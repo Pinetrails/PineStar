@@ -1,9 +1,13 @@
-/* STARNET — codexsignin.js : the ONE ChatGPT (Codex) device-code sign-in driver.
+/* STARNET — codexsignin.js : the ONE device-code OAuth sign-in driver for keyless subscription providers.
 
-   Extracted from app.js's connect-screen flow (start → show code → open page → poll → connected) so the
-   Settings→PROVIDERS panel can offer RE-SIGN-IN without duplicating the poll loop. DOM-free by design:
-   callers pass callbacks and render into their own surface (the brain screen's #codex-* block, or the
-   settings row's inline box). Tokens never touch this module — it only sees the sidecar's public
+   Originally the ChatGPT (Codex) device-code flow extracted from app.js's connect-screen (start → show code →
+   open page → poll → connected) so the Settings→PROVIDERS panel can offer RE-SIGN-IN without duplicating the
+   poll loop. Now GENERALIZED: the same engine drives any /api/auth/<pid>/* device flow (codex, grok, kimi, …).
+   `CodexSignIn` is the codex-bound instance and is UNCHANGED in API + behavior (test/codexsignin.test.js pins
+   it). `OAuthSignIn.for(pid)` returns a per-provider engine (cached, single-flight PER provider).
+
+   DOM-free by design: callers pass callbacks and render into their own surface (the brain screen's #codex-*
+   block, or a settings row's inline box). Tokens never touch this module — it only sees the sidecar's public
    device-flow endpoints (user_code / verification_uri / status strings).
 
    Callbacks (all optional):
@@ -18,7 +22,9 @@
    keep-polling rule. */
 'use strict';
 
-const CodexSignIn = (() => {
+// The internal engine factory — one closure (its own flow/timer) per provider, so two providers can be
+// mid-sign-in independently. `paths` holds the three device-flow endpoints for this provider.
+function makeOAuthSignIn(paths) {
   let flow = null;    // { device_auth_id, user_code, deadline } — the in-flight device-code login
   let timer = null;   // the poll setTimeout handle
 
@@ -34,7 +40,7 @@ const CodexSignIn = (() => {
     if (cb.onRequesting) cb.onRequesting();
     let d;
     try {
-      const r = await fetch('/api/auth/codex/start', { method: 'POST' });
+      const r = await fetch(paths.start, { method: 'POST' });
       d = await r.json();
       if (!r.ok) throw new Error(d.error || ('start failed (' + r.status + ')'));
     } catch (e) {
@@ -57,7 +63,7 @@ const CodexSignIn = (() => {
       if (Date.now() > my.deadline) { flow = null; if (cb.onTimeout) cb.onTimeout(); return; }
       let j;
       try {
-        const r = await fetch('/api/auth/codex/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device_auth_id: my.device_auth_id, user_code: my.user_code }) });
+        const r = await fetch(paths.poll, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ device_auth_id: my.device_auth_id, user_code: my.user_code }) });
         j = await r.json();
       } catch (e) { j = { status: 'pending' }; }   // transient network blip — keep polling
       if (flow !== my) return;                       // bailed out (back/disconnect) while awaiting
@@ -67,13 +73,34 @@ const CodexSignIn = (() => {
     }, Math.max(2, intervalS) * 1000);
   }
 
-  // Forget the stored ChatGPT credentials (the sidecar clears tokens AND any recorded dead-sign-in state).
+  // Forget the stored credentials (the sidecar clears tokens AND any recorded dead-sign-in state).
   async function logout() {
     cancel();
-    try { await fetch('/api/auth/codex/logout', { method: 'POST' }); } catch (_) {}
+    try { await fetch(paths.logout, { method: 'POST' }); } catch (_) {}
   }
 
   return { start, cancel, logout, active: () => !!flow };
-})();
+}
 
-if (typeof module !== 'undefined' && module.exports) module.exports = CodexSignIn;
+// build the three endpoints for a provider id. Codex is spelled out literally so the codex device-flow
+// endpoints (start/poll/logout) stay greppable in source (the source-lock tests pin /api/auth/codex/poll).
+function oauthPathsFor(pid) { const b = '/api/auth/' + pid; return { start: b + '/start', poll: b + '/poll', logout: b + '/logout' }; }
+
+// The codex-bound engine — UNCHANGED public surface (start/cancel/logout/active), so every existing caller and
+// test/codexsignin.test.js keep working verbatim. Its endpoints are the literal /api/auth/codex/{start,poll,logout}.
+const CodexSignIn = makeOAuthSignIn({ start: '/api/auth/codex/start', poll: '/api/auth/codex/poll', logout: '/api/auth/codex/logout' });
+
+// The generalized registry: one cached engine per provider id, single-flight per provider (each has its own
+// closure). CodexSignIn is registered as the codex engine so `OAuthSignIn.for('codex')` returns the SAME driver.
+const _oauthEngines = { codex: CodexSignIn };
+const OAuthSignIn = {
+  for(pid) {
+    pid = String(pid || '').trim().toLowerCase();
+    if (!pid) return CodexSignIn;
+    if (!_oauthEngines[pid]) _oauthEngines[pid] = makeOAuthSignIn(oauthPathsFor(pid));
+    return _oauthEngines[pid];
+  }
+};
+
+if (typeof module !== 'undefined' && module.exports) { module.exports = CodexSignIn; module.exports.OAuthSignIn = OAuthSignIn; }
+if (typeof window !== 'undefined') { window.CodexSignIn = CodexSignIn; window.OAuthSignIn = OAuthSignIn; }

@@ -2476,7 +2476,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // hunting HERE, but this board only holds queued directives — finished routine/away runs are
       // readable sessions in COMMS and collectable on the OUTBOX. Shown only when the board is empty
       // (that's exactly when the hunt strands); openTerm('outbox') is the one-click door.
-      (streams.length ? '' : '<div class="mc-detail dim" style="margin-top:8px">Looking for finished work? Routine and while-away runs aren’t board cards — they land as sessions in COMMS and wait on the <button type="button" class="lb-tx-btn" id="kb-outbox-link">▸ OUTBOX</button>.</div>');
+      (streams.length ? '' : '<div class="win-note" style="margin-top:8px">Looking for finished work? Routine and while-away runs aren’t board cards — they land as sessions in COMMS and wait on the <button type="button" class="lb-tx-btn" id="kb-outbox-link">▸ OUTBOX</button>.</div>');
     const inp = body.querySelector('#kb-in');
     const submit = () => { addTask(inp.value); };
     body.querySelector('#kb-add').addEventListener('click', () => { sfx('click'); submit(); });
@@ -2517,6 +2517,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   const PROVIDERS = [
     { id: 'openrouter',    name: 'OPENROUTER',        endpoint: 'openrouter.ai/api/v1',      blurb: 'one key · 300+ models',  live: true },
     { id: 'codex',         name: 'CHATGPT (CODEX)',   endpoint: 'OAuth · ChatGPT subscription', blurb: 'sign-in, no API key',  live: true },
+    { id: 'grok',          name: 'GROK (XAI)',        endpoint: 'OAuth · SuperGrok / X Premium+', blurb: 'sign-in, no API key', live: true },
+    { id: 'kimi',          name: 'KIMI FOR CODING',   endpoint: 'OAuth · Moonshot subscription', blurb: 'sign-in, no API key', live: true },
     { id: 'openai',        name: 'OPENAI API',        endpoint: 'api.openai.com/v1',          blurb: 'OpenAI-compatible', live: true },
     { id: 'anthropic',     name: 'ANTHROPIC',         endpoint: 'api.anthropic.com/v1',       blurb: 'Claude native API', live: true },
     { id: 'gemini',        name: 'GEMINI',            endpoint: 'generativelanguage.googleapis.com/v1beta', blurb: 'Google native API', live: true },
@@ -2571,6 +2573,47 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // the KNOWN-dead sign-in (sidecar recorded a relogin-class refresh failure): tokens exist but can't run.
   function codexExpired() { return !!(codexStatusKnown && codexStatusKnown.expired); }
   function codexExpiredReason() { return (codexStatusKnown && codexStatusKnown.reason) || ''; }
+
+  // The OTHER keyless device-code OAuth providers (grok/kimi) follow codex's exact contract but through the
+  // SHARED path — one status cache + one refresh + one row/handler parameterized by provider id, so we never
+  // copy the codex block per provider. Codex keeps its own literal state above (the source-lock tests pin it).
+  const OAUTH_EXTRA = ['grok', 'kimi'];                 // codex is handled by the literal path above
+  const OAUTH_ALL = ['codex'].concat(OAUTH_EXTRA);      // every keyless device-code provider
+  function isOAuthProvider(id) { return OAUTH_ALL.indexOf(id) >= 0; }
+  const oauthLabels = { grok: 'Grok OAuth', kimi: 'Kimi OAuth' };
+  function oauthMaskLabel(pid) { return oauthLabels[pid] || (provName(pid) + ' OAuth'); }
+  const oauthStatus = { grok: null, kimi: null };       // last /api/auth/<pid>/status truth per provider
+  const oauthChecking = { grok: false, kimi: false };
+  function refreshOAuthStatus(pid) {
+    if (oauthChecking[pid] || typeof fetch !== 'function') return;
+    oauthChecking[pid] = true;
+    fetch('/api/auth/' + pid + '/status', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { connected: false })
+      .then(j => {
+        // carry the WHOLE truth shape (connected + expired + reason), exactly like codex — a lone bool can't
+        // distinguish "never signed in" from the dead-refresh-token death the row must render differently.
+        const next = { connected: !!(j && j.connected), expired: !!(j && j.expired), reason: (j && j.reason) || '' };
+        const prev = oauthStatus[pid];
+        oauthStatus[pid] = next;
+        if (!prev || prev.connected !== next.connected || prev.expired !== next.expired) rerender('settings');
+      })
+      .catch(() => {})
+      .finally(() => { oauthChecking[pid] = false; });
+  }
+  function refreshExtraOAuthStatus() { OAUTH_EXTRA.forEach(refreshOAuthStatus); }
+  function oauthProvConnected(pid) {
+    const s = oauthStatus[pid];
+    if (s !== null) return !!s.connected;
+    const h = H();
+    return !!(h && h.getProv && h.getProv() === pid);
+  }
+  function oauthProvExpired(pid) { const s = oauthStatus[pid]; return !!(s && s.expired); }
+  function oauthProvReason(pid) { const s = oauthStatus[pid]; return (s && s.reason) || ''; }
+  // unified accessors that route codex to its literal predicates and grok/kimi to the shared cache, so the
+  // render/handler logic below reads one truth interface regardless of which OAuth provider a row is for.
+  function oauthConnectedFor(pid) { return pid === 'codex' ? codexConnected() : oauthProvConnected(pid); }
+  function oauthExpiredFor(pid) { return pid === 'codex' ? codexExpired() : oauthProvExpired(pid); }
+  function oauthReasonFor(pid) { return pid === 'codex' ? codexExpiredReason() : oauthProvReason(pid); }
   // Where do saved API keys actually live? TRUTH SOURCE = the sidecar's keychainMode (DESKTOP_SHELL): the packaged
   // desktop build holds BYOK keys in the OS keychain; the browser holds them in its own local store. We learn this
   // lazily from /api/providers (mirrors the codex-status probe) and cache it so the key-save confirmation can name
@@ -2624,9 +2667,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // A KNOWN-dead sign-in still gets its row (marked expired): the credentials exist on disk and the row is
     // where RE-SIGN-IN / DISCONNECT live — hiding it was the escape where the user had no recovery path.
     if (codexConnected() || codexExpired()) out.push({ provider: 'codex', key: '', model: (h.getModel && h.getModel()) || '', oauth: true, expired: codexExpired() });
+    // the other keyless device-code sign-ins (grok/kimi) get the SAME additive row treatment as codex: a live or
+    // KNOWN-dead sign-in earns a row (that's where RE-SIGN-IN / DISCONNECT live). The model is only shown when the
+    // provider is actually active (truthful telemetry — getModel() is the active-provider model, not this row's).
+    OAUTH_EXTRA.forEach(pid => {
+      if (oauthProvConnected(pid) || oauthProvExpired(pid)) {
+        const activeModel = (h.getProv && h.getProv() === pid && h.getModel) ? (h.getModel() || '') : '';
+        out.push({ provider: pid, key: '', model: activeModel, oauth: true, expired: oauthProvExpired(pid) });
+      }
+    });
     // OpenRouter BYOK: desktop keeps the key in the OS keychain (getKey returns ''); configured() reports it's set.
     function addProvider(provider) {
-      if (!provider || provider === 'codex' || out.some(k => k.provider === provider)) return;
+      if (!provider || isOAuthProvider(provider) || out.some(k => k.provider === provider)) return;
       if (provider === 'ollama' && provider !== active) return;
       // Truthful list: only providers with an ACTUALLY-stored credential show a row/badge (never DEVMODE-fabricated).
       // hasStoredCredential is the honest getter; fall back to the older signals if an old harness lacks it.
@@ -2642,7 +2694,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function keysFor(id) { return connectedKeys().filter(x => x.provider === id); }
   function providerAcceptsKey(provider) {
     provider = provider || activeProv();
-    return provider !== 'codex' && provider !== 'ollama';
+    return !isOAuthProvider(provider) && provider !== 'ollama';
   }
   function addKeyHtml(provider, empty) {
     provider = provider || 'openrouter';
@@ -2660,11 +2712,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const active = activeProv();
     return PROVIDERS.map((p, pi) => {
       const ks = keysFor(p.id);
-      // the codex sign-in can be KNOWN-dead (sidecar recorded a consumed/invalid refresh token) — that must
-      // never render as SIGNED IN. The row still exists (ks has the expired entry) so RE-SIGN-IN is reachable.
-      const codexDead = p.id === 'codex' && codexExpired();
+      // a keyless device-code sign-in (codex/grok/kimi) can be KNOWN-dead (sidecar recorded a consumed/invalid
+      // refresh token) — that must never render as SIGNED IN. The row still exists (ks has the expired entry) so
+      // RE-SIGN-IN is reachable. `codexDead` keeps its historical name because the source-lock tests pin
+      // `codexDead ? 'avail expired'` / `&& !codexDead`; it now flags a dead sign-in for ANY OAuth provider.
+      const codexDead = isOAuthProvider(p.id) && oauthExpiredFor(p.id);
       const h = H();
-      const credentialSaved = p.id === 'codex' ? (ks.length > 0 && !codexDead) : !!(h && h.hasStoredCredential && h.hasStoredCredential(p.id));
+      const credentialSaved = isOAuthProvider(p.id) ? (ks.length > 0 && !codexDead) : !!(h && h.hasStoredCredential && h.hasStoredCredential(p.id));
       const endpointConfigured = p.id === 'ollama' || (p.id === 'custom' && !!(h && h.getBaseUrl && h.getBaseUrl(p.id)));
       const configured = credentialSaved || endpointConfigured;
       const health = providerHealth[p.id];
@@ -2676,26 +2730,31 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // rate-limited, or wrong, and we haven't round-tripped it. Label it "KEY SAVED" (or SIGNED IN for
       // the codex OAuth path, which IS real auth) rather than the over-claiming "CONNECTED". The
       // ACTIVE/runnable badge logic below is unchanged — that already gates on selected provider + model.
-      const connLabel = p.id === 'codex' ? '● SIGNED IN' : '● KEY SAVED';
+      const connLabel = isOAuthProvider(p.id) ? '● SIGNED IN' : '● KEY SAVED';
       const keyless = p.id === 'ollama' || (p.id === 'custom' && endpointConfigured && !credentialSaved);
       const localStat = !endpointConfigured ? '○ NO ENDPOINT' : health === undefined ? '◐ LOCAL ENDPOINT CONFIGURED · CHECKING…'
         : health && health.reachable ? '● LOCAL ENDPOINT CONFIGURED · REACHABLE' : '○ LOCAL ENDPOINT CONFIGURED · OFFLINE';
       const keyStat = health === undefined ? connLabel + ' · CHECKING…'
         : health && health.credentialVerified ? connLabel + ' · VERIFIED' : health && health.reachable ? connLabel + ' · NOT VERIFIED' : connLabel + ' · CHECK FAILED';
       const stat = !p.live ? '○ COMING SOON' : codexDead ? '⚠ SIGN-IN EXPIRED — RECONNECT'
-        : keyless ? localStat : credentialSaved ? keyStat : (p.id === 'codex' ? '○ NOT SIGNED IN' : (p.id === 'custom' ? '○ NO ENDPOINT' : '○ NO KEY'));
+        : keyless ? localStat : credentialSaved ? keyStat : (isOAuthProvider(p.id) ? '○ NOT SIGNED IN' : (p.id === 'custom' ? '○ NO ENDPOINT' : '○ NO KEY'));
       const n = ks.length;
       // NO-KEY cards that accept a key get an inline, collapsible paste-and-save row so the user never has to hunt
       // for where keys live. It reuses the SAME save path (Harness.setKey) as the key list below — no duplicate logic.
       const wantsInline = p.live && !credentialSaved && providerAcceptsKey(p.id);
+      // A never-signed-in device-code provider (grok/kimi) gets its FIRST sign-in right on the card — these have
+      // no connect-screen block (codex does), so without this button the ⏼ RE-SIGN-IN row below is unreachable:
+      // that row only exists once a live or known-dead sign-in exists. Same shared engine, card-local inline box.
+      const wantsOAuthSignin = p.live && OAUTH_EXTRA.indexOf(p.id) !== -1 && !credentialSaved && !codexDead;
       return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
         '<span class="conn-dot"></span>' +
         '<div class="prov-main">' +
         '<div class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</div>' +
         '<div class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</div>' +
         '</div>' +
-        '<div class="prov-stat">' + stat + (credentialSaved && p.id !== 'codex' ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') +
+        '<div class="prov-stat">' + stat + (credentialSaved && !isOAuthProvider(p.id) ? '<i>' + n + (n === 1 ? ' key' : ' keys') + '</i>' : '') +
           (wantsInline ? '<button class="bb sm prov-addkey" data-act="prov-add-toggle" data-provider="' + esc(p.id) + '" aria-label="Add a ' + esc(p.name) + ' key" title="paste a ' + esc(p.name) + ' key without leaving this card">＋ ADD KEY</button>' : '') +
+          (wantsOAuthSignin ? '<button class="bb sm prov-addkey" data-act="prov-oauth-signin" data-provider="' + esc(p.id) + '" aria-label="Sign in to ' + esc(p.name) + '" title="device-code sign-in — no API key needed">⏼ SIGN IN</button>' : '') +
         '</div>' +
         (wantsInline
           ? '<div class="key-edit prov-key-edit" id="prov-key-edit-' + esc(p.id) + '" hidden>' +
@@ -2703,8 +2762,48 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             '<button class="bb sm" data-act="prov-add-save" data-provider="' + esc(p.id) + '">SAVE</button>' +
             '</div>'
           : '') +
+        (wantsOAuthSignin
+          ? '<div class="key-edit codex-inline prov-oauth-inline" id="prov-oauth-inline-' + esc(p.id) + '" hidden>' +
+            '<span class="dim" id="prov-oauth-status-' + esc(p.id) + '"></span>' +
+            '<code class="key-mask" id="prov-oauth-code-' + esc(p.id) + '" hidden></code>' +
+            '<button class="bb sm" id="prov-oauth-open-' + esc(p.id) + '" hidden>↗ OPEN PAGE</button>' +
+            '</div>'
+          : '') +
         '</div>';
     }).join('');
+  }
+  // The SHARED credential-row for a keyless device-code OAuth provider (grok/kimi) — the parameterized twin of
+  // the codex oauth branch in keysHtml. Same honest contract: SIGN-IN EXPIRED (never SIGNED IN) when dead, a
+  // scrubbed reason, and always-present ⏼ RE-SIGN-IN / ✕ DISCONNECT wired to the shared engine + its own inline
+  // device-code box (id'd by provider so two rows never collide). No token material is ever rendered.
+  function oauthKeyRow(k, runState) {
+    const pid = k.provider;
+    const dead = !!k.expired;
+    const meta = dead
+      ? '<span class="key-stat bad">⚠ SIGN-IN EXPIRED — ' + esc(oauthProvReason(pid) || 'the stored sign-in no longer works; reconnect to run again') + '</span>'
+      : 'model <b>' + esc(k.model || '—') + '</b> · ' +
+        runState +
+        ' · <span class="key-stat">no API key needed</span>';
+    return '<div class="key-row' + (dead ? ' expired' : '') + '">' +
+      '<span class="conn-dot"></span>' +
+      '<div class="key-main">' +
+      '<div class="key-top"><span class="key-prov">' + esc(provName(pid)) + '</span>' +
+      (dead
+        ? '<code class="key-mask key-mask-dead" title="the sidecar recorded a dead refresh token — a re-sign-in is the only cure">⚠ EXPIRED</code>'
+        : '<code class="key-mask" title="authenticated by OAuth sign-in — no API key is stored">' + esc(oauthMaskLabel(pid)) + '</code>') + '</div>' +
+      '<div class="key-meta">' + meta + '</div>' +
+      '</div>' +
+      '<div class="key-acts">' +
+      '<button class="bb sm" data-act="' + esc(pid) + '-resign">⏼ RE-SIGN-IN</button>' +
+      '<button class="bb sm danger" data-act="' + esc(pid) + '-logout">✕ DISCONNECT</button>' +
+      '</div></div>' +
+      // the inline device-code surface the RE-SIGN-IN action fills (same engine as codex: OAuthSignIn.for(pid)
+      // → code + verification URL here, poll until the sidecar reports connected).
+      '<div class="key-edit codex-inline" id="' + esc(pid) + '-inline-signin" hidden>' +
+      '<span class="dim" id="' + esc(pid) + '-inline-status"></span>' +
+      '<code class="key-mask" id="' + esc(pid) + '-inline-code" hidden></code>' +
+      '<button class="bb sm" id="' + esc(pid) + '-inline-open" hidden>↗ OPEN PAGE</button>' +
+      '</div>';
   }
   function keysHtml() {
     const keys = connectedKeys(), active = activeProv();
@@ -2731,6 +2830,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const runnable = !!(selected && health && health.reachable && health.credentialVerified);
       const runState = runnable ? '<span class="key-stat on">ACTIVE</span>'
         : selected ? '<span class="key-stat">SELECTED</span>' : '<span class="key-stat">idle</span>';
+      // grok/kimi (the other keyless device-code sign-ins) render through the SHARED oauth row below — same
+      // semantics as codex, parameterized by provider id, so the codex block is not copy-pasted per provider.
+      if (k.oauth && k.provider !== 'codex') return oauthKeyRow(k, runState);
       // Codex (OAuth) has no API key to mask/edit/remove — render it honestly as a sign-in connection.
       // The row always carries its OWN actions (⏼ RE-SIGN-IN / ✕ DISCONNECT): the 2026-07-08 escape was a
       // dead sign-in still labelled SIGNED IN with zero recovery actions on this exact row.
@@ -2773,6 +2875,20 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           ' · <span class="key-stat">no API key needed</span></div>' +
           '</div></div>';
       }
+      // STATION LINK / base-URL edit (post-onboarding, EL-11 #12): a custom OpenAI-compatible endpoint carries an
+      // editable base URL. Onboarding is the only other place Harness.setBaseUrl is called; without this control the
+      // endpoint was frozen at whatever onboarding stored. Only the 'custom' provider uses a base URL, so gate on it.
+      const isCustomEp = k.provider === 'custom';
+      const baseBtn = isCustomEp
+        ? '<button class="bb sm" data-act="baseurl-edit" data-i="' + i + '" title="change this station link / endpoint URL without re-onboarding">✎ STATION LINK</button>'
+        : '';
+      const baseBlock = isCustomEp
+        ? '<div class="key-edit" id="base-edit-' + i + '" hidden>' +
+            '<input type="url" class="key-input base-input" id="base-in-' + i + '" placeholder="https://your-endpoint/v1" value="' + esc(k.baseUrl || '') + '" autocomplete="off" spellcheck="false">' +
+            '<button class="bb sm" data-act="baseurl-apply" data-i="' + i + '">APPLY</button>' +
+            '<span class="msg" id="base-msg-' + i + '"></span>' +
+          '</div>'
+        : '';
       return '<div class="key-row">' +
         '<span class="conn-dot"></span>' +
         '<div class="key-main">' +
@@ -2783,12 +2899,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '</div>' +
         '<div class="key-acts">' +
         '<button class="bb sm" data-act="edit" data-i="' + i + '">✎ UPDATE</button>' +
+        baseBtn +
         '<button class="bb sm danger" data-act="rm" data-i="' + i + '">✕ REMOVE</button>' +
         '</div></div>' +
         '<div class="key-edit" id="key-edit-' + i + '" hidden>' +
         '<input type="password" class="key-input" id="key-in-' + i + '" placeholder="paste new ' + esc(provName(k.provider)) + ' key…" autocomplete="off" spellcheck="false">' +
         '<button class="bb sm" data-act="save" data-i="' + i + '">SAVE</button>' +
-        '</div>';
+        '</div>' +
+        baseBlock;
     });
     if (providerAcceptsKey(addProvider) && !hasAddProvider) rows.push(addKeyHtml(addProvider, false));
     return rows.join('');
@@ -2844,6 +2962,54 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           });
           return;
         }
+        // ---- grok / kimi OAuth row actions — the SHARED path: same wiring as codex, but through the generalized
+        //      engine OAuthSignIn.for(pid) and this provider's own inline device-code surface. No Harness store. ----
+        const oauthAct = act && act.match(/^(grok|kimi)-(resign|logout)$/);
+        if (oauthAct) {
+          const pid = oauthAct[1];
+          const engine = (typeof OAuthSignIn !== 'undefined') ? OAuthSignIn.for(pid) : null;
+          if (oauthAct[2] === 'resign') {
+            if (!engine) return;
+            const box = body.querySelector('#' + pid + '-inline-signin');
+            const st = body.querySelector('#' + pid + '-inline-status');
+            const code = body.querySelector('#' + pid + '-inline-code');
+            const open = body.querySelector('#' + pid + '-inline-open');
+            if (box) box.hidden = false;
+            engine.start({
+              onRequesting: () => { if (st) st.textContent = 'requesting a sign-in code…'; },
+              onError: msg => { if (st) st.textContent = msg; sfx('bad'); },
+              onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit RE-SIGN-IN to start again'; },
+              onCode: c => {
+                if (code) { code.textContent = c.user_code; code.hidden = false; }
+                if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
+                if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.verification_uri); }; }
+                openExternal(c.verification_uri);
+              },
+              onConnected: () => {
+                // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
+                oauthStatus[pid] = { connected: true, expired: false, reason: '' };
+                notify('✓ reconnected ' + provName(pid) + ' — your agents can run on your subscription again', 'good');
+                if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+                if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+                refreshOAuthStatus(pid);   // re-read the durable status (persistError etc.) behind the repaint
+                rerender('settings');
+              }
+            });
+            return;
+          }
+          // logout
+          if (engine) engine.cancel();
+          const drop = engine ? engine.logout() : fetch('/api/auth/' + pid + '/logout', { method: 'POST' }).catch(() => {});
+          Promise.resolve(drop).then(() => {
+            oauthStatus[pid] = { connected: false, expired: false, reason: '' };   // the sidecar just confirmed the drop
+            notify('disconnected ' + provName(pid) + ' — sign in again anytime from PROVIDERS', 'warn');
+            sfx('bad');
+            if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+            if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+            rerender('settings');
+          });
+          return;
+        }
         if (!h) return;
         if (act === 'add') {              // empty-state: connect a first key without leaving the game
           const inp = body.querySelector('#key-in-new');
@@ -2863,6 +3029,34 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (act === 'edit') {
           const ed = body.querySelector('#key-edit-' + i);
           if (ed) { ed.hidden = !ed.hidden; if (!ed.hidden) { const inp = body.querySelector('#key-in-' + i); if (inp) inp.focus(); } }
+        } else if (act === 'baseurl-edit') {
+          const ed = body.querySelector('#base-edit-' + i);
+          if (ed) { ed.hidden = !ed.hidden; if (!ed.hidden) { const inp = body.querySelector('#base-in-' + i); if (inp) inp.focus(); } }
+        } else if (act === 'baseurl-apply') {
+          // EL-11 #12: apply an edited base URL post-onboarding, then PROVE the result honestly (truthful telemetry).
+          const inp = body.querySelector('#base-in-' + i);
+          const msg = body.querySelector('#base-msg-' + i);
+          const setMsg = (t, cls) => { if (msg && msg.isConnected) { msg.textContent = t; msg.className = 'msg' + (cls ? ' ' + cls : ''); } };
+          const v = inp ? inp.value.trim() : '';
+          if (!v) { sfx('bad'); setMsg('enter your endpoint URL', 'bad'); return; }
+          // Same validation/normalization onboarding relies on: a non-empty URL; a bare host gets an https:// scheme
+          // so the endpoint is well-formed before we store it. Reject anything that still isn't a parseable URL.
+          let norm = v; if (!/^https?:\/\//i.test(norm)) norm = 'https://' + norm.replace(/^\/+/, '');
+          try { new URL(norm); } catch (_) { sfx('bad'); setMsg('that doesn\'t look like a URL', 'bad'); return; }
+          if (inp) inp.value = norm;
+          sfx('click');
+          setMsg('saved — probing endpoint…', '');
+          Promise.resolve(h.setBaseUrl ? h.setBaseUrl(norm, row.provider) : null).then(() => {
+            invalidateProviderHealth(row.provider);
+            // HONEST reachability check against the REAL endpoint — never claim connected without proof. probeProvider
+            // round-trips /api/providers/probe; the same probe result feeds the provider card badge cache.
+            if (!h.probeProvider) { setMsg('saved', 'ok'); return; }
+            return h.probeProvider(row.provider).then(pr => {
+              providerHealth[row.provider] = pr || null;   // keep the card badges consistent with this probe
+              if (pr && pr.reachable) setMsg(pr.credentialVerified ? '✓ endpoint reachable · credentials verified' : '✓ endpoint reachable — not verified', 'ok');
+              else setMsg('✕ endpoint unreachable' + (pr && pr.error ? ' — ' + pr.error : ''), 'bad');
+            });
+          }).catch(() => setMsg('✕ could not reach the sidecar to apply', 'bad'));
         } else if (act === 'save') {
           const inp = body.querySelector('#key-in-' + i);
           const v = inp ? inp.value.trim() : '';
@@ -2923,6 +3117,41 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         sfx('click');
         rerender('settings');
       };
+      // FIRST sign-in for a keyless device-code provider (grok/kimi) — the card-local twin of the key-row's
+      // ⏼ RE-SIGN-IN, driving the SAME shared engine (OAuthSignIn.for). stopPropagation: the card click selects.
+      const oauthSignin = card.querySelector('[data-act="prov-oauth-signin"]');
+      if (oauthSignin) oauthSignin.addEventListener('click', ev => {
+        ev.stopPropagation();
+        sfx('click');
+        const pid = card.dataset.provider;
+        const engine = (typeof OAuthSignIn !== 'undefined') ? OAuthSignIn.for(pid) : null;
+        if (!engine) return;
+        const box = card.querySelector('#prov-oauth-inline-' + pid);
+        const st = card.querySelector('#prov-oauth-status-' + pid);
+        const code = card.querySelector('#prov-oauth-code-' + pid);
+        const open = card.querySelector('#prov-oauth-open-' + pid);
+        if (box) { box.hidden = false; box.addEventListener('click', e2 => e2.stopPropagation()); }
+        engine.start({
+          onRequesting: () => { if (st) st.textContent = 'requesting a sign-in code…'; },
+          onError: msg => { if (st) st.textContent = msg; sfx('bad'); },
+          onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit ⏼ SIGN IN to start again'; },
+          onCode: c => {
+            if (code) { code.textContent = c.user_code; code.hidden = false; }
+            if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
+            if (open) { open.hidden = false; open.onclick = e2 => { e2.stopPropagation(); sfx('click'); openExternal(c.verification_uri); }; }
+            openExternal(c.verification_uri);
+          },
+          onConnected: () => {
+            // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
+            oauthStatus[pid] = { connected: true, expired: false, reason: '' };
+            notify('✓ signed in to ' + provName(pid) + ' — your agents can run on your subscription', 'good');
+            if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+            if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+            refreshOAuthStatus(pid);   // re-read the durable status (persistError etc.) behind the repaint
+            rerender('settings');
+          }
+        });
+      });
       // clicks on the inline key controls must NOT bubble up to provider-select — they toggle/save the key row.
       const inlineToggle = card.querySelector('[data-act="prov-add-toggle"]');
       const inlineSave = card.querySelector('[data-act="prov-add-save"]');
@@ -3466,10 +3695,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
   function buildSettings(body) {
     refreshCodexConnectionStatus();
+    refreshExtraOAuthStatus();   // the same live-status probe for the other keyless sign-ins (grok/kimi)
     refreshKeychainMode();   // learn keychain-vs-browser once, so the key-save confirmation can name the real store
     const s = store.settings;
     const awakeDesktop = !!(typeof KeepAwake !== 'undefined' && KeepAwake.isDesktop && KeepAwake.isDesktop());
     const awakeChecked = awakeDesktop && !!s.keepComputerAwake;
+    const lifecycleDesktop = !!(typeof Lifecycle !== 'undefined' && Lifecycle.isDesktop && Lifecycle.isDesktop());
     if (!s.notifyPrefs) s.notifyPrefs = notifyDefaults();   // defensive: an old save may predate P1-8
     const npf = k => s.notifyPrefs[k] !== false;            // per-category checked-state (default on)
     // ── SECTION FRAGMENTS ──────────────────────────────────────────────────────────────────
@@ -3657,6 +3888,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // "POWER" — this header held only KEEP COMPUTER AWAKE, so "SCHEDULED TASKS" mislabelled it.
       '<h4 class="ms-h">POWER</h4>' +
       '<label class="set-row"><input type="checkbox" id="set-awake" ' + (awakeChecked ? 'checked' : '') + (awakeDesktop ? '' : ' disabled') + '> KEEP COMPUTER AWAKE <span class="dim">— ' + (awakeDesktop ? 'prevent idle sleep while StarNet is open' : 'desktop app only') + '</span></label>' +
+      // Lane 4D — LAUNCH AT LOGIN (opt-in, default OFF) + the honest background-lifecycle explainer. Both are
+      // desktop-only; the checkbox is disabled and the line names the browser reality otherwise. The explainer
+      // is filled live from the tray supervisor's REAL armed state (wireLifecycle) so it never over-claims.
+      '<label class="set-row"><input type="checkbox" id="set-autostart" disabled> LAUNCH AT LOGIN <span class="dim">— ' + (lifecycleDesktop ? 'start StarNet automatically when you sign in' : 'desktop app only') + '</span></label>' +
+      '<p class="set-about" id="lifecycle-desc">' + (lifecycleDesktop ? 'Checking what runs in the background…' : 'In the desktop app, closing the window keeps the station running only when armed work (routines, connected channels, or the night shift) needs it — otherwise closing fully quits. This browser tab has no background process.') + '</p>' +
       // ADVANCED — env-only runtime knobs, now editable + persisted server-side (P1-9). PRECEDENCE is spelled out
       // in the card: an explicit environment variable ALWAYS wins over a value saved here (a deploy stays in control).
       '<h4 class="ms-h">ADVANCED <span class="dim">— runtime limits (usually leave these alone)</span></h4>' +
@@ -3776,6 +4012,46 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         sfx('bad');
       });
     });
+    // Lane 4D — LAUNCH AT LOGIN toggle + live background-lifecycle explainer. Desktop-only; both read REAL state
+    // (the OS autostart registration and the tray supervisor's armed truth), so neither line ever over-claims.
+    if (typeof Lifecycle !== 'undefined' && Lifecycle.isDesktop && Lifecycle.isDesktop()) {
+      const autostartToggle = host.querySelector('#set-autostart');
+      const lifeDesc = host.querySelector('#lifecycle-desc');
+      // Reflect the real OS autostart state onto the checkbox (default OFF; opt-in).
+      Lifecycle.autostartStatus().then(st => {
+        if (!autostartToggle) return;
+        autostartToggle.disabled = false;
+        autostartToggle.checked = !!(st && st.enabled);
+      }).catch(() => {});
+      // Fill the explainer from the tray supervisor's live armed summary — truthful about what survives a close.
+      const paintLife = () => {
+        if (!lifeDesc) return;
+        Lifecycle.status().then(v => {
+          if (!v || !v.supervised) { lifeDesc.textContent = 'Closing the window keeps the station running only when armed work needs it — otherwise it fully quits.'; return; }
+          if (v.armed) {
+            const why = (v.reasons && v.reasons.length) ? v.reasons.join(', ') : 'armed background work';
+            lifeDesc.textContent = 'Right now, closing the window KEEPS the station running in the background (' + why + '). Quit fully from the tray icon. Otherwise closing would fully quit.';
+          } else {
+            lifeDesc.textContent = 'Right now, nothing is armed — closing the window fully quits StarNet (no background process). Arm a routine, connect a channel, or turn on the night shift to keep it running while closed.';
+          }
+        }).catch(() => { lifeDesc.textContent = 'Closing the window keeps the station running only when armed work needs it — otherwise it fully quits.'; });
+      };
+      paintLife();
+      if (autostartToggle) autostartToggle.addEventListener('change', ev => {
+        const desired = !!ev.target.checked;
+        sfx('click');
+        Lifecycle.setAutostart(desired).then(st => {
+          const real = !!(st && st.enabled);
+          ev.target.checked = real;
+          if (real !== desired) notify('Launch at login could not be ' + (desired ? 'enabled' : 'disabled') + ' on this system.', 'warn');
+          else flashSaved(appMsg());
+        }).catch(err => {
+          ev.target.checked = !desired;
+          notify('Launch at login failed: ' + ((err && err.message) || err), 'warn');
+          sfx('bad');
+        });
+      });
+    }
     // PERMISSIONS panel repaint hook — set by the permissions block below; called whenever the granular dial
     // changes so the level highlight + #perm-desc stay in sync with the posture. No-op until that block wires it.
     let syncPerm = function () {};
@@ -5153,6 +5429,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const ccMsgEl = body.querySelector('#cc-msg');
     let ccCache = [];   // flat catalog entries, so a click reads the authoritative id/url/name (never re-typed)
     const ccPending = new Set();   // connector ids with an in-flight OAuth sign-in (guards duplicate popups/pollers)
+    const ccTimers = new Map();    // id -> live poll interval, so a CANCEL / panel-close can clear it (EL-11 #13)
+    const ccPendingWin = new Map();// id -> popup window handle (browser) so a CANCEL can close a still-open consent tab
+    // Stop and forget the poll for a connector — used by success/error/cap paths, the CANCEL affordance, and the
+    // panel-leaves-DOM self-terminate guard. Idempotent (a missing id is a no-op).
+    function stopCcPoll(id) { const t = ccTimers.get(id); if (t) { clearInterval(t); ccTimers.delete(id); } }
+    // Restore a signing-in card's action button back to its idle SIGN IN state so a re-click starts fresh.
+    function ccResetSignBtn(id) {
+      const btn = ccListEl && ccListEl.querySelector('.cc-card[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"] button[data-cc-act]');
+      if (btn && (btn.dataset.ccAct === 'signin' || btn.dataset.ccAct === 'signin-cancel')) {
+        btn.dataset.ccAct = 'signin'; btn.textContent = '▸ SIGN IN'; btn.disabled = false;
+        btn.title = 'opens a secure browser sign-in (OAuth)';
+      }
+    }
     // auth tier chip: glyph, label, colour. Drives the honest "what will adding this cost me" cue.
     // CRT glyphs, not emoji (⚡🔑🔒 punched holes in the phosphor look). ▸ = no setup; API key + OAUTH ride as plain
     // colour-coded text chips (gold / dim) — VT323 has no key/lock glyph that renders (⚿ came out as tofu), and the
@@ -5233,18 +5522,38 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         ccMsgEl.textContent = '✕ couldn’t open the sign-in page for ' + label + (opened.where === 'popup' ? ' — allow pop-ups for this site, then try again.' : ' — try again.'); sfx('bad'); ccPending.delete(id); return;
       }
       const win = opened.win;   // popup handle when in a browser; null on desktop (opened in the real browser)
+      ccPendingWin.set(id, win || null);   // remembered so a CANCEL can close a still-open popup
       ccMsgEl.textContent = 'complete the sign-in for ' + label + (opened.where === 'browser' ? ' in your browser…' : ' in the popup window…');
+      // Turn the card's SIGN IN button into a visible CANCEL affordance for the duration of the poll — before this
+      // the only way out of a stalled/abandoned sign-in was to wait out the 5-minute cap (EL-11 #13).
+      const signBtn = ccListEl.querySelector('.cc-card[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"] button[data-cc-act]');
+      if (signBtn) { signBtn.dataset.ccAct = 'signin-cancel'; signBtn.textContent = '✕ CANCEL'; signBtn.disabled = false; signBtn.title = 'stop waiting for this sign-in'; }
       let tries = 0;
       const timer = setInterval(async () => {
+        // Self-terminate the moment the panel body leaves the DOM (window closed / rerendered) — the same guard
+        // buildMessaging._poll uses. Without it an abandoned sign-in kept hitting /api/connectors for ~5 min.
+        if (!document.body.contains(body)) { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); return; }
         tries++;
         try {
           const j = await (await fetch('/api/connectors')).json();
           const c = (j.connectors || []).find(x => x.id === id);
-          if (c && c.state === 'up') { clearInterval(timer); ccPending.delete(id); sfx('click'); notify('Connector "' + label + '" connected', 'good'); ccMsgEl.classList.add('ok'); ccMsgEl.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
-          if (c && c.state === 'error') { clearInterval(timer); ccPending.delete(id); sfx('bad'); ccMsgEl.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); return; }
+          if (c && c.state === 'up') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); sfx('click'); notify('Connector "' + label + '" connected', 'good'); ccMsgEl.classList.add('ok'); ccMsgEl.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
+          if (c && c.state === 'error') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); sfx('bad'); ccMsgEl.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); return; }
         } catch (_) {}
-        if (tries > 150) { clearInterval(timer); ccPending.delete(id); }   // ~5-minute cap so a stalled/abandoned sign-in stops polling
+        if (tries > 150) { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); ccResetSignBtn(id); }   // ~5-minute cap so a stalled/abandoned sign-in stops polling
       }, 2000);
+      ccTimers.set(id, timer);
+    }
+    // CANCEL a still-polling sign-in: clear the timer, drop the in-flight guard, close any popup we opened, and reset
+    // the card so a re-click can start over. Honest neutral message — we are NOT claiming a failure, the user opted out.
+    function ccCancelSignIn(id) {
+      stopCcPoll(id);
+      ccPending.delete(id);
+      const w = ccPendingWin.get(id); ccPendingWin.delete(id);
+      try { if (w && !w.closed) w.close(); } catch (_) {}
+      ccResetSignBtn(id);
+      const e = ccCache.find(x => x.id === id); const label = (e && e.name) || id;
+      ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'sign-in for ' + label + ' cancelled — press SIGN IN to try again.'; sfx('tick');
     }
     ccListEl.addEventListener('click', async ev => {
       const btn = ev.target.closest('button[data-cc-act]'); if (!btn) return;
@@ -5261,6 +5570,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         btn.disabled = true; await ccInstall(id, token);
       }
       else if (act === 'signin') { btn.disabled = true; await ccSignIn(id); btn.disabled = false; }
+      else if (act === 'signin-cancel') { ccCancelSignIn(id); }
     });
     ccRefresh();
   }
@@ -5421,6 +5731,33 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const ok = j.lastStatus === 'ok';
       return '<span class="' + (ok ? 'pos' : '') + '"' + (ok ? '' : ' style="color:var(--bad)"') + '>' + (ok ? '✓ ok' : '✕ ' + esc(j.lastReason || 'error')) + '</span> <span class="dim">' + esc(fmtRel(j.lastRunAt)) + '</span>';
     }
+    // TICKER HEALTH (scheduler-audit GA-9): armed alone can't prove ticks are completing. GET /api/cron carries a
+    // real observed `health` block; render it beside the armed banner. Only meaningful when armed (a disarmed
+    // scheduler is honestly idle — the OFF banner already owns that story), so return '' otherwise.
+    function tickHealthLine(cron) {
+      const hh = cron && cron.health;
+      if (!cron || !cron.enabled || !hh) return '';
+      // cronHealth timestamps are epoch-ms NUMBERS (Date.now()), not ISO strings like the per-job fields — normalize
+      // to ISO so fmtRel (which Date.parse()es a string) reads them instead of falling through to '—'.
+      const relOf = t => fmtRel(typeof t === 'number' ? new Date(t).toISOString() : t);
+      if (hh.healthy) {
+        const age = hh.lastSuccessAt != null ? relOf(hh.lastSuccessAt) : 'just now';
+        return ' <span class="dim">· tick healthy — last success ' + esc(age) + '</span>';
+      }
+      // Armed but not proven healthy: surface WHY, never a fake-green. A real tick error wins; otherwise we honestly
+      // say we're still waiting for the first successful tick (no success timestamp yet).
+      if (hh.lastTickError) return ' <span style="color:var(--bad)">· tick error — ' + esc(hh.lastTickError) + '</span>';
+      return ' <span class="dim">· waiting for first tick…</span>';
+    }
+    // Per-job DELIVERY OUTCOME (scheduler-audit): a routine can succeed while its channel notification fails — that
+    // failure is durable (cron-store markDelivery) and must be visible, never swallowed. Show ONLY a failure (the
+    // error string already carries the channel in [brackets]); a success or a never-delivered job shows nothing
+    // (honest no-signal — we never invent a "delivered" state the job never attempted).
+    function deliveryLine(j) {
+      if (!j.lastDeliveryAt || j.lastDeliveryOk !== false) return '';
+      return '<div class="mc-detail" style="color:var(--bad)">✕ delivery failed — ' + esc(j.lastDeliveryError || 'notification could not be sent') +
+        ' <span class="dim">' + esc(fmtRel(j.lastDeliveryAt)) + '</span></div>';
+    }
     function row(j) {
       const on = j.enabled;
       const stateBadge = on ? '<span style="color:var(--gold)">● scheduled</span>' : '<span class="dim">○ paused</span>';
@@ -5438,6 +5775,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + fromRecipe + '</div>' +
         '<div class="mc-url dim">runs as ' + esc(agentLabel(j.agentId || 'agent')) + ' · next ' + next + ' · last ' + lastResult(j) + '</div>' +
         (j.lastError ? '<div class="mc-detail">' + esc(j.lastError) + '</div>' : '') +
+        deliveryLine(j) +
         '<div class="mc-acts">' +
           '<button class="bb xs" data-act="run">▶ RUN NOW</button>' +
           '<button class="bb xs" data-act="toggle">' + (on ? '⏸ DISABLE' : '▶ ENABLE') + '</button>' +
@@ -5458,7 +5796,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // the fix is one click away. When ON, the calm one-liner + DISABLE control is enough. `#rt-arm`/data-arm
         // stay identical so the arm/disarm wiring below binds unchanged.
         gateEl.innerHTML = j && j.enabled
-          ? '<span style="color:var(--gold)">● scheduler armed</span> <span class="dim">— routines fire automatically.</span> ' +
+          ? '<span style="color:var(--gold)">● scheduler armed</span> <span class="dim">— routines fire automatically.</span>' + tickHealthLine(j) + ' ' +
             '<button class="bb xs" id="rt-arm" data-arm="0">⏸ DISABLE SCHEDULING</button>'
           : '<div class="brief-block" style="border-left-color:var(--bad);margin-bottom:8px">' +
               '<div class="brief-k" style="color:var(--bad)">○ SCHEDULING IS OFF</div>' +
@@ -6449,21 +6787,22 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireVerdict(nsNo, 'decline', 'warn');
   }
 
-  /* ============== OUTBOX — the finished-work window (2026-07-16 UX fix) ==============
-     Clicking the OUTBOX prop opens THIS: one clean list of every uncollected finished run — what ran,
-     who ran it, when, what it cost — each readable IN PLACE (lazy inline transcript, the LOGBOOK's
-     proven ▸ pattern) with the real rate-the-work control (rating collects the crate) and an
-     ↗ OPEN IN COMMS jump. Replaces the old one-crate-at-a-time chat beat as the chute's click-through
-     (the beat surfaces remain for session-open digests). TRUTHFUL: rows come only from ReturnStore's
-     durable pending ledger; a missing transcript says so; the empty state says what lands here. */
+  /* ============== OUTBOX — the finished-work window (accordion redesign, 2026-07-16 round 4) ==============
+     Andrew's spec, exactly: an EXTREMELY simple list. Collapsed row = the task's TITLE + a small
+     description that is what the agent ACTUALLY DID (its real recorded output — never the prompt,
+     never a paraphrase). Click the row → it expands into the full breakdown: the ask, the complete
+     output readable right there, and a few genuinely relevant actions — ↗ OPEN (jump into the run's
+     session to test the output), ⊕ NEW SESSION (dedicate a fresh chat to expanding on it), and the
+     rate control (collecting the crate). One row open at a time; no buttons on collapsed rows.
+     TRUTHFUL: title/description derive from the run's durable transcript (routine name wins for the
+     title); a missing transcript says so; rows come only from ReturnStore's pending ledger. */
   function buildOutbox(body) {
     const RS = (typeof ReturnStore !== 'undefined') ? ReturnStore : null;
     const rows = (RS && RS.pendingRows) ? RS.pendingRows() : [];
-    const obLabel = rw => rw.routine ? ('“' + esc(rw.routine) + '” ran on its own') : esc(rw.title || 'an unnamed run');
     body.innerHTML =
-      '<div class="mc-detail dim" style="margin-bottom:6px">Work that finished while you were away lands here as crates. Read each run below; rating it collects the crate.</div>' +
-      '<div id="ob-list" class="mc-list"></div>' +
-      '<div class="mc-detail" style="margin-top:8px"><button class="bb sm" id="ob-logbook">▸ FULL RUN HISTORY — LOGBOOK</button></div>';
+      '<div class="win-note" style="margin-bottom:8px">Work that finished while you were away. Click a task to see the full result.</div>' +
+      '<div id="ob-list" class="ob-list"></div>' +
+      '<div style="margin-top:10px"><button class="bb sm" id="ob-logbook">▸ FULL RUN HISTORY — LOGBOOK</button></div>';
     const list = body.querySelector('#ob-list');
     const lb = body.querySelector('#ob-logbook');
     if (lb) lb.addEventListener('click', () => openTerm('logbook'));
@@ -6471,6 +6810,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       list.innerHTML = '<div class="fb-empty">NO UNCOLLECTED WORK.<br><span>When a run finishes while you’re away, its crate stacks on the OUTBOX and the full result is readable here.</span></div>';
     }
     if (!rows.length) { renderEmpty(); return; }
+    // agent id → display name via the live roster (raw ids read as debug output)
+    const agentName = id => { const a = (Array.isArray(present) ? present.find(x => x && x.id === id) : null); return (a && a.name) || id || 'agent'; };
+    const firstLine = (s, n) => { const t = String(s || '').replace(/\s+/g, ' ').trim(); return t.length > n ? t.slice(0, n - 1).trimEnd() + '…' : t; };
+    // strip markdown scaffolding (fences, table pipes, headings, emphasis) for the one-line glance —
+    // the FULL untouched output stays in .ob-out; this only keeps the collapsed desc readable.
+    const plain = s => String(s || '').replace(/```[\s\S]*?(```|$)/g, ' ').replace(/[|#*_>`]+/g, ' ').replace(/(^|\s)[-:=]{3,}(?=\s|$)/g, ' ').replace(/\s+/g, ' ').trim();
     // legacy crates (persisted before streamId rode the rows) — fill their transcript join once, best-effort.
     const fillStreams = (async () => {
       if (rows.every(r => r.streamId)) return;
@@ -6482,39 +6827,87 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     })();
     let open = rows.length;
     const collected = (row) => { row.style.transition = 'opacity .25s ease'; row.style.opacity = '0'; setTimeout(() => { row.remove(); if (--open <= 0) renderEmpty(); }, 300); };
+    const closeOthers = (except) => { list.querySelectorAll('.ob-row.open').forEach(r => { if (r !== except) { r.classList.remove('open'); const b = r.querySelector('.ob-body'); if (b) b.hidden = true; } }); };
     for (const rw of rows) {
-      const row = document.createElement('div'); row.className = 'mc-row';
+      const row = document.createElement('div'); row.className = 'ob-row';
       const when = rw.ts ? esc(fmtRel(new Date(rw.ts).toISOString())) : '';
       const usd = (+rw.usd > 0 && typeof U !== 'undefined' && U.usd) ? ' · ' + esc(U.usd(+rw.usd)) : '';
+      // title: routine name wins (it's the human name of the job); else the run title until the
+      // transcript's real ask replaces it (stored run titles can be prompt+reply mush).
+      const provisionalTitle = rw.routine ? ('“' + rw.routine + '”') : firstLine(rw.title || 'an unnamed run', 64);
       row.innerHTML =
-        '<div class="mc-top"><b>◷ ' + obLabel(rw) + '</b> <span class="dim">' + when + '</span> ' +
-        '<button type="button" class="lb-tx-btn" aria-expanded="false">▸ read the work</button></div>' +
-        '<div class="mc-url dim">' + esc(rw.agentId || 'agent') + usd + '</div>' +
-        '<div class="lb-tx" hidden></div>' +
-        '<div class="turnin-rate ob-acts"><button type="button" class="consent-btn ob-open">↗ OPEN IN COMMS</button><span class="ob-rate"></span></div>';
+        '<div class="ob-head" role="button" tabindex="0" aria-expanded="false">' +
+          '<div class="ob-title">◷ <b></b><span class="ob-caret">▸</span></div>' +
+          '<div class="ob-desc"><span class="loading">reading the result…</span></div>' +
+          '<div class="ob-meta">' + esc(agentName(rw.agentId)) + ' · ' + when + usd + '</div>' +
+        '</div>' +
+        '<div class="ob-body" hidden>' +
+          '<div class="ob-sec">THE ASK</div><div class="ob-ask"><span class="loading">loading…</span></div>' +
+          '<div class="ob-sec">WHAT THE AGENT DID</div><div class="ob-out"><span class="loading">loading…</span></div>' +
+          '<div class="ob-acts">' +
+            '<button type="button" class="consent-btn ob-open">↗ OPEN — test it in the session</button>' +
+            '<button type="button" class="consent-btn ob-fork">⊕ NEW SESSION — expand on this</button>' +
+            '<span class="ob-rate"></span>' +
+          '</div>' +
+        '</div>';
+      row.querySelector('.ob-title b').textContent = provisionalTitle;
       list.appendChild(row);
-      const tx = row.querySelector('.lb-tx'), txBtn = row.querySelector('.lb-tx-btn');
-      txBtn.addEventListener('click', async () => {
-        if (!tx.hidden) { tx.hidden = true; txBtn.setAttribute('aria-expanded', 'false'); txBtn.textContent = '▸ read the work'; return; }
-        tx.hidden = false; txBtn.setAttribute('aria-expanded', 'true'); txBtn.textContent = '▾ read the work';
-        if (tx.dataset.loaded) return;
-        tx.innerHTML = '<div class="mc-detail"><span class="loading">loading transcript…</span></div>';
+      // fill title/description/breakdown from the run's DURABLE transcript (the honest source of
+      // "what the agent actually did"). One fetch per row, at build — pending is capped at 24.
+      (async () => {
+        const desc = row.querySelector('.ob-desc'), ask = row.querySelector('.ob-ask'), out = row.querySelector('.ob-out');
         await fillStreams;
-        if (!rw.streamId) { tx.innerHTML = '<div class="mc-detail">no transcript recorded for this run.</div>'; tx.dataset.loaded = '1'; return; }
-        try {
-          const t = await (await fetch('/api/transcript?stream=' + encodeURIComponent(rw.streamId) + '&agent=' + encodeURIComponent(rw.agentId || 'agent') + '&limit=50')).json();
-          const turns = (t && t.turns) || [];
-          tx.innerHTML = turns.length
-            ? turns.filter(m => m && (m.role === 'user' || m.role === 'assistant')).map(m => '<div class="mc-detail"><b>' + esc(m.role === 'user' ? 'ask' : 'reply') + ':</b> ' + esc(String(m.content || '').slice(0, 1200)) + '</div>').join('')
-            : '<div class="mc-detail">no transcript recorded for this run.</div>';
-          tx.dataset.loaded = '1';
-        } catch (_) { tx.innerHTML = '<div class="mc-detail">could not load the transcript — is the station running?</div>'; }
-      });
+        let turns = null;
+        if (rw.streamId) {
+          try {
+            const t = await (await fetch('/api/transcript?stream=' + encodeURIComponent(rw.streamId) + '&agent=' + encodeURIComponent(rw.agentId || 'agent') + '&limit=50')).json();
+            turns = (t && t.turns) || [];
+          } catch (_) { turns = null; }   // null = fetch FAILED (say so); [] = genuinely empty
+        }
+        const users = (turns || []).filter(m => m && m.role === 'user' && String(m.content || '').trim());
+        const replies = (turns || []).filter(m => m && m.role === 'assistant' && String(m.content || '').trim() && String(m.content).trim() !== '[SILENT]');
+        const lastReply = replies.length ? String(replies[replies.length - 1].content) : '';
+        if (!rw.routine && users.length) row.querySelector('.ob-title b').textContent = firstLine(users[0].content, 64);
+        desc.textContent = lastReply ? firstLine(plain(lastReply), 150)
+          : (turns === null ? 'couldn’t read the result — is the station running?'
+            : (turns && turns.length ? 'the run finished with nothing to report.' : 'no transcript recorded for this run.'));
+        const askFull = users.length ? String(users[0].content) : '';
+        ask.textContent = askFull ? (askFull.length > 1500 ? askFull.slice(0, 1500) + ' …' : askFull) : (rw.title || '—');
+        out.textContent = lastReply ? (lastReply.length > 4000 ? lastReply.slice(0, 4000) + '\n\n… output truncated — ↗ OPEN shows the full run.' : lastReply)
+          : (turns === null ? '⚠ couldn’t load the output — the run’s transcript wasn’t reachable.'
+            : 'this run recorded no readable output.');
+      })();
+      // the row IS the toggle (accordion: one open at a time; collapsed rows stay clean)
+      const head = row.querySelector('.ob-head'), bodyEl = row.querySelector('.ob-body'), caret = row.querySelector('.ob-caret');
+      const toggle = () => {
+        const opening = bodyEl.hidden;
+        if (opening) closeOthers(row);
+        bodyEl.hidden = !opening;
+        row.classList.toggle('open', opening);
+        head.setAttribute('aria-expanded', opening ? 'true' : 'false');
+        caret.textContent = opening ? '▾' : '▸';
+      };
+      head.addEventListener('click', () => { const s = (window.getSelection && window.getSelection().toString()) || ''; if (!s.trim()) toggle(); });
+      head.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
+      // ↗ OPEN — jump into the run's own session (full conversation; test the output there)
       row.querySelector('.ob-open').addEventListener('click', async ev => {
+        ev.stopPropagation();
         const b = ev.currentTarget; b.disabled = true;
         const ok = (RS && RS.openWork) ? await RS.openWork(rw) : false;
         b.disabled = false;
         if (!ok) notify('transcript unreachable for that run', 'warn');
+      });
+      // ⊕ NEW SESSION — dedicate a fresh chat (same agent) to expanding on this work; the composer
+      // is prefilled naming the task so the follow-up ask writes itself. No fabricated turns.
+      row.querySelector('.ob-fork').addEventListener('click', ev => {
+        ev.stopPropagation();
+        const w = WS(); if (!w) return;
+        const title = (row.querySelector('.ob-title b').textContent || 'finished run').replace(/^[“”"]+|[“”"]+$/g, '');
+        const ws = w.create(('follow-up: ' + title).slice(0, 80), { activate: false, agentId: rw.agentId });
+        persistWS();
+        if (typeof App !== 'undefined' && App.openWorkstream) App.openWorkstream(ws.id);
+        if (typeof Chat !== 'undefined' && Chat.prefill) Chat.prefill('About the finished “' + title + '” run — ');
+        sfx('click');
       });
       const rateHost = row.querySelector('.ob-rate');
       const mounted = (typeof Chat !== 'undefined' && Chat.awayRate)
@@ -6522,7 +6915,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         : false;
       if (!mounted) {   // already judged this session — offer the plain collect so the crate never wedges
         const b = document.createElement('button'); b.type = 'button'; b.className = 'consent-btn'; b.textContent = '✓ collect crate';
-        b.addEventListener('click', () => { if (RS && RS.resolve) RS.resolve(rw.runId); collected(row); });
+        b.addEventListener('click', ev => { ev.stopPropagation(); if (RS && RS.resolve) RS.resolve(rw.runId); collected(row); });
         rateHost.appendChild(b);
       }
     }

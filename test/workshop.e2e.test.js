@@ -193,6 +193,9 @@ async function startSse(url) {
     // 6. it shows up as a PENDING deliverable for the return-card.
     const pending = await (await fetch(B + '/api/workshop/pending?agent=builder', { headers })).json();
     A.ok(pending.pending.some(m => m.runId === runId && m.title === 'CSV cleaner'), '/pending lists the built deliverable');
+    // WHY-THIS provenance (2026-07-17): the card's "why this" line is server-stamped from the REAL backlog
+    // ask (workshopBecause) — never a model claim in the manifest. The queued detail must ride /pending.
+    A.eq((pending.pending.find(m => m.runId === runId) || {}).because, 'a script that strips blank rows', '/pending stamps because from the real queued ask');
     const libraryPendingRes = await fetch(B + '/api/deliverables?status=pending&query=csv', { headers });
     const libraryPending = await libraryPendingRes.json();
     const pendingRow = (libraryPending.items || []).find(r => r.runId === runId);

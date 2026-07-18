@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "83292661a75dce05608f08330d4e5d42660a4749",
-    "pathSetSha256": "e45261d65dc7ff0b9cc77172b4f800cc4bef6dec86bd786a26771964e9b2e342",
+    "sourceCommit": "81e21b5670b338b15101245bbb38d751510c2792",
+    "pathSetSha256": "9eeefd91d6d300f96627d4a5036f6c767a4a1fe611b7bce6175e1b94964d750f",
     "files": [
       {
         "path": "INSTALL.md",
@@ -38,8 +38,8 @@
       },
       {
         "path": "RELEASE_NOTES.md",
-        "bytes": 2638,
-        "sha256": "a44dec70a71fcaf13917cff8b9f5515ca81b7f7e67cd623f98b5ec7284e6abfc"
+        "bytes": 2675,
+        "sha256": "9e9fa37825dc5953fb76c84609de6936678efbb2b773f05db07aaf70103cc7f5"
       },
       {
         "path": "TERMS.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 262403,
-        "sha256": "358e5fbc97fcb43d46a8e0598ac0eda3a561e2eeec38ea6bcf3747e2ca167484"
+        "bytes": 267987,
+        "sha256": "b6bcbfbcc3d17a0204b7a08f3f1c625a58259826e4fa2554a6844e944dc3d712"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -98,8 +98,8 @@
       },
       {
         "path": "frontend/app/autopilot.js",
-        "bytes": 47938,
-        "sha256": "9854122b344a1a3d5ae88ad1f157094874cf7d28922958c3d2504914f725f0ce"
+        "bytes": 48902,
+        "sha256": "f8352d62f0deeb6ed6fc6175587e07ee5f42cea6b993d745c093dc77549453af"
       },
       {
         "path": "frontend/app/autopilotstore.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 393497,
-        "sha256": "677e42f57d30272e6850a4f413c515750b56c735415cc2e4082335de6f09a278"
+        "bytes": 400516,
+        "sha256": "fe3ce1294331c00c4ad96f29891f76a902454313bf9faf543488f900f91d36d2"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -143,8 +143,8 @@
       },
       {
         "path": "frontend/app/classicons.js",
-        "bytes": 20411,
-        "sha256": "a50a14a649ca85c4094c2b74136c391ba64cecbc11976f4efc01c5a473467da1"
+        "bytes": 21359,
+        "sha256": "d942131591b69830beab6a0c6c44846c2b3f17b13809be6ce61cdd88362a0a5b"
       },
       {
         "path": "frontend/app/classify.js",
@@ -163,8 +163,8 @@
       },
       {
         "path": "frontend/app/codexsignin.js",
-        "bytes": 4016,
-        "sha256": "bde2d16170a18fd66fe68d91d3f53f00246391a842aeb41cc3b2bc1a57557ce0"
+        "bytes": 5940,
+        "sha256": "4e1201b5a99f807634fcf4c28ae27bd1ac69a213c674dca099244e7d04d8e328"
       },
       {
         "path": "frontend/app/confbeats.js",
@@ -243,8 +243,8 @@
       },
       {
         "path": "frontend/app/friendlyerror.js",
-        "bytes": 25058,
-        "sha256": "2f14e7721a0e4bb7b4f62c013e64e804f807538f0519b9ba90e4315dba75af65"
+        "bytes": 28067,
+        "sha256": "d0ab043efe1b2b2c5d3f30e628b35d965af353a6920f768163bc07eb8a56bb55"
       },
       {
         "path": "frontend/app/fullscreen.js",
@@ -298,8 +298,8 @@
       },
       {
         "path": "frontend/app/keycta.js",
-        "bytes": 6230,
-        "sha256": "999a12c06b8354510b36e9214d7dc254284239bcb845b53142772708e41fc193"
+        "bytes": 6524,
+        "sha256": "52525ae4be951ed5c1e5f18fb66301560cc57d822a7e696a5d8cf6019b6a7b81"
       },
       {
         "path": "frontend/app/launchmemory.js",
@@ -317,6 +317,11 @@
         "sha256": "59b365ec22af9e6480231e67b88406549da7721d1e1c221d0b89c58effba3866"
       },
       {
+        "path": "frontend/app/lifecycle.js",
+        "bytes": 3024,
+        "sha256": "a5e4dde18f6c1dbf34a54eb59ba7343e159fc5c46549a9da905987d5699dec3d"
+      },
+      {
         "path": "frontend/app/maintquests.js",
         "bytes": 11328,
         "sha256": "3ec61a7b9136b45657308bd422401f5039803a5bdc014068d9bd8db12239d5a4"
@@ -328,8 +333,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 173334,
-        "sha256": "01564c708e95c6d43974dd947a538c0e0ee80ae6af367df197248eb8ff1489e6"
+        "bytes": 172121,
+        "sha256": "8697d6153fe19884a0f3e655988a1f46eac4ffa4d5e74573cf231fb508f8d14e"
       },
       {
         "path": "frontend/app/mint.js",
@@ -343,8 +348,8 @@
       },
       {
         "path": "frontend/app/modeldock.js",
-        "bytes": 35026,
-        "sha256": "53d4a8a078715b0d89fa6aebf87addea97b1a378227523e2b6ef9fd014f9aabc"
+        "bytes": 36419,
+        "sha256": "288d4663d794c858b5f038ce99546dfa0c46e5bdb85c1dd802f8b256f6bf987d"
       },
       {
         "path": "frontend/app/modelpicker.js",
@@ -363,13 +368,13 @@
       },
       {
         "path": "frontend/app/nightreport.js",
-        "bytes": 22050,
-        "sha256": "d9fa7cb29953f6ef5498ee8326278012a8e996e382df72fb1b31b9de2c5c181b"
+        "bytes": 22171,
+        "sha256": "6d58899780751c28a679a25675262113ee02f57776f42481a0a10506cf1545c6"
       },
       {
         "path": "frontend/app/nightreportstore.js",
         "bytes": 10907,
-        "sha256": "3919652c6cd90235d9f66d073091960837b70aeaadd0e71dc7b568ad6fb61137"
+        "sha256": "7ba198ef0b5cd5e0aafc2a77865b6e619b971238b600b0d7368033237626e5f0"
       },
       {
         "path": "frontend/app/onboarding.js",
@@ -443,8 +448,8 @@
       },
       {
         "path": "frontend/app/prospect.js",
-        "bytes": 9524,
-        "sha256": "34b27967b2660658d5c4472ed7d9deb95a60440930d4c369da67ade6623f2c06"
+        "bytes": 10236,
+        "sha256": "323910a36b45d81318442747573c596ca8bea91fda9eb5eac0f70580658ed673"
       },
       {
         "path": "frontend/app/prospectstore.js",
@@ -628,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 476200,
-        "sha256": "8e6d5133c9a22cc5da348d821806b22c1076fc4c9d5d6649cb600a7d40ce56de"
+        "bytes": 507294,
+        "sha256": "18f08052b98f9f66c8ecc0653c96c226def99783927b2b7254e885dadae36bc3"
       },
       {
         "path": "frontend/app/study.js",
@@ -773,8 +778,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 452659,
-        "sha256": "6508a897901adc4f1ef637f013a834eb823fa6e23c5c706b070ec0d21261ee4e"
+        "bytes": 453612,
+        "sha256": "504d4b19d097021ffcf75da91f5a131cfb337d5e2f5c88bcb9d85b7a3c196e5e"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -798,8 +803,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 194514,
-        "sha256": "26f52162682f7b16fc818c6901dba623196a01de0ecb44ccfb4caa9c99c23180"
+        "bytes": 198708,
+        "sha256": "217407594d6f98bddc070624f44ac2e2163af5cd1bd9bfe8a6e7a6a846ae12ef"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -813,8 +818,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 62510,
-        "sha256": "8e17f754d700bd90dbff2394ce64332d6fdcef3b5f90de546fd84ee39906a4d4"
+        "bytes": 59423,
+        "sha256": "9c81435f9c5408e876097840c41fe7c046695cf1930064b25a2362711b887775"
       },
       {
         "path": "frontend/css/motion.css",
@@ -863,8 +868,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 60740,
-        "sha256": "5998a4f9b570e07c415d2e7d91c628d673f6922c481ea3d8c3ce7d3a18f37a3d"
+        "bytes": 62961,
+        "sha256": "b008de4d8ca4ffaf125fa19b2ce9d5358b536c43bbc486883836984e487248ce"
       },
       {
         "path": "frontend/js/arcade.js",
@@ -1565,25 +1570,32 @@
       ],
       "authorityChecks": [
         {
-          "kind": "absent",
+          "kind": "contains",
           "path": "src-tauri/src/main.rs",
-          "needles": [
-            "TrayIcon",
-            "SystemTray",
-            "tauri_plugin_autostart"
-          ]
+          "needle": "TrayIcon"
+        },
+        {
+          "kind": "contains",
+          "path": "src-tauri/src/main.rs",
+          "needle": "tauri_plugin_autostart"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/index.js",
+          "needle": "/api/lifecycle/armed"
         }
       ],
-      "verdict": "REFUTED",
+      "verdict": "SHIPPED",
       "disposition": "NARROW",
       "ownerWave": "W5",
-      "qualification": "The product is one sidecar owned by the app; closing the app ends it.",
+      "qualification": "Wave 4D (7f3af0be): a VISIBLE tray supervisor keeps the one sidecar alive after window-close ONLY while armed work exists (routines not durably halted, connected channels, armed night-shift; GET /api/lifecycle/armed is the truth source). Explicit Quit stops it after a bounded drain; launch-at-login is opt-in and default OFF; no hidden daemon. Messages sent while fully quit still get the honest offline note.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
         "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
         "branches@refs/heads/* audited 2026-07-12",
-        "worktrees@git-worktree-list audited 2026-07-12"
+        "worktrees@git-worktree-list audited 2026-07-12",
+        "trunk@7f3af0befb0d0660dab6f2d7bef15ef6041b8eb4 (Wave 4D lifecycle) audited 2026-07-17"
       ]
     },
     {
@@ -2562,10 +2574,10 @@
       "id": "W5-after-close-continuation",
       "wave": "W5",
       "item": "Work continues after the desktop app closes.",
-      "verdict": "REFUTED",
+      "verdict": "SHIPPED",
       "disposition": "NARROW",
       "ownerWave": "W5",
-      "qualification": "Single-process desktop ownership means close stops the sidecar; this is a copy-honesty fix.",
+      "qualification": "Wave 4D (7f3af0be) ships the supervised background lifecycle: window-close keeps the station only when armed work requires it, surfaced in the tray; Quit drains and stops; autostart opt-in. Six interactive installed-exe proofs pending (tracked in docs/NEXT.md).",
       "authorityChecks": [
         {
           "kind": "contains",
@@ -2573,18 +2585,16 @@
           "needle": "even with this window closed, as long as the station app is running"
         },
         {
-          "kind": "absent",
+          "kind": "contains",
           "path": "src-tauri/src/main.rs",
-          "needles": [
-            "TrayIcon",
-            "SystemTray"
-          ]
+          "needle": "TrayIcon"
         }
       ],
       "refsChecked": [
         "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
         "branches@refs/heads/* audited 2026-07-12",
-        "worktrees@git-worktree-list audited 2026-07-12"
+        "worktrees@git-worktree-list audited 2026-07-12",
+        "trunk@7f3af0befb0d0660dab6f2d7bef15ef6041b8eb4 (Wave 4D lifecycle) audited 2026-07-17"
       ]
     },
     {

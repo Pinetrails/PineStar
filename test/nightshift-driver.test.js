@@ -180,13 +180,17 @@ function setup(over) {
   h.resolveBeat({ delivered: false, reason: 'stood-down' });
 })();
 
-// ---- NS-2: a precheck HICCUP fails OPEN to NS-1 behavior (spend + let the pipeline decide) ----
-(function precheckHiccupFailsOpen() {
+// ---- RELEASE ESCAPE: a precheck HICCUP fails CLOSED before spend ----
+(function precheckHiccupFailsClosed() {
   const h = setup({ precheck: () => { throw new Error('boom'); }, autoResolve: false });
   const r = h.driver.applyTick(T0);
-  A.eq(r.fired, true, 'a throwing precheck fails open → the beat still fires (NS-1 behavior)');
-  A.eq(h.state.beatsUsedToday, 1, 'fail-open spends at accept-time (never wedge the tick on a precheck error)');
-  h.resolveBeat({ delivered: false, reason: 'stood-down' });
+  A.eq(r.fired, false, 'a throwing precheck stands down; unattended work never fires through an unproven gate');
+  A.eq(r.binding, 'precheck-error', 'the stand-down names the failed safety inspection');
+  A.eq(h.state.beatsUsedToday, 0, 'a failed precheck spends no leash unit');
+  A.eq(h.beats.length, 0, 'the autonomous beat is never invoked');
+  A.ok(h.ledger.some(e => e.kind === 'decline' && e.binding === 'precheck-error' && e.preSpend === true), 'the failure is ledgered truthfully as a pre-spend decline');
+  const sd = h.driver.statusDecision(T0);
+  A.eq([sd.fire, sd.binding], [false, 'precheck-error'], 'status reports the same safe stand-down instead of claiming a beat can fire');
 })();
 
 // ---- NS-2: statusDecision reflects the pre-spend readiness stand-down (status == what the tick would do) ----

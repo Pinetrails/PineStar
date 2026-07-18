@@ -113,31 +113,9 @@ const Marketplace = (() => {
   function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function voiceName(personaId) { return (typeof Personas !== 'undefined' && Personas.get(personaId) && Personas.get(personaId).name) || personaId; }
 
-  /* ---------- the class seal — a TYPED ASCII mark (premium pass; SVG stays the mission-seal path) ----------
-     TWO-TONE ENGRAVING: the mark's PAYLOAD glyphs (letters, digits, $ # ! * + < > = …) render bright while
-     the structural strokes (.-'|/\(),_~) recede — one flat colour reads as a sticker; two tones read as
-     depth cut into the readout. Runs of same-tone chars share one span so AsciiFX.scramble (leaf-text
-     walking) can decode the emblem without disturbing the markup. */
-  const MARK_BRIGHT = /[A-Za-z0-9!$#*+<>=\[\]{}@%&?░▒▓█▄▀]/;   // + the ░▒▓█▄▀ shade set: blocks are lit MASS
-  function markHTML(mark) {
-    const rows = [];
-    for (const row of mark) {
-      let html = '', i = 0;
-      while (i < row.length) {
-        if (row[i] === ' ') { let j = i; while (j < row.length && row[j] === ' ') j++; html += row.slice(i, j); i = j; continue; }
-        const bright = MARK_BRIGHT.test(row[i]);
-        let j = i;
-        while (j < row.length && row[j] !== ' ' && MARK_BRIGHT.test(row[j]) === bright) j++;
-        html += '<span class="' + (bright ? 'mb' : 'md') + '">' + esc(row.slice(i, j)) + '</span>';
-        i = j;
-      }
-      rows.push(html);
-    }
-    return rows.join('\n');
-  }
+  /* ---------- the class seal — the engraved SVG coin (the typed-ASCII layer was removed 2026-07-16;
+     the vector seal is the one emblem system, with the class emoji as the custom-class fallback) ---------- */
   function coinInner(item) {
-    const mark = (hasIcons() && ClassIcons.ascii) ? ClassIcons.ascii(item) : null;
-    if (mark) return '<pre class="mkt-amark" aria-hidden="true">' + markHTML(mark) + '</pre>';
     const svg = hasIcons() ? ClassIcons.svg(item) : null;
     return svg ? '<span class="mkt-coin-ico">' + svg + '</span>' : '<span class="mkt-coin-emoji">' + esc(item.emoji || '◆') + '</span>';
   }

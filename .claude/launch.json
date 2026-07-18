@@ -2,6 +2,20 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "lifecycle-4d-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/seed.js",
+        "--keep"
+      ],
+      "port": 9131,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "9131",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
+    },
+    {
       "name": "newskins-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": [
@@ -953,6 +967,20 @@
       }
     },
     {
+      "name": "class-redesign-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/seed.js",
+        "--keep"
+      ],
+      "port": 9091,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "9091",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
+    },
+    {
       "name": "personas-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": [
@@ -977,6 +1005,48 @@
       "autoPort": false,
       "env": {
         "SKYNET_PORT": "9095",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
+    },
+    {
+      "name": "oauth-providers-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/seed.js",
+        "--keep"
+      ],
+      "port": 9111,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "9111",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
+    },
+    {
+      "name": "polish24-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "C:/Users/andro/Desktop/gen/.claude/worktrees/polish-recent-changes-334045/dev/seed.js",
+        "--keep"
+      ],
+      "port": 9137,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "9137",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
+    },
+    {
+      "name": "ws-summary-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/seed.js",
+        "--keep"
+      ],
+      "port": 9147,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "9147",
         "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },

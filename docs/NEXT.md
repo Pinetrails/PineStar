@@ -1,6 +1,6 @@
 # NEXT.md — current priorities & task queue
 
-## 2026-07-17 — SESSION TOOLS window retired (branch `claude/sessions-panel-removal-b3278e`, UNMERGED)
+## 2026-07-17 — SESSION TOOLS window retired (branch `claude/sessions-panel-removal-b3278e`)
 
 Andrew's directive. The SYSTEM ▸ SESSION TOOLS window + parked `#ws-tools` panel are removed;
 clear/bulk-archive/undo UI died with it (the pure `workstreams.js` store keeps every invariant;
@@ -9,9 +9,54 @@ directly on the sessions rail** (`#ws-rail-search`; PROJECTS view hides it; hit-
 session) and **export .md/.json moved into the row ⋯ menu** (targets the exact row session).
 QA followed: journey rewritten (10/10 live PASS on seed :9095), `sys-sessiontools` shooter state +
 golden dropped, atlas retired-control entries deleted + ws-search/ws-export re-pointed, wiring test
-re-pinned, v0.5.2 release-notes bullet updated, in-branch W0 re-stamp `c908f67e` over `83292661`
-(claims planning PASS). `test:fast` 342/342. **TO DO: merge to trunk via starnet-merge-ritual;**
-next desktop exe rebuild picks it up.
+re-pinned, v0.5.2 release-notes bullet updated, in-branch W0 re-stamps over `83292661` and the
+trunk-sync. Merging to trunk this pass (digest in qa/STATUS.md); next desktop exe rebuild picks it up.
+
+## 2026-07-16 — CLASS ROSTER REDESIGN LANDED (agent-class-redesign lane)
+
+The recruit catalog is now 12 SPECIALIZED business-grade builtins (strategist · opportunist ·
+researcher · engineer · analyst · marketer · publisher · producer · writer · prospector ·
+treasurer · scout) + 18 archetypes (8 demoted generalists, 6 kept deep cuts, 3 new long-tail
+seeds closer/steward/optimizer, + envoy demoted 2026-07-17 on Andrew's call). liaison/publicist/
+bookkeeper RETIRED (superseded by envoy / marketer+publisher / treasurer). Typed-ASCII class
+marks REMOVED — the engraved SVG coin seal is the one emblem system again. Scout matchArchetype
+now coverage-scores (majority-token rule); prospect directive demands specialized roles. 7 new
+kit-grounded skills (+ opportunity-scan). W0 re-stamped post-merge.
+Open follow-ups: regenerate qa/atlas crew evidence (stale "18 builtins" notes); consider a
+first-run default-class experiment (strategist is now the bay's default card).
+
+## 2026-07-17 — FULL-RELEASE CAMPAIGN (active; Fable-orchestrated)
+
+Goal: full public release clean on Windows AND macOS; subscriptions = the NEXT official update.
+
+- [x] **MERGED `bae18072` — night-shift precheck fail-closed.**
+      Trunk failed open when budget/provider/readiness inspection threw, spending a leash unit and starting
+      unattended work through an unproven safety gate. The driver + composition root now stand down before
+      spend as `precheck-error`; status, durable ledger, and morning-report copy all explain it truthfully.
+      Verified: focused 51+107 assertions; `test:fast` 351/351; full `test:http`; real fault-injected sidecar
+      over HTTP reported `beatsUsedToday:0` and persisted `detail.preSpend:true` (`nightshift-budget.e2e` 11/11).
+
+**MERGED: Wave 4D supervised background lifecycle** (agent/lifecycle-4d → trunk `7f3af0be`,
+claims re-stamp `bc4ac138`; full digest in qa/STATUS.md 2026-07-17). The owner-decision
+checkpoint below (POWERUSER_FIX_PLAN Lane 4D) is CLEARED — Andrew approved the recommended
+shape. Tray supervisor + `GET /api/lifecycle/armed` + durable cron halt (`cron.halt.json`,
+E-STOP parity with night-shift be03e5d0) + opt-in launch-at-login. Gates green (fast 346/346
+clean-worktree, http full, cargo 21 tests). The formerly-REFUTED after-close claims are now
+SHIPPED-with-liveProof-PENDING in qa/product-perfect/claims.json.
+- [ ] **ATTENDED (Andrew or supervised session): the six installed-exe lifecycle proofs** —
+      close-with-armed-routine → fires exactly once + durable result; orphan-free Quit;
+      autostart login = one sidecar; update-drain; tray Pause/E-STOP while closed; disabled
+      state spawns nothing. Requires installing a fresh trunk build (this machine currently
+      runs an older installed build; EBWebView purge recipe applies on exe swap).
+- [ ] macOS runtime proof of the tray/autostart paths (cfg-clean + documented APIs only so far).
+- [x] **LAUNCH RUNBOOK: docs/LAUNCH_RUNBOOK.md** — MERGED to trunk (verified present 2026-07-17;
+      the claude/starnet-code-prompts-a9d3a7 copy is patch-identical). KEY FINDING: NOTHING 0.5.x was ever pushed/published —
+      origin tags stop at v0.4.0, starnet-releases 404s; launch = the CI train's FIRST live run
+      (all 5 platforms) at v0.5.2. Andrew's chain: updater-key backup (NONE exists) + dev-key
+      rotation → push trunk+tag → publish → verify-update-host → W1 second-user proof →
+      per-platform canaries → Mac auto-update test → T0 evidence → certify:providers real keys.
+- [ ] Subscriptions/credits merge (claude/starnet-subscriptions-plan-4d56d1, 5 ahead / 314
+      behind trunk) + Stripe/domain/deploy — NEXT UPDATE, do not merge during launch.
 
 ## 2026-07-15 — POWER-USER DEEP-DIVE AUDIT (3 isolated agents, no fixes)
 
@@ -234,20 +279,17 @@ Five-agent audit + the approved fix sequence, all lane-committed (digest lands i
   `archive/codex/...` tags — safe to delete those branches whenever Andrew signs off (tags keep the SHAs).
 
 STILL OPEN from the audit (unclaimed): codex OAuth refresh token keychain home (the one plaintext-only
-credential) · web_fetch/channel-content untrusted-content fence (recall/MCP have one; the highest-volume
-input doesn't) · IPC_TOKEN constant-time compare · index.js channel-route dedup (~9× repeated persist
-shape) · nightshiftPrecheck fails OPEN on exception (budget gate off on throw) · Cartographer re-sweep +
+credential) · index.js channel-route dedup (~9× repeated persist shape) · Cartographer re-sweep +
 re-bless (187 perfected all stale; props/events/routes areas never mapped) · fresh installed-exe smoke
 stamp for qa:ready · remaining orphaned routes (workshop/shift, nightshift/beat force-fire, config/reset,
 execution view, threads-ledger browse).
 
 RE-ARMED-WATCH FALLOUT (found by the watch itself, 2026-07-15 — both are INSTRUMENT-environment, not
 product; the same commit passes all suites in interactive shells):
-- [ ] **Hourly Guardian RED @ every cycle until fixed**: `test/shell-machine-state.test.js` fails ONLY
-      under the Task-Scheduler context ("host accepts safe inline Start-Process -FilePath:cmd.exe form —
-      expected 0, got 9"; guardian-20260715-040003, test-fast step 66/325; http-e2e/shoot/golden/audit/
-      journeys all green same cycle). Fix = make the suite (or the guardian task's execution context)
-      interactive-agnostic; until then the hourly row RED means THIS, not a product regression.
+- [x] **Hourly Guardian RED — RESOLVED** (verified 2026-07-17): the probe now asserts launch not
+      child-exit hygiene (shell-machine-state.test.js ~:189 comment documents the batch-logon
+      $p.ExitCode unreliability) and guardian cycles are GREEN all 6 gates under the real scheduler
+      (guardian-20260717-230002 / -220002 / -210002 all verdict green).
 - [ ] **Integration-tree test:fast stalls at the 600s wrapper** right after lint-evidence-secrets
       (reproduced 2× at 70cdc178; the known `.dogfood` bloat). Gate trunk commits in a clean worktree
       FF'd to the same SHA (receipt pattern used for this merge). Real fix = product-perfect lane makes
@@ -274,11 +316,10 @@ OPEN (routed, repros in the ledger):
   hero tile (3/3); F8 P2 cancelled runs persist `content:""` assistant turns (partial streamed
   text lost from the durable transcript); F9 P2-suspect NIGHT SHIFT trophy minted with zero
   night-shift activity (trophy condition needs reading).
-- KNOWN pre-existing: `test/qa-product-perfect-claims.test.js` is ENVIRONMENT-DEPENDENT — red
-  (9 fails) in ANY fresh worktree because it needs the integration tree's gitignored `.dogfood`
-  candidate state; green in the integration tree (64 assertions). Every lane gating in a clean
-  worktree loses the fast-gate tail behind step ~133 — product-perfect lane should make it
-  skip-honestly (with a visible SKIPPED note) when `.dogfood` is absent.
+- KNOWN pre-existing — SINCE RESOLVED (re-proven 2026-07-17): `test/qa-product-perfect-claims.test.js`
+  now passes in a FRESH clean worktree at trunk head (64 assertions OK; the candidate-git-blob
+  authority landed since this note). A red here in a lane now means the real thing — a shipped-surface
+  change without its in-branch W0 re-stamp — not environment.
 
 ## 2026-07-13 — FLAGSHIP WAVE: last-hop surfaces + cross-wiring (branch `claude/flagship-features-audit-d0e1a1`)
 

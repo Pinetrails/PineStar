@@ -63,6 +63,78 @@
       order: 10
     },
     {
+      // GROK OAUTH — Grok on a SuperGrok / X Premium+ subscription via the RFC 8628 device-code flow (no API
+      // key). Inference is OpenAI-compatible at api.x.ai/v1 with the OAuth access token riding in AS the Bearer
+      // key. Separate id from the API-key 'xai' profile above (same wire, different auth), like codex vs openai.
+      id: 'grok',
+      aliases: ['grok-oauth', 'xai-oauth'],
+      name: 'Grok (xAI)',
+      label: 'GROK OAUTH',
+      endpoint: 'OAuth, SuperGrok / X Premium+',
+      blurb: 'sign in, no API key',
+      live: true,
+      adapter: 'openai-compatible',
+      apiMode: 'chat_completions',
+      authType: 'oauth_device_code',
+      keyRequired: false,
+      modelsRequireAuth: true,
+      baseUrl: 'https://api.x.ai/v1',
+      modelsPath: '/models',
+      defaultReasoningEffort: 'medium',
+      unmetered: true,
+      credentialPool: false,
+      supportsTools: true,
+      supportsReasoning: null,   // mirror the api-key xai profile — asserted by the live catalog, never guessed
+      wireReasoningEffort: true,
+      // Fallback roster for when the live /models catalog is unreachable (the xAI OAuth surface can 403 an
+      // allowlisted-out account). Conservative, tools-only capability; the live catalog always wins when present.
+      staticModels: [
+        { id: 'grok-4', name: 'Grok 4', context_length: 256000, supportsTools: true, supportsReasoning: true },
+        { id: 'grok-3', name: 'Grok 3', context_length: 131072, supportsTools: true, supportsReasoning: false },
+        { id: 'grok-code-fast-1', name: 'Grok Code Fast 1', context_length: 256000, supportsTools: true, supportsReasoning: false }
+      ],
+      order: 11
+    },
+    {
+      // KIMI OAUTH — Moonshot's Kimi for Coding on a Kimi subscription via the RFC 8628 device-code flow. Auth
+      // requests carry the kimi-cli X-Msh-* headers (extraHeaders below + the runtime X-Msh-Os-Version /
+      // X-Msh-Device-Id the host injects). Inference is OpenAI-compatible at api.kimi.com/coding/v1.
+      id: 'kimi',
+      aliases: ['moonshot', 'kimi-code', 'kimi-oauth'],
+      name: 'Kimi for Coding',
+      label: 'KIMI OAUTH',
+      endpoint: 'OAuth, Kimi subscription',
+      blurb: 'sign in, no API key',
+      live: true,
+      adapter: 'openai-compatible',
+      apiMode: 'chat_completions',
+      authType: 'oauth_device_code',
+      keyRequired: false,
+      modelsRequireAuth: true,
+      baseUrl: 'https://api.kimi.com/coding/v1',
+      chatPath: '/chat/completions',
+      modelsPath: '/models',
+      defaultReasoningEffort: 'none',
+      unmetered: true,
+      credentialPool: false,
+      supportsTools: true,
+      supportsReasoning: false,
+      // The STATIC part of the kimi-cli device signature; the host adds X-Msh-Os-Version + a stable per-install
+      // X-Msh-Device-Id (minted once, persisted with the tokens) at request time. Sent on inference too.
+      extraHeaders: {
+        'X-Msh-Platform': 'kimi_cli',
+        'X-Msh-Version': '1.0.0',
+        'X-Msh-Device-Name': 'starnet',
+        'X-Msh-Device-Model': 'starnet'
+      },
+      staticModels: [
+        { id: 'kimi-for-coding', name: 'Kimi for Coding', context_length: 256000, supportsTools: true, supportsReasoning: false },
+        { id: 'kimi-for-coding-highspeed', name: 'Kimi for Coding (Highspeed)', context_length: 256000, supportsTools: true, supportsReasoning: false },
+        { id: 'k3', name: 'K3', context_length: 256000, supportsTools: true, supportsReasoning: false }
+      ],
+      order: 12
+    },
+    {
       id: 'openai',
       aliases: ['openai-api'],
       name: 'OpenAI API',
@@ -135,8 +207,11 @@
       order: 36
     },
     {
+      // NOTE: 'grok' is intentionally NO LONGER an alias here — it is now the id of the OAuth (subscription)
+      // Grok profile below. This api.x.ai/v1 profile is the API-KEY Grok ('XAI'), a separate id, exactly as
+      // 'openai' (API key) and 'codex' (OAuth) coexist. Users choosing "GROK OAUTH" vs "XAI" pick their auth.
       id: 'xai',
-      aliases: ['x-ai', 'grok'],
+      aliases: ['x-ai'],
       name: 'xAI',
       label: 'XAI',
       endpoint: 'api.x.ai/v1',
@@ -428,6 +503,13 @@
   function providerUsesCodex(value) {
     return normalizeProviderId(value, '') === 'codex';
   }
+  // True for any profile on the STANDARD RFC 8628 device-code wire (grok / kimi). Codex is DELIBERATELY excluded
+  // (it speaks OpenAI's proprietary usercode/exchange wire and keeps flowing through the providerUsesCodex paths
+  // untouched) — so a caller can branch: codex -> ensureCodexAccessToken, device-oauth -> ensureOAuthAccessToken.
+  function providerUsesDeviceOAuth(value) {
+    const profile = getProviderProfile(value);
+    return !!(profile && profile.authType === 'oauth_device_code' && profile.id !== 'codex');
+  }
   function defaultReasoningEffortForProvider(value) {
     const profile = getProviderProfile(value) || BY_ID.get(DEFAULT_PROVIDER_ID);
     return (profile && profile.defaultReasoningEffort) || 'medium';
@@ -482,6 +564,7 @@
     listProviderProfiles,
     normalizeProviderId,
     providerUsesCodex,
+    providerUsesDeviceOAuth,
     defaultReasoningEffortForProvider,
     providerRequiresKey,
     providerRequiresBaseUrl,

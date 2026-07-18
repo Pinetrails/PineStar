@@ -13,6 +13,8 @@ module.exports = (async () => {
   ['xai', 'groq', 'mistral', 'deepseek', 'together', 'fireworks', 'perplexity', 'cerebras'].forEach(id => {
     A.ok(ids.indexOf(id) >= 0, id + ' is registered');
   });
+  A.ok(ids.indexOf('grok') >= 0, 'grok (OAuth) is registered');
+  A.ok(ids.indexOf('kimi') >= 0, 'kimi (OAuth) is registered');
   A.ok(ids.indexOf('ollama') >= 0, 'ollama is registered');
   A.ok(ids.indexOf('custom') >= 0, 'custom is registered');
 
@@ -20,7 +22,12 @@ module.exports = (async () => {
   A.eq(factory.normalizeProviderId('openai-compatible', ''), 'custom', 'custom alias normalizes');
   A.eq(factory.normalizeProviderId('claude', ''), 'anthropic', 'anthropic alias normalizes');
   A.eq(factory.normalizeProviderId('google-ai', ''), 'gemini', 'gemini alias normalizes');
-  A.eq(factory.normalizeProviderId('grok', ''), 'xai', 'xAI alias normalizes');
+  // 'grok' is now the OAuth (subscription) Grok id; the API-key Grok keeps 'x-ai'/'xai'.
+  A.eq(factory.normalizeProviderId('grok', ''), 'grok', 'grok is the OAuth Grok id');
+  A.eq(factory.normalizeProviderId('x-ai', ''), 'xai', 'x-ai still normalizes to the API-key xAI');
+  A.eq(factory.normalizeProviderId('grok-oauth', ''), 'grok', 'grok-oauth alias normalizes to the OAuth Grok');
+  A.eq(factory.normalizeProviderId('moonshot', ''), 'kimi', 'moonshot alias normalizes to Kimi');
+  A.eq(factory.normalizeProviderId('kimi-oauth', ''), 'kimi', 'kimi-oauth alias normalizes to Kimi');
   A.eq(factory.normalizeProviderId('together-ai', ''), 'together', 'Together alias normalizes');
   A.eq(factory.normalizeProviderId('fireworks-ai', ''), 'fireworks', 'Fireworks alias normalizes');
   A.eq(factory.normalizeProviderId('sonar', ''), 'perplexity', 'Perplexity alias normalizes');
@@ -86,6 +93,32 @@ module.exports = (async () => {
     A.eq(roster.map(m => m.id).join(','), 'sonar,sonar-pro,sonar-reasoning-pro,sonar-deep-research', 'static Sonar roster serves the empty catalog');
     A.eq(pplx.contextLimit('sonar-pro'), 200000, 'Sonar Pro context limit rides the static roster');
     A.eq(roster.every(m => !m.pricing), true, 'Sonar roster is unpriced (search fees make token-only pricing dishonest)');
+  }
+
+  // ---- device-OAuth (grok / kimi) profiles + predicate ----
+  A.eq(factory.providerUsesDeviceOAuth('grok'), true, 'grok uses the device-OAuth wire');
+  A.eq(factory.providerUsesDeviceOAuth('kimi'), true, 'kimi uses the device-OAuth wire');
+  A.eq(factory.providerUsesDeviceOAuth('kimi-oauth'), true, 'device-OAuth predicate resolves aliases');
+  A.eq(factory.providerUsesDeviceOAuth('codex'), false, 'codex is NOT flagged device-OAuth (keeps its own wire)');
+  A.eq(factory.providerUsesDeviceOAuth('xai'), false, 'the API-key xAI is not device-OAuth');
+  A.eq(factory.providerUsesDeviceOAuth('openrouter'), false, 'openrouter is not device-OAuth');
+  A.eq(factory.providerRequiresKey('grok'), false, 'grok needs no API key (OAuth)');
+  A.eq(factory.providerRequiresKey('kimi'), false, 'kimi needs no API key (OAuth)');
+  {
+    const grok = factory.getProviderProfile('grok');
+    A.eq(grok.authType, 'oauth_device_code', 'grok is an oauth_device_code profile');
+    A.eq(grok.baseUrl, 'https://api.x.ai/v1', 'grok inference base URL is api.x.ai/v1');
+    A.eq(grok.unmetered, true, 'grok is unmetered (subscription)');
+    A.eq(grok.adapter, 'openai-compatible', 'grok inference rides the openai-compatible adapter');
+    const kimi = factory.getProviderProfile('kimi');
+    A.eq(kimi.authType, 'oauth_device_code', 'kimi is an oauth_device_code profile');
+    A.eq(kimi.baseUrl, 'https://api.kimi.com/coding/v1', 'kimi inference base URL is api.kimi.com/coding/v1');
+    A.eq(kimi.extraHeaders['X-Msh-Platform'], 'kimi_cli', 'kimi profile carries the static X-Msh-* headers');
+    // OAuth access token rides in AS the Bearer key, and the profile extraHeaders reach the adapter.
+    const kimiProv = factory.selectProvider({ provider: 'kimi', token: 'oauth-access-tok', headers: { 'X-Msh-Device-Id': 'dev-123' }, fetch: async () => new Response(JSON.stringify({ data: [] }), { status: 200 }) });
+    A.ok(kimiProv && typeof kimiProv.stream === 'function', 'kimi selects an OpenAI-compatible adapter on an OAuth token');
+    const grokRoster = await factory.selectProvider({ provider: 'grok', token: 't', fetch: async () => new Response(JSON.stringify({ data: [] }), { status: 200 }) }).listModels();
+    A.ok(grokRoster.find(m => m.id === 'grok-4'), 'grok static roster fills the empty catalog');
   }
 
   const anthropic = factory.selectProvider({ provider: 'anthropic', fetch: async () => new Response('', { status: 200 }) });

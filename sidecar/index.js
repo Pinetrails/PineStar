@@ -60,6 +60,7 @@ const {
   getProviderProfile,
   normalizeProviderId: normalizeProviderIdFromRegistry,
   providerUsesCodex: registryProviderUsesCodex,
+  providerUsesDeviceOAuth: registryProviderUsesDeviceOAuth,
   defaultReasoningEffortForProvider: registryDefaultReasoningEffort,
   providerRequiresKey,
   providerRequiresBaseUrl
@@ -68,6 +69,10 @@ const { DEFAULT_MODEL: CODEX_DEFAULT_MODEL } = require('./providers/codex.js');
 const codexAuth = require('./providers/codex-auth.js');
 const codexTokenStore = require('./providers/codex-token-store.js');
 const codexAuthState = require('./providers/codex-auth-state.js');
+// Grok / Kimi ride the STANDARD RFC 8628 device-code grant (one generic module), reusing codex-auth-state's
+// pure dead-token machinery. Codex keeps its own proprietary wire above — these are additive, never a reroute.
+const oauthDevice = require('./providers/oauth-device.js');
+const oauthTokenStore = require('./providers/oauth-token-store.js');
 const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend.js');
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
@@ -378,7 +383,7 @@ const CRON_DURABLE_HEARTBEAT_MS = num(ENV('CRON_DURABLE_HEARTBEAT_MS'), Math.max
 // in minutes: SKYNET_NIGHTSHIFT_AWAY_MS / SKYNET_NIGHTSHIFT_BEAT_MS.
 const NIGHTSHIFT_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('NIGHTSHIFT_ENABLED') || '').trim());
 const NIGHTSHIFT_TICK_MS = num(ENV('NIGHTSHIFT_TICK_MS'), 60000);          // how often the driver re-evaluates the gates
-const NIGHTSHIFT_AWAY_MS = num(ENV('NIGHTSHIFT_AWAY_MS'), nightshift.DEFAULT_AWAY_MS);   // "the Commander is away" threshold (default 15 min)
+const NIGHTSHIFT_AWAY_MS = num(ENV('NIGHTSHIFT_AWAY_MS'), nightshift.DEFAULT_AWAY_MS);   // "the Commander is away" threshold (default 30 min)
 const NIGHTSHIFT_BEAT_MS = num(ENV('NIGHTSHIFT_BEAT_MS'), nightshift.DEFAULT_BEAT_MS);   // steady cadence: one beat per ~45 min
 const NIGHTSHIFT_AGENT = String(ENV('NIGHTSHIFT_AGENT') || 'agent').trim() || 'agent';   // the agent the night shift acts as
 // Stage 2: the lead's team.dispatch awaits full worker agent-loops (minutes), so it CANNOT inherit the 30s
@@ -1255,6 +1260,14 @@ commanderPosture.load();
 // (never "instantly away" on startup). The night-shift driver reads this to decide away = now - it >= threshold.
 let lastUserActivityAt = Date.now();
 function noteUserActivity(now) { lastUserActivityAt = Number.isFinite(now) ? now : Date.now(); }
+// A LIVE user-initiated run IS presence (2026-07-17 idle-detection bug): the /api/run stamp lands once at run
+// START, so a long "watch the model work" session read as away 15 min in and night-shift beats fired WHILE the
+// Commander sat watching their own run. runsMeta already tags every interactive run; away math treats any
+// in-flight one as activity-now, and the run's finally re-stamps so the away clock starts at run END.
+function interactiveRunInFlight() {
+  for (const m of runsMeta.values()) if (m && m.source === 'interactive') return true;
+  return false;
+}
 
 // P1.2 (UPDATE_STATE_SAFETY_AUDIT) — the "merged with ULTRON" lie: a roster/registry gap used to make a
 // specialist SILENTLY answer as the overseer (cron fell back to the station persona + default model, zero logging;
@@ -1334,6 +1347,7 @@ function providerRuntimeBaseUrl(provider, explicitBaseUrl) {
 function providerHasCredential(provider, key, baseUrl) {
   const id = normalizeProvider(provider);
   if (registryProviderUsesCodex(id)) return !!(codexTokens && codexTokens.access_token);
+  if (registryProviderUsesDeviceOAuth(id)) { const e = oauthProviders[id]; return !!(e && e.tokens && e.tokens.access_token); }
   if (providerRequiresBaseUrl(id) && !String(baseUrl || '').trim()) return false;
   if (providerRequiresKey(id) && !String(key || '').trim()) return false;
   return true;
@@ -1343,6 +1357,7 @@ function providerCredentialError(provider) {
   const profile = getProviderProfile(id);
   const label = (profile && profile.label) || id;
   if (registryProviderUsesCodex(id)) return 'connect ChatGPT first - a signed-in ChatGPT account + model are required';
+  if (registryProviderUsesDeviceOAuth(id)) return 'sign in to ' + label + ' first - a signed-in subscription + model are required';
   if (providerRequiresBaseUrl(id)) return 'configure the ' + label + ' base URL';
   if (providerRequiresKey(id)) return 'connect a ' + label + ' API key';
   return 'provider is not configured';
@@ -2232,6 +2247,137 @@ async function ensureCodexAccessToken() {
   saveCodexTokens(codexTokens);
   return codexTokens.access_token;
 }
+
+// ---- Grok / Kimi (subscription) device-OAuth — the SAME protected-sibling posture as the codex tokens above:
+//      tokens live ONLY in WORKSPACES/<id>/tokens.json (out of the fs jail) and NEVER ride the event bus.
+//      Codex is deliberately NOT in this table (it keeps its own proprietary wire + ensureCodexAccessToken). ----
+const OAUTH_PROVIDER_IDS = ['grok', 'kimi'];
+// The static X-Msh-* device signature the kimi-cli sends, plus the runtime OS version + a stable per-install
+// device id (minted once, persisted with the tokens). Sent on EVERY kimi auth request AND on inference.
+function kimiMshHeaders(deviceId) {
+  return {
+    'X-Msh-Platform': 'kimi_cli',
+    'X-Msh-Version': '1.0.0',
+    'X-Msh-Device-Name': 'starnet',
+    'X-Msh-Device-Model': 'starnet',
+    'X-Msh-Os-Version': (() => { try { return os.release() || 'unknown'; } catch (_) { return 'unknown'; } })(),
+    'X-Msh-Device-Id': String(deviceId || '')
+  };
+}
+// The verified wire constants for each provider (from the official device-code implementations). Everything
+// provider-specific is contained here; the generic oauth-device.js knows none of it.
+function oauthDeviceConfig(id, deviceId) {
+  if (id === 'grok') {
+    return {
+      providerId: 'grok',
+      clientId: 'b1a00492-073a-47ea-816f-4c329264a828',
+      deviceUrl: 'https://auth.x.ai/oauth2/device/code',
+      tokenUrl: 'https://auth.x.ai/oauth2/token',
+      scope: 'openid profile email offline_access grok-cli:access api:access conversations:read conversations:write',
+      deviceExtraBody: { referrer: 'starnet' },
+      encoding: 'form',
+      refreshSkewSeconds: 120,
+      forbiddenIsAllowlist: true   // xAI's OAuth surface can 403 an active subscriber -> steer to the API-key provider, not a re-sign-in
+    };
+  }
+  if (id === 'kimi') {
+    return {
+      providerId: 'kimi',
+      clientId: '17e5f671-d194-4dfb-9706-5516cb48c098',
+      deviceUrl: 'https://auth.kimi.com/api/oauth/device_authorization',
+      tokenUrl: 'https://auth.kimi.com/api/oauth/token',
+      encoding: 'form',            // live-proven 2026-07-17: auth.kimi.com 400s JSON bodies; kimi-cli's requests(data=) is form-encoded
+      refreshSkewSeconds: 300,
+      halfLifeRefresh: true,       // ~15min access tokens: refresh past 50% of life OR within 300s of expiry
+      headers: kimiMshHeaders(deviceId)
+    };
+  }
+  return null;
+}
+// Extra inference headers for a device-OAuth provider (kimi's X-Msh-* set; grok needs none). The registry
+// profile carries the STATIC kimi headers; these add the runtime OS version + device id, merged by the factory.
+function oauthInferenceHeaders(id) {
+  const entry = oauthProviders[id];
+  if (id === 'kimi' && entry) return kimiMshHeaders(entry.deviceId);
+  return undefined;
+}
+const oauthProviders = (() => {
+  const map = {};
+  for (const id of OAUTH_PROVIDER_IDS) {
+    const file = path.join(WORKSPACES, id, 'tokens.json');
+    let tokens = null;
+    try { tokens = oauthTokenStore.loadTokens({ file, load: (f, t) => loadResilient(f, t), tag: id }); } catch (_) { tokens = null; }
+    // stable per-install device id: reuse the persisted one, else mint (persisted on the first token write).
+    const deviceId = (tokens && typeof tokens.device_id === 'string' && tokens.device_id) ? tokens.device_id : crypto.randomUUID();
+    map[id] = {
+      id, file, deviceId,
+      auth: oauthDevice.makeDeviceOAuth(oauthDeviceConfig(id, deviceId)),
+      tokens: (tokens && typeof tokens === 'object') ? tokens : null,
+      authDead: codexAuthState.deadFromTokens(tokens),
+      persistError: '',
+      pending: new Map()   // browser-opaque loginId -> { device_code (kept SERVER-SIDE), interval, at }
+    };
+  }
+  return map;
+})();
+function oauthLabel(id) {
+  const p = getProviderProfile(id);
+  return (p && (p.label || p.name)) || id;
+}
+// Verified persist (write -> read-back proof -> retry once), mirroring saveCodexTokens. Stamps the stable
+// device id into the envelope so it survives a restart. persistError is surfaced honestly by the status route.
+function saveOAuthTokens(id, obj) {
+  const entry = oauthProviders[id];
+  if (!entry) return false;
+  try { fs.mkdirSync(path.dirname(entry.file), { recursive: true }); } catch (_) {}
+  if (entry.deviceId && obj && typeof obj === 'object' && !obj.device_id) obj.device_id = entry.deviceId;
+  const r = oauthTokenStore.persistTokensVerified({
+    tokens: obj,
+    save: (o) => saveResilient(entry.file, o),
+    load: () => loadResilient(entry.file, id)
+  });
+  if (r.ok) { entry.persistError = ''; return true; }
+  entry.persistError = r.error || 'token could not be persisted to disk';
+  console.error('[' + id + '] token persist UNVERIFIED after retry (' + entry.persistError + ') — tokens kept in memory for this session; a restart may require re-signing in.');
+  return false;
+}
+function clearOAuthTokens(id) {
+  const entry = oauthProviders[id];
+  if (!entry) return;
+  try { fs.unlinkSync(entry.file); } catch (e) {}
+  try { fs.unlinkSync(entry.file + '.bak'); } catch (e) {}
+  entry.persistError = ''; entry.authDead = null;
+}
+// Hand a Grok/Kimi run a FRESH access token: refresh when the persisted expiry (or JWT exp) is inside the skew
+// window, persisting the rotated tokens. Mirrors ensureCodexAccessToken — a relogin-class refresh failure marks
+// the sign-in DEAD (durably), a transient one leaves the credentials standing; success strips any dead marker.
+async function ensureOAuthAccessToken(pid) {
+  const id = normalizeProvider(pid);
+  const entry = oauthProviders[id];
+  if (!entry) { const e = new Error('Unknown OAuth provider: ' + id); e.code = 'oauth_unknown_provider'; e.reloginRequired = false; throw e; }
+  if (!entry.tokens || !entry.tokens.access_token) {
+    const e = new Error('Not signed in to ' + oauthLabel(id) + ' — connect it first.');
+    e.code = id + '_not_connected'; e.reloginRequired = true; throw e;
+  }
+  if (!entry.auth.accessTokenIsExpiring(entry.tokens, Date.now())) return entry.tokens.access_token;
+  let next;
+  try {
+    next = await entry.auth.refreshTokens({ fetch: globalThis.fetch, refresh_token: entry.tokens.refresh_token, now: Date.now() });
+  } catch (e) {
+    const marker = codexAuthState.deadMarkerFromError(e, new Date().toISOString());
+    if (marker) {
+      entry.authDead = marker;
+      entry.tokens = codexAuthState.withDeadMarker(entry.tokens, marker);
+      saveOAuthTokens(id, entry.tokens);
+      console.warn('[' + id + '] refresh token is dead (' + marker.code + ') — Settings will show SIGN-IN EXPIRED until the user reconnects.');
+    }
+    throw e;
+  }
+  entry.tokens = codexAuthState.withoutDeadMarker(Object.assign({}, entry.tokens, next));
+  entry.authDead = null;
+  saveOAuthTokens(id, entry.tokens);
+  return entry.tokens.access_token;
+}
 // channel.* / workitem.* / queue.* telemetry: validated + redacted, logged to the sidecar console AND
 // forwarded to open browser EventSources (the station HUD). The bot token / OR key are NEVER placed on a
 // payload — nothing to leak here — and redact() runs before validate() as a second backstop.
@@ -2490,6 +2636,38 @@ function saveCronArmed(armed) {   // durable like the jobs file; throws on a rea
   // route through the resilient writer (fsync temp→rename + snapshot the prior good value to .bak) so a torn write
   // can be recovered on the next boot instead of silently disarming the scheduler. Same idiom as connectors/cron.jobs.
   saveResilient(CRON_ARMED_FILE, { version: 1, armed: armed === true });
+}
+// ---- Lane 4D: the durable cron E-STOP halt (the routines equivalent of nightshift.engageHalt). ----
+// POST /api/halt used to abort in-flight cron leases but left the TIMER armed, so due routines re-fired
+// unattended right after an E-STOP — and the tray kept reporting "N routines armed" (the close-to-tray
+// decision then kept the process alive AFTER the user paused). The halt flag is SEPARATE from cronArmed so
+// the user's arm intent survives: halt freezes the scheduler durably (survives restart); it lifts only on an
+// explicit resume — POST /api/cron/arm (either direction: a deliberate arm write IS the resume signal) or a
+// re-write of the autonomy dial (the same "autonomy back on" signal that lifts the night-shift halt).
+const CRON_HALT_FILE = path.join(WORKSPACES, 'cron.halt.json');
+function loadCronHalted() {
+  // fail-open-to-false ONLY when the file is genuinely absent; an unreadable existing flag logs (loadResilient
+  // quarantines) and defaults false — the arm flag still gates firing, so a lost halt never invents arming.
+  try {
+    if (fs.existsSync(CRON_HALT_FILE)) {
+      const env = loadResilient(CRON_HALT_FILE, 'cron-halt');
+      return !!(env && env.halted === true);
+    }
+    return false;
+  } catch (_) { return false; }
+}
+function saveCronHalted(halted) {
+  try { saveResilient(CRON_HALT_FILE, { version: 1, halted: halted === true, at: Date.now() }); } catch (_) {}
+}
+let cronHalted = loadCronHalted();
+// The ONE resume seam: clear the durable halt and re-arm the live timer when the user's arm intent says so.
+// Called from every explicit resume path so halt-lift semantics can't drift between them.
+function liftCronHalt() {
+  if (!cronHalted) return false;
+  cronHalted = false;
+  saveCronHalted(false);
+  if (cronArmed) armCron();
+  return true;
 }
 // the LIVE armed state: SKYNET_CRON_ENABLED (env, boot-frozen) OR the persisted runtime flag. Mutated only by
 // armCron()/disarmCron() (below) — never via process.env. GET /api/cron reports THIS so the panel is honest.
@@ -3353,7 +3531,8 @@ function nightshiftContextPack() {
 // model call, "could a beat even reach a model call right now?" — the same readiness/eligibility conditions the act
 // pipeline checks first. Dossier OR substantial recent activity counts as grounding (Autopilot.readiness folds both).
 // Returns { ok, reason }. Called by the driver BEFORE the leash is spent, so a stand-down that no model call could
-// have avoided (cold on both paths → tier not hot, or nothing eligible) costs no budget. Best-effort; fail OPEN.
+// have avoided (cold on both paths → tier not hot, or nothing eligible) costs no budget. Safety reads fail closed:
+// an unproven budget/provider/readiness gate stands down as `precheck-error` and is retried on a later tick.
 function nightshiftPrecheck() {
   try {
     // LANE L — COST GATE (pre-spend). The leash is spent at ACCEPT time; a beat's FIRST model call then dies with
@@ -3363,15 +3542,16 @@ function nightshiftPrecheck() {
     // {scope,usd,cap} (truthy) or null. Checked FIRST so an exhausted pool names the ACTIONABLE reason ('budget',
     // which the Commander clears by resume/raising the cap) rather than a downstream 'no-provider'/'readiness'.
     let b = null;
-    try { b = budget.check(null, NIGHTSHIFT_AGENT, 0, Date.now(), null); } catch (_) { b = null; }
+    try { b = budget.check(null, NIGHTSHIFT_AGENT, 0, Date.now(), null); }
+    catch (_) { return { ok: false, reason: 'precheck-error' }; }
     if (b) return { ok: false, reason: 'budget' };
     // LANE L — CAPABILITY GATE (pre-spend, same wart): with no runnable provider/credential a beat stands down at
     // 'no-capability' AFTER the leash was spent (runNightshiftBeat). Read it locally (no model call) and decline
-    // before the spend. Best-effort — a lookup hiccup falls through to the readiness gate (never wedge the tick).
+    // before the spend. A lookup hiccup stands down visibly; uncertainty is not unattended-work permission.
     try {
       const provider = cronProviderFor({ agentId: NIGHTSHIFT_AGENT });
       if (!cronModelFor({ agentId: NIGHTSHIFT_AGENT }) || !cronHasCredential(provider, cronKeyFor(provider))) return { ok: false, reason: 'no-provider' };
-    } catch (_) { /* fall through to readiness */ }
+    } catch (_) { return { ok: false, reason: 'precheck-error' }; }
     const snap = commanderPosture.beliefs() || {};
     const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
     const beliefsByDim = (dim) => (snap.beliefs && snap.beliefs[dim]) || [];
@@ -3381,7 +3561,7 @@ function nightshiftPrecheck() {
     const eligible = Autopilot.eligibleArchetypes(rd.usableDims, { activityGrounded: rd.groundedBy === 'activity' });
     if (rd.tier !== 'hot' || !eligible.length) return { ok: false, reason: 'readiness' };
     return { ok: true };
-  } catch (_) { return { ok: true }; }   // fail open → NS-1 behavior (spend + let the pipeline decide)
+  } catch (_) { return { ok: false, reason: 'precheck-error' }; }
 }
 
 // the READINESS view for the status route — the SAME computation nightshiftPrecheck gates on, exposed as provable
@@ -3560,7 +3740,7 @@ async function runNightshiftActShift(opts) {
   const runId = opts.runId || crypto.randomUUID();
   const backlogId = 'ns-act-' + runId;
   const title = String(sel.selected.title || 'Night-shift build').slice(0, 200);
-  try { await workshopStore.queue(agentId, { id: backlogId, title, detail: String(sel.selected.spec || ''), source: 'nightshift' }, Date.now()); }
+  try { await workshopStore.queue(agentId, { id: backlogId, title, detail: String(sel.selected.spec || ''), source: 'nightshift', grounds: String(sel.selected.grounds || '') }, Date.now()); }
   catch (_) { /* a queue hiccup (e.g. a title the Commander earlier discarded) → stand down honestly */ return { delivered: false, reason: 'queue-refused' }; }
   await workshopStore.claimNext(agentId, runId, isRunLive).catch(() => null);   // stamp buildingRunId (zombie-reap aware)
 
@@ -3596,6 +3776,8 @@ async function runNightshiftActShift(opts) {
   }
   try { await workshopStore.markBuilt(agentId, backlogId, runId); } catch (_) {}
   recordNightshiftAct(runId, sel.selected.archetype, sel.selected.threadId);   // so a keep/discard verdict feeds the RIGHT archetype into LEARN (+ NS-6: delivers/declines the cited thread)
+  // WHY-THIS: the card's provenance line — the grounding-veto-checked GROUNDS quote this job was selected on.
+  manifest.because = workshopBecause({ grounds: sel.selected.grounds, detail: sel.selected.spec, title: manifest.title });
   try { chanEmit('workshop.built', { agentId, runId, manifest }); } catch (_) {}
   const paths = (manifest.files || []).map(f => dir + '/' + f.path).slice(0, 8).join(', ');
   // LEDGER TRUTH (NS-3): a real tool-run that BUILT an artifact records kind 'act' here — the authoritative place
@@ -3612,7 +3794,9 @@ const nightshiftDriver = makeNightshiftDriver({
   getState: () => nightshiftState,
   setState: (s) => { nightshiftState = s; saveNightshiftState(); },
   getPosture: () => commanderPosture.summary(),
-  lastActivity: () => lastUserActivityAt,
+  // presence truth: a LIVE interactive run counts as activity-now — the Commander watching their own run must
+  // never read as "away" no matter how long the run streams (idle-detection bug, 2026-07-17).
+  lastActivity: () => (interactiveRunInFlight() ? Date.now() : lastUserActivityAt),
   // E-STOP awareness: a global halt STAMPS a durable flag on the night-shift state (nightshift.engageHalt, fired
   // from handleHalt), so after an E-STOP EVERY subsequent tick stands down with binding:'halt' — not just the one
   // in-flight beat that abortBeat() cancels. It survives a restart (a reboot must never silently re-enable overnight
@@ -3707,6 +3891,7 @@ async function runQuestRefreshCycle(why) {
   // standalone provider (no live run to ride): the cron seam's provider/credential resolution, verbatim.
   const providerId = cronProviderFor(null);
   const usingCodex = providerUsesCodex(providerId);
+  const usingDeviceOAuth = providerUsesDeviceOAuth(providerId);
   const baseUrl = providerRuntimeBaseUrl(providerId, '');
   const key = cronKeyFor(providerId);
   if (!cronHasCredential(providerId, key)) { questRefreshNote({ outcome: 'skipped', reason: 'no provider credential — ' + cronCredentialError(providerId, 'the quest refresh') }); return; }
@@ -3761,6 +3946,7 @@ async function runQuestRefreshCycle(why) {
     // evidence exists → NOW pay for the provider (codex token fetch is a network hop; never spend it on a cold save).
     let provider;
     if (usingCodex) { const token = await ensureCodexAccessToken(); provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token, baseUrl }); }
+    else if (usingDeviceOAuth) { const token = await ensureOAuthAccessToken(providerId); provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token, headers: oauthInferenceHeaders(providerId), baseUrl }); }
     else provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key, baseUrl });
     const cost = makeCostEngine({ priceOf: provider.priceOf });
     const directive = QuestRefresh.buildDirective(evidenceCtx);
@@ -3885,6 +4071,7 @@ function normalizeProvider(provider) {
   return normalizeProviderIdFromRegistry(provider, 'openrouter');
 }
 function providerUsesCodex(provider) { return registryProviderUsesCodex(normalizeProvider(provider)); }
+function providerUsesDeviceOAuth(provider) { return registryProviderUsesDeviceOAuth(normalizeProvider(provider)); }
 function normalizeReasoningEffort(value) {
   const key = String(value || 'medium').trim().toLowerCase().replace(/[\s_-]+/g, '');
   const map = {
@@ -4428,6 +4615,18 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/auth/codex/poll') return handleCodexPoll(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
   if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
+  // Grok / Kimi subscription device-OAuth — the SAME five-verb shape as codex, keyed by provider id. Tokens
+  // live only in WORKSPACES/<id>/tokens.json and never ride any response payload (status is booleans/strings).
+  if (req.method === 'POST' && req.url === '/api/auth/grok/start') return handleOAuthStart(req, res, 'grok');
+  if (req.method === 'POST' && req.url === '/api/auth/grok/poll') return handleOAuthPoll(req, res, 'grok');
+  if (req.method === 'GET' && req.url === '/api/auth/grok/status') return handleOAuthStatus(req, res, 'grok');
+  if (req.method === 'GET' && req.url === '/api/auth/grok/models') return handleOAuthModels(req, res, 'grok');
+  if (req.method === 'POST' && req.url === '/api/auth/grok/logout') return handleOAuthLogout(req, res, 'grok');
+  if (req.method === 'POST' && req.url === '/api/auth/kimi/start') return handleOAuthStart(req, res, 'kimi');
+  if (req.method === 'POST' && req.url === '/api/auth/kimi/poll') return handleOAuthPoll(req, res, 'kimi');
+  if (req.method === 'GET' && req.url === '/api/auth/kimi/status') return handleOAuthStatus(req, res, 'kimi');
+  if (req.method === 'GET' && req.url === '/api/auth/kimi/models') return handleOAuthModels(req, res, 'kimi');
+  if (req.method === 'POST' && req.url === '/api/auth/kimi/logout') return handleOAuthLogout(req, res, 'kimi');
   if (req.method === 'GET' && req.url === '/api/providers') return handleProviders(req, res);
   if (req.method === 'POST' && req.url === '/api/providers/probe') return handleProviderProbe(req, res);
   // /api/models/openrouter is served by this same prefix (id='openrouter'); the old dedicated branch below it was
@@ -4456,6 +4655,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/spotify/disconnect') return handleSpotifyDisconnect(req, res);
   if (req.method === 'GET' && req.url === '/api/widgets') return handleWidgetsList(req, res);   // WIDGET RAILS Phase 2: the agent-fed readouts the chrome rails poll
   if (req.method === 'GET' && req.url === '/api/state/snapshot') return handleStateSnapshot(req, res);   // reconnect reconciliation (frontend lane consumes it)
+  if (req.method === 'GET' && req.url === '/api/lifecycle/armed') return handleLifecycleArmed(req, res);   // Lane 4D: tray supervisor's close-decision truth
   if (req.method === 'GET' && req.url === '/api/cron') return handleCronList(req, res);
   if (req.method === 'POST' && req.url === '/api/cron') return handleCronCreate(req, res);
   if (req.method === 'POST' && req.url === '/api/cron/update') return handleCronUpdate(req, res);
@@ -4469,6 +4669,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/backlog') return handleWorkshopBacklog(req, res);
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res);
   if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res);
+  if (req.method === 'POST' && req.url === '/api/workshop/undo') return handleWorkshopUndo(req, res);   // EL-11 #8: reverse a keep — remove the out-of-jail copy + restore pending
   if (req.method === 'POST' && req.url === '/api/workshop/remove') return handleWorkshopRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res);
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/deliverables') return handleDeliverablesList(req, res);
@@ -4622,7 +4823,10 @@ server.listen(PORT, '127.0.0.1', () => {
   // skip; never a backlog) — BEFORE arming the interval. Inert when off: no timer, no fire, the browser path is
   // byte-identical for a user who never enables cron (no env var, no cron.armed.json -> cronArmed=false).
   try {
-    if (cronArmed) armCron();
+    // Lane 4D: a durable E-STOP halt (cron.halt.json) freezes the scheduler ACROSS restarts — armed intent is
+    // remembered but the timer stays down until an explicit resume (POST /api/cron/arm or a dial re-write).
+    if (cronArmed && cronHalted) console.log('  · cron is E-STOP halted — timer stays down until resumed (routines panel or autonomy dial)');
+    if (cronArmed && !cronHalted) armCron();
   } catch (e) { console.warn('[cron] start failed:', (e && e.message) || e); }
   // NIGHT SHIFT (OPT-IN, NS-1): arms iff SKYNET_NIGHTSHIFT_ENABLED OR the posture already permits acting at boot
   // (initiative ≥ 'leash'). Inert otherwise — no timer, no fire, byte-identical for a Commander who never dials up.
@@ -5060,11 +5264,22 @@ function setProviderRuntimeConfig(provider, patch) {
   return id;
 }
 
+/* the per-launch IPC token gate shared by the desktop push routes. Constant-time compare: a plain
+   !== leaks match-prefix length through response timing; hash both sides to fixed width first so
+   timingSafeEqual never throws on length mismatch and the comparison cost is length-independent. */
+function ipcTokenOk(req) {
+  const token = String(ENV('IPC_TOKEN') || '');
+  if (!token) return false;
+  const given = String(req.headers['x-starnet-token'] || req.headers['x-skynet-token'] || '');
+  const a = crypto.createHash('sha256').update(given, 'utf8').digest();
+  const b = crypto.createHash('sha256').update(token, 'utf8').digest();
+  return crypto.timingSafeEqual(a, b);
+}
+
 /* desktop key push: the parent shell sets live BYOK/provider config here (token-gated), so changing a
    key never restarts the sidecar. Legacy text/plain bodies still update the OpenRouter key. */
 async function handleSetKey(req, res) {
-  const token = String(ENV('IPC_TOKEN') || '');
-  if (!token || (req.headers['x-starnet-token'] || req.headers['x-skynet-token']) !== token) { res.writeHead(403); return res.end('forbidden'); }
+  if (!ipcTokenOk(req)) { res.writeHead(403); return res.end('forbidden'); }
   let raw = '';
   try { raw = String(await readBody(req, 1 << 16) || ''); } catch (_) {}
   let provider = 'openrouter';
@@ -5097,8 +5312,7 @@ async function handleSetKey(req, res) {
    empty token CLEARS the runtime token for that channel. Never echoes the token back — only booleans. */
 async function handleSetChannelToken(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
-  const token = String(ENV('IPC_TOKEN') || '');
-  if (!token || (req.headers['x-starnet-token'] || req.headers['x-skynet-token']) !== token) { res.writeHead(403); return res.end('forbidden'); }
+  if (!ipcTokenOk(req)) { res.writeHead(403); return res.end('forbidden'); }
   let body; try { body = JSON.parse(String(await readBody(req, 1 << 16) || '') || '{}') || {}; } catch (_) { return json(400, { error: 'bad json' }); }
   const channel = String(body.channel || body.id || '').trim().toLowerCase();
   if (channelSecretsMod.CHANNEL_IDS.indexOf(channel) < 0) return json(400, { error: 'unknown channel' });
@@ -5511,7 +5725,67 @@ function handleCronList(req, res) {
     lastTickError: cronHealth.lastTickError,
     healthy: !!(cronArmed && cronTimer && cronHealth.lastSuccessAt != null && (Date.now() - cronHealth.lastSuccessAt) < 3 * CRON_TICK_MS)
   };
-  res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, tickMs: CRON_TICK_MS, health: health }));
+  // `halted` (additive, Lane 4D): the durable E-STOP stand-down — enabled records the user's arm INTENT while
+  // halted says the timer is frozen anyway, so the panel can say "paused by E-STOP" instead of a false "armed".
+  res.end(JSON.stringify({ jobs: cronJobs, enabled: cronArmed, halted: cronHalted, tickMs: CRON_TICK_MS, health: health }));
+}
+
+/* GET /api/lifecycle/armed — Lane 4D: the ONE aggregate the desktop tray supervisor polls to decide whether
+   closing the window may keep the sidecar alive. "Armed work" = background work that genuinely needs a live
+   process after the window is gone: a cron scheduler with routines, a connected messaging channel, or an
+   armed night-shift. TRUTHFUL TELEMETRY: every field reads REAL in-memory server state (the same sources the
+   ROUTINES / CHANNELS / night-shift panels read) — nothing is synthesized. When nothing is armed, `armed:false`
+   and the tray quits the whole app on window close (no hidden daemon). Reasons are short human strings the tray
+   can show verbatim ("2 routines armed", "Telegram connected"). Defensive: a failing subsystem degrades to
+   armed:false for THAT category rather than 500-ing the poll (a poll error must never wedge the close decision). */
+function lifecycleArmedSnapshot(now) {
+  now = now || Date.now();
+  // ROUTINES — armed only when the scheduler is armed AND at least one routine exists to fire. A disarmed
+  // scheduler (or an armed one with zero jobs) is honestly not armed: nothing would tick after window close.
+  let routines = { armed: false, count: 0, healthy: false, halted: false };
+  try {
+    const jobs = Array.isArray(cronJobs) ? cronJobs : [];
+    // A durable E-STOP halt (cron.halt.json) freezes the timer — a halted scheduler is NOT doing background
+    // work, so it must not hold the process alive after window close (same truthfulness rule as night shift).
+    const armed = !!cronArmed && !cronHalted && jobs.length > 0;
+    const healthy = !!(cronArmed && cronTimer && cronHealth.lastSuccessAt != null && (now - cronHealth.lastSuccessAt) < 3 * CRON_TICK_MS);
+    routines = { armed: armed, count: armed ? jobs.length : 0, healthy: healthy, halted: !!cronHalted };
+  } catch (_) {}
+  // CHANNELS — the ids of every messaging channel reporting connected:true (real socket/poll state).
+  let channels = { armed: false, connected: [] };
+  try {
+    const connected = [];
+    for (const d of channelRegistry.list()) { try { if (channelStatusPayload(d.id).connected) connected.push(d.id); } catch (_) {} }
+    channels = { armed: connected.length > 0, connected: connected };
+  } catch (_) {}
+  // NIGHT SHIFT / AUTONOMY — armed = the beat timer is live (nightshiftTimer). This subsumes the autonomy dial:
+  // the timer arms only when the Commander set an unattended posture (nightshiftShouldArm reads actsUnattended),
+  // so a live timer IS the provable "autonomy will act while you're away" signal. `halted` is the durable E-STOP
+  // stand-down (survives restart) — reported so the tray never claims armed work the halt has actually frozen.
+  let nightshift = { armed: false, halted: false };
+  try {
+    const rolled = nightshift$rollDay(now);
+    nightshift = { armed: !!nightshiftTimer, halted: (rolled.haltedAt || 0) > 0 };
+  } catch (_) {}
+  // A halted night shift is not doing work — reflect that in `armed` (truthful: don't hold the process for a
+  // frozen shift). Routines/channels are independent of the NS halt.
+  const nsArmedActive = nightshift.armed && !nightshift.halted;
+  const armed = routines.armed || channels.armed || nsArmedActive;
+  const reasons = [];
+  if (routines.armed) reasons.push(routines.count === 1 ? '1 routine armed' : (routines.count + ' routines armed'));
+  for (const id of channels.connected) reasons.push((id.charAt(0).toUpperCase() + id.slice(1)) + ' connected');
+  if (nsArmedActive) reasons.push('Night shift armed');
+  return { armed: armed, categories: { routines: routines, channels: channels, nightshift: nightshift }, reasons: reasons, ts: now };
+}
+// small wrapper so lifecycleArmedSnapshot never throws on the nightshift day-roll (state may be uninitialized
+// in edge boots); returns a benign shape rather than propagating.
+function nightshift$rollDay(now) {
+  try { return nightshift.rollDay(nightshiftState, now) || {}; } catch (_) { return {}; }
+}
+function handleLifecycleArmed(req, res) {
+  const out = lifecycleArmedSnapshot(Date.now());
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(out));
 }
 
 /* GET /api/state/snapshot — a RECONNECTION snapshot for the frontend (Lane E). After the SSE bridge drops and
@@ -5598,8 +5872,11 @@ function handleCronArm(req, res) {
     try { saveCronArmed(want); }                       // durable persist FIRST so a crash can't drop the user's intent
     catch (e) { return json(500, { error: 'could not persist the arm flag: ' + ((e && e.message) || e) }); }
     cronArmed = want;                                  // live in-memory state (GET /api/cron reflects this)
+    // Lane 4D: a deliberate arm write IS the resume signal — it lifts a durable E-STOP halt in EITHER direction
+    // (arming resumes; an explicit disarm supersedes the halt, leaving a plain disarmed scheduler).
+    if (cronHalted) { cronHalted = false; saveCronHalted(false); }
     if (want) armCron(); else disarmCron();            // start/stop the live tick NOW — a due job fires within one tick
-    json(200, { ok: true, enabled: cronArmed, tickMs: CRON_TICK_MS });
+    json(200, { ok: true, enabled: cronArmed, halted: cronHalted, tickMs: CRON_TICK_MS });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
 
@@ -5815,17 +6092,37 @@ function workshopPrompt(runId, item) {
     + 'You are working in your private workshop while the Commander is away — build something real and reviewable.\n\n'
     + 'BUILD THIS:\n' + what + '\n\n'
     + 'RULES:\n'
-    + '- Prefer a SELF-CONTAINED, double-click-runnable deliverable: when the ask fits, make a SINGLE-FILE HTML tool (all CSS/JS inline, no external files or build step) named index.html so the Commander can just Open it and use it — otherwise ship a script plus a one-line run command in "howToUse". The goal is zero setup on their end.\n'
+    + '- MATCH THE FORMAT TO THE ASK — build the SIMPLEST thing that fully serves it, never the most impressive:\n'
+    + '    * a question / research ask -> a short findings doc (e.g. "' + dir + '/findings.md"), answer first, sources after.\n'
+    + '    * a draft ask (email, post, script, plan) -> the draft file itself.\n'
+    + '    * a comparison / decision ask -> a short ranked write-up with the recommendation on top.\n'
+    + '    * ONLY build an interactive SINGLE-FILE HTML tool (all CSS/JS inline, no build step, named index.html) when the ask genuinely needs interaction — a calculator, converter, explorer the Commander will USE repeatedly. NEVER default to a dashboard: a dashboard is right only when the ask is literally to watch several changing numbers in one place.\n'
+    + '- Whatever the format: ZERO SETUP on their end — self-contained, one-click openable, no external files or build step; a script ships with its single run command in "howToUse".\n'
     + '- Put every file for this deliverable UNDER the folder "' + dir + '/" in your workspace (use fs.write with paths like "' + dir + '/<file>").\n'
     + '- Do the actual work with your real tools (web search/read, files, memory). Ground factual claims in what the tools return.\n'
     + '- You CANNOT run commands or tests here, so do not claim anything was tested — list what a human still needs to verify.\n'
     + '- When finished, write a manifest to "' + dir + '/deliverable.json" with EXACTLY this shape:\n'
     + '  { "v": 1, "runId": "' + runId + '", "agentId": "<your id>", "backlogId": "' + ((item && item.id) || '') + '",\n'
-    + '    "title": "<short name>", "kind": "tool|fix|draft|doc|other", "summary": "<one paragraph, plain language>",\n'
+    + '    "title": "<short name>", "kind": "tool|fix|draft|doc|other",\n'
+    + '    "summary": "<2-3 SHORT plain sentences a busy person absorbs in ten seconds: what it IS and what it does for them. NEVER an inventory — no inline lists of categories, failure modes, or counts, and no sentence over ~25 words; the deliverable itself holds the detail>",\n'
     + '    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],\n'
     + '    "howToUse": "<ONE short sentence — at most the single run command. The station already gives the Commander an Open link and one-click actions, so NEVER write multi-step setup or git instructions here>",\n'
-    + '    "notVerified": ["<what you could not check>"] }\n'
+    + '    "notVerified": ["<up to 5 items, each ONE short check written FOR the Commander — a concrete thing THEY can do in a minute, e.g. \\"open it and click through the tabs\\". NEVER your run diagnostics: no notes about tool budgets, byte counts, or what this shift could not execute — turn every limitation into the check it implies>"] }\n'
     + '- The manifest MUST list the real files you wrote (paths relative to "' + dir + '/"). This is required — a shift with no manifest is discarded.';
+}
+
+// WHY-THIS (2026-07-17): the one-line grounding the delivery card shows — WHY the agent built this, from
+// REAL recorded data only: the backlog item's stored grounds quote (night-shift GROUNDS), else the
+// Commander's own ask detail. Never model-authored at delivery time and never synthesized here; empty
+// in → empty out (the card simply omits the line). Truthful telemetry: this is provenance, not prose.
+function workshopBecause(item) {
+  const it = item || {};
+  const grounds = String(it.grounds || '').replace(/\s+/g, ' ').trim();
+  const detail = String(it.detail || '').replace(/\s+/g, ' ').trim();
+  const title = String(it.title || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const pick = grounds || detail;
+  if (!pick || pick.toLowerCase() === title) return '';   // adds nothing over the headline → omit
+  return pick.length > 300 ? pick.slice(0, 300) + '…' : pick;
 }
 
 // validate a run's deliverable.json against the pinned schema v1 AND the real files on disk. Returns the parsed
@@ -5960,6 +6257,8 @@ async function runWorkshopShift(agentId, opts) {
   }
   await workshopStore.markBuilt(id, item.id, runId);
   noteShift({ reason: 'built', runId: runId, title: manifest.title });
+  // WHY-THIS: the card's provenance line, from the REAL backlog ask that queued this build.
+  manifest.because = workshopBecause(item);
   try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
   return { fired: true, runId: runId, reason: 'built', manifest: manifest };
 }
@@ -5987,7 +6286,9 @@ async function armWorkshopShift(agentId) {
     }, { id: jobId, now: Date.now() }));
   } catch (e) { console.warn('[workshop] arm routine failed:', (e && e.message) || e); return false; }
   // arming the shift needs the tick timer running so it actually fires unattended; arm cron if it isn't already.
-  try { if (!cronArmed) { cronArmed = true; saveCronArmed(true); armCron(); } } catch (_) {}
+  // Respect a durable E-STOP halt: record the arm INTENT but never silently restart the timer the Commander
+  // paused — the halt lifts only via the explicit resume paths (POST /api/cron/arm / autonomy-dial write).
+  try { if (!cronArmed) { cronArmed = true; saveCronArmed(true); if (!cronHalted) armCron(); } } catch (_) {}
   return true;
 }
 async function disarmWorkshopShift(agentId) {
@@ -6193,7 +6494,18 @@ function lifecycleRow(status, agentId, runId, item, man) {
 }
 async function deliverableRows() {
   const rows = [], seen = new Set();
+  // UNDO-AWARE (EL-11 #8): a kept deliverable whose out-of-jail copy was UNDONE is restored to the backlog as a
+  // PENDING built item, but its durable 'kept' lifecycle row still exists. The live pending item is ground truth —
+  // collect those ids so the stale kept row yields to the pending row emitted below (truthful telemetry: never
+  // show 'kept' for a copy the Commander removed). Inert in the normal keep flow (complete() leaves no backlog
+  // item), so this only fires after an undo.
+  const pendingBuilt = new Set();
+  for (const agentId of workshopAgentIds()) {
+    let rec; try { rec = workshopStore.read(agentId); } catch (_) { continue; }
+    for (const item of rec.backlog) if (item.builtRunId) pendingBuilt.add('workshop:' + agentId + ':' + item.builtRunId);
+  }
   for (const saved of deliverableStore.list()) {
+    if (saved.status === 'kept' && pendingBuilt.has(saved.id)) continue;   // superseded by a live pending item → let the backlog loop emit it (don't mark seen)
     const available = saved.status === 'kept';
     const files = saved.files.map(f => available ? deliverableFile(saved.agentId, saved.runId, f, true) : { path: f.path, bytes: Number.isFinite(f.bytes) ? f.bytes : null, preview: null, openUrl: null, sandboxed: false });
     rows.push(Object.assign({}, saved, { files, size: deliverableSize(files), actions: { open: available && files.length > 0, keep: false, discard: false } }));
@@ -6316,6 +6628,8 @@ async function handleWorkshopPending(req, res) {
     // pre-click consequence (2026-07-15 UX audit): resolve NOW, against the current blessed roots, what an
     // Implement would do — so the card states "apply to a branch in X" vs "save files to Y" before the click.
     try { man.implementPlan = workshopImplementPlan(man); } catch (_) {}
+    // WHY-THIS: provenance from the REAL backlog item that queued this build (grounds quote, else the ask detail).
+    try { man.because = workshopBecause(it); } catch (_) {}
     out.push(man);
   }
   json(200, { ok: true, agentId: agentId, pending: out });
@@ -6505,6 +6819,79 @@ async function handleWorkshopDecide(req, res) {
   const out = { ok: true, decision: 'keep', destPath: destPath, copied: copied, opened: opened };
   if (man.kind === 'patch') { out.savedOnly = true; out.patchRefused = patchTarget.reason || 'could not apply this patch'; }
   json(200, out);
+}
+
+// POST /api/workshop/undo { agentId, runId, destPath? } — REVERSE a file-copy keep. handleWorkshopDecide's keep
+// copies the manifest's files OUT of the jail to destPath and retires the backlog item; there was no way back.
+// This deletes EXACTLY those files (each verified gone via existsSync — never a claim we didn't prove), removes
+// only now-empty directories the keep created (non-recursive rmdir — NEVER a recursive wipe), and flips the durable
+// decision back to PENDING (the built item re-lists under /pending). Honest JSON:
+//   { ok, removed:[relPath...], missing:[{path,reason}...], destPath, restored }
+// A file the user already moved/edited/deleted lands in `missing`, never in `removed`. Gated on a real 'kept'
+// lifecycle row so only a genuine keep can be undone. Auth: the global /api token+origin gate (rejectApi /
+// rejectBadApiToken) covers this like every adjacent workshop route — no separate check here.
+async function handleWorkshopUndo(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { error: 'bad request' }); }
+  const agentId = String(body.agentId || '');
+  const runId = String(body.runId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(runId)) return json(400, { error: 'choose a valid run' });
+  // GATE: only a genuinely KEPT deliverable can be undone. The lifecycle library is the durable proof a keep ran
+  // (handleWorkshopDecide records a 'kept' row on every successful copy-out). No kept row → nothing to undo.
+  const rowId = 'workshop:' + agentId + ':' + runId;
+  let keptRow = null;
+  try { keptRow = deliverableStore.list().find(r => r.id === rowId && r.status === 'kept') || null; } catch (_) { keptRow = null; }
+  if (!keptRow) return json(404, { ok: false, error: 'no kept copy to undo for that build' });
+  // the archive run dir SURVIVES a keep, so the disk-proven manifest is the authority on which files were copied
+  // out (fall back to the recorded lifecycle file list only if the archive is gone).
+  const man = await validateWorkshopManifest(agentId, runId);
+  const files = (man && man.files && man.files.length) ? man.files : (keptRow.files || []);
+  // where the keep landed the copy: the card echoes the server's own keep destPath, else the deterministic default.
+  let destPath = String(body.destPath || '');
+  if (!destPath && man) destPath = workshopDefaultDest(man, runId);
+  if (!destPath) return json(400, { ok: false, error: 'need the folder the files were kept in to undo' });
+  const rd = path.resolve(destPath);
+  const removed = [], missing = [], dirsTouched = new Set();
+  for (const f of files) {
+    const rel = String((f && f.path) || '').replace(/^[\\/]+/, '');
+    if (!rel || rel === 'deliverable.json') continue;
+    const abs = path.join(destPath, rel);
+    // containment: a '..' in a manifest path must never let the delete escape destPath. Refuse → report missing.
+    const rp = path.resolve(abs);
+    if (rp !== rd && rp.indexOf(rd + path.sep) !== 0) { missing.push({ path: rel, reason: 'outside destination' }); continue; }
+    let isFile = false; try { isFile = fs.existsSync(abs) && fs.statSync(abs).isFile(); } catch (_) { isFile = false; }
+    if (!isFile) { missing.push({ path: rel, reason: 'already gone' }); continue; }
+    try { await fsp.unlink(abs); } catch (_) { missing.push({ path: rel, reason: 'could not remove' }); continue; }
+    // truthful telemetry: prove the unlink actually removed the file before claiming it removed.
+    let gone = true; try { gone = !fs.existsSync(abs); } catch (_) { gone = true; }
+    if (gone) { removed.push(rel); const d = path.resolve(path.dirname(abs)); if (d !== rd) dirsTouched.add(d); }
+    else missing.push({ path: rel, reason: 'still present after remove' });
+  }
+  // remove now-empty subdirectories the keep CREATED — deepest first, climbing toward destPath. rmdir is
+  // NON-RECURSIVE, so a directory that still holds the user's own files simply fails and we stop climbing that
+  // chain (never a recursive delete of anything).
+  for (const d of [...dirsTouched].sort((a, b) => b.length - a.length)) {
+    let cur = d;
+    while (cur !== rd && cur.indexOf(rd + path.sep) === 0) {
+      try { await fsp.rmdir(cur); } catch (_) { break; }
+      cur = path.dirname(cur);
+    }
+  }
+  // the DEFAULTED per-deliverable folder is uniquely THIS build's (slug + runTag) — if the destPath provably equals
+  // that auto-created folder and it is now empty, remove it too. A user-CHOSEN destPath is never removed (the keep
+  // didn't create it), only its now-empty created subdirs above.
+  try { if (man && path.resolve(destPath) === path.resolve(workshopDefaultDest(man, runId))) await fsp.rmdir(destPath); } catch (_) {}
+  // FLIP DURABLE STATE BACK → pending: re-list the built item under /pending so the Commander can decide again.
+  let restored = false;
+  try {
+    const r = await workshopStore.restorePending(agentId, runId, { backlogId: (man && man.backlogId) || '', title: (man && man.title) || keptRow.title, source: keptRow.source }, Date.now());
+    restored = !!(r && r.restored);
+  } catch (_) {}
+  // No workshop.decided emit: undo is not one of the enum'd decisions (keep|discard|later) on the OWNED bus
+  // contract, and that event has no frontend consumer anyway (state flows via this HTTP response). We also leave
+  // the keep-time archetype learning as-is — the Commander wanted this KIND of build; undo only relocated the copy.
+  json(200, { ok: true, removed: removed, missing: missing, destPath: destPath, restored: restored });
 }
 
 // ---- W7: OPEN the deliverable, don't display its code ------------------------------------------------------------
@@ -7027,6 +7414,7 @@ async function handleRun(req, res) {
   } finally {
     runs.delete(runId);
     runsMeta.delete(runId);
+    noteUserActivity(Date.now());       // the away clock starts when the user's run ENDS, not when it started (a long run must not read as absence)
     dropSteer(runId, 'handleRun');      // drop any un-drained steering notes so they can't leak to a later run; logs a count if non-empty
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
@@ -7066,6 +7454,7 @@ async function runOnce(o) {
   if (identityFallback) warnRosterMiss(agentId, 'runOnce');
   const providerId = normalizeProvider(o.provider || (rosterIdent && rosterIdent.provider) || '');
   const usingCodex = providerUsesCodex(providerId);
+  const usingDeviceOAuth = providerUsesDeviceOAuth(providerId);
   const providerUnmetered = !!((getProviderProfile(providerId) || {}).unmetered);
   // Class Loadouts S1: reasoning-effort precedence = explicit run-option > this agent's roster record (the class
   // applied default) > provider default. An explicit per-run choice still wins; the roster only fills a gap.
@@ -7352,6 +7741,8 @@ async function runOnce(o) {
       const want = enabled === true;
       saveCronArmed(want);
       cronArmed = want;
+      // same resume semantics as POST /api/cron/arm: a deliberate arm write lifts a durable E-STOP halt.
+      if (cronHalted) { cronHalted = false; saveCronHalted(false); }
       if (want) armCron(); else disarmCron();
       return cronArmed;
     }
@@ -7454,6 +7845,19 @@ async function runOnce(o) {
       return;
     }
     provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: codexToken, baseUrl, reasoningEffort });
+  } else if (usingDeviceOAuth) {
+    // Grok / Kimi subscription: the OAuth access token authenticates the OpenAI-compatible endpoint (riding in
+    // AS the Bearer key). Same dead/missing-token -> clean run.error contract as codex; kimi's X-Msh-* headers
+    // ride via oauthInferenceHeaders. A grok allowlist 403 surfaces here as a transient (non-relogin) error.
+    let oauthToken;
+    try { oauthToken = await ensureOAuthAccessToken(providerId); }
+    catch (e) {
+      emit('agent.run.start', { agentId, runId, trigger: trigger, model });
+      emit('agent.run.error', { agentId, runId, transient: !(e && e.reloginRequired), message: oauthLabel(providerId) + ' sign-in needed: ' + ((e && e.message) || e) });
+      emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+      return;
+    }
+    provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, token: oauthToken, headers: oauthInferenceHeaders(providerId), baseUrl, reasoningEffort });
   } else {
     provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key: runKey, baseUrl, reasoningEffort });
   }
@@ -7474,7 +7878,7 @@ async function runOnce(o) {
   // OpenRouter only (Codex authenticates by OAuth token, not an API key). Empty pool = byte-identical to today.
   let rotationFallbacks = [];
   const primaryProfile = getProviderProfile(providerId);
-  if (!usingCodex && primaryProfile && primaryProfile.credentialPool) {
+  if (!usingCodex && !usingDeviceOAuth && primaryProfile && primaryProfile.credentialPool) {
     const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(ENV('KEY_POOL') || '').split(','))
       .map(s => String(s || '').trim()).filter(s => s && s !== runKey);
     rotationFallbacks = credPool.order(pool).map(rk => ({
@@ -7497,6 +7901,10 @@ async function runOnce(o) {
       let fbToken;
       try { fbToken = await ensureCodexAccessToken(); } catch (_) { continue; }
       fbProvider = selectProvider({ provider: fbProviderId, fetch: globalThis.fetch, token: fbToken, baseUrl: fbBaseUrl, reasoningEffort });
+    } else if (providerUsesDeviceOAuth(fbProviderId)) {
+      let fbToken;
+      try { fbToken = await ensureOAuthAccessToken(fbProviderId); } catch (_) { continue; }
+      fbProvider = selectProvider({ provider: fbProviderId, fetch: globalThis.fetch, token: fbToken, headers: oauthInferenceHeaders(fbProviderId), baseUrl: fbBaseUrl, reasoningEffort });
     } else {
       fbProvider = selectProvider({ provider: fbProviderId, fetch: globalThis.fetch, key: fbKey, baseUrl: fbBaseUrl, reasoningEffort });
     }
@@ -7682,6 +8090,8 @@ async function runOnce(o) {
       + (hasWriteTools ? 'Saving a file shows the Commander a quick one-click approval prompt — so just CALL the write tool when you are ready; do not ask permission in chat or claim you cannot save. If they decline, carry on without it. ' : '')
       + 'Keep working across as many tool calls as the task needs; when it is fully done, give the Commander a clear '
       + 'final report of what you found/did' + (hasWriteTools ? ' and which files you saved.' : '.')
+      + ' Never end a reply by only announcing your next action ("Let me read the file", "Fixing it now") — a reply '
+      + 'with no tool calls ends your run. If you name a next step, make that tool call in the SAME reply.'
     : '';
   // Stage 2/3: a LEAD run is told it can DELEGATE to existing crew (team.dispatch, listed FRESH from the roster
   // the browser pushed via /api/roster) AND SUMMON new specialists (team.summon). Only the lead gets this (it alone
@@ -8231,6 +8641,9 @@ async function handleAutonomyPosture(req, res) {
   // deliberately re-writing the dial is the Commander's "autonomy back on" signal, so it LIFTS any durable E-STOP
   // halt on the night shift (engaged in handleHalt). Without this an E-STOP would wedge the shift stood-down forever.
   try { if (nightshift.isHalted(nightshiftState)) { nightshiftState = nightshift.clearHalt(nightshiftState, Date.now()); saveNightshiftState(); } } catch (_) {}
+  // Lane 4D symmetry: the same "autonomy back on" signal lifts the durable cron E-STOP halt (engaged in
+  // handleHalt) and re-arms the timer when the user's arm intent still stands — routines resume with no restart.
+  try { liftCronHalt(); } catch (_) {}
   // if the (new) posture permits acting and the timer isn't running yet, arm it NOW (no restart); if it dropped
   // below acting, we LEAVE the timer armed — its own gate returns binding:'posture' and no beat fires, which is
   // cheaper + simpler than tearing the timer down and matches how the driver already no-ops when not permitted.
@@ -8283,7 +8696,8 @@ function handleNightshiftStatus(req, res) {
   const decision = (() => { try { return nightshiftDriver.statusDecision(now); } catch (_) { return null; } })();
   const summary = commanderPosture.summary() || {};
   const rolled = nightshift.rollDay(nightshiftState, now);
-  const awaySince = lastUserActivityAt + NIGHTSHIFT_AWAY_MS;   // the instant "away" becomes true
+  // presence truth mirrors the driver's lastActivity dep: a LIVE interactive run counts as activity-now.
+  const awaySince = (interactiveRunInFlight() ? now : lastUserActivityAt) + NIGHTSHIFT_AWAY_MS;   // the instant "away" becomes true
   const out = {
     active: !!nightshiftTimer,
     halted: (rolled.haltedAt || 0) > 0,   // NS E-STOP durable halt — true until the Commander re-writes the dial
@@ -8621,6 +9035,11 @@ function handleHalt(req, res) {
   // on their own even though the Commander hit E-STOP. The flag persists (survives restart); it lifts only when the
   // dial is re-written (handleAutonomyPosture → nightshift.clearHalt). Truthful telemetry: status now reports halted.
   try { nightshiftState = nightshift.engageHalt(nightshiftState, Date.now()); saveNightshiftState(); } catch (_) {}
+  // Lane 4D symmetry: ROUTINES get the same durable stand-down the night shift got above. Without this the
+  // cron timer kept re-firing due jobs unattended right after an E-STOP, and the lifecycle aggregate kept
+  // claiming "N routines armed" — so the tray held the process alive AFTER the user paused. The flag persists
+  // (survives restart) and lifts only on an explicit resume (POST /api/cron/arm or an autonomy-dial re-write).
+  try { if (cronArmed && !cronHalted) { cronHalted = true; saveCronHalted(true); disarmCron(); } } catch (_) {}
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
   try { inputGuard.observe('halt').catch(() => {}); } catch (_) {}   // diagnostic only: never release an unowned global clip
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
@@ -9051,6 +9470,9 @@ async function listModelsForProvider(providerId, opts) {
   if (providerUsesCodex(id)) {
     const token = await ensureCodexAccessToken();
     provider = selectProvider({ provider: id, fetch: globalThis.fetch, token, baseUrl });
+  } else if (providerUsesDeviceOAuth(id)) {
+    const token = await ensureOAuthAccessToken(id);
+    provider = selectProvider({ provider: id, fetch: globalThis.fetch, token, headers: oauthInferenceHeaders(id), baseUrl });
   } else {
     provider = selectProvider({ provider: id, fetch: globalThis.fetch, key, baseUrl });
   }
@@ -9104,6 +9526,93 @@ async function handleCodexModels(req, res) {
 // POST /api/auth/codex/logout — forget the stored ChatGPT credentials.
 function handleCodexLogout(req, res) {
   codexTokens = null; clearCodexTokens();
+  res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false }));
+}
+
+/* -------------------- Grok / Kimi (subscription) device-OAuth — RFC 8628 --------------------
+   Identical five-verb browser flow to codex, parameterized by provider id:
+     POST /start          -> { login_id, user_code, verification_uri[_complete], interval, expires_in }
+     POST /poll {login_id} -> { status:'pending', interval } until done, then persist -> { status:'connected' }
+     GET  /status         -> codex-auth-state.statusPayload (booleans/strings only; NEVER the tokens)
+     GET  /models         -> the account's live catalog (falls back to the static roster + reports the error)
+     POST /logout         -> forgets the stored tokens
+   THE opaque `device_code` (the poll handle) is kept SERVER-SIDE in entry.pending, keyed by a random login_id —
+   exactly as codex keeps its PKCE code_verifier server-side. Only login_id ever reaches the browser. */
+const OAUTH_PENDING_TTL_MS = 16 * 60 * 1000;   // device codes expire ~15min; prune the server-side map just past that
+function pruneOAuthPending(entry) {
+  const now = Date.now();
+  for (const [k, v] of entry.pending) { if (!v || (now - (v.at || 0)) > OAUTH_PENDING_TTL_MS) entry.pending.delete(k); }
+}
+
+async function handleOAuthStart(req, res, id) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const entry = oauthProviders[id];
+  if (!entry) return json(404, { error: 'unknown provider' });
+  try {
+    const d = await entry.auth.startDeviceLogin({ fetch: globalThis.fetch });
+    pruneOAuthPending(entry);
+    const login_id = crypto.randomUUID();
+    entry.pending.set(login_id, { device_code: d.device_code, interval: d.interval, at: Date.now() });
+    // device_code is DELIBERATELY absent from this payload — it stays server-side (entry.pending).
+    // device_auth_id mirrors login_id so the ONE shared browser sign-in engine (codexsignin.js) works verbatim.
+    json(200, { login_id, device_auth_id: login_id, user_code: d.user_code, verification_uri: d.verification_uri, verification_uri_complete: d.verification_uri_complete, interval: d.interval, expires_in: d.expires_in });
+  } catch (e) {
+    json(502, { error: (e && e.message) || ('failed to start ' + oauthLabel(id) + ' sign-in'), code: (e && e.code) || 'device_code_request_failed' });
+  }
+}
+
+// POST /api/auth/<id>/poll { login_id } — one poll tick; on completion it persists the tokens.
+async function handleOAuthPoll(req, res, id) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const entry = oauthProviders[id];
+  if (!entry) return json(404, { status: 'error', error: 'unknown provider' });
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { status: 'error', error: 'bad json' }); }
+  const login_id = String(body.login_id || body.device_auth_id || '');   // engine sends device_auth_id (codex vocabulary)
+  const pending = login_id && entry.pending.get(login_id);
+  if (!pending) return json(400, { status: 'error', error: 'unknown or expired sign-in — start again', code: 'login_not_found' });
+  try {
+    const poll = await entry.auth.pollDeviceLogin({ fetch: globalThis.fetch, device_code: pending.device_code, interval: pending.interval, now: Date.now() });
+    if (poll && poll.pending) {
+      if (poll.interval) pending.interval = poll.interval;   // honor a slow_down replacement interval
+      return json(200, { status: 'pending', interval: pending.interval });
+    }
+    // poll resolved to the normalized token envelope — a completed device sign-in supersedes any dead marker.
+    entry.tokens = Object.assign({}, poll, entry.deviceId ? { device_id: entry.deviceId } : {});
+    entry.authDead = null;
+    saveOAuthTokens(id, entry.tokens);
+    entry.pending.delete(login_id);
+    console.log('  · ' + oauthLabel(id) + ' subscription connected (device OAuth) — agents can now run on it');
+    json(200, { status: 'connected' });
+  } catch (e) {
+    entry.pending.delete(login_id);
+    json(502, { status: 'error', error: (e && e.message) || (oauthLabel(id) + ' sign-in failed'), code: (e && e.code) || 'device_code_poll_error' });
+  }
+}
+
+// GET /api/auth/<id>/status — booleans/strings only; never the tokens.
+function handleOAuthStatus(req, res, id) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  const entry = oauthProviders[id] || {};
+  res.end(JSON.stringify(codexAuthState.statusPayload({ tokens: entry.tokens, dead: entry.authDead, persistError: entry.persistError })));
+}
+
+// GET /api/auth/<id>/models — the account's live catalog with a fresh token; falls back to the static roster
+// (and reports the error) when not connected / discovery fails, so the connect dropdown is never empty.
+async function handleOAuthModels(req, res, id) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (!oauthProviders[id]) return json(404, { models: [], default: null, error: 'unknown provider' });
+  try {
+    const models = await listModelsForProvider(id, {});
+    json(200, { models: models.map(publicModel), default: (models[0] && models[0].id) || null });
+  } catch (e) {
+    json(200, { models: [], default: null, error: (e && e.message) || 'not connected', code: (e && e.code) || '' });
+  }
+}
+
+// POST /api/auth/<id>/logout — forget the stored subscription credentials.
+function handleOAuthLogout(req, res, id) {
+  const entry = oauthProviders[id];
+  if (entry) { entry.tokens = null; clearOAuthTokens(id); }
   res.writeHead(200, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ connected: false }));
 }
 

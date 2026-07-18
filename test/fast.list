@@ -35,6 +35,7 @@ test/provider.gemini.test.js
 test/provider.timeouts.test.js
 test/provider.registry.test.js
 test/provider.codex-auth.test.js
+test/provider.oauth-device.test.js
 test/codex-auth-state.test.js
 test/provider.codex.test.js
 test/credpool.test.js
@@ -45,12 +46,16 @@ test/billing.test.js
 test/credits.test.js
 test/friendlyerror.test.js
 test/codexsignin.test.js
+test/oauthsignin.test.js
 test/loop.replay.test.js
 test/loop.steer.test.js
 test/loop.provider-recovery.test.js
 test/compaction.test.js
 test/loopguard.test.js
 test/loopguard.dispatch.test.js
+test/continuation-guard.test.js
+test/text-toolcall-markup.test.js
+test/model-conformance.test.js
 test/iteration-budget.test.js
 test/updatecore.test.js
 test/quitguard.test.js
@@ -96,6 +101,7 @@ test/manual.test.js
 test/permissions.test.js
 test/workshop-permissions.test.js
 test/workshop-store.test.js
+test/workshop-undo.e2e.test.js
 test/workshop-visibility.test.js
 test/quest-store.test.js
 test/questinject.test.js
@@ -151,6 +157,7 @@ test/fs.jail.test.js
 test/fs.patch.test.js
 test/web.ssrf.test.js
 test/web.search.test.js
+test/web.fence.test.js
 test/browser.test.js
 test/desktop.test.js
 test/computer.test.js
@@ -238,6 +245,7 @@ test/permissionsstore.test.js
 test/permissions-ui.test.js
 test/settings-p1-ui.test.js
 test/settings-codex-row.test.js
+test/settings-oauth-rows.test.js
 test/modelpicker.test.js
 test/agent-model-select.test.js
 test/provider-connections-ui.test.js
@@ -245,6 +253,7 @@ test/newhero-reset.test.js
 test/harness-internal.test.js
 test/chat-runmeta.test.js
 test/chat-stopped-retry.test.js
+test/chat-linkify.test.js
 test/mint.test.js
 test/ctxgauge.test.js
 test/floorstats.test.js
@@ -254,6 +263,8 @@ test/xp.test.js
 test/xp-crewsplit.test.js
 test/xpstore.test.js
 test/returns.test.js
+test/outbox-window.test.js
+test/personas-fun-five.test.js
 test/pride.test.js
 test/seedcredit.test.js
 test/seedreuse.test.js
@@ -338,6 +349,7 @@ test/widgetfeed.test.js
 test/terminal-resize.test.js
 test/poweruser-shell-repairs.test.js
 test/release-bump.test.js
+test/release-cut.test.js
 test/release-train-provenance.test.js
 test/lint-emits.js
 test/lint-determinism.js

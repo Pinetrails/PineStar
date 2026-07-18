@@ -36,7 +36,7 @@
   'use strict';
 
   const STATE_VERSION = 1;
-  const DEFAULT_AWAY_MS = 15 * 60 * 1000;    // "the Commander stepped out" = no user-surface activity for 15 min
+  const DEFAULT_AWAY_MS = 30 * 60 * 1000;    // "the Commander stepped out" = no user-surface activity for 30 min
   const DEFAULT_BEAT_MS = 45 * 60 * 1000;    // steady cadence: at most one autonomous beat every ~45 min
   const DAY_MS = 86400000;
 
