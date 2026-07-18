@@ -135,7 +135,11 @@ const SpaceBG = (() => {
     if (sizeKey !== key) {
       // a seam-drag streams ResizeObserver sizes — rebuilding the tiles per tick (8k specks +
       // gradients) would jank the drag. Draw the OLD tiles stretched until the size holds ~250ms.
+      // But stretching only reads right for SMALL deltas: snapping open from a collapsed stage
+      // (canvas floored at 1px) would smear a 1px-wide tile of 'lighter' nebulas + dense dust
+      // across the whole sky — a bright flash. Big jumps up (or a degenerate old tile) rebuild NOW.
       if (!nebCv) rebuild(w, h);
+      else if (w > nebCv.width * 1.5 || h > nebCv.height * 1.5 || nebCv.width < 48 || nebCv.height < 48) rebuild(w, h);
       else if (pendKey !== key) { pendKey = key; pendAt = now; }
       else if (now - pendAt > 250) rebuild(w, h);
     } else pendKey = '';
