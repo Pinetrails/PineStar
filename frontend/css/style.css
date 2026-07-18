@@ -1044,6 +1044,9 @@ body.no-scan .crt-scan { display: none; }
 }
 .set-row { display: block; margin: 5px 0; font-size: 15px; cursor: pointer; }
 .set-row input { accent-color: var(--ph); }
+/* a label directly followed by its control renders flush in the block rows (no markup whitespace);
+   .bg-cap rows are excluded — #budget-form already spaces them with flex gap. */
+.set-row > label + .key-input:not(.bg-cap), .set-row > label + select.fbc-sel { margin-left: 10px; }
 .set-save { display: flex; gap: 8px; }
 .set-about { font-size: 12px; opacity: 0.55; margin-top: 12px; }
 /* NIGHT SHIFT durable-halt (E-STOP) callout — the panel must read as STOPPED, never as dim standing-by
