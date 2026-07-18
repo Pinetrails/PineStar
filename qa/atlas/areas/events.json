@@ -69,18 +69,22 @@
         {
           "kind": "audit",
           "ref": ".uiatlas/events-evidence/run-events-result.json"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.run.test.js"
         }
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "[wave-7 final-a re-stale: re-proven via POST /api/run NDJSON chain on :8966. Evidence events-result.json.]"
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: re-proven LIVE on :8968 — POST /api/run NDJSON emitted agent.run.start→token→cost.estimate→agent.cost{reconciled:true}→agent.run.end{reason:done}, payloads exactly matching shared/events.js. Evidence .uiatlas/events-evidence/run-events-result.json. Consumer wiring traced real; consumer-render not DOM-round-tripped this session → held at audited, not perfected.]"
     },
     {
       "id": "event/agent-reasoning",
@@ -150,18 +154,22 @@
         {
           "kind": "audit",
           "ref": ".uiatlas/events-evidence/run-events-result.json"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.run.test.js"
         }
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "[wave-7 final-a re-stale: re-proven via POST /api/run NDJSON chain on :8966. Evidence events-result.json.]"
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: re-proven LIVE on :8968 — POST /api/run NDJSON emitted agent.run.start→token→cost.estimate→agent.cost{reconciled:true}→agent.run.end{reason:done}, payloads exactly matching shared/events.js. Evidence .uiatlas/events-evidence/run-events-result.json. Consumer wiring traced real; consumer-render not DOM-round-tripped this session → held at audited, not perfected.]"
     },
     {
       "id": "event/agent-run-error",
@@ -233,18 +241,22 @@
         {
           "kind": "audit",
           "ref": ".uiatlas/events-evidence/run-events-result.json"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.run.test.js"
         }
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "[wave-7 final-a re-stale: re-proven via POST /api/run NDJSON chain on :8966. Evidence events-result.json.]"
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: re-proven LIVE on :8968 — POST /api/run NDJSON emitted agent.run.start→token→cost.estimate→agent.cost{reconciled:true}→agent.run.end{reason:done}, payloads exactly matching shared/events.js. Evidence .uiatlas/events-evidence/run-events-result.json. Consumer wiring traced real; consumer-render not DOM-round-tripped this session → held at audited, not perfected.]"
     },
     {
       "id": "event/agent-token",
@@ -275,18 +287,22 @@
         {
           "kind": "audit",
           "ref": ".uiatlas/events-evidence/run-events-result.json"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.run.test.js"
         }
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "[wave-7 final-a re-stale: re-proven via POST /api/run NDJSON chain on :8966. Evidence events-result.json.]"
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: re-proven LIVE on :8968 — POST /api/run NDJSON emitted agent.run.start→token→cost.estimate→agent.cost{reconciled:true}→agent.run.end{reason:done}, payloads exactly matching shared/events.js. Evidence .uiatlas/events-evidence/run-events-result.json. Consumer wiring traced real; consumer-render not DOM-round-tripped this session → held at audited, not perfected.]"
     },
     {
       "id": "event/agent-tool-call",
@@ -658,14 +674,26 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/contract.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": ".uiatlas/events-evidence/run-events-result.json"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: EMIT-ONLY by design — emit machine-guarded in the gate (contract.test.js); trace confirms NO frontend consumer (intentional observability/telemetry, not a dead surface). Capped at audited.] Also observed live in the same run (cost.estimate line present)."
     },
     {
       "id": "event/crew-summon-request",
