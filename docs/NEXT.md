@@ -1,5 +1,18 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-17 — SESSION TOOLS window retired (branch `claude/sessions-panel-removal-b3278e`, UNMERGED)
+
+Andrew's directive. The SYSTEM ▸ SESSION TOOLS window + parked `#ws-tools` panel are removed;
+clear/bulk-archive/undo UI died with it (the pure `workstreams.js` store keeps every invariant;
+`/clear` + per-row archive cover the real needs). Survivors: **title+transcript search now lives
+directly on the sessions rail** (`#ws-rail-search`; PROJECTS view hides it; hit-click opens the
+session) and **export .md/.json moved into the row ⋯ menu** (targets the exact row session).
+QA followed: journey rewritten (10/10 live PASS on seed :9095), `sys-sessiontools` shooter state +
+golden dropped, atlas retired-control entries deleted + ws-search/ws-export re-pointed, wiring test
+re-pinned, v0.5.2 release-notes bullet updated, in-branch W0 re-stamp `c908f67e` over `83292661`
+(claims planning PASS). `test:fast` 342/342. **TO DO: merge to trunk via starnet-merge-ritual;**
+next desktop exe rebuild picks it up.
+
 ## 2026-07-15 — POWER-USER DEEP-DIVE AUDIT (3 isolated agents, no fixes)
 
 Full evidence and repros: `docs/POWERUSER_AUDIT_2026-07-15.md`. Baseline gates were green
