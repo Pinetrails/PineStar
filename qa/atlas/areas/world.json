@@ -1,6 +1,6 @@
 {
   "area": "world",
-  "updatedAt": "2026-07-18T02:26:14.507Z",
+  "updatedAt": "2026-07-18T02:34:24.029Z",
   "entries": [
     {
       "id": "state/ingame",
@@ -57,8 +57,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:16:20.560Z"
+        "sha": "66a80e548642ba35c82d37a3d6730f21749020af",
+        "date": "2026-07-18T02:34:24.029Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -66,7 +66,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Add a widget to this rail\"]",
       "state": "ingame",
-      "notes": "CANONICAL widget-rail add. Live-proven 2026-07-07T22:16:20.560Z (port 8968): 2 add buttons (one per rail); clicking opened a .wg-pop with .wg-pop-item entries. makeAddBtn() widgets.js:298. Evidence dock-chrome.json. NOTE: 2 instances = one per rail (top/bot), same seam."
+      "notes": "Live @ HEAD: click opened .wg-pop role=menu with 4 widget options (RUNS·24H shown, QUEUE/ROUTINES/TOKENS +add). Seam widgets.js togglePop."
     },
     {
       "id": "ui/world/aria-remove-widget",
@@ -89,10 +89,10 @@
           "ref": "ingame"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:16:20.560Z"
+        "sha": "66a80e548642ba35c82d37a3d6730f21749020af",
+        "date": "2026-07-18T02:34:24.029Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -100,15 +100,15 @@
       "missing": false,
       "selector": "button[aria-label=\"Remove widget\"]",
       "state": "ingame",
-      "notes": "Present + wired (.wg-x button widgets.js:250, aria-label \"Remove widget\"). Live-seen 1 instance 2026-07-07T22:16:20.560Z. Audited (remove-then-persist round-trip not re-driven). Evidence dock-chrome.json."
+      "notes": "Live @ HEAD: clicking the widget's 'Remove widget' (.wg-x) button dropped the widget count 1 -> 0 (widgets.js removeWidget). Seam proven."
     },
     {
       "id": "ui/world/aria-session-actions",
       "kind": "ui",
       "area": "world",
       "name": "session actions",
-      "purpose": "The ⋯ kebab on a workstream row — opens per-session actions (rename/archive/etc).",
-      "promise": "Clicking the .ws-kebab opens that session's action menu; aria-label/title \"session actions\".",
+      "purpose": "The ⋯ kebab on a workstream row — opens that session's per-row action menu (rename/archive/etc).",
+      "promise": "Clicking the .ws-kebab (aria-label/title 'session actions') opens the session's action menu.",
       "wiring": {
         "files": [
           "frontend/app/app.js",
@@ -123,15 +123,18 @@
           "ref": "ingame"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "66a80e548642ba35c82d37a3d6730f21749020af",
+        "date": "2026-07-18T02:34:24.029Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button[aria-label=\"session actions\"]",
       "state": "ingame",
-      "notes": "Per-row .ws-kebab (app.js:2338). Seam understood; action-menu open not driven live. Mapped."
+      "notes": "Live @ HEAD: .ws-kebab present with correct aria-label/title 'session actions', wired at app.js:2674. AUDITED not perfected: it is a hover-revealed row control (tabindex -1) and its action menu did not open under a synthetic click, so the menu-open was not cleanly live-driven; the ingame shoot walks the rail but not the kebab menu."
     },
     {
       "id": "ui/world/bb-build",
@@ -157,8 +160,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "66a80e548642ba35c82d37a3d6730f21749020af",
+        "date": "2026-07-18T02:34:24.029Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -166,7 +169,7 @@
       "missing": false,
       "selector": "#bb-build",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→ '.refit-canvas' + '.refit-title' REFIT MODE overlay visible (probe2 build-door). Evidence .uiatlas/world-dock-evidence/doors-and-structure.json. onclick=Build.toggle() (app.js); refit-nudge until starnet.refit.seen. Shoot state build-station."
+      "notes": "Live @ HEAD: click #bb-build set document.body.class 'refit-on' and rendered the REFIT dock (.refit-canvas/.refit-top/.refit-title) = REFIT STATION build mode open (Build.toggle, build.js)."
     },
     {
       "id": "ui/world/bb-missions",
@@ -190,8 +193,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "66a80e548642ba35c82d37a3d6730f21749020af",
+        "date": "2026-07-18T02:34:24.029Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -199,7 +202,7 @@
       "missing": false,
       "selector": "#bb-missions",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→ recipe library overlay visible ('＋ SAVE A RECIPE', probe dock-door). Evidence .uiatlas/world-dock-evidence/doors-and-structure.json. onclick=openDeployBay('recipes') (app.js). Shoot state work-recipes."
+      "notes": "Live @ HEAD: click #bb-missions opened the Marketplace bay on the '❒ RECIPES' tab (active) via openDeployBay('recipes')."
     },
     {
       "id": "ui/world/bb-recruit",
@@ -223,8 +226,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "66a80e548642ba35c82d37a3d6730f21749020af",
+        "date": "2026-07-18T02:34:24.029Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -232,7 +235,7 @@
       "missing": false,
       "selector": "#bb-recruit",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→ '.mkt-scrim' + '.mkt-dossier' RECRUITMENT BAY / CLASS DOSSIER visible (probe2 recruit-door). Evidence .uiatlas/world-dock-evidence/doors-and-structure.json. onclick=openSummonBay (app.js). One-recruit-door law (index.html comment). Shoot state crew-recruit."
+      "notes": "Live @ HEAD: click #bb-recruit opened the Marketplace bay (.mkt, title '▮ RECRUITMENT BAY') via openSummonBay -> Marketplace.open."
     },
     {
       "id": "ui/world/btn-back",
