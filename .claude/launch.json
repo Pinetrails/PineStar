@@ -1204,6 +1204,20 @@
         "SKYNET_PORT": "9207",
         "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
+    },
+    {
+      "name": "builders-split-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/seed.js",
+        "--keep"
+      ],
+      "port": 9147,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "9147",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
     }
   ]
 }
