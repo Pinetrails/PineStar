@@ -75,9 +75,9 @@ into gates, W0 re-stamped. NOT done (locked/blocked): tts/stt 200-always is a LO
 outside page scope.
 
 Tier 2 backlog (each its own lane; incremental only, no big-bang splits while lanes are in flight):
-- [ ] Declarative route table for sidecar dispatchRoute (~174 if-lines; THE merge hotspot; encode
+- [x] Declarative route table — DONE, merged fb43b0f7 2026-07-18 (176 ifs -> ROUTES data; next slice = per-domain route modules registering into the table) (~174 if-lines; THE merge hotspot; encode
       the tts/stt fail-open policies as data)
-- [ ] Split stationui.js along the BUILDERS registry (stationui.js:7197) into app/windows/*.js,
+- [x] BUILDERS split (partial by design) — DONE, merged d2b335ba 2026-07-18: 7 self-contained windows -> app/windows/*.js via StationUI.registerWindow; SETTINGS/CONNECTIONS/dossier etc. deliberately kept in core (mutable-state entanglement). Original item: split stationui.js along the BUILDERS registry (stationui.js:7197) into app/windows/*.js,
       one window per PR
 - [ ] Settings-store factory for the ~25 loadX/saveX/global triples (whole-file clobber race class);
       fold the 4 bespoke token stores onto makeDurableJsonStore (security-adjacent)
