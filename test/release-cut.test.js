@@ -2,6 +2,7 @@
 
 const assert = require('node:assert/strict');
 const { spawnSync } = require('node:child_process');
+const { readFileSync } = require('node:fs');
 const { join, resolve } = require('node:path');
 
 const ROOT = resolve(__dirname, '..');
@@ -18,5 +19,11 @@ assert.match(output, /--config .*release-unsigned-updater\.conf\.json/i);
 assert.match(output, /signer sign --private-key-path .*starnet-updater\.key --password=/i);
 assert.doesNotMatch(output, /TAURI_SIGNING_PRIVATE_KEY\s*=/,
   'the release cutter must not put raw private-key contents in its command output');
+
+const source = readFileSync(join(ROOT, 'scripts', 'release-cut.mjs'), 'utf8');
+assert.match(source, /TAURI_SIGNING_PRIVATE_KEY:\s*null/,
+  'explicit path signing must remove a legacy inline key from the child environment');
+assert.match(source, /TAURI_SIGNING_PRIVATE_KEY_PASSWORD:\s*null/,
+  'explicit password signing must remove a legacy password variable from the child environment');
 
 console.log('release-cut.test: OK (non-interactive explicit signing path)');
