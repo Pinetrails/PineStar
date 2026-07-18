@@ -351,6 +351,25 @@ const App = (() => {
     return true;
   }
 
+  // Per-agent PERSONALITY from the dossier CONFIG card (mirrors setAgentModelPin): resolve + set the persona,
+  // recompose THAT agent's live prompt (personality is prompt text — Personas.compose folds it in), and if the
+  // agent is the focused one, hand the new prompt to the running chat and re-key Voice so the text voice changes
+  // immediately. pushRoster ships the recomposed prompt to the sidecar (delegation + cron runs speak it too).
+  function setAgentPersona(agentId, personaId) {
+    const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
+    if (!a || typeof Personas === 'undefined' || !Personas.exists(personaId)) return false;
+    a.personaId = Personas.resolve ? Personas.resolve(personaId) : personaId;
+    a.systemPrompt = composeSystemPrompt(a);
+    if (agent && a.id === agent.id) {   // focused agent — the live COMMS session adopts the voice at once
+      if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(a.systemPrompt);
+      if (typeof Voice !== 'undefined' && Voice.init) Voice.init({ name: a.name, personaId: a.personaId, resumeCue: false });
+      syncChannels();   // a connected Telegram bot keeps speaking as the SAME agent, new voice
+    }
+    pushRoster();
+    persist();
+    return true;
+  }
+
   // W3 per-agent AWAY-WORKSHOP grant: flip the "build things while I'm away" consent for this agent.
   // The AUTHORITY is the sidecar: POST /api/workshop/grant records the grant server-side (workshopStore)
   // AND arms/disarms the agent's unattended "workshop shift" cron routine — pushRoster alone does NEITHER
@@ -2165,7 +2184,7 @@ const App = (() => {
         totals: () => Harness.totals(),
         context: () => Harness.contextState(agent ? agent.id : 'agent'),
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
-        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setName: setAgentName, setWorkshop: setAgentWorkshop, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
+        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setPersona: setAgentPersona, setName: setAgentName, setWorkshop: setAgentWorkshop, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setPersona swaps the personality voice from the dossier; setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
         comms: { openWorkstream: openWorkstream }   // the while-you're-away card's "review" jumps straight to a deliverable's session (2026-07-15)
       });
       // Presence is already proven by the live roster, link indicator, and COMMS state. Do not
