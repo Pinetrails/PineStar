@@ -1,5 +1,18 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-16 — CLASS ROSTER REDESIGN LANDED (agent-class-redesign lane)
+
+The recruit catalog is now 12 SPECIALIZED business-grade builtins (strategist · opportunist ·
+researcher · engineer · analyst · marketer · publisher · producer · writer · prospector ·
+treasurer · scout) + 18 archetypes (8 demoted generalists, 6 kept deep cuts, 3 new long-tail
+seeds closer/steward/optimizer, + envoy demoted 2026-07-17 on Andrew's call). liaison/publicist/
+bookkeeper RETIRED (superseded by envoy / marketer+publisher / treasurer). Typed-ASCII class
+marks REMOVED — the engraved SVG coin seal is the one emblem system again. Scout matchArchetype
+now coverage-scores (majority-token rule); prospect directive demands specialized roles. 7 new
+kit-grounded skills (+ opportunity-scan). W0 re-stamped post-merge.
+Open follow-ups: regenerate qa/atlas crew evidence (stale "18 builtins" notes); consider a
+first-run default-class experiment (strategist is now the bay's default card).
+
 ## 2026-07-17 — FULL-RELEASE CAMPAIGN (active; Fable-orchestrated)
 
 Goal: full public release clean on Windows AND macOS; subscriptions = the NEXT official update.

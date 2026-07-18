@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f203231850aba1e980d27e8aac8c18394533b05b",
+    "sourceCommit": "81e21b5670b338b15101245bbb38d751510c2792",
     "pathSetSha256": "9eeefd91d6d300f96627d4a5036f6c767a4a1fe611b7bce6175e1b94964d750f",
     "files": [
       {
@@ -33,8 +33,8 @@
       },
       {
         "path": "README.md",
-        "bytes": 4769,
-        "sha256": "2231630e6ceb8953cf695939d296dad8f965a2cdfa70b93ac099fe2e374f720a"
+        "bytes": 4415,
+        "sha256": "fa80cbf5195412303ea241667cc2bc23eacdf763b593d34e5d1dcbe32648b8eb"
       },
       {
         "path": "RELEASE_NOTES.md",
@@ -143,8 +143,8 @@
       },
       {
         "path": "frontend/app/classicons.js",
-        "bytes": 20411,
-        "sha256": "a50a14a649ca85c4094c2b74136c391ba64cecbc11976f4efc01c5a473467da1"
+        "bytes": 21359,
+        "sha256": "d942131591b69830beab6a0c6c44846c2b3f17b13809be6ce61cdd88362a0a5b"
       },
       {
         "path": "frontend/app/classify.js",
@@ -333,8 +333,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 173334,
-        "sha256": "01564c708e95c6d43974dd947a538c0e0ee80ae6af367df197248eb8ff1489e6"
+        "bytes": 172121,
+        "sha256": "8697d6153fe19884a0f3e655988a1f46eac4ffa4d5e74573cf231fb508f8d14e"
       },
       {
         "path": "frontend/app/mint.js",
@@ -448,8 +448,8 @@
       },
       {
         "path": "frontend/app/prospect.js",
-        "bytes": 9524,
-        "sha256": "34b27967b2660658d5c4472ed7d9deb95a60440930d4c369da67ade6623f2c06"
+        "bytes": 10236,
+        "sha256": "323910a36b45d81318442747573c596ca8bea91fda9eb5eac0f70580658ed673"
       },
       {
         "path": "frontend/app/prospectstore.js",
@@ -818,8 +818,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 62510,
-        "sha256": "8e17f754d700bd90dbff2394ce64332d6fdcef3b5f90de546fd84ee39906a4d4"
+        "bytes": 59423,
+        "sha256": "9c81435f9c5408e876097840c41fe7c046695cf1930064b25a2362711b887775"
       },
       {
         "path": "frontend/css/motion.css",
