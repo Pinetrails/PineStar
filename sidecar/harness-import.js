@@ -110,28 +110,57 @@
     return [];
   }
 
-  /* ---- JSON5 scrubber: strip // and /* *​/ comments (only OUTSIDE strings) and trailing commas, so JSON.parse can
-     read an openclaw.json that a human hand-edited with comments. NOT a full JSON5 parser — it deliberately does the
-     two things openclaw.json actually uses. Single/double quoted strings are both tracked so a // inside a string is
-     never mistaken for a comment. ---- */
+  /* ---- JSON5 scrubber: rewrite the JSON5 dialect openclaw.json actually uses into strict JSON, in ONE
+     string-aware walk: strip // and /* *​/ comments, quote BARE identifier keys ({ agents: ... }), convert
+     single-quoted strings to double-quoted (escaping inner " / unescaping \'), then drop trailing commas.
+     NOT a full JSON5 parser — best effort, and parseJson5 stays fail-soft when it still can't read the file. ---- */
   function scrubJson5(text) {
     const s = String(text == null ? '' : text);
     let out = '';
-    let inStr = false, quote = '', esc = false, inLine = false, inBlock = false;
+    let inLine = false, inBlock = false;
     for (let i = 0; i < s.length; i++) {
       const c = s[i], n = i + 1 < s.length ? s[i + 1] : '';
       if (inLine) { if (c === '\n') { inLine = false; out += c; } continue; }
       if (inBlock) { if (c === '*' && n === '/') { inBlock = false; i++; } continue; }
-      if (inStr) {
-        out += c;
-        if (esc) esc = false;
-        else if (c === '\\') esc = true;
-        else if (c === quote) inStr = false;
-        continue;
-      }
-      if (c === '"' || c === '\'') { inStr = true; quote = c; out += c; continue; }
       if (c === '/' && n === '/') { inLine = true; i++; continue; }
       if (c === '/' && n === '*') { inBlock = true; i++; continue; }
+      if (c === '"') {
+        // double-quoted string: copy verbatim through its closing quote (escapes honored).
+        out += c;
+        let esc = false;
+        for (i++; i < s.length; i++) {
+          const d = s[i]; out += d;
+          if (esc) { esc = false; continue; }
+          if (d === '\\') { esc = true; continue; }
+          if (d === '"') break;
+        }
+        continue;
+      }
+      if (c === '\'') {
+        // single-quoted string (JSON5): re-emit as a double-quoted one. \' becomes ', a bare " becomes \".
+        out += '"';
+        let esc = false;
+        for (i++; i < s.length; i++) {
+          const d = s[i];
+          if (esc) { esc = false; out += (d === '\'') ? '\'' : ('\\' + d); continue; }
+          if (d === '\\') { esc = true; continue; }
+          if (d === '\'') break;
+          out += (d === '"') ? '\\"' : d;
+        }
+        out += '"';
+        continue;
+      }
+      // bare identifier KEY (JSON5): an identifier whose next non-space char is ':' gets quoted.
+      if (/[A-Za-z_$]/.test(c)) {
+        let j = i;
+        while (j < s.length && /[A-Za-z0-9_$]/.test(s[j])) j++;
+        const word = s.slice(i, j);
+        let k = j;
+        while (k < s.length && /[ \t\r\n]/.test(s[k])) k++;
+        if (s[k] === ':') { out += '"' + word + '"'; i = j - 1; continue; }
+        out += word; i = j - 1;   // a bare VALUE word (true/false/null/numbers-with-e) passes through untouched
+        continue;
+      }
       out += c;
     }
     // trailing commas before a closing } or ]

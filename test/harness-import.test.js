@@ -59,6 +59,31 @@ const agents = H.openclawAgents(cfg);
 eq(agents.length, 2, 'agents.list enumerated');
 eq(agents[1].workspace, 'workspace-scout', 'explicit per-agent workspace carried');
 
+// ---- JSON5 with UNQUOTED KEYS (the live-repro fixture: real OpenClaw configs use bare identifier keys) ----
+const ocBare = `{
+  // comment
+  agents: {
+    defaults: { model: { primary: "anthropic/claude-sonnet-4-6", fallbacks: ["openai/gpt-5.2",], }, },
+    list: [ { id: "main", default: true, }, ],
+  },
+  env: { ANTHROPIC_API_KEY: "sk-ant-FAKE-1234", },
+}`;
+const bcfg = H.parseJson5(ocBare);
+ok(bcfg && bcfg.agents, 'JSON5 with bare identifier keys parses (live-repro fixture)');
+eq(H.openclawModel(bcfg).provider, 'anthropic', 'bare-key fixture: model provider split');
+eq(H.openclawModel(bcfg).model, 'claude-sonnet-4-6', 'bare-key fixture: model id split');
+eq(H.openclawAgents(bcfg)[0].id, 'main', 'bare-key fixture: agents.list yields id "main" (not the default fallback)');
+const bareScan = H.scanProfile({ harness: 'openclaw', files: { 'openclaw.json': ocBare, 'SOUL.md': 'p' } });
+ok(JSON.stringify(bareScan).indexOf('sk-ant-FAKE-1234') < 0, 'bare-key fixture: the env secret value NEVER appears in the preview');
+ok(bareScan.warnings.filter(w => /never transfer/i.test(w)).length === 1, 'bare-key fixture: re-enter warning exactly once');
+ok(!bareScan.warnings.some(w => /could not be parsed/.test(w)), 'bare-key fixture: no could-not-parse warning');
+
+// ---- JSON5 single-quoted strings (also legal JSON5) ----
+const sq = H.parseJson5("{ agents: { defaults: { model: { primary: 'openrouter/kimi-k2' } } }, note: 'it\\'s // \"fine\"' }");
+ok(sq && sq.agents, 'single-quoted strings parse');
+eq(H.openclawModel(sq).provider, 'openrouter', 'single-quoted model id splits');
+eq(sq.note, 'it\'s // "fine"', 'escaped quote + // + inner double-quotes survive the rewrite');
+
 // a "//" INSIDE a string is not mistaken for a comment
 const strUrl = H.parseJson5('{ "agents": { "defaults": { "model": { "primary": "openrouter/x" } } }, "note": "see http://x.example" }');
 eq(strUrl.note, 'see http://x.example', 'a // inside a string survives the comment scrubber');
