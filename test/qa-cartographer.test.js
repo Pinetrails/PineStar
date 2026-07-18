@@ -11,7 +11,7 @@
    Pure + deterministic — every timestamp comes from the injected clock, never Date.now(). */
 'use strict';
 const A = require('./_assert.js');
-const { makeCartographer, enumerateProps, slug, areaOfState, computeProbeKeys, harvestRoutes, AREAS, STATUSES } = require('../scripts/qa/cartographer.mjs');
+const { makeCartographer, enumerateProps, slug, areaOfState, computeProbeKeys, harvestRoutes, DATA_DRIVEN_LISTS, AREAS, STATUSES } = require('../scripts/qa/cartographer.mjs');
 
 // a fixed clock so firstSeen/lastSeen are deterministic ISO strings.
 let clk = Date.UTC(2026, 6, 7, 12, 0, 0);          // 2026-07-07T12:00:00.000Z
@@ -379,6 +379,61 @@ const fullEntry = (over) => Object.assign({
   A.eq(resweep.findings.length, 0, 'no dead-entry finding filed (the churn bug is fixed)');
   const ids = new Set(resweep.shards.system.entries.map(e => e.id));
   A.ok(ids.has(carto.entryId({ kind: 'ui', area: 'system', key: kBefore[0] })), 'the Save entry survives under its stable id');
+}
+
+// ---- (g2) DATA-DRIVEN LIST COLLAPSE: an unbounded catalog list harvests to ONE representative ----
+// The defect (finding e9d24ac6): the #model-dock-list model rows are data-driven from the live provider
+// catalog (~400 rows), each an anonymous <button> whose nearest id-bearing ancestor is #model-dock-list.
+// The txt-fallback minted ONE atlas entry PER model row — unjudgeable individually, churning
+// missing/staleness on every catalog refresh. The fix collapses any anonymous element inside a listed
+// container (DATA_DRIVEN_LISTS) to ONE representative key. computeProbeKeys is the pure mirror of the
+// in-page ENUM_PROBE, so this locks the collapse without a browser.
+{
+  const carto = makeCartographer({ clock, git: fakeGit() });
+
+  // (a) the collapse map exists and names the model dock list container -> a stable representative.
+  A.ok(DATA_DRIVEN_LISTS && DATA_DRIVEN_LISTS['#model-dock-list'], 'DATA_DRIVEN_LISTS registers the model-dock list container');
+  A.eq(DATA_DRIVEN_LISTS['#model-dock-list'].key, 'model-list-row', 'the model-dock list collapses to the model-list-row key');
+
+  // (b) N different model rows under #model-dock-list ALL collapse to the ONE representative key.
+  const rows = [
+    { tag: 'button', anc: '#model-dock-list', txt: 'claude opus 4.8 MED' },
+    { tag: 'button', anc: '#model-dock-list', txt: 'llama 4 scout OFF' },
+    { tag: 'button', anc: '#model-dock-list', txt: 'gpt 5 MED' },
+    { tag: 'button', anc: '#model-dock-list', txt: 'gemini 2.5 pro MED' }
+  ];
+  const keys = computeProbeKeys(rows);
+  A.eq(new Set(keys).size, 1, 'N model rows collapse to exactly ONE distinct key');
+  A.eq(keys[0], 'model-list-row', 'the collapsed key is the representative model-list-row');
+  A.eq(carto.entryId({ kind: 'ui', area: 'world', key: keys[0] }), 'ui/world/model-list-row', 'entryId yields the single representative id');
+
+  // (c) an id/data-term/aria-bearing row is individually judgeable and is NOT collapsed (precedence).
+  const named = computeProbeKeys([
+    { id: 'model-dock-search', tag: 'input', anc: '#model-dock-list' },
+    { dataTerm: 'foo', tag: 'button', anc: '#model-dock-list' },
+    { ariaLabel: 'refresh catalog', tag: 'button', anc: '#model-dock-list' }
+  ]);
+  A.eq(named[0], '#model-dock-search', 'an id-bearing element in the container keeps its #id key (not collapsed)');
+  A.eq(named[1], '[data-term=foo]', 'a data-term element keeps its own key (not collapsed)');
+  A.eq(named[2], 'aria:refresh catalog', 'an aria-labelled element keeps its own key (not collapsed)');
+
+  // (d) elements OUTSIDE any listed container are untouched — the collapse is scoped, not global.
+  const outside = computeProbeKeys([
+    { tag: 'button', anc: '#bay-panel', txt: 'Save' },
+    { tag: 'button', anc: '', txt: 'Loose' }
+  ]);
+  A.eq(outside[0], 'txt:button:#bay-panel:Save:1', 'an anonymous element under a non-listed ancestor keeps its txt-fallback key');
+  A.eq(outside[1], 'txt:button::Loose:1', 'an anonymous element with no id-ancestor keeps its txt-fallback key');
+
+  // (e) the MERGE consequence: a sweep enumerating N collapsed model rows creates ONE entry, not N.
+  const uiHarvest = (ks) => ks.map((key) => ({
+    id: carto.entryId({ kind: 'ui', area: 'world', key }), kind: 'ui', area: 'world',
+    name: 'a model row in the model dock', selector: '#model-dock-list button', state: 'ingame'
+  }));
+  const merged = carto.mergeSweep({}, { elements: uiHarvest(keys), sweptKinds: ['ui'], reportRel: 'r' });
+  A.eq(merged.created, 1, 'N enumerated model rows merge into exactly ONE created entry (over-harvest fixed)');
+  A.eq((merged.shards.world.entries || []).length, 1, 'the world shard carries a single model-list-row entry');
+  A.eq(merged.shards.world.entries[0].id, 'ui/world/model-list-row', 'the single entry is the representative id');
 }
 
 // ---- (h) route harvester: same-statement method<->path binding (SSE path-match + phantom-variant lock) ----
