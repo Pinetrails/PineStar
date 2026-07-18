@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-18T01:38:07.236Z",
+  "updatedAt": "2026-07-18T01:40:40.654Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -1122,7 +1122,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:22:43.218Z"
       },
-      "findings": [],
+      "findings": [
+        "e9e4fab6"
+      ],
       "firstSeen": "2026-07-07T08:11:07.412Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
@@ -1154,7 +1156,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:22:43.218Z"
       },
-      "findings": [],
+      "findings": [
+        "e9e4fab6"
+      ],
       "firstSeen": "2026-07-07T08:11:07.412Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
@@ -1186,7 +1190,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:38:07.236Z"
       },
-      "findings": [],
+      "findings": [
+        "e9e4fab6"
+      ],
       "firstSeen": "2026-07-07T08:11:07.412Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
@@ -1218,7 +1224,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:22:43.218Z"
       },
-      "findings": [],
+      "findings": [
+        "e9e4fab6"
+      ],
       "firstSeen": "2026-07-07T08:11:07.412Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
@@ -1250,7 +1258,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:22:43.218Z"
       },
-      "findings": [],
+      "findings": [
+        "e9e4fab6"
+      ],
       "firstSeen": "2026-07-18T00:54:02.719Z",
       "lastSeen": "2026-07-18T00:54:02.719Z",
       "missing": false,
@@ -1282,7 +1292,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:22:43.218Z"
       },
-      "findings": [],
+      "findings": [
+        "e9e4fab6"
+      ],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
@@ -3113,7 +3125,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:16:03.811Z"
       },
-      "findings": [],
+      "findings": [
+        "bec0f139"
+      ],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
@@ -3150,7 +3164,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:16:03.811Z"
       },
-      "findings": [],
+      "findings": [
+        "bec0f139"
+      ],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
@@ -3224,7 +3240,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:16:03.811Z"
       },
-      "findings": [],
+      "findings": [
+        "bec0f139"
+      ],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
@@ -4174,7 +4192,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:16:03.811Z"
       },
-      "findings": [],
+      "findings": [
+        "d87c49c9"
+      ],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
@@ -4206,7 +4226,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:16:03.811Z"
       },
-      "findings": [],
+      "findings": [
+        "d87c49c9"
+      ],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
@@ -4238,7 +4260,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:16:03.811Z"
       },
-      "findings": [],
+      "findings": [
+        "d87c49c9"
+      ],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
@@ -4306,7 +4330,9 @@
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:16:03.811Z"
       },
-      "findings": [],
+      "findings": [
+        "d87c49c9"
+      ],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
