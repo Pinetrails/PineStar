@@ -527,14 +527,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/lifecycle-armed.http.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (lifecycle-armed.http.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/channel-delivery",
@@ -561,14 +569,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/channels.telegram.e2e.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (channels.telegram.e2e.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/channel-inbound",
@@ -596,14 +612,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/channels.telegram.e2e.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (channels.telegram.e2e.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/chat",
@@ -837,14 +861,26 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cron.tick.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cron.session-transcript.e2e.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (cron.tick.test.js + cron.session-transcript.e2e.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/cron-result",
@@ -873,14 +909,26 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cron.tick.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cron.session-transcript.e2e.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (cron.tick.test.js + cron.session-transcript.e2e.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/cron-skipped",
@@ -907,14 +955,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cron.tick.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (cron.tick.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/cron-tick",
@@ -940,14 +996,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cron.tick.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: EMIT-ONLY by design — emit machine-guarded in the gate (cron.tick.test.js); trace confirms NO frontend consumer (intentional observability/telemetry, not a dead surface). Capped at audited.]"
     },
     {
       "id": "event/day",
@@ -1015,14 +1079,26 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/deliverable-store.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/workshop.e2e.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (deliverable-store.test.js + workshop.e2e.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/flagged",
@@ -1480,10 +1556,12 @@
       "kind": "event",
       "area": "events",
       "name": "notify",
-      "purpose": "FROZEN v7-reused SLOT: a bare-string toast. Not wired on the bus in the current harness (the UI notify() helper is called directly, not via this event).",
-      "promise": "Would emit a bare string payload. NOTE: no bus emitter and no bus consumer — a reserved v7 name (the in-app notify() function is unrelated).",
+      "purpose": "A bare-string toast pushed onto the durable SSE bus so a station HUD notice can surface it (used by the night-shift immediate-visibility path).",
+      "promise": "notify carries a bare string payload; sidecar chanEmit('notify', str) fires it (e.g. a night-shift draft landing while the app is open) and stationui.js wires U.bus.on('notify') to toast it gold.",
       "wiring": {
         "files": [
+          "sidecar/index.js",
+          "frontend/app/stationui.js",
           "shared/events.js"
         ],
         "events": [
@@ -1498,16 +1576,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/contract.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [
-        "9c5ec90c"
-      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
+      "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: STALE-NOTE CORRECTED — prior mapping claimed \"no bus emitter and no bus consumer\". At HEAD it IS wired: emit sidecar/index.js:3665 (night-shift draft toast), consumer frontend/app/stationui.js:6996 (U.bus.on notify → gold toast). Payload guarded by contract.test.js. KNOWN: the specific live emit lacks a dedicated gate assertion → audited.]"
     },
     {
       "id": "event/object-place",
@@ -1839,14 +1923,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/floorstats.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (floorstats.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/run-cancel",
@@ -2064,14 +2156,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.subagent-background.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (e2e.subagent-background.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/tool-args-repaired",
@@ -2181,14 +2281,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/floorstats.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (floorstats.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/workitem-placed",
@@ -2215,14 +2323,26 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/cron.run-now.e2e.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/floorstats.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (cron.run-now.e2e.test.js + floorstats.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/workitem-superseded",
@@ -2251,12 +2371,18 @@
           "ref": "test/lint-emits.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
+      "findings": [
+        "40203e5e"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+consumer traced live at HEAD but NO gate test asserts this event by name (coverage gap, ledger finding filed). Capped at audited-by-trace.]"
     },
     {
       "id": "event/workshop-built",
@@ -2264,10 +2390,11 @@
       "area": "events",
       "name": "workshop.built",
       "purpose": "An away-workshop shift finished with a VALIDATED manifest (files proven on disk) — the return-card trigger.",
-      "promise": "After validation workshop.built carries {agentId,runId,manifest}; emitted ONLY after the manifest validates. NOTE: no frontend bus consumer — the return card is driven by the /api/workshop pending-list fetch, not this event.  [emitted, no bus consumer — the workshop return card polls /api/workshop rather than listening to this event.]",
+      "promise": "After validation workshop.built carries {agentId,runId,manifest}; emitted ONLY after the manifest validates. Consumed on the bus by frontend/app/workshopstore.js (U.bus.on(workshop.built)→onBuilt) which folds it into the return-card queue.",
       "wiring": {
         "files": [
           "sidecar/index.js",
+          "frontend/app/workshopstore.js",
           "shared/events.js"
         ],
         "events": [
@@ -2282,14 +2409,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/workshop.e2e.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: STALE-NOTE CORRECTED — prior mapping claimed \"no frontend bus consumer\". At HEAD workshopstore.js:427 subscribes U.bus.on(workshop.built)→onBuilt. Emit gate-guarded by workshop.e2e.test.js. KNOWN: consumer-render (return card) lacks a dedicated journey → audited.]"
     },
     {
       "id": "event/workshop-decided",
@@ -2317,12 +2452,18 @@
           "ref": "test/lint-emits.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
+      "findings": [
+        "cf61a8e9"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+consumer traced live at HEAD but NO gate test asserts this event by name (coverage gap, ledger finding filed). Capped at audited-by-trace.] EMIT-ONLY by design (state flows via the /api/workshop/decide HTTP response, not a bus consumer)."
     },
     {
       "id": "event/worldchange",
