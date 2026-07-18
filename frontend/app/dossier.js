@@ -2,7 +2,7 @@
 
    Phase A of the Commander Dossier (docs/COMMANDER_DOSSIER_PLAN.md): one station-wide, dimensioned,
    local-first model of the human, unifying signals that today are thin + scattered. This is the durable
-   BELIEF layer — a small set of named dimensions (identity / stack / goals / style / standing_orders / pain / ambition),
+   BELIEF layer — a small set of named dimensions (identity / stack / goals / style / standing_orders / pain / ambition / people / schedule),
    each holding human-readable beliefs with provenance — that compose into every agent's system prompt so
    the whole station knows the Commander. (The live affinity vector in profile.js is the SEPARATE "what
    you work on" signal; this engine never rewrites it — the store reads it for the panel only.)
@@ -28,7 +28,11 @@
     { key: 'style',           label: 'Working style',   lead: 'Working style' },
     { key: 'standing_orders', label: 'Standing orders', lead: 'Standing orders' },
     { key: 'pain',            label: 'Pain points',     lead: 'Pain points (what eats their time / the work they want gone)' },
-    { key: 'ambition',        label: 'Ambitions',       lead: 'Ambitions (what they keep meaning to do but never find time for)' }
+    { key: 'ambition',        label: 'Ambitions',       lead: 'Ambitions (what they keep meaning to do but never find time for)' },
+    // depth pass (2026-07-18): who the work is FOR and WHEN it should land — the two facts agents kept
+    // lacking when drafting outreach/deliverables (people) and scheduling routines/night work (schedule).
+    { key: 'people',          label: 'People & audience',  lead: 'People & audience (who they work with / build for / report to)' },
+    { key: 'schedule',        label: 'Schedule & cadence', lead: 'Schedule & cadence (timezone, work hours, when work should land)' }
   ];
   const DIM_KEYS = DIMS.map(d => d.key);
   // which onboarding doc seeds which dimension (the Commander already authored these at the awakening).
@@ -38,12 +42,12 @@
     { doc: 'manual',  dim: 'standing_orders' }   // operating-manual.md = standing rules
   ];
 
-  const BLOCK_CHARS = 1200;  // default cap on the composed system-prompt block. Sized for all 7 dims at realistic
-                             // belief lengths (was 800 for ~5 dims, which silently dropped the last dims, incl. the
-                             // pitch-critical pain+ambition); the sidecar tolerates up to 4096.
+  const BLOCK_CHARS = 1600;  // default cap on the composed system-prompt block. Sized for all 9 dims at realistic
+                             // belief lengths (1200 fit the 7-dim set; people+schedule would have squeezed everyone's
+                             // fair share); the sidecar tolerates up to 4096.
   // compose order for the SYSTEM-PROMPT block (distinct from the DIMS panel/render order): highest-signal dims
   // first, so if the cap ever forces a trim the bulky doc-seeded dims yield BEFORE goals/pain/ambition.
-  const COMPOSE_ORDER = ['goals', 'pain', 'ambition', 'identity', 'stack', 'style', 'standing_orders'];
+  const COMPOSE_ORDER = ['goals', 'pain', 'ambition', 'identity', 'people', 'schedule', 'stack', 'style', 'standing_orders'];
   const TEXT_CHARS = 280;    // a single belief is capped (mirrors the §5.2 memory-record content cap)
 
   function isKey(k) { return DIM_KEYS.indexOf(k) >= 0; }

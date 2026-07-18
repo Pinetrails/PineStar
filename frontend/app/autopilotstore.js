@@ -128,7 +128,7 @@ const AutopilotStore = (() => {
   // build the { dim:[texts] } grounding map the directives want, from the injected belief accessor.
   function beliefMap() {
     const out = {};
-    for (const k of ['goals', 'pain', 'ambition', 'stack', 'standing_orders', 'style']) {
+    for (const k of ['goals', 'pain', 'ambition', 'stack', 'standing_orders', 'style', 'people', 'schedule']) {
       try { const arr = (deps.getBeliefs ? (deps.getBeliefs(k) || []) : []).map(b => b && b.text).filter(Boolean); if (arr.length) out[k] = arr; } catch (_) {}
     }
     return out;

@@ -306,7 +306,7 @@
     pushPriorTonight(lines, ctx.priorTonight);
     const dimLine = (key, label) => { const arr = Array.isArray(beliefs[key]) ? beliefs[key].filter(Boolean) : []; if (arr.length) lines.push('- ' + label + ': ' + arr.join(' | ')); };
     lines.push('What you know about them:');
-    dimLine('goals', 'Goals'); dimLine('pain', 'Pain points'); dimLine('ambition', 'Ambitions'); dimLine('stack', 'Stack & tools'); dimLine('standing_orders', 'Standing orders'); dimLine('style', 'Working style');
+    dimLine('goals', 'Goals'); dimLine('pain', 'Pain points'); dimLine('ambition', 'Ambitions'); dimLine('stack', 'Stack & tools'); dimLine('standing_orders', 'Standing orders'); dimLine('style', 'Working style'); dimLine('people', 'People & audience (who the work is for)'); dimLine('schedule', 'Schedule & cadence (when work should land)');
     lines.push('Each job must be ONE of these kinds: ' + eligible.map(a => a.id + ' (' + a.blurb + ')').join(', ') + '.');
     lines.push('Hard rules:');
     if (hasFocus) lines.push('- STAY ON FOCUS: the single best job MUST advance TONIGHT\'S FOCUS above. A job that wanders off it is worse than a smaller job that moves it.');
@@ -453,7 +453,7 @@
     pushPriorTonight(lines, ctx.priorTonight);
     const dimLine = (key, label) => { const arr = Array.isArray(beliefs[key]) ? beliefs[key].filter(Boolean) : []; if (arr.length) lines.push('- ' + label + ': ' + arr.join(' | ')); };
     lines.push('What you know about them:');
-    dimLine('goals', 'Goals'); dimLine('pain', 'Pain points'); dimLine('ambition', 'Ambitions'); dimLine('stack', 'Stack & tools'); dimLine('standing_orders', 'Standing orders'); dimLine('style', 'Working style');
+    dimLine('goals', 'Goals'); dimLine('pain', 'Pain points'); dimLine('ambition', 'Ambitions'); dimLine('stack', 'Stack & tools'); dimLine('standing_orders', 'Standing orders'); dimLine('style', 'Working style'); dimLine('people', 'People & audience (who the work is for)'); dimLine('schedule', 'Schedule & cadence (when work should land)');
     lines.push('Each job must be ONE of these kinds: ' + eligible.map(a => a.id + ' (' + a.blurb + ')').join(', ') + '.');
     lines.push('Hard rules:');
     if (hasFocus) lines.push('- STAY ON FOCUS: the single best job MUST advance TONIGHT\'S FOCUS above.');
@@ -491,15 +491,17 @@
     if (hasSnap && String(ctx.targetRoot || '').trim()) {
       lines.push('- THIS IS A PROJECT PATCH: write a UNIFIED-DIFF file (e.g. "' + dir + '/change.patch") that applies cleanly with `git apply` from the repo root ' + String(ctx.targetRoot).trim() + '. Base every hunk on the PROJECT SNAPSHOT above; do not invent files or lines that aren\'t there. In the manifest set "kind":"patch" and "targetRoot":"' + String(ctx.targetRoot).trim() + '", and list the .patch file in "files". The Commander applies it to a NEW branch on Keep — you never touch their repo yourself.');
     }
-    lines.push('- Prefer a SELF-CONTAINED, double-click-runnable deliverable: when it fits, a SINGLE-FILE HTML tool (all CSS/JS inline, no external files or build step) named index.html the Commander can just Open — otherwise a script/doc plus a one-line run note in "howToUse". Zero setup on their end.');
+    lines.push('- MATCH THE FORMAT TO THE ASK — build the SIMPLEST thing that fully serves it, never the most impressive: a question/research ask -> a short findings doc (answer first, sources after); a draft ask -> the draft file itself; a comparison/decision -> a short ranked write-up, recommendation on top. ONLY build an interactive SINGLE-FILE HTML tool (all CSS/JS inline, no build step, named index.html) when the ask genuinely needs interaction the Commander will use repeatedly — NEVER default to a dashboard unless the ask is literally to watch several changing numbers in one place.');
+    lines.push('- Whatever the format: ZERO SETUP on their end — self-contained, one-click openable, no external files or build step; a script ships with its single run note in "howToUse".');
     lines.push('- Do the real work with your tools (web read/search, files). Ground factual claims in what the tools return. Write every file for this deliverable UNDER "' + dir + '/" (use paths like "' + dir + '/<file>").');
     lines.push('- LOCAL ONLY: never send, publish, spend, or message. You cannot run commands or tests, so do not claim anything was tested — list what a human still needs to verify.');
     lines.push('- When finished, write a manifest to "' + dir + '/deliverable.json" with EXACTLY this shape:');
     lines.push('  { "v": 1, "runId": "' + String(ctx.runId || '') + '", "agentId": "<your id>", "backlogId": "' + backlogId + '",');
-    lines.push('    "title": "<short name>", "kind": "tool|fix|draft|doc|other", "summary": "<one paragraph, plain language>",');
+    lines.push('    "title": "<short name>", "kind": "tool|fix|draft|doc|other",');
+    lines.push('    "summary": "<2-3 SHORT plain sentences a busy person absorbs in ten seconds: what it IS and what it does for them. NEVER an inventory — no inline lists of categories, failure modes, or counts, and no sentence over ~25 words; the deliverable itself holds the detail>",');
     lines.push('    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],');
     lines.push('    "howToUse": "<ONE short sentence — at most the single run command. The station gives the Commander an Open link and a one-click Implement action (a patch is applied for them), so NEVER write multi-step setup or git instructions here>",');
-    lines.push('    "notVerified": ["<what you could not check>"] }');
+    lines.push('    "notVerified": ["<up to 5 items, each ONE short check written FOR the Commander — a concrete thing THEY can do in a minute. NEVER your run diagnostics: no tool budgets, byte counts, or what this shift could not execute — turn every limitation into the check it implies>"] }');
     lines.push('- The manifest MUST list the real files you wrote (paths relative to "' + dir + '/"). A shift with no manifest is discarded.');
     return lines.join('\n');
   }

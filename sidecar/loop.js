@@ -54,6 +54,37 @@
     }
   }
 
+  // TEXT TOOL-CALL MARKUP SCRUB (model-consistency sweep 2026-07-17; aligned with the reference harness):
+  // some models (Kimi/Qwen/GLM/Gemma families) emit tool-call markup — `<tool_call>{"name":…}</tool_call>`,
+  // `<function_call>…`, Gemma's `<function name="…">…</function>` — as PLAIN TEXT instead of the tool_calls
+  // wire. The markup must NEVER be executed: the reference harness's #47967 class showed weak models ECHO
+  // tool-call markup they saw in file contents or tool output, so executing it would let FILE DATA drive
+  // tool execution (an injection vector). Instead: strip the blocks from the kept text (raw XML never shows
+  // as a "final answer") and, when tools are wired, the caller nudges the model once — the wire here is
+  // intact (tools are never dropped; provider-compatibility law), so a model that MEANT to act re-emits the
+  // call properly next turn, and an echo of data continues without it. The `<function>` variant is gated on
+  // a name= attribute at a block boundary so prose like "use <function> in JS" is preserved.
+  const TEXT_MARKUP_RES = [
+    /<tool_call>[\s\S]*?<\/tool_call>/gi,
+    /<tool_calls>[\s\S]*?<\/tool_calls>/gi,
+    /<function_call>[\s\S]*?<\/function_call>/gi,
+    /<function_calls>[\s\S]*?<\/function_calls>/gi,
+    /(?:(?<=^)|(?<=[\n\r.!?:]))[ \t]*<function\b[^>]*\bname\s*=[^>]*>[\s\S]*?<\/function>/gi
+  ];
+  function scrubTextToolCallMarkup(text) {
+    let t = String(text == null ? '' : text);
+    let found = false;
+    for (const re of TEXT_MARKUP_RES) {
+      re.lastIndex = 0;
+      if (!re.test(t)) continue;
+      re.lastIndex = 0;
+      found = true;
+      t = t.replace(re, '');
+    }
+    if (!found) return null;
+    return { text: t.replace(/\n{3,}/g, '\n\n').trim() };
+  }
+
   function assistantTurn(text, calls) {
     const msg = { role: 'assistant', content: text || '' };
     if (calls.length) {
@@ -101,6 +132,27 @@
       });
     }
     return results;
+  }
+
+  // Pure heuristic for the continuation guard: does a final, tool-free text ANNOUNCE work the model never did?
+  // Tuned to the observed narrate-then-stop family: "Let me read…", "I'll fix…", "Now let me check…",
+  // "Reading the file now", "Fixing all three now." Deliberately conservative — "let me know…" (a closing
+  // pleasantry) never matches. A false positive costs one bounded extra turn; a false negative just keeps
+  // today's behavior. Only the tail is scanned: intent that ends a message is what signals a premature stop.
+  const CG_VERBS = 'read|re-?read|check|look|open|find|fix|run|apply|write|patch|search|scan|inspect|start|create|update|edit|trace|dig|verify|test|grep|examine|review|implement|investigate|continue|proceed|execute|analy[sz]e|debug';
+  const CG_GERUNDS = 'reading|checking|looking|opening|finding|fixing|running|applying|writing|patching|searching|scanning|inspecting|starting|creating|updating|editing|tracing|digging|verifying|testing|examining|reviewing|implementing|investigating|proceeding|executing|analy[sz]ing|debugging';
+  const CG_PATTERNS = [
+    new RegExp('\\blet me\\s+(?!know\\b)[a-z]', 'i'),                                                       // "Let me read the file"
+    new RegExp('\\b(i\'?ll|i\\s+will|i\'?m\\s+going\\s+to|about\\s+to|now\\s+i(?:\'?ll|\\s+will)?)\\s+(now\\s+)?(' + CG_VERBS + ')\\b', 'i'),  // "I'll fix all three"
+    new RegExp('\\b(' + CG_GERUNDS + ')\\b[^.!?\\n]{0,80}\\bnow\\b', 'i'),                                  // "Reading the full main.js now"
+    new RegExp('\\bnow\\b[^.!?\\n]{0,40}\\b(' + CG_GERUNDS + ')\\b', 'i')                                   // "now fixing the death path"
+  ];
+  function announcesIntent(text) {
+    const t = String(text == null ? '' : text).trim();
+    if (!t) return false;
+    const tail = t.slice(-600);
+    for (const re of CG_PATTERNS) if (re.test(tail)) return true;
+    return false;
   }
 
   async function runAgentLoop(o) {
@@ -168,6 +220,25 @@
     const LG_STOP = (_lg === false) ? 0 : (_lg && _lg.stopAfter != null ? _lg.stopAfter : 6);
     const lgFails = new Map();    // signature (name\0args) -> failure count
     const lgWarned = new Set();   // signatures already nudged (the warn fires once)
+
+    // CONTINUATION GUARD (default ON): some models (Kimi K3, live-caught 2026-07-17) end a turn by ANNOUNCING
+    // the next action ("Reading the full main.js now — then fixing immediately.") with finish_reason 'stop' and
+    // NO tool call. A no-tool turn normally means "final answer", so the run ends 'done' mid-task and the
+    // Commander has to prod the agent repeatedly. When the final text clearly announces imminent work AND tools
+    // are wired, inject ONE system nudge (act now or say you're done) and give the model another turn instead
+    // of ending. Bounded: at most `continueMax` nudges per run (limits.continueGuard === false disables;
+    // { max } overrides), and never on a grace turn — a narrate-forever model still terminates.
+    const _cg = limits.continueGuard;
+    const CG_MAX = (_cg === false) ? 0 : (_cg && _cg.max != null ? _cg.max : 2);
+    let cgUsed = 0;
+    // Companion nudge budgets (same disable knob as the continuation guard — they are one family):
+    //  · markup nudge — the turn's TEXT carried tool-call markup (scrubbed above; NEVER executed). Tell the
+    //    model once that text markup is data and to make a REAL call. Bounded like CG.
+    //  · empty-after-tools nudge — the reference harness's "weaker models return empty after tool results
+    //    instead of continuing" class (its #9400): one bounded push to process the results and continue,
+    //    instead of ending the run 'empty' on the first silence.
+    let mkUsed = 0;
+    let emptyNudgeUsed = false;
 
     // NO-OP TURN REFUND (reference-harness iteration-budget parity): a turn that produced NO tool call AND no NEW assistant
     // content (empty/whitespace text, OR text byte-identical to the immediately-prior assistant turn) is wasted work
@@ -411,6 +482,14 @@
       let priorAssistantText = null;
       for (let mi = messages.length - 1; mi >= 0; mi--) { if (messages[mi].role === 'assistant') { priorAssistantText = String(messages[mi].content == null ? '' : messages[mi].content); break; } }
       const calls = Object.keys(acc.toolCalls).sort((a, b) => a - b).map((k, i) => parseCall(acc.toolCalls[k], i));
+      // TEXT TOOL-CALL MARKUP: a zero-wire-call turn whose TEXT carries tool-call markup is neither a final
+      // answer nor a call to execute (echoed markup = data; see scrubTextToolCallMarkup). Strip it from the
+      // kept turn; the stop branch below nudges the model to make a REAL call.
+      let textMarkup = false;
+      if (calls.length === 0) {
+        const scrubbed = scrubTextToolCallMarkup(acc.text);
+        if (scrubbed) { textMarkup = true; acc.text = scrubbed.text; }
+      }
       repairCalls(calls, emit, agentId, runId);   // L2: fix broken tool-call JSON before it is used or discarded
       messages.push(assistantTurn(acc.text, calls));
 
@@ -420,6 +499,37 @@
         const text = String(acc.text || '');
         const empty = !text.trim();                                   // nothing usable produced
         const duplicate = !empty && priorAssistantText != null && text === priorAssistantText;   // a re-emitted prior turn
+        // MARKUP NUDGE: the turn's text carried tool-call markup (scrubbed above, never executed). Point the
+        // model at the real wire once — a model that meant to act re-emits the call properly; an echo of
+        // quoted data just continues without it. Shares the continuation-guard disable knob and grace rule.
+        if (textMarkup && !graceUsed && CG_MAX > 0 && mkUsed < CG_MAX && tools.length > 0) {
+          mkUsed++;
+          messages.push({ role: 'system', content: '<tool_markup>Tool-call markup (e.g. <tool_call>…</tool_call>) appeared in your reply TEXT. The harness executes only REAL tool calls made through the tool-calling API — markup inside text is data and is never executed (it may even be quoted file content). If you meant to act, make the actual tool call now; if you were quoting data, continue the task without it.</tool_markup>' });
+          continue;
+        }
+        // EMPTY-AFTER-TOOLS NUDGE (reference-harness parity): weaker models sometimes stream NOTHING right
+        // after tool results instead of continuing. One bounded nudge to process the results and continue
+        // beats ending the whole run 'empty' on the first silence; the empty turn is still refunded.
+        if (empty && !graceUsed && !emptyNudgeUsed && CG_MAX > 0 && tools.length > 0
+            && messages.slice(-6).some(m => m && m.role === 'tool')) {
+          emptyNudgeUsed = true;
+          if (refundsUsed < REFUND_MAX) {
+            refundsUsed++;
+            turns = turnStart;
+            emit('iteration.refunded', { agentId, runId, turn: turnStart, reason: 'empty', refundsUsed });
+          }
+          messages.push({ role: 'system', content: '<continue_after_tools>You returned an empty reply after tool results. Process the tool results above and continue the task now; if the task is fully complete, give your final answer.</continue_after_tools>' });
+          continue;
+        }
+        // CONTINUATION GUARD: an announce-without-acting final turn ("Reading main.js now…" + zero tool calls)
+        // is a premature stop, not a delivery — nudge the model back to work instead of ending 'done' mid-task.
+        // Never fires on a grace turn (that turn is CONTRACTED to be tool-free) and never past CG_MAX, so a
+        // model that narrates forever still terminates through the normal end below.
+        if (!empty && !duplicate && !graceUsed && cgUsed < CG_MAX && tools.length > 0 && announcesIntent(text)) {
+          cgUsed++;
+          messages.push({ role: 'system', content: '<continuation>Your last message only ANNOUNCED an action but you called no tools — ending your reply without tool calls ends the run with the work not done. Do not narrate intentions. If work remains, make the actual tool call(s) NOW in this same turn; if the task is truly complete, give your final answer without announcing further actions.</continuation>' });
+          continue;
+        }
         if ((empty || duplicate) && refundsUsed < REFUND_MAX) {
           refundsUsed++;
           turns = turnStart;                                          // refund: this turn didn't advance the budget
@@ -486,5 +596,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup } };
 });

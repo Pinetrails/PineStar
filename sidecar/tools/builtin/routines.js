@@ -43,7 +43,7 @@
     {
       name: 'research',
       triggers: ['research', 'news', 'latest', 'source', 'sources', 'web', 'paper', 'papers', 'arxiv', 'scan', 'monitor', 'brief'],
-      roles: ['research', 'researcher', 'scout', 'analyst', 'intelligence', 'web']
+      roles: ['research', 'researcher', 'scout', 'analyst', 'intelligence', 'web', 'prospector', 'strategist']
     },
     {
       name: 'engineering',
@@ -52,18 +52,18 @@
     },
     {
       name: 'writing',
-      triggers: ['write', 'draft', 'copy', 'post', 'email', 'newsletter', 'document', 'summary'],
-      roles: ['scribe', 'writer', 'liaison', 'editor']
+      triggers: ['write', 'draft', 'copy', 'post', 'email', 'newsletter', 'document', 'summary', 'script', 'publish'],
+      roles: ['scribe', 'writer', 'editor', 'publisher', 'envoy', 'marketer']
     },
     {
       name: 'ops',
       triggers: ['check', 'remind', 'watch', 'backup', 'sync', 'ops', 'operate', 'admin'],
-      roles: ['operator', 'ops', 'chief']
+      roles: ['operator', 'ops', 'chief', 'treasurer']
     },
     {
       name: 'design',
       triggers: ['design', 'image', 'visual', 'ui', 'ux', 'mockup', 'sprite'],
-      roles: ['designer', 'design', 'artist']
+      roles: ['designer', 'design', 'artist', 'producer']
     }
   ];
 

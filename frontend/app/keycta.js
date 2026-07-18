@@ -21,13 +21,16 @@ const KeyCTA = (() => {
   function normProv(p) {
     p = String(p || 'openrouter').trim().toLowerCase();
     if (p === 'codex' || p === 'openai-codex') return 'codex';
+    if (p === 'grok' || p === 'grok-oauth' || p === 'supergrok') return 'grok';
+    if (p === 'kimi' || p === 'moonshot' || p === 'kimi-for-coding') return 'kimi';
     if (p === 'ollama' || p === 'ollama-local') return 'ollama';
     if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
     return p;
   }
   function providerNeedsKey(p) {
     p = normProv(p);
-    return p !== 'codex' && p !== 'ollama' && p !== 'custom';
+    // codex/grok/kimi are keyless OAuth sign-ins; ollama/custom are keyless-by-design endpoints.
+    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom';
   }
   function activeProvider() {
     return normProv((typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter');

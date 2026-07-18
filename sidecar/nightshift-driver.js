@@ -84,7 +84,7 @@
     // decideNow + the pre-spend readiness precheck folded in, for the STATUS route: when the pure gates clear but the
     // local precheck says the beat couldn't reach a model call, report binding:'readiness' (the pre-spend stand-down)
     // so status == what the tick would actually do. Side-effect free (the precheck must be a pure read). No precheck →
-    // identical to decideNow. Never throws (a precheck hiccup falls back to the pure decision).
+    // identical to decideNow. Never throws; a precheck hiccup binds `precheck-error` and stands down safely.
     function statusDecision(nowMs) {
       const decision = decideNow(nowMs);
       if (!decision.fire || !precheck) return decision;
@@ -95,7 +95,9 @@
           const reason = (pr && typeof pr === 'object' && pr.reason) ? String(pr.reason) : 'readiness';
           return Object.assign({}, decision, { fire: false, binding: reason || 'readiness' });
         }
-      } catch (_) { /* fall back to the pure decision */ }
+      } catch (_) {
+        return Object.assign({}, decision, { fire: false, binding: 'precheck-error' });
+      }
       return decision;
     }
 
@@ -128,7 +130,12 @@
       let preOk = true, preReason = 'readiness';
       if (decision.fire && precheck) {
         try { const pr = precheck({ agentId: agentId }); if (pr === false) { preOk = false; } else if (pr && typeof pr === 'object' && pr.ok === false) { preOk = false; preReason = String(pr.reason || 'readiness') || 'readiness'; } }
-        catch (_) { /* a precheck hiccup must never wedge the tick; fail OPEN to NS-1 behavior (spend + let the pipeline decide) */ }
+        catch (_) {
+          // An unreadable safety gate is not permission for unattended work. Stand down without spending and
+          // expose the failure through status + ledger so the next tick can retry it honestly.
+          preOk = false;
+          preReason = 'precheck-error';
+        }
       }
       const fireNow = decision.fire && preOk;
       const binding = decision.fire ? (preOk ? null : preReason) : decision.binding;

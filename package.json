@@ -1,8 +1,24 @@
 {
   "name": "starnet-harness",
-  "version": "0.0.0",
+  "version": "0.5.2",
   "private": true,
-  "description": "StarNet — a real, gamified, downloadable AI-agent harness. Phase 0.0 scaffold: the v7 engine ported verbatim into frontend/, with the v7 headless tests running from test/.",
+  "description": "A local-first, gamified desktop harness for building and running real AI-agent teams.",
+  "license": "MIT",
+  "author": "Andrew Sims",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nonfungiblefunyuns-ship-it/skynet-harness.git"
+  },
+  "homepage": "https://github.com/nonfungiblefunyuns-ship-it/skynet-harness#readme",
+  "bugs": {
+    "url": "https://github.com/nonfungiblefunyuns-ship-it/skynet-harness/issues"
+  },
+  "keywords": [
+    "ai-agents",
+    "local-first",
+    "multi-agent",
+    "tauri"
+  ],
   "engines": {
     "node": ">=18"
   },
@@ -12,7 +28,7 @@
     "test:world": "node scripts/timeout.mjs --label test:world --timeout=120000 -- node test/test_world.js",
     "test:world:raw": "node test/test_world.js",
     "test:http": "node scripts/timeout.mjs --label test:http --timeout=300000 -- npm run test:http:raw",
-    "test:http:raw": "node test/sidecar.http.test.js && node test/codex-status.e2e.test.js && node test/roster-envelope.http.test.js && node test/scout.http.test.js && node test/scout.e2e.test.js && node test/auxbudget.e2e.test.js && node test/questrefresh.e2e.test.js && node test/e2e.run.test.js && node test/e2e.attachments.test.js && node test/e2e.summon.test.js && node test/e2e.worker-access.test.js && node test/e2e.pathtrust.test.js && node test/e2e.subagent-background.test.js && node test/e2e.mcp-connector.test.js && node test/cron.api.test.js && node test/cron.run-now.e2e.test.js && node test/autonomy-ledger.e2e.test.js && node test/workshop.e2e.test.js && node test/nightshift-act.e2e.test.js && node test/nightshift-grant.e2e.test.js && node test/nightshift-contextpack.e2e.test.js && node test/nightshift-focus.e2e.test.js && node test/nightshift-halt.e2e.test.js && node test/nightshift-beat-halt.e2e.test.js && node test/nightshift-budget.e2e.test.js && node test/threads.e2e.test.js && node test/cron.session-transcript.e2e.test.js && node test/channels.telegram.e2e.test.js && node test/cron.arm.test.js && node test/checkpoint-store.test.js && node test/shell.test.js && node test/verify.run.test.js",
+    "test:http:raw": "node test/sidecar.http.test.js && node test/codex-status.e2e.test.js && node test/oauth-status.e2e.test.js && node test/roster-envelope.http.test.js && node test/scout.http.test.js && node test/scout.e2e.test.js && node test/auxbudget.e2e.test.js && node test/questrefresh.e2e.test.js && node test/e2e.run.test.js && node test/e2e.attachments.test.js && node test/e2e.summon.test.js && node test/e2e.worker-access.test.js && node test/e2e.pathtrust.test.js && node test/e2e.subagent-background.test.js && node test/e2e.mcp-connector.test.js && node test/cron.api.test.js && node test/cron.run-now.e2e.test.js && node test/autonomy-ledger.e2e.test.js && node test/workshop.e2e.test.js && node test/nightshift-act.e2e.test.js && node test/nightshift-grant.e2e.test.js && node test/nightshift-contextpack.e2e.test.js && node test/nightshift-focus.e2e.test.js && node test/nightshift-halt.e2e.test.js && node test/nightshift-beat-halt.e2e.test.js && node test/nightshift-budget.e2e.test.js && node test/nightshift-presence.e2e.test.js && node test/threads.e2e.test.js && node test/cron.session-transcript.e2e.test.js && node test/channels.telegram.e2e.test.js && node test/cron.arm.test.js && node test/lifecycle-armed.http.test.js && node test/checkpoint-store.test.js && node test/shell.test.js && node test/verify.run.test.js && node test/routes-coverage.http.test.js && node test/atlas-events.emit.e2e.test.js",
     "test:fast": "node scripts/timeout.mjs --label test:fast --timeout=600000 -- npm run test:fast:raw",
     "test:fast:raw": "node scripts/run-fast-tests.mjs",
     "test": "npm run validate && npm run test:world && npm run test:fast && npm run test:http",
@@ -71,6 +87,7 @@
     "replacement:sweep:dry": "node scripts/replacement-sweep.mjs --dry-run",
     "lint:evidence-secrets": "node scripts/lint-evidence-secrets.mjs",
     "qa:ledger": "node scripts/qa/ledger.mjs",
+    "qa:model": "node scripts/qa/model-conformance.mjs",
     "qa:beginner": "node scripts/qa/beginner-run.mjs",
     "qa:beginner:live": "node scripts/qa/beginner-run.mjs --live",
     "qa:janitor": "node scripts/qa/janitor.mjs",
@@ -78,6 +95,7 @@
     "qa:sweep:dry": "node scripts/qa/evidence-sweep.mjs --dry-run",
     "qa:journeys": "node scripts/qa/journeys.mjs",
     "qa:session-power-tools": "node scripts/qa/session-power-tools-journey.mjs",
+    "qa:work-console": "node scripts/qa/work-console-journey.mjs",
     "qa:atlas": "node scripts/qa/cartographer.mjs --sweep",
     "qa:atlas:static": "node scripts/qa/cartographer.mjs --sweep --static-only",
     "qa:atlas:status": "node scripts/qa/cartographer.mjs --status",
@@ -100,7 +118,8 @@
     "release:cut:dry": "node scripts/release-cut.mjs --dry-run",
     "release:verify-host": "node scripts/verify-update-host.mjs",
     "release:verify-sig": "node scripts/minisign-verify.mjs",
-    "release:canary": "node scripts/update-canary.mjs"
+    "release:canary": "node scripts/update-canary.mjs",
+    "security:secrets": "node scripts/scan-history-secrets.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"

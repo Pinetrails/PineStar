@@ -87,19 +87,19 @@ const forged = Object.assign({}, exact, { ids: exact.ids.concat('s23') });
 A.eq(W.archivePreview(forged), null, 'a forged preview token is rejected without mutation');
 A.eq(!!W.get('s23').archived, beforeArchived.s23, 'rejected forged preview cannot archive an unpreviewed session');
 
-/* browser wiring: the power tools are discoverable, confirmed, persisted, and download both formats */
+/* browser wiring (2026-07-17 window retirement): search lives ON the rail, export lives in the
+   row ⋯ actions menu, and the SESSION TOOLS window is fully gone — no orphaned entry points. */
 const app = fs.readFileSync(require.resolve('../frontend/app/app.js'), 'utf8');
 const html = fs.readFileSync(require.resolve('../frontend/index.html'), 'utf8');
 const sui = fs.readFileSync(require.resolve('../frontend/app/stationui.js'), 'utf8');
-A.ok(/data-term="sessiontools"/.test(html) && /id="ws-tools-park"/.test(html), 'SESSION TOOLS is discoverable from the SYSTEM menu and the panel is parked outside the rail');
+A.ok(!/data-term="sessiontools"/.test(html) && !/ws-tools-park/.test(html), 'the SESSION TOOLS window entry and parked panel are fully removed');
+A.ok(!/buildSessionTools|parkSessionTools|sessiontools:/.test(sui), 'stationui no longer builds a SESSION TOOLS window');
 A.ok(!/ws-tools-btn/.test(html), 'rail head stays SESSIONS/PROJECTS + NEW only (no inline TOOLS button)');
-A.ok(/sessiontools:\s*\['SESSION TOOLS',\s*buildSessionTools/.test(sui) && /onClose:\s*parkSessionTools/.test(sui), 'the floating window adopts the parked panel and re-parks it on close');
-A.ok(/id="ws-search"[\s\S]*search sessions \+ transcripts/.test(html), 'one labelled search surface covers sessions and transcripts');
-A.ok(/EXPORT \.MD[\s\S]*EXPORT \.JSON/.test(html), 'both conversation export formats are visible');
-A.ok(/CONFIRM CLEAR/.test(app) && /clearConversation\(w\.id\)/.test(app), 'clear requires an explicit second confirmation');
-A.ok(/archivePreview\(sessionToolsPreview\)/.test(app), 'bulk apply consumes the exact stored preview');
-A.ok(/sessionUndo:\s*saved\.sessionUndo/.test(app), 'durable recovery checkpoint is hydrated on restart');
-A.ok(/Workstreams\.undoLast\(\)[\s\S]*persist\(\)/.test(app), 'undo is immediately persisted');
+A.ok(/id="ws-rail-search"[\s\S]*id="ws-search"[\s\S]*search sessions \+ transcripts/.test(html), 'one labelled rail search surface covers sessions and transcripts');
+A.ok(/set\('ws-rail-search', pan\.sessionsList\)/.test(app), 'the PROJECTS view hides rail search along with the sessions list');
+A.ok(/item\('export-md', 'Export \.md'/.test(app) && /item\('export-json', 'Export \.json'/.test(app), 'both export formats live in the row actions menu');
+A.ok(/exportSession\(id, 'markdown'\)/.test(app) && /exportSession\(id, 'json'\)/.test(app), 'menu export acts on the exact row session, never an implicit active one');
+A.ok(/sessionUndo:\s*saved\.sessionUndo/.test(app), 'the durable recovery checkpoint is still hydrated on restart');
 A.ok(/URL\.revokeObjectURL/.test(app), 'export object URL is always revoked');
 
 A.report('session-power-tools.test');

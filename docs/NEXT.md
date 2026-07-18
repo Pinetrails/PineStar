@@ -1,5 +1,75 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-17 — AUTONOMY TUNING (direction dial) — merging this pass (claude/agent-autonomy-tuning-89786e)
+
+Andrew's ask: let users guide WHERE the agent's autonomous work goes, as a release cherry-on-top.
+Shipped (feature `d7821054`+`eebf7f11`, W0 re-stamps in-branch; digest in qa/STATUS.md):
+- **AVOID directive** (nightfocus.js + POST/DELETE /api/nightshift/avoid): durable off-limits list the
+  focus resolver can never pick; latest-directive-wins on steer/avoid conflict; resolver fails toward
+  not acting; restart-safe. Pure tests 55 assertions green.
+- **Steer → scout cross-wire**: scoutDirectionBlock now leads with the live steer (same steerActive gate).
+- **DIRECTION block in the AUTONOMY settings tab**: focus readout + steer + OFF-LIMITS (RULE OUT /
+  ALLOW AGAIN) + evidence-cited LEARNED INTERESTS from /api/scout. Live-proven full cycle on seeded app.
+- [ ] Later (not this lane): thread steer/avoid into quest refresh + First Pitch grounding blocks.
+
+## 2026-07-17 — SESSION TOOLS window retired (branch `claude/sessions-panel-removal-b3278e`)
+
+Andrew's directive. The SYSTEM ▸ SESSION TOOLS window + parked `#ws-tools` panel are removed;
+clear/bulk-archive/undo UI died with it (the pure `workstreams.js` store keeps every invariant;
+`/clear` + per-row archive cover the real needs). Survivors: **title+transcript search now lives
+directly on the sessions rail** (`#ws-rail-search`; PROJECTS view hides it; hit-click opens the
+session) and **export .md/.json moved into the row ⋯ menu** (targets the exact row session).
+QA followed: journey rewritten (10/10 live PASS on seed :9095), `sys-sessiontools` shooter state +
+golden dropped, atlas retired-control entries deleted + ws-search/ws-export re-pointed, wiring test
+re-pinned, v0.5.2 release-notes bullet updated, in-branch W0 re-stamps over `83292661` and the
+trunk-sync. Merging to trunk this pass (digest in qa/STATUS.md); next desktop exe rebuild picks it up.
+
+## 2026-07-16 — CLASS ROSTER REDESIGN LANDED (agent-class-redesign lane)
+
+The recruit catalog is now 12 SPECIALIZED business-grade builtins (strategist · opportunist ·
+researcher · engineer · analyst · marketer · publisher · producer · writer · prospector ·
+treasurer · scout) + 18 archetypes (8 demoted generalists, 6 kept deep cuts, 3 new long-tail
+seeds closer/steward/optimizer, + envoy demoted 2026-07-17 on Andrew's call). liaison/publicist/
+bookkeeper RETIRED (superseded by envoy / marketer+publisher / treasurer). Typed-ASCII class
+marks REMOVED — the engraved SVG coin seal is the one emblem system again. Scout matchArchetype
+now coverage-scores (majority-token rule); prospect directive demands specialized roles. 7 new
+kit-grounded skills (+ opportunity-scan). W0 re-stamped post-merge.
+Open follow-ups: regenerate qa/atlas crew evidence (stale "18 builtins" notes); consider a
+first-run default-class experiment (strategist is now the bay's default card).
+
+## 2026-07-17 — FULL-RELEASE CAMPAIGN (active; Fable-orchestrated)
+
+Goal: full public release clean on Windows AND macOS; subscriptions = the NEXT official update.
+
+- [x] **MERGED `bae18072` — night-shift precheck fail-closed.**
+      Trunk failed open when budget/provider/readiness inspection threw, spending a leash unit and starting
+      unattended work through an unproven safety gate. The driver + composition root now stand down before
+      spend as `precheck-error`; status, durable ledger, and morning-report copy all explain it truthfully.
+      Verified: focused 51+107 assertions; `test:fast` 351/351; full `test:http`; real fault-injected sidecar
+      over HTTP reported `beatsUsedToday:0` and persisted `detail.preSpend:true` (`nightshift-budget.e2e` 11/11).
+
+**MERGED: Wave 4D supervised background lifecycle** (agent/lifecycle-4d → trunk `7f3af0be`,
+claims re-stamp `bc4ac138`; full digest in qa/STATUS.md 2026-07-17). The owner-decision
+checkpoint below (POWERUSER_FIX_PLAN Lane 4D) is CLEARED — Andrew approved the recommended
+shape. Tray supervisor + `GET /api/lifecycle/armed` + durable cron halt (`cron.halt.json`,
+E-STOP parity with night-shift be03e5d0) + opt-in launch-at-login. Gates green (fast 346/346
+clean-worktree, http full, cargo 21 tests). The formerly-REFUTED after-close claims are now
+SHIPPED-with-liveProof-PENDING in qa/product-perfect/claims.json.
+- [ ] **ATTENDED (Andrew or supervised session): the six installed-exe lifecycle proofs** —
+      close-with-armed-routine → fires exactly once + durable result; orphan-free Quit;
+      autostart login = one sidecar; update-drain; tray Pause/E-STOP while closed; disabled
+      state spawns nothing. Requires installing a fresh trunk build (this machine currently
+      runs an older installed build; EBWebView purge recipe applies on exe swap).
+- [ ] macOS runtime proof of the tray/autostart paths (cfg-clean + documented APIs only so far).
+- [x] **LAUNCH RUNBOOK: docs/LAUNCH_RUNBOOK.md** — MERGED to trunk (verified present 2026-07-17;
+      the claude/starnet-code-prompts-a9d3a7 copy is patch-identical). KEY FINDING: NOTHING 0.5.x was ever pushed/published —
+      origin tags stop at v0.4.0, starnet-releases 404s; launch = the CI train's FIRST live run
+      (all 5 platforms) at v0.5.2. Andrew's chain: updater-key backup (NONE exists) + dev-key
+      rotation → push trunk+tag → publish → verify-update-host → W1 second-user proof →
+      per-platform canaries → Mac auto-update test → T0 evidence → certify:providers real keys.
+- [ ] Subscriptions/credits merge (claude/starnet-subscriptions-plan-4d56d1, 5 ahead / 314
+      behind trunk) + Stripe/domain/deploy — NEXT UPDATE, do not merge during launch.
+
 ## 2026-07-15 — POWER-USER DEEP-DIVE AUDIT (3 isolated agents, no fixes)
 
 Full evidence and repros: `docs/POWERUSER_AUDIT_2026-07-15.md`. Baseline gates were green
@@ -12,21 +82,32 @@ live restart criteria, composed gates, and a final installed-app proof. Wave 4D 
 background lifecycle) remains an explicit owner decision checkpoint; the plan recommends opt-in
 launch-at-login plus visible tray ownership, never a hidden daemon.
 
-- [ ] **PU-03 P1:** recovery EXPORT AGENT includes browser BYOK localStorage secrets despite
-      Settings saying secrets are excluded.
-- [ ] **PU-01 P1:** Night Shift accepts/persists nonexistent or unblessed project/thread focus
-      and reports it resolved/buildable.
-- [ ] **PU-02 P1:** disabled MCP connector disappears after restart while its secret-bearing
-      config remains on disk and unmanageable.
-- [ ] **PU-04 P1:** drag-wide-window left + viewport shrink can persist Settings fully off-screen.
-- [ ] **PU-05..PU-12 P2:** stale focus after CLEAR; misleading Signal FORGET; false Ollama/custom
-      KEY SAVED/ACTIVE; duplicate recruit display names; cross-session agent-busy composer trap;
-      false 1-minute age; generic sidecar-loss error; partial transcript loss on disconnect.
-- [ ] **PU-13..PU-14 P3:** rapid +NEW durable empty-session spam; stopped run lacks visible retry.
+**2026-07-16 (late) — ALL 14 PU FINDINGS RE-VERIFIED FIXED AT TRUNK `f2c6d92a`** (post-merge-review
+lane; 5-agent code-verification sweep with file:line evidence). The plan above was written at
+baseline `bf99df2a`; the subsequent power-user loop repairs merge (`8ce4c967`), the summon-naming
+lane, the nightfocus validator, and the Task Brief chat.js waves closed every seam. Each has a
+dedicated regression test on trunk:
 
-Attack order and verified/unverified surface inventory are in the audit. EL-3 law applies: land
-the exact failing reproduction before each fix. Do not infer station-wide readiness from the green
-baseline; Atlas at this head is 444 stale · 123 unmapped · 1 missing.
+- [x] **PU-03 P1:** backup.js `isCredentialKey` denylist (default-deny `starnet.byok.*`), export
+      `secretsIncluded:false`, import guard. — [x] **PU-01 P1:** `validateNightFocusSteer`
+      (index.js ~8368): 404 missing path, 403 unblessed, thread/goal checked; nothing persists on
+      reject. — [x] **PU-02 P1:** disabled connectors are durable management rows (boot registers
+      all, list merges, EL-3 restart test in e2e.mcp-connector). — [x] **PU-04 P1:**
+      `visibleTerminalRect` clamp on drag/restore/resize + repaired coords persisted
+      (terminal-resize journey asserts reachability incl. phone viewport).
+- [x] **PU-05..PU-12 P2:** clearSteer drops steer-derived focus; Signal ✕ REMOVE CONFIGURATION
+      (read-back proven, no token lie); Ollama/custom = LOCAL ENDPOINT CONFIGURED/OFFLINE with
+      reachability-gated ACTIVE; `allocName` uniquifies defaults + `[id]` badge on collisions;
+      `busyPeerFor` preflight = BUSY IN <session> + VIEW ACTIVE RUN; `formatRunHolderAge` "just
+      now"; mid-stream sidecar death classified station-unreachable; `persistPartial` keeps
+      streamed text + disconnect marker on both error branches.
+- [x] **PU-13..PU-14 P3:** `Workstreams.startSession` reuses the untouched blank; stopped runs
+      offer Try again (incl. after reload; clarifying end correctly excluded).
+
+Remaining from this audit: Wave 4D (background lifecycle) = Andrew's product decision; minor
+coverage gaps noted in the review lane (route-level test for validateNightFocusSteer; explicit
+poisoned-termPos reload assert). EL-3 law applies to any NEW finding. Do not infer station-wide
+readiness from the green baseline; Atlas at this head is 444 stale · 123 unmapped · 1 missing.
 
 ## IMPLEMENTED 2026-07-16 — TASK-BRIEF RELIABILITY HARDENING (`agent/briefing-reliability`)
 
@@ -210,20 +291,17 @@ Five-agent audit + the approved fix sequence, all lane-committed (digest lands i
   `archive/codex/...` tags — safe to delete those branches whenever Andrew signs off (tags keep the SHAs).
 
 STILL OPEN from the audit (unclaimed): codex OAuth refresh token keychain home (the one plaintext-only
-credential) · web_fetch/channel-content untrusted-content fence (recall/MCP have one; the highest-volume
-input doesn't) · IPC_TOKEN constant-time compare · index.js channel-route dedup (~9× repeated persist
-shape) · nightshiftPrecheck fails OPEN on exception (budget gate off on throw) · Cartographer re-sweep +
+credential) · index.js channel-route dedup (~9× repeated persist shape) · Cartographer re-sweep +
 re-bless (187 perfected all stale; props/events/routes areas never mapped) · fresh installed-exe smoke
 stamp for qa:ready · remaining orphaned routes (workshop/shift, nightshift/beat force-fire, config/reset,
 execution view, threads-ledger browse).
 
 RE-ARMED-WATCH FALLOUT (found by the watch itself, 2026-07-15 — both are INSTRUMENT-environment, not
 product; the same commit passes all suites in interactive shells):
-- [ ] **Hourly Guardian RED @ every cycle until fixed**: `test/shell-machine-state.test.js` fails ONLY
-      under the Task-Scheduler context ("host accepts safe inline Start-Process -FilePath:cmd.exe form —
-      expected 0, got 9"; guardian-20260715-040003, test-fast step 66/325; http-e2e/shoot/golden/audit/
-      journeys all green same cycle). Fix = make the suite (or the guardian task's execution context)
-      interactive-agnostic; until then the hourly row RED means THIS, not a product regression.
+- [x] **Hourly Guardian RED — RESOLVED** (verified 2026-07-17): the probe now asserts launch not
+      child-exit hygiene (shell-machine-state.test.js ~:189 comment documents the batch-logon
+      $p.ExitCode unreliability) and guardian cycles are GREEN all 6 gates under the real scheduler
+      (guardian-20260717-230002 / -220002 / -210002 all verdict green).
 - [ ] **Integration-tree test:fast stalls at the 600s wrapper** right after lint-evidence-secrets
       (reproduced 2× at 70cdc178; the known `.dogfood` bloat). Gate trunk commits in a clean worktree
       FF'd to the same SHA (receipt pattern used for this merge). Real fix = product-perfect lane makes
@@ -250,11 +328,10 @@ OPEN (routed, repros in the ledger):
   hero tile (3/3); F8 P2 cancelled runs persist `content:""` assistant turns (partial streamed
   text lost from the durable transcript); F9 P2-suspect NIGHT SHIFT trophy minted with zero
   night-shift activity (trophy condition needs reading).
-- KNOWN pre-existing: `test/qa-product-perfect-claims.test.js` is ENVIRONMENT-DEPENDENT — red
-  (9 fails) in ANY fresh worktree because it needs the integration tree's gitignored `.dogfood`
-  candidate state; green in the integration tree (64 assertions). Every lane gating in a clean
-  worktree loses the fast-gate tail behind step ~133 — product-perfect lane should make it
-  skip-honestly (with a visible SKIPPED note) when `.dogfood` is absent.
+- KNOWN pre-existing — SINCE RESOLVED (re-proven 2026-07-17): `test/qa-product-perfect-claims.test.js`
+  now passes in a FRESH clean worktree at trunk head (64 assertions OK; the candidate-git-blob
+  authority landed since this note). A red here in a lane now means the real thing — a shipped-surface
+  change without its in-branch W0 re-stamp — not environment.
 
 ## 2026-07-13 — FLAGSHIP WAVE: last-hop surfaces + cross-wiring (branch `claude/flagship-features-audit-d0e1a1`)
 
@@ -1014,6 +1091,17 @@ Gauge: `npm run qa:atlas:status`. Trunk re-sweep 2026-07-07 (39b9c569): **1339 e
 The whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
 
 _Active claims: (none)._
+
+Wave-3 done (2026-07-18): registry 1154 (harvest collapse −369), 34 unmapped left; 9 new coverage
+suites (~420 assertions) in the gates; 10 findings fixed. 551 derived-stale from mid-wave trunk
+frontend merges — freshness is a living number; wave-4 = re-proof cycle once the frontend settles
+(post exe cut). Open product items: jukebox tier 818768f7 · ui id/aria anchors d8bc2554/cea0899f.
+
+Wave-1+2 (2026-07-18, release-polish lane): gauge 0% → 18% fresh (274/1523) + 478 audited; zero
+product truthfulness defects across 1,200+ judged entries; digests in qa/STATUS.md. Wave-3 queue:
+build connectors tail (136 unmapped) · model-harvest collapse (finding e9d24ac6) · coverage wave
+(the ~20 filed coverage-gap findings convert audited→perfected) · jukebox tier taxonomy call
+(818768f7) · stable id/aria anchors for skill-card + high-traffic controls (cea0899f, d8bc2554).
 
 _**CAMPAIGN COMPLETE 2026-07-07** (7 waves, 17 lanes, every merge through the full ritual):
 **0 unmapped / 1288.** End gauge: 184 perfected·fresh · 235 audited · 842 mapped · 27

@@ -347,7 +347,7 @@ const Chat = (() => {
     let out = '', last = 0, m;
     while ((m = re.exec(s)) !== null) {
       let url = m[0];
-      const trail = /[.,;:!?'")\]}>]+$/.exec(url);   // don't swallow sentence punctuation trailing the URL
+      const trail = /[.,;:!?'")\]}>*`]+$/.exec(url); // don't swallow sentence punctuation OR markdown markers (**url**, `url`) trailing the URL
       if (trail) url = url.slice(0, url.length - trail[0].length);
       if (!url) continue;                            // pathological match (scheme only) — let escape handle it
       out += escapeHtml(s.slice(last, m.index));     // escaped text before the URL
@@ -1827,7 +1827,12 @@ const Chat = (() => {
       try { localStorage.setItem(WORKRATE_COACH_KEY, '1'); } catch (_) {}
     }
     const lbl = document.createElement('span'); lbl.className = 'work-rate-label';
-    lbl.textContent = '◈ rate ' + name + '’s work — ';
+    // name the RUN's agent, not whoever the active chat happens to be bound to — the OUTBOX window
+    // (and any multi-agent surface) rates crew runs while a different agent is on screen. The verdict
+    // already routes by the agentId param; the label must agree with it (truthful telemetry).
+    let ratee = name;
+    try { if (typeof App !== 'undefined' && App.agentName) ratee = App.agentName(agentId || 'agent') || name; } catch (_) {}
+    lbl.textContent = '◈ rate ' + ratee + '’s work — ';
     const btns = document.createElement('span'); btns.className = 'consent-btns';
     host.appendChild(lbl); host.appendChild(btns);
     let done = false;
@@ -2058,8 +2063,8 @@ const Chat = (() => {
   /* W3 — THE DELIVERY CARD (reshaped 2026-07-15). WorkshopStore adopts one SESSION per idle-work
      deliverable ('workshop-<runId>', unread in the rail) and calls this ONLY when the Commander opens that
      session — opts.sessionId pins the card to it, so a delivery can never paint into an unrelated stream.
-     Simple by design: the headline, the honest verification line, WHAT it did, a link that RUNS it (when a
-     web entry exists), the files, and ONE action row — an optional message to the agent plus three one-click
+     Simple by design: the headline, the honest verification line, the link that RUNS it FIRST (when a
+     web entry exists — open-not-read law), then WHAT it did / WHY / check-yourself, the files, and ONE action row — an optional message to the agent plus three one-click
      decisions: Implement (decide keep — the sidecar applies a patch deliverable to a new branch, or lands
      files in the default deliverables folder), Later (dismiss; the session stays), Discard (single confirm →
      wipe + denylist). A typed message rides the decision as a REAL user turn in this same session — the
@@ -2152,41 +2157,9 @@ const Chat = (() => {
     }
     r.body.appendChild(ver);
 
-    // labeled section rows — the premium dossier grammar (gold uppercase micro-label over a bright value),
-    // same ws-k/ws-v vocabulary the old summary pane and the config cards speak.
-    const mkSection = (label, value, cls) => {
-      const d = document.createElement('div'); d.className = 'ws-line ' + cls;
-      const kk = document.createElement('span'); kk.className = 'ws-k'; kk.textContent = label;
-      const vv = document.createElement('span'); vv.className = 'ws-v'; vv.textContent = value;
-      d.appendChild(kk); d.appendChild(vv); r.body.appendChild(d);
-    };
-    // ── WHAT it did — the one paragraph the agent wrote, plain ──
-    if (m.summary) mkSection('what it did', String(m.summary), 'ws-what');
-    // ── how to use — ONE short line. The workshop prompt now caps this to a sentence; a verbose legacy
-    // manifest is clamped here rather than dumped as a wall of instructions (the old confusing card).
-    if (m.howToUse) {
-      const one = String(m.howToUse).replace(/\s+/g, ' ').trim();
-      if (one) mkSection('how to use', one.length > 200 ? one.slice(0, 200) + '…' : one, 'ws-how');
-    }
-    // what a human still needs to check — honest, compact (never implied failure, never hidden).
-    if (Array.isArray(m.notVerified) && m.notVerified.length) mkSection('check yourself', m.notVerified.join('; '), 'ws-notver');
-    // per-command verification detail: the ACTUAL commands run + each one's pass/fail from the manifest
-    // (renders only when the manifest actually recorded them — never invents a command or a result).
-    if (vcmds && vcmds.length) {
-      const vd = document.createElement('div'); vd.className = 'ws-verdetail';
-      vcmds.forEach(c => {
-        const ok = Number(c.exit) === 0;
-        const line = document.createElement('div'); line.className = 'ws-vcmd ' + (ok ? 'ok' : 'bad');
-        const mark = document.createElement('span'); mark.className = 'ws-vmark'; mark.textContent = ok ? '✓' : '✕';
-        const cmd = document.createElement('code'); cmd.className = 'ws-vcmdtext'; cmd.textContent = String(c.cmd);
-        line.appendChild(mark); line.appendChild(cmd);
-        if (!ok && c.exit != null) { const ex = document.createElement('span'); ex.className = 'ws-vexit'; ex.textContent = 'exit ' + c.exit; line.appendChild(ex); }
-        vd.appendChild(line);
-      });
-      r.body.appendChild(vd);
-    }
-
-    // ── TRY IT — the link that RUNS the deliverable (jailed /workshop-run/ route), when a web entry exists ──
+    // ── TRY IT FIRST (2026-07-17, deliverable = open-not-read law) — when a web entry exists, the RUN
+    // action leads the card: the Commander opens the thing, the prose below is supporting context, not a
+    // gate in front of the click. Jailed /workshop-run/ route, same as before — only the position moved.
     if (htmlEntry) {
       // disk-proven by validateWorkshopManifest (never the model's claim): this deliverable requests pointer
       // lock / fullscreen, i.e. opening it will capture the Commander's REAL mouse. Say so BEFORE the click.
@@ -2208,6 +2181,87 @@ const Chat = (() => {
       openItBtn.onclick = () => openRunTab(htmlEntry);
       tryRow.appendChild(openItBtn);
       r.body.appendChild(tryRow);
+    }
+
+    // labeled section rows — the premium dossier grammar (gold uppercase micro-label over a bright value),
+    // same ws-k/ws-v vocabulary the old summary pane and the config cards speak.
+    const mkSection = (label, value, cls) => {
+      const d = document.createElement('div'); d.className = 'ws-line ' + cls;
+      const kk = document.createElement('span'); kk.className = 'ws-k'; kk.textContent = label;
+      const vv = document.createElement('span'); vv.className = 'ws-v'; vv.textContent = value;
+      d.appendChild(kk); d.appendChild(vv); r.body.appendChild(d);
+    };
+    // ── WHAT it did — the agent's plain summary. Both away-work personas (sidecar workshopPrompt +
+    // autopilot buildDoDirectiveV2) now cap this to 2-3 short sentences; a verbose legacy manifest folds
+    // at a sentence boundary behind a one-tap "more" instead of painting a wall of prose. Nothing is
+    // hidden for good — expand shows the agent's full paragraph verbatim.
+    if (m.summary) {
+      const full = String(m.summary).replace(/\s+/g, ' ').trim();
+      if (full && full.length <= 360) mkSection('what it did', full, 'ws-what');
+      else if (full) {
+        const win = full.slice(0, 340);
+        const sentEnd = Math.max(win.lastIndexOf('. '), win.lastIndexOf('! '), win.lastIndexOf('? '));
+        // prefer a sentence boundary; a boundary-free run-on breaks at a WORD boundary with an honest ellipsis
+        const short = sentEnd > 120 ? full.slice(0, sentEnd + 1) : full.slice(0, win.lastIndexOf(' ') > 120 ? win.lastIndexOf(' ') : 300).trim() + '…';
+        const d = document.createElement('div'); d.className = 'ws-line ws-what';
+        const kk = document.createElement('span'); kk.className = 'ws-k'; kk.textContent = 'what it did';
+        const vv = document.createElement('span'); vv.className = 'ws-v'; vv.textContent = short + ' ';
+        const more = document.createElement('button'); more.type = 'button'; more.className = 'ws-more'; more.textContent = '+ more';
+        more.onclick = () => { vv.textContent = full; autoscroll(); };   // one-way expand; replacing textContent drops the button
+        vv.appendChild(more);
+        d.appendChild(kk); d.appendChild(vv); r.body.appendChild(d);
+      }
+    }
+    // ── why this — server-stamped provenance (workshopBecause): the grounds quote or the Commander's own
+    // ask that queued the build. Real recorded data only; absent → no line. This is the adaptation made
+    // visible: the card says WHY in your terms, not just WHAT in the agent's.
+    if (m.because) {
+      const because = String(m.because).replace(/\s+/g, ' ').trim();
+      if (because) mkSection('why this', because.length > 300 ? because.slice(0, 300) + '…' : because, 'ws-because');
+    }
+    // ── how to use — ONE short line, and ONLY when there is no Open button (an html entry's how-to-use IS
+    // the ▶ Open it action above; repeating "open index.html" under it was dead weight). A verbose legacy
+    // manifest is clamped rather than dumped as a wall of instructions (the old confusing card).
+    if (m.howToUse && !htmlEntry) {
+      const one = String(m.howToUse).replace(/\s+/g, ' ').trim();
+      if (one) mkSection('how to use', one.length > 200 ? one.slice(0, 200) + '…' : one, 'ws-how');
+    }
+    // what a human still needs to check — honest, compact (never implied failure, never hidden). One short
+    // row per item (the old semicolon join painted a wall); past the fourth, items fold behind "+N more".
+    if (Array.isArray(m.notVerified) && m.notVerified.length) {
+      const items = m.notVerified.filter(Boolean)
+        .map(s => { const t = String(s).replace(/\s+/g, ' ').trim(); return t.length > 200 ? t.slice(0, 200) + '…' : t; })
+        .filter(Boolean);
+      if (items.length === 1) mkSection('check yourself', items[0], 'ws-notver');
+      else if (items.length) {
+        const d = document.createElement('div'); d.className = 'ws-line ws-notver';
+        const kk = document.createElement('span'); kk.className = 'ws-k'; kk.textContent = 'check yourself';
+        const vv = document.createElement('span'); vv.className = 'ws-v';
+        const addItem = (t) => { const li = document.createElement('div'); li.className = 'ws-nvitem'; li.textContent = t; vv.appendChild(li); };
+        items.slice(0, 4).forEach(addItem);
+        if (items.length > 4) {
+          const more = document.createElement('button'); more.type = 'button'; more.className = 'ws-more';
+          more.textContent = '+ ' + (items.length - 4) + ' more';
+          more.onclick = () => { more.remove(); items.slice(4).forEach(addItem); autoscroll(); };
+          vv.appendChild(more);
+        }
+        d.appendChild(kk); d.appendChild(vv); r.body.appendChild(d);
+      }
+    }
+    // per-command verification detail: the ACTUAL commands run + each one's pass/fail from the manifest
+    // (renders only when the manifest actually recorded them — never invents a command or a result).
+    if (vcmds && vcmds.length) {
+      const vd = document.createElement('div'); vd.className = 'ws-verdetail';
+      vcmds.forEach(c => {
+        const ok = Number(c.exit) === 0;
+        const line = document.createElement('div'); line.className = 'ws-vcmd ' + (ok ? 'ok' : 'bad');
+        const mark = document.createElement('span'); mark.className = 'ws-vmark'; mark.textContent = ok ? '✓' : '✕';
+        const cmd = document.createElement('code'); cmd.className = 'ws-vcmdtext'; cmd.textContent = String(c.cmd);
+        line.appendChild(mark); line.appendChild(cmd);
+        if (!ok && c.exit != null) { const ex = document.createElement('span'); ex.className = 'ws-vexit'; ex.textContent = 'exit ' + c.exit; line.appendChild(ex); }
+        vd.appendChild(line);
+      });
+      r.body.appendChild(vd);
     }
 
     // ── the files — every row's click ACTUALLY WORKS (2026-07-15 UX audit: the old "open in your default
@@ -2304,6 +2358,38 @@ const Chat = (() => {
             rv.onclick = () => { Promise.resolve(core.invoke('starnet_reveal_path', { path: destPath })).catch(() => { rv.textContent = 'could not open'; setTimeout(() => { rv.textContent = '📂 open folder'; }, 1600); }); };
             chips.appendChild(rv);
           }
+          // UNDO KEEP (EL-11 #8) — reverse the copy-out: delete exactly the files Implement wrote to destPath and
+          // return the build to pending. DESTRUCTIVE-CONTROLS LAW: the chip names its target folder AND its effect,
+          // and single-arms (click to arm, click again to confirm) so it's never a one-tap accident. The resulting
+          // line is driven by the SERVER's honest {removed, missing} — a file the user already moved reads as such,
+          // never as a phantom removal.
+          const un = document.createElement('button'); un.className = 'consent-btn deny'; un.textContent = 'undo keep';
+          un.title = 'UNDO KEEP — removes the copied files from ' + destPath + ' and returns this build to pending';
+          let unArmed = false;
+          un.onclick = async () => {
+            if (un.disabled) return;
+            if (!unArmed) { unArmed = true; un.textContent = 'undo — remove these files?'; setTimeout(() => { if (!un.disabled) { unArmed = false; un.textContent = 'undo keep'; } }, 4000); return; }
+            un.disabled = true; un.textContent = 'undoing…';
+            let j = null;
+            try {
+              const tok = (typeof Harness !== 'undefined' && Harness.apiToken) ? String(Harness.apiToken() || '') : '';
+              const headers = { 'Content-Type': 'application/json' }; if (tok) headers['X-StarNet-Token'] = tok;
+              const rr = await fetch('/api/workshop/undo', { method: 'POST', headers, body: JSON.stringify({ agentId: agentId, runId: m.runId, destPath: destPath }) });
+              j = await rr.json().catch(() => null);
+              if (!rr.ok || !j || j.ok === false) j = null;
+            } catch (_) { j = null; }
+            if (!j) { un.disabled = false; unArmed = false; un.textContent = 'undo keep'; localLine('Could not undo this keep: the station kept the files.'); return; }
+            // honest resulting state, straight from server truth.
+            const nRemoved = (j.removed || []).length, nMissing = (j.missing || []).length;
+            let done;
+            if (nRemoved && !nMissing) done = '↩ keep undone — removed ' + nRemoved + ' file' + (nRemoved === 1 ? '' : 's') + ' from ' + (j.destPath || destPath) + '. This build is pending again.';
+            else if (nRemoved && nMissing) done = '↩ keep undone — removed ' + nRemoved + ', but ' + nMissing + ' file' + (nMissing === 1 ? ' was' : 's were') + ' already moved or gone. This build is pending again.';
+            else done = '↩ nothing to remove — those files were already moved or deleted' + (j.restored ? '. This build is pending again.' : '.');
+            lr.body.textContent = done;   // replaces the label + chips (the destPath is gone, so its chips are moot)
+            try { decideNote(done); } catch (_) {}
+            autoscroll();
+          };
+          chips.appendChild(un);
           lr.body.appendChild(chips);
         }
         autoscroll();
@@ -4438,7 +4524,10 @@ const Chat = (() => {
     const key = raw.toLowerCase();
     if (key && typeof Personas !== 'undefined' && Personas.exists && Personas.exists(key)) {
       const id = Personas.resolve ? Personas.resolve(key) : key;
-      if (applyAgentPatch({ personaId: id })) localLine('Personality set to ' + Personas.get(id).name + '.');
+      if (applyAgentPatch({ personaId: id })) {
+        // slash-set skips the create screen's two-press confirm, so the honesty note rides the confirmation line
+        localLine('Personality set to ' + Personas.get(id).name + '.' + (id === 'unhinged' ? ' Heads up: this one swears — for real.' : ''));
+      }
       else localLine('Personality setting is not available yet.');
       return;
     }

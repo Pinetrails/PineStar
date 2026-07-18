@@ -288,7 +288,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const pushXai = await fetch(B + '/api/key', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Skynet-Token': IPC_TOKEN },
-      body: JSON.stringify({ provider: 'grok', key: 'xai-provider-http-test-secret' })
+      body: JSON.stringify({ provider: 'x-ai', key: 'xai-provider-http-test-secret' })
     });
     A.eq(pushXai.status, 200, 'POST /api/key can push an xAI provider key by alias with the IPC token');
     const xaiAck = await pushXai.json();

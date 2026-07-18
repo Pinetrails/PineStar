@@ -81,11 +81,15 @@ function startMockOpenRouter(model) {
   });
 }
 
-// TOOL-EMITTING mock (for the approval scenario): the FIRST completion asks for a consent-gated write tool
+// TOOL-EMITTING mock (for the approval scenario): the FIRST directive completion settles the Task Brief
+// (brief_proceed — since the briefing-reliability boundary, a.k.a. merge a948a530, the host BLOCKS mutating
+// tools until the brief is settled, so a model that leads with fs.write burns its call on the brief gate and
+// never reaches the permission broker). The SECOND completion asks for the consent-gated write tool
 // (fs.write, capability `cabinet`), so a non-Full-Access interactive run trips the real permission broker →
 // emits permission.prompt → PAUSES. Every subsequent completion finishes with plain text + stop, so once the
 // human approves and the tool result flows back, the run resumes to a terminal agent.run.end. `calls` counts
-// completion requests, which is the ground truth for "the run is blocked" (exactly 1 until approval arrives).
+// completion requests, which is the ground truth for "the run is blocked" (exactly 2 until approval arrives:
+// the settle turn + the paused tool turn).
 function startToolMock(model) {
   return new Promise((resolve) => {
     let calls = 0;           // every completion the mock served (background engines included — forensics only)
@@ -122,6 +126,16 @@ function startToolMock(model) {
           else console.log(`[tool-mock] background completion #${calls} (not the directive): "${lastUserTxt.slice(0, 80)}"`);
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
           if (isDirective && directiveCalls === 1) {
+            // settle the Task Brief first — the host's brief boundary refuses consequential tools before this.
+            // (If a boot ever runs WITHOUT the brief layer armed, this call just errors as an unknown tool and
+            // the run proceeds to completion #2 exactly the same — the script is safe in both worlds.)
+            const tc = { index: 0, id: 'call_brief', type: 'function', function: { name: 'brief_proceed', arguments: JSON.stringify({ objective: 'write a short note to a file in the workspace' }) } };
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [tc] } }] }) + '\n\n');
+            setTimeout(() => {
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }) + '\n\n');
+              res.write('data: [DONE]\n\n'); res.end();
+            }, 150);
+          } else if (isDirective && directiveCalls === 2) {
             const tc = { index: 0, id: 'call_0', type: 'function', function: { name: 'fs.write', arguments: JSON.stringify({ path: 'audit-note.txt', content: 'written by the approval audit' }) } };
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [tc] } }] }) + '\n\n');
             setTimeout(() => {
@@ -513,8 +527,10 @@ async function runApprovalScenario() {
     A.ok('approval/consent-row-rendered', consentRow, consentRow ? '.consent control rendered in COMMS' : 'consent control never appeared');
     // BLOCKED: the run must not have terminated, and the DIRECTIVE's run must have made exactly one completion
     // (paused pre-tool-result). Background engine calls are counted separately by the content-aware mock.
+    // ≤2 completions while paused: the brief-settle turn + the paused tool turn (or just 1 if the brief
+    // layer wasn't armed and the settle call errored without consuming a completion budget).
     const callsBeforeApprove = mock.directiveCalls();
-    A.ok('approval/run-blocked-while-waiting', !endedEarly && callsBeforeApprove === 1, `agent.run.end seen=${endedEarly}; directive completions so far=${callsBeforeApprove} (expect 1 while paused; ${mock.callCount()} total incl. background)`);
+    A.ok('approval/run-blocked-while-waiting', !endedEarly && callsBeforeApprove >= 1 && callsBeforeApprove <= 2, `agent.run.end seen=${endedEarly}; directive completions so far=${callsBeforeApprove} (expect 2 while paused: settle+tool; ${mock.callCount()} total incl. background)`);
     await capture(cdp, OUT_DIR, 'tool-run-with-approval_awaiting');
 
     // APPROVE ONCE → the paused dispatch resolves, the tool runs, the result flows back, the run resumes.
@@ -522,7 +538,7 @@ async function runApprovalScenario() {
     A.ok('approval/approve-clicked', approved === 'approved', approved);
     let resumed = false;
     for (let i = 0; i < 60; i++) { await sleep(250); const ends = await evalJS(cdp, "window.__SKYNET_TEST__.events('agent.run.end').length").catch(() => 0); if ((ends || 0) > 0) { resumed = true; break; } }
-    A.ok('approval/run-resumes-on-approve', resumed && mock.directiveCalls() >= 2, `agent.run.end after approve=${resumed}; directive completions now=${mock.directiveCalls()} (≥2 ⇒ tool result round-tripped)`);
+    A.ok('approval/run-resumes-on-approve', resumed && mock.directiveCalls() >= 3, `agent.run.end after approve=${resumed}; directive completions now=${mock.directiveCalls()} (≥3 ⇒ settle + tool + post-approval round-trip)`);
 
     const hardFail = A.results.some((r) => !r.pass && !r.soft);
     await capture(cdp, OUT_DIR, hardFail ? '_FAIL-tool-run-with-approval' : 'tool-run-with-approval');

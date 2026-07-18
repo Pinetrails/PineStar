@@ -77,6 +77,9 @@
     // one honest next step; the action BUTTON (actionButton) tailors the door — "add a key" vs "sign in with ChatGPT".
     auth:          { retryable: false, action: 'settings', msg: 'No model is connected yet — add a provider key (or sign in with ChatGPT) to let it run.' },
     oauth:         { retryable: false, action: 'settings', msg: 'Your ChatGPT sign-in expired — reconnect it (or add a provider key instead).' },
+    // xAI can 403-allowlist the Grok OAuth device flow off for an account — signing in is a dead-end there, so
+    // point the user at the xAI (API KEY) provider instead of a doomed reconnect. Door is the PROVIDERS key field.
+    grok_oauth_unavailable: { retryable: false, action: 'settings', msg: "Grok sign-in isn't available on this account yet — xAI hasn't opened the Grok sign-in for it. Add an xAI provider key instead (paste it under SETTINGS → PROVIDERS and pick the XAI provider)." },
     billing:       { retryable: false, action: 'settings', msg: "Your provider account is out of credit — top it up, then try again." },
     // managed StarNet credits ran out (only reachable when a managed-credit backend is wired). Point at the STORE
     // to top up; a BYOK station never hits this kind (it gets `billing`/`auth` instead).
@@ -213,6 +216,18 @@
     if (/managed credit|add credits in the store|out of managed credit/.test(raw.toLowerCase())) {
       kind = 'managed_credit';
     } else
+    // xAI's Grok OAuth device flow can be 403-allowlisted off for an account: the backend says the OAuth surface
+    // is unavailable/forbidden. That's a dead-end for RECONNECT, so route to the xAI (API KEY) provider instead.
+    if (/\bgrok\b/.test(raw.toLowerCase()) && /allowlist|not allowed|not enabled|not available|unavailable|access forbidden|\bforbidden\b|\b403\b/.test(raw.toLowerCase())) {
+      kind = 'grok_oauth_unavailable';
+    } else
+    // grok/kimi keyless sign-ins are a reconnect case (same class as codex): not-connected, auth-error, or a
+    // dead refresh token. The action BUTTON tailors the door per provider (RECONNECT GROK / RECONNECT KIMI).
+    if (/\b(grok|kimi)[_ -]?(not[_ -]?connected|auth[_ -]?error|auth\b|token[_ -]?refresh|refresh[_ -]?token|relogin|reconnect)/.test(raw.toLowerCase())
+        || /(grok|kimi).*(sign[- ]?in|not signed in|not connected|expired|sign in again)/.test(raw.toLowerCase())
+        || /sign[- ]?in.*(grok|kimi)/.test(raw.toLowerCase())) {
+      kind = 'oauth';
+    } else
     // Harness pre-flight misconfig ("no API key set" / "no model selected") is UI-level — catch before delegating
     // (the sidecar classifier never sees these) so both paths point at Settings, not a blind retry.
     // `sign[- ]?in` (space allowed): the sidecar's dead-refresh-token errors say "Sign in with ChatGPT again"
@@ -261,6 +276,16 @@
     if (kind === 'agent_busy' && /already running a task/.test(raw.toLowerCase())) {
       return { userMessage: raw, kind: kind, retryable: k.retryable, action: k.action, raw: raw };
     }
+    // oauth (keyless device-code sign-in) carries WHICH provider it was, so the door reads the right reconnect
+    // label (RECONNECT CHATGPT / GROK / KIMI). Codex keeps its exact copy; grok/kimi name themselves.
+    if (kind === 'oauth') {
+      const low = raw.toLowerCase();
+      // loose contains-match (an underscore like "grok_not_connected" is a word char, so \b would miss it).
+      const provider = /grok/.test(low) ? 'grok' : /kimi/.test(low) ? 'kimi' : 'codex';
+      const nm = provider === 'grok' ? 'Grok' : provider === 'kimi' ? 'Kimi' : null;
+      const userMessage = nm ? ('Your ' + nm + ' sign-in expired — reconnect it (or add a provider key instead).') : k.msg;
+      return { userMessage: userMessage, kind: kind, retryable: k.retryable, action: k.action, provider: provider, raw: raw };
+    }
     return { userMessage: k.msg, kind: kind, retryable: k.retryable, action: k.action, raw: raw };
   }
 
@@ -296,11 +321,20 @@
       case 'refit':
         return { label: '⚒ Open REFIT', run: () => { try { if (typeof Build !== 'undefined' && Build.open) Build.open(); else if (typeof Build !== 'undefined' && Build.toggle && !(Build.isOpen && Build.isOpen())) Build.toggle(); } catch (_) {} } };
       case 'settings':
+        // Grok's OAuth sign-in is 403-allowlisted off for this account — the honest door is the xAI (API KEY)
+        // provider, not a doomed reconnect. Lands on the PROVIDERS section where the xAI key row lives.
+        if (verdict.kind === 'grok_oauth_unavailable')
+          return { label: '▸ USE XAI (API KEY)', run: () => openSettings('providers') };
         // A codex sign-in-class failure (dead/consumed refresh token, not-signed-in) ALWAYS gets the reconnect
         // door — the 2026-07-08 escape was exactly this error landing with only a generic "add a key" path.
         // Settings→PROVIDERS is where the row's ⏼ RE-SIGN-IN action now lives.
-        if (verdict.kind === 'oauth')
-          return { label: '⏼ RECONNECT CHATGPT', run: () => openSettings('providers') };
+        if (verdict.kind === 'oauth') {
+          // the door names the specific provider whose sign-in died (all land on the same PROVIDERS section).
+          const label = verdict.provider === 'grok' ? '⏼ RECONNECT GROK'
+            : verdict.provider === 'kimi' ? '⏼ RECONNECT KIMI'
+            : '⏼ RECONNECT CHATGPT';
+          return { label: label, run: () => openSettings('providers') };
+        }
         // other auth/no-key: if ChatGPT is already the connected brain, the honest door is still "reconnect";
         // otherwise the provider key field. Both land on the same PROVIDERS section.
         if (verdict.kind === 'auth' && codexConnected())

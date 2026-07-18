@@ -16,7 +16,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const cold = U.understanding(D.fresh(), { now: 1000 });
 A.eq(cold.overall, 0, 'a cold dossier reads overall 0');
 A.eq(cold.clarity, 0, 'clarity aliases overall');
-A.eq(cold.blanks.length, 7, 'a cold dossier has all seven dimensions blank');
+A.eq(cold.blanks.length, 9, 'a cold dossier has all nine dimensions blank');
 A.ok(cold.calibrating, 'a cold dossier is calibrating');
 A.eq(cold.dims.goals.conf, 0, 'a blank dimension has 0 confidence');
 A.ok(cold.dims.goals.blank, 'a blank dimension is flagged blank');

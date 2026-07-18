@@ -32,7 +32,7 @@ A.eq(full.length, I.QUESTIONS.length, 'plan() with no skip asks every question')
 A.eq(full.map(q => q.dim), I.QUESTIONS.map(q => q.dim), 'plan() preserves canonical question order');
 
 const partial = I.plan({ skip: ['identity', 'goals'] });
-A.eq(partial.map(q => q.dim), ['stack', 'pain', 'ambition', 'style', 'standing_orders'], 'plan() skips already-known dimensions');
+A.eq(partial.map(q => q.dim), ['stack', 'pain', 'ambition', 'style', 'people', 'schedule', 'standing_orders'], 'plan() skips already-known dimensions');
 
 A.eq(I.plan({ skip: D.DIM_KEYS }).length, 0, 'plan() asks nothing when every dimension is known');
 A.eq(I.plan({ max: 2 }).length, 2, 'plan() honors the max cap');

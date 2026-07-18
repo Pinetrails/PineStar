@@ -1,5 +1,6 @@
-// Wave 4A live DOM journey. Start a seeded StarNet app, then point SKYNET_PORT here.
-// Drives real controls for 50-session search, both exports, clear/reload/undo, and exact bulk archive/undo.
+// Live DOM journey for the surviving session power tools (the SESSION TOOLS window was retired
+// 2026-07-17): rail search over 50 sessions, hit-click session switch, and per-row ⋯ menu export
+// in both formats. Start a seeded StarNet app, then point SKYNET_PORT here.
 import { launchChrome, connectCDP, evalJS, collectDiagnostics, sleep } from '../lib/cdp.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -37,52 +38,60 @@ try {
   await sleep(1200);
   check('seeded General plus 50 sessions', seeded === 51, String(seeded));
 
-  await evalJS(cdp, `StationUI.openTerm('sessiontools')`);
-  await sleep(200);   // window mount + the deferred search focus (setTimeout 0)
-  const opened = await evalJS(cdp, `({inWindow:!!document.querySelector('#ws-tools').closest('.term'),hidden:document.querySelector('#ws-tools').hidden,focused:document.activeElement.id})`);
-  check('SESSION TOOLS window opens and focuses search', opened.inWindow && !opened.hidden && opened.focused === 'ws-search', JSON.stringify(opened));
-  await evalJS(cdp, `(() => { const q=document.querySelector('#ws-search'); q.value='NEBULA-NEEDLE'; q.dispatchEvent(new Event('input',{bubbles:true})); })()`);
-  const search = await evalJS(cdp, `[...document.querySelectorAll('#ws-search-results .ws-search-hit')].map(e=>({id:e.dataset.id,text:e.textContent}))`);
-  check('body search finds exact known session', search.length === 1 && search[0].id === 'power-23', JSON.stringify(search));
+  // the retired window must be GONE, not merely unreachable — no SYSTEM entry, no parked panel
+  const gone = await evalJS(cdp, `({menu:!!document.querySelector('.bb[data-term="sessiontools"]'),park:!!document.querySelector('#ws-tools-park')})`);
+  check('SESSION TOOLS window entry and parked panel are removed', !gone.menu && !gone.park, JSON.stringify(gone));
 
-  // Preserve the generated export bundle while neutralizing the browser download navigation.
+  // rail search: visible on the SESSIONS view, finds a transcript body across 50 sessions
+  const railSearch = await evalJS(cdp, `(() => {
+    const box=document.querySelector('#ws-rail-search'), q=document.querySelector('#ws-search');
+    if(!box||!q) return {present:false};
+    q.value='NEBULA-NEEDLE'; q.dispatchEvent(new Event('input',{bubbles:true}));
+    return {present:true,hidden:box.hidden,hits:[...document.querySelectorAll('#ws-search-results .ws-search-hit')].map(e=>({id:e.dataset.id,text:e.textContent}))};
+  })()`);
+  check('rail search is present on the sessions rail', railSearch.present && !railSearch.hidden, JSON.stringify(railSearch));
+  check('body search finds exact known session', railSearch.hits && railSearch.hits.length === 1 && railSearch.hits[0].id === 'power-23', JSON.stringify(railSearch.hits));
+
+  // clicking a hit switches to that session and clears the query
+  const jumped = await evalJS(cdp, `(() => {
+    document.querySelector('#ws-search-results .ws-search-hit').click();
+    return {active:Workstreams.activeId(),query:document.querySelector('#ws-search').value,results:document.querySelectorAll('#ws-search-results .ws-search-hit').length};
+  })()`);
+  check('search hit opens its session and resets the box', jumped.active === 'power-23' && jumped.query === '' && jumped.results === 0, JSON.stringify(jumped));
+
+  // PROJECTS view hides the search block with the sessions list; switching back restores it
+  const viewFlip = await evalJS(cdp, `(() => {
+    App.setRailView ? App.setRailView('projects') : document.querySelector('#ws-tab-projects').click();
+    const hiddenInProjects=document.querySelector('#ws-rail-search').hidden;
+    document.querySelector('#ws-tab-sessions').click();
+    return {hiddenInProjects,backOnSessions:!document.querySelector('#ws-rail-search').hidden};
+  })()`);
+  check('PROJECTS view hides rail search, SESSIONS restores it', viewFlip.hiddenInProjects && viewFlip.backOnSessions, JSON.stringify(viewFlip));
+
+  // per-row ⋯ menu export: preserve the generated bundle while neutralizing the download navigation
   await evalJS(cdp, `(() => {
     window.__powerExports=[]; const original=Workstreams.exportConversation;
-    Workstreams.exportConversation=(id,format,opts)=>{ const b=original(id,format,opts); window.__powerExports.push(b); return b; };
+    Workstreams.exportConversation=(id,format,opts)=>{ const b=original(id,format,opts); window.__powerExports.push({id,bundle:b}); return b; };
     URL.createObjectURL=()=> 'blob:starnet-test'; URL.revokeObjectURL=()=>{};
     HTMLAnchorElement.prototype.click=function(){};
-    document.querySelector('#ws-export-md').click(); document.querySelector('#ws-export-json').click();
   })()`);
-  const exports = await evalJS(cdp, `window.__powerExports.map(x=>({format:x.format,mime:x.mime,text:x.text}))`);
-  check('both export controls emit their promised formats', exports.length === 2 && exports[0].format === 'markdown' && exports[1].format === 'json', JSON.stringify(exports.map(x => x.format)));
-  check('export carries no hidden roles and JSON round-trips', /# Orchid launch notes/.test(exports[0].text) && JSON.parse(exports[1].text).messages.every(m=>m.role==='user'||m.role==='assistant'));
+  const menuExport = await evalJS(cdp, `(() => {
+    const row=document.querySelector('#workstreams .ws-row[data-id="power-17"]');
+    row.querySelector('.ws-kebab').click();
+    const items=[...document.querySelectorAll('.ws-menu .ws-menu-item')].map(b=>b.dataset.act);
+    const md=document.querySelector('.ws-menu .ws-menu-item[data-act="export-md"]'); md && md.click();
+    return {items,exports:window.__powerExports.map(x=>({id:x.id,format:x.bundle.format}))};
+  })()`);
+  check('row menu offers both export formats', menuExport.items.includes('export-md') && menuExport.items.includes('export-json'), JSON.stringify(menuExport.items));
+  check('menu export targets the exact ROW session (not the active one)', menuExport.exports.length === 1 && menuExport.exports[0].id === 'power-17' && menuExport.exports[0].format === 'markdown', JSON.stringify(menuExport.exports));
+  const jsonExport = await evalJS(cdp, `(() => {
+    const row=document.querySelector('#workstreams .ws-row[data-id="power-17"]');
+    row.querySelector('.ws-kebab').click();
+    document.querySelector('.ws-menu .ws-menu-item[data-act="export-json"]').click();
+    return window.__powerExports[window.__powerExports.length-1].bundle;
+  })()`);
+  check('JSON export carries dialogue roles only and round-trips its title', jsonExport.format === 'json' && /Orchid launch notes/.test(jsonExport.text) && JSON.parse(jsonExport.text).messages.every(m=>m.role==='user'||m.role==='assistant'), jsonExport.format);
 
-  await evalJS(cdp, `document.querySelector('#ws-clear').click()`);
-  check('first clear click only arms named confirmation', await evalJS(cdp, `/CONFIRM CLEAR/.test(document.querySelector('#ws-clear').textContent) && Workstreams.get('power-17').history.length>0`));
-  await evalJS(cdp, `document.querySelector('#ws-clear').click()`);
-  check('confirmed clear empties only active transcript and offers undo', await evalJS(cdp, `Workstreams.get('power-17').history.length===0 && !document.querySelector('#ws-undo').hidden && Workstreams.get('power-23').history.length===2`));
-  await cdp.send('Page.reload', { ignoreCache: true });
-  await waitFor(cdp, `typeof Workstreams === 'object' && typeof StationUI === 'object' && !!document.querySelector('#screen-game.active') && !!document.querySelector('#ws-tools')`, 'reload after clear');
-  await sleep(300);
-  await evalJS(cdp, `StationUI.openTerm('sessiontools')`); await sleep(200);
-  check('clear checkpoint survives reload', await evalJS(cdp, `Workstreams.get('power-17').history.length===0 && !document.querySelector('#ws-undo').hidden`));
-  await evalJS(cdp, `document.querySelector('#ws-undo').click()`);
-  check('clear undo restores exact transcript', await evalJS(cdp, `Workstreams.get('power-17').history.length===2 && !Workstreams.canUndo()`));
-
-  await evalJS(cdp, `(() => { for(const id of ['ws-bulk-completed','ws-bulk-old']){const n=document.querySelector('#'+id);n.checked=true;n.dispatchEvent(new Event('change',{bubbles:true}));} document.querySelector('#ws-bulk-preview').click(); window.__expectedBulk=Workstreams.previewArchive({empty:true,completed:true,olderThanMs:30*86400000}).ids; })()`);
-  const preview = await evalJS(cdp, `({expected:window.__expectedBulk,status:document.querySelector('#ws-bulk-status').textContent,disabled:document.querySelector('#ws-bulk-apply').disabled})`);
-  check('bulk preview discloses exact non-empty count', preview.expected.length > 0 && !preview.disabled && preview.status.startsWith(preview.expected.length + ' exact'), JSON.stringify(preview));
-  await evalJS(cdp, `document.querySelector('#ws-bulk-apply').click()`);
-  const archived = await evalJS(cdp, `Workstreams.all().filter(w=>w.archived).map(w=>w.id).sort()`);
-  check('bulk apply cannot cross previewed set', JSON.stringify(archived) === JSON.stringify(preview.expected), JSON.stringify({ archived, expected: preview.expected }));
-  check('General and pinned remain protected', !archived.includes('power-general') && !archived.includes('power-49'));
-  await cdp.send('Page.reload', { ignoreCache: true });
-  await waitFor(cdp, `typeof Workstreams === 'object' && typeof StationUI === 'object' && !!document.querySelector('#screen-game.active') && !!document.querySelector('#ws-tools')`, 'reload after bulk');
-  await sleep(300);
-  await evalJS(cdp, `StationUI.openTerm('sessiontools')`); await sleep(200);
-  check('bulk checkpoint survives reload', await evalJS(cdp, `Workstreams.canUndo() && !document.querySelector('#ws-undo').hidden`));
-  await evalJS(cdp, `document.querySelector('#ws-undo').click()`);
-  check('bulk undo restores every previewed row', (await evalJS(cdp, `Workstreams.all().filter(w=>w.archived).length`)) === 0);
   check('no uncaught page exceptions', exceptions.length === 0, exceptions.join(' ; '));
 } catch (e) {
   console.log('FAIL harness :: ' + (e && e.stack || e)); failures.push('harness');

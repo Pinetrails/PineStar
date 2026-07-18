@@ -11,7 +11,7 @@ const D = require('../frontend/app/dossier.js');
 /* ---------- fresh shape ---------- */
 const f = D.fresh();
 A.eq(f.v, 1, 'fresh() is v1');
-A.eq(Object.keys(f.dims).sort(), ['ambition', 'goals', 'identity', 'pain', 'stack', 'standing_orders', 'style'], 'fresh() has all seven dimensions, each empty');
+A.eq(Object.keys(f.dims).sort(), ['ambition', 'goals', 'identity', 'pain', 'people', 'schedule', 'stack', 'standing_orders', 'style'], 'fresh() has all nine dimensions, each empty');
 A.eq(f.dims.identity, [], 'a fresh dimension is an empty array');
 A.eq(f.seededFrom, {}, 'fresh() has seeded nothing');
 
@@ -121,20 +121,24 @@ D.upsert(seven, 'style', { text: longish('terse fast high signal run with it') }
 D.upsert(seven, 'standing_orders', { text: longish('cite sources never irreversible without asking') }, 5);
 D.upsert(seven, 'pain', { text: 'writing standup reports by hand every morning' }, 6);
 D.upsert(seven, 'ambition', { text: 'finally launch the newsletter' }, 7);
+D.upsert(seven, 'people', { text: longish('builds for a public audience of AI builders') }, 8);
+D.upsert(seven, 'schedule', { text: longish('US eastern, nights and weekends mostly') }, 9);
 const sevenBlock = D.composeBlock(seven, {});   // production DEFAULT cap (no maxChars)
-A.ok(sevenBlock.indexOf('Pain points (what eats their time') >= 0, 'composeBlock keeps the PAIN lead with all 7 dims at the default cap (no silent drop)');
-A.ok(sevenBlock.indexOf('Ambitions (what they keep meaning to do') >= 0, 'composeBlock keeps the AMBITION lead with all 7 dims at the default cap');
+A.ok(sevenBlock.indexOf('Pain points (what eats their time') >= 0, 'composeBlock keeps the PAIN lead with all 9 dims at the default cap (no silent drop)');
+A.ok(sevenBlock.indexOf('Ambitions (what they keep meaning to do') >= 0, 'composeBlock keeps the AMBITION lead with all 9 dims at the default cap');
+A.ok(sevenBlock.indexOf('People & audience (who they work with') >= 0, 'composeBlock keeps the PEOPLE lead with all 9 dims at the default cap');
+A.ok(sevenBlock.indexOf('Schedule & cadence (timezone') >= 0, 'composeBlock keeps the SCHEDULE lead with all 9 dims at the default cap');
 
 /* ---------- summary: honest counts + fraction-of-dimensions familiarity ---------- */
 const sm0 = D.summary(D.fresh(), {});
 A.eq(sm0.familiarity, 0, 'a cold dossier is 0% familiar');
 A.eq(sm0.known, [], 'a cold dossier knows no dimensions');
-A.eq(sm0.blank.length, 7, 'a cold dossier has seven blank dimensions');
+A.eq(sm0.blank.length, 9, 'a cold dossier has nine blank dimensions');
 const smX = D.fresh();
 D.upsert(smX, 'identity', { text: 'a' }, 1);
 D.upsert(smX, 'stack', { text: 'b' }, 2);
 const sm = D.summary(smX, { observed: { dominant: 'code' } });
-A.eq(sm.familiarity, 2 / 7, 'familiarity = fraction of dimensions with at least one belief');
+A.eq(sm.familiarity, 2 / 9, 'familiarity = fraction of dimensions with at least one belief');
 A.eq(sm.counts.identity, 1, 'summary reports per-dimension counts');
 A.eq(sm.total, 2, 'summary totals the beliefs');
 A.eq(sm.observed.dominant, 'code', 'summary passes the observed affinity through for the panel');

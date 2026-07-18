@@ -24,7 +24,8 @@ The desktop build checks the **public GitHub Releases** channel:
 https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/download/latest.json
 ```
 
-`starnet-releases` is a dedicated PUBLIC repo (the source repo stays private). GitHub
+`starnet-releases` is a dedicated public binary-distribution repo, separate from the public
+source repository. GitHub
 redirects the `latest/download` path to the newest published release, so the endpoint never
 changes between versions — only the release contents do. The native Tauri updater fetches
 this directly (it is not subject to the webview CSP).
@@ -67,18 +68,18 @@ lost after release, existing users will not be able to install future signed upd
 ### The signing stall (why 0.1.7 shipped without updater artifacts)
 
 `tauri build` invokes minisign to produce the `.sig`. Because the key is encrypted, the CLI
-**blocks on an interactive password prompt** unless the password is supplied via env — even
-though the password is empty. That interactive stall is why an earlier build set
+**blocks on an interactive password prompt** when its empty password is supplied through the
+normal build environment. That interactive stall is why an earlier build set
 `createUpdaterArtifacts: false` to get unblocked (which silently disabled the updater, since
-the updater REQUIRES the `.sig`). The fix is to set BOTH env vars so signing is
-non-interactive:
+the updater REQUIRES the `.sig`). The release cutter avoids that path: it builds the NSIS
+installer first, then signs it explicitly with the key file and `--password=`. No signing
+environment variables are required for a local cut:
 
 ```powershell
-$env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content "$env:USERPROFILE\.tauri\starnet-updater.key" -Raw)
-$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ""
+Test-Path "$env:USERPROFILE\.tauri\starnet-updater.key" # must print True
+npm run release:cut
 ```
 
-The bare `TAURI_SIGNING_PRIVATE_KEY` var accepts the key contents directly (not just a path).
 `createUpdaterArtifacts` is `true` in `tauri.conf.json` and stays that way.
 
 ## Build And Publish — one command
@@ -88,8 +89,8 @@ npm run release:cut
 ```
 
 `scripts/release-cut.mjs` does the whole thing from trunk: it verifies the versions match,
-pre-builds the `ctor` crates (dodging the E0463 parallel-build race), runs a signed
-`desktop:build` with the non-interactive signing env above, stages the installer + `.sig` +
+pre-builds the `ctor` crates (dodging the E0463 parallel-build race), builds NSIS and signs
+the final installer with the explicit local key path, stages the installer + `.sig` +
 `latest.json` into `release/`, and prints the exact upload checklist. Then, after Andrew
 uploads the release, prove the channel is live:
 

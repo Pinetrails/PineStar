@@ -24,20 +24,24 @@ const { bootToken } = require('./_httpToken.js');
 
 const HOST = '127.0.0.1';
 const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
+const BUDGET = path.resolve(__dirname, '..', 'sidecar', 'budget.js');
+const FAULT_BOOT = 'const b=require(' + JSON.stringify(BUDGET) + '),mk=b.makeBudget;' +
+  'b.makeBudget=(...a)=>{const v=mk(...a);v.check=()=>{throw new Error("injected precheck read failure")};return v};' +
+  'require(' + JSON.stringify(INDEX) + ');';
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // clear any AMBIENT OpenRouter key from the parent env so "no runnable provider" is deterministic (the dev seed holds
 // NO secret — the key lives only in runtimeKey, sourced from these envs; blanking them removes the credential).
 const NO_KEY = { OPENROUTER_KEY: '', OPENROUTER_API_KEY: '', SKYNET_OPENROUTER_KEY: '' };
 
-function boot(port, env, attemptsLeft) {
+function boot(port, env, attemptsLeft, injectBudgetFault) {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [INDEX], { env: Object.assign({}, process.env, NO_KEY, env, { SKYNET_PORT: String(port) }), stdio: ['ignore', 'pipe', 'pipe'] });
+    const child = spawn(process.execPath, injectBudgetFault ? ['-e', FAULT_BOOT] : [INDEX], { env: Object.assign({}, process.env, NO_KEY, env, { SKYNET_PORT: String(port) }), stdio: ['ignore', 'pipe', 'pipe'] });
     let out = '', settled = false;
     const onData = d => {
       out += d.toString();
       if (!settled && out.indexOf('http://' + HOST + ':' + port) >= 0) { settled = true; resolve({ child, port }); }
-      else if (!settled && /already in use/i.test(out)) { settled = true; try { child.kill(); } catch (_) {} if (attemptsLeft > 0) resolve(boot(port + 1, env, attemptsLeft - 1)); else reject(new Error('no free port')); }
+      else if (!settled && /already in use/i.test(out)) { settled = true; try { child.kill(); } catch (_) {} if (attemptsLeft > 0) resolve(boot(port + 1, env, attemptsLeft - 1, injectBudgetFault)); else reject(new Error('no free port')); }
     };
     child.stdout.on('data', onData); child.stderr.on('data', onData);
     child.on('error', e => { if (!settled) { settled = true; reject(e); } });
@@ -88,6 +92,29 @@ async function armAndStatus(B) {
       const s = await armAndStatus(B);
       A.eq(s.binding, 'budget', 'an exhausted cross-run budget pool → binding:budget (outranks no-provider; keys are also blank)');
       A.eq(s.beatsUsedToday, 0, 'the budget stand-down spent no leash (the cold-leash wart is fixed)');
+    } finally {
+      await kill(child);
+      try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
+    }
+  }
+
+  // ===== 3. PRECHECK INSPECTION FAILURE -> fail closed, spend nothing, and leave a truthful durable decision =====
+  {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-nsbudget-precheck-fault-'));
+    const env = { SKYNET_WORKSPACES: ws, SKYNET_DEV: '1', SKYNET_NIGHTSHIFT_AWAY_MS: '1', SKYNET_NIGHTSHIFT_TICK_MS: '10' };
+    let { child, port } = await boot(9020 + (process.pid % 25), env, 20, true);
+    const B = 'http://' + HOST + ':' + port;
+    try {
+      const s = await armAndStatus(B);
+      A.eq(s.binding, 'precheck-error', 'a thrown budget/provider/readiness inspection stands down as precheck-error');
+      A.eq(s.beatsUsedToday, 0, 'the unproven safety gate spends no leash');
+      await sleep(80); // let the real server-owned tick persist at least one decline
+      const token = await bootToken(B, B);
+      const headers = { 'X-StarNet-Token': token, Origin: B };
+      const body = await (await fetch(B + '/api/autonomy/ledger', { headers })).json();
+      const decline = (body.entries || []).find(e => e.source === 'nightshift' && e.kind === 'decline' && e.binding === 'precheck-error');
+      A.ok(decline && decline.detail && decline.detail.preSpend === true, 'the real sidecar ledger records the failed inspection as a pre-spend decline');
+      A.ok(fs.existsSync(path.join(ws, 'autonomy.ledger.jsonl')), 'the fail-closed decision is durable on disk');
     } finally {
       await kill(child);
       try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}

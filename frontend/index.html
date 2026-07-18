@@ -366,22 +366,12 @@
     <div id="crew-sum"></div>
     <div id="ws-wrap">
       <div class="ws-head"><span class="ws-view" role="tablist" aria-label="rail view"><button id="ws-tab-sessions" class="ws-tab on" role="tab" aria-selected="true" title="your conversations">SESSIONS</button><button id="ws-tab-projects" class="ws-tab" role="tab" aria-selected="false" title="trusted project folders">PROJECTS</button></span><span class="ws-head-acts"><button id="ws-new" title="start a new workstream">+ NEW</button><button id="ws-addproject" title="bless a folder as a trusted project" hidden>+ ADD</button></span></div>
-      <!-- SESSION TOOLS panel — parked here hidden; StationUI's SESSION TOOLS floating window (SYSTEM ▸
-           SESSION TOOLS, data-term="sessiontools") ADOPTS this node into its body on open and re-parks it
-           on close, so App's one-time wiring survives. The rail head stays SESSIONS/PROJECTS + NEW only
-           (Commander directive, 2026-07-08 — see qa/atlas ui/world/ws-archived-reveal notes). -->
-      <div id="ws-tools-park">
-      <section id="ws-tools" aria-label="Session tools" hidden>
-        <label class="ws-tools-search"><span class="sr-only">Search session titles and transcripts</span><input id="ws-search" type="search" placeholder="search sessions + transcripts" autocomplete="off"></label>
+      <!-- RAIL SEARCH (2026-07-17): the SESSION TOOLS window was retired — search lives ON the rail now
+           (the one capability no other surface covered); per-session export moved into the row ⋯ menu.
+           The head above stays SESSIONS/PROJECTS + NEW only (Commander directive, 2026-07-08). -->
+      <div id="ws-rail-search" class="ws-rail-search">
+        <label><span class="sr-only">Search session titles and transcripts</span><input id="ws-search" type="search" placeholder="⌕ search sessions + transcripts" autocomplete="off"></label>
         <ul id="ws-search-results" aria-live="polite"></ul>
-        <div class="ws-tools-row"><span>ACTIVE CONVERSATION <b id="ws-tools-active"></b></span><button id="ws-export-md" title="download this conversation as Markdown — secrets and hidden data are excluded">EXPORT .MD</button><button id="ws-export-json" title="download this conversation as JSON — secrets and hidden data are excluded">EXPORT .JSON</button></div>
-        <button id="ws-clear" class="ws-tools-wide danger">CLEAR ACTIVE CONVERSATION</button>
-        <div class="ws-tools-hint">Clears only this transcript — the session itself stays, and UNDO below can restore it.</div>
-        <fieldset class="ws-bulk"><legend>ARCHIVE SESSIONS</legend><label title="sessions with no dialogue, runs, or deliverables"><input id="ws-bulk-empty" type="checkbox" checked> empty</label><label title="sessions you marked as shipped"><input id="ws-bulk-completed" type="checkbox"> completed</label><label title="sessions with no activity since the chosen age"><input id="ws-bulk-old" type="checkbox"> older than <select id="ws-bulk-days"><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option></select></label><button id="ws-bulk-preview">PREVIEW</button></fieldset>
-        <div id="ws-bulk-status" role="status" aria-live="polite">Nothing is archived until you preview, then apply. Archived sessions stay restorable under the rail’s ARCHIVED footer; General and pinned are never touched.</div>
-        <button id="ws-bulk-apply" class="ws-tools-wide" disabled>ARCHIVE PREVIEWED</button>
-        <button id="ws-undo" class="ws-tools-wide" hidden>UNDO LAST SESSION CHANGE</button>
-      </section>
       </div>
       <ul id="workstreams"></ul>
       <ul id="projects" hidden></ul>
@@ -520,7 +510,6 @@
         <button class="bb" data-term="settings"><span class="bb-i">⚙</span><span class="bb-tx"><b>SETTINGS</b><small>keys, models, voice, data</small></span></button>
         <button class="bb" data-term="updates"><span class="bb-i">↑</span><span class="bb-tx"><b>UPDATES</b><small>version &amp; release notes</small></span></button>
         <button class="bb" data-term="rewind"><span class="bb-i">↶</span><span class="bb-tx"><b>RESTORE</b><small>restore an agent's workspace files</small></span></button>
-        <button class="bb" data-term="sessiontools"><span class="bb-i">▤</span><span class="bb-tx"><b>SESSION TOOLS</b><small>search, export &amp; archive conversations</small></span></button>
         <button class="bb" data-term="logbook"><span class="bb-i">▦</span><span class="bb-tx"><b>LOGBOOK</b><small>this agent's run history</small></span></button>
         <button class="bb" data-term="notifs"><span class="bb-i">▲</span><span class="bb-tx"><b>NOTIFICATIONS</b><small>alerts &amp; unread events</small></span><span id="nf-badge" class="badge"></span></button>
       </div>
@@ -648,6 +637,8 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/chat.js"></script>
 <script src="app/voice.js"></script>
 <script src="app/keepawake.js"></script>
+<script src="app/lifecycle.js"></script><!-- Lane 4D: launch-at-login toggle + live "what keeps running when closed" summary -->
+
 <script src="app/deliverables.js"></script><!-- backend-backed run artifact + Workshop library with bounded safe previews -->
 <script src="app/stationui.js"></script>
 <script src="app/navdock.js"></script>

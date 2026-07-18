@@ -212,7 +212,11 @@ const root = path.resolve(__dirname, '..');
   // the push handler is IPC-token gated and never returns the token
   const h = src.slice(src.indexOf('function handleSetChannelToken'));
   const body = h.slice(0, h.indexOf('\n}\n') + 3);
-  A.ok(/IPC_TOKEN/.test(body), '/api/channels/token is gated by the per-launch IPC token');
+  A.ok(/ipcTokenOk\(req\)/.test(body), '/api/channels/token is gated by the per-launch IPC token (ipcTokenOk)');
+  const gate = src.slice(src.indexOf('function ipcTokenOk'));
+  const gateBody = gate.slice(0, gate.indexOf('\n}\n') + 3);
+  A.ok(/IPC_TOKEN/.test(gateBody), 'ipcTokenOk reads the per-launch IPC token');
+  A.ok(/timingSafeEqual/.test(gateBody), 'ipcTokenOk compares in constant time (no prefix-timing oracle)');
   A.ok(!/token:\s*(tok|body\.token|channelTokenRuntime)/.test(body), '/api/channels/token never echoes the token back');
 }
 
