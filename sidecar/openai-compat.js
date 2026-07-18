@@ -199,7 +199,8 @@ function makeOpenAiCompat(deps) {
   const maxConcurrent = () => { const n = typeof d.maxConcurrent === 'function' ? d.maxConcurrent() : d.maxConcurrent; const v = Number(n); return (Number.isFinite(v) && v >= 0) ? Math.floor(v) : DEFAULT_MAX_CONCURRENT; };
   const version = () => String((typeof d.version === 'function' ? d.version() : d.version) || 'dev');
   const newId = typeof d.newId === 'function' ? d.newId : () => nodeCrypto.randomUUID();
-  const now = typeof d.now === 'function' ? d.now : () => Date.now();
+  if (typeof d.now !== 'function') throw new Error('makeOpenAiCompat: now() is required (injected clock — no ambient time in backend logic)');
+  const now = d.now;
   const readBody = typeof d.readBody === 'function' ? d.readBody : null;
   const redact = typeof d.redact === 'function' ? d.redact : (s) => s;
 
