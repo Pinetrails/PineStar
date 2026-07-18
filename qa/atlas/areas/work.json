@@ -130,7 +130,7 @@
       "area": "work",
       "name": "shoot state: work-tasks",
       "purpose": "The TASKS shoot state: the project-board view of workstreams (one card ≡ one kind:\"task\" workstream), where a user queues, assigns, ships, and archives directives for their agent.",
-      "promise": "Opening TASKS shows exactly the kind:\"task\" workstreams (never chat/summon sessions) as kanban cards across TO DO / IN PROGRESS / SHIPPED; a card auto-advances to IN PROGRESS when a run fires and only reaches SHIPPED on a deliberate human ✓ SHIP.",
+      "promise": "Opening TASKS shows exactly the kind:\"task\" workstreams (never chat/summon sessions) as kanban cards across TO DO / ACTIVE / SHIPPED; a card auto-advances to ACTIVE when a run fires and only reaches SHIPPED on a deliberate human ✓ SHIP.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -151,14 +151,14 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "d6878efa43804db2211f5aebf14522ea840eaf8e",
+        "date": "2026-07-18T01:21:39Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt (kb-add→kind:task TO DO, assign→IN PROGRESS, ship→SHIPPED). J1 (scripts/qa/journeys.mjs) guards the board-truth lifecycle: rows===kind:task store, RUNNING/DONE chip===Channels.isBusy, no chat session on the board."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/tasks-evidence.txt, port 8963): [data-term=tasks] opens TASK BOARD; columns render TO DO / ACTIVE / SHIPPED (NOTE: live label is ACTIVE, not the old IN PROGRESS); kb-add created a kind:task card in TO DO; store rows===Workstreams.all().filter(kind==task). J1 (scripts/qa/journeys.mjs) guards the board-truth lifecycle: rows===kind:task store, RUNNING/DONE chip===Channels.isBusy, no chat session on the board."
     },
     {
       "id": "ui/work/aria-close-routines",
@@ -204,14 +204,18 @@
       },
       "coverage": [
         {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
+        },
+        {
           "kind": "test",
-          "ref": "test/qa-cartographer.test.js"
+          "ref": "test/terminal-resize.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "d6878efa43804db2211f5aebf14522ea840eaf8e",
+        "date": "2026-07-18T01:21:39Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -219,7 +223,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Close TASK BOARD\"]",
       "state": "work-tasks",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID kb-close: winRemovedFromDOM true, noKbCols true. AUDITED not PERFECTED: window close/minimize chrome is shared window plumbing with no board-specific machine assertion (J1 uses closeOnly but never asserts the close control per se). KNOWN gap recorded per EL-3."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/tasks-evidence.txt): clean open→close cycle, task-board windows 0→1→0 (window removed from DOM). COVERED: window chrome is shared stationui.js term plumbing; terminal-resize-journey.mjs closeTerm() asserts the window is removed after the term-x click (across representative windows), and test/terminal-resize.test.js source-guards the shared chrome — legitimate class-coverage of identical per-window plumbing."
     },
     {
       "id": "ui/work/aria-minimize-routines",
@@ -265,14 +269,18 @@
       },
       "coverage": [
         {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
+        },
+        {
           "kind": "test",
-          "ref": "test/qa-cartographer.test.js"
+          "ref": "test/terminal-resize.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "d6878efa43804db2211f5aebf14522ea840eaf8e",
+        "date": "2026-07-18T01:21:39Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -280,7 +288,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize TASK BOARD\"]",
       "state": "work-tasks",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID kb-minimize: minimizedToStrip true, winHidden true. AUDITED not PERFECTED: shared window chrome, no dedicated assertion — KNOWN gap recorded per EL-3."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/tasks-evidence.txt): Minimize → window gains term-min-hidden (computed HIDDEN) and #term-strip gains button.term-chip \"TASK BOARD\"; clicking the chip restores the window (VISIBLE, chip gone). COVERED: terminal-resize-journey.mjs asserts minimize→term-min-hidden→restore with dimensions preserved (shared chrome); test/terminal-resize.test.js source-guards the plumbing."
     },
     {
       "id": "ui/work/aria-resize-routines",
@@ -308,21 +316,36 @@
       "kind": "ui",
       "area": "work",
       "name": "Resize TASK BOARD",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The window resize grip (Resize TASK BOARD): a keyboard- and pointer-accessible affordance to change the TASKS window's dimensions.",
+      "promise": "The term-resize grip (title \"Drag to resize · arrow keys resize\") resizes the TASK BOARD window: arrow keys grow/shrink it in both dimensions (clamped to per-window min/max) and the size persists.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
+        },
+        {
+          "kind": "test",
+          "ref": "test/terminal-resize.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "d6878efa43804db2211f5aebf14522ea840eaf8e",
+        "date": "2026-07-18T01:21:39Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button[aria-label=\"Resize TASK BOARD\"]",
-      "state": "work-tasks"
+      "state": "work-tasks",
+      "notes": "PROVEN live @HEAD 0a009ec2 (.uiatlas/work-probe/tasks-evidence.txt): the grip is a button.term-resize (title \"Drag to resize · arrow keys resize\"); focus + 8× ArrowRight+ArrowDown grew the window 760x369 → 888x497 (class term-sized) and ArrowLeft/Up shrank it back to 760x369. COVERED: test/terminal-resize.test.js source-guards the shared resize affordance (all four arrow directions, aria-label, pointer events, size persistence, per-window min/max clamps) and terminal-resize-journey.mjs proves keyboard+pointer resize live across representative windows using the same plumbing."
     },
     {
       "id": "ui/work/con-tab-routines-active",
@@ -427,8 +450,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "d6878efa43804db2211f5aebf14522ea840eaf8e",
+        "date": "2026-07-18T01:21:39Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -436,7 +459,7 @@
       "missing": false,
       "selector": "#kb-add",
       "state": "work-tasks",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID kb-add: countBefore 0→1, cardLane \"TO DO\", kind \"task\", inputCleared true. J1 guards the resulting board-truth (rows===kind:task store) though it drives Workstreams.create directly rather than this DOM button."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/tasks-evidence.txt): type title into #kb-in → #kb-add click → Workstreams kind:task store 0→1, card rendered in TO DO lane, kind \"task\"; board re-renders and #kb-in is replaced by a fresh empty element (input clears from the user's view). J1 guards the resulting board-truth (rows===kind:task store)."
     },
     {
       "id": "ui/work/kb-in",
@@ -444,7 +467,7 @@
       "area": "work",
       "name": "input",
       "purpose": "The add-a-workstream text input on the TASKS board: holds the title for the next queued directive.",
-      "promise": "Typing a title and pressing Enter (or clicking + ADD) queues it as a TO DO task; the field then clears. Max 160 chars.",
+      "promise": "Typing a title and pressing Enter (or clicking + ADD) queues it as a TO DO task; the field then clears. Max 80 chars.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -465,8 +488,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "d6878efa43804db2211f5aebf14522ea840eaf8e",
+        "date": "2026-07-18T01:21:39Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -474,28 +497,41 @@
       "missing": false,
       "selector": "#kb-in",
       "state": "work-tasks",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt (input accepted, submit created a task, input cleared). J1 covers the board lifecycle the input feeds."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/tasks-evidence.txt): live #kb-in.maxLength === 80 (promise corrected from stale 160); Enter and + ADD both create a kind:task TO DO card; input clears via board re-render. J1 covers the board lifecycle the input feeds."
     },
     {
       "id": "ui/work/kb-outbox-link",
       "kind": "ui",
       "area": "work",
       "name": "▸ OUTBOX",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The empty-board ▸ OUTBOX footnote: an honest anti-dead-end that tells you finished routine/while-away runs aren't board cards — they land as COMMS sessions collectable on the OUTBOX — and one-click opens it.",
+      "promise": "When the TASK BOARD is empty (no workstreams), a win-note shows the ▸ OUTBOX button; clicking it calls openTerm('outbox') and the \"OUTBOX — FINISHED WORK\" window opens. When the board has cards, the footnote (and this link) is not rendered.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "no machine assertion guards the empty-board OUTBOX footnote render-condition or its openTerm('outbox') click — ledger finding filed (EL-3 recorded reason)"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "d6878efa43804db2211f5aebf14522ea840eaf8e",
+        "date": "2026-07-18T01:21:39Z"
+      },
+      "findings": [
+        "46cab512"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "#kb-outbox-link",
-      "state": "work-tasks"
+      "state": "work-tasks",
+      "notes": "Live-proven @HEAD 0a009ec2 (.uiatlas/work-probe/tasks-evidence.txt): with 0 task workstreams #kb-outbox-link renders (text \"▸ OUTBOX\"); click → openTerm('outbox') → window titled \"OUTBOX — FINISHED WORK\". With cards present the footnote is absent (stationui.js ~2479 `streams.length ? '' : ...`). AUDITED not PERFECTED: no dedicated machine assertion for the render-condition/click — KNOWN gap + ledger finding per EL-3."
     },
     {
       "id": "ui/work/mkt-import-file",
