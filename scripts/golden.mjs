@@ -64,11 +64,15 @@ export function goldenFrameFingerprint(name) {
 
 // Build a ledger over the real qa/ dir (same io shape as ledger.mjs's own CLI) and return the
 // Set of suppressed (dismissed|known) fingerprints. Fail-open to an empty Set.
-export function dismissedFingerprints() {
+export function dismissedFingerprints(options = {}) {
   try {
     const root = join(dirname(fileURLToPath(import.meta.url)), '..');   // scripts/ -> repo root
-    const findingsDir = join(root, 'qa', 'findings');
-    const knownFile = join(root, 'qa', 'KNOWN_ISSUES.md');
+    // Guardian executes this gate from an immutable pinned worktree, while ignored operational
+    // findings live in the integration checkout. Accept explicit paths from that composition root;
+    // a standalone golden run keeps using its own checkout. Missing/unreadable paths still fail
+    // open to no suppression, so a detector can never become green because evidence vanished.
+    const findingsDir = options.findingsDir || process.env.STARNET_QA_FINDINGS_DIR || join(root, 'qa', 'findings');
+    const knownFile = options.knownFile || process.env.STARNET_QA_KNOWN_FILE || join(root, 'qa', 'KNOWN_ISSUES.md');
     const io = {
       listFindings() {
         let names;
