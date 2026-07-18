@@ -157,20 +157,24 @@
       "coverage": [
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+          "ref": "KNOWN: qa/atlas/build3-verify.mjs removed (ledger:0a808216) — no machine assertion guards the FIELD MANUAL surface; live-proven this session"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
       "findings": [
-        "75af5388"
+        "75af5388",
+        "0a808216"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button[aria-label=\"Close FIELD MANUAL\"]",
       "state": "build-manual",
-      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
+      "notes": "Live: button[aria-label=Close FIELD MANUAL] present (window-law close control). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-close-skills-capabilities",
@@ -452,20 +456,24 @@
       "coverage": [
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+          "ref": "KNOWN: qa/atlas/build3-verify.mjs removed (ledger:0a808216) — no machine assertion guards the FIELD MANUAL surface; live-proven this session"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
       "findings": [
-        "75af5388"
+        "75af5388",
+        "0a808216"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize FIELD MANUAL\"]",
       "state": "build-manual",
-      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
+      "notes": "Live: button[aria-label=Minimize FIELD MANUAL] present (window-law minimize control). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-minimize-skills-capabilities",
@@ -5814,8 +5822,8 @@
       "kind": "ui",
       "area": "build",
       "name": "Station systems — manual, settings, updates, restore, logs, notifications",
-      "purpose": "The FIELD MANUAL help console and its section tabs (first steps / the loop / growth / gear / wiring) — static in-app documentation.",
-      "promise": "Each manual tab swaps the help body to that section; close/minimize follow the window law. No backend claim (pure static help).",
+      "purpose": "The bottombar SYSTEM button: opens the station-systems menu (manual, settings, updates, restore, logs, notifications).",
+      "promise": "Clicking it opens the SYSTEM menu whose items reach the FIELD MANUAL, SETTINGS, updates, restore, logs and notifications surfaces.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -5825,20 +5833,24 @@
       "coverage": [
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+          "ref": "KNOWN: qa/atlas/build3-verify.mjs removed (ledger:0a808216) — no machine assertion guards the FIELD MANUAL surface; live-proven this session"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
       "findings": [
-        "75af5388"
+        "75af5388",
+        "0a808216"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual",
-      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
+      "notes": "Live: a bottombar button titled \"Station systems — manual, settings, updates, restore, logs, notifications\" is present; it is the SYSTEM dock entry (this atlas entry previously carried a copy-pasted manual-tab promise — corrected this session). No machine assertion guards it yet (ledger:0a808216). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-1",
@@ -10095,21 +10107,22 @@
         {
           "kind": "test",
           "ref": "test/worldmodel.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
+      "findings": [
+        "0a808216"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+      "notes": "Live: with the ROOM tool active the ROOM TYPE palette (#refit-palette .refit-kind) lists HAB/BRIDGE/LAB/FOUNDRY/QUARTERS/STORAGE (=WorldModel.KIND_ORDER, factory->FOUNDRY). Clicking the BRIDGE tile sets it active (proven: click LAB -> LAB active/HAB off; click STORAGE -> STORAGE active). addRoom-by-kind machine-covered in worldmodel.test.js (222, pass). Dead build3-verify.mjs ref removed (finding 0a808216). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-palette-foundry-1",
@@ -10129,21 +10142,22 @@
         {
           "kind": "test",
           "ref": "test/worldmodel.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
+      "findings": [
+        "0a808216"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+      "notes": "Live: with the ROOM tool active the ROOM TYPE palette (#refit-palette .refit-kind) lists HAB/BRIDGE/LAB/FOUNDRY/QUARTERS/STORAGE (=WorldModel.KIND_ORDER, factory->FOUNDRY). Clicking the FOUNDRY tile sets it active (proven: click LAB -> LAB active/HAB off; click STORAGE -> STORAGE active). addRoom-by-kind machine-covered in worldmodel.test.js (222, pass). Dead build3-verify.mjs ref removed (finding 0a808216). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-palette-hab-1",
@@ -10163,21 +10177,22 @@
         {
           "kind": "test",
           "ref": "test/worldmodel.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
+      "findings": [
+        "0a808216"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+      "notes": "Live: with the ROOM tool active the ROOM TYPE palette (#refit-palette .refit-kind) lists HAB/BRIDGE/LAB/FOUNDRY/QUARTERS/STORAGE (=WorldModel.KIND_ORDER, factory->FOUNDRY). Clicking the HAB tile sets it active (proven: click LAB -> LAB active/HAB off; click STORAGE -> STORAGE active). addRoom-by-kind machine-covered in worldmodel.test.js (222, pass). Dead build3-verify.mjs ref removed (finding 0a808216). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-palette-lab-1",
@@ -10197,21 +10212,22 @@
         {
           "kind": "test",
           "ref": "test/worldmodel.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
+      "findings": [
+        "0a808216"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+      "notes": "Live: with the ROOM tool active the ROOM TYPE palette (#refit-palette .refit-kind) lists HAB/BRIDGE/LAB/FOUNDRY/QUARTERS/STORAGE (=WorldModel.KIND_ORDER, factory->FOUNDRY). Clicking the LAB tile sets it active (proven: click LAB -> LAB active/HAB off; click STORAGE -> STORAGE active). addRoom-by-kind machine-covered in worldmodel.test.js (222, pass). Dead build3-verify.mjs ref removed (finding 0a808216). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-palette-quarters-1",
@@ -10231,21 +10247,22 @@
         {
           "kind": "test",
           "ref": "test/worldmodel.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
+      "findings": [
+        "0a808216"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+      "notes": "Live: with the ROOM tool active the ROOM TYPE palette (#refit-palette .refit-kind) lists HAB/BRIDGE/LAB/FOUNDRY/QUARTERS/STORAGE (=WorldModel.KIND_ORDER, factory->FOUNDRY). Clicking the QUARTERS tile sets it active (proven: click LAB -> LAB active/HAB off; click STORAGE -> STORAGE active). addRoom-by-kind machine-covered in worldmodel.test.js (222, pass). Dead build3-verify.mjs ref removed (finding 0a808216). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-palette-storage-1",
@@ -10265,21 +10282,22 @@
         {
           "kind": "test",
           "ref": "test/worldmodel.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
+      "findings": [
+        "0a808216"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+      "notes": "Live: with the ROOM tool active the ROOM TYPE palette (#refit-palette .refit-kind) lists HAB/BRIDGE/LAB/FOUNDRY/QUARTERS/STORAGE (=WorldModel.KIND_ORDER, factory->FOUNDRY). Clicking the STORAGE tile sets it active (proven: click LAB -> LAB active/HAB off; click STORAGE -> STORAGE active). addRoom-by-kind machine-covered in worldmodel.test.js (222, pass). Dead build3-verify.mjs ref removed (finding 0a808216). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-tools-belt-7-1",
@@ -11566,20 +11584,24 @@
       "coverage": [
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+          "ref": "KNOWN: qa/atlas/build3-verify.mjs removed (ledger:0a808216) — no machine assertion guards the FIELD MANUAL surface; live-proven this session"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
       "findings": [
-        "75af5388"
+        "75af5388",
+        "0a808216"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual",
-      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
+      "notes": "Live: FIRST STEPS is the default-landed manual tab (body present, 312 chars). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-terms-gear-1",
@@ -11597,20 +11619,24 @@
       "coverage": [
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+          "ref": "KNOWN: qa/atlas/build3-verify.mjs removed (ledger:0a808216) — no machine assertion guards the FIELD MANUAL surface; live-proven this session"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
       "findings": [
-        "75af5388"
+        "75af5388",
+        "0a808216"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual",
-      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
+      "notes": "Live: clicking GEAR swaps the manual body (->1131 chars). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-terms-growth-1",
@@ -11628,20 +11654,24 @@
       "coverage": [
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+          "ref": "KNOWN: qa/atlas/build3-verify.mjs removed (ledger:0a808216) — no machine assertion guards the FIELD MANUAL surface; live-proven this session"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
       "findings": [
-        "75af5388"
+        "75af5388",
+        "0a808216"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual",
-      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
+      "notes": "Live: clicking GROWTH swaps the manual body (->409 chars). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-terms-the-loop-1",
@@ -11659,20 +11689,24 @@
       "coverage": [
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+          "ref": "KNOWN: qa/atlas/build3-verify.mjs removed (ledger:0a808216) — no machine assertion guards the FIELD MANUAL surface; live-proven this session"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
       "findings": [
-        "75af5388"
+        "75af5388",
+        "0a808216"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual",
-      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
+      "notes": "Live: clicking THE LOOP swaps the manual body (->700 chars). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-terms-wiring-1",
@@ -11690,20 +11724,24 @@
       "coverage": [
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+          "ref": "KNOWN: qa/atlas/build3-verify.mjs removed (ledger:0a808216) — no machine assertion guards the FIELD MANUAL surface; live-proven this session"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "cccd9519d49859a17361715a6520e239585d4e1f",
+        "date": "2026-07-18T02:27:57.588Z"
+      },
       "findings": [
-        "75af5388"
+        "75af5388",
+        "0a808216"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual",
-      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
+      "notes": "Live: clicking WIRING swaps the manual body (->1484 chars). [live-proof this session @ HEAD cccd9519 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-div-terms-memorynotebook-read-write-no-noteboo-1",
