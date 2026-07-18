@@ -214,7 +214,7 @@ async function main() {
     log(' [dry-run] no artifacts staged.');
   }
   log('');
-  log(' UPLOAD CHECKLIST (do this on the PUBLIC repo — source repo stays private):');
+  log(' UPLOAD CHECKLIST (publish binaries to the dedicated public releases repo):');
   log('   Repo   : https://github.com/' + RELEASES_REPO);
   log('   1. Create a GitHub Release, tag it EXACTLY:  v' + version);
   log('   2. Attach these THREE assets to that release:');

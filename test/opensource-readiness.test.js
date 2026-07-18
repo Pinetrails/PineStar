@@ -37,4 +37,14 @@ assert.match(workflow, /gitleaks git \. --no-banner --redact/);
 assert.match(workflow, /551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb/,
   'downloaded scanner archive must be checksum-pinned');
 
+const operatorSurface = [
+  read('scripts/release-cut.mjs'),
+  read('docs/RELEASE_RUNBOOK.md'),
+  read('docs/STARNET_UPDATES.md')
+].join('\n');
+assert.doesNotMatch(operatorSurface, /source repo stays private|Source repo \(private\)/,
+  'release instructions must not contradict the public-source launch');
+assert.match(operatorSurface, /Public source repo:/,
+  'the release runbook must identify the source repository as public');
+
 console.log('opensource-readiness.test: OK');
