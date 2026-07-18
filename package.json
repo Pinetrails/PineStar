@@ -1,8 +1,24 @@
 {
   "name": "starnet-harness",
-  "version": "0.0.0",
+  "version": "0.5.2",
   "private": true,
-  "description": "StarNet — a real, gamified, downloadable AI-agent harness. Phase 0.0 scaffold: the v7 engine ported verbatim into frontend/, with the v7 headless tests running from test/.",
+  "description": "A local-first, gamified desktop harness for building and running real AI-agent teams.",
+  "license": "MIT",
+  "author": "Andrew Sims",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nonfungiblefunyuns-ship-it/skynet-harness.git"
+  },
+  "homepage": "https://github.com/nonfungiblefunyuns-ship-it/skynet-harness#readme",
+  "bugs": {
+    "url": "https://github.com/nonfungiblefunyuns-ship-it/skynet-harness/issues"
+  },
+  "keywords": [
+    "ai-agents",
+    "local-first",
+    "multi-agent",
+    "tauri"
+  ],
   "engines": {
     "node": ">=18"
   },
@@ -101,7 +117,8 @@
     "release:cut:dry": "node scripts/release-cut.mjs --dry-run",
     "release:verify-host": "node scripts/verify-update-host.mjs",
     "release:verify-sig": "node scripts/minisign-verify.mjs",
-    "release:canary": "node scripts/update-canary.mjs"
+    "release:canary": "node scripts/update-canary.mjs",
+    "security:secrets": "node scripts/scan-history-secrets.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
