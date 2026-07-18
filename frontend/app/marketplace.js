@@ -1828,6 +1828,17 @@ const Marketplace = (() => {
     if (norm === 'openrouter' && !/^open[\s_-]?router$/.test(r)) return null;
     return norm;
   }
+  // the ONE pin resolver — shared by the preview and RECRUIT so the card can never claim a pin confirmImport
+  // won't set. A pin exists only when the provider is recognized AND a concrete model id exists. Direct providers
+  // take a BARE model id (anthropic.js passes req.model straight to the API) — only openrouter keeps the
+  // 'vendor/model' slug shape, so a prefix that just restates the pinned provider is stripped.
+  function importModelPin(s) {
+    const m = (s && s.model) || {};
+    const rec = recognizeProvider(m.provider);
+    let modelId = String(m.model || m.raw || '').trim();
+    if (rec && rec !== 'openrouter' && modelId.toLowerCase().indexOf(rec + '/') === 0) modelId = modelId.slice(rec.length + 1);
+    return { pin: (rec && modelId) ? { model: modelId, provider: rec, effort: '' } : null, rec: rec, raw: String(m.raw || ''), provider: String(m.provider || '') };
+  }
   // enter the flow: reset to the detect step and kick the machine scan.
   function enterHarnessImport() {
     view = 'harnessImport'; importStep = 'detect';
@@ -1876,8 +1887,9 @@ const Marketplace = (() => {
     const lines = String(persona || '').split(/\r?\n/);
     for (const raw of lines) {
       const t = raw.trim();
-      if (!t || /^#+\s*$/.test(t) || /^[-*=_]{2,}$/.test(t)) continue;
-      let p = t.replace(/^#+\s*/, '').replace(/^[-*]\s+/, '').trim();
+      // skip blanks, EVERY heading line (a title like "# Vex — soul" is a name, not a purpose), and rules.
+      if (!t || t.charAt(0) === '#' || /^[-*=_]{2,}$/.test(t)) continue;
+      let p = t.replace(/^[-*]\s+/, '').trim();
       if (!p) continue;
       if (p.length > 140) p = p.slice(0, 139).replace(/\s+\S*$/, '') + '…';
       return p;
@@ -1923,7 +1935,7 @@ const Marketplace = (() => {
     const err = importErr ? '<div class="mkt-r-warn">⚠ ' + esc(importErr) + '</div>' : '';
     return '<div class="mkt-save mkt-imp">' +
       '<div class="mkt-save-h">⇪ IMPORT AGENT</div>' +
-      '<p class="mkt-hint">bring an agent over from OpenClaw or Hermes — its persona, standing orders and memory come with it. keys never transfer.</p>' +
+      '<p class="mkt-hint">bring an agent over from OpenClaw or Hermes — its persona, standing orders and curated memory come with it. keys never transfer.</p>' +
       '<div class="mkt-imp-rows">' + rows + pick + '</div>' +
       scanning + err +
       '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button></div>' +
@@ -1942,20 +1954,27 @@ const Marketplace = (() => {
     const dailyCount = +mem.dailyCount || 0;
     const dash = '<span class="mkt-imp-dim">—</span>';
     const t = (k, v) => '<div class="mkt-imp-t"><span class="mkt-imp-t-k">' + k + '</span><span class="mkt-imp-t-v">' + v + '</span></div>';
+    // MEMORY claims ONLY what actually transfers: the curated chars. Daily notes are counted, never read —
+    // their bodies stay behind, so they must not sit inside a "WHAT TRANSFERS" claim (truthful telemetry);
+    // they get their own explicitly-dim non-transfer note below the table instead.
     let transfers =
       t('INSTRUCTIONS', String(s.instructions || '').trim() ? 'present' : dash) +
       t('USER CONTEXT', String(s.userContext || '').trim() ? 'present' : dash) +
-      t('MEMORY', (memChars || dailyCount) ? (memChars + ' chars curated · ' + dailyCount + ' daily') : '<span class="mkt-imp-dim">none</span>');
-    // MODEL: a recognized StarNet provider becomes the agent's pin; anything else shows the raw string with an
-    // honest note that the station default runs instead (no pin is set).
-    const m = s.model || {};
-    const rec = recognizeProvider(m.provider);
-    if (rec) {
-      const lbl = (typeof ModelDock !== 'undefined' && ModelDock.labels && ModelDock.labels.provider) ? ModelDock.labels.provider(rec) : up(rec);
-      transfers += t('MODEL', esc(lbl) + ' · ' + esc(String(m.model || m.raw || '')));
+      t('MEMORY', memChars ? (memChars + ' chars curated') : '<span class="mkt-imp-dim">none</span>');
+    // MODEL: the pin branch renders ONLY when confirmImport will actually set a pin (same importModelPin
+    // resolver) — a recognized provider with no model id gets the honest no-pin line, never a dangling
+    // "PROVIDER · " that implies a pin. No pin → say what we do know (raw id or provider name), dim.
+    const mp = importModelPin(s);
+    if (mp.pin) {
+      const lbl = (typeof ModelDock !== 'undefined' && ModelDock.labels && ModelDock.labels.provider) ? ModelDock.labels.provider(mp.rec) : up(mp.rec);
+      transfers += t('MODEL', esc(lbl) + ' · ' + esc(mp.pin.model));
     } else {
-      transfers += t('MODEL', esc(String(m.raw || 'unknown')) + ' <span class="mkt-imp-dim">— unrecognized here; station default model will be used</span>');
+      const known = String(mp.raw || mp.provider || '').trim();
+      transfers += t('MODEL', (known ? esc(known) + ' ' : '') + '<span class="mkt-imp-dim">— ' + (known ? 'not pinnable here' : 'none found') + '; station default model will be used</span>');
     }
+    const dailyNote = dailyCount
+      ? '<div class="mkt-imp-dim">' + dailyCount + ' daily note' + (dailyCount === 1 ? ' stays' : 's stay') + ' behind — not imported</div>'
+      : '';
     // warnings: render every entry the scan returned verbatim, and ALWAYS state the keys-never-transfer truth
     // (added only if the scan didn't already say it).
     const warns = Array.isArray(s.warnings) ? s.warnings.slice() : [];
@@ -1967,6 +1986,7 @@ const Marketplace = (() => {
       '<div class="mkt-imp-origin">' + esc(H) + ' · <span class="mkt-imp-row-path">' + esc(rootPath) + '</span></div>' +
       '<div class="mkt-imp-sect">PERSONA</div><div class="mkt-imp-persona">' + excerpt + '</div>' +
       '<div class="mkt-imp-sect">WHAT TRANSFERS</div><div class="mkt-imp-transfers">' + transfers + '</div>' +
+      dailyNote +
       warnHTML +
       '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button>' +
         '<button class="bb sm mkt-imp-recruit">▸ RECRUIT</button></div>' +
@@ -1995,6 +2015,11 @@ const Marketplace = (() => {
         })
         .catch(() => { importScanning = false; importErr = 'could not open the folder picker'; if (view === 'harnessImport') renderStage(); });
     });
+    // NAME is stateful (importName is the single source of truth): the bay's search box + FILTER chips stay live
+    // during this view and each rebuilds the stage — without this write-back a rebuild would revert the field to
+    // the stale value and RECRUIT would mint under the wrong name.
+    const nameIn = stage.querySelector('#mkt-imp-name');
+    if (nameIn) nameIn.addEventListener('input', () => { importName = nameIn.value; });
     const recruit = stage.querySelector('.mkt-imp-recruit');
     if (recruit) recruit.addEventListener('click', confirmImport);
   }
@@ -2009,20 +2034,14 @@ const Marketplace = (() => {
     if (!importScan || !(ctx && ctx.onPick)) { close(); return; }
     const s = importScan;
     const harnessLabel = s.harness || (importOrigin && importOrigin.harness) || 'harness';
-    const nameIn = root && root.querySelector('#mkt-imp-name');
-    const editedName = (nameIn && nameIn.value) || importName || s.name || '';
-    const m = s.model || {};
-    const rec = recognizeProvider(m.provider);
-    let modelId = String(m.model || m.raw || '').trim();
-    // direct providers take a BARE model id (anthropic.js passes req.model straight to the API) — only
-    // openrouter keeps the 'vendor/model' slug shape. Strip a prefix that just restates the pinned provider.
-    if (rec && rec !== 'openrouter' && modelId.toLowerCase().indexOf(rec + '/') === 0) modelId = modelId.slice(rec.length + 1);
-    const modelPin = (rec && modelId) ? { model: modelId, provider: rec, effort: '' } : null;
+    // NAME comes from state, never the DOM: importName is the single source of truth (the input's 'input'
+    // listener writes it back), so a stage rebuild between typing and RECRUIT can't revert the mint name.
+    const editedName = String(importName || s.name || '').trim();
     const spec = {
       name: s.name || harnessLabel,
       agentName: editedName,
       skin: (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN) || undefined,
-      modelPin: modelPin
+      modelPin: importModelPin(s).pin   // the SAME resolver the preview rendered — the card and the mint can't drift
     };
     sfx('click');
     const created = ctx.onPick(spec, { activate: true });
