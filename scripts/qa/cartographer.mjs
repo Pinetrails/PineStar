@@ -153,6 +153,47 @@ export function computeProbeKeys(nodes) {
   });
 }
 
+// Pure, disk-free ROUTE HARVESTER — the single authority for enumerating sidecar/index.js's HTTP routes.
+// The router is a flat list of `if (req.method === 'X' && <url match>) return handler(req, res);` guards;
+// the url match appears in several forms, ALL captured here:
+//   req.url === '/api/...'
+//   req.url.split('?')[0] === '/api/...'
+//   req.url.indexOf('/api/...') === 0        (prefix)
+//   req.url.startsWith('/api/...')           (prefix)
+//   apiauth.pathOf(req.url) === '/api/...'
+// THE SEAM THIS FIXES: the method token and the path token MUST come from the SAME guard statement. The
+// gap between them is a TEMPERED run — each character may not begin a `return` token nor be a `;`, the two
+// tokens that close a guard — so a method can never bind to a path in a LATER guard. That cross-statement
+// bleed had two symptoms, both live-verified against index.js:
+//   (a) DROPPED path-match routes: the GET SSE stream `req.url.split('?')[0] === '/api/channels/events'`
+//       (index.js:4597) was invisible because a preceding guard's loose gap swallowed its `req.method`
+//       token before the real GET statement could match.
+//   (b) MINTED phantom method variants: a POST skeleton for the GET-only /api/channels/events (a preceding
+//       POST guard reached across `}` into the SSE path), and a GET label for the POST-only
+//       /api/auth/codex/logout (the GET /api/models/ guard, whose own path form it could not match, reached
+//       forward into the next guard's POST path). Tempering the gap mints a variant only when the guard it
+//       comes from actually proves that method.
+// A multi-method OR guard — `(req.method === 'GET' || req.method === 'POST' || ...) && <url match>` — still
+// binds the FIRST method in the group (there is no `return`/`;` between the alternatives), preserving the
+// long-standing behavior for routes like GET /api/nightshift/focus. Dedup by method+path; FIRST wins.
+// Exported so the failure mode is lockable Chrome-, disk-, and git-free in test/qa-cartographer.test.js.
+export function harvestRoutes(src) {
+  const routeRe = /req\.method\s*===\s*'([A-Z]+)'(?:(?!\breturn\b|;)[\s\S]){0,240}?(?:req\.url(?:\.split\('\?'\)\[0\])?\s*===\s*'(\/api[^']*)'|req\.url\.indexOf\('(\/api[^']*)'\)\s*===\s*0|req\.url\.startsWith\('(\/api[^']*)'\)|apiauth\.pathOf\(req\.url\)\s*===\s*'(\/api[^']*)')/g;
+  const seen = new Set();
+  const out = [];
+  let m;
+  while ((m = routeRe.exec(str(src)))) {
+    const method = m[1];
+    const p = m[2] || m[3] || m[4] || m[5] || '';
+    if (!p) continue;
+    const key = method + '-' + p;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ method, path: p, key });
+  }
+  return out;
+}
+
 export function makeCartographer(opts) {
   opts = opts || {};
   const clock = opts.clock || { now() { return 0; } };
@@ -610,39 +651,23 @@ if (INVOKED_DIRECTLY) {
       }
     } catch (e) { appendLog('static/slash FAILED: ' + (e && e.message || e)); throw new Error('static enumeration of slash commands failed: ' + (e && e.message || e)); }
 
-    // 2. API routes — scan sidecar/index.js text for every route-match form. Study the file: the router
-    //    is a flat list of `if (req.method === 'X' && <url match>) return handler(...)`. The url match
-    //    appears in several forms; capture ALL of them:
-    //      req.url === '/api/...'
-    //      req.url.split('?')[0] === '/api/...'
-    //      req.url.indexOf('/api/...') === 0     (prefix)
-    //      req.url.startsWith('/api/...')        (prefix)
-    //      apiauth.pathOf(req.url) === '/api/...'
+    // 2. API routes — scan sidecar/index.js text with the pure `harvestRoutes()` authority (defined in the
+    //    PURE CORE above, so the exact same-statement binding logic is unit-locked without disk). See that
+    //    function for the url-match forms and the tempered-gap seam it fixes (SSE path-match routes + phantom
+    //    method variants).
     try {
       const src = fs.readFileSync(path.join(REPO, 'sidecar', 'index.js'), 'utf8');
-      const seen = new Set();
-      // one regex per url-match form, each paired to a nearby method. We first find the method token,
-      // then the path token, on the SAME statement (method and match co-occur in `req.method === 'X' && ...`).
-      const routeRe = /req\.method\s*===\s*'([A-Z]+)'[\s\S]{0,240}?(?:req\.url(?:\.split\('\?'\)\[0\])?\s*===\s*'(\/api[^']*)'|req\.url\.indexOf\('(\/api[^']*)'\)\s*===\s*0|req\.url\.startsWith\('(\/api[^']*)'\)|apiauth\.pathOf\(req\.url\)\s*===\s*'(\/api[^']*)')/g;
-      let m;
-      let matched = 0;
-      while ((m = routeRe.exec(src))) {
-        const method = m[1];
-        const p = m[2] || m[3] || m[4] || m[5] || '';
-        if (!p) continue;
-        const key = method + '-' + p;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        matched++;
-        const id = carto.entryId({ kind: 'route', area: 'routes', key });
-        elements.push({ id, kind: 'route', area: 'routes', name: method + ' ' + p });
+      const routes = harvestRoutes(src);
+      for (const r of routes) {
+        const id = carto.entryId({ kind: 'route', area: 'routes', key: r.key });
+        elements.push({ id, kind: 'route', area: 'routes', name: r.method + ' ' + r.path });
         counts.route++;
       }
       // eyeball: how many `req.method ===` guards exist at all (an upper bound on routes). Reported so a
       // gap between the two numbers is visible in the sweep report (some guards are multi-condition/HEAD dupes).
       const guardCount = (src.match(/req\.method\s*===\s*'[A-Z]+'/g) || []).length;
       counts._routeGuards = guardCount;
-      counts._routeMatched = matched;
+      counts._routeMatched = routes.length;
     } catch (e) { appendLog('static/routes FAILED: ' + (e && e.message || e)); throw new Error('static enumeration of API routes failed: ' + (e && e.message || e)); }
 
     // 3. events — import shared/events.js (READ ONLY; owned contract file) and enumerate EVENTS keys.

@@ -11,7 +11,7 @@
    Pure + deterministic — every timestamp comes from the injected clock, never Date.now(). */
 'use strict';
 const A = require('./_assert.js');
-const { makeCartographer, enumerateProps, slug, areaOfState, computeProbeKeys, AREAS, STATUSES } = require('../scripts/qa/cartographer.mjs');
+const { makeCartographer, enumerateProps, slug, areaOfState, computeProbeKeys, harvestRoutes, AREAS, STATUSES } = require('../scripts/qa/cartographer.mjs');
 
 // a fixed clock so firstSeen/lastSeen are deterministic ISO strings.
 let clk = Date.UTC(2026, 6, 7, 12, 0, 0);          // 2026-07-07T12:00:00.000Z
@@ -379,6 +379,67 @@ const fullEntry = (over) => Object.assign({
   A.eq(resweep.findings.length, 0, 'no dead-entry finding filed (the churn bug is fixed)');
   const ids = new Set(resweep.shards.system.entries.map(e => e.id));
   A.ok(ids.has(carto.entryId({ kind: 'ui', area: 'system', key: kBefore[0] })), 'the Save entry survives under its stable id');
+}
+
+// ---- (h) route harvester: same-statement method<->path binding (SSE path-match + phantom-variant lock) ----
+// The defect: the route regex paired a `req.method === 'X'` token with the FIRST /api path within 240 chars,
+// even across `}`/`return`/`;` into a LATER guard. That both DROPPED path-match routes (the GET SSE stream
+// whose method token got swallowed by a preceding guard's loose gap) and MINTED phantom method variants
+// (a POST skeleton for a GET-only SSE path; a GET label for a POST-only route). harvestRoutes is the pure
+// authority the CLI uses; this fixture reproduces the EXACT index.js shapes so the fix is locked disk-free.
+{
+  // reproduces sidecar/index.js: the generic-channels block (POST/GET guards whose url match is NOT an /api
+  // literal) immediately followed by the GET SSE path-match guard for /api/channels/events (index.js:4597).
+  const sseFixture = [
+    "  {",
+    "    const gm = req.url.match(/^\\/api\\/channels\\/(slack|matrix|signal)\\/(connect|sync|disconnect|status)$/);",
+    "    if (gm) {",
+    "      if (req.method === 'POST' && gm[2] === 'connect') return handleGenericChannelConnect(req, res, gm[1]);",
+    "      if (req.method === 'POST' && gm[2] === 'disconnect') return handleGenericChannelDisconnect(req, res, gm[1]);",
+    "      if (req.method === 'GET' && gm[2] === 'status') return handleGenericChannelStatus(req, res, gm[1]);",
+    "    }",
+    "  }",
+    "  if (req.method === 'GET' && req.url.split('?')[0] === '/api/channels/events') return handleChannelEvents(req, res);",
+  ].join('\n');
+  const sse = harvestRoutes(sseFixture);
+  const sseKeys = sse.map(r => r.key);
+  A.ok(sseKeys.includes('GET-/api/channels/events'), 'the GET SSE path-match route is harvested (2a: path-match seam no longer invisible)');
+  A.eq(sseKeys.includes('POST-/api/channels/events'), false, 'no phantom POST variant minted for the GET-only SSE path (2b)');
+
+  // reproduces index.js:4631-4632 — the GET /api/models/ prefix guard (a split+indexOf form the regex does
+  // NOT match as a path) immediately followed by the POST-only /api/auth/codex/logout guard. The old regex
+  // let the GET reach forward and mislabel logout as GET; the tempered gap forbids crossing `return`/`;`.
+  const codexFixture = [
+    "  if (req.method === 'GET' && req.url.split('?')[0].indexOf('/api/models/') === 0) return handleProviderModels(req, res);",
+    "  if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);",
+  ].join('\n');
+  const codex = harvestRoutes(codexFixture).map(r => r.key);
+  A.ok(codex.includes('POST-/api/auth/codex/logout'), 'the POST-only logout route is harvested with its real method (2b)');
+  A.eq(codex.includes('GET-/api/auth/codex/logout'), false, 'no phantom GET variant minted for the POST-only logout route (2b)');
+
+  // a clean single guard binds its own method+path.
+  const one = harvestRoutes("  if (req.method === 'GET' && req.url === '/api/version') return handleVersion(req, res);");
+  A.eq(one.length, 1, 'a single clean guard yields exactly one route');
+  A.eq(one[0].method + ' ' + one[0].path, 'GET /api/version', 'the clean guard binds its own method+path');
+
+  // a multi-method OR guard still binds the FIRST method (no return/; between the alternatives) — preserves
+  // the long-standing behavior for routes like GET /api/nightshift/focus (POST/DELETE documented in notes).
+  const orGuard = harvestRoutes("  if ((req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE') && req.url.split('?')[0] === '/api/nightshift/focus') return handleNightshiftFocus(req, res);");
+  A.eq(orGuard.map(r => r.key), ['GET-/api/nightshift/focus'], 'an OR-method guard binds the FIRST method (behavior preserved)');
+
+  // all four url-match forms are recognized.
+  const forms = harvestRoutes([
+    "if (req.method === 'GET' && req.url === '/api/a') return h(req, res);",
+    "if (req.method === 'GET' && req.url.split('?')[0] === '/api/b') return h(req, res);",
+    "if (req.method === 'GET' && req.url.indexOf('/api/c') === 0) return h(req, res);",
+    "if (req.method === 'GET' && req.url.startsWith('/api/d')) return h(req, res);",
+    "if (req.method === 'GET' && apiauth.pathOf(req.url) === '/api/e') return h(req, res);",
+  ].join('\n')).map(r => r.path);
+  A.eq(forms, ['/api/a', '/api/b', '/api/c', '/api/d', '/api/e'], 'all four url-match forms (===, split===, indexOf, startsWith, pathOf) are harvested');
+
+  // dedup: the same method+path guarded twice yields ONE route.
+  const dup = harvestRoutes("if (req.method === 'GET' && req.url === '/api/x') return a(req, res);\nif (req.method === 'GET' && req.url === '/api/x') return b(req, res);");
+  A.eq(dup.length, 1, 'a duplicate method+path guard is deduped to one route');
 }
 
 A.report('qa-cartographer.test');
