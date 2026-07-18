@@ -4665,6 +4665,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/backlog') return handleWorkshopBacklog(req, res);
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res);
   if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res);
+  if (req.method === 'POST' && req.url === '/api/workshop/undo') return handleWorkshopUndo(req, res);   // EL-11 #8: reverse a keep — remove the out-of-jail copy + restore pending
   if (req.method === 'POST' && req.url === '/api/workshop/remove') return handleWorkshopRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res);
   if (req.method === 'GET' && req.url.split('?')[0] === '/api/deliverables') return handleDeliverablesList(req, res);
@@ -6472,7 +6473,18 @@ function lifecycleRow(status, agentId, runId, item, man) {
 }
 async function deliverableRows() {
   const rows = [], seen = new Set();
+  // UNDO-AWARE (EL-11 #8): a kept deliverable whose out-of-jail copy was UNDONE is restored to the backlog as a
+  // PENDING built item, but its durable 'kept' lifecycle row still exists. The live pending item is ground truth —
+  // collect those ids so the stale kept row yields to the pending row emitted below (truthful telemetry: never
+  // show 'kept' for a copy the Commander removed). Inert in the normal keep flow (complete() leaves no backlog
+  // item), so this only fires after an undo.
+  const pendingBuilt = new Set();
+  for (const agentId of workshopAgentIds()) {
+    let rec; try { rec = workshopStore.read(agentId); } catch (_) { continue; }
+    for (const item of rec.backlog) if (item.builtRunId) pendingBuilt.add('workshop:' + agentId + ':' + item.builtRunId);
+  }
   for (const saved of deliverableStore.list()) {
+    if (saved.status === 'kept' && pendingBuilt.has(saved.id)) continue;   // superseded by a live pending item → let the backlog loop emit it (don't mark seen)
     const available = saved.status === 'kept';
     const files = saved.files.map(f => available ? deliverableFile(saved.agentId, saved.runId, f, true) : { path: f.path, bytes: Number.isFinite(f.bytes) ? f.bytes : null, preview: null, openUrl: null, sandboxed: false });
     rows.push(Object.assign({}, saved, { files, size: deliverableSize(files), actions: { open: available && files.length > 0, keep: false, discard: false } }));
@@ -6784,6 +6796,79 @@ async function handleWorkshopDecide(req, res) {
   const out = { ok: true, decision: 'keep', destPath: destPath, copied: copied, opened: opened };
   if (man.kind === 'patch') { out.savedOnly = true; out.patchRefused = patchTarget.reason || 'could not apply this patch'; }
   json(200, out);
+}
+
+// POST /api/workshop/undo { agentId, runId, destPath? } — REVERSE a file-copy keep. handleWorkshopDecide's keep
+// copies the manifest's files OUT of the jail to destPath and retires the backlog item; there was no way back.
+// This deletes EXACTLY those files (each verified gone via existsSync — never a claim we didn't prove), removes
+// only now-empty directories the keep created (non-recursive rmdir — NEVER a recursive wipe), and flips the durable
+// decision back to PENDING (the built item re-lists under /pending). Honest JSON:
+//   { ok, removed:[relPath...], missing:[{path,reason}...], destPath, restored }
+// A file the user already moved/edited/deleted lands in `missing`, never in `removed`. Gated on a real 'kept'
+// lifecycle row so only a genuine keep can be undone. Auth: the global /api token+origin gate (rejectApi /
+// rejectBadApiToken) covers this like every adjacent workshop route — no separate check here.
+async function handleWorkshopUndo(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { error: 'bad request' }); }
+  const agentId = String(body.agentId || '');
+  const runId = String(body.runId || '');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'choose a valid agent' });
+  if (!/^[A-Za-z0-9_-]{1,80}$/.test(runId)) return json(400, { error: 'choose a valid run' });
+  // GATE: only a genuinely KEPT deliverable can be undone. The lifecycle library is the durable proof a keep ran
+  // (handleWorkshopDecide records a 'kept' row on every successful copy-out). No kept row → nothing to undo.
+  const rowId = 'workshop:' + agentId + ':' + runId;
+  let keptRow = null;
+  try { keptRow = deliverableStore.list().find(r => r.id === rowId && r.status === 'kept') || null; } catch (_) { keptRow = null; }
+  if (!keptRow) return json(404, { ok: false, error: 'no kept copy to undo for that build' });
+  // the archive run dir SURVIVES a keep, so the disk-proven manifest is the authority on which files were copied
+  // out (fall back to the recorded lifecycle file list only if the archive is gone).
+  const man = await validateWorkshopManifest(agentId, runId);
+  const files = (man && man.files && man.files.length) ? man.files : (keptRow.files || []);
+  // where the keep landed the copy: the card echoes the server's own keep destPath, else the deterministic default.
+  let destPath = String(body.destPath || '');
+  if (!destPath && man) destPath = workshopDefaultDest(man, runId);
+  if (!destPath) return json(400, { ok: false, error: 'need the folder the files were kept in to undo' });
+  const rd = path.resolve(destPath);
+  const removed = [], missing = [], dirsTouched = new Set();
+  for (const f of files) {
+    const rel = String((f && f.path) || '').replace(/^[\\/]+/, '');
+    if (!rel || rel === 'deliverable.json') continue;
+    const abs = path.join(destPath, rel);
+    // containment: a '..' in a manifest path must never let the delete escape destPath. Refuse → report missing.
+    const rp = path.resolve(abs);
+    if (rp !== rd && rp.indexOf(rd + path.sep) !== 0) { missing.push({ path: rel, reason: 'outside destination' }); continue; }
+    let isFile = false; try { isFile = fs.existsSync(abs) && fs.statSync(abs).isFile(); } catch (_) { isFile = false; }
+    if (!isFile) { missing.push({ path: rel, reason: 'already gone' }); continue; }
+    try { await fsp.unlink(abs); } catch (_) { missing.push({ path: rel, reason: 'could not remove' }); continue; }
+    // truthful telemetry: prove the unlink actually removed the file before claiming it removed.
+    let gone = true; try { gone = !fs.existsSync(abs); } catch (_) { gone = true; }
+    if (gone) { removed.push(rel); const d = path.resolve(path.dirname(abs)); if (d !== rd) dirsTouched.add(d); }
+    else missing.push({ path: rel, reason: 'still present after remove' });
+  }
+  // remove now-empty subdirectories the keep CREATED — deepest first, climbing toward destPath. rmdir is
+  // NON-RECURSIVE, so a directory that still holds the user's own files simply fails and we stop climbing that
+  // chain (never a recursive delete of anything).
+  for (const d of [...dirsTouched].sort((a, b) => b.length - a.length)) {
+    let cur = d;
+    while (cur !== rd && cur.indexOf(rd + path.sep) === 0) {
+      try { await fsp.rmdir(cur); } catch (_) { break; }
+      cur = path.dirname(cur);
+    }
+  }
+  // the DEFAULTED per-deliverable folder is uniquely THIS build's (slug + runTag) — if the destPath provably equals
+  // that auto-created folder and it is now empty, remove it too. A user-CHOSEN destPath is never removed (the keep
+  // didn't create it), only its now-empty created subdirs above.
+  try { if (man && path.resolve(destPath) === path.resolve(workshopDefaultDest(man, runId))) await fsp.rmdir(destPath); } catch (_) {}
+  // FLIP DURABLE STATE BACK → pending: re-list the built item under /pending so the Commander can decide again.
+  let restored = false;
+  try {
+    const r = await workshopStore.restorePending(agentId, runId, { backlogId: (man && man.backlogId) || '', title: (man && man.title) || keptRow.title, source: keptRow.source }, Date.now());
+    restored = !!(r && r.restored);
+  } catch (_) {}
+  // No workshop.decided emit: undo is not one of the enum'd decisions (keep|discard|later) on the OWNED bus
+  // contract, and that event has no frontend consumer anyway (state flows via this HTTP response). We also leave
+  // the keep-time archetype learning as-is — the Commander wanted this KIND of build; undo only relocated the copy.
+  json(200, { ok: true, removed: removed, missing: missing, destPath: destPath, restored: restored });
 }
 
 // ---- W7: OPEN the deliverable, don't display its code ------------------------------------------------------------
