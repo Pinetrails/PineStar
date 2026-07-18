@@ -106,7 +106,6 @@ export function buildStates() {
     { name: 'sys-settings',    drive: openSel('[data-term="settings"]', 'SETTINGS') },
     { name: 'sys-messaging',   drive: openSel('[data-term="messaging"]', 'MESSAGING') },
     { name: 'sys-rewind',      drive: openSel('[data-term="rewind"]', 'REWIND') },
-    { name: 'sys-sessiontools',drive: openSel('[data-term="sessiontools"]', 'SESSION TOOLS') },
     { name: 'sys-logbook',     drive: openSel('[data-term="logbook"]', 'LOGBOOK') },
     { name: 'sys-notifs',      drive: openStableNotifs },
   ];

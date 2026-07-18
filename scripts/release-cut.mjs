@@ -9,15 +9,14 @@
  *
  *  1. SIGNING STALL (the reason 0.1.7 shipped with createUpdaterArtifacts:false).
  *     The updater private key at ~/.tauri/starnet-updater.key is an rsign ENCRYPTED
- *     secret key. Even though its password is empty, the Tauri CLI (minisign) will
- *     BLOCK on an interactive password prompt during `tauri build` unless the password
- *     is supplied via env. We supply BOTH:
- *       TAURI_SIGNING_PRIVATE_KEY           = <contents of the key file>  (bare var, not _PATH)
- *       TAURI_SIGNING_PRIVATE_KEY_PASSWORD  = ""                          (empty, non-interactive)
- *     The Tauri CLI accepts either a filesystem path OR the raw key contents in
- *     TAURI_SIGNING_PRIVATE_KEY; we pass the contents so there is zero ambiguity and no
- *     path-quoting surprises. createUpdaterArtifacts is TRUE in tauri.conf.json — the
- *     updater REQUIRES the .sig, so we never disable it here.
+ *     secret key. Its password is empty, and an empty password supplied through the
+ *     environment is treated as absent by the Tauri build signer on Windows. That makes
+ *     `tauri build` block on an invisible interactive prompt. Build the NSIS installer
+ *     with updater-artifact generation disabled for that invocation, then sign the final
+ *     installer explicitly with `tauri signer sign --password=`. The private key stays in
+ *     its file and never appears in argv or logs. createUpdaterArtifacts remains TRUE in
+ *     tauri.conf.json as the release-policy assertion; only this bounded build invocation
+ *     is overridden because the explicit signing step produces the required .sig.
  *
  *  2. E0463 ctor_proc_macro — a cargo parallel-build race in the `ctor` proc-macro crates.
  *     We pre-build the ctor crates single-threaded before the full desktop build so the
@@ -134,13 +133,6 @@ async function runStep(label, cmd, extraArgs, env) {
 async function main() {
   const version = await preflight();
 
-  // Signing env: contents of the key + EMPTY password so the CLI never prompts (the stall fix).
-  const signEnv = {};
-  if (!SKIP_BUILD) {
-    signEnv.TAURI_SIGNING_PRIVATE_KEY = readText(KEY_FILE).trim();
-    signEnv.TAURI_SIGNING_PRIVATE_KEY_PASSWORD = process.env.TAURI_SIGNING_PRIVATE_KEY_PASSWORD || '';
-  }
-
   if (!SKIP_BUILD) {
     // Gotcha #2: pre-build the ctor proc-macro crates single-threaded to dodge the E0463 race.
     if (PRE_BUILD_CTOR) {
@@ -149,15 +141,29 @@ async function main() {
          '--manifest-path', join(ROOT, 'src-tauri', 'Cargo.toml')],
         {}).catch(() => log('  (ctor pre-build best-effort; continuing)'));
     }
-    await runStep('desktop:build (signed, updater artifacts on)', 'npm', ['run', 'desktop:build'], signEnv);
+    // Do not let `tauri build` reach its interactive empty-password prompt. The final
+    // installer is signed explicitly below, after NSIS has finished writing it.
+    const unsignedBuildOverride = join(ROOT, 'scripts', 'release-unsigned-updater.conf.json');
+    await runStep('desktop:build (NSIS; explicit updater signing follows)', 'npm',
+      ['run', 'desktop:build', '--', '--config', unsignedBuildOverride], {});
   } else {
     log('\n== --skip-build: using existing artifacts ==');
   }
 
   // Locate the produced artifacts.
   const nsisDir = join(ROOT, 'src-tauri', 'target', 'release', 'bundle', 'nsis');
-  const installer = findInstaller(nsisDir);
+  const installer = DRY_RUN
+    ? join(nsisDir, 'StarNet_' + version + '_x64-setup.exe')
+    : findInstaller(nsisDir);
   if (!DRY_RUN && !installer) fail('no *-setup.exe found in ' + nsisDir + ' (build did not produce an installer)');
+
+  if (!SKIP_BUILD) {
+    const tauriCli = join(ROOT, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
+    await runStep('Sign updater installer (explicit empty password)', 'node', [
+      tauriCli, 'signer', 'sign', '--private-key-path', KEY_FILE, '--password=', installer
+    ], {});
+  }
+
   const sig = installer + '.sig';
   if (!DRY_RUN && !existsSync(sig)) {
     fail('updater signature missing: ' + sig + '\n  This is the createUpdaterArtifacts / signing-stall failure. ' +
@@ -208,7 +214,7 @@ async function main() {
     log(' [dry-run] no artifacts staged.');
   }
   log('');
-  log(' UPLOAD CHECKLIST (do this on the PUBLIC repo — source repo stays private):');
+  log(' UPLOAD CHECKLIST (publish binaries to the dedicated public releases repo):');
   log('   Repo   : https://github.com/' + RELEASES_REPO);
   log('   1. Create a GitHub Release, tag it EXACTLY:  v' + version);
   log('   2. Attach these THREE assets to that release:');

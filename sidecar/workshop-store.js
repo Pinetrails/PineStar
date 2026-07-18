@@ -145,6 +145,10 @@ function makeWorkshopStore(deps) {
         if (dupByTitle) { out = { item: dupByTitle, reason: 'duplicate' }; if (dupByTitle.attempts) { delete dupByTitle.attempts; return rec; } return undefined; }   // already lined up
       }
       const stored = { id: id, title: title, detail: String(it.detail || '').slice(0, 4000), source: String(it.source || 'queued').slice(0, 40), ts: Number(now) || 0 };
+      // WHY-THIS provenance (2026-07-17): the grounding quote that justified this job (night-shift GROUNDS,
+      // or any caller-supplied ask context). Stored so the delivery card can say WHY it built this in the
+      // Commander's own terms — real recorded data, never re-synthesized at render time. Additive; optional.
+      if (it.grounds != null && String(it.grounds).trim()) stored.grounds = String(it.grounds).slice(0, 500);
       rec.backlog.push(stored);
       while (rec.backlog.length > BACKLOG_CAP) rec.backlog.shift();
       out = { item: stored, reason: 'added' };

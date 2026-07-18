@@ -1,8 +1,40 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-17 — SESSION TOOLS window retired (branch `claude/sessions-panel-removal-b3278e`)
+
+Andrew's directive. The SYSTEM ▸ SESSION TOOLS window + parked `#ws-tools` panel are removed;
+clear/bulk-archive/undo UI died with it (the pure `workstreams.js` store keeps every invariant;
+`/clear` + per-row archive cover the real needs). Survivors: **title+transcript search now lives
+directly on the sessions rail** (`#ws-rail-search`; PROJECTS view hides it; hit-click opens the
+session) and **export .md/.json moved into the row ⋯ menu** (targets the exact row session).
+QA followed: journey rewritten (10/10 live PASS on seed :9095), `sys-sessiontools` shooter state +
+golden dropped, atlas retired-control entries deleted + ws-search/ws-export re-pointed, wiring test
+re-pinned, v0.5.2 release-notes bullet updated, in-branch W0 re-stamps over `83292661` and the
+trunk-sync. Merging to trunk this pass (digest in qa/STATUS.md); next desktop exe rebuild picks it up.
+
+## 2026-07-16 — CLASS ROSTER REDESIGN LANDED (agent-class-redesign lane)
+
+The recruit catalog is now 12 SPECIALIZED business-grade builtins (strategist · opportunist ·
+researcher · engineer · analyst · marketer · publisher · producer · writer · prospector ·
+treasurer · scout) + 18 archetypes (8 demoted generalists, 6 kept deep cuts, 3 new long-tail
+seeds closer/steward/optimizer, + envoy demoted 2026-07-17 on Andrew's call). liaison/publicist/
+bookkeeper RETIRED (superseded by envoy / marketer+publisher / treasurer). Typed-ASCII class
+marks REMOVED — the engraved SVG coin seal is the one emblem system again. Scout matchArchetype
+now coverage-scores (majority-token rule); prospect directive demands specialized roles. 7 new
+kit-grounded skills (+ opportunity-scan). W0 re-stamped post-merge.
+Open follow-ups: regenerate qa/atlas crew evidence (stale "18 builtins" notes); consider a
+first-run default-class experiment (strategist is now the bay's default card).
+
 ## 2026-07-17 — FULL-RELEASE CAMPAIGN (active; Fable-orchestrated)
 
 Goal: full public release clean on Windows AND macOS; subscriptions = the NEXT official update.
+
+- [x] **MERGED `bae18072` — night-shift precheck fail-closed.**
+      Trunk failed open when budget/provider/readiness inspection threw, spending a leash unit and starting
+      unattended work through an unproven safety gate. The driver + composition root now stand down before
+      spend as `precheck-error`; status, durable ledger, and morning-report copy all explain it truthfully.
+      Verified: focused 51+107 assertions; `test:fast` 351/351; full `test:http`; real fault-injected sidecar
+      over HTTP reported `beatsUsedToday:0` and persisted `detail.preSpend:true` (`nightshift-budget.e2e` 11/11).
 
 **MERGED: Wave 4D supervised background lifecycle** (agent/lifecycle-4d → trunk `7f3af0be`,
 claims re-stamp `bc4ac138`; full digest in qa/STATUS.md 2026-07-17). The owner-decision

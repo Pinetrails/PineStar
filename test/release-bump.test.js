@@ -22,6 +22,13 @@ function eq(a, b, msg) { assert.equal(a, b, msg); assertions++; }
 function makeFixture(dir, version, opts) {
   opts = opts || {};
   fs.mkdirSync(path.join(dir, 'src-tauri'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'package.json'), JSON.stringify({
+    name: 'starnet-harness', version, private: true, license: 'MIT'
+  }, null, 2) + '\n');
+  fs.writeFileSync(path.join(dir, 'package-lock.json'), JSON.stringify({
+    name: 'starnet-harness', version, lockfileVersion: 3, requires: true,
+    packages: { '': { name: 'starnet-harness', version } }
+  }, null, 2) + '\n');
   const conf = {
     $schema: 'x', productName: 'StarNet', version, identifier: 'ai.skynet.harness',
     // The published-floor check reads the releases repo slug from the updater endpoint.
@@ -147,6 +154,11 @@ try {
     // Files actually updated in lockstep.
     const conf = JSON.parse(fs.readFileSync(path.join(dir, 'src-tauri', 'tauri.conf.json'), 'utf8'));
     eq(conf.version, '0.2.0', 'tauri.conf.json bumped');
+    const pkg = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+    eq(pkg.version, '0.2.0', 'package.json bumped');
+    const packageLock = JSON.parse(fs.readFileSync(path.join(dir, 'package-lock.json'), 'utf8'));
+    eq(packageLock.version, '0.2.0', 'package-lock.json top-level version bumped');
+    eq(packageLock.packages[''].version, '0.2.0', 'package-lock.json root package bumped');
     const cargo = fs.readFileSync(path.join(dir, 'src-tauri', 'Cargo.toml'), 'utf8');
     check(/^version = "0\.2\.0"$/m.test(cargo), 'Cargo.toml bumped');
     const lock = fs.readFileSync(path.join(dir, 'src-tauri', 'Cargo.lock'), 'utf8');
@@ -160,12 +172,13 @@ try {
     const subject = spawnSync('git', ['log', '-1', '--pretty=%s'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
     eq(subject, 'release: v0.2.0', 'commit subject');
 
-    // ONLY the 4 files are in the release commit — the stray file is NOT.
+    // ONLY the 6 release files are in the release commit — the stray file is NOT.
     const files = spawnSync('git', ['show', '--name-only', '--pretty=format:', 'HEAD'], { cwd: dir, encoding: 'utf8' })
       .stdout.split(/\r?\n/).filter(Boolean).sort();
     assert.deepEqual(files, [
-      'RELEASE_NOTES.md', 'src-tauri/Cargo.lock', 'src-tauri/Cargo.toml', 'src-tauri/tauri.conf.json'
-    ], 'exactly the 4 pinned files committed'); assertions++;
+      'RELEASE_NOTES.md', 'package-lock.json', 'package.json', 'src-tauri/Cargo.lock',
+      'src-tauri/Cargo.toml', 'src-tauri/tauri.conf.json'
+    ], 'exactly the 6 pinned files committed'); assertions++;
     const straySt = spawnSync('git', ['status', '--porcelain', 'stray.txt'], { cwd: dir, encoding: 'utf8' }).stdout;
     check(/^\?\? stray\.txt/.test(straySt), 'stray file left untracked (pathspec commit, not -A)');
 

@@ -3531,7 +3531,8 @@ function nightshiftContextPack() {
 // model call, "could a beat even reach a model call right now?" — the same readiness/eligibility conditions the act
 // pipeline checks first. Dossier OR substantial recent activity counts as grounding (Autopilot.readiness folds both).
 // Returns { ok, reason }. Called by the driver BEFORE the leash is spent, so a stand-down that no model call could
-// have avoided (cold on both paths → tier not hot, or nothing eligible) costs no budget. Best-effort; fail OPEN.
+// have avoided (cold on both paths → tier not hot, or nothing eligible) costs no budget. Safety reads fail closed:
+// an unproven budget/provider/readiness gate stands down as `precheck-error` and is retried on a later tick.
 function nightshiftPrecheck() {
   try {
     // LANE L — COST GATE (pre-spend). The leash is spent at ACCEPT time; a beat's FIRST model call then dies with
@@ -3541,15 +3542,16 @@ function nightshiftPrecheck() {
     // {scope,usd,cap} (truthy) or null. Checked FIRST so an exhausted pool names the ACTIONABLE reason ('budget',
     // which the Commander clears by resume/raising the cap) rather than a downstream 'no-provider'/'readiness'.
     let b = null;
-    try { b = budget.check(null, NIGHTSHIFT_AGENT, 0, Date.now(), null); } catch (_) { b = null; }
+    try { b = budget.check(null, NIGHTSHIFT_AGENT, 0, Date.now(), null); }
+    catch (_) { return { ok: false, reason: 'precheck-error' }; }
     if (b) return { ok: false, reason: 'budget' };
     // LANE L — CAPABILITY GATE (pre-spend, same wart): with no runnable provider/credential a beat stands down at
     // 'no-capability' AFTER the leash was spent (runNightshiftBeat). Read it locally (no model call) and decline
-    // before the spend. Best-effort — a lookup hiccup falls through to the readiness gate (never wedge the tick).
+    // before the spend. A lookup hiccup stands down visibly; uncertainty is not unattended-work permission.
     try {
       const provider = cronProviderFor({ agentId: NIGHTSHIFT_AGENT });
       if (!cronModelFor({ agentId: NIGHTSHIFT_AGENT }) || !cronHasCredential(provider, cronKeyFor(provider))) return { ok: false, reason: 'no-provider' };
-    } catch (_) { /* fall through to readiness */ }
+    } catch (_) { return { ok: false, reason: 'precheck-error' }; }
     const snap = commanderPosture.beliefs() || {};
     const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
     const beliefsByDim = (dim) => (snap.beliefs && snap.beliefs[dim]) || [];
@@ -3559,7 +3561,7 @@ function nightshiftPrecheck() {
     const eligible = Autopilot.eligibleArchetypes(rd.usableDims, { activityGrounded: rd.groundedBy === 'activity' });
     if (rd.tier !== 'hot' || !eligible.length) return { ok: false, reason: 'readiness' };
     return { ok: true };
-  } catch (_) { return { ok: true }; }   // fail open → NS-1 behavior (spend + let the pipeline decide)
+  } catch (_) { return { ok: false, reason: 'precheck-error' }; }
 }
 
 // the READINESS view for the status route — the SAME computation nightshiftPrecheck gates on, exposed as provable
@@ -3738,7 +3740,7 @@ async function runNightshiftActShift(opts) {
   const runId = opts.runId || crypto.randomUUID();
   const backlogId = 'ns-act-' + runId;
   const title = String(sel.selected.title || 'Night-shift build').slice(0, 200);
-  try { await workshopStore.queue(agentId, { id: backlogId, title, detail: String(sel.selected.spec || ''), source: 'nightshift' }, Date.now()); }
+  try { await workshopStore.queue(agentId, { id: backlogId, title, detail: String(sel.selected.spec || ''), source: 'nightshift', grounds: String(sel.selected.grounds || '') }, Date.now()); }
   catch (_) { /* a queue hiccup (e.g. a title the Commander earlier discarded) → stand down honestly */ return { delivered: false, reason: 'queue-refused' }; }
   await workshopStore.claimNext(agentId, runId, isRunLive).catch(() => null);   // stamp buildingRunId (zombie-reap aware)
 
@@ -3774,6 +3776,8 @@ async function runNightshiftActShift(opts) {
   }
   try { await workshopStore.markBuilt(agentId, backlogId, runId); } catch (_) {}
   recordNightshiftAct(runId, sel.selected.archetype, sel.selected.threadId);   // so a keep/discard verdict feeds the RIGHT archetype into LEARN (+ NS-6: delivers/declines the cited thread)
+  // WHY-THIS: the card's provenance line — the grounding-veto-checked GROUNDS quote this job was selected on.
+  manifest.because = workshopBecause({ grounds: sel.selected.grounds, detail: sel.selected.spec, title: manifest.title });
   try { chanEmit('workshop.built', { agentId, runId, manifest }); } catch (_) {}
   const paths = (manifest.files || []).map(f => dir + '/' + f.path).slice(0, 8).join(', ');
   // LEDGER TRUTH (NS-3): a real tool-run that BUILT an artifact records kind 'act' here — the authoritative place
@@ -6099,11 +6103,26 @@ function workshopPrompt(runId, item) {
     + '- You CANNOT run commands or tests here, so do not claim anything was tested — list what a human still needs to verify.\n'
     + '- When finished, write a manifest to "' + dir + '/deliverable.json" with EXACTLY this shape:\n'
     + '  { "v": 1, "runId": "' + runId + '", "agentId": "<your id>", "backlogId": "' + ((item && item.id) || '') + '",\n'
-    + '    "title": "<short name>", "kind": "tool|fix|draft|doc|other", "summary": "<one paragraph, plain language>",\n'
+    + '    "title": "<short name>", "kind": "tool|fix|draft|doc|other",\n'
+    + '    "summary": "<2-3 SHORT plain sentences a busy person absorbs in ten seconds: what it IS and what it does for them. NEVER an inventory — no inline lists of categories, failure modes, or counts, and no sentence over ~25 words; the deliverable itself holds the detail>",\n'
     + '    "files": [{ "path": "<relative to ' + dir + '>", "bytes": <number> }],\n'
     + '    "howToUse": "<ONE short sentence — at most the single run command. The station already gives the Commander an Open link and one-click actions, so NEVER write multi-step setup or git instructions here>",\n'
-    + '    "notVerified": ["<what you could not check>"] }\n'
+    + '    "notVerified": ["<up to 5 items, each ONE short check written FOR the Commander — a concrete thing THEY can do in a minute, e.g. \\"open it and click through the tabs\\". NEVER your run diagnostics: no notes about tool budgets, byte counts, or what this shift could not execute — turn every limitation into the check it implies>"] }\n'
     + '- The manifest MUST list the real files you wrote (paths relative to "' + dir + '/"). This is required — a shift with no manifest is discarded.';
+}
+
+// WHY-THIS (2026-07-17): the one-line grounding the delivery card shows — WHY the agent built this, from
+// REAL recorded data only: the backlog item's stored grounds quote (night-shift GROUNDS), else the
+// Commander's own ask detail. Never model-authored at delivery time and never synthesized here; empty
+// in → empty out (the card simply omits the line). Truthful telemetry: this is provenance, not prose.
+function workshopBecause(item) {
+  const it = item || {};
+  const grounds = String(it.grounds || '').replace(/\s+/g, ' ').trim();
+  const detail = String(it.detail || '').replace(/\s+/g, ' ').trim();
+  const title = String(it.title || '').replace(/\s+/g, ' ').trim().toLowerCase();
+  const pick = grounds || detail;
+  if (!pick || pick.toLowerCase() === title) return '';   // adds nothing over the headline → omit
+  return pick.length > 300 ? pick.slice(0, 300) + '…' : pick;
 }
 
 // validate a run's deliverable.json against the pinned schema v1 AND the real files on disk. Returns the parsed
@@ -6238,6 +6257,8 @@ async function runWorkshopShift(agentId, opts) {
   }
   await workshopStore.markBuilt(id, item.id, runId);
   noteShift({ reason: 'built', runId: runId, title: manifest.title });
+  // WHY-THIS: the card's provenance line, from the REAL backlog ask that queued this build.
+  manifest.because = workshopBecause(item);
   try { chanEmit('workshop.built', { agentId: id, runId: runId, manifest: manifest }); } catch (_) {}
   return { fired: true, runId: runId, reason: 'built', manifest: manifest };
 }
@@ -6607,6 +6628,8 @@ async function handleWorkshopPending(req, res) {
     // pre-click consequence (2026-07-15 UX audit): resolve NOW, against the current blessed roots, what an
     // Implement would do — so the card states "apply to a branch in X" vs "save files to Y" before the click.
     try { man.implementPlan = workshopImplementPlan(man); } catch (_) {}
+    // WHY-THIS: provenance from the REAL backlog item that queued this build (grounds quote, else the ask detail).
+    try { man.because = workshopBecause(it); } catch (_) {}
     out.push(man);
   }
   json(200, { ok: true, agentId: agentId, pending: out });

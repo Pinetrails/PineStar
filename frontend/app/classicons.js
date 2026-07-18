@@ -32,7 +32,8 @@
     scout: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 4.6 C5.6 4.6 2 11 2 12 C2 13 5.6 19.4 12 19.4 C18.4 19.4 22 13 22 12 C22 11 18.4 4.6 12 4.6 Z"/><circle cx="12" cy="12" r="4.4" fill="' + D + '"/><circle cx="12" cy="12" r="2" fill="currentColor"/></svg>',
     archivist: '<svg viewBox="0 0 24 24"><rect x="4" y="3.5" width="16" height="17" rx="2" fill="currentColor"/><g fill="' + D + '"><rect x="6" y="5.6" width="12" height="3.1" rx=".6"/><rect x="6" y="10.4" width="12" height="3.1" rx=".6"/><rect x="6" y="15.3" width="12" height="3.1" rx=".6"/></g><g fill="currentColor"><rect x="10.5" y="6.6" width="3" height="1.1" rx=".5"/><rect x="10.5" y="11.4" width="3" height="1.1" rx=".5"/><rect x="10.5" y="16.3" width="3" height="1.1" rx=".5"/></g></svg>',
     designer: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="11" height="11" rx="1.6" fill="currentColor"/><circle cx="15.5" cy="15.5" r="5.7" fill="none" stroke="currentColor" stroke-width="3"/></svg>',
-    liaison: '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.2" fill="currentColor"/><path fill="' + D + '" d="M4.6 7.4 L12 12.9 L19.4 7.4 L19.4 8.9 L12 14.4 L4.6 8.9 Z"/></svg>',
+    // envoy: the envelope (inherited from the retired liaison — same job, wider desk).
+    envoy: '<svg viewBox="0 0 24 24"><rect x="2.5" y="5" width="19" height="14" rx="2.2" fill="currentColor"/><path fill="' + D + '" d="M4.6 7.4 L12 12.9 L19.4 7.4 L19.4 8.9 L12 14.4 L4.6 8.9 Z"/></svg>',
     // ---- recuration new class seals (2026-07-14, same engraved-coin style) ----
     // navigator: a compass rose carved into a coin — plotting the route.
     navigator: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.8" fill="currentColor"/><path fill="' + D + '" d="M12 3.8 L13.8 10.2 L20.2 12 L13.8 13.8 L12 20.2 L10.2 13.8 L3.8 12 L10.2 10.2 Z"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/></svg>',
@@ -43,14 +44,33 @@
     // ---- S2 new class seals (same matte/debossed engraved-coin style, currentColor) ----
     // broker: a scale/balance — weighing the deal.
     broker: '<svg viewBox="0 0 24 24"><g fill="currentColor"><rect x="11" y="3.4" width="2" height="15.4" rx=".5"/><rect x="6" y="18.6" width="12" height="2" rx=".8"/><path d="M4 6.6 H20 V8 H4 Z"/></g><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M4 7.3 L1.8 12.4"/><path d="M4 7.3 L6.2 12.4"/><path d="M20 7.3 L17.8 12.4"/><path d="M20 7.3 L22.2 12.4"/></g><path fill="' + D + '" d="M1.8 12.4 A2.6 2.6 0 0 0 6.2 12.4 Z"/><path fill="' + D + '" d="M17.8 12.4 A2.6 2.6 0 0 0 22.2 12.4 Z"/></svg>',
-    // publicist: a megaphone — the broadcast of copy.
-    publicist: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 9.5 L11 9.5 L18.5 4.5 V19.5 L11 14.5 L3 14.5 Z"/><rect x="4.4" y="14.5" width="3.4" height="5.4" rx=".8" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20.6 8 L22.4 6.8"/><path d="M20.9 12 H23"/><path d="M20.6 16 L22.4 17.2"/></g></svg>',
+    // marketer: the megaphone (inherited from the retired publicist — the campaign broadcast).
+    marketer: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M3 9.5 L11 9.5 L18.5 4.5 V19.5 L11 14.5 L3 14.5 Z"/><rect x="4.4" y="14.5" width="3.4" height="5.4" rx=".8" fill="currentColor"/><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M20.6 8 L22.4 6.8"/><path d="M20.9 12 H23"/><path d="M20.6 16 L22.4 17.2"/></g></svg>',
     // tutor: an open book with a rising spark — teaching.
     tutor: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 6 C5.4 4.6 8.6 4.6 11 6 V19 C8.6 17.6 5.4 17.6 2.6 19 Z"/><path fill="currentColor" d="M21.4 6 C18.6 4.6 15.4 4.6 13 6 V19 C15.4 17.6 18.6 17.6 21.4 19 Z"/><path fill="' + D + '" d="M11.2 6.2 H12.8 V18.8 H11.2 Z"/><path fill="currentColor" d="M12 1.4 L13 3.6 L15.2 4.6 L13 5.6 L12 7.8 L11 5.6 L8.8 4.6 L11 3.6 Z"/></svg>',
     // auditor: a shield with a magnifier — the security sweep.
     auditor: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M12 2 L20 5 V11 C20 16 16.5 19.4 12 21.4 C7.5 19.4 4 16 4 11 V5 Z"/><circle cx="10.6" cy="10.4" r="3.3" fill="none" stroke="' + D + '" stroke-width="1.8"/><path d="M13 12.8 L16 15.8" stroke="' + D + '" stroke-width="2.1" stroke-linecap="round"/></svg>',
-    // bookkeeper: a ledger book with ruled lines and a balance mark.
-    bookkeeper: '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="15" height="18" rx="1.6" fill="currentColor"/><rect x="4" y="3" width="3" height="18" fill="' + D + '"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M9.4 7.4 H16"/><path d="M9.4 10.6 H16"/><path d="M9.4 13.8 H16"/></g><path fill="' + D + '" d="M9.2 16.4 L11 18.2 L15.4 15 L16.4 16 L11 20 L8.2 17.4 Z"/></svg>',
+    // treasurer: the ledger book with ruled lines and a balance mark (inherited from the retired bookkeeper).
+    treasurer: '<svg viewBox="0 0 24 24"><rect x="4" y="3" width="15" height="18" rx="1.6" fill="currentColor"/><rect x="4" y="3" width="3" height="18" fill="' + D + '"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M9.4 7.4 H16"/><path d="M9.4 10.6 H16"/><path d="M9.4 13.8 H16"/></g><path fill="' + D + '" d="M9.2 16.4 L11 18.2 L15.4 15 L16.4 16 L11 20 L8.2 17.4 Z"/></svg>',
+    // ---- 2026-07-16 business-roster seals (same matte engraved-coin style, currentColor + deboss only) ----
+    // opportunist: the cut gem half-buried in ground — value spotted where others walked past.
+    opportunist: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M7 3.4 H17 L21.4 8.6 L12 20.6 L2.6 8.6 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linejoin="round"><path d="M2.6 8.6 H21.4"/><path d="M7 3.4 L9.6 8.6 L12 20.6"/><path d="M17 3.4 L14.4 8.6 L12 20.6"/></g></svg>',
+    // strategist: an arrow striking the target's center — the chosen direction, committed.
+    strategist: '<svg viewBox="0 0 24 24"><circle cx="13.4" cy="10.6" r="8.4" fill="currentColor"/><circle cx="13.4" cy="10.6" r="5" fill="' + D + '"/><circle cx="13.4" cy="10.6" r="1.9" fill="currentColor"/><path fill="currentColor" d="M2 22 L11.9 12.1 L13.4 13.6 L3.5 23.5 Z"/><path fill="currentColor" d="M2 17.4 L2 22 L6.6 22 L4.9 20.3 L6.4 18.8 L3.5 18.9 Z"/></svg>',
+    // publisher: the calendar grid with one slot lit — the piece scheduled to ship.
+    publisher: '<svg viewBox="0 0 24 24"><rect x="3" y="4.4" width="18" height="17" rx="1.8" fill="currentColor"/><rect x="5" y="9.2" width="14" height="10.2" fill="' + D + '"/><g fill="currentColor"><rect x="6.6" y="2" width="2.2" height="4.4" rx=".8"/><rect x="15.2" y="2" width="2.2" height="4.4" rx=".8"/><rect x="6.4" y="10.7" width="3.4" height="3.2" rx=".4"/><rect x="10.6" y="10.7" width="3.4" height="3.2" rx=".4"/><rect x="10.6" y="15" width="3.4" height="3.2" rx=".4"/><rect x="14.8" y="10.7" width="3.4" height="3.2" rx=".4"/></g></svg>',
+    // producer: the clapperboard — the shoot, ready to roll.
+    producer: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 9.2 L20.2 4 L21.4 8 L3.8 13.2 Z"/><rect x="2.6" y="10.4" width="18.8" height="10.6" rx="1.4" fill="currentColor"/><g fill="' + D + '"><path d="M6.2 8.2 L9.4 7.2 L11.2 9.4 L8 10.4 Z"/><path d="M12.6 6.3 L15.8 5.3 L17.6 7.5 L14.4 8.5 Z"/><path d="M9.6 13.4 L15.6 16 L9.6 18.6 Z"/></g></svg>',
+    // writer: the script page, beat lines marked with the play cue.
+    writer: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M5 2.6 H15.4 L19.6 6.8 V21.4 H5 Z"/><path fill="' + D + '" d="M15.4 2.6 L19.6 6.8 H15.4 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M7.6 9.4 H16.8"/><path d="M7.6 12.4 H16.8"/><path d="M7.6 15.4 H12.4"/></g><path fill="' + D + '" d="M14.4 14.2 L17.8 16.2 L14.4 18.2 Z"/></svg>',
+    // prospector: the funnel — the wide field narrowed to the qualified few.
+    prospector: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 3.6 H21.4 L14.6 12.2 V19.4 L9.4 22.4 V12.2 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M6.2 6.4 H17.8"/><path d="M8.8 9.2 H15.2"/></g></svg>',
+    // closer: the contract signed and sealed — the deal done.
+    closer: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M4 2.6 H16.2 L20 6.4 V21.4 H4 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M6.6 8 H17"/><path d="M6.6 11 H17"/><path d="M6.6 14 H11.4"/></g><circle cx="15.4" cy="16.6" r="4.2" fill="' + D + '"/><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M13.4 16.6 L14.9 18.1 L17.5 15.3"/></svg>',
+    // steward: two speech bubbles in conversation — the tended community.
+    steward: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M2.6 3.6 H15 a1.8 1.8 0 0 1 1.8 1.8 V11 a1.8 1.8 0 0 1 -1.8 1.8 H8.4 L4.6 16 v-3.2 H4.4 a1.8 1.8 0 0 1 -1.8 -1.8 Z"/><path fill="currentColor" d="M9.8 14.8 H19.6 a1.8 1.8 0 0 1 1.8 1.8 v3 a1.8 1.8 0 0 1 -1.8 1.8 h-2 v2.2 L14.6 21.4 H9.8 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.5" stroke-linecap="round"><path d="M5.4 6.6 H13.6"/><path d="M5.4 9.4 H11"/></g></svg>',
+    // optimizer: the magnifier over rising bars — found, and climbing.
+    optimizer: '<svg viewBox="0 0 24 24"><circle cx="10.5" cy="10.5" r="8" fill="currentColor"/><path fill="currentColor" d="M16 14.2 L22 20.2 L20.2 22 L14.2 16 Z"/><g fill="' + D + '"><rect x="6.2" y="10.4" width="2.2" height="4" rx=".4"/><rect x="9.4" y="8.4" width="2.2" height="6" rx=".4"/><rect x="12.6" y="6.2" width="2.2" height="8.2" rx=".4"/></g></svg>',
     // translator: two-way arrows over two script marks — swapping languages. The glyphs are stroke PATHS (a Latin
     // "A" top-left, an abstract CJK mark bottom-right), not <text> — <text> was the only seal that rendered with a
     // system font, so it scaled + themed inconsistently against the other engraved paths.
@@ -59,48 +79,18 @@
     herald: '<svg viewBox="0 0 24 24"><rect x="5" y="2.6" width="2" height="18.8" rx=".6" fill="currentColor"/><path fill="currentColor" d="M7 3.4 H20 L16.8 7.6 L20 11.8 H7 Z"/><g fill="none" stroke="' + D + '" stroke-width="1.4" stroke-linecap="round"><path d="M9.6 6 H16"/><path d="M9.6 9 H14"/></g></svg>',
   };
 
-  /* ---- ASCII MARKS (premium bay pass, 2026-07-14; upsized same day): terminal-native class emblems ----
-     The bay renders THESE (in the class accent, VT323) instead of the SVG coins — the station is an ASCII
-     terminal, its insignia are typed, not drawn. Exactly 5 rows each, <=9 columns, printable ASCII plus the
-     terminal SHADE/HALF-BLOCK set (░ ▒ ▓ █ ▄ ▀ — the AsciiFX decode alphabet, so VT323 provably renders
-     them): strokes draw the structure, blocks carry lit MASS, which is what makes the emblems read as
-     glowing pictograms instead of line art. Authored + reviewed in the icon-lab loop at both the row scale
-     (~10px) and the dossier scale (~19px) — every mark must read at BOTH. The SVG ICONS above stay as the
-     mission-seal art + vector fallback; custom classes fall back to their emoji glyph. */
-  const ASCII = {
-    researcher: ['  .--.   ', ' /░░  \\  ', '| (+)  | ', ' \\    /█▄', '  \'--\' ▀█'],      // hand lens, glint + solid grip
-    engineer:   ['.-------.', '| $ </> |', '|░░░░░░░|', '\'---,-,-\'', '   ▄█▄   '],        // lit terminal on its stand
-    operator:   ['  \\ | /  ', ' .-----. ', '-| ▓█▓ |-', ' \'-----\' ', '  / | \\  '],      // the gear, core glowing
-    scribe:     ['    ,--\\ ', '   /▒▒) ', '  /▒▒/   ', ' |_,-`   ', ' ▀▀▀▀▀▀▀ '],           // shaded quill over the ink line
-    analyst:    ['|      ██', '|      ██', '|   ██ ██', '| ▄ ██ ██', '\'--------'],          // solid bars rising on the axis
-    scout:      ['  .---.  ', ' / .-. \\ ', '| (o---->', ' \\ `-\' / ', '  \'---\'  '],     // radar rings + the sweep
-    designer:   [' .-----. ', ' | ░ o | ', ' |▄▀▀▄▄| ', ' \'-----\' ', '  /   \\  '],        // the picture on its easel
-    chief:      [' ▀▀▀▀▀▀▀ ', '   .^.   ', '  <(*)>  ', '   \'v\'   ', ' ▄▄▄▄▄▄▄ '],        // command star between solid bars
-    tutor:      [' ▄▄▄ ▄▄▄ ', '/░░░V░░░\\', '|░░░|░░░|', '\\▄▄▄|▄▄▄/', '   ▀▀▀   '],         // the open book, pages lit
-    navigator:  ['    N    ', '  ▄▀|▀▄  ', ' (--+--) ', '  ▀▄|▄▀  ', '    S    '],            // compass rose in its ring
-    curator:    [' .-----. ', ' | [█] | ', ' |-----| ', ' | [█] | ', ' \'-----\' '],          // drawers, solid handles
-    muse:       ['   .-.   ', '  /░░░\\  ', ' |░░!░░| ', '  \\░▄░/  ', '   |=|   '],          // the bulb, glowing
-    reviewer:   [' \\,   ,/ ', '  \\o-o/  ', '  (▒▒▒)  ', '  (▒▒▒)  ', '  /| |\\  '],         // the bug, shell banded
-    archivist:  [' .-----. ', ' ||||||| ', ' ||||||| ', ' |░░░░░| ', ' \'-----\' '],          // the card index
-    liaison:    [' .-----. ', ' |\\▒▒▒/| ', ' | \\ / | ', ' |  v  | ', ' \'-----\' '],        // envelope, flap shaded
-    broker:     ['   ▄|▄   ', '  / | \\  ', ' o  |  o ', '    |    ', '  ▄▄█▄▄  '],           // the balance on its base
-    publicist:  ['  .---.  ', ' |▓▓▓▓▓| ', ' |▒▒▒▒▒| ', '  \'-.-\'  ', '  ▄▄█▄▄  '],         // the mic, grille shaded
-    auditor:    [' ,-----. ', ' |░░!░░| ', ' \\░░░░░/ ', '  \\░░░/  ', '   \'-\'   '],        // the warded shield
-    bookkeeper: [' .-----. ', ' | $ = | ', ' |--+--| ', ' | = $ | ', ' \'-----\' '],          // the ruled ledger
-    translator: [' A .---> ', '   |     ', '  <=>    ', '     |   ', ' <---. B '],            // A to B and back
-    herald:     [' |▀▄▄▄▄▄ ', ' |░░░░░░\\', ' |▄▄▄▄▄▄/', ' |       ', ' |       ']            // the banner, cloth catching light
-  };
-  // the typed emblem for a class id — an array of 5 ASCII rows, or null (custom → caller draws its emoji).
-  function ascii(idOrSpec) {
-    const id = typeof idOrSpec === 'string' ? idOrSpec : (idOrSpec && idOrSpec.id);
-    return ASCII[id] || null;
-  }
+  /* (The 2026-07-14 "typed ASCII mark" layer was REMOVED 2026-07-16 on Andrew's call — the typed
+     emblems read as noise next to the engraved coins. The SVG seals above are the ONE class emblem
+     system again: clean, accent-themed, unique per class. Custom classes fall back to their emoji.) */
 
   const CODE = {
     chief: 'CHF', engineer: 'ENG', researcher: 'RES', reviewer: 'REV', operator: 'OPR',
-    scribe: 'SCR', analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN', liaison: 'LIA',
-    broker: 'BRK', publicist: 'PUB', tutor: 'TUT', auditor: 'AUD', bookkeeper: 'LDG', translator: 'XLT', herald: 'HLD',
-    navigator: 'NAV', curator: 'CUR', muse: 'MUS'
+    scribe: 'SCR', analyst: 'ANL', scout: 'SCT', archivist: 'ARV', designer: 'DSN',
+    broker: 'BRK', tutor: 'TUT', auditor: 'AUD', translator: 'XLT', herald: 'HLD',
+    navigator: 'NAV', curator: 'CUR', muse: 'MUS',
+    strategist: 'STG', marketer: 'MKT', publisher: 'PUB', producer: 'PRD', writer: 'WRT',
+    prospector: 'PRS', envoy: 'ENV', treasurer: 'TRE',
+    closer: 'CLO', steward: 'STW', optimizer: 'OPT', opportunist: 'OPP'
   };
 
   // bespoke emblems for the built-in RECIPES (missions) — same matte/debossed style, keyed by recipe id.
@@ -160,5 +150,5 @@
     return '<span class="mkt-pips">' + '<b>◆</b>'.repeat(n) + '◇'.repeat(3 - n) + '</span>';
   }
 
-  return { ICONS, ASCII, CODE, LANE_LABEL, svg, ascii, code, lane, laneLabel, clearance, pipsHTML };
+  return { ICONS, CODE, LANE_LABEL, svg, code, lane, laneLabel, clearance, pipsHTML };
 });

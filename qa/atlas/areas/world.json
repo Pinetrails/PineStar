@@ -1,6 +1,6 @@
 {
   "area": "world",
-  "updatedAt": "2026-07-18T02:46:06.532Z",
+  "updatedAt": "2026-07-18T02:54:12.306Z",
   "entries": [
     {
       "id": "state/ingame",
@@ -15974,12 +15974,11 @@
       "id": "ui/world/ws-export-json",
       "kind": "ui",
       "area": "world",
-      "name": "download this conversation as JSON — secrets and hidden data are excluded",
-      "purpose": "Download the active conversation as a portable structured transcript.",
-      "promise": "JSON contains only dialogue/title, declares secretsIncluded:false, excludes hidden/system records, scrubs credentials, round-trips, and revokes its object URL.",
+      "name": "Export .json (row menu)",
+      "purpose": "Download one named session as a portable structured transcript from its row actions menu.",
+      "promise": "The row ⋯ menu's Export .json downloads THAT session's conversation: dialogue/title only, secretsIncluded:false declared, hidden/system records excluded, credentials scrubbed, round-trips, and the object URL is revoked.",
       "wiring": {
         "files": [
-          "frontend/index.html",
           "frontend/app/app.js",
           "frontend/app/workstreams.js"
         ],
@@ -15989,31 +15988,31 @@
         {
           "kind": "test",
           "ref": "test/session-power-tools.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/session-power-tools-journey.mjs"
         }
       ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
-        "date": "2026-07-18T02:38:44.323Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
-      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "lastSeen": "2026-07-16T07:47:13.046Z",
       "missing": false,
-      "selector": "#ws-export-json",
+      "selector": ".ws-menu .ws-menu-item[data-act=\"export-json\"]",
       "state": "ingame",
-      "notes": "Live @ HEAD: #ws-export-json (EXPORT .JSON) present+visible+wired. AUDITED: not clicked live (triggers a download, permission-gated); underlying W.exportConversation('json') round-trip is covered by session-power-tools.test.js (MIME + title + visible-dialogue asserts)."
+      "notes": "REDESIGNED 2026-07-17: the SESSION TOOLS window was retired; export moved into the sessions-rail row ⋯ menu (App exportSession) and targets the exact row session, never an implicit active one. Prior window audit no longer applies."
     },
     {
       "id": "ui/world/ws-export-md",
       "kind": "ui",
       "area": "world",
-      "name": "download this conversation as Markdown — secrets and hidden data are excluded",
-      "purpose": "Download the active conversation as readable Markdown.",
-      "promise": "Markdown labels Commander/Agent dialogue, excludes hidden/system rows, scrubs credentials, and revokes its object URL.",
+      "name": "Export .md (row menu)",
+      "purpose": "Download one named session as readable Markdown from its row actions menu.",
+      "promise": "The row ⋯ menu's Export .md downloads THAT session's conversation: Commander/Agent dialogue labelled, hidden/system rows excluded, credentials scrubbed, and the object URL is revoked.",
       "wiring": {
         "files": [
-          "frontend/index.html",
           "frontend/app/app.js",
           "frontend/app/workstreams.js"
         ],
@@ -16023,20 +16022,21 @@
         {
           "kind": "test",
           "ref": "test/session-power-tools.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/session-power-tools-journey.mjs"
         }
       ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
-        "date": "2026-07-18T02:38:44.323Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
-      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "lastSeen": "2026-07-16T07:47:13.046Z",
       "missing": false,
-      "selector": "#ws-export-md",
+      "selector": ".ws-menu .ws-menu-item[data-act=\"export-md\"]",
       "state": "ingame",
-      "notes": "Live @ HEAD: #ws-export-md (EXPORT .MD) present+visible+wired. AUDITED: not clicked live (download-gated); W.exportConversation('markdown') heading+MIME covered by session-power-tools.test.js."
+      "notes": "REDESIGNED 2026-07-17: the SESSION TOOLS window was retired; export moved into the sessions-rail row ⋯ menu (App exportSession) and targets the exact row session, never an implicit active one. Prior window audit no longer applies."
     },
     {
       "id": "ui/world/ws-new",
@@ -16078,9 +16078,9 @@
       "id": "ui/world/ws-search",
       "kind": "ui",
       "area": "world",
-      "name": "input",
-      "purpose": "Search one local surface across every session title and visible transcript body.",
-      "promise": "Typing returns case-insensitive title/body hits with snippets across active and archived sessions; hidden/system rows and credentials are not exposed, and activating a hit opens its session.",
+      "name": "search sessions and transcripts (rail)",
+      "purpose": "Search one local surface across every session title and visible transcript body, directly on the sessions rail.",
+      "promise": "Typing returns case-insensitive title/body hits with snippets across active and archived sessions; hidden/system rows and credentials are not exposed; activating a hit opens its session and resets the box; Escape clears; the PROJECTS view hides the whole block with the sessions list.",
       "wiring": {
         "files": [
           "frontend/index.html",
@@ -16094,20 +16094,21 @@
         {
           "kind": "test",
           "ref": "test/session-power-tools.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/session-power-tools-journey.mjs"
         }
       ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
-        "date": "2026-07-18T02:38:44.323Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
-      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "lastSeen": "2026-07-16T07:47:13.046Z",
       "missing": false,
-      "selector": "#ws-search",
+      "selector": "#ws-rail-search #ws-search",
       "state": "ingame",
-      "notes": "Live @ HEAD: #ws-search input present+visible in SESSION TOOLS; wired + covered by session-power-tools.test.js. AUDITED: live filter effect not cleanly counted (seed has a single session; filter hides rather than removes rows)."
+      "notes": "REDESIGNED 2026-07-17: the SESSION TOOLS window was retired; the search input now lives directly on the sessions rail under the head (#ws-rail-search). The rail HEAD itself stays SESSIONS/PROJECTS + NEW only. Prior window audit no longer applies."
     },
     {
       "id": "ui/world/ws-tab-projects",

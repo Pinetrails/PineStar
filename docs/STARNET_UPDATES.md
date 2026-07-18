@@ -24,7 +24,8 @@ The desktop build checks the **public GitHub Releases** channel:
 https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/download/latest.json
 ```
 
-`starnet-releases` is a dedicated PUBLIC repo (the source repo stays private). GitHub
+`starnet-releases` is a dedicated public binary-distribution repo, separate from the public
+source repository. GitHub
 redirects the `latest/download` path to the newest published release, so the endpoint never
 changes between versions — only the release contents do. The native Tauri updater fetches
 this directly (it is not subject to the webview CSP).

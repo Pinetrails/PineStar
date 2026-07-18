@@ -1,0 +1,26 @@
+# Exact, reviewed false-positive fingerprints from the pre-publication full-history scan.
+# Do not add path-wide or rule-wide exclusions: new findings must still fail the gate.
+#
+# Test fixtures exercise redaction, token parsing, TLS, and secret-removal behavior.
+011e7c7d44dd0653d2464e1b9d9e9ec5c077eba8:test/saveversion.test.js:generic-api-key:633
+12b2b3745ffcd1a83a380ada4ad23c2fdea9eebd:test/codex-auth-state.test.js:generic-api-key:22
+12b2b3745ffcd1a83a380ada4ad23c2fdea9eebd:test/codex-status.e2e.test.js:jwt:45
+12b7726ab97f9c4595065ce27b7f8b250c203282:test/network-policy.test.js:private-key:25
+262415808030f25159e741e7cfe29b84feee4019:test/context.test.js:gcp-api-key:79
+262415808030f25159e741e7cfe29b84feee4019:test/context.test.js:stripe-access-token:82
+27eafe28fa7dbc956da9e26712b151c6e84c352d:test/shell-bg.test.js:curl-auth-header:94
+2e2430780d039e99ec3d7d5be7bdfa808397f12b:test/lint-evidence-secrets.test.js:generic-api-key:27
+4e889eafd40b32b2909f3edf5dcc10c90a36e429:test/oauth-status.e2e.test.js:jwt:42
+836a32b12dd281207af6fea6884cd4701048b5c1:test/saveversion.test.js:generic-api-key:617
+836a32b12dd281207af6fea6884cd4701048b5c1:test/saveversion.test.js:generic-api-key:674
+8c985cd2bdbd14c39d1472c1c8a7209ffe01eef2:test/diagnostics.test.js:jwt:23
+985b1e47714580ac1fd9d5f476e8a366537a9246:test/saveversion.test.js:generic-api-key:313
+aef8b47ce014cc661dd95f18210ac3731edbc48f:test/consent-details.test.js:curl-auth-header:60
+dd1d2468aa8fb6e78fca8f858890a5d2f0d9b0d6:test/saveversion.test.js:generic-api-key:250
+dd1d2468aa8fb6e78fca8f858890a5d2f0d9b0d6:test/saveversion.test.js:generic-api-key:251
+
+# Public Edge Read Aloud trusted-client token (not an account credential).
+6a14a266a0b3f49a33e8243aa928918d7a460773:sidecar/edgetts.js:generic-api-key:21
+
+# Deleted vendored audit rule that matched example text rather than a credential.
+5e9e25666876a0a4bc17ab0e96597f567f1bab7a:skills/vendor/threejs-game-skills/skills/threejs-game-director/scripts/audit_reference_report.py:generic-api-key:137
