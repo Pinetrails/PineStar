@@ -2789,6 +2789,9 @@ select.fbc-sel:focus { border-color: var(--ph); box-shadow: inset 0 2px 5px rgba
 .cc-home:hover { color: var(--ph); }
 .cc-key { display: flex; flex-direction: column; gap: 3px; }
 .cc-card .bb[disabled] { opacity: .5; cursor: default; }
+/* "VIA <name>" jump landing: the aggregator card flashes gold — a MOMENT (same 2.4s gold-flash
+   vocabulary as q-celebrate), never a lingering state. */
+.cc-card.cc-jump { border-color: var(--gold); animation: q-celebrate 2.4s ease-out 1; }
 
 .rt-agent-pick { display: grid; grid-template-columns: repeat(auto-fit, minmax(132px, 1fr)); gap: 5px; }
 .rt-agent-btn {

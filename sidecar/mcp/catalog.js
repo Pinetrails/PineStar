@@ -16,7 +16,9 @@
                 registration flow in mcp/oauth.js). LIVE: the panel shows a SIGN IN button (gated on
                 authType==='oauth'). `installable` stays FALSE for oauth BY DESIGN — an oauth connector is stood
                 up by its own start/callback sign-in flow, not a one-click direct upsert, so installConfig()
-                returns null for it. A url-less oauth entry (reached via an aggregator) shows a disabled SOON.
+                returns null for it. A url-less oauth entry (reached via an aggregator) carries `via` — the
+                catalog id of the aggregator that reaches it — and the panel renders a live "VIA <name>" jump
+                to that card (never a mute dead button).
 
    transport is always 'http' — the manager's http transport speaks MCP "Streamable HTTP" (POST JSON-RPC,
    response is JSON or an SSE stream). We deliberately seed only Streamable-HTTP `/mcp`-style endpoints and
@@ -107,9 +109,11 @@
       blurb: 'Read and update CRM contacts, companies, deals, and tickets with a private-app token.' },
 
     // ── OAuth tier — LISTED but not installable until the OAuth slice ships (honest, not a dead click) ──
+    /* `via` (url-less oauth entries only): the catalog id of the AGGREGATOR that reaches this platform today.
+       The panel renders it as a live "VIA <name>" jump to that card instead of a mute disabled button. */
     { id: 'google-workspace', name: 'Google Workspace', category: 'Productivity', authType: 'oauth', transport: 'http',
-      url: '', official: true, homepage: 'https://workspace.google.com',
-      blurb: 'Gmail, Calendar, Drive, Docs, and Sheets. Needs Google sign-in (OAuth) — available today via the Zapier connector.' },
+      url: '', official: true, homepage: 'https://workspace.google.com', via: 'zapier',
+      blurb: 'Gmail, Calendar, Drive, Docs, and Sheets. Google ships no public MCP endpoint yet — reach it today through the Zapier connector (one API key).' },
     { id: 'notion', name: 'Notion', category: 'Productivity', authType: 'oauth', transport: 'http',
       url: 'https://mcp.notion.com/mcp', official: true, homepage: 'https://notion.so',
       blurb: 'Search, read, and create Notion pages and databases. Needs Notion sign-in (OAuth).' },
@@ -117,11 +121,14 @@
       url: 'https://mcp.linear.app/mcp', official: true, homepage: 'https://linear.app',
       blurb: 'Create, search, and update Linear issues and projects. Needs Linear sign-in (OAuth).' },
     { id: 'atlassian', name: 'Jira & Confluence', category: 'Productivity', authType: 'oauth', transport: 'http',
-      url: '', official: true, homepage: 'https://atlassian.com',
-      blurb: 'Atlassian Jira issues and Confluence pages. Needs Atlassian sign-in (OAuth).' },
-    { id: 'github', name: 'GitHub', category: 'Developer Tools', authType: 'oauth', transport: 'http',
+      url: '', official: true, homepage: 'https://atlassian.com', via: 'zapier',
+      blurb: 'Atlassian Jira issues and Confluence pages. Their endpoint speaks Basic auth our transport can\'t drive — reach it today through the Zapier connector (one API key).' },
+    /* apikey, NOT oauth: github.com/login/oauth exposes no RFC 7591 dynamic registration (live-probed
+       2026-07-18 — discovery succeeds but registration_endpoint is absent), so our DCR sign-in flow can
+       never complete against it. A PAT as `Authorization: Bearer` is the documented remote-server path. */
+    { id: 'github', name: 'GitHub', category: 'Developer Tools', authType: 'apikey', transport: 'http',
       url: 'https://api.githubcopilot.com/mcp', official: true, homepage: 'https://github.com',
-      blurb: 'Issues, pull requests, code search, and Actions across your repos. Needs GitHub sign-in (OAuth).' },
+      blurb: 'Issues, pull requests, code search, and Actions across your repos. Paste a GitHub personal access token (github.com → Settings → Developer settings).' },
     { id: 'sentry', name: 'Sentry', category: 'Developer Tools', authType: 'oauth', transport: 'http',
       url: 'https://mcp.sentry.dev/mcp', official: true, homepage: 'https://sentry.io',
       blurb: 'Inspect errors, issues, and releases from your Sentry projects. Needs Sentry sign-in (OAuth).' },
@@ -197,7 +204,7 @@
     return {
       id: e.id, name: e.name, category: e.category, authType: e.authType, transport: e.transport,
       url: e.url || '', official: !!e.official, homepage: e.homepage || '', blurb: e.blurb || '',
-      installable: isInstallable(e)
+      via: e.via || '', installable: isInstallable(e)
     };
   }
 
