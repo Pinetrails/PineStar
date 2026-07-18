@@ -8760,12 +8760,22 @@ async function handleProjectPickFolder(req, res) {
 // stat helper: is `abs` an existing directory? (never throws)
 async function isHarnessDir(abs) { try { const st = await fsp.stat(abs); return st.isDirectory(); } catch (_) { return false; } }
 
-// read at most `maxBytes` (default 128KB) of a file as utf-8; a missing/oversize/unreadable file yields null (the
-// scanner treats null as "file absent"). Bounded via a positional read so a giant file never loads fully into memory.
-async function harnessReadClamped(abs, maxBytes) {
+// read at most `maxBytes` (default 128KB) of a REGULAR file as utf-8; anything else — missing, unreadable, a
+// directory, or a SYMLINK/JUNCTION — yields null (the scanner treats null as "file absent"). lstat first (does NOT
+// follow links) so a whitelisted name that is really a symlink to an outside file (.env, a key) is never opened;
+// then, when `realBase` is given, the file's realpath must stay inside it (fsJail.pathInside, win32 case-folded) so
+// a symlinked ANCESTOR directory can't hop the jail either — real-vs-real, the same discipline as resolveInside.
+// Bounded via a positional read so a giant file never loads fully into memory. Read-only, never throws.
+async function harnessReadClamped(abs, maxBytes, realBase) {
   maxBytes = (maxBytes | 0) > 0 ? (maxBytes | 0) : (128 * 1024);
   let fd = null;
   try {
+    const lst = await fsp.lstat(abs);
+    if (!lst.isFile()) return null;                       // symlink/junction/dir/device — treat as absent
+    if (realBase) {
+      const real = await fsp.realpath(abs);               // resolves any symlinked ancestor too
+      if (!fsJail.pathInside(real, realBase)) return null;
+    }
     fd = await fsp.open(abs, 'r');
     const st = await fd.stat();
     if (!st.isFile()) return null;
@@ -8777,6 +8787,9 @@ async function harnessReadClamped(abs, maxBytes) {
   } catch (_) { return null; }
   finally { if (fd) { try { await fd.close(); } catch (_) {} } }
 }
+
+// realpath a directory the harness routes will read under; null when it can't resolve (caller skips it).
+async function harnessRealDir(abs) { try { return await fsp.realpath(abs); } catch (_) { return null; } }
 
 // never read these off an imported home, even if a future whitelist entry named one (defense in depth — the current
 // filesWanted list is all persona/memory markdown + one config, none of which match).
@@ -8794,14 +8807,16 @@ async function handleHarnessDetect(req, res) {
     if (!(await isHarnessDir(cand.root))) continue;
     if (cand.harness === 'openclaw') {
       // read openclaw.json (JSON5) from the STATE dir to learn the agent roster; fall back to the default agent.
+      // Same jailed read as scan: a symlinked openclaw.json pointing outside the state dir is treated as absent.
       let cfg = null;
-      try { cfg = harnessImport.parseJson5(await harnessReadClamped(path.join(cand.root, 'openclaw.json'))); } catch (_) { cfg = null; }
+      try { cfg = harnessImport.parseJson5(await harnessReadClamped(path.join(cand.root, 'openclaw.json'), 0, await harnessRealDir(cand.root))); } catch (_) { cfg = null; }
       const agents = harnessImport.openclawAgents(cfg);
-      for (const a of agents) {
+      const probes = await Promise.all(agents.map(async (a) => {
         const wsRel = a.workspace || (a.default ? 'workspace' : ('workspace-' + a.id));
         const wsDir = path.isAbsolute(wsRel) ? wsRel : path.join(cand.root, wsRel);
-        if (await isHarnessDir(wsDir)) found.push({ harness: 'openclaw', root: wsDir, label: 'OpenClaw — ' + a.id });
-      }
+        return (await isHarnessDir(wsDir)) ? { harness: 'openclaw', root: wsDir, label: 'OpenClaw — ' + a.id } : null;
+      }));
+      for (const p of probes) { if (p) found.push(p); }
     } else {
       // Hermes: the home itself is an importable agent, plus every profiles/<name> subdir.
       found.push({ harness: 'hermes', root: cand.root, label: 'Hermes — main' });
@@ -8830,15 +8845,20 @@ async function handleHarnessScan(req, res) {
   const warnings = [];
   const files = {};
   const stateDir = path.dirname(root);   // OpenClaw's state dir is the workspace's parent (where openclaw.json lives)
-  for (const w of harnessImport.filesWanted(harness)) {
+  // realpath each base ONCE; every whitelisted file must lstat as a regular non-symlink file AND realpath back
+  // under its base's realpath (harnessReadClamped) — so neither a symlinked file nor a symlinked ancestor dir can
+  // pull outside bytes (.env, a key) into the preview. A base that can't realpath is skipped (nothing safe to read).
+  const realBases = { root: await harnessRealDir(root), state: await harnessRealDir(stateDir) };
+  await Promise.all(harnessImport.filesWanted(harness).map(async (w) => {
     const baseDir = w.base === 'state' ? stateDir : root;
+    const realBase = realBases[w.base === 'state' ? 'state' : 'root'];
+    if (!realBase) return;
     const abs = path.resolve(baseDir, w.rel);
-    const rel = path.relative(baseDir, abs);
-    if (rel.startsWith('..') || path.isAbsolute(rel)) { warnings.push('skipped ' + w.rel + ' (escaped its base dir)'); continue; }   // path jail
-    if (HARNESS_FORBIDDEN_RE.test(w.rel)) continue;   // defense in depth — never read a secret/db/sessions file
-    const txt = await harnessReadClamped(abs, 128 * 1024);
+    if (!fsJail.pathInside(abs, baseDir)) { warnings.push('skipped ' + w.rel + ' (escaped its base dir)'); return; }   // syntactic jail (win32 case-folded)
+    if (HARNESS_FORBIDDEN_RE.test(w.rel)) return;   // defense in depth — never read a secret/db/sessions file
+    const txt = await harnessReadClamped(abs, 128 * 1024, realBase);
     if (txt != null) files[w.rel] = txt;
-  }
+  }));
 
   // count the daily memory notes for dailyCount (OpenClaw: memory/*.md; Hermes: memories/*.md minus MEMORY/USER).
   let dailyCount = 0;
