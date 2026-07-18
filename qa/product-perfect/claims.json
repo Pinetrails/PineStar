@@ -1498,7 +1498,7 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/routines.js",
           "needle": "ROUTINES"
         },
         {

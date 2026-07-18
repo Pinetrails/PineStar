@@ -8,7 +8,7 @@ const A = require('./_assert.js');
 const fs = require('fs');
 const path = require('path');
 
-const src = fs.readFileSync(path.join(__dirname, '../frontend/app/stationui.js'), 'utf8');
+const src = fs.readFileSync(path.join(__dirname, '../frontend/app/windows/routines.js'), 'utf8');   // ROUTINES window extracted from stationui.js (BUILDERS split)
 
 // the button exists in the ROUTINES panel.
 A.ok(/id="rt-propose"/.test(src), 'the ROUTINES panel has a propose-standing-jobs button (#rt-propose)');
