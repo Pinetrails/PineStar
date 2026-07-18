@@ -6449,26 +6449,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireVerdict(nsNo, 'decline', 'warn');
   }
 
-  /* ============== SESSION TOOLS ==============
-     Search/export/clear/bulk-archive for conversations. The controls live in ONE parked DOM node
-     (#ws-tools in index.html) that App wires exactly once at init; this window ADOPTS that node into
-     its body on open and re-parks it hidden on close, so the wiring (and any armed confirm state)
-     survives open/close cycles. Rail head stays SESSIONS/PROJECTS + NEW (Commander directive). */
-  function parkSessionTools() {
-    const panel = document.getElementById('ws-tools'), park = document.getElementById('ws-tools-park');
-    if (!panel) return;
-    panel.hidden = true;
-    if (park) park.appendChild(panel);
-  }
-  function buildSessionTools(body) {
-    const panel = document.getElementById('ws-tools'); if (!panel) return;
-    panel.hidden = false;
-    body.appendChild(panel);
-    if (typeof App !== 'undefined' && App.sessionToolsShown) App.sessionToolsShown();
-    const q = panel.querySelector('#ws-search');
-    if (q) setTimeout(() => { try { q.focus(); } catch (_) {} }, 0);
-  }
-
   /* ============== OUTBOX — the finished-work window (2026-07-16 UX fix) ==============
      Clicking the OUTBOX prop opens THIS: one clean list of every uncollected finished run — what ran,
      who ran it, when, what it cost — each readable IN PLACE (lazy inline transcript, the LOGBOOK's
@@ -6561,7 +6541,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     connectors:['TOOLSETS & CONNECTORS', buildConnectors,{ console: true }],
     routines: ['ROUTINES',               buildRoutines,  { console: true }],
     rewind:   ['RESTORE POINTS',         buildRewind,    { w: '520px' }],
-    sessiontools: ['SESSION TOOLS',      buildSessionTools, { w: '440px', onClose: parkSessionTools }],
     logbook:  ['LOGBOOK',                buildLogbook,   { console: true }],
     notifs:   ['NOTIFICATIONS',          buildNotifs,    { w: '460px' }],
     // the FIELD MANUAL codex is owned by tutorial.js (P3); this term just hosts its builder

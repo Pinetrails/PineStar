@@ -2563,7 +2563,7 @@ const App = (() => {
     pushRoster();     // Stage 2: seed the sidecar with the live crew so the lead can delegate (no-op for a solo station)
     renderRail();
     el('ws-new').onclick = newWorkstream;
-    wireSessionTools();
+    wireRailSearch();
     // NS-5c SESSIONS ↔ PROJECTS toggle + ADD-a-project wiring
     { const ts = el('ws-tab-sessions'); if (ts) ts.onclick = () => setRailView('sessions'); }
     { const tp = el('ws-tab-projects'); if (tp) tp.onclick = () => setRailView('projects'); }
@@ -2657,8 +2657,6 @@ const App = (() => {
   function renderRail() {
     const ul = el('workstreams');
     if (!ul || typeof Workstreams === 'undefined') return;
-    refreshSessionToolsActive();   // keep the SESSION TOOLS window's active-conversation label truthful across switches
-    refreshSessionToolsArchived(); // …and its archived-mirror row in step with the rail footer it mirrors
     const activeId = Workstreams.activeId();
     ul.innerHTML = Workstreams.list({ includeArchived: railShowArchived }).map(w => {
       const title = w.title || 'General';
@@ -2734,10 +2732,10 @@ const App = (() => {
     const ws = Workstreams.startSession();
     SFX.open(); Chat.load(ws); refreshUsage(); renderRail(); persist();
   }
-  /* Session power tools — the SESSION TOOLS floating window (SYSTEM menu) for title/transcript search, secret-safe active
-     conversation export, explicit clear+checkpoint, and exact-preview bulk archive. The pure store
-     owns every selection/recovery invariant; this layer only renders and persists its decisions. */
-  let sessionToolsPreview = null;
+  /* Rail search + per-session export — what survived the SESSION TOOLS window (retired 2026-07-17).
+     Search lives directly on the sessions rail (the one capability no other surface covered); export
+     moved into the row ⋯ actions menu so it always names its exact target. The pure store
+     (workstreams.js) still owns the search/export/scrub invariants; this layer only renders + downloads. */
   function sessionDownload(bundle) {
     if (!bundle || !bundle.text) return false;
     try {
@@ -2748,31 +2746,12 @@ const App = (() => {
       return true;
     } catch (_) { return false; }
   }
-  function refreshSessionUndo() {
-    const b = el('ws-undo'); if (b) b.hidden = !Workstreams.canUndo();
+  // Export ONE named session from its row menu — never an implicit "the active one".
+  function exportSession(id, format) {
+    const w = Workstreams.get(id), bundle = w && Workstreams.exportConversation(id, format);
+    const ok = sessionDownload(bundle); if (ok) SFX.click(); else SFX.bad();
+    if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? ('exported “' + ((w && w.title) || 'General') + '” — hidden data and secrets excluded') : 'nothing to export in “' + ((w && w.title) || 'General') + '”', ok ? '' : 'warn');
   }
-  // The floating window is detached from the rail, so "ACTIVE CONVERSATION" must NAME the session it
-  // acts on — export/clear aiming at an unnamed target reads as a trap. Kept live via renderRail (every
-  // session switch re-renders the rail), so the label can never go stale while the window is open.
-  function refreshSessionToolsActive() {
-    const n = el('ws-tools-active'); if (!n) return;
-    const w = Workstreams.active();
-    n.textContent = '— “' + ((w && w.title) || 'General') + '”';
-  }
-  // MIRROR of the rail's archived footer — same count, same railShowArchived state, refreshed by the
-  // same renderRail pass. One source of truth: this row can never claim a reveal state the rail
-  // doesn't have. Hidden at zero archived (a door to nothing would be a dead control).
-  function refreshSessionToolsArchived() {
-    const b = el('ws-tools-archived'); if (!b) return;
-    let n = 0; for (const w of Workstreams.list({ includeArchived: true })) if (w.archived) n++;
-    b.hidden = !n;
-    if (!n) return;
-    b.textContent = railShowArchived
-      ? '▾ ARCHIVED SHOWN IN THE SESSIONS RAIL — CLICK TO HIDE'
-      : '▸ VIEW ' + n + ' ARCHIVED — IN THE SESSIONS RAIL';
-    b.title = railShowArchived ? 'hide the archived sessions in the rail' : 'reveal the ' + n + ' archived session' + (n === 1 ? '' : 's') + ' (dimmed) in the sessions rail';
-  }
-  function sessionToolsShown() { refreshSessionUndo(); refreshSessionToolsActive(); refreshSessionToolsArchived(); }
   function renderSessionSearch() {
     const input = el('ws-search'), out = el('ws-search-results'); if (!input || !out) return;
     const q = input.value.trim(); out.innerHTML = '';
@@ -2791,71 +2770,11 @@ const App = (() => {
       const li = document.createElement('li'); li.className = 'ws-search-hit'; li.textContent = 'No title or transcript matches.'; out.appendChild(li);
     }
   }
-  function resetBulkPreview(message) {
-    sessionToolsPreview = null;
-    const apply = el('ws-bulk-apply'); if (apply) apply.disabled = true;
-    const status = el('ws-bulk-status'); if (status) status.textContent = message || 'Nothing is archived until you preview, then apply. Archived sessions stay restorable under the rail’s ARCHIVED footer; General and pinned are never touched.';
-  }
-  function wireSessionTools() {
-    // The panel lives parked+hidden in #ws-tools-park; StationUI's SESSION TOOLS window (SYSTEM menu)
-    // adopts the node into its body on open and re-parks it on close. Wiring here runs exactly once and
-    // survives adoption because the DOM node itself moves — nothing is rebuilt.
-    const panel = el('ws-tools'); if (!panel || panel.__wired) return;
-    panel.__wired = true;
-    { const q = el('ws-search'); if (q) q.oninput = renderSessionSearch; }
-    const exportActive = format => {
-      const w = Workstreams.active(), bundle = w && Workstreams.exportConversation(w.id, format);
-      const ok = sessionDownload(bundle); if (ok) SFX.click(); else SFX.bad();
-      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify(ok ? ('exported “' + ((w && w.title) || 'General') + '” — hidden data and secrets excluded') : 'conversation export failed', ok ? '' : 'warn');
-    };
-    el('ws-export-md').onclick = () => exportActive('markdown');
-    el('ws-export-json').onclick = () => exportActive('json');
-    const clear = el('ws-clear');
-    clear.onclick = () => {
-      const w = Workstreams.active(); if (!w) return;
-      if (typeof Channels !== 'undefined' && Channels.isBusy(w.id)) {
-        SFX.bad(); if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('stop the active run before clearing this conversation', 'warn'); return;
-      }
-      if (!clear.dataset.armed) {
-        clear.dataset.armed = '1'; clear.textContent = 'CONFIRM CLEAR “' + (w.title || 'General') + '”'; SFX.bad();
-        setTimeout(() => { if (clear.isConnected && clear.dataset.armed) { delete clear.dataset.armed; clear.textContent = 'CLEAR ACTIVE CONVERSATION'; } }, 5000);
-        return;
-      }
-      delete clear.dataset.armed; clear.textContent = 'CLEAR ACTIVE CONVERSATION';
-      const cp = Workstreams.clearConversation(w.id); if (!cp) { SFX.bad(); return; }
-      Chat.load(w); persist(); refreshSessionUndo(); renderRail(); SFX.close();
-      if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('conversation cleared — recovery checkpoint ready', 'warn');
-    };
-    el('ws-bulk-preview').onclick = () => {
-      const empty = !!el('ws-bulk-empty').checked, completed = !!el('ws-bulk-completed').checked, old = !!el('ws-bulk-old').checked;
-      const days = Math.max(1, +el('ws-bulk-days').value || 30);
-      sessionToolsPreview = Workstreams.previewArchive({ empty, completed, olderThanMs: old ? days * 86400000 : 0 });
-      const n = sessionToolsPreview.count, status = el('ws-bulk-status'), apply = el('ws-bulk-apply');
-      status.textContent = n ? (n + ' exact session' + (n === 1 ? '' : 's') + ' previewed. General and pinned sessions are protected.') : '0 sessions match this preview.';
-      apply.disabled = !n; SFX.click();
-    };
-    for (const id of ['ws-bulk-empty', 'ws-bulk-completed', 'ws-bulk-old', 'ws-bulk-days']) {
-      const n = el(id); if (n) n.onchange = () => resetBulkPreview('Criteria changed — preview again before archiving.');
-    }
-    el('ws-bulk-apply').onclick = () => {
-      const before = Workstreams.activeId(), result = Workstreams.archivePreview(sessionToolsPreview);
-      if (!result) { SFX.bad(); resetBulkPreview('Preview expired or changed — preview again.'); return; }
-      if (Workstreams.activeId() !== before) loadActiveStream();
-      persist(); renderRail(); refreshSessionUndo(); resetBulkPreview(result.count + ' session' + (result.count === 1 ? '' : 's') + ' archived. Undo is available below.');
-      refreshSessionUndo(); SFX.close();
-    };
-    el('ws-undo').onclick = () => {
-      if (!Workstreams.undoLast()) { SFX.bad(); refreshSessionUndo(); return; }
-      loadActiveStream(); persist(); renderRail(); refreshSessionUndo(); resetBulkPreview('Last session change restored.'); SFX.open();
-    };
-    // the archived-mirror row: flips the rail's OWN reveal (toggleArchived), forcing the rail onto the
-    // SESSIONS view first — the archived rows live in #workstreams, which the PROJECTS view hides, and a
-    // click that visibly does nothing is exactly the kind of lie this window exists to avoid.
-    el('ws-tools-archived').onclick = () => {
-      setRailView('sessions');
-      toggleArchived();   // ends in renderRail(), which re-labels this mirror row in the same pass
-    };
-    refreshSessionUndo();
+  function wireRailSearch() {
+    const q = el('ws-search'); if (!q || q.__wired) return;
+    q.__wired = true;
+    q.oninput = renderSessionSearch;
+    q.onkeydown = e => { if (e.key === 'Escape') { e.preventDefault(); q.value = ''; renderSessionSearch(); q.blur(); } };
   }
   // COMMS AGENT SELECTOR: put the Commander on the line with agent <agentId>. Selecting an agent must never
   // silently rebind an existing conversation to a different agent (that would corrupt whose transcript it is);
@@ -2919,7 +2838,8 @@ const App = (() => {
     const item = (act, label, glyph, cls) =>
       '<button class="ws-menu-item' + (cls ? ' ' + cls : '') + '" role="menuitem" data-act="' + act + '">' +
       '<span class="ws-menu-glyph" aria-hidden="true">' + glyph + '</span>' + U.esc(label) + '</button>';
-    let html = item('rename', 'Rename', '✎') + item('pin', w.pinned ? 'Unpin' : 'Pin to top', w.pinned ? '☆' : '★');
+    let html = item('rename', 'Rename', '✎') + item('pin', w.pinned ? 'Unpin' : 'Pin to top', w.pinned ? '☆' : '★')
+      + item('export-md', 'Export .md', '⤓') + item('export-json', 'Export .json', '⤓');
     if (!isGeneral) {
       html += item('archive', w.archived ? 'Unarchive' : 'Archive', w.archived ? '⇱' : '⇲') +
         '<div class="ws-menu-sep"></div>' + item('delete', 'Delete', '✕', 'danger');
@@ -2958,6 +2878,8 @@ const App = (() => {
     const w = Workstreams.get(id); if (!w) return;
     if (act === 'rename') { beginRenameRow(id); return; }
     if (act === 'pin') { Workstreams.pin(id, !w.pinned); SFX.click(); renderRail(); persist(); return; }
+    if (act === 'export-md') { exportSession(id, 'markdown'); return; }
+    if (act === 'export-json') { exportSession(id, 'json'); return; }
     if (act === 'archive') {
       const wasActive = (id === Workstreams.activeId());
       const nowArchived = !w.archived, label = w.title || 'General';
@@ -3078,6 +3000,7 @@ const App = (() => {
     SFX.click();
     const pan = (typeof Projects !== 'undefined') ? Projects.panels(view) : { sessionsList: view === 'sessions', projectsList: view === 'projects', newBtn: view === 'sessions', addBtn: view === 'projects' };
     const set = (id, show) => { const e = el(id); if (e) e.hidden = !show; };
+    set('ws-rail-search', pan.sessionsList);   // search is a SESSIONS-view affordance; PROJECTS hides it with the list
     set('workstreams', pan.sessionsList);
     set('projects', pan.projectsList);
     set('ws-new', pan.newBtn);
@@ -3621,6 +3544,5 @@ const App = (() => {
     selectAgent: selectAgent,   // COMMS top-bar agent selector: switch to (or mint) a workstream bound to agentId
     openSummonBay: openSummonBay,   // adaptive-recruitment beat: accepting the recruit nudge deep-links into the bay's summon flow
     openRecipeLaunch: openRecipeLaunch,   // routine-nudge beat (lane D): accepting deep-links into the recipe's SCHEDULE IT form
-    sessionToolsShown: sessionToolsShown,   // SESSION TOOLS window opened (stationui adopts the panel): sync the undo button + active-session label
     applyConfig: applyAgentConfig };
 })();
