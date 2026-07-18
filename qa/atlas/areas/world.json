@@ -1,6 +1,6 @@
 {
   "area": "world",
-  "updatedAt": "2026-07-18T02:11:33.943Z",
+  "updatedAt": "2026-07-18T02:18:21.743Z",
   "entries": [
     {
       "id": "state/ingame",
@@ -926,8 +926,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -935,7 +935,7 @@
       "missing": false,
       "selector": "[data-term=\"agents\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→window 'AGENT DOSSIER' opened, body 13964 chars real content. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'AGENTS' prefix-matches title 'AGENT DOSSIER' (label law). Covered by shoot state crew-agents + journeys J1 drive [data-term=agents]."
+      "notes": "Live @ 583fbfbd: click .bb[data-term=agents] opened .term titled 'AGENT DOSSIER' (toggleTerm seam, stationui.js). Re-stamped."
     },
     {
       "id": "ui/world/data-term-commander",
@@ -964,8 +964,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -973,7 +973,7 @@
       "missing": false,
       "selector": "[data-term=\"commander\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'COMMANDER DOSSIER' opened, body 1459 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Label law OK. Shoot state crew-commander; J1 drives [data-term=commander]."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'COMMANDER DOSSIER'."
     },
     {
       "id": "ui/world/data-term-connectors",
@@ -998,8 +998,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1007,28 +1007,41 @@
       "missing": false,
       "selector": "[data-term=\"connectors\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'TOOLSETS & CONNECTORS' opened, body 10056 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'TOOLSETS' prefix of title. Shoot state build-connectors."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'TOOLSETS & CONNECTORS'."
     },
     {
       "id": "ui/world/data-term-deliverables",
       "kind": "ui",
       "area": "world",
       "name": "▣DELIVERABLESoutputs, Workshop builds & cleanup",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Dock menu button opening the DELIVERABLES console — produced outputs, Workshop builds & cleanup.",
+      "promise": "Clicking .bb[data-term=deliverables] toggles open a .term window titled 'DELIVERABLES' (fetches GET /api/deliverables on open); re-click closes it.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "work-deliverables"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "[data-term=\"deliverables\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ 583fbfbd: click opened .term titled 'DELIVERABLES'. Open walked by the cartographer's work-deliverables shoot state (added finding 206d3ceb / commit 583fbfbd)."
     },
     {
       "id": "ui/world/data-term-logbook",
@@ -1053,8 +1066,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1062,7 +1075,7 @@
       "missing": false,
       "selector": "[data-term=\"logbook\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'LOGBOOK' opened, body 469 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Exact label==title. Shoot state sys-logbook."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'LOGBOOK'."
     },
     {
       "id": "ui/world/data-term-manual",
@@ -1088,8 +1101,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1097,7 +1110,7 @@
       "missing": false,
       "selector": "[data-term=\"manual\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'FIELD MANUAL' opened, body 270 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Exact label==title. Builder delegates to tutorial.js fillFieldManual. Shoot state build-manual."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'FIELD MANUAL' (builder = Tutorial.fillFieldManual)."
     },
     {
       "id": "ui/world/data-term-messaging",
@@ -1122,8 +1135,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1131,7 +1144,7 @@
       "missing": false,
       "selector": "[data-term=\"messaging\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'CHANNELS' opened, body 1151 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Exact label==title (deliberately 'CHANNELS' not 'COMMS' — comment at stationui.js BUILDERS). Shoot state sys-messaging."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'CHANNELS'."
     },
     {
       "id": "ui/world/data-term-notifs",
@@ -1160,8 +1173,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1169,7 +1182,7 @@
       "missing": false,
       "selector": "[data-term=\"notifs\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'NOTIFICATIONS' opened. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'NOTIFS' is the standard abbreviation of title 'NOTIFICATIONS' (first-5 'NOTIF' shared) — satisfies the label-prefix law in spirit; not flagged. Shoot state sys-notifs (openStableNotifs)."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'NOTIFICATIONS'."
     },
     {
       "id": "ui/world/data-term-quests",
@@ -1198,18 +1211,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [
-        "161206b5"
+        "5c8f6921"
       ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "[data-term=\"quests\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'QUEST LOG' opened, body 1362 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'QUESTS' prefix of title. NOT perfected: rubric #7 partial — the quest STORE is well tested (queststore/queststatestore/stationquest tests) but NO machine assertion guards the DOCK ITEM opening the QUEST LOG window (no shoot state) — see finding perf-world-quests-ui-uncovered."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'QUEST LOG'. AUDITED not perfected — queststore/queststatestore tests guard the quest STORE, not this dock button's open; no shoot state walks it. Filed KNOWN coverage-gap."
     },
     {
       "id": "ui/world/data-term-rewind",
@@ -1234,8 +1247,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1243,7 +1256,7 @@
       "missing": false,
       "selector": "[data-term=\"rewind\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'RESTORE POINTS' opened, body 373 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'RESTORE' prefix of title. Shoot state sys-rewind."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'RESTORE POINTS'."
     },
     {
       "id": "ui/world/data-term-routines",
@@ -1268,8 +1281,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1277,28 +1290,49 @@
       "missing": false,
       "selector": "[data-term=\"routines\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'ROUTINES' opened, body 863 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Exact label==title. Shoot state work-routines."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'ROUTINES'."
     },
     {
       "id": "ui/world/data-term-sessiontools",
       "kind": "ui",
       "area": "world",
       "name": "▤SESSION TOOLSsearch, export & archive conversations",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Dock menu button opening the SESSION TOOLS window — search, export & archive conversations.",
+      "promise": "Clicking .bb[data-term=sessiontools] toggles open the floating SESSION TOOLS window (adopts #ws-tools body on open).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/stationui.js",
+          "frontend/app/navdock.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-sessiontools"
+        },
+        {
+          "kind": "test",
+          "ref": "session-power-tools.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/session-power-tools-journey.mjs"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "[data-term=\"sessiontools\"]",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ 583fbfbd: click opened .term titled 'SESSION TOOLS'. Guarded by sys-sessiontools shoot + session-power-tools test/journey."
     },
     {
       "id": "ui/world/data-term-settings",
@@ -1329,8 +1363,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1338,7 +1372,7 @@
       "missing": false,
       "selector": "[data-term=\"settings\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'SETTINGS' console opened, body 80063 chars, rails PROVIDERS/AUTONOMY/BUDGET/MODELS present (probe2). Evidence .uiatlas/world-dock-evidence/label-law.json+.uiatlas/world-dock-evidence/doors-and-structure.json. Exact label==title. Shoot state sys-settings. Also the deep-link target of the COMMS error chip (keycta.js) and model dock SETTINGS button."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'SETTINGS'."
     },
     {
       "id": "ui/world/data-term-skills",
@@ -1367,8 +1401,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1376,7 +1410,7 @@
       "missing": false,
       "selector": "[data-term=\"skills\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'SKILLS & CAPABILITIES' opened, body 76181 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'SKILLS' prefix of title. Shoot state build-skills."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'SKILLS & CAPABILITIES'."
     },
     {
       "id": "ui/world/data-term-tasks",
@@ -1405,8 +1439,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1414,7 +1448,7 @@
       "missing": false,
       "selector": "[data-term=\"tasks\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'TASK BOARD' opened. Evidence .uiatlas/world-dock-evidence/label-law.json. Journey J1 asserts board rows == task store (board/rows-match-task-store), the truthfulness guard. Shoot state work-tasks."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'TASK BOARD'."
     },
     {
       "id": "ui/world/data-term-updates",
@@ -1434,18 +1468,18 @@
       "coverage": [],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
+        "date": "2026-07-18T02:18:21.743Z"
       },
       "findings": [
-        "16193fd0"
+        "5c8f6921"
       ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "[data-term=\"updates\"]",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T08:41:01.512Z: click→'UPDATE CENTER' opened, body 110 chars. Evidence .uiatlas/world-dock-evidence/label-law.json. Label 'UPDATES' prefix of title. NOT perfected: rubric #7 fails — no shoot state, no UI test guards this dock item's promise (see finding perf-world-updates-uncovered)."
+      "notes": "Live @ 583fbfbd: click opened .term titled 'UPDATE CENTER'. AUDITED not perfected — no machine assertion guards this dock button's open (coverage[] empty); filed KNOWN coverage-gap."
     },
     {
       "id": "ui/world/estop-btn",
