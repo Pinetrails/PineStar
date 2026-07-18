@@ -63,6 +63,13 @@
     }),
     // the loop advanced its failover chain mid-run: a fallback to an alternate model and/or a credential
     // rotation (P0.2/P3.1). Observable telemetry — the only prior signal was the switched agent.cost.model.
+    // (additive, 2026-07-16, taste-extraction lane, Andrew-approved): a run's Task Brief settled —
+    // the model's READ of the task (objective + correctable assumptions incl. taste guesses). The
+    // COMMS announce-and-act card renders from this; corrections fold back via /api/run/steer.
+    'taskbrief.settled': obj(['agentId', 'runId', 'objective'], {
+      agentId: str, runId: str, objective: str, deliverable: str, audience: str, success: str,
+      assumptions: { type: 'array' }
+    }),
     'provider.fallback': obj(['agentId', 'runId', 'fromModel', 'toModel', 'reason'], {
       agentId: str, runId: str, fromModel: str, toModel: str, reason: str,
       fromProvider: str, toProvider: str, rotate: bool

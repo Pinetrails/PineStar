@@ -215,6 +215,14 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   const loopSrc = fs.readFileSync(path.join(__dirname, '../sidecar/loop.js'), 'utf8');
   A.ok(/delta: '\\n\\n' \+ controlText/.test(loopSrc), 'the final-control marker streams on its own line so the client line-anchored parse always hits');
   A.ok(/endReason === 'clarifying'\) restoreTaskQuestion\(ws\)/.test(chatSrc), 'a clarifying end without a parsed marker re-presents from the durable brief');
+
+  // TASTE EXTRACTION slice 1 — announce-and-act: the settled read surfaces, corrections steer the live run.
+  A.ok(/'taskbrief\.settled': obj\(\['agentId', 'runId', 'objective'\]/.test(eventsSrc), 'the settled-read event is declared additively in the shared contract');
+  A.ok(/emit\('taskbrief\.settled'/.test(indexSrc) && /c\.name === 'brief\.proceed'/.test(indexSrc), 'a successful brief.proceed emits the settled read');
+  A.ok(/wireBriefRead/.test(chatSrc) && /taskbrief\.settled/.test(chatSrc), 'COMMS renders the READ card from the settled event');
+  A.ok(/\/api\/run\/steer/.test(chatSrc) && /folded into the run/.test(chatSrc), 'READ-card corrections fold into the live run via steer');
+  A.ok(/run already ended|run already finished/.test(chatSrc), 'a correction after run end is refused honestly, never faked');
+  A.ok(/STYLE, TONE, and AESTHETIC as explicit assumptions/.test(TaskIntent.directive('')), 'the doctrine demands bold, correctable taste assumptions in brief_proceed');
   A.ok(/endReason !== 'clarifying'/.test(chatSrc), 'COMMS never renders a clarifying end as a stopped run');
   A.ok(/offerTaskQuestion/.test(chatSrc) && /TaskIntent\.strip/.test(chatSrc), 'COMMS strips the marker and renders the natural decision');
   A.ok(/clarificationRuns\.has\(runId\)/.test(chatSrc) && /clarificationRuns\.add\(thisRunId\)/.test(chatSrc), 'clarification turns do not count as completed-work beats');

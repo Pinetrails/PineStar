@@ -7603,6 +7603,20 @@ async function runOnce(o) {
     }
     const dctx = (ctx && ctx.callId !== c.id) ? Object.assign({}, ctx, { callId: c.id }) : ctx;   // per-call id for shell.exec telemetry
     let r = await registry.dispatch(c, dctx);
+    // TASTE EXTRACTION (announce-and-act): a successful brief.proceed IS the product moment — the model's
+    // settled READ (objective + correctable assumptions, incl. its taste guesses) surfaces to COMMS as a
+    // non-blocking card while the run continues. Internal brief controls stay hidden from tool telemetry;
+    // this event is the deliberate, additive product surface of the settle. Fail-open: never breaks a run.
+    if (internalBriefControl && c.name === 'brief.proceed' && r && !r.isError && taskBriefState && taskBriefState.brief && taskBriefState.brief.settled) {
+      try {
+        const s = taskBriefState.brief.settled;
+        emit('taskbrief.settled', {
+          agentId, runId, objective: s.objective || '',
+          deliverable: s.deliverable || '', audience: s.audience || '', success: s.success || '',
+          assumptions: Array.isArray(s.assumptions) ? s.assumptions.slice(0, 8) : []
+        });
+      } catch (_) {}
+    }
     // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.
     if (!internalBriefControl) try { artifactLedger.observe({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }
     // bound the TOTAL tool output across a run so a few big fetches/reads can't blow the context window or cost

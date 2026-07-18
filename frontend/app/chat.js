@@ -489,6 +489,7 @@ const Chat = (() => {
     warmSlashCatalog();
     wireProposals();   // Cortex turn-in beat: listen for reflection's memory.proposed (registers once)
     wireStudy();       // GROWTH Tier 1: after a salient run, offer ≤1 dossier belief-update at turn-in priority (registers once)
+    wireBriefRead();   // TASTE EXTRACTION: the announce-and-act READ card (taskbrief.settled → correctable assumptions; registers once)
     wireArc();         // GROWTH Tier 2: after a clean run, offer ONE goal-decomposition confirm at the LOWEST beat priority (registers once)
     wireTrust();       // GROWTH Tier 3: after a clean run, offer ONE earned-autonomy raise at the LOWEST beat priority — below the arc (registers once)
     wireThreads();     // NS-6: after a mined task run, offer ONE thread turn-in (Keep/Edit/Discard) at the lowest beat priority — study wins the moment first (registers once)
@@ -2688,6 +2689,66 @@ const Chat = (() => {
         : (ans || 'Use your judgment and continue the original task.');
       if (!isBusy()) send(msg, { taskAction: 'answer' }); else echoUser(msg);
     });
+  }
+
+  // TASTE EXTRACTION (announce-and-act): the model settled its Task Brief mid-run — surface its READ
+  // (objective + correctable assumptions, incl. taste guesses) as a NON-BLOCKING card while the run keeps
+  // working. A typed correction folds into the LIVE run via /api/run/steer; when the run has already ended
+  // the card says so honestly instead of pretending to steer. Registers exactly once.
+  let readWired = false;
+  function wireBriefRead() {
+    if (readWired || typeof U === 'undefined' || !U.bus) return;
+    readWired = true;
+    U.bus.on('taskbrief.settled', p => {
+      const ws = activeWs;
+      if (!ws || !isActiveWs(ws)) return;
+      const rid = (typeof Channels !== 'undefined' && Channels.runIdOf) ? Channels.runIdOf(ws.id) : null;
+      if (!rid || rid !== p.runId) return;   // only the displayed stream's own live run announces here
+      briefReadCard(ws, p);
+    });
+  }
+  function briefReadCard(ws, p) {
+    const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('tb-read');
+    const head = document.createElement('div'); head.className = 'tb-read-head';
+    head.textContent = '▸ my read: ' + p.objective;
+    r.body.appendChild(head);
+    const meta = [];
+    if (p.deliverable) meta.push('deliverable: ' + p.deliverable);
+    if (p.audience) meta.push('for: ' + p.audience);
+    if (p.success) meta.push('done when: ' + p.success);
+    if (meta.length) { const m = document.createElement('div'); m.className = 'tb-read-meta'; m.textContent = meta.join(' · '); r.body.appendChild(m); }
+    const line = document.createElement('div'); line.className = 'tb-read-fix';
+    const input = document.createElement('input'); input.className = 'tb-read-in';
+    input.placeholder = 'correct anything — it folds straight into the run';
+    const asum = (Array.isArray(p.assumptions) ? p.assumptions : []).filter(Boolean);
+    if (asum.length) {
+      const wrap = document.createElement('div'); wrap.className = 'tb-read-assumps';
+      for (const a of asum) {
+        const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'tb-read-assump'; chip.textContent = '~ ' + a;
+        chip.onclick = () => { input.value = 'Not "' + a + '" — '; input.focus(); };   // tap = start the correction; the user's own words ARE the taste signal
+        wrap.appendChild(chip);
+      }
+      r.body.appendChild(wrap);
+    }
+    const send = () => {
+      const text = input.value.trim(); if (!text) return;
+      const rid = (typeof Channels !== 'undefined' && Channels.runIdOf) ? Channels.runIdOf(ws.id) : null;
+      if (!rid) { input.value = ''; input.placeholder = 'run already finished — say it in chat instead'; return; }
+      fetch('/api/run/steer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId: rid, text: text }) })
+        .then(res => res.ok ? res.json() : null)
+        .then(d => {
+          const ok = d && d.ok === true;
+          line.innerHTML = '';
+          const tag = document.createElement('span'); tag.className = 'tb-read-ack' + (ok ? '' : ' err');
+          tag.textContent = ok ? '✔ folded into the run — ' + text : '✕ the run already ended — say it in chat instead';
+          line.appendChild(tag);
+        })
+        .catch(() => { input.placeholder = 'could not reach the run — say it in chat'; });
+    };
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
+    line.appendChild(input);
+    r.body.appendChild(line);
+    autoscroll();
   }
 
   // TASK BRIEF v2: enrich a run-end marker question with the durable brief's host-validated recommendation

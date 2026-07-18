@@ -118,6 +118,7 @@
       'A task may ask at most two questions total; a second is allowed only when the first answer exposed another genuinely blocking decision.',
       'If the Commander said "use your judgment", "just do it", or equivalent, choose the most sensible reversible default and act.',
       'When brief_ask and brief_proceed are available, use them as the authoritative protocol. Call brief_proceed immediately before the first consequential tool; the host blocks writes/executes until you do.',
+      'In brief_proceed, state your READ of the desired STYLE, TONE, and AESTHETIC as explicit assumptions (e.g. "gritty and readable, not decorative") — the Commander sees them and corrects what is wrong, which is the fastest way to learn their taste. Guess boldly; a corrected guess teaches more than a hedge.',
       'Use brief_ask to pause on a material unknown. It validates the decision dimension, distinct options, recommended default, research status, and whole-task question budget.',
       'To ask, do no consequential mutation first and END your reply with exactly:',
       'TASK_QUESTION: <one concrete question> || <option A> | <option B> | <option C, optional>',
