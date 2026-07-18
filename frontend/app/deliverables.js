@@ -47,7 +47,7 @@
     const say = (s, bad) => { msg.textContent = s || ''; msg.className = 'msg ' + (bad ? 'bad' : 'ok'); };
     function render() {
       list.innerHTML = rows.length ? rows.map((r, i) => '<article class="cfg-block deliverable-row" data-i="' + i + '"><div><b>' + esc(r.title || 'Untitled output') + '</b> <span class="tag">' + esc(r.status) + '</span></div><small>' + esc(r.source) + ' · ' + esc(r.agentId || 'station') + ' · ' + fmtSize(r.size) + ' · ' + esc(r.createdAt ? new Date(r.createdAt).toLocaleString() : 'time unknown') + '</small><p>' + esc(r.summary || '') + '</p><div class="row">' +
-        ((r.actions && r.actions.open) ? (r.files || []).filter(f => f.openUrl).map((f, fi) => '<button data-file="' + fi + '">OPEN ' + esc(f.path) + '</button>').join('') : '') + ((r.actions && r.actions.keep) ? '<button data-act="keep">KEEP</button>' : '') + ((r.actions && r.actions.discard) ? '<button data-act="discard">DISCARD</button>' : '') + '</div></article>').join('') : '<p class="muted">No deliverables match this view.</p>';
+        ((r.actions && r.actions.open) ? (r.files || []).filter(f => f.openUrl).map((f, fi) => '<button class="bb sm" data-file="' + fi + '">OPEN ' + esc(f.path) + '</button>').join('') : '') + ((r.actions && r.actions.keep) ? '<button class="bb sm" data-act="keep">KEEP</button>' : '') + ((r.actions && r.actions.discard) ? '<button class="bb sm danger" data-act="discard">DISCARD</button>' : '') + '</div></article>').join('') : '<p class="muted">No deliverables match this view.</p>';
     }
     async function load() {
       const seq = ++loadSeq; say('Loading…');

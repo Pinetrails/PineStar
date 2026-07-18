@@ -1873,6 +1873,15 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ws-bulk { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0; padding: 8px; border: 1px solid var(--ph-faint); border-radius: 3px; }
 .ws-bulk legend { letter-spacing: 1px; padding: 0 4px; }
 .ws-bulk label { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.ws-bulk input[type="checkbox"] { accent-color: var(--ph); }   /* phosphor check, not the browser-blue default */
+
+/* Diagnostics on-screen report block (Settings → SYSTEM, clipboard-failure fallback): the raw <pre>
+   and its button bar previously rendered with browser defaults. Same well + border language as the
+   other settings panels; buttons are the shared .bb.sm skin. */
+.diag-block { margin-top: 8px; }
+.diag-pre { font-family: inherit; font-size: 11px; line-height: 1.4; color: var(--ph); margin: 0;
+  padding: 8px 10px; border: 1px solid var(--ph-dim); border-radius: 2px; background: rgba(0,0,0,.25); }
+.diag-block-bar { display: flex; gap: 8px; margin-top: 6px; }
 .ws-bulk button { margin-left: auto; }
 #ws-bulk-status { min-height: 2.4em; line-height: 1.3; }
 #workstreams {
@@ -2299,6 +2308,13 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-oc-none   { color:var(--ph); border-color:var(--ph-glow2); }
 .q-oc-skipped, .q-oc-rejected { color:var(--ph-dim); }
 .q-oc-error  { color:#e88; border-color:#e88; }
+
+/* TROPHY CASE card header — the kind tag (DOSSIER / MILESTONE / n× LIFETIME) pins to the top-right
+   corner and never shrinks, so a long title wraps cleanly under it instead of jamming the tag
+   mid-text in the narrow grid columns. */
+.gx-tro .tro-hd { display:flex; align-items:flex-start; gap:6px; }
+.tro-hd .nm { min-width:0; }
+.tro-hd .gx-tag { margin-left:auto; flex:0 0 auto; white-space:nowrap; }
 
 .gx-station { border:1px solid var(--gold); border-radius:2px; background:var(--ph-faint); padding:12px 14px; margin-top:6px; }
 .gx-station .hd { display:flex; align-items:center; gap:8px; margin-bottom:11px; }
