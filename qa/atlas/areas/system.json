@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-18T01:16:03.811Z",
+  "updatedAt": "2026-07-18T01:19:33.987Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -1651,21 +1651,37 @@
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "One shared opt-in: message me on my connected channels when my agent finishes autonomous work.",
+      "promise": "Toggling it POSTs the flag to /api/channels/notify (server truth); reflected back from GET /api/channels/status on open.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/autonotify.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:33.987Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#ch-notify",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: #ch-notify type=checkbox present in CHANNELS panel. autonotify.test.js:117/123 locks the /api/channels/notify route+handler and that the panel posts it. Evidence union.json."
     },
     {
       "id": "ui/system/con-tab-logbook-insights",
@@ -2197,21 +2213,34 @@
       "kind": "ui",
       "area": "system",
       "name": "permanently deletes the saved token from this machine (record + OS keychain) — you’d have to set it up again",
-      "purpose": "",
-      "promise": "",
+      "purpose": "FORGET — purge the stored Discord bot token so the channel must be re-entered from scratch.",
+      "promise": "Clicking FORGET POSTs a purge to /api/channels/discord/disconnect (purge:true), clearing the stored secret; only shown once connected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.secrets.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#dc-forget",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Mapped @ HEAD 0a009ec2: conditional control — only renders when Discord is connected, so not live-proven under the keyless seed (union shows dc-connect/dc-token, not dc-forget). Held mapped: seam known + secrets test covers purge, but WORKS is unproven this session. KNOWN reveal-state gap."
     },
     {
       "id": "ui/system/dc-notify",
@@ -2508,105 +2537,193 @@
       "kind": "ui",
       "area": "system",
       "name": "⏼ CONNECT",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Connect the agent to Matrix via the homeserver + access token.",
+      "promise": "Clicking CONNECT validates the endpoint config then POSTs to /api/channels/matrix/connect; the status pill reflects real adapter health.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
+        "events": [
+          "channel.connect"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/channels.matrix.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:33.987Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#mx-connect",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: #mx-connect submit present, #mx-status '○ not connected' (truthful). generic-wire.test.js:32/41 locks matrix×connect route + endpoint validation. Evidence union.json."
     },
     {
       "id": "ui/system/mx-disconnect",
       "kind": "ui",
       "area": "system",
       "name": "⏏ DISCONNECT",
-      "purpose": "",
-      "promise": "",
+      "purpose": "DISCONNECT — stop the Matrix adapter but keep the token.",
+      "promise": "Clicking DISCONNECT POSTs /api/channels/matrix/disconnect (no purge); token retained; only shown once connected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#mx-disconnect",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Mapped @ HEAD 0a009ec2: conditional on a connected Matrix channel; not live-proven under keyless seed. WORKS unproven this session."
     },
     {
       "id": "ui/system/mx-endpoint",
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Matrix HOMESERVER URL field (e.g. https://matrix.org) — plain-text config, not a secret.",
+      "promise": "Renders type=text; read into the Matrix connect payload; prefilled from saved status.endpoint on open.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/channels.matrix.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:33.987Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#mx-endpoint",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: #mx-endpoint type=text value='' present. generic-wire.test.js:61 source-locks id=mx-endpoint type=text + matrix connect validates the homeserver URL. Evidence union.json."
     },
     {
       "id": "ui/system/mx-forget",
       "kind": "ui",
       "area": "system",
       "name": "permanently deletes the saved token from this machine (record + OS keychain) — you’d have to set it up again",
-      "purpose": "",
-      "promise": "",
+      "purpose": "FORGET — purge the stored Matrix access token.",
+      "promise": "Clicking FORGET purges the stored Matrix token via /api/channels/matrix/disconnect(purge); only shown once connected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.secrets.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#mx-forget",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Mapped @ HEAD 0a009ec2: conditional on a connected Matrix channel; not live-proven under keyless seed. WORKS unproven this session."
     },
     {
       "id": "ui/system/mx-token",
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Masked Matrix access-token field.",
+      "promise": "Renders type=password; read into the Matrix connect payload with the homeserver endpoint; never shown back.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/channels.matrix.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:33.987Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#mx-token",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: #mx-token type=password present. generic-wire.test.js:60 source-locks id=mx-token type=password. Evidence union.json."
     },
     {
       "id": "ui/system/nf-clear",
@@ -3903,210 +4020,382 @@
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Signal REGISTERED NUMBER field — the agent's Signal phone number (e.g. +15551234567).",
+      "promise": "Renders type=text; read into the Signal connect payload alongside the endpoint; prefilled from saved status.account.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.signal.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:33.987Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#sg-account",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: #sg-account type=text value='' present. Held audited: the sg-account field id is not individually source-locked by generic-wire (only sg-endpoint is); it is covered transitively via signal connect config validation. KNOWN coverage gap. Evidence union.json."
     },
     {
       "id": "ui/system/sg-connect",
       "kind": "ui",
       "area": "system",
       "name": "⏼ CONNECT",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Connect the agent to Signal via the self-hosted signal-cli REST bridge.",
+      "promise": "Clicking CONNECT validates the endpoint config then POSTs to /api/channels/signal/connect; the status pill reflects real adapter health.",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
+        "events": [
+          "channel.connect"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/channels.signal.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:33.987Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#sg-connect",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: #sg-connect submit present, #sg-status '○ not connected' (truthful). generic-wire.test.js:32/41 locks signal×connect route + endpoint validation. Evidence union.json."
     },
     {
       "id": "ui/system/sg-disconnect",
       "kind": "ui",
       "area": "system",
       "name": "⏏ DISCONNECT",
-      "purpose": "",
-      "promise": "",
+      "purpose": "DISCONNECT — stop the Signal adapter but keep the config.",
+      "promise": "Clicking DISCONNECT POSTs /api/channels/signal/disconnect (no purge); endpoint/account retained; only shown once connected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#sg-disconnect",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Mapped @ HEAD 0a009ec2: conditional on a connected Signal channel; not live-proven under keyless seed. WORKS unproven this session."
     },
     {
       "id": "ui/system/sg-endpoint",
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Signal SIGNAL-CLI REST URL field (e.g. http://127.0.0.1:8080) — the self-hosted bridge address.",
+      "promise": "Renders type=text; read into the Signal connect payload with the registered number; prefilled from saved status.endpoint.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/channels.signal.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:33.987Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#sg-endpoint",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: #sg-endpoint type=text value='' present. generic-wire.test.js:61 source-locks id=sg-endpoint type=text + signal connect validates the REST URL. Evidence union.json."
     },
     {
       "id": "ui/system/sg-forget",
       "kind": "ui",
       "area": "system",
       "name": "removes the saved bridge URL and registered number from this machine",
-      "purpose": "",
-      "promise": "",
+      "purpose": "FORGET — purge the stored Signal config + linked-device state.",
+      "promise": "Clicking FORGET POSTs /api/channels/signal/disconnect with purge:true, clearing the stored config; only shown once connected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.secrets.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#sg-forget",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Mapped @ HEAD 0a009ec2: conditional on a connected Signal channel; not live-proven (stationui.js:5041 wires the purge). WORKS unproven this session."
     },
     {
       "id": "ui/system/sl-app-token",
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Masked Slack APP-LEVEL token (xapp-…) field, from Socket Mode.",
+      "promise": "Renders type=password; read into the Slack connect payload alongside the bot token; never shown back.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/channels.slack.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:33.987Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#sl-app-token",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: #sl-app-token type=password present. generic-wire.test.js:59 source-locks id=sl-app-token type=password; channels.slack.test.js:50 proves connections.open uses the app-level token. Evidence union.json."
     },
     {
       "id": "ui/system/sl-bot-token",
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Masked Slack BOT token (xoxb-…) field, from OAuth & Permissions.",
+      "promise": "Renders type=password; its value is read into the Slack connect payload; never shown back.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/channels.slack.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:33.987Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#sl-bot-token",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: #sl-bot-token type=password present. generic-wire.test.js:59 source-locks id=sl-bot-token type=password + slack connect validates both tokens. Evidence union.json."
     },
     {
       "id": "ui/system/sl-connect",
       "kind": "ui",
       "area": "system",
       "name": "⏼ CONNECT",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Connect the agent to Slack (Socket Mode) using the pasted bot + app tokens.",
+      "promise": "Clicking CONNECT validates BOTH tokens then POSTs to /api/channels/slack/connect; the status pill reflects the real socket phase (invalid_auth is fatal, never a premature up).",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
+        "events": [
+          "channel.connect"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/channels.slack.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:19:33.987Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#sl-connect",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: #sl-connect submit present, #sl-status shows '○ not connected' (truthful, keyless seed). generic-wire.test.js:32/40 locks slack×connect route + both-token validation; channels.slack.test.js:77 proves invalid_auth is fatal. Evidence union.json."
     },
     {
       "id": "ui/system/sl-disconnect",
       "kind": "ui",
       "area": "system",
       "name": "⏏ DISCONNECT",
-      "purpose": "",
-      "promise": "",
+      "purpose": "DISCONNECT — stop the Slack socket but keep the tokens (RESUME reconnects).",
+      "promise": "Clicking DISCONNECT POSTs /api/channels/slack/disconnect (no purge); tokens retained; only shown once connected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#sl-disconnect",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Mapped @ HEAD 0a009ec2: conditional on a connected Slack channel; not live-proven under keyless seed. generic-wire locks the slack×disconnect route. WORKS unproven this session."
     },
     {
       "id": "ui/system/sl-forget",
       "kind": "ui",
       "area": "system",
       "name": "permanently deletes the saved token from this machine (record + OS keychain) — you’d have to set it up again",
-      "purpose": "",
-      "promise": "",
+      "purpose": "FORGET — purge stored Slack tokens.",
+      "promise": "Clicking FORGET purges the stored Slack tokens via /api/channels/slack/disconnect(purge); only shown once connected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.secrets.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#sl-forget",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Mapped @ HEAD 0a009ec2: conditional on a connected Slack channel; not live-proven under keyless seed. WORKS unproven this session."
     },
     {
       "id": "ui/system/tg-connect",
@@ -4198,21 +4487,34 @@
       "kind": "ui",
       "area": "system",
       "name": "permanently deletes the saved token from this machine (record + OS keychain) — you’d have to set it up again",
-      "purpose": "",
-      "promise": "",
+      "purpose": "FORGET — purge the stored Telegram bot token so it must be re-pasted.",
+      "promise": "Clicking FORGET purges the stored token via /api/channels/telegram/disconnect (purge); only shown once connected.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.secrets.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#tg-forget",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Mapped @ HEAD 0a009ec2: conditional on a connected Telegram channel; not live-proven under keyless seed. Held mapped, WORKS unproven this session."
     },
     {
       "id": "ui/system/tg-notify",
