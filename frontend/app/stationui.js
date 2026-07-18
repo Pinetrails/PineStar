@@ -6057,7 +6057,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // the section-scoped body.querySelector loads below resolve against the mounted panes.
     const frag = h => (el => { el.innerHTML = h; });
     mountConsole(body, 'logbook', [
-      { id: 'runs', label: 'RUNS', glyph: '▦', desc: 'Every finished run by ' + nm + ', newest first — what it produced and why it ended.',
+      { id: 'runs', label: 'RUNS', glyph: '▦', desc: 'Real work by ' + nm + ', newest first — runs that used tools, produced files, or failed. Chat-only replies are folded at the bottom.',
         build: frag('<div id="lb-list" class="mc-list"><span class="loading pulse">loading…</span></div>') },
       { id: 'slag', label: 'SLAG — DEAD RUNS', glyph: '⚠', desc: 'Post-mortems for ' + nm + ' runs that ended without a deliverable, diagnosed into a real, fixable cause.',
         build: frag('<div id="lb-slag" class="mc-list"><span class="loading pulse">loading…</span></div>') },
@@ -6121,7 +6121,29 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const j = await (await fetch('/api/runs?agent=' + encodeURIComponent(agentId) + '&limit=100')).json();
         const h = body.querySelector('#lb-list'); if (!h) return;
         const runs = (j && j.runs) || [];
-        h.innerHTML = runs.length ? runs.map(runRow).join('') : '<div class="fb-empty">NO RUNS YET.<br><span>Finished runs appear here once this agent does real work.</span></div>';
+        // PRACTICAL FOLD: every chat message is a run, so an interactive station's history is mostly talk-only
+        // rows that bury the record that matters (away/cron runs, failures, real work). A row is CHATTER when the
+        // run ended fine with ZERO successful tool calls and ZERO artifacts — provable from the row's own recorded
+        // fields (toolsOk / artifacts), never a guess. Chatter folds behind an honest count; work renders up front.
+        const isChat = r => r.reason === 'done' && !(r.toolsOk > 0) && !(r.artifacts && r.artifacts.length);
+        const work = runs.filter(r => !isChat(r));
+        const chatter = runs.filter(isChat);
+        const foldLabel = open => (open ? '▾ ' : '▸ ') + chatter.length + ' CHAT-ONLY ' + (chatter.length === 1 ? 'REPLY' : 'REPLIES') + ' — no tools, no files';
+        h.innerHTML = runs.length
+          ? (work.length ? work.map(runRow).join('')
+              : '<div class="fb-empty">NO TASK RUNS YET.<br><span>Runs that use tools, write files, or fail land here.</span></div>')
+            + (chatter.length
+              ? '<button type="button" class="bb sm" id="lb-chat-fold" aria-expanded="false" style="margin-top:8px">' + foldLabel(false) + '</button>'
+                + '<div id="lb-chat-rows" hidden>' + chatter.map(runRow).join('') + '</div>'
+              : '')
+          : '<div class="fb-empty">NO RUNS YET.<br><span>Finished runs appear here once this agent does real work.</span></div>';
+        const fold = h.querySelector('#lb-chat-fold');
+        if (fold) fold.addEventListener('click', () => {
+          const rowsEl = h.querySelector('#lb-chat-rows'); if (!rowsEl) return;
+          rowsEl.hidden = !rowsEl.hidden;
+          fold.setAttribute('aria-expanded', String(!rowsEl.hidden));
+          fold.textContent = foldLabel(!rowsEl.hidden);
+        });
         // H3.2: a run opens its durable transcript (GET /api/transcript?stream=) inline — toggle + lazy-load.
         const toggleTx = async (row) => {
           const tx = row.querySelector('.lb-tx'); if (!tx) return;
