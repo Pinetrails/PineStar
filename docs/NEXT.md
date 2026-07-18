@@ -39,6 +39,35 @@ connector) — a KEYS tab in TOOLSETS & CONNECTORS under CATALOG. Shipped in thi
   provider refusal) added to test:http. Live-proven on seed :9207 (add/mask/toggle/remove/platforms/
   provider-refusal DOM round-trips; no secret in responses; ⊟ glyph measured non-tofu).
 - [ ] Open: live proof of a real agent shell run reading the env var; per-agent scoping if wanted later.
+## 2026-07-18 — ARCHITECTURE AUDIT: Tier 1 landed (branch `claude/starnet-codebase-audit-ff0b4c`); Tier 2/3 backlog
+
+Full-codebase cleanliness audit (4 parallel sweeps: sidecar, frontend, contract seams, dead code).
+Tier 1 executed in-branch, gate 364/364 green: `sidecar/respond.js` canonical json()/isAgentId
+(3 sendJson copies + serve* family migrated; dead `tool.web` warn-filters removed), `Harness.api`
+JSON client (stationui.js 56/65 fetch sites migrated; 9 left raw deliberately — test-pinned
+literals, streaming, Response-shape consumers), `el()`→`mkEl` collision fix, 4 stale root planning
+docs → docs/archive/, 15 orphaned scripts deleted, terminal-position.test + openai-compat.e2e wired
+into gates, W0 re-stamped. NOT done (locked/blocked): tts/stt 200-always is a LOCKED decision
+(DECISIONS.md:56) — do not "fix"; escaping unification blocked by tests that execute the local fns
+outside page scope.
+
+Tier 2 backlog (each its own lane; incremental only, no big-bang splits while lanes are in flight):
+- [ ] Declarative route table for sidecar dispatchRoute (~174 if-lines; THE merge hotspot; encode
+      the tts/stt fail-open policies as data)
+- [ ] Split stationui.js along the BUILDERS registry (stationui.js:7197) into app/windows/*.js,
+      one window per PR
+- [ ] Settings-store factory for the ~25 loadX/saveX/global triples (whole-file clobber race class);
+      fold the 4 bespoke token stores onto makeDurableJsonStore (security-adjacent)
+- [ ] Extract leaf domains from sidecar/index.js: TTS/STT (~445 ln), scout+questrefresh glue (~600),
+      workshop (~900); port telegram onto the wireChannel path (needs live verify)
+- [ ] Shared frontend poller primitive + bus-fed runs/cron/channels store (16 timers today; /api/cron
+      fetched by 10+ files); load shared/events.js in frontend, validate at SSE ingress (log, not drop)
+- [ ] Generic beatCard(spec) engine for chat.js's 6 cloned card lifecycles (~1,000 ln; one-beat-slot
+      law — verify live)
+- [ ] Contract hygiene (owner request, additive-only): document workshop.decided branch/root +
+      channel.connect ok; mark ~15 never-emitted events DORMANT; emitter drop-counter into /api/diagnostics
+Tier 3 (merge-quiet window only): runOnce decomposition (1,080 ln); shared e2e boot helper (~40 test
+files). Owner decisions pending: docs/raw-*-output.json (450KB) + qa/STATUS.md (314KB) in public repo.
 
 ## 2026-07-17 — AUTONOMY TUNING (direction dial) — merging this pass (claude/agent-autonomy-tuning-89786e)
 

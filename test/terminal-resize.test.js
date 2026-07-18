@@ -18,7 +18,7 @@ A.eq(clampTerminalSize({ width: 'bad', height: null }, smallLimits, desktop), { 
 
 const src = fs.readFileSync(path.join(__dirname, '../frontend/app/stationui.js'), 'utf8');
 A.ok(/termSize/.test(src) && /store\.termSize\s*=\s*termSize/.test(src), 'dimensions persist beside positions');
-A.ok(/className\s*=\s*'term-resize'|el\('button',\s*'term-resize'/.test(src), 'every terminal gets one shared resize affordance');
+A.ok(/className\s*=\s*'term-resize'|mkEl\('button',\s*'term-resize'/.test(src), 'every terminal gets one shared resize affordance');
 A.ok(/pointerdown/.test(src) && /pointermove/.test(src) && /pointerup/.test(src), 'resize supports pointer, touch, and pen through pointer events');
 A.ok(/pointercancel/.test(src), 'an interrupted pointer resize still commits a reachable final size');
 A.ok(/ArrowLeft/.test(src) && /ArrowRight/.test(src) && /ArrowUp/.test(src) && /ArrowDown/.test(src), 'resize affordance supports all keyboard arrow directions');

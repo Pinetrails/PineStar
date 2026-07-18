@@ -62,10 +62,6 @@ src-tauri/binaries/
 frontend/assets/sprites/_clawd_work/
 # manual backup copy of the minion sprite preset (live set is tracked at frontend/assets/sprites/minion/)
 design/minion_backup_preset/
-# scripts/devverify.mjs --smoke chrome profile dirs (self-cleaned after each run; this is belt-and-suspenders)
-.devverify-chrome-*/
-# scripts/board.mjs --write output (a regenerated snapshot; the live board is `node scripts/board.mjs`)
-scripts/STATUS.generated.md
 
 # QA ledger findings — one <id>.json per finding, written at RUN TIME by scripts/qa/ledger.mjs
 # (and janitor.mjs) into whatever checkout the crew runs in. They are MACHINE-LOCAL run

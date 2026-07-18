@@ -78,6 +78,7 @@ const { effectiveModel: resolveEffectiveModel, effectiveUsd } = require('./spend
 const { makeEmitter } = require('../shared/emitter.js');
 const { redact, renderRecall, injectRecall, rank, makeContext, compactionMemoryBlock, compactionSummaryPrompt } = require('./context.js');
 const { runRouteFailure } = require('./runroute.js');   // a failure escaping handleRun must never read as an empty 200
+const { json: respondJson, readJsonBody, isAgentId } = require('./respond.js');   // canonical json()/body/agent-id helpers — adopt incrementally, don't mass-migrate
 const { reflect, reflectSalient, recordFromProposal, feedbackFor, highStakes } = require('./reflect.js');
 // GROWTH Tier 1 — the pure STUDY ENGINE (the dossier's Phase B). A UMD frontend module that also exports under
 // node, so the sidecar reuses the SAME parse/salience/dedup the browser consent path uses. Fail-open: if it can't
@@ -6178,7 +6179,7 @@ async function handleCronRun(req, res) {
   // request, so req 'close' has fired before this listener attaches and a dead watcher was never noticed (F1).
   res.on('close', () => { ac.abort(); runs.delete(runId); runsMeta.delete(runId); });
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
-  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
+  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e) console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   // tee: stream every event to the watching browser AND capture the outcome so the last-run record is honest.
   const state = { buf: '', errMsg: null, reason: null, transient: false };
   const teeEmit = (name, payload) => {
@@ -7114,7 +7115,7 @@ async function handleWorkshopShiftNow(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
   const kaOff = attachStreamKeepAlive(res);   // hold-open heartbeat (mirrors /api/run): shifts run whole tool phases silently
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
-  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
+  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e) console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   let result;
   try { result = await runWorkshopShift(agentId, { emit: emit, broadcast: true }); }
   catch (e) { result = { fired: false, reason: 'error: ' + ((e && e.message) || e) }; }
@@ -7477,7 +7478,7 @@ async function handleRun(req, res) {
   // the "bus" writes one validated, REDACTED NDJSON line per event (key-shaped secrets are scrubbed even
   // if a tool ever echoes one back); makeEmitter validates against the frozen registry first.
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
-  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
+  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e) console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
 
   // THE LIVE CONSENT CHANNEL: emit a permission.prompt down the NDJSON stream and return a Promise that the loop's
   // dispatch await-pauses on. The browser answers via POST /api/consent (handleConsent), which calls the stored
@@ -8748,7 +8749,7 @@ function handleProjectsList(req, res) {
 // git-root proposal) lives in the pure projectbless core; honest errors come back as 400 { ok:false, reason }. Token-
 // gated like every /api route; fail-closed (a torn durable write returns ok:false so the grant never phantom-takes).
 async function handleProjectBless(req, res) {
-  const sendJson = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const sendJson = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
   let r; try { r = await projectBless.blessPath({ path: body && body.path, surface: 'interactive' }); }
   catch (e) { return sendJson(400, { ok: false, reason: 'bless failed: ' + (e && e.message || e) }); }
@@ -8761,7 +8762,7 @@ async function handleProjectBless(req, res) {
 // click reaches /api/projects/bless (the consent stays where it was). Interactive-only + single-flight inside
 // the folderpick core; token-gated like every /api route. The response may take minutes (a human is browsing).
 async function handleProjectPickFolder(req, res) {
-  const sendJson = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const sendJson = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   let r; try { r = await folderPick.pick({ surface: 'interactive' }); }
   catch (e) { return sendJson(400, { ok: false, reason: 'folder picker failed: ' + (e && e.message || e) }); }
   sendJson(r && r.ok ? 200 : 400, r || { ok: false, reason: 'folder picker failed' });
@@ -8776,7 +8777,7 @@ async function handleProjectPickFolder(req, res) {
 // cabinet-OBJECT-placed requirement (the B1 honesty story) is the autopilot's client-side gate (Autopilot.canWrite);
 // the server's authoritative boundary here is the cabinet:write GRANT + the fs-jail + the hardline floor.
 async function handleAutonomyWrite(req, res) {
-  const sendJson = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const sendJson = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   let body; try { body = JSON.parse(await readBody(req, 1 << 20, res)) || {}; } catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
   const agentId = String(body.agentId || 'agent');
   // agentId keys the workspace jail + the checkpoint store + the blanket-grant set; validate it to the same
@@ -8926,7 +8927,7 @@ async function handleNightshiftBeatNow(req, res) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) { res.writeHead(400, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'choose a valid agent' })); }
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
   const bus = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
-  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e && e.event !== 'tool.web') console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
+  const emit = wrapEmitDiag(makeEmitter(bus, e => { if (e) console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
   let result;
   const ac = new AbortController();
   // EL-11 P0: this AC was created and never registered ANYWHERE the E-STOP reaches (killAll walks `runs`; the
@@ -10574,11 +10575,11 @@ async function handleSaveWrite(req, res) {
 // while-away digest covers crew routines too), and a since=<ms> filter keeps the answer to runs that finished
 // after the caller's last-attended stamp.
 function serveRuns(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const json = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
-    if (agent !== '*' && !/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    if (agent !== '*' && !isAgentId(agent)) return json(403, { error: 'forbidden' });
     const runId = u.searchParams.get('runId') || '';
     if (runId) return json(200, { runs: runStore.list(agent === '*' ? null : agent, { limit: 1000 }).filter(r => r.runId === runId) });
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
@@ -10601,7 +10602,7 @@ function serveRuns(req, res) {
 // the store is append-only, fail-open, and a sibling of the fs jail so an agent can neither read nor rewrite it.
 // A store read that THROWS reports 500 truthfully (auth/crash ≠ "no decisions") — a genuinely-empty log is 200 {entries:[]}.
 function serveAutonomyLedger(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const json = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 100));
@@ -10616,11 +10617,11 @@ function serveAutonomyLedger(req, res) {
 // GET /api/insights?agent=<id> — H3.3: aggregate usage folded from the run history (overview, per-model spend,
 // outcome breakdown, per-agent, runs/spend-over-time). Read-only; fail-open to an empty fold, never a 500.
 function serveInsights(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const json = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent');
-    if (agent && !/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    if (agent && !isAgentId(agent)) return json(403, { error: 'forbidden' });
     const rows = agent ? runStore.list(agent, { limit: 1000 }) : runStore.all();   // agent-scoped or whole station
     json(200, foldInsights(rows, { nowMs: Date.now(), bucketMs: 3600000, buckets: 24 }));
   } catch (e) { json(200, { totalRuns: 0, totalUsd: 0, byModel: [], byReason: {}, byAgent: [], overTime: [] }); }
@@ -10630,11 +10631,11 @@ function serveInsights(req, res) {
 // (P0.1), chronological. Feeds a server-side autopsy/replay view and recovers headless-run dialogue (the
 // browser's own COMMS history persists via the save-envelope mirror). Read-only; fail-open, never a 500.
 function serveTranscript(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const json = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
-    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    if (!isAgentId(agent)) return json(403, { error: 'forbidden' });
     const stream = u.searchParams.get('stream') || 'global';
     const limit = Math.max(1, Math.min(500, Number(u.searchParams.get('limit')) || 200));
     json(200, { stream, turns: transcriptStore.history(stream, { limit }) });
@@ -10645,11 +10646,11 @@ function serveTranscript(req, res) {
 // for a run (with content; the memory.proposed SSE event is just the trigger and carries no content). Read-only;
 // falls back to the agent's newest pending batch when the runId is unknown. Empty (never a 500) if none.
 function serveProposals(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const json = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
-    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    if (!isAgentId(agent)) return json(403, { error: 'forbidden' });
     const runId = u.searchParams.get('run') || '';
     let batch = runId && proposalsByRun.get(runId);
     if (!batch) { const lr = latestProposalRun.get(agent); batch = lr && proposalsByRun.get(lr); }
@@ -10663,11 +10664,11 @@ function serveProposals(req, res) {
 // the runId is unknown. The DOSSIER write itself happens client-side (the dossier lives in the browser); the
 // browser then CONSUMES the decided proposal via POST /api/study/resolve below.
 function serveStudyProposals(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const json = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
-    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    if (!isAgentId(agent)) return json(403, { error: 'forbidden' });
     const runId = u.searchParams.get('run') || '';
     let batch = runId && studyByRun.get(runId);
     if (!batch) { const lr = latestStudyRun.get(agent); batch = lr && studyByRun.get(lr); }
@@ -10705,7 +10706,7 @@ async function handleStudyResolve(req, res) {
 // Default 'open' (the primary surface: ideas awaiting a night-shift pickup). Real store state only (truthful
 // telemetry): a kept thread reads open here; nothing synthesized. Empty (never a 500) if the ledger is empty.
 function serveThreads(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const json = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const state = u.searchParams.get('state') || 'open';
@@ -10721,7 +10722,7 @@ function serveThreads(req, res) {
 // GET /api/task-briefs?key=<conversation-key>&status=<state>&limit=<n> — real durable intent state only.
 // Briefs are written exclusively at the run prompt/result seams; this route cannot fabricate or mutate them.
 function serveTaskBriefs(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const json = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const key = String(u.searchParams.get('key') || '').slice(0, 160);
@@ -10736,11 +10737,11 @@ function serveTaskBriefs(req, res) {
 // verbatim evidence quote). Read-only; falls back to the agent's newest pending batch when the runId is unknown.
 // Mirrors serveStudyProposals. The browser turn-in beat CONSUMES a decided candidate via POST /api/threads/turnin.
 function serveThreadProposals(req, res) {
-  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const json = (code, obj) => respondJson(res, code, obj);   // canonical helper (sidecar/respond.js)
   try {
     const u = new URL(req.url, 'http://127.0.0.1');
     const agent = u.searchParams.get('agent') || 'agent';
-    if (!/^[A-Za-z0-9_-]{1,40}$/.test(agent)) return json(403, { error: 'forbidden' });
+    if (!isAgentId(agent)) return json(403, { error: 'forbidden' });
     const runId = u.searchParams.get('run') || '';
     let batch = runId && threadsByRun.get(runId);
     if (!batch) { const lr = latestThreadRun.get(agent); batch = lr && threadsByRun.get(lr); }

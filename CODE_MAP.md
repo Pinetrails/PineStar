@@ -65,9 +65,9 @@ Tauri 2; version in `tauri.conf.json` + `Cargo.toml` (0.2.2). NSIS + dmg; embedd
 binary; platform keyring; updater → GitHub Releases `nonfungiblefunyuns-ship-it/starnet-releases`
 `latest.json`. Workspace data root: `%APPDATA%\Roaming\ai.skynet.harness\workspaces`.
 
-## test/ (~275 files) + gates
+## test/ (~409 files) + gates
 
-- `npm run test:fast` — THE merge gate: ~254 steps from `test/fast.list` via
+- `npm run test:fast` — THE merge gate: ~364 steps from `test/fast.list` via
   `scripts/run-fast-tests.mjs`.
 - `npm run test:http` — HTTP/e2e; `npm run test:world` — headless world sim;
   `npm run validate` — map validation.

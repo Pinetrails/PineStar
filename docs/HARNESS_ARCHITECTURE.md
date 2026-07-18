@@ -1,7 +1,7 @@
 # STARNET Harness — Architecture Reference
 
 > Engineering reference for the agent-harness backend. The *roadmap* (what to build when) lives in
-> `INCREMENTAL_ROADMAP.md` and the approved plan; this doc is the *target shape* (modules, interfaces,
+> `archive/INCREMENTAL_ROADMAP.md` (historical) and the approved plan; this doc is the *target shape* (modules, interfaces,
 > the event contract, invariants) that every step builds toward. Keep it in sync as the code lands.
 
 ## 1. Purpose & the one bet
