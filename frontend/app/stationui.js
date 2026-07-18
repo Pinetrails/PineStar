@@ -1555,6 +1555,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function agConfig(a) {
     return '<div class="cf-root">▣ station://agents/' + esc(agSlug(a)) + '/</div>' +
       CONFIG_FILES.map(f => fileCard(a, f)).join('') +
+      personaCard(a) +
       modelCard(a) +
       workshopCard(a) +
       agCommand(a);   // SKIN swap + DANGER delete — lives at the END of CONFIG, off the BRIEF landing tab
@@ -1577,6 +1578,27 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div id="ag-workshop-msg" class="msg"></div>' +
       '<div id="ag-ws-live"><div class="dim" style="font-size:11px;">reading the build list…</div></div>' +
       '<div class="dim" style="font-size:11px;margin-top:6px;line-height:1.35;">Separate from this: the AUTONOMY dial’s night-shift beats let the agent pick its <i>own</i> small jobs while you’re away — those deliver to your rail the same way. This card is the list <b>you</b> queue (the ◈ on a quest, or /build-away in COMMS).</div>' +
+    '</div>';
+  }
+
+  // Per-agent PERSONALITY (dossier CONFIG card): the same archetype chips as the create screen, changeable any
+  // time — until now the ONLY post-create path was /personality in COMMS, which most Commanders never find.
+  // Chips reuse the genesis .ov-vchip vocabulary; the pick applies via access.config.setPersona (App recomposes
+  // the live prompt + pushRoster, so chat, delegated work, and cron all speak the new voice). UNHINGED swears
+  // for real, so its chip keeps the house two-press confirm (wired in wireConfig). Personality changes the WORDS
+  // only — never the audible station voice, and never the work (the personas.js law).
+  function personaCard(a) {
+    if (typeof Personas === 'undefined' || !Personas.list) return '';
+    const cur = Personas.resolve ? Personas.resolve((a && a.personaId) || Personas.DEFAULT_ID) : ((a && a.personaId) || 'professional');
+    const p = Personas.get ? Personas.get(cur) : null;
+    const chips = Personas.list().map(x =>
+      '<button type="button" class="ov-vchip' + (x.id === cur ? ' sel' : '') + '" data-persona="' + esc(x.id) + '" data-name="' + esc(x.name) + '" title="' + esc(x.vibe || '') + '" aria-pressed="' + (x.id === cur ? 'true' : 'false') + '">' + esc(x.name) + '</button>').join('');
+    return '<div class="cf-card">' +
+      '<div class="cf-head"><span class="cf-file">◉ personality</span><span class="cf-badge">PER-AGENT</span></div>' +
+      '<div class="cf-desc">How this agent talks — in chat, delivered work, and its ambient lines on the floor. Changes the delivery only, never the work (or the station voice). Pick one to apply it immediately.</div>' +
+      '<div class="ov-vchips" id="ag-persona-chips">' + chips + '</div>' +
+      (p ? '<div class="ov-vpreview"><div class="vp-quote">“' + esc(p.sampleVoiceReply || p.cardLine || '') + '”</div><div class="vp-meta">' + esc(p.name) + '</div></div>' : '') +
+      '<div id="ag-persona-msg" class="msg"></div>' +
     '</div>';
   }
 
@@ -1664,6 +1686,34 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     });
     const mClear = body.querySelector('#ag-model-clear');
     if (mClear) mClear.addEventListener('click', () => applyModel('', '', ''));
+    // PERSONALITY chips — apply via access.config.setPersona, then rerender so the sel chip + preview line
+    // reflect the recorded truth (never an optimistic highlight). UNHINGED keeps the house two-press confirm:
+    // press one names what it means (warn tint), press two applies; pressing anything else disarms.
+    const pWrap = body.querySelector('#ag-persona-chips');
+    if (pWrap) {
+      const pMsg = body.querySelector('#ag-persona-msg');
+      const setPMsg = (t, ok) => { if (pMsg) { pMsg.textContent = t || ''; pMsg.className = 'msg' + (ok ? ' ok' : ''); } };
+      let armed = null;
+      const disarm = () => { if (armed) { armed.textContent = armed.dataset.name; armed.classList.remove('arm'); armed = null; } };
+      const curId = (typeof Personas !== 'undefined' && Personas.resolve) ? Personas.resolve((a && a.personaId) || Personas.DEFAULT_ID) : '';
+      pWrap.querySelectorAll('.ov-vchip').forEach(chip => chip.addEventListener('click', () => {
+        const id = chip.dataset.persona;
+        if (!id || id === curId) { disarm(); return; }
+        if (id === 'unhinged' && armed !== chip) {
+          disarm(); armed = chip;
+          chip.classList.add('arm');
+          chip.textContent = 'UNHINGED — SURE? it swears, for real';
+          sfx('click');
+          return;
+        }
+        disarm();
+        if (!(access.config && access.config.setPersona)) { setPMsg('personality change unavailable', false); sfx('bad'); return; }
+        const ok = access.config.setPersona(a && a.id, id);
+        if (ok === false) { setPMsg('could not change personality', false); sfx('bad'); return; }
+        notify('personality → ' + (chip.dataset.name || id).toUpperCase() + (id === 'unhinged' ? ' — it swears, for real' : ''), 'good');
+        sfx('click'); rerender('agents');
+      }));
+    }
     // W3 AWAY-WORKSHOP toggle: flip a.workshop via App.setWorkshop (updates the flag + pushRoster + persist).
     // Optimistic UI: on failure we revert the checkbox and say so — never assert a grant the harness didn't record.
     const wOn = body.querySelector('#ag-workshop-on');
