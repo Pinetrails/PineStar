@@ -94,6 +94,7 @@ const { makeFolderPick } = require('./folderpick.js');          // Projects rail
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
+const { makeOpenAiCompat } = require('./openai-compat.js');   // /v1/* OpenAI-compatible surface (external harness ingress)
 const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
 const { parseSlackTokens } = require('./channels/slack.js');                       // slack stores its two tokens as ONE secret string
 const channelSecretsMod = require('./channels/secrets.js');                        // T1.4: token-vs-config split + keychain migration
@@ -4505,7 +4506,32 @@ function stopGenericChannel(id) {
   genericStatus[id] = { connected: false, state: 'down', detail: '' };
 }
 
+/* /v1/* — the OpenAI-compatible surface for EXTERNAL local clients / other harnesses (see openai-compat.js).
+   Its auth is its OWN bearer seam (STARNET_API_KEY), NOT the page-injected launch token: external clients never
+   see that token. It refuses to enable without a strong key (>=16 chars) and applies the same loopback Host pin.
+   Every run rides the SAME runOnce autonomous seam the channel hub uses (surface:'autonomous', broadcast:true),
+   so an external harness's run is visible on the station floor and its transcript lands in the channel store. */
+const openaiCompat = makeOpenAiCompat({
+  runOnce: runOnce,
+  apiKey: () => String(ENV('API_KEY') || ENV('V1_KEY') || '').trim(),   // env STARNET_API_KEY / STARNET_V1_KEY (SKYNET_* alias too)
+  resolveProviderKey: (provider) => providerRuntimeKey(normalizeProvider(provider), ''),
+  resolveBaseUrl: (provider) => providerRuntimeBaseUrl(normalizeProvider(provider), ''),
+  roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
+  store: channelStore,
+  isAllowedHost: isAllowedHost,
+  constTimeEq: apiauth.constTimeEq,
+  defaultModel: () => String(ENV('V1_MODEL') || ENV('DEFAULT_MODEL') || '').trim(),
+  maxConcurrent: () => num(ENV('V1_MAX_CONCURRENT'), 10),
+  version: () => { try { return computeVersionSurface().harness || 'dev'; } catch (_) { return 'dev'; } },
+  newId: () => crypto.randomUUID(), now: () => Date.now(),
+  readBody: (req, max) => readBody(req, max), redact: redact,
+  logBoot: (line) => { try { console.log(line); } catch (_) {} }
+});
+
 const server = http.createServer((req, res) => {
+  // /v1/* (external-harness OpenAI API) + /health are their OWN seam: intercept BEFORE the /api launch-token
+  // machinery (they must NOT require the page token, and openai-compat applies its own bearer auth + Host pin).
+  if (openaiCompat.handle(req, res)) return;
   const isApi = String(req.url || '').indexOf('/api/') === 0 || req.url === '/api';
   if (isApi) {
     // Desktop serves the frontend from a Tauri app origin, while browser mode is same-origin loopback.
@@ -4772,6 +4798,7 @@ server.listen(PORT, '127.0.0.1', () => {
   console.log('     the agents/web-search/tools behind it are all served from here.');
   if (DEV_MODE) console.log('     ⚡ DEV SEED MODE — onboarding auto-skipped; the page resumes the seeded agent.');
   console.log(bar + '\n');
+  try { openaiCompat.announce(); } catch (_) {}   // one honest boot line: is the /v1 external-harness API live?
   // warm the key-independent /models catalog once so priceOf / contextLimit are live for every run. A boot-time
   // failure no longer disables channel /model validation for the session — maybeRewarmModelCatalog re-warms on
   // demand (throttled) the next time a /model command asks (see the channel-hub modelCatalog accessor).
