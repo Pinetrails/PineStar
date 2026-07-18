@@ -4,7 +4,7 @@
 
 Goal: full public release clean on Windows AND macOS; subscriptions = the NEXT official update.
 
-- [x] **READY TO MERGE — `agent/release-reliability-audit` · night-shift precheck fail-closed.**
+- [x] **MERGED `bae18072` — night-shift precheck fail-closed.**
       Trunk failed open when budget/provider/readiness inspection threw, spending a leash unit and starting
       unattended work through an unproven safety gate. The driver + composition root now stand down before
       spend as `precheck-error`; status, durable ledger, and morning-report copy all explain it truthfully.
