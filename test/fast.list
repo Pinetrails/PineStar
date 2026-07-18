@@ -355,6 +355,7 @@ test/channels.discord-wire.test.js
 test/widgets.test.js
 test/widgetfeed.test.js
 test/terminal-resize.test.js
+test/terminal-position.test.js
 test/poweruser-shell-repairs.test.js
 test/release-bump.test.js
 test/release-cut.test.js
