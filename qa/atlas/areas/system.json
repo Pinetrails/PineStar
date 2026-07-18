@@ -1251,44 +1251,6 @@
       "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize RESTORE POINTS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json. [wave-3] Machine assertion test/window-minimize.test.js now guards the minimizeTerm collapse/restore round-trip (element kept alive + hidden not destroyed, geometry captured into termPos only when term-moved, placeTerm re-applies it on restore) plus the exported clampTerminalSize geometry primitive. Finding e9e4fab6 resolved. HELD audited: the finding itself flagged the live COLLAPSE behavior as never proven (only the aria render was shoot-covered) — a live collapse round-trip at HEAD is still owed before perfected."
     },
     {
-      "id": "ui/system/aria-minimize-session-tools",
-      "kind": "ui",
-      "area": "system",
-      "name": "Minimize SESSION TOOLS",
-      "purpose": "Minimize the SESSION TOOLS window to a dock strip chip (keeps it logically open).",
-      "promise": "Clicking it collapses the SESSION TOOLS window via minimizeTerm; the aria-label reads \"Minimize SESSION TOOLS\".",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "shoot",
-          "ref": "sys-sessiontools"
-        },
-        {
-          "kind": "test",
-          "ref": "test/window-minimize.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:22:43.218Z"
-      },
-      "findings": [
-        "e9e4fab6"
-      ],
-      "firstSeen": "2026-07-18T00:54:02.719Z",
-      "lastSeen": "2026-07-18T00:54:02.719Z",
-      "missing": false,
-      "selector": "button[aria-label=\"Minimize SESSION TOOLS\"]",
-      "state": "sys-sessiontools",
-      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize SESSION TOOLS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json. [wave-3] Machine assertion test/window-minimize.test.js now guards the minimizeTerm collapse/restore round-trip (element kept alive + hidden not destroyed, geometry captured into termPos only when term-moved, placeTerm re-applies it on restore) plus the exported clampTerminalSize geometry primitive. Finding e9e4fab6 resolved. HELD audited: the finding itself flagged the live COLLAPSE behavior as never proven (only the aria render was shoot-covered) — a live collapse round-trip at HEAD is still owed before perfected. NOTE: the SESSION TOOLS window was RETIRED (commit 83292661) — this entry needs reconciliation (likely now missing); its promise no longer holds, do not promote."
-    },
-    {
       "id": "ui/system/aria-minimize-settings",
       "kind": "ui",
       "area": "system",

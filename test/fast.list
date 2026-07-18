@@ -103,6 +103,7 @@ test/workshop-permissions.test.js
 test/workshop-store.test.js
 test/workshop-undo.e2e.test.js
 test/workshop-visibility.test.js
+test/workshop-toggle-ui.test.js
 test/quest-store.test.js
 test/questinject.test.js
 test/quests-tool.test.js
@@ -243,6 +244,12 @@ test/projectscan.test.js
 test/permpanel.test.js
 test/permissionsstore.test.js
 test/permissions-ui.test.js
+test/theme-custom-phosphor.test.js
+test/window-minimize.test.js
+test/nightshift-steer-ui.test.js
+test/world-setskin.test.js
+test/capprop-map.contract.test.js
+test/dock-terms-open.test.js
 test/settings-p1-ui.test.js
 test/settings-codex-row.test.js
 test/settings-oauth-rows.test.js
