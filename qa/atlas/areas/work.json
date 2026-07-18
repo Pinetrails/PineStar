@@ -71,16 +71,16 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "e74ea483"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt (bay opens via #bb-missions, SAVE A RECIPE editor opens, LAUNCH→RUN NOW created a NEW kind:task workstream \"Morning Brief\"). test/recipes.test.js guards fillTask/importRecipe/exportRecipe (the launch/round-trip primitives). NOTE: the UI button→dispatch seam itself is not journey-covered — see finding routed to work-recipes lane. [downgraded to AUDITED: a routed UI-seam coverage finding is attached — the store/route is guarded but the button→dispatch seam is not.]"
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): #bb-missions opens the .mkt overlay; render contract Recipes.builtins()===50===.mkt-card count (all data-id); category filter DEVELOPER->13/ALL->50; SAVE A RECIPE + TWEAK + EXPORT proven; LAUNCH: morning-brief SET UP & LAUNCH -> 2 params -> RUN NOW -> Workstreams kind:task \"Morning Brief\". recipes.test.js guards store primitives; DOM seams not journey-guarded (finding 72f74d2c, EL-3) -> AUDITED."
     },
     {
       "id": "state/work-routines",
@@ -584,13 +584,15 @@
       ],
       "status": "mapped",
       "auditedAt": null,
-      "findings": [],
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mkt-import-file",
       "state": "work-recipes",
-      "notes": "Traced seam (marketplace.js R6 rail hidden #mkt-import-file → Recipes.importRecipe; export/import round-trip store-covered by recipes.test.js). Headless file-picker upload out of scope this batch. Left MAPPED (mirrors the ⇪ IMPORT button entry)."
+      "notes": "Hidden <input type=file> #mkt-import-file fed by ⇪ IMPORT -> Recipes.importRecipe (validate/strip/save to MINE). Headless upload out of scope; round-trip store-covered by recipes.test.js. Left MAPPED."
     },
     {
       "id": "ui/work/rt-add",
@@ -1853,21 +1855,23 @@
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/qa-cartographer.test.js"
+          "ref": "test/recipes.test.js"
         }
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
-      "findings": [],
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "The AGENTS tab is the recruit side of the merged bay (marketplace.js renderBar t('agents','☰ AGENTS')). Live-observed present alongside ❒ RECIPES (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering was reached via the RECIPES tab of the same bay). AUDITED: tab switch has no dedicated machine assertion (this is the crew/recruit area's surface, mapped here only because the Cartographer swept it in work-recipes state). KNOWN gap per EL-3."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-all50-1",
@@ -1892,18 +1896,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-creator12-1",
@@ -1928,18 +1932,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-developer13-1",
@@ -1964,18 +1968,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-general1-1",
@@ -2000,18 +2004,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-import-1",
@@ -2036,14 +2040,14 @@
       "status": "mapped",
       "auditedAt": null,
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Traced seam (marketplace.js R6 hidden #mkt-import-file → Recipes.importRecipe). recipes.test.js covers importRecipe/exportRecipe round-trip at the store level. UI file-picker path not driven live (headless file upload out of scope). Left MAPPED. UI-dispatch coverage gap tracked by finding 3717ef2e."
+      "notes": "⇪ IMPORT rail button opens the hidden #mkt-import-file picker -> Recipes.importRecipe. Headless file-picker upload out of scope; import round-trip store-covered by recipes.test.js. Left MAPPED."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-mine0-1",
@@ -2068,18 +2072,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-ops11-1",
@@ -2104,18 +2108,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-recipes-1",
@@ -2140,18 +2144,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "e74ea483"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID mkt-state tabs \"☰ AGENTS ❒ RECIPES\", recipes-view saveAsBtn+importBtn present, 53 recipe els. AUDITED: the tab switch has no dedicated machine assertion (recipes.test.js covers the store, not the tab). KNOWN gap per EL-3."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-research13-1",
@@ -2176,18 +2180,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-dossier-export-1",
@@ -2211,18 +2215,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Live-proven .uiatlas/work2-evidence/probe-evidence.txt export-serialize: Recipes.exportRecipe('fix-bug') returns a starnetRecipe-stamped JSON object (keys starnetRecipe,id,name,emoji,tagline,blurb,accent,tags). recipes.test.js covers exportRecipe. AUDITED not PERFECTED: the browser download UI path is not driven (headless download out of scope) and the button seam is unguarded — finding 3717ef2e routed to work-recipes."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): ⇩ EXPORT invoked URL.createObjectURL (recipe JSON blob download). exportRecipe store-covered by recipes.test.js. AUDITED: UI seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-dossier-set-up-launch-1",
@@ -2247,18 +2251,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "e74ea483"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID recipes-launch-open (morning-brief), recipes-runnow-form, recipes-runnow-dispatch: countBefore 1→2, newTasks 1, title \"Morning Brief\", kind \"task\" — the launchRecipe dispatch contract holds. AUDITED not PERFECTED: recipes.test.js covers fillTask (the launch primitive) but NO journey/test drives this UI button→kind:task dispatch. Finding routed to work-recipes lane."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): ▸ SET UP & LAUNCH (.mkt-launch) opens the #mkt-stage launch form; filling params + RUN NOW (.mkt-do-launch) created a kind:task workstream \"Morning Brief\". AUDITED: fillTask store-covered; button->dispatch seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-dossier-tweak-1",
@@ -2283,81 +2287,129 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Live-proven .uiatlas/work2-evidence/probe-evidence.txt tweak-fork: clicking ✎ TWEAK on fix-bug opened the editor titled \"TWEAK RECIPE\" seeded \"Fix a Bug (my version)\" (fork path; builtin untouched, customsBefore 0). recipes.test.js R2 guards forkFrom (source:fork provenance). AUDITED not PERFECTED: the TWEAK button→editor UI seam has no dedicated assertion — finding 3717ef2e (recipe-catalog UI-dispatch) covers it, routed to work-recipes."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): ✎ TWEAK opens the #mkt-stage \"TWEAK RECIPE — a copy of ... yours to change\" fork editor. AUDITED: fork store-covered; UI seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-background-briefwhat-is-on-the-public-",
       "kind": "ui",
       "area": "work",
       "name": "◈Background BriefWhat is on the public recordRESEARCH▤ 1 inp",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Background BriefWhat is on the public recordRESE): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-bug-triagesort-a-pile-of-bugs-by-what-",
       "kind": "ui",
       "area": "work",
       "name": "⌦Bug TriageSort a pile of bugs by what to fix firstCODE▤ 1 i",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Bug TriageSort a pile of bugs by what to fix fir): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-build-a-featureadd-something-end-to-en",
       "kind": "ui",
       "area": "work",
       "name": "Build a FeatureAdd something, end to endCODE▤ 2 inputsBLD",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Build a FeatureAdd something, end to endCODE▤ 2): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-caption-variantsthe-same-post-tuned-pe",
@@ -2383,346 +2435,32 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-changelog-draftturn-commits-into-a-rea",
       "kind": "ui",
       "area": "work",
       "name": "⊞Changelog DraftTurn commits into a readable changelogCODE▤ ",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-code-reviewadversarial-review-passcode",
-      "kind": "ui",
-      "area": "work",
-      "name": "Code ReviewAdversarial review passCODE▤ 1 inputCRV",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-comment-digestwhat-your-audience-is-ac",
-      "kind": "ui",
-      "area": "work",
-      "name": "▤Comment DigestWhat your audience is actually sayingOPS▤ 1 i",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-competitor-trackingwhat-a-rival-shippe",
-      "kind": "ui",
-      "area": "work",
-      "name": "◎Competitor TrackingWhat a rival shipped or announcedRESEARC",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-daily-standupyour-day-focused-before-i",
-      "kind": "ui",
-      "area": "work",
-      "name": "☀Daily StandupYour day, focused before it startsOPS▤ 1 input",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-decision-memoone-page-to-make-the-call",
-      "kind": "ui",
-      "area": "work",
-      "name": "◇Decision MemoOne page to make the callOPS▤ 1 inputDEC",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-deep-dive-researchsourced-brief-on-a-q",
-      "kind": "ui",
-      "area": "work",
-      "name": "Deep-Dive ResearchSourced brief on a questionRESEARCH▤ 1 inp",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-deep-fact-checkverify-a-claim-across-t",
-      "kind": "ui",
-      "area": "work",
-      "name": "⊜Deep Fact-CheckVerify a claim across the recordRESEARCH▤ 1 ",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-dependency-auditwhat-is-outdated-risky",
-      "kind": "ui",
-      "area": "work",
-      "name": "⊡Dependency AuditWhat is outdated, risky, or unusedCODE▤ 1 i",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-draft-a-replyanswer-a-message-in-your-",
-      "kind": "ui",
-      "area": "work",
-      "name": "Draft a ReplyAnswer a message in your voiceOPS▤ 2 inputsRPL",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-error-log-triagecluster-the-noise-into",
-      "kind": "ui",
-      "area": "work",
-      "name": "⚠Error-Log TriageCluster the noise into real incidentsCODE▤ ",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-fact-checkverify-a-claim-with-sourcesr",
-      "kind": "ui",
-      "area": "work",
-      "name": "Fact-CheckVerify a claim, with sourcesRESEARCH▤ 1 inputCHK",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-feed-watchkeep-an-eye-on-a-source-for-",
-      "kind": "ui",
-      "area": "work",
-      "name": "◉Feed WatchKeep an eye on a source for meRESEARCH▤ 2 inputsF",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-fix-a-bugdiagnose-patch-a-defectcode-1",
-      "kind": "ui",
-      "area": "work",
-      "name": "Fix a BugDiagnose & patch a defectCODE▤ 1 inputFIX",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-flaky-test-huntfind-the-tests-that-fai",
-      "kind": "ui",
-      "area": "work",
-      "name": "⊘Flaky-Test HuntFind the tests that fail at randomCODE▤ 1 in",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-forget-1",
-      "kind": "ui",
-      "area": "work",
-      "name": "⌫ FORGET",
-      "purpose": "The ⌫ FORGET button in the STATION FAMILIARITY panel: a two-step armed control that wipes the LOCALLY-LEARNED work-affinity profile (not a recipe).",
-      "promise": "Clicking ⌫ FORGET arms (label → \"SURE? WIPE\", 4s window); a confirming second click clears the local profile + mint stores (ps.forget() / MintStore.forget()) — it is never a one-click wipe, and it removes NO recipes.",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Changelog DraftTurn commits into a readable chan): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
         "files": [
           "frontend/app/marketplace.js",
-          "frontend/app/profilestore.js",
-          "frontend/app/mintstore.js"
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
         ],
         "events": []
       },
@@ -2734,6 +2472,558 @@
       ],
       "status": "audited",
       "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-code-reviewadversarial-review-passcode",
+      "kind": "ui",
+      "area": "work",
+      "name": "Code ReviewAdversarial review passCODE▤ 1 inputCRV",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Code ReviewAdversarial review passCODE▤ 1 inputC): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-comment-digestwhat-your-audience-is-ac",
+      "kind": "ui",
+      "area": "work",
+      "name": "▤Comment DigestWhat your audience is actually sayingOPS▤ 1 i",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Comment DigestWhat your audience is actually say): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-competitor-trackingwhat-a-rival-shippe",
+      "kind": "ui",
+      "area": "work",
+      "name": "◎Competitor TrackingWhat a rival shipped or announcedRESEARC",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Competitor TrackingWhat a rival shipped or annou): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-daily-standupyour-day-focused-before-i",
+      "kind": "ui",
+      "area": "work",
+      "name": "☀Daily StandupYour day, focused before it startsOPS▤ 1 input",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Daily StandupYour day, focused before it startsO): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-decision-memoone-page-to-make-the-call",
+      "kind": "ui",
+      "area": "work",
+      "name": "◇Decision MemoOne page to make the callOPS▤ 1 inputDEC",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Decision MemoOne page to make the callOPS▤ 1 inp): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-deep-dive-researchsourced-brief-on-a-q",
+      "kind": "ui",
+      "area": "work",
+      "name": "Deep-Dive ResearchSourced brief on a questionRESEARCH▤ 1 inp",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Deep-Dive ResearchSourced brief on a questionRES): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-deep-fact-checkverify-a-claim-across-t",
+      "kind": "ui",
+      "area": "work",
+      "name": "⊜Deep Fact-CheckVerify a claim across the recordRESEARCH▤ 1 ",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Deep Fact-CheckVerify a claim across the recordR): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-dependency-auditwhat-is-outdated-risky",
+      "kind": "ui",
+      "area": "work",
+      "name": "⊡Dependency AuditWhat is outdated, risky, or unusedCODE▤ 1 i",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Dependency AuditWhat is outdated, risky, or unus): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-draft-a-replyanswer-a-message-in-your-",
+      "kind": "ui",
+      "area": "work",
+      "name": "Draft a ReplyAnswer a message in your voiceOPS▤ 2 inputsRPL",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Draft a ReplyAnswer a message in your voiceOPS▤): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-error-log-triagecluster-the-noise-into",
+      "kind": "ui",
+      "area": "work",
+      "name": "⚠Error-Log TriageCluster the noise into real incidentsCODE▤ ",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Error-Log TriageCluster the noise into real inci): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-fact-checkverify-a-claim-with-sourcesr",
+      "kind": "ui",
+      "area": "work",
+      "name": "Fact-CheckVerify a claim, with sourcesRESEARCH▤ 1 inputCHK",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Fact-CheckVerify a claim, with sourcesRESEARCH▤): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-feed-watchkeep-an-eye-on-a-source-for-",
+      "kind": "ui",
+      "area": "work",
+      "name": "◉Feed WatchKeep an eye on a source for meRESEARCH▤ 2 inputsF",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Feed WatchKeep an eye on a source for meRESEARCH): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-fix-a-bugdiagnose-patch-a-defectcode-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "Fix a BugDiagnose & patch a defectCODE▤ 1 inputFIX",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Fix a BugDiagnose & patch a defectCODE▤ 1 inputF): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-flaky-test-huntfind-the-tests-that-fai",
+      "kind": "ui",
+      "area": "work",
+      "name": "⊘Flaky-Test HuntFind the tests that fail at randomCODE▤ 1 in",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Flaky-Test HuntFind the tests that fail at rando): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-forget-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "⌫ FORGET",
+      "purpose": "The ⌫ FORGET control: an arm-to-confirm destructive wipe of the station's learned interest profile.",
+      "promise": "Clicking ⌫ FORGET arms a confirm; confirming calls profile.forget() + MintStore.forget(), wiping the learned interest/mint state so suggestions reset to zero.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": {
         "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
         "date": "2026-07-07T21:47:32.573Z"
       },
@@ -2743,20 +3033,18 @@
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "CORRECTED wave-2 mis-mapping: this button wipes the learned STATION FAMILIARITY profile, NOT a \"custom recipe family\" (marketplace.js mkt-fam-forget → ps.forget()/MintStore.forget(), inside glassHTML alongside PAUSE LEARNING). Live-proven .uiatlas/work2-evidence/probe-evidence.txt forget-semantics: label0 \"⌫ FORGET\" → armedLabel \"SURE? WIPE\", armed:true, twoStep:true (two-step arm/confirm holds). Truthful destructive-confirm semantics verified. AUDITED: the arm/confirm has no dedicated assertion; belongs to the profile/mint lane. KNOWN gap per EL-3."
+      "notes": ".mkt-fam-forget present live (armDelete pattern, danger styling). Destructive; not driven this batch. Left MAPPED — owned by the adaptive-recruitment lane."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-got-it-1",
       "kind": "ui",
       "area": "work",
       "name": "GOT IT",
-      "purpose": "The GOT IT button in the STATION FAMILIARITY consent strip: acknowledges the local-learning disclosure so the strip stops showing.",
-      "promise": "Clicking GOT IT records the acknowledgement (acked) and removes the consent strip; the affinity panel stays, learning continues locally.",
+      "purpose": "The GOT IT acknowledgement: dismisses the STATION FAMILIARITY explainer once the user understands the pause/forget controls.",
+      "promise": "Clicking GOT IT dismisses the familiarity explainer copy (it does not reappear), leaving the meter + pause/forget controls in place.",
       "wiring": {
         "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/profilestore.js",
-          "frontend/app/mintstore.js"
+          "frontend/app/marketplace.js"
         ],
         "events": []
       },
@@ -2774,209 +3062,351 @@
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "STATION FAMILIARITY glass panel control (marketplace.js glassHTML, mkt-fam-* family). This panel shows/pauses/wipes the LOCALLY-LEARNED work-affinity profile that ranks the recommender shelves — it is NOT recipe management. Live-proven .uiatlas/work2-evidence/probe-evidence.txt forget-semantics. Consent-ack path not driven live (only present when un-acked). Left MAPPED — profile/mint lane."
+      "notes": ".mkt-fam-ack present live. Dismiss persists; not driven this batch. Left MAPPED — owned by the adaptive-recruitment lane."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-hook-draftsten-openings-that-earn-the-",
       "kind": "ui",
       "area": "work",
       "name": "⌁Hook DraftsTen openings that earn the next lineOPS▤ 1 input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Hook DraftsTen openings that earn the next lineO): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-inbox-triagewhat-in-your-inbox-actuall",
       "kind": "ui",
       "area": "work",
       "name": "⊟Inbox TriageWhat in your inbox actually needs youOPS▤ 1 inp",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Inbox TriageWhat in your inbox actually needs yo): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-learning-plana-path-from-zero-to-compe",
       "kind": "ui",
       "area": "work",
       "name": "◫Learning PlanA path from zero to competentOPS▤ 2 inputsLEA",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Learning PlanA path from zero to competentOPS▤ 2): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-literature-reviewmap-what-is-known-on-",
       "kind": "ui",
       "area": "work",
       "name": "◫Literature ReviewMap what is known on a questionRESEARCH▤ 1",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Literature ReviewMap what is known on a question): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-market-watcha-pulse-on-what-you-hold-o",
       "kind": "ui",
       "area": "work",
       "name": "◐Market WatchA pulse on what you hold or trackRESEARCH▤ 1 in",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Market WatchA pulse on what you hold or trackRES): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-meeting-prepwalk-in-ready-not-coldops-",
       "kind": "ui",
       "area": "work",
       "name": "◱Meeting PrepWalk in ready, not coldOPS▤ 2 inputsMEE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Meeting PrepWalk in ready, not coldOPS▤ 2 inputs): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-morning-briefdaily-what-changed-digest",
       "kind": "ui",
       "area": "work",
       "name": "Morning BriefDaily what-changed digestRESEARCH▤ 2 inputsBRF",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Morning BriefDaily what-changed digestRESEARCH▤): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-newsletter-draftan-issue-drafted-in-yo",
       "kind": "ui",
       "area": "work",
       "name": "✉Newsletter DraftAn issue drafted in your voiceOPS▤ 1 inputN",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Newsletter DraftAn issue drafted in your voiceOP): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-onboard-a-codebaseget-oriented-in-unfa",
       "kind": "ui",
       "area": "work",
       "name": "◱Onboard a CodebaseGet oriented in unfamiliar code fastCODE▤",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Onboard a CodebaseGet oriented in unfamiliar cod): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-pause-learning-1",
       "kind": "ui",
       "area": "work",
       "name": "❚❚ PAUSE LEARNING",
-      "purpose": "The ❚❚ PAUSE LEARNING button: stops the station folding new work-signal into the local affinity profile (toggles to ▸ RESUME).",
-      "promise": "Clicking ❚❚ PAUSE LEARNING sets the profile + mint stores disabled (nothing new folded in) and the label flips to ▸ RESUME LEARNING; clicking again resumes.",
+      "purpose": "The ❚❚ PAUSE LEARNING / ▸ RESUME LEARNING toggle: stops or resumes the station learning from your work signals for suggestions.",
+      "promise": "Clicking ❚❚ PAUSE LEARNING halts work-signal learning (meter → PAUSED) and the button flips to ▸ RESUME LEARNING; resuming re-enables it.",
       "wiring": {
         "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/profilestore.js",
-          "frontend/app/mintstore.js"
+          "frontend/app/marketplace.js"
         ],
         "events": []
       },
@@ -2994,217 +3424,377 @@
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "STATION FAMILIARITY glass panel control (marketplace.js glassHTML, mkt-fam-* family). This panel shows/pauses/wipes the LOCALLY-LEARNED work-affinity profile that ranks the recommender shelves — it is NOT recipe management. Live-proven .uiatlas/work2-evidence/probe-evidence.txt forget-semantics. Pause toggle not exercised live this batch. Left MAPPED — profile/mint lane, not a recipe control."
+      "notes": ".mkt-fam-pause present live. Toggle persists to the familiarity/profile store; not driven this batch (avoid mutating the learning profile). Left MAPPED — owned by the adaptive-recruitment lane."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-performance-passfind-where-the-time-an",
       "kind": "ui",
       "area": "work",
       "name": "◈Performance PassFind where the time and memory goCODE▤ 1 in",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Performance PassFind where the time and memory g): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-plan-a-projectbreak-a-goal-into-a-plan",
       "kind": "ui",
       "area": "work",
       "name": "Plan a ProjectBreak a goal into a planOPS▤ 1 inputPLN",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Plan a ProjectBreak a goal into a planOPS▤ 1 inp): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-posting-plana-publishing-cadence-you-c",
       "kind": "ui",
       "area": "work",
       "name": "▦Posting PlanA publishing cadence you can keepOPS▤ 2 inputsP",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Posting PlanA publishing cadence you can keepOPS): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-pr-sweepreview-the-open-prs-worst-risk",
       "kind": "ui",
       "area": "work",
       "name": "⊟PR SweepReview the open PRs, worst risk firstCODE▤ 1 inputP",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (PR SweepReview the open PRs, worst risk firstCOD): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-price-watchtell-me-when-it-movesops-2-",
       "kind": "ui",
       "area": "work",
       "name": "◉Price WatchTell me when it movesOPS▤ 2 inputsPRI",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Price WatchTell me when it movesOPS▤ 2 inputsPRI): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-question-miningthe-content-ideas-hidin",
       "kind": "ui",
       "area": "work",
       "name": "⊙Question MiningThe content ideas hiding in questionsOPS▤ 1 ",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Question MiningThe content ideas hiding in quest): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-refactor-scoutfind-the-code-most-worth",
       "kind": "ui",
       "area": "work",
       "name": "⌘Refactor ScoutFind the code most worth cleaning upCODE▤ 1 i",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Refactor ScoutFind the code most worth cleaning): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-release-noteswrite-the-notes-users-wil",
       "kind": "ui",
       "area": "work",
       "name": "⊛Release NotesWrite the notes users will readCODE▤ 2 inputsR",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Release NotesWrite the notes users will readCODE): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-repurpose-contentone-piece-into-many-f",
       "kind": "ui",
       "area": "work",
       "name": "⊕Repurpose ContentOne piece into many formatsOPS▤ 2 inputsRE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Repurpose ContentOne piece into many formatsOPS▤): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-research-digesta-themed-roundup-on-you",
       "kind": "ui",
       "area": "work",
       "name": "▤Research DigestA themed roundup on your topicsRESEARCH▤ 2 i",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Research DigestA themed roundup on your topicsRE): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-save-a-recipe-1",
@@ -3229,73 +3819,32 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "e74ea483"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID recipes-saveas: editorOpen true, title \"SAVE A RECIPE\". AUDITED: the editor-open UI path is not machine-guarded (recipes.test.js validates recipe shape/fillTask, not the editor). Finding routed to work-recipes lane for a UI-dispatch assertion."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): ＋ SAVE A RECIPE opens the #mkt-stage \"SAVE A RECIPE — write the directive...\" editor. AUDITED: save store-covered; UI seam not journey-guarded (finding 72f74d2c)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-script-outlinea-beat-by-beat-outline-t",
       "kind": "ui",
       "area": "work",
       "name": "◇Script OutlineA beat-by-beat outline that holds attentionOP",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-source-comparewhere-the-sources-actual",
-      "kind": "ui",
-      "area": "work",
-      "name": "⊞Source CompareWhere the sources actually disagreeRESEARCH▤ ",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.715Z",
-      "lastSeen": "2026-07-18T00:54:02.715Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes"
-    },
-    {
-      "id": "ui/work/txt-button-mkt-roster-station-familiaritycalibratingstill-ge",
-      "kind": "ui",
-      "area": "work",
-      "name": "◉STATION FAMILIARITYCALIBRATINGstill getting to know you — s",
-      "purpose": "The STATION FAMILIARITY panel header: expands the local learned-affinity profile (what the station has inferred you work on) that powers the recommender shelves.",
-      "promise": "Clicking the STATION FAMILIARITY header toggles the glass panel open/closed, revealing per-tag affinity bars, the local-first privacy note, and PAUSE / FORGET controls — all computed from the on-device profile, 0 bytes sent.",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Script OutlineA beat-by-beat outline that holds): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
         "files": [
           "frontend/app/marketplace.js",
-          "frontend/app/profilestore.js",
-          "frontend/app/mintstore.js"
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
         ],
         "events": []
       },
@@ -3305,99 +3854,237 @@
           "ref": "test/recipes.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-source-comparewhere-the-sources-actual",
+      "kind": "ui",
+      "area": "work",
+      "name": "⊞Source CompareWhere the sources actually disagreeRESEARCH▤ ",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Source CompareWhere the sources actually disagre): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
+      "firstSeen": "2026-07-18T00:54:02.715Z",
+      "lastSeen": "2026-07-18T00:54:02.715Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-station-familiaritycalibratingstill-ge",
+      "kind": "ui",
+      "area": "work",
+      "name": "◉STATION FAMILIARITYCALIBRATINGstill getting to know you — s",
+      "purpose": "The STATION FAMILIARITY glass box: an honest meter of how much the station has learned about your work (it drives recipe/recruit suggestions), with controls to pause or wipe that learning.",
+      "promise": "The meter reads the real familiarity summary — CALIBRATING while no signal is strong enough, a percentage once it is, PAUSED when learning is off — and never asserts a level the profile cannot back.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "familiarity meter reads the adaptive-recruitment/profile summary; owned by that system, no atlas-work journey"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "STATION FAMILIARITY glass panel control (marketplace.js glassHTML, mkt-fam-* family). This panel shows/pauses/wipes the LOCALLY-LEARNED work-affinity profile that ranks the recommender shelves — it is NOT recipe management. Live-proven .uiatlas/work2-evidence/probe-evidence.txt forget-semantics. Header expand not driven live this batch (the panel body/forget WERE). Left MAPPED — belongs to the mint/profile lane, not recipes."
+      "notes": "PROVEN live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): .mkt-fam box present, .mkt-fam-meter shows \"CALIBRATING\" for the fresh seed (truthful — source shows CALIBRATING until an interest signal is strong enough), title STATION FAMILIARITY, with PAUSE LEARNING / FORGET / GOT IT controls. Truthful telemetry. KNOWN: guarded by the adaptive-recruitment/familiarity system, not an atlas-work journey."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-subscription-auditwhat-you-are-paying-",
       "kind": "ui",
       "area": "work",
       "name": "⊡Subscription AuditWhat you are paying for and forgotOPS▤ 1 ",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Subscription AuditWhat you are paying for and fo): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-summarize-a-paperthe-paper-minus-the-j",
       "kind": "ui",
       "area": "work",
       "name": "◫Summarize a PaperThe paper, minus the jargonRESEARCH▤ 1 inp",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Summarize a PaperThe paper, minus the jargonRESE): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-summarizetl-dr-of-anythingops-1-inputt",
       "kind": "ui",
       "area": "work",
       "name": "SummarizeTL;DR of anythingOPS▤ 1 inputTLD",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (SummarizeTL;DR of anythingOPS▤ 1 inputTLD): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-thumbnail-conceptsvisual-directions-fo",
       "kind": "ui",
       "area": "work",
       "name": "▨Thumbnail ConceptsVisual directions for the frame that sell",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Thumbnail ConceptsVisual directions for the fram): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-tighten-thiscut-filler-keep-the-meanin",
@@ -3423,18 +4110,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-title-a-b-ideastitles-worth-testing-ag",
@@ -3460,102 +4147,166 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
       },
       "findings": [
-        "3717ef2e"
+        "72f74d2c"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-topic-monitorstanding-watch-on-a-subje",
       "kind": "ui",
       "area": "work",
       "name": "◐Topic MonitorStanding watch on a subjectRESEARCH▤ 1 inputTO",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Topic MonitorStanding watch on a subjectRESEARCH): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-travel-plana-trip-mapped-end-to-endops",
       "kind": "ui",
       "area": "work",
       "name": "◈Travel PlanA trip mapped end to endOPS▤ 2 inputsTRA",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Travel PlanA trip mapped end to endOPS▤ 2 inputs): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-trend-scanwhat-is-rising-in-a-spaceres",
       "kind": "ui",
       "area": "work",
       "name": "◇Trend ScanWhat is rising in a spaceRESEARCH▤ 1 inputTRE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Trend ScanWhat is rising in a spaceRESEARCH▤ 1 i): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-weekly-reviewclose-the-week-aim-the-ne",
       "kind": "ui",
       "area": "work",
       "name": "▤Weekly ReviewClose the week, aim the nextOPS▤ 1 inputWEE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "A ready-made recipe tile in the RECIPES roster (Weekly ReviewClose the week, aim the nextOPS▤ 1): selecting it focuses the recipe dossier so it can be tweaked, exported, or set up and launched as a fresh task.",
+      "promise": "Clicking this recipe tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → RUN NOW fills the params once and creates a new kind:\"task\" workstream the agent works on.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
+        "date": "2026-07-18T01:45:00Z"
+      },
+      "findings": [
+        "72f74d2c"
+      ],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
-      "state": "work-recipes"
+      "state": "work-recipes",
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
     },
     {
       "id": "ui/work/txt-button-newnewsletter-draftan-issue-drafted-in-462",
@@ -4191,11 +4942,11 @@
       "kind": "ui",
       "area": "work",
       "name": "+ ADD ONE",
-      "purpose": "The + ADD ONE empty-state CTA in the TO DO column: focuses the add-a-workstream input when the board is empty (focus only, no new behavior).",
-      "promise": "Clicking + ADD ONE in the empty TO DO column focuses #kb-in so the user can immediately type a first directive.",
+      "purpose": "The ＋ ADD ONE control in the team/roster deploy view: adds an agent slot to the team being assembled.",
+      "promise": "Clicking ＋ ADD ONE appends an agent slot to the current team roster so another specialist can be picked.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/marketplace.js"
         ],
         "events": []
       },
@@ -4205,7 +4956,7 @@
           "ref": "J1"
         }
       ],
-      "status": "audited",
+      "status": "mapped",
       "auditedAt": {
         "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
         "date": "2026-07-07T22:34:32Z"
@@ -4216,20 +4967,18 @@
       "missing": false,
       "selector": "button",
       "state": "work-tasks",
-      "notes": "Live-verified the control exists and its handler focuses #kb-in (stationui.js kbEmpty + wiring). Left AUDITED not PERFECTED: it is a focus-only affordance with no dedicated machine assertion (J1 never exercises the empty-state CTA). KNOWN: cosmetic focus helper, guarding it is low-value — recorded reason per EL-3."
+      "notes": "Deploy/team roster affordance under the shared .mkt panel. Not driven live this batch (needs team-assembly deploy mode). Left MAPPED — likely crew/recruit-owned; flagged for Cartographer area reconciliation."
     },
     {
       "id": "ui/work/txt-button-terms-novaagent-1",
       "kind": "ui",
       "area": "work",
       "name": "NOVAagent",
-      "purpose": "A routine AGENT pick button (rt-agent-btn) in the CREATE ROUTINE form: choose which roster agent a scheduled job runs as (here NOVA, the seeded agent).",
-      "promise": "Clicking an agent button marks it active (aria-pressed) and writes its id into #rt-agent, so + ADD ROUTINE schedules the job against that agent.",
+      "purpose": "A team-roster agent chip (NOVA): shows an agent already placed on the team being assembled in the deploy view.",
+      "promise": "The chip displays the agent (NOVA) selected onto the team; interacting with it manages that slot.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js",
-          "sidecar/index.js",
-          "frontend/app/autojobstore.js"
+          "frontend/app/marketplace.js"
         ],
         "events": []
       },
@@ -4241,15 +4990,13 @@
       ],
       "status": "mapped",
       "auditedAt": null,
-      "findings": [
-        "5c6adcaa"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-routines",
-      "notes": "Traced seam (stationui.js agentButton → #rt-agent → body.agentId). Roster-driven (button label = live agent name). Left MAPPED — one of N per-agent pick buttons; the create route it feeds is re-proven live (.uiatlas/work2-evidence/cron-probe-evidence.txt)."
+      "notes": "Deploy/team roster agent chip under the shared .mkt panel. Not driven live this batch. Left MAPPED — likely crew/recruit-owned; flagged for Cartographer area reconciliation."
     },
     {
       "id": "ui/work/txt-button-thumbnail-conceptsvisual-directions-for-421",
