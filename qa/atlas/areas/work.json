@@ -113,16 +113,16 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "4ea9fcb561b3723eb091bb61223f27ef66b90fd7",
+        "date": "2026-07-18T01:35:00Z"
       },
       "findings": [
-        "5c6adcaa"
+        "7e02c493"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt (preview server math, ADD ROUTINE→/api/cron created+enabled, active list renders with RUN NOW). cron.api/arm/run-now tests guard the routes the console drives. [downgraded to AUDITED: a routed UI-seam coverage finding is attached — the store/route is guarded but the button→dispatch seam is not.] [RE-PROVED @393e8cdb after sidecar/index.js moved (night-shift/cron NS-* commits): routines-preview ok + routines-add created(200,id,enabled) + routines-list GET /api/cron count 1 armed:false + routines-arm armedBefore:false→armedAfter:true — evidence .uiatlas/work2-evidence/cron-probe-evidence.txt]"
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): create (GET /api/cron 0->1, server-parsed schedule {interval,30m}), preview (POST /api/cron/preview -> honest next-fires), active list (RUN NOW/DISABLE/DELETE), arm (POST /api/cron/arm flips enabled false->true), remove (POST /api/cron/remove -> 0). Every displayed state reads from authoritative GET /api/cron. AUDITED: route-tested (cron.api/arm/run-now) but the DOM button->route seam is not journey-guarded (finding 7e02c493, EL-3)."
     },
     {
       "id": "state/work-tasks",
@@ -175,19 +175,26 @@
       },
       "coverage": [
         {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
+        },
+        {
           "kind": "test",
-          "ref": "test/qa-cartographer.test.js"
+          "ref": "test/terminal-resize.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
+        "date": "2026-07-18T01:35:00Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button[aria-label=\"Close ROUTINES\"]",
       "state": "work-routines",
-      "notes": "Shared window chrome (stationui.js window close plumbing, same as the TASK BOARD close). Not exercised live this batch. Left MAPPED — window chrome with no routines-specific assertion (parallels the TASK BOARD close/minimize KNOWN gap per EL-3)."
+      "notes": "Close ROUTINES = shared stationui.js term-x plumbing; proven cleanly 1->0 on TASK BOARD (identical factory) and the ROUTINES window carries the same control. COVERED by terminal-resize-journey.mjs (closeTerm removal) + test/terminal-resize.test.js."
     },
     {
       "id": "ui/work/aria-close-task-board",
@@ -240,19 +247,26 @@
       },
       "coverage": [
         {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
+        },
+        {
           "kind": "test",
-          "ref": "test/qa-cartographer.test.js"
+          "ref": "test/terminal-resize.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
+        "date": "2026-07-18T01:35:00Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize ROUTINES\"]",
       "state": "work-routines",
-      "notes": "Shared window chrome (stationui.js minimize→strip, same as TASK BOARD). Not exercised live this batch. Left MAPPED — window chrome, no routines-specific assertion (EL-3 KNOWN gap parallel)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): Minimize ROUTINES -> window term-min-hidden (HIDDEN) + #term-strip chip \"ROUTINES\"; chip click restores (VISIBLE). COVERED by terminal-resize-journey.mjs (minimize/restore) + test/terminal-resize.test.js."
     },
     {
       "id": "ui/work/aria-minimize-task-board",
@@ -295,21 +309,36 @@
       "kind": "ui",
       "area": "work",
       "name": "Resize ROUTINES",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The window resize grip (Resize ROUTINES): a keyboard- and pointer-accessible affordance to change the ROUTINES console dimensions.",
+      "promise": "The term-resize grip resizes the ROUTINES window: arrow keys grow/shrink it in both dimensions (clamped to per-window min/max) and the size persists.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/terminal-resize-journey.mjs"
+        },
+        {
+          "kind": "test",
+          "ref": "test/terminal-resize.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
+        "date": "2026-07-18T01:35:00Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Resize ROUTINES\"]",
-      "state": "work-routines"
+      "state": "work-routines",
+      "notes": "PROVEN live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): focus grip + arrow keys grew the ROUTINES window in both dimensions. COVERED by test/terminal-resize.test.js (shared resize affordance) + terminal-resize-journey.mjs."
     },
     {
       "id": "ui/work/aria-resize-task-board",
@@ -374,18 +403,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
+        "date": "2026-07-18T01:35:00Z"
       },
       "findings": [
-        "5c6adcaa"
+        "7e02c493"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#con-tab-routines-active",
       "state": "work-routines",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID routines-active-list: rowsRendered 1, runNowBtn true (the created routine renders with its RUN NOW action). AUDITED: tab switch not machine-asserted; cron.api/run-now guard the routes behind the row actions. KNOWN gap per EL-3. [RE-PROVED @393e8cdb after sidecar/index.js moved (night-shift/cron NS-* commits): routines-list GET /api/cron rendered the created job (Probe Routine, every 30m, enabled) with the authoritative armed:false read — evidence .uiatlas/work2-evidence/cron-probe-evidence.txt]"
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #con-tab-routines-active shows #rt-list with the created job (name, every 30m, ● scheduled, runs as NOVA, next in 30m, last never run) and ▶ RUN NOW / ⏸ DISABLE / ✕ DELETE row actions from GET /api/cron. AUDITED: route-tested; UI seam not journey-guarded (finding 7e02c493)."
     },
     {
       "id": "ui/work/con-tab-routines-create",
@@ -410,18 +439,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
+        "date": "2026-07-18T01:35:00Z"
       },
       "findings": [
-        "5c6adcaa"
+        "7e02c493"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#con-tab-routines-create",
       "state": "work-routines",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID routines-preview: server-computed next-fire times shown for \"every 30m\". AUDITED: the tab switch itself is not machine-asserted (cron tests drive the routes, not the console tab). KNOWN gap per EL-3. [RE-PROVED @393e8cdb after sidecar/index.js moved (night-shift/cron NS-* commits): routines-preview server schedule math ok:true display \"every 30m\" — evidence .uiatlas/work2-evidence/cron-probe-evidence.txt]"
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #con-tab-routines-create reveals the create pane (name/prompt/sched/agent + live server-math preview + ADD). AUDITED: route-tested; tab switch not journey-guarded (finding 7e02c493)."
     },
     {
       "id": "ui/work/kb-add",
@@ -586,18 +615,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
+        "date": "2026-07-18T01:35:00Z"
       },
       "findings": [
-        "5c6adcaa"
+        "7e02c493"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-add",
       "state": "work-routines",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID routines-add-dispatch: created true, schedule \"every 30m\", enabled true, then active-list rows 1. cron.api.test.js guards POST /api/cron create (valid→200 with job id, unparseable→400). [downgraded to AUDITED: a routed UI-seam coverage finding is attached — the store/route is guarded but the button→dispatch seam is not.] [RE-PROVED @393e8cdb after sidecar/index.js moved (night-shift/cron NS-* commits): routines-add POST /api/cron created a job (200, id, enabled:true); routines-list then shows count 1 — evidence .uiatlas/work2-evidence/cron-probe-evidence.txt]"
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): filled sched/name/prompt -> #rt-add -> GET /api/cron count 0->1 with the new job (schedule {interval,30m}); renders in ACTIVE ROUTINES. cron.api.test.js guards POST /api/cron. AUDITED: button->route seam not journey-guarded (finding 7e02c493)."
     },
     {
       "id": "ui/work/rt-agent",
@@ -620,17 +649,20 @@
           "ref": "test/cron.api.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
+        "date": "2026-07-18T01:35:00Z"
+      },
       "findings": [
-        "5c6adcaa"
+        "7e02c493"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-agent",
       "state": "work-routines",
-      "notes": "Traced seam (stationui.js #rt-agent hidden field ← rt-agent-btn picks → handleCronCreate body.agentId). Create route re-proven live with agentId \"agent\" (.uiatlas/work2-evidence/cron-probe-evidence.txt routines-add). Left MAPPED — hidden field."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): hidden #rt-agent carries the target agent id into body.agentId; created job \"runs as NOVA\" in the active list. AUDITED: hidden field, route-tested (finding 7e02c493)."
     },
     {
       "id": "ui/work/rt-arm",
@@ -655,18 +687,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
+        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
+        "date": "2026-07-18T01:35:00Z"
       },
       "findings": [
-        "5c6adcaa"
+        "7e02c493"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-arm",
       "state": "work-routines",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID routines-arm: armBtnPresent true, dataArm \"1\", armedBefore false (badge honestly reflects OFF scheduler). cron.arm.test.js guards /api/cron/arm arming a due job within one tick. [downgraded to AUDITED: a routed UI-seam coverage finding is attached — the store/route is guarded but the button→dispatch seam is not.] [RE-PROVED @393e8cdb after sidecar/index.js moved (night-shift/cron NS-* commits): routines-arm POST /api/cron/arm flipped armedBefore:false→armedAfter:true; GET /api/cron reflects it immediately — evidence .uiatlas/work2-evidence/cron-probe-evidence.txt]"
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #rt-arm \"▶ ENABLE SCHEDULING\" -> click -> POST /api/cron/arm -> GET /api/cron enabled false->true, label -> \"⏸ DISABLE SCHEDULING\" (authoritative). cron.arm.test.js guards the route. AUDITED: button->route seam not journey-guarded (finding 7e02c493)."
     },
     {
       "id": "ui/work/rt-empty-cta",
@@ -689,18 +721,18 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
+        "date": "2026-07-18T01:35:00Z"
       },
       "findings": [
-        "5c6adcaa"
+        "7e02c493"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-empty-cta",
       "state": "work-routines",
-      "notes": "Verified live the CREATE form + tabs are reachable (EVID routines-view: tabCreate/tabActive present). The empty-state CTA only shows with zero jobs; not exercised after a job existed in the probe. AUDITED: navigation-only affordance, no dedicated assertion — KNOWN gap per EL-3."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): with 0 jobs the empty-state #rt-empty-cta \"+ ADD A ROUTINE\" shows; click -> CREATE tab shown + #rt-name focused. AUDITED: navigation affordance, no dedicated assertion (EL-3, finding 7e02c493)."
     },
     {
       "id": "ui/work/rt-name",
@@ -723,17 +755,20 @@
           "ref": "test/cron.api.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
+        "date": "2026-07-18T01:35:00Z"
+      },
       "findings": [
-        "5c6adcaa"
+        "7e02c493"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-name",
       "state": "work-routines",
-      "notes": "Traced seam (stationui.js #rt-name → handleCronCreate body.name). Field feeds the create route re-proven live this batch (.uiatlas/work2-evidence/cron-probe-evidence.txt routines-add). Left MAPPED — form input, no dedicated field-level assertion."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #rt-name feeds body.name; the created job showed name \"Probe Routine A\" in GET /api/cron + the active list. AUDITED: form field, route-tested, no field-level journey (finding 7e02c493)."
     },
     {
       "id": "ui/work/rt-prompt",
@@ -756,17 +791,20 @@
           "ref": "test/cron.api.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
+        "date": "2026-07-18T01:35:00Z"
+      },
       "findings": [
-        "5c6adcaa"
+        "7e02c493"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-prompt",
       "state": "work-routines",
-      "notes": "Traced seam (stationui.js #rt-prompt → handleCronCreate body.prompt). Create route re-proven live (.uiatlas/work2-evidence/cron-probe-evidence.txt routines-add prompt \"summarize the day\"). Left MAPPED — form input."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #rt-prompt feeds body.prompt; create with prompt \"summarize the day\" produced a job. AUDITED: form field, route-tested (finding 7e02c493)."
     },
     {
       "id": "ui/work/rt-propose",
@@ -791,14 +829,14 @@
       "status": "mapped",
       "auditedAt": null,
       "findings": [
-        "5c6adcaa"
+        "7e02c493"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-propose",
       "state": "work-routines",
-      "notes": "Traced seam (stationui.js #rt-propose handler → routine suggestions). Not driven live this batch (suggestion generation needs work-signal history). Left MAPPED — proposal affordance, routed with the routines cluster."
+      "notes": "#rt-propose \"✦ SUGGEST ROUTINES\" present live (AutoJobStore.propose -> notify + refresh). Not driven to a suggestion this batch (needs work-signal history). Left MAPPED — proposal affordance (finding 7e02c493)."
     },
     {
       "id": "ui/work/rt-sched",
@@ -821,17 +859,20 @@
           "ref": "test/cron.api.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
+        "date": "2026-07-18T01:35:00Z"
+      },
       "findings": [
-        "5c6adcaa"
+        "7e02c493"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-sched",
       "state": "work-routines",
-      "notes": "Traced seam (stationui.js #rt-sched → parseCronScheduleOr400). Server schedule math re-proven live (.uiatlas/work2-evidence/cron-probe-evidence.txt routines-preview ok:true \"every 30m\"). Left MAPPED — form input."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #rt-sched \"every 30m\" -> debounced POST /api/cron/preview -> #rt-preview shows honest next-fire times; feeds body.schedule (server parsed {interval,30m}). AUDITED: form field, route-tested (finding 7e02c493)."
     },
     {
       "id": "ui/work/txt-button-bacbackground-briefwhat-is-on-the-publi-452",
