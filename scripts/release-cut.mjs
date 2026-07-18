@@ -121,9 +121,13 @@ async function preflight() {
 async function runStep(label, cmd, extraArgs, env) {
   log('\n== ' + label + ' ==');
   if (DRY_RUN) { log('  [dry-run] would run: ' + cmd + ' ' + (extraArgs || []).join(' ')); return { exitCode: 0, output: '' }; }
+  const commandEnv = Object.assign({}, process.env, env || {});
+  for (const [key, value] of Object.entries(commandEnv)) {
+    if (value == null) delete commandEnv[key];
+  }
   const res = await runBoundedCommand({
     cmd, args: extraArgs || [], cwd: ROOT, inherit: true,
-    env: Object.assign({}, process.env, env || {}),
+    env: commandEnv,
     timeoutMs: 1800000, label
   });
   if (res.exitCode !== 0) fail(label + ' failed (exit ' + res.exitCode + ')');
@@ -161,13 +165,18 @@ async function main() {
     const tauriCli = join(ROOT, 'node_modules', '@tauri-apps', 'cli', 'tauri.js');
     await runStep('Sign updater installer (explicit empty password)', 'node', [
       tauriCli, 'signer', 'sign', '--private-key-path', KEY_FILE, '--password=', installer
-    ], {});
+    ], {
+      // Explicit arguments are authoritative. Legacy shells may still carry these vars;
+      // inheriting them makes the CLI reject the duplicate private-key source.
+      TAURI_SIGNING_PRIVATE_KEY: null,
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: null
+    });
   }
 
   const sig = installer + '.sig';
   if (!DRY_RUN && !existsSync(sig)) {
     fail('updater signature missing: ' + sig + '\n  This is the createUpdaterArtifacts / signing-stall failure. ' +
-      'Confirm TAURI_SIGNING_PRIVATE_KEY + TAURI_SIGNING_PRIVATE_KEY_PASSWORD were set and createUpdaterArtifacts:true.');
+      'Confirm the updater key file is readable and createUpdaterArtifacts:true.');
   }
   if (!DRY_RUN) {
     const sigAge = statSync(sig).mtimeMs;
@@ -214,7 +223,7 @@ async function main() {
     log(' [dry-run] no artifacts staged.');
   }
   log('');
-  log(' UPLOAD CHECKLIST (do this on the PUBLIC repo — source repo stays private):');
+  log(' UPLOAD CHECKLIST (publish binaries to the dedicated public releases repo):');
   log('   Repo   : https://github.com/' + RELEASES_REPO);
   log('   1. Create a GitHub Release, tag it EXACTLY:  v' + version);
   log('   2. Attach these THREE assets to that release:');

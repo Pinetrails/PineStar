@@ -1,83 +1,65 @@
 # Contributing to StarNet
 
-StarNet is a real, downloadable AI-agent harness: a Node sidecar (the agent runtime) that
-also serves a vanilla-JS pixel-art station world, wrapped in a Tauri desktop shell. This is
-the practical guide to running it, testing it, and working in the repo alongside other agents.
+Thanks for helping improve StarNet. Bug fixes, tests, documentation, accessibility work, and
+carefully scoped features are welcome.
 
-## Run it
+## Before you start
 
-The sidecar uses only Node core modules, so no install is needed to run the harness itself:
+- Search existing issues and pull requests before opening a duplicate.
+- For a substantial feature or architecture change, open an issue first so the scope and safety
+  model can be agreed before implementation.
+- Report security vulnerabilities privately using [SECURITY.md](SECURITY.md), never in a public
+  issue.
+- Follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-```bash
-node sidecar/index.js          # or: npm start
-```
+## Development setup
 
-This boots the agent runtime **and** serves the frontend on `http://localhost:8787`. Open that
-URL, then connect a model provider — bring your own OpenRouter key (BYOK) or sign in with a
-ChatGPT subscription (Codex OAuth). Data (memory, ledger, saves, secrets) is written under your
-OS app-data dir; secrets are held by the sidecar / OS keychain, never the frontend.
-
-`npm install` is only needed for the desktop build/dev tooling (the `@tauri-apps/cli`
-devDependency); building the installer also needs Rust + the Tauri CLI. See `INSTALL.md` for the
-end-user desktop install path.
-
-## Test it
+Node.js 22 is recommended because it matches CI and the release train.
 
 ```bash
-npm run test:fast     # THE MERGE GATE — must be fully green before any branch merges to trunk
-npm run test:http     # the longer HTTP/e2e suite (sidecar boot, runs, cron, channels, workshop)
-npm test              # everything: validate + world + fast + http
+git clone https://github.com/nonfungiblefunyuns-ship-it/skynet-harness.git
+cd skynet-harness
+npm ci
+npm run test:fast
 ```
 
-`test:fast` is the gate you must run and pass before merging. `test:http` is the slower
-end-to-end suite worth running when you touch sidecar routes or the run stream.
+The Node sidecar itself has no runtime npm dependencies and can be started with
+`node sidecar/index.js`. Desktop development additionally requires Rust and the
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/).
 
-## Repo layout
+## Pull-request workflow
 
-| Dir          | What it is |
-| ------------ | ---------- |
-| `frontend/`  | Vanilla-JS canvas + DOM app (the pixel-art station world), served by the sidecar. |
-| `sidecar/`   | Node-core-only agent runtime: the run loop, tools, providers, memory, capability projection. |
-| `shared/`    | The **FROZEN** cross-boundary event contract (`events.js` + `schema.js`). Additive changes only, and owned — see below. |
-| `src-tauri/` | The Tauri desktop shell (Rust) that bundles the sidecar + frontend into an installer. |
-| `test/`      | Headless test suites (the gate lives here). |
-| `qa/`        | QA harness, ledgers, and capture/audit substrate. |
-| `scripts/`   | Build, release, phase-proof, and QA driver scripts. |
+1. Fork the repository and create a focused branch from the current default branch.
+2. Keep the change narrow; do not mix unrelated formatting or generated artifacts into it.
+3. Add or update tests for behavior changes.
+4. Run `npm run test:fast`. Run `npm run test:http` when changing routes, streaming, persistence,
+   providers, tools, schedules, channels, or other sidecar integration paths.
+5. Use a clear Conventional Commit-style title such as `fix(sidecar): reject stale consent`.
+6. Explain what changed, why it is safe, and how you verified it in the pull request.
 
-## The multi-agent worktree protocol
+Do not commit credentials, local workspaces, QA captures, installers, or generated release
+artifacts. Run `npm run security:secrets` before submitting if you have Gitleaks installed.
 
-This repo is built by **many agents at once**. The rule that prevents silent overwrites: one
-agent per git worktree, never edit the trunk directly.
+## Project laws
 
-- **Trunk** is `feat/harness-backend` — the branch everything merges *into*. Do not feature-edit
-  it directly.
-- **Your workspace** is a git *worktree* under `gen-trees/`, on branch `agent/<name>`. All your
-  editing and committing happens there, in isolation. Run `git worktree list` to see who is
-  working where.
-- **Commit only your own files, with pathspecs** (`git add path/to/file`). Never `git add -A` or
-  `git add .` — that sweeps up other agents' in-flight work.
-- **`shared/events.js` and `shared/schema.js` are owned** by one workstream. Never edit them
-  yourself; request additive changes (new events/fields — never rename or remove) from the owner.
-- **Green before merge:** `npm run test:fast` must pass fully.
-- **Sync before merge:** rebase your branch onto trunk first so conflicts surface in *your*
-  worktree, not on the shared trunk.
+- Only claim behavior that was verified in the live app.
+- The interface must never assert state the harness cannot prove.
+- Permission escalation defaults to deny and destructive actions require explicit consent.
+- `shared/events.js` and `shared/schema.js` are additive contracts: do not rename or remove existing
+  events or fields without an approved migration.
+- Keep secrets in the sidecar or native credential store; never send them to the renderer or logs.
 
-The full control-plane doc (worktree create/sync/remove scripts and gotchas) lives in
-`CLAUDE.md` at the repo root.
+## Repository layout
 
-## Commit style
+| Path | Responsibility |
+| --- | --- |
+| `frontend/` | Station UI and renderer. |
+| `sidecar/` | Agent runtime and local authority. |
+| `shared/` | Cross-boundary schemas and events. |
+| `src-tauri/` | Desktop shell. |
+| `test/` | Test gates. |
+| `qa/` | Live verification and release receipts. |
 
-Use [Conventional Commits](https://www.conventionalcommits.org/): `feat:`, `fix:`, `docs:`,
-`refactor:`, `test:`, `chore:`, with an optional scope, e.g.
-`fix(sidecar): guard empty finishReason` or `docs(qa): record merge digest`.
-
-## Engineering doctrine
-
-The senior engineer's judgment for this project ships as skills in `.claude/skills/` — they are
-not optional reading; they encode the project's locked decisions and recurring failure modes.
-Start with `starnet-task-doctrine` before your first edit on any task; it routes you to the
-others (`starnet-verify`, `starnet-frontend-law`, `starnet-backend-law`, `starnet-debugging`,
-`starnet-merge-ritual`).
-
-The two laws that override everything else: **only claim what you verified in the live app**,
-and **the app must never assert state the harness can't prove** (truthful telemetry).
+Maintainers and automated coding agents working in the shared local integration environment must
+also follow [AGENTS.md](AGENTS.md). Its worktree protocol is an internal collision-safety rule;
+external contributors can use a normal fork-and-pull-request workflow.

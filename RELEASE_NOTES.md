@@ -17,10 +17,9 @@ Your agents now ask before they guess — and finished work finally has a front 
   longer a crate you can't see into.
 - **Deliveries land in their own session.** Workshop builds arrive as their own unread
   session with the full return card, so nothing lands silently.
-- **SESSION TOOLS window.** Search across sessions and transcripts, export the active
-  conversation (.md/.json), clear with undo, and bulk-archive with a preview — and the
-  window tells you exactly what it acts on and what's reversible. Archived sessions show
-  where they live.
+- **Session search on the rail.** Search across every session title and transcript right
+  under the SESSIONS list — a hit opens its session. Export any conversation (.md/.json)
+  from its row menu; secrets and hidden data are always excluded.
 - **Session starters.** Empty sessions offer context-aware opening chips — your usual
   recipe, something new to try, and your agent's pitch.
 - **6 new skins.** Beach Babe, Secret Agent, Grim Reaper, Plague Doctor, and two founder

@@ -3242,6 +3242,16 @@ function scoutTakenNames() {
 // the grounding corpus, so a WHY that cites a quest/star is genuinely grounded, never an invented pitch.
 function scoutDirectionBlock() {
   const lines = [];
+  // the live STEER leads the block (autonomy-tuning): an explicit "focus on Y" is the strongest direction signal the
+  // Commander can give, so a scout draft should serve it before the derived quests/star. Cited as the user's own
+  // directive; a stale/absent steer contributes nothing (steerActive is the same gate the night resolver uses).
+  try {
+    const st = nightFocusState && nightFocusState.steer;
+    if (st && nightfocus.steerActive(st, Date.now())) {
+      const label = st.kind === 'project' ? nightfocus.baseName(st.ref) : String(st.ref);
+      lines.push('STEER (the Commander explicitly asked the station to focus here — serve this first): ' + label);
+    }
+  } catch (_) {}
   try {
     const eff = QuestRefresh.effectiveNorthStar(QuestRefresh.normalize(questRefreshState));
     if (eff && eff.text) lines.push('NORTH STAR' + (eff.status === 'proposed' ? ' (proposed — unconfirmed)' : '') + ': ' + String(eff.text).slice(0, 200));
@@ -4563,6 +4573,7 @@ function dispatchRoute(req, res) {
   if (req.method === 'GET' && req.url === '/api/nightshift/status') return handleNightshiftStatus(req, res);
   if (req.method === 'POST' && req.url === '/api/nightshift/beat') return handleNightshiftBeatNow(req, res);
   if ((req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE') && req.url.split('?')[0] === '/api/nightshift/focus') return handleNightshiftFocus(req, res);   // NS-5b: the durable focus steer
+  if ((req.method === 'POST' || req.method === 'DELETE') && req.url.split('?')[0] === '/api/nightshift/avoid') return handleNightshiftAvoid(req, res);   // autonomy-tuning: the off-limits directive
   if (req.method === 'GET' && req.url.indexOf('/api/nightshift/drafts') === 0) return handleNightshiftDrafts(req, res);   // NS-4: night-shift drafts for the morning report
   // SCOUT: learned interests + server-drafted bay options (prospects/recipes) + the honest attempt ledger
   if (req.method === 'GET' && req.url === '/api/scout') return handleScoutGet(req, res);
@@ -8832,7 +8843,44 @@ async function handleNightshiftFocus(req, res) {
   }
   // GET — a read-only preview: resolve (persist iff changed) so a first-ever read still shows what the night WOULD chase.
   const foc = resolveNightFocus();
-  return json(200, { ok: true, focus: nightFocusView() || (foc && foc.focus) || null, steer: (nightFocusState.steer || null) });
+  return json(200, { ok: true, focus: nightFocusView() || (foc && foc.focus) || null, steer: (nightFocusState.steer || null), avoid: nightFocusAvoidView() });
+}
+
+// the avoid list as the UI renders it (label always present; project labels fall back to the folder name).
+function nightFocusAvoidView() {
+  const list = (nightFocusState && Array.isArray(nightFocusState.avoid)) ? nightFocusState.avoid : [];
+  return list.map(e => ({ ref: e.ref, kind: e.kind, label: e.label || (e.kind === 'project' ? nightfocus.baseName(e.ref) : e.ref), setAt: e.setAt || 0 }));
+}
+
+/* POST/DELETE /api/nightshift/avoid — the OFF-LIMITS directive (autonomy-tuning). "Never pick X as the night's focus
+   on your own" — the exclusion mirror of the steer. Durable until removed (a boundary, not a nudge); the user's
+   latest word wins on conflicts (see nightfocus.js). Same validation seam as the steer: a target must be a real,
+   currently-authorized thing (blessed project / live thread / the current goal) — an avoid for a target the night
+   couldn't reach anyway would be a fake reassurance (truthful telemetry).
+     POST   { ref, kind? } → add to the off-limits list (re-resolves the focus immediately if it was dethroned).
+     DELETE ?ref=<ref>     → remove that entry (derived evidence may pick it again). */
+async function handleNightshiftAvoid(req, res) {
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (req.method === 'POST') {
+    let body; try { body = JSON.parse(await readBody(req, 1 << 14, res)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad json' }); }
+    const ref = String(body.ref || '').trim();
+    if (!ref) return json(400, { ok: false, error: 'an off-limits ref is required (a project path, a thread id, or "goal")' });
+    const requestedKind = (body.kind == null || body.kind === '') ? 'project' : body.kind;
+    const checked = await validateNightFocusSteer(requestedKind, ref);
+    if (!checked.ok) return json(checked.status, { ok: false, error: checked.error });
+    const label = checked.kind === 'thread' ? String((liveNightThread(checked.ref) || {}).title || '') : '';
+    nightFocusState = nightfocus.applyAvoid(nightFocusState, { ref: checked.ref, kind: checked.kind, label }, Date.now());
+    saveNightFocusState();
+    const foc = resolveNightFocus();   // if the avoid dethroned tonight's focus, re-declare from what remains NOW
+    return json(200, { ok: true, avoid: nightFocusAvoidView(), focus: nightFocusView() || (foc && foc.focus) || null });
+  }
+  // DELETE — remove one entry by ref.
+  const u = new URL(req.url, 'http://127.0.0.1');
+  const ref = String(u.searchParams.get('ref') || '').trim();
+  if (!ref) return json(400, { ok: false, error: 'which entry? DELETE /api/nightshift/avoid?ref=<ref>' });
+  nightFocusState = nightfocus.removeAvoid(nightFocusState, ref);
+  saveNightFocusState();
+  return json(200, { ok: true, avoid: nightFocusAvoidView() });
 }
 
 // GET /api/nightshift/drafts?since=<ms>&limit=<n> — NS-4: the night-shift DRAFTS the beats left on the desk, so the

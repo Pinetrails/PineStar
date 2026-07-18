@@ -160,6 +160,66 @@ const goal = { text: 'launch the beta', done: 1, total: 4, next: 'wire the signu
   A.eq(f.kind, 'goal', 'the goal wins its own direction; the star did not add a second candidate');
 })();
 
+// ---- AVOID (autonomy-tuning): an off-limits target can never be declared as the autonomous focus ----
+(function avoidExcludesCandidate() {
+  const avoid = [{ ref: 'C:/repo/alpha', kind: 'project', setAt: T0 }];
+  const f = F.resolveFocus({ projects: projects(), threads, goal, avoid }, { now: T0 });
+  A.ok(f && f.ref !== 'C:/repo/alpha', 'the avoided project cannot win, even as the freshest evidence');
+  // case + slash direction fold on project refs (a win32 round-trip must not split one root into two identities)
+  const f2 = F.resolveFocus({ projects: projects(), threads, goal, avoid: [{ ref: 'c:\\repo\\ALPHA', kind: 'project' }] }, { now: T0 });
+  A.ok(f2 && f2.ref !== 'C:/repo/alpha', 'avoid matches project refs case/slash-insensitively');
+  // avoiding the goal blocks the goal candidate too
+  const f3 = F.resolveFocus({ projects: [], threads: [], goal, avoid: [{ ref: 'goal', kind: 'goal' }] }, { now: T0 });
+  A.eq(f3, null, 'an avoided goal yields no focus when nothing else is on the board (honest null, never a workaround pick)');
+})();
+
+// ---- AVOID beats a conflicting steer inside the resolver (defense in depth: fail toward NOT acting) ----
+(function avoidBeatsSteerDefenseInDepth() {
+  const steer = { ref: 'C:/repo/beta', kind: 'project', setAt: T0 - 3600000 };
+  const avoid = [{ ref: 'C:/repo/beta', kind: 'project', setAt: T0 }];
+  const f = F.resolveFocus({ projects: projects(), threads, goal, steer, avoid }, { now: T0 });
+  A.ok(f && f.ref !== 'C:/repo/beta', 'a persisted steer+avoid conflict resolves away from the avoided target');
+})();
+
+// ---- latest-word-wins: applyAvoid clears a matching steer + dethrones a matching focus; applySteer lifts a matching avoid ----
+(function avoidSteerLatestWordWins() {
+  let st = F.applySteer(F.fresh(T0), { ref: 'C:/repo/beta', kind: 'project' }, T0);
+  st = F.ensureFocus(st, { projects: projects(), threads, goal }, { now: T0 + 1 }).state;
+  A.eq(st.focus.ref, 'C:/repo/beta', 'precondition: the steer drives the focus');
+  st = F.applyAvoid(st, { ref: 'C:/repo/beta', kind: 'project' }, T0 + 3600000);
+  A.eq(st.steer, null, 'avoiding the steered target clears the steer (latest directive wins)');
+  A.eq(st.focus, null, 'and dethrones the matching cached focus');
+  const r = F.ensureFocus(st, { projects: projects(), threads, goal }, { now: T0 + 3600001 });
+  A.ok(r.resolved && r.focus && r.focus.ref !== 'C:/repo/beta', 'the next resolution avoids the off-limits target');
+  // and the reverse: steering to an avoided target lifts the avoid
+  let st2 = F.applyAvoid(F.fresh(T0), { ref: 'C:/repo/alpha', kind: 'project' }, T0);
+  st2 = F.applySteer(st2, { ref: 'C:/repo/alpha', kind: 'project' }, T0 + 1000);
+  A.eq(st2.avoid.length, 0, 'steering to an off-limits target lifts that avoid entry');
+  const f2 = F.ensureFocus(st2, { projects: projects(), threads, goal }, { now: T0 + 2000 });
+  A.eq(f2.focus.ref, 'C:/repo/alpha', 'and the steer then drives the focus normally');
+})();
+
+// ---- an avoid added mid-night dethrones the standing focus via ensureFocus too (stale persisted pair) ----
+(function avoidedFocusReResolves() {
+  let st = F.ensureFocus(F.fresh(T0), { projects: projects(), threads, goal }, { now: T0 }).state;
+  A.eq(st.focus.ref, 'C:/repo/alpha', 'precondition: evidence picked alpha');
+  // simulate a persisted state where the avoid landed without applyAvoid's focus drop (tolerant hydrate path)
+  st = F.normalize(Object.assign({}, st, { avoid: [{ ref: 'C:/repo/alpha', kind: 'project', setAt: T0 + 1 }] }), T0);
+  const r = F.ensureFocus(st, { projects: projects(), threads, goal }, { now: T0 + 2 });
+  A.eq(r.resolved, true, 'an avoided standing focus forces a re-resolve');
+  A.ok(r.focus && r.focus.ref !== 'C:/repo/alpha', 'and the new focus honors the boundary');
+})();
+
+// ---- avoid survives the envelope round-trip (a boundary must outlive a restart) ----
+(function avoidPersists() {
+  let st = F.applyAvoid(F.fresh(T0), { ref: 'C:/repo/alpha', kind: 'project' }, T0);
+  const back = F.loadEnvelope(JSON.stringify(F.toEnvelope(st, T0)), T0);
+  A.eq(back.avoid.length, 1, 'the avoid list survives a serialize round-trip (restart-safe)');
+  A.ok(F.isAvoided(back.avoid, 'project', 'C:/repo/alpha'), 'and still matches its target');
+  const cleared = F.removeAvoid(back, 'C:/repo/alpha');
+  A.eq(cleared.avoid.length, 0, 'removeAvoid lifts the boundary');
+})();
+
 // ---- focusLine renders a cited, human-legible directive header ----
 (function focusLineCited() {
   const f = F.resolveFocus({ projects: projects(), threads, goal }, { now: T0 });
