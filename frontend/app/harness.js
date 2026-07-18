@@ -676,6 +676,22 @@ const Harness = (() => {
   }
   const memoryRestore = o => memoryMutate('declined/restore', o);   // undo a discard — remove one entry from the reject-list
 
+  /* Minimal JSON client for the sidecar's /api surface (the launch-token rides via the hardened
+     window.fetch above). Two shapes, matching the two call-site idioms this codebase already uses:
+       get(path)        -> resolves the parsed JSON; THROWS Error('http <status>') on a non-2xx.
+                           Callers keep their own .catch — silence stays an explicit .catch(() => …).
+       post(path, body) -> resolves { ok, status, j } where j is the parsed body EVEN on a non-2xx
+       del(path)           (the sidecar's {error} envelope), so callers can surface j.error; rejects
+                           only on network failure or a non-JSON body. body defaults to {}.
+     Streaming responses (/api/run, /api/cron/run) and Response-shape consumers must NOT use this. */
+  const api = {
+    get: path => fetch(path, { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }),
+    post: (path, body) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body == null ? {} : body) })
+      .then(r => r.json().then(j => ({ ok: r.ok, status: r.status, j }))),
+    del: path => fetch(path, { method: 'DELETE' })
+      .then(r => r.json().then(j => ({ ok: r.ok, status: r.status, j })))
+  };
+
   // ONE fold point for context occupancy: every agent.cost on the bus — chat-stream re-emits AND
   // routed/scheduled/channel runs arriving over the world SSE bridge — updates the gauge. util.js
   // (U.bus) loads before this file; the chat reader keeps a direct-fold fallback for busless embeds.
@@ -689,6 +705,7 @@ const Harness = (() => {
     studyProposals,
     threadProposals, threadTurnin,
     agentSkills, agentSkillManage,
+    api,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),
     totals: () => totals,

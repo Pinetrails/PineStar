@@ -110,7 +110,7 @@ const Marketplace = (() => {
   function summonNameConflict() {
     return !!(String(pickedSummonName || '').trim() && ctx && typeof ctx.nameConflict === 'function' && ctx.nameConflict(pickedSummonName));
   }
-  function el(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
+  function mkEl(tag, cls, html) { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; }
   function voiceName(personaId) { return (typeof Personas !== 'undefined' && Personas.get(personaId) && Personas.get(personaId).name) || personaId; }
 
   /* ---------- the class seal — the engraved SVG coin (the typed-ASCII layer was removed 2026-07-16;
@@ -207,7 +207,7 @@ const Marketplace = (() => {
     focusAgent = (ctx.currentSpecialtyId && Specialties.get(ctx.currentSpecialtyId)) ? ctx.currentSpecialtyId : (builtins[0] && builtins[0].id) || null;
     focusRecipe = hasRecipes() ? ((Recipes.builtins()[0] && Recipes.builtins()[0].id) || null) : null;
 
-    root = el('div', 'mkt-scrim');
+    root = mkEl('div', 'mkt-scrim');
     root.innerHTML =
       '<div class="mkt" role="dialog" aria-modal="true" aria-labelledby="mkt-title" aria-describedby="mkt-sub" tabindex="-1">' +
         '<span class="mkt-screw tl"></span><span class="mkt-screw tr"></span><span class="mkt-screw bl"></span><span class="mkt-screw br"></span>' +

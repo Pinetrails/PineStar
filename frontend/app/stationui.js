@@ -55,7 +55,7 @@ function clampTerminalSize(size, limits, viewport) {
 const StationUI = typeof document === 'undefined' ? {} : (() => {
   const $ = s => document.querySelector(s);
   const esc = s => U.esc(String(s == null ? '' : s));
-  const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
+  const mkEl = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html !== undefined) e.innerHTML = html; return e; };
   const sfx = n => { try { if (typeof SFX === 'object' && SFX[n]) SFX[n](); } catch (_) {} };
 
   const KEY = 'starnet.station.v1';
@@ -303,7 +303,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return next;
   }
   function addTermResizeHandle(w, key, title) {
-    const grip = el('button', 'term-resize', '◢');
+    const grip = mkEl('button', 'term-resize', '◢');
     grip.type = 'button';
     grip.setAttribute('aria-label', 'Resize ' + title);
     grip.title = 'Drag to resize · arrow keys resize';
@@ -453,7 +453,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const host = $('#terms'); if (!host) return;
     let s = document.getElementById('term-scrim');
     const any = visibleCount() > 0;
-    if (any && !s) { s = el('div', 'term-scrim'); s.id = 'term-scrim'; host.insertBefore(s, host.firstChild); }
+    if (any && !s) { s = mkEl('div', 'term-scrim'); s.id = 'term-scrim'; host.insertBefore(s, host.firstChild); }
     else if (!any && s) { s.remove(); }
   }
 
@@ -467,7 +467,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     let strip = termStrip();
     if (strip) return strip;
     const bar = document.getElementById('bottombar'); if (!bar) return null;
-    strip = el('div', 'term-strip'); strip.id = 'term-strip';
+    strip = mkEl('div', 'term-strip'); strip.id = 'term-strip';
     strip.setAttribute('role', 'group');
     strip.setAttribute('aria-label', 'Minimized windows');
     const right = bar.querySelector('.bb-right');
@@ -488,7 +488,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const strip = ensureStrip(); if (!strip) return;
     if (strip.querySelector('.term-chip[data-key="' + CSS.escape(key) + '"]')) return;   // no dup
     const title = chipTitle(key);
-    const chip = el('button', 'term-chip');
+    const chip = mkEl('button', 'term-chip');
     chip.dataset.key = key;
     chip.type = 'button';
     chip.setAttribute('aria-label', 'Restore ' + title);
@@ -631,7 +631,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // ARM: keep the window, warn, and require a second close within 3s.
     w._closeArmed = true; sfx('bad');
     let bar = w.querySelector('.term-unsaved-bar');
-    if (!bar) { bar = el('div', 'term-unsaved-bar', '⚠ UNSAVED — close again to discard, or SAVE first'); bar.setAttribute('role', 'alert'); w.appendChild(bar); }
+    if (!bar) { bar = mkEl('div', 'term-unsaved-bar', '⚠ UNSAVED — close again to discard, or SAVE first'); bar.setAttribute('role', 'alert'); w.appendChild(bar); }
     bar.hidden = false;
     clearTimeout(w._closeArmTimer);
     w._closeArmTimer = setTimeout(() => { if (!w) return; w._closeArmed = false; w._closeArmTimer = 0; const b = w.querySelector('.term-unsaved-bar'); if (b) b.remove(); }, 3000);
@@ -661,7 +661,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     sfx('open');
     // a11y: remember who opened this so focus can return there on close (the dock item / trigger).
     const opener = (typeof document !== 'undefined' && document.activeElement) || null;
-    const w = el('div', 'term');
+    const w = mkEl('div', 'term');
     w.style.zIndex = U.zTop();
     // CONSOLE MODE: a large two-pane window (section rail + content pane). Its size is owned by CSS
     // (.term.console), so a per-panel opts.w must NOT be applied — an inline 500px would starve the rail.
@@ -682,27 +682,27 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     w.tabIndex = -1;
     // Phase-2 chrome: a subtle status LED at the head's left + the inverted title chip. The LED reads as
     // "this window is live" — pure decoration (static ok-green), pointer-events off so it never eats the drag.
-    const head = el('div', 'term-head',
+    const head = mkEl('div', 'term-head',
       '<span class="term-led" aria-hidden="true"></span>' +
       '<span class="term-title" id="' + titleId + '">' + title + '</span>');
     // minimize control — sits left of ✕. Collapses the window to a strip chip (keeps it logically open).
-    const mn = el('button', 'term-min', '–');
+    const mn = mkEl('button', 'term-min', '–');
     mn.setAttribute('aria-label', 'Minimize ' + title);
     mn.setAttribute('type', 'button');
     mn.addEventListener('click', ev => { ev.stopPropagation(); minimizeTerm(key); });
     head.appendChild(mn);
-    const x = el('button', 'term-x', '✕');
+    const x = mkEl('button', 'term-x', '✕');
     x.setAttribute('aria-label', 'Close ' + title);
     x.addEventListener('click', () => requestCloseTerm(key));   // unsaved-draft guard sits on this path
     head.appendChild(x);
-    const body = el('div', 'term-body');
+    const body = mkEl('div', 'term-body');
     if (opts && opts.feature) {
       // hero "feature window": wrap the screen in a molded monitor casing
       w.classList.add('feature');
-      const screen = el('div', 'term-screen');
+      const screen = mkEl('div', 'term-screen');
       screen.appendChild(head); screen.appendChild(body);
       w.appendChild(screen);
-      w.appendChild(el('div', 'term-plate',
+      w.appendChild(mkEl('div', 'term-plate',
         '<span>STARNET DYNAMICS</span><span class="term-knobs"><i class="knob"></i><i class="knob"></i></span>'));
     } else {
       w.appendChild(head); w.appendChild(body);
@@ -710,14 +710,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       //   · four corner L-brackets + a faint top light-grade overlay for glass depth (both pointer-events:none)
       //   · a thin footer plate (status text left, grip dots right). All purely cosmetic — appended AFTER the
       //     body so they never disturb the focus-trap order (term-x remains the last focusable control).
-      const chrome = el('div', 'term-chrome');
+      const chrome = mkEl('div', 'term-chrome');
       chrome.setAttribute('aria-hidden', 'true');
       chrome.innerHTML =
         '<span class="term-brk tl"></span><span class="term-brk tr"></span>' +
         '<span class="term-brk bl"></span><span class="term-brk br"></span>' +
         '<span class="term-grade"></span>';
       w.appendChild(chrome);
-      w.appendChild(el('div', 'term-foot',
+      w.appendChild(mkEl('div', 'term-foot',
         '<span class="term-foot-d" aria-hidden="true"></span>' +
         // the plate names the WINDOW (its title), not the internal registry key — so CHANNELS reads CHANNELS,
         // never the stale internal "MESSAGING". Titles are plain strings; strip any markup + uppercase for the plate.
@@ -832,17 +832,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if (!sections.some(s => s.id === activeId)) activeId = sections[0] && sections[0].id;
 
     // ---- left: optional rail-top slot (e.g. the dossier roster) + optional search + the section rail (role=tablist) ----
-    const left = el('div', 'con-rail');
+    const left = mkEl('div', 'con-rail');
     // railTop: a caller-owned block above the search + section list (the AGENT DOSSIER mounts its roster here).
     // Settings/Skills pass nothing → the slot is never created, so they are entirely unaffected.
     if (typeof opts.railTop === 'function') {
-      const top = el('div', 'con-rail-top');
+      const top = mkEl('div', 'con-rail-top');
       try { opts.railTop(top); } catch (_) {}
       left.appendChild(top);
     }
     let searchInput = null;
     if (opts.search) {
-      const sw = el('div', 'con-search');
+      const sw = mkEl('div', 'con-search');
       sw.innerHTML = '<span class="con-search-i" aria-hidden="true">⌕</span>' +
         '<input type="text" class="con-search-in" placeholder="' + esc(opts.searchPlaceholder || 'search settings…') +
         '" autocomplete="off" spellcheck="false" aria-label="Search ' + esc(key) + '">';
@@ -854,17 +854,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // the identical vertical rail — this whole branch is inert for them. The AGENT DOSSIER opts in so its
     // left rail is purely the agent roster.
     const tabsTop = !!opts.tabsTop;
-    const rail = el('div', 'con-rail-list');
+    const rail = mkEl('div', 'con-rail-list');
     rail.setAttribute('role', 'tablist');
     rail.setAttribute('aria-label', String(key).toUpperCase() + ' sections');
     if (!tabsTop) left.appendChild(rail);
 
     // ---- right: the content host (all panes mounted; one visible) ----
-    const host = el('div', 'con-pane');
+    const host = mkEl('div', 'con-pane');
     // the horizontal tab strip lives at the top of the pane in tabsTop mode; it reuses the tablist role.
     let topTabs = null;
     if (tabsTop) {
-      topTabs = el('div', 'con-toptabs');
+      topTabs = mkEl('div', 'con-toptabs');
       topTabs.setAttribute('role', 'tablist');
       topTabs.setAttribute('aria-label', String(key).toUpperCase() + ' sections');
       host.appendChild(topTabs);
@@ -873,7 +873,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const railItems = {};    // id -> rail/tab button
     const panes = {};        // id -> pane wrapper element
     sections.forEach((sec, i) => {
-      const item = el('button', tabsTop ? 'con-rail-item con-toptab' : 'con-rail-item');
+      const item = mkEl('button', tabsTop ? 'con-rail-item con-toptab' : 'con-rail-item');
       item.type = 'button';
       item.dataset.section = sec.id;
       item.setAttribute('role', 'tab');
@@ -885,7 +885,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       railItems[sec.id] = item;
 
       // build the pane content once, into its own section wrapper (header + description + body slot)
-      const pane = el('section', 'con-sec');
+      const pane = mkEl('section', 'con-sec');
       pane.dataset.section = sec.id;
       pane.setAttribute('role', 'tabpanel');
       pane.setAttribute('aria-labelledby', item.id);
@@ -893,7 +893,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<div class="sec con-sec-head"><span class="sec-l">' + esc(sec.label) + '</span>' +
           '<span class="sec-r"></span><span class="sec-nd"></span></div>' +
         (sec.desc ? '<p class="con-sec-desc">' + esc(sec.desc) + '</p>' : '');
-      const slot = el('div', 'con-sec-body');
+      const slot = mkEl('div', 'con-sec-body');
       pane.appendChild(slot);
       try { sec.build(slot); } catch (e) { slot.innerHTML = '<p class="con-sec-desc">This section failed to render.</p>'; }
       host.appendChild(pane);
@@ -1389,7 +1389,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const onBox = $('#mc-reflect-on'), cd = $('#mc-cooldown'), scope = $('#mc-scope'), msg = $('#mc-reflect-msg'), saveBtn = $('#mc-reflect-save');
     if (!onBox || !cd) return;
     const setMsg = (t, ok) => { if (msg) { msg.textContent = t || ''; msg.className = 'msg' + (ok ? ' ok' : ''); } };
-    fetch('/api/memory/config', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(cfg => {
+    Harness.api.get('/api/memory/config').then(cfg => {
       const o = $('#mc-reflect-on'), c = $('#mc-cooldown'), s = $('#mc-scope');
       if (!o || !c) return;   // retabbed mid-fetch
       o.checked = cfg.reflectEnabled !== false;
@@ -1403,8 +1403,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const mins = Number(String(c.value).trim());
         if (!isFinite(mins) || mins < 0 || mins > 60) { setMsg('cooldown: 0–60 minutes'); sfx('bad'); c.focus(); return; }
         setMsg('saving…');
-        fetch('/api/memory/config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ reflectEnabled: !!o.checked, reflectCooldownMs: Math.floor(mins * 60000) }) })
-          .then(r => r.json().then(j => ({ ok: r.ok, j }))).then(({ ok, j }) => {
+        Harness.api.post('/api/memory/config', { reflectEnabled: !!o.checked, reflectCooldownMs: Math.floor(mins * 60000) })
+          .then(({ ok, j }) => {
             if (!ok) { setMsg((j && j.error) || 'could not save'); sfx('bad'); return; }
             setMsg('✓ saved', true); sfx('click');
           }).catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
@@ -1429,11 +1429,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
 
   function declinedCard(text, a) {
-    const card = el('div', 'mc-rec mc-declined');
-    const bodyEl = el('div', 'mc-body'); bodyEl.textContent = text; card.appendChild(bodyEl);   // textContent — never interpreted
-    const btns = el('div', 'consent-btns mc-acts'); card.appendChild(btns);
+    const card = mkEl('div', 'mc-rec mc-declined');
+    const bodyEl = mkEl('div', 'mc-body'); bodyEl.textContent = text; card.appendChild(bodyEl);   // textContent — never interpreted
+    const btns = mkEl('div', 'consent-btns mc-acts'); card.appendChild(btns);
     let busy = false;
-    const b = el('button', 'consent-btn'); b.textContent = 'Restore'; b.title = 'allow this belief to be proposed again';
+    const b = mkEl('button', 'consent-btn'); b.textContent = 'Restore'; b.title = 'allow this belief to be proposed again';
     b.onclick = async () => {
       if (busy) return; busy = true;
       const r = await Harness.memoryRestore({ agentId: a.id, text });
@@ -1447,7 +1447,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     host.innerHTML = '';
     if (!records.length) {
       // shared .empty-state vocabulary (glyph + title + prose) rather than a bare paragraph
-      const es = el('div', 'empty-state');
+      const es = mkEl('div', 'empty-state');
       es.innerHTML = '<span class="es-glyph">◈</span><b>NO MEMORIES YET</b>' +
         '<span>As ' + esc(a.name) + ' works and you Keep what it learns, durable beliefs collect here — ' +
         'each typed, scored, and traceable to the run that earned it.</span>';
@@ -1460,37 +1460,37 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
 
   function memCard(rec, a) {
-    const card = el('div', 'mc-rec' + (rec.pinned ? ' pinned' : ''));
-    const head = el('div', 'mc-head');
-    const tag = el('span', 'turnin-kind'); tag.textContent = MEM_KIND[rec.kind] || 'NOTE'; head.appendChild(tag);
-    if (rec.kind === 'note' && rec.title) { const t = el('span', 'mc-rectitle'); t.textContent = rec.title; head.appendChild(t); }
+    const card = mkEl('div', 'mc-rec' + (rec.pinned ? ' pinned' : ''));
+    const head = mkEl('div', 'mc-head');
+    const tag = mkEl('span', 'turnin-kind'); tag.textContent = MEM_KIND[rec.kind] || 'NOTE'; head.appendChild(tag);
+    if (rec.kind === 'note' && rec.title) { const t = mkEl('span', 'mc-rectitle'); t.textContent = rec.title; head.appendChild(t); }
     if (rec.scope === 'stream' && rec.streamId) {   // M-mem.2b: working memory scoped to a workstream
       const wsT = (typeof Workstreams !== 'undefined' && Workstreams.get) ? ((Workstreams.get(rec.streamId) || {}).title || null) : null;
-      const sc = el('span', 'mc-scope'); sc.textContent = '⊂ ' + (wsT || 'workstream'); sc.title = 'working memory — scoped to this workstream (still cross-stream searchable)'; head.appendChild(sc);
+      const sc = mkEl('span', 'mc-scope'); sc.textContent = '⊂ ' + (wsT || 'workstream'); sc.title = 'working memory — scoped to this workstream (still cross-stream searchable)'; head.appendChild(sc);
     }
-    if (rec.pinned) { const p = el('span', 'mc-pinflag'); p.textContent = '★ pinned'; head.appendChild(p); }
+    if (rec.pinned) { const p = mkEl('span', 'mc-pinflag'); p.textContent = '★ pinned'; head.appendChild(p); }
     card.appendChild(head);
 
-    const bodyEl = el('div', 'mc-body'); bodyEl.textContent = rec.body || '(empty)'; card.appendChild(bodyEl);
+    const bodyEl = mkEl('div', 'mc-body'); bodyEl.textContent = rec.body || '(empty)'; card.appendChild(bodyEl);
 
-    const meta = el('div', 'mc-meta');
-    const prov = el('span', 'mc-prov');
+    const meta = mkEl('div', 'mc-meta');
+    const prov = mkEl('span', 'mc-prov');
     const when = rec.createdAt ? new Date(rec.createdAt).toLocaleDateString() : '—';
     prov.textContent = '◉ learned ' + when + (rec.sourceRunId ? ' · run ' + String(rec.sourceRunId).slice(0, 8) : '');
     prov.title = rec.sourceRunId ? ('earned in run ' + rec.sourceRunId) : 'origin run unknown';   // drill-to-the-run (identity)
     meta.appendChild(prov);
-    const used = el('span', 'mc-used');
+    const used = mkEl('span', 'mc-used');
     used.textContent = rec.useCount ? ('used ' + rec.useCount + '×') : 'never recalled';
     meta.appendChild(used);
     const pct = Math.max(0, Math.min(100, Math.round((rec.trust || 0) * 100)));
-    const trust = el('span', 'mc-trust', 'trust <span class="mc-trk"><span class="mc-fill" style="width:' + pct + '%;"></span></span>');   // numeric pct only — safe
+    const trust = mkEl('span', 'mc-trust', 'trust <span class="mc-trk"><span class="mc-fill" style="width:' + pct + '%;"></span></span>');   // numeric pct only — safe
     meta.appendChild(trust);
     card.appendChild(meta);
 
-    const btns = el('div', 'consent-btns mc-acts'); card.appendChild(btns);
+    const btns = mkEl('div', 'consent-btns mc-acts'); card.appendChild(btns);
     const reload = () => loadMemoryCore(a);
     let busy = false;   // in-flight guard: a fast double-click must not fire two POSTs (a success reloads the card away)
-    const mk = (label, cls, fn) => { const b = el('button', 'consent-btn' + (cls ? ' ' + cls : '')); b.textContent = label; b.onclick = fn; btns.appendChild(b); return b; };
+    const mk = (label, cls, fn) => { const b = mkEl('button', 'consent-btn' + (cls ? ' ' + cls : '')); b.textContent = label; b.onclick = fn; btns.appendChild(b); return b; };
     mk(rec.pinned ? 'Unpin' : 'Pin', '', async () => {
       if (busy) return; busy = true;
       const r = await Harness.memoryPin({ agentId: a.id, id: rec.id, pinned: !rec.pinned });
@@ -1510,11 +1510,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
   // inline edit (mirrors the CONFIG file editor + the turn-in beat): swap the body for a textarea + Save/Cancel.
   function editMemCard(card, bodyEl, btns, rec, a) {
-    const ta = el('textarea', 'cf-ta mc-edit'); ta.value = rec.body || ''; ta.spellcheck = false;
+    const ta = mkEl('textarea', 'cf-ta mc-edit'); ta.value = rec.body || ''; ta.spellcheck = false;
     card.replaceChild(ta, bodyEl); ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {}
     btns.innerHTML = '';
-    const save = el('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
-    const cancel = el('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
+    const save = mkEl('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
+    const cancel = mkEl('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
     let saving = false;
     save.onclick = async () => { if (saving) return; const v = ta.value.trim(); if (!v) { ta.focus(); return; } saving = true; const r = await Harness.memoryEdit({ agentId: a.id, id: rec.id, content: v }); if (r && r.ok) { sfx('click'); loadMemoryCore(a); } else saving = false; };
     cancel.onclick = () => loadMemoryCore(a);
@@ -1714,8 +1714,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     };
     function loadWsLive() {
       if (!wsLive) return;
-      fetch('/api/workshop/backlog?agent=' + encodeURIComponent(aid), { cache: 'no-store' })
-        .then(r => r.ok ? r.json() : null)
+      Harness.api.get('/api/workshop/backlog?agent=' + encodeURIComponent(aid))
         .then(j => { if (j && j.ok) renderWsLive(j); else if (wsLive) wsLive.innerHTML = '<div class="dim" style="font-size:11px;">couldn’t read the build list — the station may be unreachable</div>'; })
         .catch(() => { if (wsLive) wsLive.innerHTML = '<div class="dim" style="font-size:11px;">couldn’t read the build list — the station may be unreachable</div>'; });
     }
@@ -1750,15 +1749,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       wsLive.querySelectorAll('.ws-bl-remove').forEach(b => b.addEventListener('click', () => {
         const id = b.closest('.ws-bl-row').getAttribute('data-blid');
         b.disabled = true;
-        fetch('/api/workshop/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: aid, backlogId: id }) })
-          .then(r => r.json()).then(res => { if (!(res && res.ok)) notify((res && res.error) || 'could not remove that', 'bad'); loadWsLive(); })
+        Harness.api.post('/api/workshop/remove', { agentId: aid, backlogId: id })
+          .then(({ j: res }) => { if (!(res && res.ok)) notify((res && res.error) || 'could not remove that', 'bad'); loadWsLive(); })
           .catch(() => { notify('could not reach the station', 'bad'); loadWsLive(); });
       }));
       wsLive.querySelectorAll('.ws-bl-retry').forEach(b => b.addEventListener('click', () => {
         const id = b.closest('.ws-bl-row').getAttribute('data-blid');
         b.disabled = true;   // re-queueing the SAME id un-parks it server-side (clears the failed-attempt count)
-        fetch('/api/workshop/queue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: aid, id: id, title: b.getAttribute('data-title') || '' }) })
-          .then(r => r.json()).then(() => loadWsLive())
+        Harness.api.post('/api/workshop/queue', { agentId: aid, id: id, title: b.getAttribute('data-title') || '' })
+          .then(() => loadWsLive())
           .catch(() => { notify('could not reach the station', 'bad'); loadWsLive(); });
       }));
       wsLive.querySelectorAll('.ws-bl-review').forEach(b => b.addEventListener('click', () => {
@@ -1769,8 +1768,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const nowBtn = wsLive.querySelector('#ag-ws-now');
       if (nowBtn) nowBtn.addEventListener('click', () => {
         nowBtn.disabled = true; nowBtn.textContent = 'building…';
-        fetch('/api/workshop/shift', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ agentId: aid }) })
-          .then(r => r.json()).then(res => {
+        Harness.api.post('/api/workshop/shift', { agentId: aid })
+          .then(({ j: res }) => {
             const p = (res && res.payload) || res || {};
             if (p.reason === 'built') notify('⚒ built — it’s waiting as a new session in your rail', 'gold');
             else if (p.reason === 'no-capability') notify('couldn’t build — no model/key available for unattended runs', 'bad');
@@ -2082,7 +2081,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // TOOLSET honesty: a family switched OFF in the TOOLSETS console must read as OFF here too, so the two
     // surfaces can't tell different stories. Cheap best-effort: fetch the toolset state and dim matching perks
     // (mapped by the granting objectType == SKILLS[].cap). Never blocks the panel; a fetch miss leaves perks as-is.
-    fetch('/api/toolsets').then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => {
+    Harness.api.get('/api/toolsets').then(j => {
       const disabledObjs = {};
       (j && j.toolsets || []).forEach(t => { if (!t.enabled && t.object) disabledObjs[t.object] = true; });
       const perks = body.querySelectorAll('.perk-grid .perk');
@@ -2242,9 +2241,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     host.querySelectorAll('[data-toggle]').forEach(btn => btn.addEventListener('click', () => {
       const slug = btn.dataset.toggle, next = btn.dataset.enabled !== 'true';
       btn.classList.add('busy');
-      fetch('/api/skills/toggle', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ slug: slug, enabled: next }) })
-        .then(r => r.ok ? r.json() : null)
-        .then(res => { if (res && res.ok) { sfx('click'); loadSkillLibrary(agentId); } else { btn.classList.remove('busy'); } })
+      Harness.api.post('/api/skills/toggle', { slug: slug, enabled: next })
+        .then(({ ok, j: res }) => { if (ok && res && res.ok) { sfx('click'); loadSkillLibrary(agentId); } else { btn.classList.remove('busy'); } })
         .catch(() => btn.classList.remove('busy'));
     }));
     host.querySelectorAll('[data-place]').forEach(btn => btn.addEventListener('click', () => {
@@ -2325,11 +2323,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const pre = body.querySelector('pre');
     const actions = body.querySelector('.consent-btns');
     if (!actions) return;
-    const ta = el('textarea', 'cf-ta mc-edit'); ta.value = skill.body || ''; ta.spellcheck = false;
+    const ta = mkEl('textarea', 'cf-ta mc-edit'); ta.value = skill.body || ''; ta.spellcheck = false;
     if (pre) body.replaceChild(ta, pre);
     if (actions) actions.innerHTML = '';
-    const save = el('button', 'consent-btn'); save.textContent = 'Save'; actions.appendChild(save);
-    const cancel = el('button', 'consent-btn'); cancel.textContent = 'Cancel'; actions.appendChild(cancel);
+    const save = mkEl('button', 'consent-btn'); save.textContent = 'Save'; actions.appendChild(save);
+    const cancel = mkEl('button', 'consent-btn'); cancel.textContent = 'Cancel'; actions.appendChild(cancel);
     save.onclick = async () => {
       const r = await Harness.agentSkillManage({ agentId, action: 'edit', target: skill.id, summary: skill.summary || '', body: ta.value, category: skill.category || 'General' });
       if (r && r.ok) { sfx('click'); loadAgentSkills(agentId); }
@@ -2951,7 +2949,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
         if (act === 'codex-logout') {
           if (typeof CodexSignIn !== 'undefined') CodexSignIn.cancel();
-          const drop = (typeof CodexSignIn !== 'undefined') ? CodexSignIn.logout() : fetch('/api/auth/codex/logout', { method: 'POST' }).catch(() => {});
+          const drop = (typeof CodexSignIn !== 'undefined') ? CodexSignIn.logout() : Harness.api.post('/api/auth/codex/logout').catch(() => {});
           Promise.resolve(drop).then(() => {
             codexStatusKnown = { connected: false, expired: false, reason: '' };   // the sidecar just confirmed the drop
             notify('disconnected ChatGPT — sign in again anytime from PROVIDERS', 'warn');
@@ -2999,7 +2997,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           }
           // logout
           if (engine) engine.cancel();
-          const drop = engine ? engine.logout() : fetch('/api/auth/' + pid + '/logout', { method: 'POST' }).catch(() => {});
+          const drop = engine ? engine.logout() : Harness.api.post('/api/auth/' + pid + '/logout').catch(() => {});
           Promise.resolve(drop).then(() => {
             oauthStatus[pid] = { connected: false, expired: false, reason: '' };   // the sidecar just confirmed the drop
             notify('disconnected ' + provName(pid) + ' — sign in again anytime from PROVIDERS', 'warn');
@@ -3225,8 +3223,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const host = body.querySelector('#credits-store');
     if (!host) return;
     host.innerHTML = '';   // stay empty until we KNOW credits are configured
-    fetch('/api/credits', { cache: 'no-store' })
-      .then(r => r.ok ? r.json() : { configured: false })
+    Harness.api.get('/api/credits')
       .then(j => {
         if (!j || !j.configured) return;   // unconfigured → no surface at all
         const bal = (j.balanceUsd == null) ? '—' : fmtUsd(j.balanceUsd);
@@ -3334,8 +3331,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         btn.title = 'grant one more base-cap of ' + scope + ' headroom for the rest of this session';
         btn.addEventListener('click', () => {
           btn.disabled = true; setMsg('resuming…');
-          fetch('/api/budget/resume', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ scope }) })
-            .then(r => r.json().then(j => ({ ok: r.ok, j })))
+          Harness.api.post('/api/budget/resume', { scope })
             .then(({ ok, j }) => {
               if (!ok) { setMsg((j && j.error) || 'could not resume'); sfx('bad'); btn.disabled = false; return; }
               setMsg('✓ ' + scope + ' pool resumed — runs may continue this session', true); sfx('click');
@@ -3347,7 +3343,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         poolsEl.appendChild(row);
       }
     };
-    const refresh = () => fetch('/api/budget/status', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(paint)
+    const refresh = () => Harness.api.get('/api/budget/status').then(paint)
       .catch(() => { if (spendEl) spendEl.textContent = 'spend unavailable'; });   // never paint an error body as $0 spend
     refresh();
     if (saveBtn) saveBtn.addEventListener('click', () => {
@@ -3361,8 +3357,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         payload[k] = n;
       }
       setMsg('saving…');
-      fetch('/api/budget/caps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-        .then(r => r.json().then(j => ({ ok: r.ok, j })))
+      Harness.api.post('/api/budget/caps', payload)
         .then(({ ok, j }) => {
           if (!ok) { setMsg((j && j.error) || 'could not save limits'); sfx('bad'); return; }
           paint(j); setMsg('✓ limits saved & applied', true); sfx('click');
@@ -3373,8 +3368,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // clear every saved override -> each cap falls back to its env default, live.
       const payload = {}; BG_KEYS.forEach(k => { payload[k] = null; });
       setMsg('resetting…');
-      fetch('/api/budget/caps', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-        .then(r => r.json().then(j => ({ ok: r.ok, j })))
+      Harness.api.post('/api/budget/caps', payload)
         .then(({ ok, j }) => { if (!ok) { setMsg((j && j.error) || 'reset failed'); sfx('bad'); return; } paint(j); setMsg('✓ reset to environment defaults', true); sfx('click'); })
         .catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
     });
@@ -3429,11 +3423,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       if (st && typeof st.maxEntries === 'number') maxEntries = st.maxEntries;
       paint();
     };
-    fetch('/api/fallback/chain', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(applyStatus)
+    Harness.api.get('/api/fallback/chain').then(applyStatus)
       .catch(() => { if (listEl) listEl.innerHTML = '<div class="fbc-row dim">chain unavailable — sidecar unreachable</div>'; });   // never paint an error body as an empty chain
     // catalog for the ADD picker — the same warmed OpenRouter catalog the model dock uses. Best-effort: an empty
     // catalog just leaves the picker with its placeholder (the chain itself still paints + saves fine).
-    fetch('/api/models/openrouter', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => {
+    Harness.api.get('/api/models/openrouter').then(j => {
       if (!addSel || !j || !Array.isArray(j.models)) return;
       const frag = document.createDocumentFragment();
       j.models.slice().sort((a, b) => String(a.id).localeCompare(String(b.id))).forEach(m => {
@@ -3453,8 +3447,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     });
     const post = (models, okText) => {
       setMsg('saving…');
-      fetch('/api/fallback/chain', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ models: models }) })
-        .then(r => r.json().then(j => ({ ok: r.ok, j })))
+      Harness.api.post('/api/fallback/chain', { models: models })
         .then(({ ok, j }) => {
           if (!ok) { setMsg((j && j.error) || 'could not save the chain'); sfx('bad'); return; }
           applyStatus(j);
@@ -3496,7 +3489,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     });
     paint();
     // fill the model catalog into all three selects (same warmed catalog the fallback picker uses).
-    fetch('/api/models/openrouter', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(j => {
+    Harness.api.get('/api/models/openrouter').then(j => {
       if (!j || !Array.isArray(j.models)) return;
       const opts = j.models.slice().filter(m => m && m.id).sort((a, b) => String(a.id).localeCompare(String(b.id)));
       TM_TIERS.forEach(tier => {
@@ -3572,8 +3565,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           payload[f.key] = Math.floor(n);
         }
         setMsg('saving…');
-        fetch('/api/runtime/knobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-          .then(r => r.json().then(j => ({ ok: r.ok, j }))).then(({ ok, j }) => {
+        Harness.api.post('/api/runtime/knobs', payload)
+          .then(({ ok, j }) => {
             if (!ok) { setMsg((j && j.error) || 'could not save'); sfx('bad'); return; }
             render(j); setMsg('✓ saved (some limits apply on next restart)', true); sfx('click');
           }).catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
@@ -3582,12 +3575,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       if (resetBtn) resetBtn.addEventListener('click', () => {
         const payload = {}; ADV_FIELDS.forEach(f => { payload[f.key] = null; });
         setMsg('resetting…');
-        fetch('/api/runtime/knobs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
-          .then(r => r.json().then(j => ({ ok: r.ok, j }))).then(({ ok, j }) => { if (!ok) { setMsg('reset failed'); sfx('bad'); return; } render(j); setMsg('✓ reset to defaults', true); sfx('click'); })
+        Harness.api.post('/api/runtime/knobs', payload)
+          .then(({ ok, j }) => { if (!ok) { setMsg('reset failed'); sfx('bad'); return; } render(j); setMsg('✓ reset to defaults', true); sfx('click'); })
           .catch(() => { setMsg('could not reach the sidecar'); sfx('bad'); });
       });
     };
-    fetch('/api/runtime/knobs', { cache: 'no-store' }).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(render)
+    Harness.api.get('/api/runtime/knobs').then(render)
       .catch(() => { form.innerHTML = '<div class="dim">runtime settings unavailable</div>'; });   // never render an error body as knobs
   }
 
@@ -3647,8 +3640,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     };
     if (exportBtn) exportBtn.addEventListener('click', () => {
       setMsg('building export…');
-      fetch('/api/config/export', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sections: browserSections() }) })
-        .then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); }).then(env => {   // never download an error body as a "backup"
+      Harness.api.post('/api/config/export', { sections: browserSections() })
+        .then(({ ok, status, j: env }) => {   // never download an error body as a "backup"
+          if (!ok) throw new Error('http ' + status);
           const blob = new Blob([JSON.stringify(env, null, 2)], { type: 'application/json' });
           const url = URL.createObjectURL(blob);
           const a = document.createElement('a');
@@ -3667,8 +3661,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         reader.onload = () => {
           let env; try { env = JSON.parse(String(reader.result || '')); } catch (_) { setMsg('that is not a valid StarNet backup file'); sfx('bad'); fileIn.value = ''; return; }
           setMsg('importing…');
-          fetch('/api/config/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ envelope: env }) })
-            .then(r => r.json().then(j => ({ ok: r.ok, j }))).then(({ ok, j }) => {
+          Harness.api.post('/api/config/import', { envelope: env })
+            .then(({ ok, j }) => {
               fileIn.value = '';
               if (!ok) { setMsg((j && j.error) || 'import failed'); sfx('bad'); return; }
               // restore the browser-owned slices locally.
@@ -4153,8 +4147,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           rm.title = 'remove this boundary — the station may pick it unattended again';
           rm.addEventListener('click', () => {
             rm.disabled = true;
-            fetch('/api/nightshift/avoid?ref=' + encodeURIComponent(e.ref), { method: 'DELETE' })
-              .then(r => r.json().then(j => ({ ok: r.ok, j })))
+            Harness.api.del('/api/nightshift/avoid?ref=' + encodeURIComponent(e.ref))
               .then(({ ok, j }) => {
                 if (!ok || !j || j.ok === false) { label.textContent = String(e.label || e.ref) + ' — could not remove: ' + ((j && j.error) || 'error'); sfx('bad'); rm.disabled = false; return; }
                 sfx('click'); refreshDirection();   // repaint from the route's truth
@@ -4181,16 +4174,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         paintAvoid(Array.isArray(j.avoid) ? j.avoid : []);
       };
       const refreshDirection = () => {
-        fetch('/api/nightshift/focus', { cache: 'no-store' })
-          .then(r => r.ok ? r.json() : null).catch(() => null)
+        Harness.api.get('/api/nightshift/focus').catch(() => null)
           .then(paintDirection);
       };
       if (dSteerSet) dSteerSet.addEventListener('click', () => {
         const raw = dSteer ? String(dSteer.value).trim() : '';
         if (!raw) { dMsg('enter a trusted project path, thread:<id>, or goal'); sfx('bad'); return; }
         dMsg('steering…');
-        fetch('/api/nightshift/focus', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(parseRef(raw)) })
-          .then(r => r.json().then(j => ({ ok: r.ok, j })))
+        Harness.api.post('/api/nightshift/focus', parseRef(raw))
           .then(({ ok, j }) => {
             if (!ok || !j || j.ok === false) { dMsg((j && j.error) || 'could not steer'); sfx('bad'); return; }
             if (dSteer) dSteer.value = '';
@@ -4200,8 +4191,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       });
       if (dSteerClear) dSteerClear.addEventListener('click', () => {
         dMsg('clearing…');
-        fetch('/api/nightshift/focus', { method: 'DELETE' })
-          .then(r => r.json().then(j => ({ ok: r.ok, j })))
+        Harness.api.del('/api/nightshift/focus')
           .then(({ ok, j }) => {
             if (!ok || !j || j.ok === false) { dMsg((j && j.error) || 'could not clear the steer'); sfx('bad'); return; }
             sfx('click'); refreshDirection();
@@ -4212,8 +4202,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const raw = dAvoidRef ? String(dAvoidRef.value).trim() : '';
         if (!raw) { sfx('bad'); if (dAvoid) dAvoid.innerHTML = '<p class="set-about">enter a trusted project path, thread:&lt;id&gt;, or goal to rule out.</p>'; return; }
         dAvoidAdd.disabled = true;
-        fetch('/api/nightshift/avoid', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(parseRef(raw)) })
-          .then(r => r.json().then(j => ({ ok: r.ok, j })))
+        Harness.api.post('/api/nightshift/avoid', parseRef(raw))
           .then(({ ok, j }) => {
             dAvoidAdd.disabled = false;
             if (!ok || !j || j.ok === false) { if (dAvoid) dAvoid.innerHTML = '<p class="set-about">' + esc((j && j.error) || 'could not rule that out') + '</p>'; sfx('bad'); return; }
@@ -4241,8 +4230,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           dInterests.appendChild(row);
         }
       };
-      fetch('/api/scout', { cache: 'no-store' })
-        .then(r => r.ok ? r.json() : null).catch(() => null)
+      Harness.api.get('/api/scout').catch(() => null)
         .then(j => paintInterests(j && Array.isArray(j.interests) ? j.interests : null));
       refreshDirection();
     }
@@ -4270,8 +4258,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           stop.title = 'interrupt this background helper (its work so far is kept; it can be resumed)';
           stop.addEventListener('click', () => {
             stop.disabled = true;
-            fetch('/api/subagents/interrupt', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: r.id }) })
-              .then(x => x.json().then(j => ({ ok: x.ok, j })))
+            Harness.api.post('/api/subagents/interrupt', { id: r.id })
               .then(({ ok, j }) => {
                 if (!ok || !j || j.ok === false) { label.textContent = title + ' — could not stop: ' + ((j && j.error) || 'error'); sfx('bad'); stop.disabled = false; return; }
                 sfx('click'); refreshHelpers();   // repaint from the ledger (the row leaves only when the server says interrupted)
@@ -4283,8 +4270,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         }
       };
       const refreshHelpers = () => {
-        fetch('/api/subagents?status=running', { cache: 'no-store' })
-          .then(r => r.ok ? r.json() : null).catch(() => null)
+        Harness.api.get('/api/subagents?status=running').catch(() => null)
           .then(j => paintHelpers(j && Array.isArray(j.records) ? j.records : null));
       };
       if (list) refreshHelpers();
@@ -4382,12 +4368,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       };
       // paint honest "reading…" first, then replace with the live truth (or an honest unreachable/error state).
       const refreshPanel = () => {
-        fetch('/api/nightshift/status', { cache: 'no-store' })
-          .then(r => r.ok ? r.json() : null).catch(() => null)
+        Harness.api.get('/api/nightshift/status').catch(() => null)
           .then(paintPanel);
         // limit 200 (was 12): collapsing eats duplicates, so 12 raw rows could cover only ~12 minutes of history.
-        fetch('/api/autonomy/ledger?source=nightshift&limit=200', { cache: 'no-store' })
-          .then(r => r.ok ? r.json() : null).catch(() => null)
+        Harness.api.get('/api/autonomy/ledger?source=nightshift&limit=200').catch(() => null)
           .then(j => { if (j && Array.isArray(j.entries)) paintTrail(j.entries); else if (nsTrail) nsTrail.innerHTML = '<p class="set-about">the decision trail is unreachable right now.</p>'; });
       };
       refreshPanel();
@@ -4402,7 +4386,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         nsReport.innerHTML = '<p class="set-about">composing the last report…</p>';
         const now = Date.now();
         const awaySince = now - 24 * 3600 * 1000;   // the last day's night-shift window
-        const getJSON = (u) => fetch(u, { cache: 'no-store' }).then(r => r.ok ? r.json() : null).catch(() => null);
+        const getJSON = (u) => Harness.api.get(u).catch(() => null);
         Promise.all([
           getJSON('/api/nightshift/status'),
           getJSON('/api/autonomy/ledger?source=nightshift&limit=200'),
@@ -4586,11 +4570,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // (which itself respects the master TERMINAL AUDIO switch), so muting either silences it. undefined = on.
     if (playSound !== false) sfx(severityOf(cls) === 'bad' ? 'bad' : 'notify');
     let stack = document.getElementById('toast-stack');
-    if (!stack) { stack = el('div'); stack.id = 'toast-stack'; document.body.appendChild(stack); }
+    if (!stack) { stack = mkEl('div'); stack.id = 'toast-stack'; document.body.appendChild(stack); }
     const sev = severityOf(cls);
     // keep the caller's raw cls (good/gold/warn/bad already have edge styling) AND add a normalized
     // sev-* class so 'error'/'info' also get an edge + the lead glyph.
-    const t = el('div', 'toast' + (cls ? ' ' + cls : '') + ' sev-' + sev);
+    const t = mkEl('div', 'toast' + (cls ? ' ' + cls : '') + ' sev-' + sev);
     // message text rides its own span so the ASCII decode below can target JUST the message —
     // the severity glyph and timestamp stay stable (a scrambling clock would read as broken).
     t.innerHTML = '<span class="toast-sev" aria-hidden="true">' + esc(SEV_GLYPH[sev]) + '</span>' +
@@ -5142,8 +5126,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const payload = { token: bodyToken, key, model, provider, baseUrl, agentId: ident.agentId, system: ident.system, agentName: ident.agentName };
           if (vals.endpoint != null) payload.endpoint = vals.endpoint;
           if (vals.account != null) payload.account = vals.account;
-          const r = await fetch('/api/channels/' + c.id + '/connect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-          const j = await r.json().catch(() => ({}));
+          const r = await Harness.api.post('/api/channels/' + c.id + '/connect', payload);
+          const j = r.j || {};
           if (!r.ok || j.error) { delete pendingConnect[c.id]; setMsg(msgEl, '✕ ' + (j.error || ('HTTP ' + r.status)), ''); sfx('bad'); }
           else {
             // DERIVE the outcome line from the status refresh (paintCard finalizes pendingConnect), NOT from this
@@ -5162,7 +5146,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       dBtn.addEventListener('click', () => {
         if (!(configuredById[c.id])) { return; }   // nothing to disconnect — no lie, no request
         armed(c.pre + '-disconnect', dBtn, '⏏ DISCONNECT', '⏏ CONFIRM DISCONNECT', async () => {
-          try { await fetch('/api/channels/' + c.id + '/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) }); setMsg(msgEl, 'disconnected — token kept; RESUME to reconnect', 'info'); sfx('click'); }
+          try { await Harness.api.post('/api/channels/' + c.id + '/disconnect', {}); setMsg(msgEl, 'disconnected — token kept; RESUME to reconnect', 'info'); sfx('click'); }
           catch (_) { setMsg(msgEl, '✕ could not reach the sidecar', ''); }
           refreshAll();
         });
@@ -5180,8 +5164,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             // Signal has no token. Its destructive action removes the actual durable configuration — endpoint,
             // registered account and adapter ownership — and claims success only from the backend read-back bit.
             if (c.id === 'signal') {
-              const r = await fetch('/api/channels/signal/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purge: true }) });
-              const j = await r.json().catch(() => ({}));
+              const r = await Harness.api.post('/api/channels/signal/disconnect', { purge: true });
+              const j = r.j || {};
               if (j.removedConfiguration) {
                 setMsg(msgEl, 'configuration removed — Signal is no longer configured on this machine', 'info');
                 const endpoint = body.querySelector('#sg-endpoint'); if (endpoint) endpoint.value = '';
@@ -5199,8 +5183,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             if (typeof Harness !== 'undefined' && Harness.storeChannelToken && Harness.isDesktop && Harness.isDesktop()) {
               kcCleared = await Promise.resolve(Harness.storeChannelToken(c.id, '')).then(ok => ok !== false).catch(() => false);
             }
-            const r = await fetch('/api/channels/' + c.id + '/disconnect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ purge: true }) });
-            const j = await r.json().catch(() => ({}));
+            const r = await Harness.api.post('/api/channels/' + c.id + '/disconnect', { purge: true });
+            const j = r.j || {};
             // truthful telemetry: "purged" is a DESTRUCTION claim — assert it only from the backend's
             // read-back-proven bit (j.purged) plus the keychain result, never from the click itself.
             if (j.purged && kcCleared) { setMsg(msgEl, 'forgotten — the stored token was purged', 'info'); sfx('click'); try { c.clear(body); } catch (_) {} }
@@ -5226,7 +5210,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const notifyMsg = body.querySelector('#ch-notify-msg');
     if (notifyBox) notifyBox.addEventListener('change', async () => {
       try {
-        const r = await fetch('/api/channels/notify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ on: notifyBox.checked }) });
+        const r = await Harness.api.post('/api/channels/notify', { on: notifyBox.checked });
         if (!r.ok) throw new Error('HTTP ' + r.status);
         sfx('click'); refreshAll();   // refresh so the zero-channel hint appears/clears from PROVEN status
       } catch (_) { notifyBox.checked = !notifyBox.checked; setMsg(notifyMsg, '✕ couldn\'t save that — the sidecar didn\'t answer', ''); }
@@ -5362,7 +5346,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     }
     async function tsRefresh() {
       try {
-        const j = await (await fetch('/api/toolsets?placed=' + encodeURIComponent(placedTypes.join(',')))).json();
+        const j = await Harness.api.get('/api/toolsets?placed=' + encodeURIComponent(placedTypes.join(',')));
         const list = (j && j.toolsets) || [];
         tsListEl.innerHTML = list.map(tsRowHTML).join('');
         if (body.querySelector('#sp-connect')) setupSpotify(body);   // wire Spotify now the sp-* markup is in the JUKEBOX row
@@ -5373,8 +5357,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const id = cb.dataset.tsToggle; const enabled = cb.checked;
       cb.disabled = true;
       try {
-        const r = await fetch('/api/toolsets/' + encodeURIComponent(id), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }) });
-        const j = await r.json().catch(() => ({}));
+        const r = await Harness.api.post('/api/toolsets/' + encodeURIComponent(id), { enabled });
+        const j = r.j || {};
         if (!r.ok || j.error) { cb.checked = !enabled; sfx('bad'); notify('✕ ' + (j.error || 'toggle failed')); }
         else { sfx('tick'); notify((enabled ? 'Enabled ' : 'Disabled ') + id, enabled ? 'good' : undefined); }
       } catch (e) { cb.checked = !enabled; sfx('bad'); notify('✕ ' + ((e && e.message) || 'request failed')); }
@@ -5480,7 +5464,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     let lastList = [];
     async function refresh() {
       try {
-        const j = await (await fetch('/api/connectors')).json();
+        const j = await Harness.api.get('/api/connectors');
         const list = (j && j.connectors) || []; lastList = list;
         if (list.length) { listEl.innerHTML = list.map(row).join(''); }
         else {
@@ -5620,7 +5604,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     }
     async function ccRefresh() {
       try {
-        const j = await (await fetch('/api/connectors/catalog')).json();
+        const j = await Harness.api.get('/api/connectors/catalog');
         ccCache = (j && j.connectors) || [];
         const groups = (j && j.groups) || [];
         ccListEl.innerHTML = groups.map(ccGroupHTML).join('') || '<div class="mc-detail">catalog is empty.</div>';
@@ -5677,7 +5661,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (!document.body.contains(body)) { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); return; }
         tries++;
         try {
-          const j = await (await fetch('/api/connectors')).json();
+          const j = await Harness.api.get('/api/connectors');
           const c = (j.connectors || []).find(x => x.id === id);
           if (c && c.state === 'up') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); sfx('click'); notify('Connector "' + label + '" connected', 'good'); ccMsgEl.classList.add('ok'); ccMsgEl.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
           if (c && c.state === 'error') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); sfx('bad'); ccMsgEl.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); return; }
@@ -5729,7 +5713,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     let pollTimer = null;
     async function refreshStatus() {
       try {
-        const j = await (await fetch('/api/spotify/status')).json();
+        const j = await Harness.api.get('/api/spotify/status');
         if (redirEl && j.redirectUri) redirEl.textContent = j.redirectUri;
         if (j.connected) {
           statusEl.innerHTML = '<span style="color:var(--ok)">● connected</span>' + (j.scope ? ' <span class="dim">· ' + esc(j.scope) + '</span>' : '');
@@ -5747,7 +5731,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const clientId = (clientInput.value || '').trim();
       msgEl.textContent = 'opening Spotify…';
       try {
-        const j = await (await fetch('/api/spotify/auth/start', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(clientId ? { clientId } : {}) })).json();
+        const j = (await Harness.api.post('/api/spotify/auth/start', clientId ? { clientId } : {})).j;
         if (j.error) { msgEl.textContent = '✕ ' + j.error; sfx('bad'); return; }
         const opened = await openSignIn(j.url);
         if (!opened.opened) {
@@ -5773,7 +5757,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       } catch (e) { msgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
     });
     disconnectBtn.addEventListener('click', async () => {
-      try { await fetch('/api/spotify/disconnect', { method: 'POST' }); } catch (_) {}
+      try { await Harness.api.post('/api/spotify/disconnect'); } catch (_) {}
       clearInterval(pollTimer); msgEl.textContent = 'disconnected'; notify('Spotify disconnected'); sfx('click'); refreshStatus();
     });
     refreshStatus();
@@ -5926,7 +5910,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     }
     async function refresh() {
       try {
-        const j = await (await fetch('/api/cron')).json();
+        const j = await Harness.api.get('/api/cron');
         const jobs = (j && j.jobs) || [];
         schedulerArmed = !!(j && j.enabled);   // the live cronArmed — feeds the create-confirm's honest arm-state line
         // HONEST disabled-state + one-click ENABLE (G4.6): when the scheduler is OFF, say plainly that routines
@@ -6136,7 +6120,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div id="rw-msg" class="msg"></div>';
     wireRosterSwitch(body, 'rewind');
     const listEl = body.querySelector('#rw-list'), msgEl = body.querySelector('#rw-msg');
-    const post = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     function row(s) {
       const when = s.ts ? esc(fmtRel(new Date(s.ts).toISOString())) : '';
       return '<div class="mc-row" data-id="' + esc(s.id) + '" data-when="' + when + '">' +
@@ -6147,7 +6130,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     }
     async function refresh() {
       try {
-        const j = await (await fetch('/api/checkpoint?agent=' + encodeURIComponent(agentId))).json();
+        const j = await Harness.api.get('/api/checkpoint?agent=' + encodeURIComponent(agentId));
         const snaps = ((j && j.snapshots) || []).slice().reverse();   // newest first
         // honest empty-state: file-edit snapshots are opt-in (SKYNET_CHECKPOINTS); shell commands ALWAYS snapshot.
         // Tell the user what actually triggers a restore point under their current config, not an aspirational promise.
@@ -6173,7 +6156,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       clearTimeout(armTimer); delete btn.dataset.armed;
       sfx('bad'); btn.disabled = true; msgEl.className = 'msg'; msgEl.textContent = 'restoring…';
       try {
-        const r = await (await post('/api/checkpoint/restore', { agentId: agentId, snapshotId: id })).json();
+        const r = (await Harness.api.post('/api/checkpoint/restore', { agentId: agentId, snapshotId: id })).j;
         if (r && r.ok) { notify('rewound ' + nm + ' to an earlier restore point', 'warn'); msgEl.className = 'msg ok'; msgEl.textContent = '✓ restored.'; }
         else { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((r && r.error) || 'restore failed') + '</span>'; sfx('bad'); }
       } catch (e) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'restore failed') + '</span>'; sfx('bad'); }
@@ -6260,7 +6243,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     async function loadRuns() {
       const host = body.querySelector('#lb-list'); if (!host) return;
       try {
-        const j = await (await fetch('/api/runs?agent=' + encodeURIComponent(agentId) + '&limit=100')).json();
+        const j = await Harness.api.get('/api/runs?agent=' + encodeURIComponent(agentId) + '&limit=100');
         const h = body.querySelector('#lb-list'); if (!h) return;
         const runs = (j && j.runs) || [];
         // PRACTICAL FOLD: every chat message is a run, so an interactive station's history is mostly talk-only
@@ -6295,7 +6278,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           if (tx.dataset.loaded) return;
           tx.innerHTML = '<div class="mc-detail"><span class="loading">loading transcript…</span></div>';
           try {
-            const t = await (await fetch('/api/transcript?stream=' + encodeURIComponent(row.dataset.stream) + '&agent=' + encodeURIComponent(agentId) + '&limit=50')).json();
+            const t = await Harness.api.get('/api/transcript?stream=' + encodeURIComponent(row.dataset.stream) + '&agent=' + encodeURIComponent(agentId) + '&limit=50');
             const turns = (t && t.turns) || [];
             tx.innerHTML = turns.length ? turns.map(m => '<div class="mc-detail"><b>' + esc(m.role) + ':</b> ' + esc(String(m.content || '').slice(0, 400)) + '</div>').join('') : '<div class="mc-detail">no transcript recorded for this workstream.</div>';
             tx.dataset.loaded = '1';
@@ -6325,7 +6308,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     async function loadInsights() {
       const host = body.querySelector('#lb-insights'); if (!host) return;
       try {
-        const j = await (await fetch('/api/insights?agent=' + encodeURIComponent(agentId))).json();
+        const j = await Harness.api.get('/api/insights?agent=' + encodeURIComponent(agentId));
         const h = body.querySelector('#lb-insights'); if (h) h.innerHTML = insightsHtml(j);
       } catch (_) { const h = body.querySelector('#lb-insights'); if (h) h.innerHTML = '<div class="mc-detail">sidecar offline — start it to see insights.</div>'; }
     }
@@ -6364,7 +6347,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       let d = ''; try { d = new Date(snap.foundedAt).toLocaleDateString(); } catch (_) { d = ''; }
       if (d) founded = '<div class="cd-founded">station founded <b>' + esc(d) + '</b></div>';
     }
-    return el('div', 'cd-record',
+    return mkEl('div', 'cd-record',
       '<div class="cd-record-h">STATION RECORD // LIFETIME</div>'
       + '<div class="cd-record-grid">' + grid + '</div>'
       + founded);
@@ -6393,7 +6376,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const obsLine = (obs && obs.dominant && !obs.calibrating)
       ? 'Observed: you work mostly on <b>' + esc(obs.dominant) + '</b> tasks.'
       : 'Observed work-mix: <span class="dim">calibrating…</span>';
-    const head = el('div', 'gx',
+    const head = mkEl('div', 'gx',
       '<div class="gx-head"><div><div class="gx-kicker">STATION // COMMANDER DOSSIER</div>' +
       '<div class="gx-name">What the station knows about you</div></div>' +
       '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">FAMILIARITY</div>' +
@@ -6408,8 +6391,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
     // the active "get to know you" trigger — runs the intake interview in COMMS, folding answers into the
     // dossier through the same upsert path the cards use. Gated on a free agent + not-already-running.
-    const actRow = el('div', 'cd-actions-row');
-    const goBtn = el('button', 'cd-interview');
+    const actRow = mkEl('div', 'cd-actions-row');
+    const goBtn = mkEl('button', 'cd-interview');
     goBtn.textContent = sum.blank.length ? '▸ LET THE STATION GET TO KNOW YOU' : '▸ REFINE WHAT THE STATION KNOWS';
     goBtn.onclick = () => {
       if (typeof Intake === 'undefined') return;
@@ -6434,14 +6417,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // column of short cards wasted half of it). The composed block is passed down so each card can
     // honestly flag "trimmed from briefing" when the char cap cut it out of the prompt.
     const block = ds.composeBlock();
-    const grid = el('div', 'cd-dims');
+    const grid = mkEl('div', 'cd-dims');
     for (const d of dims) {
       const bs = ds.beliefs(d.key);
-      const sec = el('div', 'cd-sec' + (bs.length ? ' known' : ''));
-      sec.appendChild(el('div', 'cd-sech', '<span class="cd-dim">' + esc(d.label) + '</span><span class="cd-dn">' + (bs.length || '—') + '</span>'));
+      const sec = mkEl('div', 'cd-sec' + (bs.length ? ' known' : ''));
+      sec.appendChild(mkEl('div', 'cd-sech', '<span class="cd-dim">' + esc(d.label) + '</span><span class="cd-dn">' + (bs.length || '—') + '</span>'));
       const addRow = cdAddRow(d.key);
       if (!bs.length) {
-        const e = el('div', 'cd-empty'); e.textContent = 'unknown — the station hasn’t learned this yet.'; sec.appendChild(e);
+        const e = mkEl('div', 'cd-empty'); e.textContent = 'unknown — the station hasn’t learned this yet.'; sec.appendChild(e);
         // an empty dimension shows its starter chips INLINE (tap → the editor opens prefilled) so filling
         // the dossier in is one tap + a finished sentence, not a blank textarea behind a "+ add".
         // (_open hides this row on hand-off — the editor renders its own chips.)
@@ -6470,34 +6453,34 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function cdBriefing(ds) {
     const block = ds.composeBlock();
     const cap = (typeof Dossier !== 'undefined' && Dossier.BLOCK_CHARS) ? Dossier.BLOCK_CHARS : 1200;
-    const wrap = el('div', 'cd-brief');
-    const head = el('div', 'cd-brief-head', '<span class="cd-brief-h">AGENT BRIEFING // WHAT EVERY AGENT IS TOLD ABOUT YOU</span>');
+    const wrap = mkEl('div', 'cd-brief');
+    const head = mkEl('div', 'cd-brief-head', '<span class="cd-brief-h">AGENT BRIEFING // WHAT EVERY AGENT IS TOLD ABOUT YOU</span>');
     if (block) {
-      const meter = el('span', 'cd-brief-meter');
+      const meter = mkEl('span', 'cd-brief-meter');
       meter.textContent = block.length + ' / ' + cap + ' chars';
       meter.title = 'the briefing composes from your beliefs below, capped at ' + cap + ' characters — past the cap, every known dimension keeps a fair share and the rest is trimmed';
       head.appendChild(meter);
     }
     wrap.appendChild(head);
     if (!block) {
-      const e = el('div', 'cd-brief-empty');
+      const e = mkEl('div', 'cd-brief-empty');
       e.textContent = 'cold — the station knows nothing yet, so agents receive no Commander block. Run the interview or add a belief below and this briefing writes itself.';
       wrap.appendChild(e);
     } else {
-      const pre = el('pre', 'cd-brief-text'); pre.textContent = block;   // textContent — belief text is never interpreted
+      const pre = mkEl('pre', 'cd-brief-text'); pre.textContent = block;   // textContent — belief text is never interpreted
       wrap.appendChild(pre);
     }
     // WIRED INTO — states the wiring (each chip names a real code path), never a wish. Cold station: the
     // chips still state where the block WILL flow, phrased as wiring, since the paths exist regardless.
-    const foot = el('div', 'cd-brief-foot');
-    const flows = el('div', 'cd-flows',
+    const foot = mkEl('div', 'cd-brief-foot');
+    const flows = mkEl('div', 'cd-flows',
       '<span class="cd-flow" title="composeSystemPrompt folds this block into the system prompt of every agent on the station — including a freshly-summoned one">▸ every agent’s briefing</span>' +
       '<span class="cd-flow" title="mirrored to the sidecar so autonomous scheduled runs (cron, night shift) that compose their own persona still know who they serve">▸ autonomous &amp; scheduled runs</span>' +
       '<span class="cd-flow" title="the pitch engine and recruitment matcher read your goals, pain points and ambitions to propose work and crew">▸ pitches &amp; recruitment</span>' +
       '<span class="cd-flow" title="the quest board turns still-blank dimensions into get-to-know-you quests">▸ quest board</span>');
     foot.appendChild(flows);
     if (block) {
-      const copy = el('button', 'consent-btn cd-brief-copy'); copy.textContent = 'copy briefing';
+      const copy = mkEl('button', 'consent-btn cd-brief-copy'); copy.textContent = 'copy briefing';
       copy.onclick = () => {
         try { navigator.clipboard.writeText(block); } catch (_) {}
         copy.textContent = 'copied ✓'; sfx('click');
@@ -6514,17 +6497,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // it offers a re-enable (the escape hatch, mirroring Restore on the memory side). Returns an empty fragment-row
   // when there's nothing to say, so the caller can append unconditionally.
   function cdCurioRow(d) {
-    const row = el('div', 'cd-curio');
+    const row = mkEl('div', 'cd-curio');
     if (typeof CuriosityStore === 'undefined' || !CuriosityStore.statusOf) return row;
     const st = CuriosityStore.statusOf(d.key);
     if (!st.stopped && !st.asked) return row;   // never asked → say nothing (keeps the panel quiet)
-    const lbl = el('span', 'cd-curio-lbl');
+    const lbl = mkEl('span', 'cd-curio-lbl');
     lbl.textContent = st.stopped
       ? (st.dismissed ? '⏸ you waved this question off' : '⏸ the station stopped asking — you skipped it')
       : ('· the station asked once, waiting');
     row.appendChild(lbl);
     if (st.stopped) {
-      const rb = el('button', 'consent-btn cd-reenable'); rb.textContent = 'ask me about this';
+      const rb = mkEl('button', 'consent-btn cd-reenable'); rb.textContent = 'ask me about this';
       rb.title = 'turn this question back on — the station may ask about your ' + String(d.label).toLowerCase() + ' again';
       rb.onclick = () => { CuriosityStore.reEnable(d.key); sfx('click'); notify('the station will ask about your ' + String(d.label).toLowerCase() + ' again', 'good'); rerender('commander'); };
       row.appendChild(rb);
@@ -6533,28 +6516,28 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
 
   function cdCard(dim, b, block) {
-    const card = el('div', 'cd-rec' + (b.pinned ? ' pinned' : '') + (b.source === 'study' ? ' cd-observed' : ''));
-    const txt = el('div', 'cd-body'); txt.textContent = b.text; card.appendChild(txt);   // textContent — belief text is never interpreted
-    const metaRow = el('div', 'cd-meta');
+    const card = mkEl('div', 'cd-rec' + (b.pinned ? ' pinned' : '') + (b.source === 'study' ? ' cd-observed' : ''));
+    const txt = mkEl('div', 'cd-body'); txt.textContent = b.text; card.appendChild(txt);   // textContent — belief text is never interpreted
+    const metaRow = mkEl('div', 'cd-meta');
     // GROWTH Tier 1: a STUDY-sourced belief (the station learned it from real work, not the Commander authoring it)
     // gets a distinct "observed" tag so the glass box stays honest about provenance.
-    if (b.source === 'study') { const tag = el('span', 'cd-observed-tag'); tag.textContent = 'observed'; tag.title = 'the station proposed this from your work; you kept it'; metaRow.appendChild(tag); }
+    if (b.source === 'study') { const tag = mkEl('span', 'cd-observed-tag'); tag.textContent = 'observed'; tag.title = 'the station proposed this from your work; you kept it'; metaRow.appendChild(tag); }
     // BRIEFING HONESTY: the composed block trims past its char cap (fair-share per dimension), so a belief can
     // exist in the dossier yet be shortened/dropped from the prompt. An exact-substring check against the LIVE
     // block flags that state — otherwise the panel implies every belief reaches the agents, which can be false.
     if (typeof block === 'string' && block && block.indexOf(b.text) < 0) {
-      const tt = el('span', 'cd-trim-tag'); tt.textContent = 'trimmed from briefing';
+      const tt = mkEl('span', 'cd-trim-tag'); tt.textContent = 'trimmed from briefing';
       tt.title = 'the briefing hit its character cap, so this belief was shortened or dropped from what agents are told — pin or shorten what matters most';
       metaRow.appendChild(tt);
     }
-    const meta = el('span', 'cd-src');
+    const meta = mkEl('span', 'cd-src');
     const when = (Number.isFinite(b.observedAt) && b.observedAt > 0) ? b.observedAt : b.createdAt;
     meta.textContent = (b.pinned ? '★ pinned · ' : '') + (CD_SOURCE[b.source] || 'you told the station') + (when ? ' · ' + new Date(when).toLocaleDateString() : '');
     card.appendChild(metaRow).appendChild(meta);
 
-    const btns = el('div', 'consent-btns cd-acts'); card.appendChild(btns);
+    const btns = mkEl('div', 'consent-btns cd-acts'); card.appendChild(btns);
     let busy = false;
-    const mk = (label, cls, fn) => { const x = el('button', 'consent-btn' + (cls ? ' ' + cls : '')); x.textContent = label; x.onclick = fn; btns.appendChild(x); return x; };
+    const mk = (label, cls, fn) => { const x = mkEl('button', 'consent-btn' + (cls ? ' ' + cls : '')); x.textContent = label; x.onclick = fn; btns.appendChild(x); return x; };
     mk(b.pinned ? 'Unpin' : 'Pin', '', () => { if (busy) return; busy = true; CDS().setPinned(dim, b.id, !b.pinned); sfx('click'); rerender('commander'); });
     mk('Edit', '', () => cdEdit(card, txt, btns, dim, b));
     let armed = false;
@@ -6567,11 +6550,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
   // inline edit (mirrors the Memory Core editor): swap the body for a textarea + Save/Cancel.
   function cdEdit(card, txt, btns, dim, b) {
-    const ta = el('textarea', 'cd-edit'); ta.value = b.text; ta.spellcheck = false;
+    const ta = mkEl('textarea', 'cd-edit'); ta.value = b.text; ta.spellcheck = false;
     card.replaceChild(ta, txt); ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {}
     btns.innerHTML = '';
-    const save = el('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
-    const cancel = el('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
+    const save = mkEl('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
+    const cancel = mkEl('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
     let saving = false;
     save.onclick = () => { if (saving) return; const v = ta.value.trim(); if (!v) { ta.focus(); return; } saving = true; CDS().upsert(dim, { id: b.id, text: v }); sfx('click'); rerender('commander'); };
     cancel.onclick = () => rerender('commander');
@@ -6595,9 +6578,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   function cdStarterChips(dim, onPick) {
     const ps = CD_PROMPTS[dim];
     if (!ps || !ps.length) return null;
-    const row = el('div', 'cd-starters');
+    const row = mkEl('div', 'cd-starters');
     for (const p of ps) {
-      const b = el('button', 'cd-starter'); b.textContent = p.c;
+      const b = mkEl('button', 'cd-starter'); b.textContent = p.c;
       b.title = 'start with: “' + p.s + '…” — you finish the sentence';
       b.onclick = () => { sfx('click'); onPick(p.s); };
       row.appendChild(b);
@@ -6608,22 +6591,22 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // a "+ add" affordance per dimension: expands to starter chips + a textarea so the Commander can teach the
   // station directly. row._open(starter) lets an empty dimension's inline chips jump straight into the editor.
   function cdAddRow(dim) {
-    const row = el('div', 'cd-add');
-    const btn = el('button', 'cd-addbtn'); btn.textContent = '+ add'; row.appendChild(btn);
+    const row = mkEl('div', 'cd-add');
+    const btn = mkEl('button', 'cd-addbtn'); btn.textContent = '+ add'; row.appendChild(btn);
     const open = starter => {
       // hide a sibling inline starter row (empty-dim state) — the editor renders its own chips, and two
       // identical rows read as a bug. Covers BOTH entries: an inline chip tap and the plain "+ add".
       try { const sib = row.parentElement && row.parentElement.querySelector(':scope > .cd-starters'); if (sib) sib.style.display = 'none'; } catch (_) {}
       row.innerHTML = '';
-      const ta = el('textarea', 'cd-edit'); ta.placeholder = 'Tell the station something about yourself…'; ta.spellcheck = false;
+      const ta = mkEl('textarea', 'cd-edit'); ta.placeholder = 'Tell the station something about yourself…'; ta.spellcheck = false;
       const chips = cdStarterChips(dim, s => { ta.value = s; ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {} });
       if (chips) row.appendChild(chips);
       row.appendChild(ta);
       if (starter) ta.value = starter;
       ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {}
-      const btns = el('div', 'consent-btns cd-acts'); row.appendChild(btns);
-      const save = el('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
-      const cancel = el('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
+      const btns = mkEl('div', 'consent-btns cd-acts'); row.appendChild(btns);
+      const save = mkEl('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
+      const cancel = mkEl('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
       let saving = false;
       save.onclick = () => { if (saving) return; const v = ta.value.trim(); if (!v) { ta.focus(); return; } saving = true; CDS().upsert(dim, { text: v, source: 'commander' }); sfx('click'); rerender('commander'); };
       cancel.onclick = () => rerender('commander');
@@ -7092,7 +7075,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const fillStreams = (async () => {
       if (rows.every(r => r.streamId)) return;
       try {
-        const j = await (await fetch('/api/runs?agent=*&limit=200', { cache: 'no-store' })).json();
+        const j = await Harness.api.get('/api/runs?agent=*&limit=200');
         const by = {}; for (const r of ((j && j.runs) || [])) if (r && r.runId) by[r.runId] = String(r.streamId || '');
         for (const rw of rows) if (!rw.streamId && by[rw.runId]) rw.streamId = by[rw.runId];
       } catch (_) {}
@@ -7132,7 +7115,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         let turns = null;
         if (rw.streamId) {
           try {
-            const t = await (await fetch('/api/transcript?stream=' + encodeURIComponent(rw.streamId) + '&agent=' + encodeURIComponent(rw.agentId || 'agent') + '&limit=50')).json();
+            const t = await Harness.api.get('/api/transcript?stream=' + encodeURIComponent(rw.streamId) + '&agent=' + encodeURIComponent(rw.agentId || 'agent') + '&limit=50');
             turns = (t && t.turns) || [];
           } catch (_) { turns = null; }   // null = fetch FAILED (say so); [] = genuinely empty
         }
