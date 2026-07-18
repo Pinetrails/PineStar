@@ -1047,11 +1047,10 @@ Gauge: `npm run qa:atlas:status`. Trunk re-sweep 2026-07-07 (39b9c569): **1339 e
 The whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
 
 _Active claims:_
-- IN PROGRESS — release-polish wave-1 agent A · system
-- IN PROGRESS — release-polish wave-1 agent B · crew
-- IN PROGRESS — release-polish wave-1 agent C · work
-- IN PROGRESS — release-polish wave-1 agent D · routes
-- IN PROGRESS — release-polish wave-1 agent E · commands
+- IN PROGRESS — release-polish wave-2 agent F · build
+- IN PROGRESS — release-polish wave-2 agent G · world
+- IN PROGRESS — release-polish wave-2 agent H · events
+- IN PROGRESS — release-polish wave-2 agent I · props
 
 _**CAMPAIGN COMPLETE 2026-07-07** (7 waves, 17 lanes, every merge through the full ritual):
 **0 unmapped / 1288.** End gauge: 184 perfected·fresh · 235 audited · 842 mapped · 27
