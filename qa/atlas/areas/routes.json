@@ -71,7 +71,7 @@
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "RECONCILE: the harvester labeled this GET, but the real route is POST /api/auth/codex/logout. LIVE :8964 @ HEAD 0a009ec2 — GET → 404 not found (phantom GET); POST → 200 {connected:false} (real token clear, no secret echoed). The entry documents the codex logout contract; the GET method label is a Cartographer method-variant artifact (same class as fp 15d5b43c)."
+      "notes": "RECONCILE: the harvester labeled this GET, but the real route is POST /api/auth/codex/logout. LIVE :8964 @ HEAD 0a009ec2 — GET → 404 not found (phantom GET); POST → 200 {connected:false} (real token clear, no secret echoed). The entry documents the codex logout contract; the GET method label is a Cartographer method-variant artifact (same class as fp 15d5b43c). [retire-pass: HARVESTER FIXED this lane — the route harvester now mints the correct POST /api/auth/codex/logout variant (no more phantom GET label); the orchestrator's next sweep reconciles this GET-labelled entry accordingly.]"
     },
     {
       "id": "route/get-api-auth-codex-models",
@@ -436,7 +436,7 @@
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-08T21:11:49.341Z",
       "missing": true,
-      "notes": "MISSING RECONCILE: route is NOT removed and NOT regressed — it LIVES at sidecar/index.js:4597 (SSE path-match). LIVE :8964 @ HEAD 0a009ec2 — GET ?token=wrong → 403 forbidden token; GET ?token=<valid> → 200 text/event-stream (retry:3000, keepalive). The missing:true flag is a Cartographer harvest blind spot (an SSE path-match route the live DOM walk cannot enumerate); it will re-clear only if the harvester learns SSE routes. Filed tooling finding. TOKEN_EXEMPT from the header gate; validates ?token= in-handler via apiauth.queryTokenOk(req, API_TOKEN)."
+      "notes": "MISSING RECONCILE: route is NOT removed and NOT regressed — it LIVES at sidecar/index.js:4597 (SSE path-match). LIVE :8964 @ HEAD 0a009ec2 — GET ?token=wrong → 403 forbidden token; GET ?token=<valid> → 200 text/event-stream (retry:3000, keepalive). The missing:true flag is a Cartographer harvest blind spot (an SSE path-match route the live DOM walk cannot enumerate); it will re-clear only if the harvester learns SSE routes. Filed tooling finding. TOKEN_EXEMPT from the header gate; validates ?token= in-handler via apiauth.queryTokenOk(req, API_TOKEN). [retire-pass: HARVESTER FIXED this lane — harvestRoutes() now binds method+path within one guard, so the GET SSE path-match route (index.js:4597, req.url.split('?')[0]===) is enumerated; the next full sweep clears missing:true. KEPT (real route).]"
     },
     {
       "id": "route/get-api-channels-status",
@@ -2769,35 +2769,6 @@
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {agentId:agent} → 200 {synced:false} (no bot to sync). KNOWN HTTP coverage gap filed to ledger."
-    },
-    {
-      "id": "route/post-api-channels-events",
-      "kind": "route",
-      "area": "routes",
-      "name": "POST /api/channels/events",
-      "purpose": "Phantom skeleton — there is NO POST handler for /api/channels/events; only the GET SSE stream is dispatched (index.js:4597). The harvester over-minted this method variant.",
-      "promise": "POST /api/channels/events has no route and returns 404 \"not found\" (verified live). It is not a real surface; the only /api/channels/events contract is the GET EventSource stream.",
-      "wiring": {
-        "files": [
-          "sidecar/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "KNOWN",
-          "ref": "Not a real route — 404. No test should assert it. Phantom-skeleton harvest bug tracked in ledger fp 15d5b43c."
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [
-        "15d5b43c"
-      ],
-      "firstSeen": "2026-07-10T05:18:57.443Z",
-      "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 404 not found (no handler). Cartographer phantom: it minted a POST skeleton for a GET-only SSE path. Left mapped with the honest 404 promise + finding attached; retirement needs the harvester to stop over-minting method variants for path-match routes."
     },
     {
       "id": "route/post-api-channels-notify",
