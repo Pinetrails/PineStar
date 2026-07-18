@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-18T00:54:02.711Z",
+  "updatedAt": "2026-07-18T01:09:48.824Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -230,8 +230,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -239,7 +239,7 @@
       "missing": false,
       "selector": "#adv-consentTimeoutMs",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #adv-consentTimeoutMs renders type=number; GET returned effective for consentTimeoutMs, maxIters value=40 matches API. Evidence api-contracts.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#adv-consentTimeoutMs> type=number, live value=\"120000\". Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/adv-crontickms",
@@ -271,8 +271,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -280,7 +280,7 @@
       "missing": false,
       "selector": "#adv-cronTickMs",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #adv-cronTickMs renders type=number; GET returned effective for cronTickMs, maxIters value=40 matches API. Evidence api-contracts.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#adv-cronTickMs> type=number, live value=\"60000\". Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/adv-maxconcurrentagents",
@@ -312,8 +312,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -321,7 +321,7 @@
       "missing": false,
       "selector": "#adv-maxConcurrentAgents",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #adv-maxConcurrentAgents renders type=number; GET returned effective for maxConcurrentAgents, maxIters value=40 matches API. Evidence api-contracts.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#adv-maxConcurrentAgents> type=number, live value=\"3\". Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/adv-maxiters",
@@ -353,8 +353,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -362,7 +362,7 @@
       "missing": false,
       "selector": "#adv-maxIters",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #adv-maxIters renders type=number; GET returned effective for maxIters, maxIters value=40 matches API. Evidence api-contracts.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#adv-maxIters> type=number, live value=\"40\". Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/adv-reset",
@@ -394,8 +394,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -403,7 +403,7 @@
       "missing": false,
       "selector": "#adv-reset",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #adv-reset present; same /api/runtime/knobs route (null clears overrides). Covered by settings-p1 tests. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#adv-reset> submit present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/adv-save",
@@ -435,8 +435,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -444,7 +444,7 @@
       "missing": false,
       "selector": "#adv-save",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #adv-save present; POST path proven by GET round-trip + settings-p1-backend.test.js (resolveKnob env>saved>default). No override written in-audit. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#adv-save> submit present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/aria-add-a-anthropic-key",
@@ -1330,8 +1330,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -1339,7 +1339,7 @@
       "missing": false,
       "selector": "#bg-global",
       "state": "sys-settings",
-      "notes": "Budget cap field in the BUDGET tab; the placeholder truthfully says \"not yet saved here\" when unset. Held at audited: the specific field save is not independently machine-asserted (bg-save is). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#bg-global> type=number, live value=\"100\". Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/bg-peragent",
@@ -1367,8 +1367,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -1376,7 +1376,7 @@
       "missing": false,
       "selector": "#bg-perAgent",
       "state": "sys-settings",
-      "notes": "Budget cap field in the BUDGET tab; the placeholder truthfully says \"not yet saved here\" when unset. Held at audited: the specific field save is not independently machine-asserted (bg-save is). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#bg-perAgent> type=number, live value=\"5\". Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/bg-perday",
@@ -1404,8 +1404,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -1413,7 +1413,7 @@
       "missing": false,
       "selector": "#bg-perDay",
       "state": "sys-settings",
-      "notes": "Live: input painted \"40\" == /api/budget/status envDefaults.perDay, badge \"environment default\" (saved:{}) — truthful. Save round-trip perDay=7 -> saved:{perDay:7}, day.cap:7; reset -> saved:{}. Evidence .uiatlas/system-evidence/budget-save.json + roundtrip-out.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#bg-perDay> type=number, live value=\"40\". Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/bg-perrun",
@@ -1441,8 +1441,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1450,7 +1450,7 @@
       "missing": false,
       "selector": "#bg-perRun",
       "state": "sys-settings",
-      "notes": "Backend /api/budget/status returns perRun:3 (env default), painted into #bg-perRun. Save/reset round-trip proven via bg-save. Evidence .uiatlas/system-evidence/budget-status.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#bg-perRun> type=number, live value=\"3\". Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/bg-reset",
@@ -1513,8 +1513,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -1522,7 +1522,7 @@
       "missing": false,
       "selector": "#bg-save",
       "state": "sys-settings",
-      "notes": "Live POST /api/budget/caps {perDay:7} -> {saved:{perDay:7}, day.cap:7}, re-read confirms; reset clears. Evidence .uiatlas/system-evidence/budget-save.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#bg-save> submit present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/bk-export",
@@ -1554,8 +1554,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1563,7 +1563,7 @@
       "missing": false,
       "selector": "#bk-export",
       "state": "sys-settings",
-      "notes": "buildExport pure-engine covered by configexport.test.js (schema-versioned, secret-free). Live: #bk-export present in SYSTEM card. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#bk-export> submit present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/bk-file",
@@ -1635,8 +1635,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1644,7 +1644,7 @@
       "missing": false,
       "selector": "#bk-import",
       "state": "sys-settings",
-      "notes": "parseImport forward-tolerant + fail-soft covered by configexport.test.js. Live: #bk-import present. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#bk-import> submit present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/ch-notify",
@@ -1688,8 +1688,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1697,7 +1697,7 @@
       "missing": false,
       "selector": "#con-tab-logbook-insights",
       "state": "sys-logbook",
-      "notes": "Live CDP :8967 — tab activates (active class set). Held at audited: no committed assertion enumerating logbook tab contents. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#con-tab-logbook-insights> button present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/con-tab-logbook-runs",
@@ -1720,8 +1720,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1729,7 +1729,7 @@
       "missing": false,
       "selector": "#con-tab-logbook-runs",
       "state": "sys-logbook",
-      "notes": "Live CDP :8967 — tab activates (active class set). Held at audited: no committed assertion enumerating logbook tab contents. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#con-tab-logbook-runs> button present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/con-tab-logbook-slag",
@@ -1752,8 +1752,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1761,7 +1761,7 @@
       "missing": false,
       "selector": "#con-tab-logbook-slag",
       "state": "sys-logbook",
-      "notes": "Live CDP :8967 — tab activates (active class set). Held at audited: no committed assertion enumerating logbook tab contents. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#con-tab-logbook-slag> button present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/con-tab-settings-appearance",
@@ -1792,8 +1792,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1801,7 +1801,7 @@
       "missing": false,
       "selector": "#con-tab-settings-appearance",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — tab click sets rail item active and renders panel controls (appearance: proven contents). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#con-tab-settings-appearance> button present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/con-tab-settings-autonomy",
@@ -1828,8 +1828,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1837,7 +1837,7 @@
       "missing": false,
       "selector": "#con-tab-settings-autonomy",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — tab click sets rail item active and renders panel controls (autonomy: proven contents). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#con-tab-settings-autonomy> button present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/con-tab-settings-budget",
@@ -1868,8 +1868,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1877,7 +1877,7 @@
       "missing": false,
       "selector": "#con-tab-settings-budget",
       "state": "sys-settings",
-      "notes": "Live DOM: BUDGET tab renders #bg-save + spend readout \"$0.00 · LIFETIME $0.00 (0 runs)\" matching /api/budget/status. Evidence .uiatlas/system-evidence/roundtrip-out.json + budget-status.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#con-tab-settings-budget> button present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/con-tab-settings-models",
@@ -1908,8 +1908,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1917,7 +1917,7 @@
       "missing": false,
       "selector": "#con-tab-settings-models",
       "state": "sys-settings",
-      "notes": "Live: MODELS tab renders #tm-balanced with 342 catalog options + #fbc-save. Evidence .uiatlas/system-evidence/roundtrip-out.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#con-tab-settings-models> button present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/con-tab-settings-nightshift",
@@ -1969,8 +1969,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1978,7 +1978,7 @@
       "missing": false,
       "selector": "#con-tab-settings-notifs",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — tab click sets rail item active and renders panel controls (notifs: proven contents). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#con-tab-settings-notifs> button present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/con-tab-settings-permissions",
@@ -2026,8 +2026,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [
         "a48393ca"
@@ -2037,7 +2037,7 @@
       "missing": false,
       "selector": "#con-tab-settings-providers",
       "state": "sys-settings",
-      "notes": "Live DOM: tab click renders #prov-key-in-anthropic + prov-card. Evidence .uiatlas/system-evidence/roundtrip-out.json. Held at audited pending the signup-link discoverability finding. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#con-tab-settings-providers> button present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/con-tab-settings-system",
@@ -2064,8 +2064,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -2073,7 +2073,7 @@
       "missing": false,
       "selector": "#con-tab-settings-system",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — tab click sets rail item active and renders panel controls (system: proven contents). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#con-tab-settings-system> button present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/dc-connect",
@@ -2107,8 +2107,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -2116,7 +2116,7 @@
       "missing": false,
       "selector": "#dc-connect",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — #dc-connect present; /api/channels/discord/status connected:false at rest. startDiscord sets connected:false,state:connecting (index.js:2996) — truthful (unlike telegram, finding 1c09b36f). Evidence channel-status.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#dc-connect> submit present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/dc-disconnect",
@@ -2249,8 +2249,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -2258,7 +2258,7 @@
       "missing": false,
       "selector": "#dc-token",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — #dc-token type=password. Covered by channels.discord-wire.test.js. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#dc-token> present (input/password). Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/diag-copy",
@@ -2292,8 +2292,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -2301,7 +2301,7 @@
       "missing": false,
       "selector": "#diag-copy",
       "state": "sys-settings",
-      "notes": "Live: /api/diagnostics -> {report,text}, states \"no keys, tokens, or message content\", and the fake key passed as SKYNET_OPENROUTER_KEY does NOT appear (0 matches). Secret-free enforced by the 8-secret leak battery in diagnostics.test.js. Evidence .uiatlas/system-evidence/diagnostics.json + roundtrip-out.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#diag-copy> submit present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/fbc-add",
@@ -2329,8 +2329,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2338,7 +2338,7 @@
       "missing": false,
       "selector": "#fbc-add",
       "state": "sys-settings",
-      "notes": "Sibling of fbc-save (perfected). Chain persistence + host-consumption guarded by fallback-chain.test.js. Live: #fbc-add present in MODELS tab. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#fbc-add> select present, 345 options, value=\"\" (station default, nothing pinned — truthful). Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/fbc-reset",
@@ -2403,8 +2403,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2412,7 +2412,7 @@
       "missing": false,
       "selector": "#fbc-save",
       "state": "sys-settings",
-      "notes": "Live: /api/fallback/chain returns {chain:[],saved:false,maxEntries:8} (env default, truthful). Persistence + host-consumption guarded by fallback-chain.test.js. Evidence .uiatlas/system-evidence/fallback-chain.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#fbc-save> submit present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/key-in-0",
@@ -2722,8 +2722,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2731,7 +2731,7 @@
       "missing": false,
       "selector": "#ntp-cronDigest",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #ntp-crondigest renders type=checkbox; wired via wireNotifyPrefs bind(). Covered by settings-p1-ui.test.js (per-category toggle assertion). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#ntp-cronDigest> checkbox present, checked=true. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/ntp-needsapproval",
@@ -2760,8 +2760,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2769,7 +2769,7 @@
       "missing": false,
       "selector": "#ntp-needsApproval",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #ntp-needsapproval renders type=checkbox; wired via wireNotifyPrefs bind(). Covered by settings-p1-ui.test.js (per-category toggle assertion). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#ntp-needsApproval> checkbox present, checked=true. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/ntp-runcomplete",
@@ -2798,8 +2798,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2807,7 +2807,7 @@
       "missing": false,
       "selector": "#ntp-runComplete",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #ntp-runcomplete renders type=checkbox; wired via wireNotifyPrefs bind(). Covered by settings-p1-ui.test.js (per-category toggle assertion). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#ntp-runComplete> checkbox present, checked=true. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/ntp-sound",
@@ -2836,8 +2836,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2845,7 +2845,7 @@
       "missing": false,
       "selector": "#ntp-sound",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #ntp-sound renders type=checkbox; wired via wireNotifyPrefs bind(). Covered by settings-p1-ui.test.js (per-category toggle assertion). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#ntp-sound> checkbox present, checked=true. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/ntp-test",
@@ -2874,8 +2874,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -2883,7 +2883,7 @@
       "missing": false,
       "selector": "#ntp-test",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #ntp-test click bumped #nf-badge 1->2 (event-backed). Evidence notif-flow.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#ntp-test> submit present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/prov-key-in-anthropic",
@@ -3462,8 +3462,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -3471,7 +3471,7 @@
       "missing": false,
       "selector": "#set-awake",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-awake type=checkbox present, disabled in dev (browser) matching the desktop-only guard — truthful. Held at audited: no committed assertion; desktop wake-lock path unverifiable in dev. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#set-awake> checkbox present, DISABLED in dev/browser (desktop-only guard — truthful). Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/set-clear",
@@ -3495,8 +3495,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [
         "316baa58"
@@ -3506,7 +3506,7 @@
       "missing": false,
       "selector": "#set-clear",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-clear present. Shares the store.notifs+badges() seam as nf-clear (finding 316baa58 covers the uncovered chip flow). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#set-clear> submit present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/set-flicker",
@@ -3533,8 +3533,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -3542,7 +3542,7 @@
       "missing": false,
       "selector": "#set-flicker",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-flicker renders type=checkbox (APPEARANCE tab). Held at audited: settings-p1-ui asserts the notif/adv cards but not the CRT toggle apply-path; visual apply not machine-guarded. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#set-flicker> checkbox present, checked=true. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/set-glow",
@@ -3632,8 +3632,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -3641,7 +3641,7 @@
       "missing": false,
       "selector": "#set-sound",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-sound type=checkbox present (APPEARANCE). Held at audited: audio apply-path not machine-guarded. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#set-sound> checkbox present, checked=true. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/set-theme-custom",
@@ -3689,8 +3689,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -3698,7 +3698,7 @@
       "missing": false,
       "selector": "#set-updates-auto",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-updates-auto present. Held at audited: auto-apply path is desktop-only, not exercisable in dev. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#set-updates-auto> checkbox present, checked=true. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/set-updates-open",
@@ -3725,8 +3725,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -3734,7 +3734,7 @@
       "missing": false,
       "selector": "#set-updates-open",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — #set-updates-open present in SYSTEM card. Held at audited: opens a separate window (updates area, out of this batch); update engine covered by updatecore.test.js. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#set-updates-open> submit present; live-clickable. Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/sg-account",
@@ -4119,8 +4119,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -4128,7 +4128,7 @@
       "missing": false,
       "selector": "#tg-token",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — #tg-token type=password. Covered by channels.telegram.e2e.test.js. Evidence channel-status.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#tg-token> present (input/password). Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/tm-balanced",
@@ -4156,8 +4156,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -4165,7 +4165,7 @@
       "missing": false,
       "selector": "#tm-balanced",
       "state": "sys-settings",
-      "notes": "Live: select present, 342 options, value=\"\" = station default (truthful, nothing pinned). Consumer confirmed: app.js:659/667/680 reads starnet.tierModels.v1 via resolveTierModel at summon. Evidence .uiatlas/system-evidence/roundtrip-out.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#tm-balanced> select present, 345 options, value=\"\" (station default, nothing pinned — truthful). Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/tm-fast",
@@ -4193,8 +4193,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -4202,7 +4202,7 @@
       "missing": false,
       "selector": "#tm-fast",
       "state": "sys-settings",
-      "notes": "Live: select present, 342 options, value=\"\" default. Same tierModels.v1 consumer path as tm-balanced. Evidence .uiatlas/system-evidence/roundtrip-out.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#tm-fast> select present, 345 options, value=\"\" (station default, nothing pinned — truthful). Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/tm-reasoning",
@@ -4230,8 +4230,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:09:48.824Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
@@ -4239,7 +4239,7 @@
       "missing": false,
       "selector": "#tm-reasoning",
       "state": "sys-settings",
-      "notes": "Live: select present, 342 options, value=\"\" default. Same tierModels.v1 consumer path. Evidence .uiatlas/system-evidence/roundtrip-out.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961 / CDP :9361): <#tm-reasoning> select present, 345 options, value=\"\" (station default, nothing pinned — truthful). Evidence .uiatlas/system-evidence/union.json + settings-dump.json."
     },
     {
       "id": "ui/system/txt-button-add-key-405",
