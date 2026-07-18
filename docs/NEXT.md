@@ -1,5 +1,28 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-18 — IMPORT AGENT from Hermes/OpenClaw (branch `claude/agent-transfer-hermes-openclaw-9f0efb`)
+
+Andrew's ask: his community (thousands on Hermes agent / OpenClaw) needs a one-click migration
+into StarNet — this is launch-conversion work. Shipped in this lane:
+- `sidecar/harness-import.js` (pure, UMD, injected-data): detectCandidates (env-built roots incl.
+  HERMES_HOME/OPENCLAW_STATE_DIR overrides), filesWanted whitelist, scanProfile → normalized
+  preview { name, persona, instructions, userContext, memory{curated,dailyCount}, model, warnings }.
+  JSON5-tolerant openclaw.json parse (comments/trailing commas/bare keys/single quotes), line-based
+  config.yaml model extraction. SECRETS LAW: key-shaped values dropped, never emitted; warning
+  "API keys never transfer — re-enter them in the KEYS tab".
+- Routes `POST /api/harness/detect` + `POST /api/harness/scan` (read-only, path-jailed, forbidden
+  `.env`/`auth.json`/sqlite/sessions, 128KB read clamp).
+- Recruitment Bay `⇪ IMPORT AGENT` (summon mode): detect list + PICK FOLDER fallback → truthful
+  preview card → RECRUIT mints via summonAgent; docs via App.applyConfig (persona APPENDED under
+  baseIdentity, orders→manual, USER.md+curated memory→context, labeled headers). Model pin only for
+  recognized providers (`ModelDock.labels.normProvider`), bare id for direct providers.
+- Proof: live on seeded :9217 with fixture installs — both harnesses detect/scan/mint end-to-end;
+  roster rows `vex` (default model, unparsed-config honesty) and `cassandra` (anthropic/claude-opus-4.6
+  pin, bare id); composed system prompts carry persona+orders+memory, zero secret bytes in any
+  response/prompt (planted fake keys never leaked). test:fast + test:http green in-branch.
+- [ ] Open: merge to trunk (ritual), MIGRATING.md guide for the launch content push, session-history
+  import deliberately out of scope v1.
+
 ## 2026-07-18 — CONCURRENT SESSIONS ON ONE AGENT (branch `claude/multiple-concurrent-sessions-736e68`)
 
 Andrew's ask: multiple COMMS sessions may drive the SAME agent at once (Hermes parity), with the

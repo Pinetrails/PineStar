@@ -18,6 +18,7 @@ test/budget.test.js
 test/budget-caps.test.js
 test/fallback-chain.test.js
 test/configexport.test.js
+test/harness-import.test.js
 test/settings-p1-backend.test.js
 test/concurrency.test.js
 test/workspace-lease.test.js

@@ -128,6 +128,7 @@ const SharedSpecialties = require('../shared/specialties.js');           // SCOU
 const RecipeCatalogAll = require('../frontend/app/recipe-catalog/index.js'); // SCOUT: builtin recipe catalog (draft dedup + context)
 const { makeAutoNotifier } = require('./autonotify.js');   // B4: ping a connected channel when a cron run produces work
 const configExport = require('./configexport.js');   // P1-7: station backup — export/import/reset (pure shape+redaction; index wires the live stores)
+const harnessImport = require('./harness-import.js'); // IMPORT-AN-AGENT: read-only OpenClaw/Hermes home -> normalized preview (pure; index does the fs)
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
 const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore, saveJsonVerified } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
@@ -4705,6 +4706,8 @@ const ROUTES = [
   { m: 'GET', exact: '/api/projects', h: handleProjectsList },   // NS-5: the known blessed-project roots (autonomy surface)
   { m: 'POST', exact: '/api/projects/bless', h: handleProjectBless },   // NS-5c: ADD a project (interactive-only, blesses through the same path-grant machinery)
   { m: 'POST', exact: '/api/projects/pickfolder', h: handleProjectPickFolder },   // Projects rail "browse": native OS folder chooser (grants nothing)
+  { m: 'POST', exact: '/api/harness/detect', h: handleHarnessDetect },   // IMPORT-AN-AGENT: find on-disk OpenClaw/Hermes agent homes (read-only)
+  { m: 'POST', exact: '/api/harness/scan', h: handleHarnessScan },       // IMPORT-AN-AGENT: read ONE agent home into a normalized preview (read-only)
   { m: 'POST', exact: '/api/autonomy/write', h: handleAutonomyWrite },
   // NS-1: the SERVER copy of the dial + a read-only beliefs snapshot (the driver reads ONLY this); the throttled
   // activity beacon (away detection); and the truthful night-shift status telemetry.
@@ -8823,6 +8826,130 @@ async function handleProjectPickFolder(req, res) {
   let r; try { r = await folderPick.pick({ surface: 'interactive' }); }
   catch (e) { return sendJson(400, { ok: false, reason: 'folder picker failed: ' + (e && e.message || e) }); }
   sendJson(r && r.ok ? 200 : 400, r || { ok: false, reason: 'folder picker failed' });
+}
+
+/* ---- IMPORT-AN-AGENT (read-only): read an existing OpenClaw / Hermes agent home off disk and return a normalized
+   preview the frontend mints from (via summonAgent + POST /api/roster — no agent is created here). This side is
+   STRICTLY READ-ONLY: it stats directories and reads a small whitelist of persona/memory markdown + the one config
+   file, and writes NOTHING anywhere. The shape/redaction/model-parse lives in the pure harness-import.js core; these
+   two routes do only the filesystem work. Token-gated like every /api route (main route table). ---- */
+
+// stat helper: is `abs` an existing directory? (never throws)
+async function isHarnessDir(abs) { try { const st = await fsp.stat(abs); return st.isDirectory(); } catch (_) { return false; } }
+
+// read at most `maxBytes` (default 128KB) of a REGULAR file as utf-8; anything else — missing, unreadable, a
+// directory, or a SYMLINK/JUNCTION — yields null (the scanner treats null as "file absent"). lstat first (does NOT
+// follow links) so a whitelisted name that is really a symlink to an outside file (.env, a key) is never opened;
+// then, when `realBase` is given, the file's realpath must stay inside it (fsJail.pathInside, win32 case-folded) so
+// a symlinked ANCESTOR directory can't hop the jail either — real-vs-real, the same discipline as resolveInside.
+// Bounded via a positional read so a giant file never loads fully into memory. Read-only, never throws.
+async function harnessReadClamped(abs, maxBytes, realBase) {
+  maxBytes = (maxBytes | 0) > 0 ? (maxBytes | 0) : (128 * 1024);
+  let fd = null;
+  try {
+    const lst = await fsp.lstat(abs);
+    if (!lst.isFile()) return null;                       // symlink/junction/dir/device — treat as absent
+    if (realBase) {
+      const real = await fsp.realpath(abs);               // resolves any symlinked ancestor too
+      if (!fsJail.pathInside(real, realBase)) return null;
+    }
+    fd = await fsp.open(abs, 'r');
+    const st = await fd.stat();
+    if (!st.isFile()) return null;
+    const len = Math.min(st.size, maxBytes);
+    if (len <= 0) return '';
+    const buf = Buffer.alloc(len);
+    await fd.read(buf, 0, len, 0);
+    return buf.toString('utf8');
+  } catch (_) { return null; }
+  finally { if (fd) { try { await fd.close(); } catch (_) {} } }
+}
+
+// realpath a directory the harness routes will read under; null when it can't resolve (caller skips it).
+async function harnessRealDir(abs) { try { return await fsp.realpath(abs); } catch (_) { return null; } }
+
+// never read these off an imported home, even if a future whitelist entry named one (defense in depth — the current
+// filesWanted list is all persona/memory markdown + one config, none of which match).
+const HARNESS_FORBIDDEN_RE = /(^|[\\/])(\.env|auth\.json|state\.db|sessions)([\\/]|$)|\.sqlite$/i;
+
+// POST /api/harness/detect {} — enumerate the on-disk agent homes worth importing. detectCandidates builds the base
+// roots purely from env; here we filter by directory existence and expand them: OpenClaw's agents.list -> one entry
+// per agent workspace that exists; Hermes' home + each profiles/<name>. Read-only; empty found is a truthful ok:true.
+async function handleHarnessDetect(req, res) {
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try { await readBody(req, 4096, res); } catch (_) { /* body ignored — the arrival is the request */ }
+  const found = [];
+  const candidates = harnessImport.detectCandidates({ platform: process.platform, env: process.env });
+  for (const cand of candidates) {
+    if (!(await isHarnessDir(cand.root))) continue;
+    if (cand.harness === 'openclaw') {
+      // read openclaw.json (JSON5) from the STATE dir to learn the agent roster; fall back to the default agent.
+      // Same jailed read as scan: a symlinked openclaw.json pointing outside the state dir is treated as absent.
+      let cfg = null;
+      try { cfg = harnessImport.parseJson5(await harnessReadClamped(path.join(cand.root, 'openclaw.json'), 0, await harnessRealDir(cand.root))); } catch (_) { cfg = null; }
+      const agents = harnessImport.openclawAgents(cfg);
+      const probes = await Promise.all(agents.map(async (a) => {
+        const wsRel = a.workspace || (a.default ? 'workspace' : ('workspace-' + a.id));
+        const wsDir = path.isAbsolute(wsRel) ? wsRel : path.join(cand.root, wsRel);
+        return (await isHarnessDir(wsDir)) ? { harness: 'openclaw', root: wsDir, label: 'OpenClaw — ' + a.id } : null;
+      }));
+      for (const p of probes) { if (p) found.push(p); }
+    } else {
+      // Hermes: the home itself is an importable agent, plus every profiles/<name> subdir.
+      found.push({ harness: 'hermes', root: cand.root, label: 'Hermes — main' });
+      try {
+        const entries = await fsp.readdir(path.join(cand.root, 'profiles'), { withFileTypes: true });
+        for (const e of entries) { if (e.isDirectory()) found.push({ harness: 'hermes', root: path.join(cand.root, 'profiles', e.name), label: 'Hermes — profile ' + e.name }); }
+      } catch (_) { /* no profiles dir — just the main home */ }
+    }
+  }
+  json(200, { ok: true, found: found });
+}
+
+// POST /api/harness/scan { harness, root } — read ONE agent home into the normalized preview. Validates root is an
+// absolute, existing directory; reads ONLY the filesWanted whitelist (each clamped to 128KB, utf-8, errors -> absent)
+// with a per-file path-jail (a resolved path that escapes its base is skipped); counts memory/*.md for dailyCount;
+// then hands the plain strings to the pure scanProfile. READ-ONLY — writes nothing. 400 only on bad input.
+async function handleHarnessScan(req, res) {
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 4096, res)) || {}; } catch (e) { if (res.headersSent) return; return json(400, { ok: false, reason: 'bad json' }); }
+  const harness = body.harness === 'hermes' ? 'hermes' : (body.harness === 'openclaw' ? 'openclaw' : null);
+  const root = typeof body.root === 'string' ? body.root : '';
+  if (!harness) return json(400, { ok: false, reason: 'harness must be "openclaw" or "hermes"' });
+  if (!root || !path.isAbsolute(root)) return json(400, { ok: false, reason: 'root must be an absolute path' });
+  if (!(await isHarnessDir(root))) return json(400, { ok: false, reason: 'root is not an existing directory' });
+
+  const warnings = [];
+  const files = {};
+  const stateDir = path.dirname(root);   // OpenClaw's state dir is the workspace's parent (where openclaw.json lives)
+  // realpath each base ONCE; every whitelisted file must lstat as a regular non-symlink file AND realpath back
+  // under its base's realpath (harnessReadClamped) — so neither a symlinked file nor a symlinked ancestor dir can
+  // pull outside bytes (.env, a key) into the preview. A base that can't realpath is skipped (nothing safe to read).
+  const realBases = { root: await harnessRealDir(root), state: await harnessRealDir(stateDir) };
+  await Promise.all(harnessImport.filesWanted(harness).map(async (w) => {
+    const baseDir = w.base === 'state' ? stateDir : root;
+    const realBase = realBases[w.base === 'state' ? 'state' : 'root'];
+    if (!realBase) return;
+    const abs = path.resolve(baseDir, w.rel);
+    if (!fsJail.pathInside(abs, baseDir)) { warnings.push('skipped ' + w.rel + ' (escaped its base dir)'); return; }   // syntactic jail (win32 case-folded)
+    if (HARNESS_FORBIDDEN_RE.test(w.rel)) return;   // defense in depth — never read a secret/db/sessions file
+    const txt = await harnessReadClamped(abs, 128 * 1024, realBase);
+    if (txt != null) files[w.rel] = txt;
+  }));
+
+  // count the daily memory notes for dailyCount (OpenClaw: memory/*.md; Hermes: memories/*.md minus MEMORY/USER).
+  let dailyCount = 0;
+  const memDir = path.join(root, harness === 'openclaw' ? 'memory' : 'memories');
+  try {
+    for (const e of await fsp.readdir(memDir, { withFileTypes: true })) {
+      if (!e.isFile() || !/\.md$/i.test(e.name)) continue;
+      if (harness === 'hermes' && /^(MEMORY|USER)\.md$/i.test(e.name)) continue;
+      dailyCount++;
+    }
+  } catch (_) { /* no memory dir — dailyCount stays 0 */ }
+
+  const result = harnessImport.scanProfile({ harness: harness, files: files, dailyCount: dailyCount, warnings: warnings });
+  return json(200, result);   // validation already passed; nothing-found is a truthful ok:false result, not a 400
 }
 
 // POST /api/autonomy/write { agentId?, path, content } — autonomy Stage B / B2. Deterministically write a PRE-VETTED
