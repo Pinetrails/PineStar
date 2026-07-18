@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-18T01:22:43.218Z",
+  "updatedAt": "2026-07-18T01:28:46.579Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -8,7 +8,7 @@
       "area": "system",
       "name": "shoot state: sys-logbook",
       "purpose": "The LOGBOOK window shoot-state — a console of RUNS / INSIGHTS / SLAG tabs recording what the station's agents actually did.",
-      "promise": "Opening LOGBOOK renders a console with RUNS/INSIGHTS/SLAG rail tabs that each activate and paint their own view.",
+      "promise": "Opening LOGBOOK renders a console with RUNS/INSIGHTS/SLAG rail tabs that each activate and paint their own read-only view.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -21,34 +21,39 @@
           "ref": "sys-logbook"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:28:46.579Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live CDP :8967 — LOGBOOK opens, all 3 tabs activate. Held at mapped: no committed machine assertion enumerated for the logbook tab contents yet (seam mapped, promise proven live but uncovered)."
+      "notes": "Proven live @ HEAD 0a009ec2: opening LOGBOOK rendered #con-tab-logbook-runs/insights/slag rail tabs. Promoted mapped->audited on live proof. Held audited: no committed assertion for the tab-activate behavior beyond shoot presence. KNOWN coverage gap. Evidence union.json."
     },
     {
       "id": "state/sys-messaging",
       "kind": "state",
       "area": "system",
       "name": "shoot state: sys-messaging",
-      "purpose": "The CHANNELS window shoot-state — connect an external messenger (Telegram/Discord) so the agent runs from your phone.",
-      "promise": "Opening CHANNELS renders Telegram + Discord cards, each with a masked token field, CONNECT/DISCONNECT, a per-channel autonomous-ping opt-in, and a status pill that reflects real connection state.",
+      "purpose": "The CHANNELS window shoot-state — connect an external messenger (Telegram/Discord/Slack/Matrix/Signal) so the agent runs from your phone.",
+      "promise": "Opening CHANNELS renders Telegram/Discord/Slack/Matrix/Signal cards, each with its masked token/endpoint fields, CONNECT, a shared autonomous-ping opt-in, and a status pill that reflects real connection state (all '○ not connected' under a keyless seed).",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
           "sidecar/index.js"
         ],
-        "events": [
-          "channel.connect"
-        ]
+        "events": []
       },
       "coverage": [
         {
           "kind": "test",
           "ref": "test/channels.telegram.e2e.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
         },
         {
           "kind": "test",
@@ -61,30 +66,28 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:28:46.579Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live CDP :8967 — both cards render, token inputs type=password, status pills read \"○ not connected\" matching /api/channels/*/status connected:false. Evidence channel-status.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: CHANNELS rendered 5 channel cards (telegram/discord/slack/matrix/signal), each '○ not connected' (truthful, keyless seed), with token/endpoint fields + CONNECT + #ch-notify. Promise updated from the old 2-channel text to the full 5. Evidence union.json."
     },
     {
       "id": "state/sys-notifs",
       "kind": "state",
       "area": "system",
       "name": "shoot state: sys-notifs",
-      "purpose": "The NOTIFICATIONS window shoot-state — the station-wide feed of pings (run complete / needs approval / cron digest) with a MARK ALL READ control.",
-      "promise": "Opening NOTIFICATIONS lists past notifications newest-first (read ones dimmed); MARK ALL READ marks every entry read and clears the dock unread chip.",
+      "purpose": "The NOTIFICATIONS window shoot-state — the station-wide feed of pings (run complete / needs approval / cron digest) with a clear/mark-read control.",
+      "promise": "Opening NOTIFICATIONS lists past notifications newest-first (read ones dimmed) and clears the dock unread chip on read.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
           "frontend/app/navdock.js"
         ],
-        "events": [
-          "notify"
-        ]
+        "events": []
       },
       "coverage": [
         {
@@ -94,8 +97,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:28:46.579Z"
       },
       "findings": [
         "316baa58"
@@ -103,7 +106,7 @@
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live CDP :8967 — window lists 2 items, chip 1->2 on TEST NOTIFICATION, 2->\"\" on MARK ALL READ. TRUTH holds. Held at audited: no committed machine assertion for the chip flow (finding 316baa58). Evidence notif-flow.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: opening NOTIFICATIONS rendered the .nf-list feed. Held audited: the mark-all-read/clear behavior has only shoot-state coverage, no committed assertion. KNOWN coverage gap. Evidence union.json."
     },
     {
       "id": "state/sys-rewind",
@@ -111,16 +114,14 @@
       "area": "system",
       "name": "shoot state: sys-rewind",
       "purpose": "The RESTORE POINTS window shoot-state — browse the agent's auto-checkpoints and (destructively) roll the workspace back to one.",
-      "promise": "Opening RESTORE POINTS lists real on-disk snapshots for the agent (or an honest empty state); a restore requires a two-step armed confirm before it fires.",
+      "promise": "Opening RESTORE POINTS lists real on-disk snapshots for the agent (or an honest empty state) with a REFRESH; a restore requires a two-step armed confirm before it fires.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
           "sidecar/index.js",
           "sidecar/checkpoint-store.js"
         ],
-        "events": [
-          "checkpoint.restored"
-        ]
+        "events": []
       },
       "coverage": [
         {
@@ -134,41 +135,56 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:28:46.579Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live CDP :8967 — list shows honest \"NO RESTORE POINTS YET\" matching /api/checkpoint {enabled:false,snapshots:[]} and empty .checkpoints/ on disk. Confirm door = stationui.js:4288-4300 (5s armed two-step); no restore fired. Evidence channel-status.json#restore_points_window. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: opening RESTORE POINTS rendered the checkpoint panel with #rw-refresh. checkpoint-store.test.js covers the snapshot data layer. Evidence union.json."
     },
     {
       "id": "state/sys-sessiontools",
       "kind": "state",
       "area": "system",
       "name": "shoot state: sys-sessiontools",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The SESSION TOOLS window shoot-state — the floating rail (440px) listing the station's SESSIONS/PROJECTS with a NEW control, parked (not destroyed) on close.",
+      "promise": "Opening SESSION TOOLS renders a floating window whose head toggles SESSIONS/PROJECTS and offers NEW; rows open/manage real sessions, and closing parks it rather than tearing it down.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/session-power-tools.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-sessiontools"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:28:46.579Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
-      "missing": false
+      "missing": false,
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: opening SESSION TOOLS rendered the floating window (Minimize/Close/Resize SESSION TOOLS chrome captured). stationui.js:6957 registers it with a parkSessionTools onClose. session-power-tools.test.js covers the tools. Held audited: window render proven live; the SESSIONS/PROJECTS toggle + NEW flow not exhaustively driven this session. KNOWN. Evidence union.json."
     },
     {
       "id": "state/sys-settings",
       "kind": "state",
       "area": "system",
       "name": "shoot state: sys-settings",
-      "purpose": "The SETTINGS window shoot-state — the console-railed panel where a beginner connects providers, sets budgets/models, tunes autonomy, appearance, notifications, and advanced runtime knobs.",
-      "promise": "Opening SETTINGS from the SYSTEM dock renders a console with PROVIDERS/MODELS/BUDGET/AUTONOMY/APPEARANCE/NOTIFICATIONS/SYSTEM rail tabs; each tab paints its real controls and reads live server state.",
+      "purpose": "The SETTINGS window shoot-state — the console-railed panel where a beginner connects providers, sets budgets/models, tunes autonomy, permissions, night shift, appearance, notifications, and advanced runtime knobs.",
+      "promise": "Opening SETTINGS from the SYSTEM dock renders a console with PROVIDERS/AUTONOMY/NIGHT SHIFT/PERMISSIONS/BUDGET/MODELS/APPEARANCE/NOTIFICATIONS/SYSTEM rail tabs; each tab activates and paints its real controls and reads live server state.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -191,14 +207,14 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:28:46.579Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live CDP :8967 — SETTINGS opens, PROVIDERS tab active by default, tabs switch (system=adv knobs value 40, notifs=ntp toggles, appearance=theme). Evidence .uiatlas/system2-evidence/settings-dom.json. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: opening SETTINGS rendered all 9 rail tabs (providers/autonomy/nightshift/permissions/budget/models/appearance/notifs/system) and each click activated its panel. Promise updated to include the NIGHT SHIFT + PERMISSIONS tabs added since the prior stamp. Evidence .uiatlas/system-evidence/settings-dump.json."
     },
     {
       "id": "ui/system/adv-consenttimeoutms",
@@ -451,252 +467,444 @@
       "kind": "ui",
       "area": "system",
       "name": "Add a ANTHROPIC key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveal the inline BYOK key-paste field for the ANTHROPIC provider card without leaving SETTINGS.",
+      "promise": "Clicking it expands the ANTHROPIC row to a masked #prov-key-in-anthropic input + SAVE, targeting this row provider (not necessarily the active one); aria-label reads \"Add a ANTHROPIC key\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Add a ANTHROPIC key\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking button[aria-label=\"Add a ANTHROPIC key\"] revealed the masked #prov-key-in-anthropic input (providers.json). provider-connections-ui.test.js:26-27 source-locks add-key controls carry+target their row provider. Held audited: reveal proven live, end-to-end save dev-limited. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-add-a-cerebras-key",
       "kind": "ui",
       "area": "system",
       "name": "Add a CEREBRAS key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveal the inline BYOK key-paste field for the CEREBRAS provider card without leaving SETTINGS.",
+      "promise": "Clicking it expands the CEREBRAS row to a masked #prov-key-in-cerebras input + SAVE, targeting this row provider (not necessarily the active one); aria-label reads \"Add a CEREBRAS key\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Add a CEREBRAS key\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking button[aria-label=\"Add a CEREBRAS key\"] revealed the masked #prov-key-in-cerebras input (providers.json). provider-connections-ui.test.js:26-27 source-locks add-key controls carry+target their row provider. Held audited: reveal proven live, end-to-end save dev-limited. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-add-a-custom-key",
       "kind": "ui",
       "area": "system",
       "name": "Add a CUSTOM key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveal the inline BYOK key-paste field for the CUSTOM provider card without leaving SETTINGS.",
+      "promise": "Clicking it expands the CUSTOM row to a masked #prov-key-in-custom input + SAVE, targeting this row provider (not necessarily the active one); aria-label reads \"Add a CUSTOM key\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Add a CUSTOM key\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking button[aria-label=\"Add a CUSTOM key\"] revealed the masked #prov-key-in-custom input (providers.json). provider-connections-ui.test.js:26-27 source-locks add-key controls carry+target their row provider. Held audited: reveal proven live, end-to-end save dev-limited. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-add-a-deepseek-key",
       "kind": "ui",
       "area": "system",
       "name": "Add a DEEPSEEK key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveal the inline BYOK key-paste field for the DEEPSEEK provider card without leaving SETTINGS.",
+      "promise": "Clicking it expands the DEEPSEEK row to a masked #prov-key-in-deepseek input + SAVE, targeting this row provider (not necessarily the active one); aria-label reads \"Add a DEEPSEEK key\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Add a DEEPSEEK key\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking button[aria-label=\"Add a DEEPSEEK key\"] revealed the masked #prov-key-in-deepseek input (providers.json). provider-connections-ui.test.js:26-27 source-locks add-key controls carry+target their row provider. Held audited: reveal proven live, end-to-end save dev-limited. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-add-a-fireworks-key",
       "kind": "ui",
       "area": "system",
       "name": "Add a FIREWORKS key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveal the inline BYOK key-paste field for the FIREWORKS provider card without leaving SETTINGS.",
+      "promise": "Clicking it expands the FIREWORKS row to a masked #prov-key-in-fireworks input + SAVE, targeting this row provider (not necessarily the active one); aria-label reads \"Add a FIREWORKS key\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Add a FIREWORKS key\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking button[aria-label=\"Add a FIREWORKS key\"] revealed the masked #prov-key-in-fireworks input (providers.json). provider-connections-ui.test.js:26-27 source-locks add-key controls carry+target their row provider. Held audited: reveal proven live, end-to-end save dev-limited. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-add-a-gemini-key",
       "kind": "ui",
       "area": "system",
       "name": "Add a GEMINI key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveal the inline BYOK key-paste field for the GEMINI provider card without leaving SETTINGS.",
+      "promise": "Clicking it expands the GEMINI row to a masked #prov-key-in-gemini input + SAVE, targeting this row provider (not necessarily the active one); aria-label reads \"Add a GEMINI key\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Add a GEMINI key\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking button[aria-label=\"Add a GEMINI key\"] revealed the masked #prov-key-in-gemini input (providers.json). provider-connections-ui.test.js:26-27 source-locks add-key controls carry+target their row provider. Held audited: reveal proven live, end-to-end save dev-limited. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-add-a-groq-key",
       "kind": "ui",
       "area": "system",
       "name": "Add a GROQ key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveal the inline BYOK key-paste field for the GROQ provider card without leaving SETTINGS.",
+      "promise": "Clicking it expands the GROQ row to a masked #prov-key-in-groq input + SAVE, targeting this row provider (not necessarily the active one); aria-label reads \"Add a GROQ key\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Add a GROQ key\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking button[aria-label=\"Add a GROQ key\"] revealed the masked #prov-key-in-groq input (providers.json). provider-connections-ui.test.js:26-27 source-locks add-key controls carry+target their row provider. Held audited: reveal proven live, end-to-end save dev-limited. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-add-a-mistral-key",
       "kind": "ui",
       "area": "system",
       "name": "Add a MISTRAL key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveal the inline BYOK key-paste field for the MISTRAL provider card without leaving SETTINGS.",
+      "promise": "Clicking it expands the MISTRAL row to a masked #prov-key-in-mistral input + SAVE, targeting this row provider (not necessarily the active one); aria-label reads \"Add a MISTRAL key\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Add a MISTRAL key\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking button[aria-label=\"Add a MISTRAL key\"] revealed the masked #prov-key-in-mistral input (providers.json). provider-connections-ui.test.js:26-27 source-locks add-key controls carry+target their row provider. Held audited: reveal proven live, end-to-end save dev-limited. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-add-a-openai-api-key",
       "kind": "ui",
       "area": "system",
       "name": "Add a OPENAI API key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveal the inline BYOK key-paste field for the OPENAI provider card without leaving SETTINGS.",
+      "promise": "Clicking it expands the OPENAI row to a masked #prov-key-in-openai input + SAVE, targeting this row provider (not necessarily the active one); aria-label reads \"Add a OPENAI API key\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Add a OPENAI API key\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking button[aria-label=\"Add a OPENAI API key\"] revealed the masked #prov-key-in-openai input (providers.json). provider-connections-ui.test.js:26-27 source-locks add-key controls carry+target their row provider. Held audited: reveal proven live, end-to-end save dev-limited. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-add-a-perplexity-key",
       "kind": "ui",
       "area": "system",
       "name": "Add a PERPLEXITY key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveal the inline BYOK key-paste field for the PERPLEXITY provider card without leaving SETTINGS.",
+      "promise": "Clicking it expands the PERPLEXITY row to a masked #prov-key-in-perplexity input + SAVE, targeting this row provider (not necessarily the active one); aria-label reads \"Add a PERPLEXITY key\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Add a PERPLEXITY key\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking button[aria-label=\"Add a PERPLEXITY key\"] revealed the masked #prov-key-in-perplexity input (providers.json). provider-connections-ui.test.js:26-27 source-locks add-key controls carry+target their row provider. Held audited: reveal proven live, end-to-end save dev-limited. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-add-a-together-key",
       "kind": "ui",
       "area": "system",
       "name": "Add a TOGETHER key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveal the inline BYOK key-paste field for the TOGETHER provider card without leaving SETTINGS.",
+      "promise": "Clicking it expands the TOGETHER row to a masked #prov-key-in-together input + SAVE, targeting this row provider (not necessarily the active one); aria-label reads \"Add a TOGETHER key\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Add a TOGETHER key\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking button[aria-label=\"Add a TOGETHER key\"] revealed the masked #prov-key-in-together input (providers.json). provider-connections-ui.test.js:26-27 source-locks add-key controls carry+target their row provider. Held audited: reveal proven live, end-to-end save dev-limited. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-add-a-xai-key",
       "kind": "ui",
       "area": "system",
       "name": "Add a XAI key",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Reveal the inline BYOK key-paste field for the XAI provider card without leaving SETTINGS.",
+      "promise": "Clicking it expands the XAI row to a masked #prov-key-in-xai input + SAVE, targeting this row provider (not necessarily the active one); aria-label reads \"Add a XAI key\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Add a XAI key\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking button[aria-label=\"Add a XAI key\"] revealed the masked #prov-key-in-xai input (providers.json). provider-connections-ui.test.js:26-27 source-locks add-key controls carry+target their row provider. Held audited: reveal proven live, end-to-end save dev-limited. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-close-channels",
@@ -1324,42 +1532,74 @@
       "kind": "ui",
       "area": "system",
       "name": "Sign in to GROK (XAI)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Sign-in affordance on the GROK (xAI) provider card — the accessible name for the keyless OAuth sign-in control.",
+      "promise": "The button carries aria-label \"Sign in to GROK (XAI)\" and drives the shared OAuth sign-in for grok; the card gates its label on the real per-provider status (never a premature SIGNED IN).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/codexsignin.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-oauth-rows.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:28:46.579Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Sign in to GROK (XAI)\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Sign in to GROK (XAI)\"] present in PROVIDERS tab. settings-oauth-rows.test.js:31/34 locks the generalized isOAuthProvider render + SIGNED-IN-only-on-live gating. Evidence providers.json."
     },
     {
       "id": "ui/system/aria-sign-in-to-kimi-for-coding",
       "kind": "ui",
       "area": "system",
       "name": "Sign in to KIMI FOR CODING",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Sign-in affordance on the KIMI FOR CODING provider card — the accessible name for the keyless OAuth sign-in control.",
+      "promise": "The button carries aria-label \"Sign in to KIMI FOR CODING\" and drives the shared OAuth sign-in for kimi; the card gates its label on the real per-provider status.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/codexsignin.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-oauth-rows.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:28:46.579Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Sign in to KIMI FOR CODING\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Sign in to KIMI FOR CODING\"] present in PROVIDERS tab. settings-oauth-rows.test.js:25/31 locks kimi on the shared OAuth-card render. Evidence providers.json."
     },
     {
       "id": "ui/system/bg-global",
@@ -2536,21 +2776,38 @@
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Inline BYOK paste field for an OpenRouter key (the resold-AI default provider) on its Settings row.",
+      "promise": "Typing a key and saving routes it through the harness BYOK path (keychain on desktop, scoped LS in dev); type=password, never echoed. Revealed when the OpenRouter add-key row is expanded.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/provider.openrouter.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "mapped",
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#key-in-0",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped @ HEAD 0a009ec2: #key-in-0 type=password (placeholder 'paste new OPENROUTER key…') present in DOM but not visible under the keyless seed (offsetParent null - conditional reveal, truthful). Held mapped: seam known + provider-connections-ui covers the wiring, but the visible reveal was not driven this session. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/key-in-1",
@@ -3180,8 +3437,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
       },
       "findings": [
         "a48393ca"
@@ -3191,7 +3448,7 @@
       "missing": false,
       "selector": "#prov-key-in-anthropic",
       "state": "sys-settings",
-      "notes": "Live DOM: input present, type=\"password\" (masked). setKey path -> keychain (desktop) / scoped LS (dev). keyStoreClause() truthfully reports the real store. Evidence .uiatlas/system-evidence/roundtrip-out.json. Held at audited pending signup-link finding. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking the \"Add a ANTHROPIC key\" row revealed #prov-key-in-anthropic type=password (placeholder \"paste ANTHROPIC key…\"), masked - never echoes the key (truthful). Held audited: the setKey->keychain save+card-flip is dev-limited (no real key pasted); provider-connections-ui.test.js source-locks the wiring. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-key-in-cerebras",
@@ -3219,8 +3476,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
       },
       "findings": [
         "a48393ca"
@@ -3230,7 +3487,7 @@
       "missing": false,
       "selector": "#prov-key-in-cerebras",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking the \"Add a CEREBRAS key\" row revealed #prov-key-in-cerebras type=password (placeholder \"paste CEREBRAS key…\"), masked - never echoes the key (truthful). Held audited: the setKey->keychain save+card-flip is dev-limited (no real key pasted); provider-connections-ui.test.js source-locks the wiring. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-key-in-custom",
@@ -3258,8 +3515,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
       },
       "findings": [
         "a48393ca"
@@ -3269,7 +3526,7 @@
       "missing": false,
       "selector": "#prov-key-in-custom",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking the \"Add a CUSTOM key\" row revealed #prov-key-in-custom type=password (placeholder \"paste CUSTOM key…\"), masked - never echoes the key (truthful). Held audited: the setKey->keychain save+card-flip is dev-limited (no real key pasted); provider-connections-ui.test.js source-locks the wiring. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-key-in-deepseek",
@@ -3297,8 +3554,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
       },
       "findings": [
         "a48393ca"
@@ -3308,7 +3565,7 @@
       "missing": false,
       "selector": "#prov-key-in-deepseek",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking the \"Add a DEEPSEEK key\" row revealed #prov-key-in-deepseek type=password (placeholder \"paste DEEPSEEK key…\"), masked - never echoes the key (truthful). Held audited: the setKey->keychain save+card-flip is dev-limited (no real key pasted); provider-connections-ui.test.js source-locks the wiring. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-key-in-fireworks",
@@ -3336,8 +3593,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
       },
       "findings": [
         "a48393ca"
@@ -3347,7 +3604,7 @@
       "missing": false,
       "selector": "#prov-key-in-fireworks",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking the \"Add a FIREWORKS key\" row revealed #prov-key-in-fireworks type=password (placeholder \"paste FIREWORKS key…\"), masked - never echoes the key (truthful). Held audited: the setKey->keychain save+card-flip is dev-limited (no real key pasted); provider-connections-ui.test.js source-locks the wiring. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-key-in-gemini",
@@ -3375,8 +3632,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
       },
       "findings": [
         "a48393ca"
@@ -3386,7 +3643,7 @@
       "missing": false,
       "selector": "#prov-key-in-gemini",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Live CDP :8967 — #prov-key-in-gemini rendered type=password. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking the \"Add a GEMINI key\" row revealed #prov-key-in-gemini type=password (placeholder \"paste GEMINI key…\"), masked - never echoes the key (truthful). Held audited: the setKey->keychain save+card-flip is dev-limited (no real key pasted); provider-connections-ui.test.js source-locks the wiring. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-key-in-groq",
@@ -3414,8 +3671,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
       },
       "findings": [
         "a48393ca"
@@ -3425,7 +3682,7 @@
       "missing": false,
       "selector": "#prov-key-in-groq",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking the \"Add a GROQ key\" row revealed #prov-key-in-groq type=password (placeholder \"paste GROQ key…\"), masked - never echoes the key (truthful). Held audited: the setKey->keychain save+card-flip is dev-limited (no real key pasted); provider-connections-ui.test.js source-locks the wiring. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-key-in-mistral",
@@ -3453,8 +3710,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
       },
       "findings": [
         "a48393ca"
@@ -3464,7 +3721,7 @@
       "missing": false,
       "selector": "#prov-key-in-mistral",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking the \"Add a MISTRAL key\" row revealed #prov-key-in-mistral type=password (placeholder \"paste MISTRAL key…\"), masked - never echoes the key (truthful). Held audited: the setKey->keychain save+card-flip is dev-limited (no real key pasted); provider-connections-ui.test.js source-locks the wiring. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-key-in-openai",
@@ -3492,8 +3749,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
       },
       "findings": [
         "a48393ca"
@@ -3503,7 +3760,7 @@
       "missing": false,
       "selector": "#prov-key-in-openai",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Live CDP :8967 — #prov-key-in-openai rendered type=password. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking the \"Add a OPENAI API key\" row revealed #prov-key-in-openai type=password (placeholder \"paste OPENAI key…\"), masked - never echoes the key (truthful). Held audited: the setKey->keychain save+card-flip is dev-limited (no real key pasted); provider-connections-ui.test.js source-locks the wiring. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-key-in-perplexity",
@@ -3531,8 +3788,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
       },
       "findings": [
         "a48393ca"
@@ -3542,7 +3799,7 @@
       "missing": false,
       "selector": "#prov-key-in-perplexity",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking the \"Add a PERPLEXITY key\" row revealed #prov-key-in-perplexity type=password (placeholder \"paste PERPLEXITY key…\"), masked - never echoes the key (truthful). Held audited: the setKey->keychain save+card-flip is dev-limited (no real key pasted); provider-connections-ui.test.js source-locks the wiring. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-key-in-together",
@@ -3570,8 +3827,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
       },
       "findings": [
         "a48393ca"
@@ -3581,7 +3838,7 @@
       "missing": false,
       "selector": "#prov-key-in-together",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking the \"Add a TOGETHER key\" row revealed #prov-key-in-together type=password (placeholder \"paste TOGETHER key…\"), masked - never echoes the key (truthful). Held audited: the setKey->keychain save+card-flip is dev-limited (no real key pasted); provider-connections-ui.test.js source-locks the wiring. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-key-in-xai",
@@ -3609,8 +3866,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:27:17.502Z"
       },
       "findings": [
         "a48393ca"
@@ -3620,49 +3877,91 @@
       "missing": false,
       "selector": "#prov-key-in-xai",
       "state": "sys-settings",
-      "notes": "Homogeneous clone of the anthropic setKey seam (saveInline, stationui.js:2238). Class-proof: same saveInline path + provider-connections-ui.test.js asserts the PROVIDERS.forEach(addProvider) family loop. Held at audited pending signup-link finding a48393ca (same hold as prov-key-in-anthropic). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking the \"Add a XAI key\" row revealed #prov-key-in-xai type=password (placeholder \"paste XAI key…\"), masked - never echoes the key (truthful). Held audited: the setKey->keychain save+card-flip is dev-limited (no real key pasted); provider-connections-ui.test.js source-locks the wiring. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-oauth-open-grok",
       "kind": "ui",
       "area": "system",
       "name": "↗ OPEN PAGE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "OPEN PAGE — starts the keyless device-code OAuth sign-in for GROK (xAI) by opening the provider's authorization page.",
+      "promise": "Clicking it opens the GROK device-code sign-in; the row then reflects the real /api/auth/grok/status truth (● SIGNED IN only on a live token, ⚠ EXPIRED masks a dead one — never a premature connected label).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/codexsignin.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-oauth-rows.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/oauth-status.e2e.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:28:46.579Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#prov-oauth-open-grok",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: #prov-oauth-open-grok present ('↗ OPEN PAGE') in the PROVIDERS tab GROK card. settings-oauth-rows.test.js:25/34-37 source-locks grok as an OAuth provider card whose SIGNED IN is reserved for a live sign-in and whose expired row masks the fault (truthful telemetry). Real device-code completion is dev-limited but the truthful-status contract is committed-tested. Evidence .uiatlas/system-evidence/providers.json."
     },
     {
       "id": "ui/system/prov-oauth-open-kimi",
       "kind": "ui",
       "area": "system",
       "name": "↗ OPEN PAGE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "OPEN PAGE — starts the keyless device-code OAuth sign-in for KIMI FOR CODING by opening the provider's authorization page.",
+      "promise": "Clicking it opens the KIMI device-code sign-in; the row then reflects the real /api/auth/kimi/status truth (● SIGNED IN only on a live token, ⚠ EXPIRED masks a dead one).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/codexsignin.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-oauth-rows.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/oauth-status.e2e.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:28:46.579Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#prov-oauth-open-kimi",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: #prov-oauth-open-kimi present ('↗ OPEN PAGE') in the PROVIDERS tab KIMI card. settings-oauth-rows.test.js:25-26 source-locks kimi as an OAuth provider card on the same shared truthful machinery as grok/codex. Evidence providers.json."
     },
     {
       "id": "ui/system/rw-refresh",
