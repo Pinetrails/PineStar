@@ -1,6 +1,6 @@
 {
   "area": "world",
-  "updatedAt": "2026-07-18T02:43:15.177Z",
+  "updatedAt": "2026-07-18T02:45:18.222Z",
   "entries": [
     {
       "id": "state/ingame",
@@ -1951,18 +1951,20 @@
           "ref": "ingame"
         }
       ],
-      "status": "perfected",
+      "status": "audited",
       "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:16:20.560Z"
+        "sha": "2b0577d6f2bc98c42de7f59d64de1bc3ee63101c",
+        "date": "2026-07-18T02:45:18.222Z"
       },
-      "findings": [],
+      "findings": [
+        "e9d24ac6"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "ingame",
-      "notes": "CANONICAL dock-group tile. Live-proven 2026-07-07T22:16:20.560Z (port 8968): clicking CREW .bb-grp set aria-expanded false→true (flyout open). index.html:352. Evidence .uiatlas/world3-evidence/dock-chrome.json."
+      "notes": "Live @ HEAD: the '☻CREW' dock section-group button present in #bottombar. AUDITED not perfected: selector is the non-unique 'button' (text-harvest) so re-find/staleness can't be trusted — see over-harvest finding e9d24ac6."
     },
     {
       "id": "ui/world/txt-button-bottombar-system-1",
@@ -2145,18 +2147,20 @@
           "ref": "test/agent-model-select.test.js"
         }
       ],
-      "status": "perfected",
+      "status": "audited",
       "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:11:56.490Z"
+        "sha": "2b0577d6f2bc98c42de7f59d64de1bc3ee63101c",
+        "date": "2026-07-18T02:45:18.222Z"
       },
-      "findings": [],
+      "findings": [
+        "e9d24ac6"
+      ],
       "firstSeen": "2026-07-07T08:11:07.402Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "ingame",
-      "notes": "CANONICAL model-dock effort button. Live-proven 2026-07-07T22:11:56.490Z (port 8968): 7 .model-dock-effort rendered with MED marked sel; clicking HIGH set Harness reasoningEffort medium→high. renderEfforts() modeldock.js:387-408; applyEffort() :493-500. Evidence model-dock-seam.json."
+      "notes": "Live @ HEAD: the HIGH rung of the model-dock effort dial (OFF/MIN/LOW/MED/HIGH/MAX) — a conditional per-model control (renders in the selected model's effort row, not standalone). AUDITED: non-unique 'button' selector + conditional render (finding e9d24ac6)."
     },
     {
       "id": "ui/world/txt-button-model-dock-efforts-low-1",
@@ -2393,10 +2397,10 @@
           "ref": "test/agent-model-select.test.js"
         }
       ],
-      "status": "perfected",
+      "status": "audited",
       "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:11:56.490Z"
+        "sha": "2b0577d6f2bc98c42de7f59d64de1bc3ee63101c",
+        "date": "2026-07-18T02:45:18.222Z"
       },
       "findings": [
         "e9d24ac6"
@@ -2406,7 +2410,7 @@
       "missing": false,
       "selector": "button",
       "state": "ingame",
-      "notes": "Live @ HEAD: representative model-picker row. Clicking a model button in #model-dock selects it (proven: dock label CLAUDE SONNET 4.6 -> LLAMA 4 SCOUT/GROQ). The ~400 sibling txt-button model rows are over-harvest (finding e9d24ac6)."
+      "notes": "Live @ HEAD: representative model-picker row; clicking a model in #model-dock selects it (dock label CLAUDE SONNET 4.6 -> LLAMA 4 SCOUT/GROQ, proven this wave). AUDITED: non-unique 'button' selector — canonical for the ~397 over-harvested model rows (finding e9d24ac6)."
     },
     {
       "id": "ui/world/txt-button-model-dock-list-accounts-fireworks-models-kimi-k2",
@@ -15075,18 +15079,20 @@
           "ref": "test/agent-model-select.test.js"
         }
       ],
-      "status": "perfected",
+      "status": "audited",
       "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:11:56.490Z"
+        "sha": "2b0577d6f2bc98c42de7f59d64de1bc3ee63101c",
+        "date": "2026-07-18T02:45:18.222Z"
       },
-      "findings": [],
+      "findings": [
+        "e9d24ac6"
+      ],
       "firstSeen": "2026-07-07T08:11:07.402Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "ingame",
-      "notes": "CANONICAL model-dock group header. Live-proven 2026-07-07T22:11:56.490Z (port 8968): 12 .model-dock-group rendered; ANTHROPIC/GEMINI/XAI/GROQ carried \"(catalog offline)\". renderList() modeldock.js:441-455. Not clickable (a label). Evidence model-dock-seam.json."
+      "notes": "Live @ HEAD: the 'anthropic' provider chip (data-prov=anthropic) present on #screen-connect .provider-row. AUDITED: non-unique 'button' selector (finding e9d24ac6)."
     },
     {
       "id": "ui/world/txt-button-screen-connect-cerebras-1",
