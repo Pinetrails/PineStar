@@ -36,7 +36,7 @@ const res = R.recommend({ worksignal: dishSig, roster: ['chief'], catalog: CATAL
 A.eq(res.warm, true, 'a dish-heavy signal past the floor is warm');
 A.ok(res.items.length > 0, 'a warm signal recommends at least one class');
 const top = res.items[0];
-A.ok(['researcher', 'scout', 'broker', 'herald', 'tutor'].indexOf(top.classId) >= 0, 'the top pick is a dish/research-family class');
+A.ok(['researcher', 'scout', 'prospector', 'strategist'].indexOf(top.classId) >= 0, 'the top pick is a dish/research-family class');
 A.ok(/web research/.test(top.why), 'the why NAMES the dish lane (web research) — a real persisted counter, never fabricated');
 A.eq(top.evidence.dominantLane, 'dish', 'evidence records the dominant lane driving the pick');
 A.ok(top.evidence.bestLane === 'dish', 'evidence names the heaviest kit lane behind the reason');
@@ -75,7 +75,7 @@ const codeSig = W.fresh();
 for (let i = 0; i < 8; i++) W.observe(codeSig, { lane: 'workbench', tag: 'code' }, 0);
 for (let i = 0; i < 4; i++) W.observe(codeSig, { lane: 'cabinet', tag: 'code' }, 0);
 const codeRes = R.recommend({ worksignal: codeSig, roster: ['chief'], catalog: CATALOG, now: 0 });
-A.ok(['engineer', 'reviewer', 'auditor', 'operator', 'analyst'].indexOf(codeRes.items[0].classId) >= 0, 'code-heavy workbench work surfaces a code-family class');
+A.ok(['engineer', 'analyst', 'treasurer'].indexOf(codeRes.items[0].classId) >= 0, 'code-heavy workbench work surfaces a code-family class');
 A.ok(/terminal|files/.test(codeRes.items[0].why), 'the code pick’s why names the terminal/files lane it actually used');
 
 /* ---------- a zero-kit-affinity class never surfaces even on a dossier keyword hit ---------- */

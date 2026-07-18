@@ -41,6 +41,7 @@
     const top = ctx.topRecommendation ? String(ctx.topRecommendation) : '';
     const lines = [];
     lines.push('You are the station\'s recruiter, drafting ONE brand-new specialist role tailored to how the Commander ACTUALLY works.');
+    lines.push('A specialist is a REAL JOB with standing importance in the Commander\'s business, project, or craft — the kind of role they would hire for (think: retention editor, grant writer, community manager, supply buyer). Never a generalist assistant, never a vague "helper".');
     lines.push('');
     lines.push('WHAT YOU KNOW ABOUT THE COMMANDER:');
     if (ctx.dossierBlock) lines.push(String(ctx.dossierBlock).trim());
@@ -53,6 +54,8 @@
     lines.push('');
     lines.push('HARD CONSTRAINTS:');
     lines.push('- Propose EXACTLY ONE new specialist, distinct from every crew member AND every catalog entry above.');
+    lines.push('- The role must be SPECIALIZED: one clear job a business would hire for, with a domain of its own — not a broader restatement of an existing class and not an assistant-for-everything.');
+    lines.push('- PURPOSE states the job, the standard the work is held to, and what the role never does. MANUAL bullets are a real operating playbook (method + honesty rules + output shape), not restated marketing.');
     lines.push('- KIT must be chosen ONLY from these real capability keys: ' + (caps || '(none available)') + '. Use nothing else.');
     lines.push('- SKILLS must be chosen ONLY from these real installed skill slugs: ' + (slugs || '(none available)') + '. Use nothing else. SKILLS may be empty.');
     lines.push('- WHY must cite the REAL observed signal above (the capability lanes / stated goals) — never a generic pitch.');
