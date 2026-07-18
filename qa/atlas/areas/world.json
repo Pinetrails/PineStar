@@ -1,6 +1,6 @@
 {
   "area": "world",
-  "updatedAt": "2026-07-18T02:38:44.323Z",
+  "updatedAt": "2026-07-18T02:40:12.858Z",
   "entries": [
     {
       "id": "state/ingame",
@@ -15573,11 +15573,16 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "audited",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "voice.button.test.js"
+        }
+      ],
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "3f1f5ca299f06e2ac55066db515dca9cd3fb67d9",
+        "date": "2026-07-18T02:40:12.858Z"
       },
       "findings": [
         "c3fa1f39"
@@ -15587,7 +15592,7 @@
       "missing": false,
       "selector": "#voice-mode",
       "state": "ingame",
-      "notes": "AUDITED not perfected: rest-state live-proven (aria-pressed=false, title push-to-talk, no .on — .uiatlas/world2-evidence/comms-composer-probe.txt, voice-mode), but no test/journey clicks it or asserts reflectMode flips the press-state / STT-gated hide. Coverage gap filed (fp c3fa1f39 → voice lane)."
+      "notes": "Live @ HEAD: click flipped #voice-mode push-to-talk->hands-free (title 'voice mode: OFF (push-to-talk)' -> 'ON (hands-free)'; class 'on' added). Seam voice.js; exercised by voice.button.test.js."
     },
     {
       "id": "ui/world/voice-toggle",
@@ -15603,11 +15608,16 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "audited",
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "voice.button.test.js"
+        }
+      ],
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "3f1f5ca299f06e2ac55066db515dca9cd3fb67d9",
+        "date": "2026-07-18T02:40:12.858Z"
       },
       "findings": [
         "c3fa1f39"
@@ -15617,7 +15627,7 @@
       "missing": false,
       "selector": "#voice-toggle",
       "state": "ingame",
-      "notes": "AUDITED not perfected: rest-state live-proven (aria-pressed=false, title \"agent voice: OFF — click to unmute\", .off — .uiatlas/world2-evidence/comms-composer-probe.txt, voice-toggle), but no test/journey clicks it or asserts reflectToggle flips the press-state. Coverage gap filed (fp c3fa1f39 → voice lane)."
+      "notes": "Live @ HEAD: click flipped #voice-toggle OFF->ON (title 'agent voice: OFF — click to unmute' -> 'ON — click to mute'; aria-pressed false->true; class 'off' cleared). Seam voice.js; voice.button.test.js asserts the toggle-tooltip honesty (real/backup voice)."
     },
     {
       "id": "ui/world/ws-addproject",
