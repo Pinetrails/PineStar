@@ -1,6 +1,6 @@
 {
   "area": "build",
-  "updatedAt": "2026-07-18T04:05:21.631Z",
+  "updatedAt": "2026-07-18T04:06:59.846Z",
   "entries": [
     {
       "id": "state/build-connectors",
@@ -1568,840 +1568,1560 @@
       "kind": "ui",
       "area": "build",
       "name": "Turn off 1-3-1 Decision Framework",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn off 1-3-1 Decision Framework\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-off-ascii-art",
       "kind": "ui",
       "area": "build",
       "name": "Turn off ASCII Art",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn off ASCII Art\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-off-creative-ideation",
       "kind": "ui",
       "area": "build",
       "name": "Turn off Creative Ideation",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn off Creative Ideation\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-off-humanizer",
       "kind": "ui",
       "area": "build",
       "name": "Turn off Humanizer",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn off Humanizer\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-off-make-a-plan",
       "kind": "ui",
       "area": "build",
       "name": "Turn off Make a Plan",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn off Make a Plan\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-adversarial-review-pass",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Adversarial Review Pass",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Adversarial Review Pass\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-adversarial-ux-test",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Adversarial UX Test",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Adversarial UX Test\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-announcement-kit",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Announcement Kit",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Announcement Kit\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-architecture-diagram",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Architecture Diagram",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Architecture Diagram\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-arxiv-research",
       "kind": "ui",
       "area": "build",
       "name": "Turn on arXiv Research",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on arXiv Research\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-code-review",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Code Review",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Code Review\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-codebase-inspection",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Codebase Inspection",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Codebase Inspection\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-concept-diagrams",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Concept Diagrams",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Concept Diagrams\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-digest-composer",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Digest Composer",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Digest Composer\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-domain-intelligence",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Domain Intelligence",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Domain Intelligence\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-excalidraw-diagrams",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Excalidraw Diagrams",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Excalidraw Diagrams\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-feed-watch",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Feed Watch",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Feed Watch\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-file-curation",
       "kind": "ui",
       "area": "build",
       "name": "Turn on File Curation",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on File Curation\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-itinerary-planning",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Itinerary Planning",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Itinerary Planning\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-ledger-upkeep",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Ledger Upkeep",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Ledger Upkeep\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-meme-generation",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Meme Generation",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Meme Generation\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-node-js-inspect-debugger",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Node.js Inspect Debugger",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Node.js Inspect Debugger\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-osint-public-records",
       "kind": "ui",
       "area": "build",
       "name": "Turn on OSINT Public Records",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on OSINT Public Records\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-p5-js-creative-coding",
       "kind": "ui",
       "area": "build",
       "name": "Turn on p5.js Creative Coding",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on p5.js Creative Coding\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-pdf-document-extraction",
       "kind": "ui",
       "area": "build",
       "name": "Turn on PDF & Document Extraction",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on PDF & Document Extraction\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-popular-web-designs",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Popular Web Designs",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Popular Web Designs\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-pre-commit-verification",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Pre-Commit Verification",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Pre-Commit Verification\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-price-watch",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Price Watch",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Price Watch\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-python-debugger",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Python Debugger",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Python Debugger\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-research-paper-writing",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Research Paper Writing",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Research Paper Writing\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-security-sweep",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Security Sweep",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Security Sweep\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-simplify-code",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Simplify Code",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Simplify Code\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-source-triangulation",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Source Triangulation",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Source Triangulation\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-spike",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Spike",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Spike\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-study-plan",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Study Plan",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Study Plan\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-systematic-debugging",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Systematic Debugging",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Systematic Debugging\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-test-driven-development",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Test-Driven Development",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Test-Driven Development\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-translation-pass",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Translation Pass",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Translation Pass\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-ui-sketch",
       "kind": "ui",
       "area": "build",
       "name": "Turn on UI Sketch",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on UI Sketch\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-on-web-research",
       "kind": "ui",
       "area": "build",
       "name": "Turn on Web Research",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Turn a pre-installed recipe ON/OFF for this agent — an enabled+available recipe's body is injected into the agent's system prompt.",
+      "promise": "Toggling ON/OFF writes POST /api/skills/toggle and flips the skill's backend enabled state; an enabled+available recipe is composed into the prompt (over-budget recipes are omit-flagged, never silently dropped).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (compose injects enabled+available recipe; placing required object activates; over-budget omit-flagged)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/skills.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Turn on Web Research\"]",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=aria-turn-on-inbox-triage. Live: clicked 'Turn on Inbox Triage' -> POST /api/skills/toggle; re-read /api/skills shows enabled:true (round-trip). render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/con-tab-connectors-catalog",
@@ -6885,21 +7605,37 @@
       "kind": "ui",
       "area": "build",
       "name": "click a room or prop to copy it · then every click stamps a copy — mirror your build fast  (8)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "DUPE mode (8): duplicate an already-placed prop — pick a placed object and stamp a copy, so repeated gear is placed without re-choosing from the palette.",
+      "promise": "With DUPE selected, clicking a placed prop stamps a duplicate at the next grid cell; it is one of the 8 refit tools (room/hallway/paint/move/reclaim/prop/belt/dupe).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        },
+        {
+          "kind": "audit",
+          "ref": "prop-place"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station"
+      "state": "build-station",
+      "notes": "Renderer-judged sibling of the 7 perfected refit-tools. Live: BUILD STATION -> refit tools palette shows the 8th tool \"⧉ DUPE 8\" alongside room/hallway/paint/move/reclaim/prop/belt. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-tools-hallway-2-1",
@@ -7116,696 +7852,1279 @@
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-10",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-11",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-12",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-13",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-14",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-15",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-16",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-17",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-18",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-19",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-2",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-20",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-3",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-4",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-5",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-6",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-7",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-8",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-9",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a CABINET",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-dish-1",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-dish-10",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-dish-11",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-dish-12",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-dish-2",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-dish-3",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-dish-4",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-dish-5",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-dish-6",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-dish-7",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-dish-8",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-dish-9",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a DISH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-studio-1",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a STUDIO",
-      "purpose": "A deep-link that sends the user to the REAL placement surface for the STUDIO a locked recipe needs — never a fake auto-place.",
-      "promise": "Clicking \"→ PLACE STUDIO\" minimizes SKILLS, opens REFIT (body.refit-on), and drives the palette so the studio prop tile is armed active — the very next floor-click drops it.",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "audit",
-          "ref": "ledger:11c69e21 (EL-3 coverage gap — no journey/test guards this promise; live-proven this session)"
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:21:47.861Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
       },
       "findings": [
         "11c69e21",
@@ -7816,301 +9135,553 @@
       "missing": false,
       "selector": "button",
       "state": "build-skills",
-      "notes": "Live: an Open REFIT to place a STUDIO CTA button present in the SKILLS library pane. Positional key (button has no stable anchor — see ledger:cea0899f). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-1",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-10",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-11",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-12",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-13",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-14",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-2",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.716Z",
       "lastSeen": "2026-07-18T00:54:02.716Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-3",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-4",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-5",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-6",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-7",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-8",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-9",
       "kind": "ui",
       "area": "build",
       "name": "Open REFIT to place a WORKBENCH",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Place the physical prop (cabinet/dish/workbench/studio/notebook) a recipe needs — placing the object grants the real capability that flips the recipe from NEEDS-X to READY.",
+      "promise": "Clicking '→ PLACE <prop>' enters refit placement mode ('click to place'); placing the required object activates the recipe (object=capability grant).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/skillstore.js",
+          "sidecar/skills/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/skills.library.test.js (placing the required object activates the recipe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:bayObjects"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button",
-      "state": "build-skills"
+      "state": "build-skills",
+      "notes": "Renderer-judged; representative=txt-button-sk-lib-place-cabinet-1. Live: clicked '→ PLACE CABINET' -> body.refit-on + .refit-overlay + 'click to place' hint (enters placement). CAPABILITIES tab honestly reads '1 of 7 live'. render contract proven live: /api/skills=48 === 48 .sk-card DOM nodes; READY chip honestly gated (Inbox Triage requires notebook -> NEEDS NOTEBOOK, Architecture Diagram -> NEEDS CABINET; only requirement-met skills show sk-ready ok=READY); ON/OFF toggle round-trips to backend (POST /api/skills/toggle flips enabled:true, re-read confirmed). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-terms-first-steps-1",
