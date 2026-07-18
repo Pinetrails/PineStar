@@ -6280,6 +6280,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const e = el('div', 'cd-empty'); e.textContent = 'unknown — the station hasn’t learned this yet.'; sec.appendChild(e);
         // an empty dimension shows its starter chips INLINE (tap → the editor opens prefilled) so filling
         // the dossier in is one tap + a finished sentence, not a blank textarea behind a "+ add".
+        // (_open hides this row on hand-off — the editor renders its own chips.)
         const st = cdStarterChips(d.key, s => addRow._open(s));
         if (st) sec.appendChild(st);
         sec.appendChild(cdCurioRow(d));   // the question-state readout (asked / paused) + re-enable, when relevant
@@ -6446,6 +6447,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const row = el('div', 'cd-add');
     const btn = el('button', 'cd-addbtn'); btn.textContent = '+ add'; row.appendChild(btn);
     const open = starter => {
+      // hide a sibling inline starter row (empty-dim state) — the editor renders its own chips, and two
+      // identical rows read as a bug. Covers BOTH entries: an inline chip tap and the plain "+ add".
+      try { const sib = row.parentElement && row.parentElement.querySelector(':scope > .cd-starters'); if (sib) sib.style.display = 'none'; } catch (_) {}
       row.innerHTML = '';
       const ta = el('textarea', 'cd-edit'); ta.placeholder = 'Tell the station something about yourself…'; ta.spellcheck = false;
       const chips = cdStarterChips(dim, s => { ta.value = s; ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {} });

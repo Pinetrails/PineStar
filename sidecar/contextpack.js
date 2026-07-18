@@ -193,7 +193,7 @@
     {
       const b = (inputs.beliefs && typeof inputs.beliefs === 'object') ? inputs.beliefs : {};
       const dim = (key, label) => { const arr = Array.isArray(b[key]) ? b[key].filter(Boolean) : []; if (arr.length) beliefLines.push(label + ': ' + oneLine(arr.join(' | '), LINE_MAX)); };
-      dim('goals', 'Goals'); dim('pain', 'Pain'); dim('ambition', 'Ambition'); dim('stack', 'Stack'); dim('standing_orders', 'Standing orders'); dim('style', 'Style');
+      dim('goals', 'Goals'); dim('pain', 'Pain'); dim('ambition', 'Ambition'); dim('stack', 'Stack'); dim('standing_orders', 'Standing orders'); dim('style', 'Style'); dim('people', 'People / audience'); dim('schedule', 'Schedule');
     }
     counts.beliefs = beliefLines.length;
     if (beliefLines.length) sections.push({ label: 'What they told you about themselves', lines: beliefLines.slice() });

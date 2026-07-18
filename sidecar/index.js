@@ -3475,7 +3475,7 @@ function nightshiftBeliefMap() {
   const snap = commanderPosture.beliefs();
   const out = {};
   const src = (snap && snap.beliefs && typeof snap.beliefs === 'object') ? snap.beliefs : {};
-  for (const k of ['goals', 'pain', 'ambition', 'stack', 'standing_orders', 'style']) {
+  for (const k of ['goals', 'pain', 'ambition', 'stack', 'standing_orders', 'style', 'people', 'schedule']) {
     const arr = (src[k] || []).map(b => b && b.text).filter(Boolean);
     if (arr.length) out[k] = arr;
   }

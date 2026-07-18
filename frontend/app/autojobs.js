@@ -118,6 +118,8 @@
     dimLine('ambition', 'Ambitions (what they never find time for)');
     dimLine('stack', 'Stack & tools');
     dimLine('standing_orders', 'Standing orders');
+    dimLine('people', 'People & audience (who the work is for)');
+    dimLine('schedule', 'Schedule & cadence (when work should land)');
     lines.push('Hard rules:');
     lines.push('- GROUNDED: every job must aim at a SPECIFIC thing above (a real goal, pain, or ambition). If you cannot ground it in something you actually know, do not propose it.');
     lines.push('- ACHIEVABLE UNATTENDED: each job runs with NO tools, NO web, NO file writes, NO sending (you will not have permission while they are away). It must be REASONING / DRAFTING / PLANNING work you can do from what you know, leaving a draft for them to review. Never propose searching, fetching, posting, or messaging.');
