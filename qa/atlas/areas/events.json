@@ -1,6 +1,6 @@
 {
   "area": "events",
-  "updatedAt": "2026-07-07T22:40:51.000Z",
+  "updatedAt": "2026-07-18T04:05:08.230Z",
   "entries": [
     {
       "id": "event/agent-compact",
@@ -2369,20 +2369,23 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/atlas-events.emit.e2e.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:05:08.230Z"
       },
-      "findings": [
-        "40203e5e"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+consumer traced live at HEAD but NO gate test asserts this event by name (coverage gap, ledger finding filed). Capped at audited-by-trace.]"
+      "notes": "Emit seam now asserted BY NAME with payload {workitemId,agentId,ts} in test/atlas-events.emit.e2e.test.js (fake Telegram + held run #1 → second same-chat message supersedes it, event rides the SSE bus). Consumer half (world.js drops the superseded box off the belt) is guarded by conveyor.test.js. Contract shape by events-contract.test.js; emit-site by lint-emits.js. Atlas finding 40203e5e remediated."
     },
     {
       "id": "event/workshop-built",
@@ -2450,20 +2453,23 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/atlas-events.emit.e2e.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:05:08.230Z"
       },
-      "findings": [
-        "cf61a8e9"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+consumer traced live at HEAD but NO gate test asserts this event by name (coverage gap, ledger finding filed). Capped at audited-by-trace.] EMIT-ONLY by design (state flows via the /api/workshop/decide HTTP response, not a bus consumer)."
+      "notes": "EMIT-ONLY by design (state flows via the /api/workshop/decide HTTP response, no bus consumer). Emit seam now asserted BY NAME with payload {agentId,runId,decision} in test/atlas-events.emit.e2e.test.js via the deterministic decision:later path. Contract shape by events-contract.test.js; emit-site by lint-emits.js. Atlas finding cf61a8e9 remediated."
     },
     {
       "id": "event/worldchange",

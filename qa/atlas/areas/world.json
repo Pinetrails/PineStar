@@ -1,6 +1,6 @@
 {
   "area": "world",
-  "updatedAt": "2026-07-18T02:54:12.306Z",
+  "updatedAt": "2026-07-18T04:07:06.267Z",
   "entries": [
     {
       "id": "state/ingame",
@@ -1195,22 +1195,25 @@
         {
           "kind": "test",
           "ref": "test/queststatestore.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/dock-terms-open.test.js",
+          "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
-        "date": "2026-07-18T02:18:21.743Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:07:06.267Z"
       },
-      "findings": [
-        "5c8f6921"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "[data-term=\"quests\"]",
       "state": "ingame",
-      "notes": "Live @ 583fbfbd: click opened .term titled 'QUEST LOG'. AUDITED not perfected — queststore/queststatestore tests guard the quest STORE, not this dock button's open; no shoot state walks it. Filed KNOWN coverage-gap."
+      "notes": "Dock-button OPEN seam locked in test/dock-terms-open.test.js (index.html .bb[data-term] → stationui init → BUILDERS[key] → builder). Atlas finding 5c8f6921 remediated."
     },
     {
       "id": "ui/world/data-term-rewind",
@@ -1453,21 +1456,25 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "47c365a7e3866c4e3cc2852fbc13cfa88e7189af",
-        "date": "2026-07-18T02:18:21.743Z"
-      },
-      "findings": [
-        "5c8f6921"
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dock-terms-open.test.js",
+          "gate": "test:fast"
+        }
       ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:07:06.267Z"
+      },
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "[data-term=\"updates\"]",
       "state": "ingame",
-      "notes": "Live @ 583fbfbd: click opened .term titled 'UPDATE CENTER'. AUDITED not perfected — no machine assertion guards this dock button's open (coverage[] empty); filed KNOWN coverage-gap."
+      "notes": "Dock-button OPEN seam locked in test/dock-terms-open.test.js (index.html .bb[data-term] → stationui init → BUILDERS[key] → builder). Atlas finding 5c8f6921 remediated."
     },
     {
       "id": "ui/world/estop-btn",
@@ -3047,15 +3054,13 @@
         "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
         "date": "2026-07-18T02:38:44.323Z"
       },
-      "findings": [
-        "b916c508"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#ws-addproject",
       "state": "ingame",
-      "notes": "Live @ HEAD: #ws-addproject (+ADD) hidden on SESSIONS tab, revealed when PROJECTS tab activated. AUDITED: folder-trust flow (native picker) not headlessly driveable; no coverage. KNOWN coverage-gap."
+      "notes": "Finding b916c508 superseded (SESSION TOOLS window retired 2026-07-17). HONEST GAP: the #ws-addproject folder-trust CLICK flow is still machine-uncovered — session-power-tools.test.js guards the STORE ops + rail search/export, not the folder-trust dialog. Left audited with the gap recorded here."
     },
     {
       "id": "ui/world/ws-archived",
@@ -3413,22 +3418,25 @@
         {
           "kind": "shoot",
           "ref": "ingame"
+        },
+        {
+          "kind": "test",
+          "ref": "test/session-power-tools.test.js",
+          "gate": "test:fast"
         }
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
-        "date": "2026-07-18T02:38:44.323Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:07:06.267Z"
       },
-      "findings": [
-        "b916c508"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-new",
       "state": "ingame",
-      "notes": "Live @ HEAD: click #ws-new (+NEW) added a .ws-row (count 1 -> 2) = new workstream created. AUDITED not perfected: no machine assertion guards new-session creation (session-power-tools.test.js covers export/clear/undo/bulk only). KNOWN coverage-gap."
+      "notes": "Rail head is SESSIONS/PROJECTS + NEW only — source-locked in test/session-power-tools.test.js (no inline TOOLS button). Finding b916c508 superseded (SESSION TOOLS window retired). Stays audited: the create-workstream CLICK behavior is not itself a machine assertion."
     },
     {
       "id": "ui/world/ws-search",
@@ -3481,21 +3489,25 @@
         ],
         "events": []
       },
-      "coverage": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/session-power-tools.test.js",
+          "gate": "test:fast"
+        }
+      ],
       "status": "audited",
       "auditedAt": {
-        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
-        "date": "2026-07-18T02:38:44.323Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:07:06.267Z"
       },
-      "findings": [
-        "b916c508"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#ws-tab-projects",
       "state": "ingame",
-      "notes": "Live @ HEAD: click activated the PROJECTS tab and revealed #ws-addproject (+ADD). AUDITED: tab-swap not machine-asserted. KNOWN coverage-gap."
+      "notes": "SESSION TOOLS window RETIRED 2026-07-17; the sessions/projects rail-tab swap is now source-locked in test/session-power-tools.test.js (PROJECTS view hides #ws-rail-search + the sessions list). Finding b916c508 superseded (retired-window framing). Stays audited: the live list-swap + row-count is a source-lock, not a full browser journey."
     },
     {
       "id": "ui/world/ws-tab-sessions",
@@ -3511,21 +3523,25 @@
         ],
         "events": []
       },
-      "coverage": [],
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/session-power-tools.test.js",
+          "gate": "test:fast"
+        }
+      ],
       "status": "audited",
       "auditedAt": {
-        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
-        "date": "2026-07-18T02:38:44.323Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:07:06.267Z"
       },
-      "findings": [
-        "b916c508"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#ws-tab-sessions",
       "state": "ingame",
-      "notes": "Live @ HEAD: click activated the SESSIONS tab and hid #ws-addproject (projects-only control). AUDITED: tab-swap has no machine assertion (session-power-tools.test.js only asserts the rail head has no inline TOOLS button). KNOWN coverage-gap."
+      "notes": "SESSION TOOLS window RETIRED 2026-07-17; the sessions/projects rail-tab swap is now source-locked in test/session-power-tools.test.js (PROJECTS view hides #ws-rail-search + the sessions list). Finding b916c508 superseded (retired-window framing). Stays audited: the live list-swap + row-count is a source-lock, not a full browser journey."
     },
     {
       "id": "ui/world/ws-tools-archived",

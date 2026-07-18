@@ -1,6 +1,6 @@
 {
   "area": "routes",
-  "updatedAt": "2026-07-18T01:32:01.449Z",
+  "updatedAt": "2026-07-18T04:04:22.614Z",
   "entries": [
     {
       "id": "route/get-api-agent-skills",
@@ -121,20 +121,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP-path test in test/ asserts GET /api/auth/codex/status; the status payload shape is covered by codex-status.e2e.test.js + codex-auth-state.test.js at the auth-state layer. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:23:57.953Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connected:false,expired:false,reason:'',last_refresh:''} — booleans/strings only, no tokens. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-auth-grok-models",
@@ -486,20 +487,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP-path test for GET /api/channels/telegram/status; the bulk /api/channels/status is covered by channels.generic-wire.test.js. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:23:57.953Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connected:false,configured:false,state:down,...} — booleans only, no token/key. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-checkpoint",
@@ -795,20 +797,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP-path test for GET /api/execution; executionEnvironment.describe() is a static capability read. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:23:57.953Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {backend:local,workspace:<jailed dir>} honest capability surface. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-fallback-chain",
@@ -826,20 +829,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP-path test for GET /api/fallback/chain; the chain store logic is exercised by fallbackchain units if present but no HTTP assertion found. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:23:57.953Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {chain:[],saved:false,envDefault:[],maxEntries:8} — honestly flags env-default vs saved. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-file",
@@ -893,20 +897,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP-path test for GET /api/fs/dirstat. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:23:57.953Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?path=C:/Windows → 200 {exists:false,isDir:false,reason:'outside-allowed-roots'} — existence check jailed to allowed roots, never lists contents. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-health",
@@ -1179,20 +1184,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP-path assertion in test/; the capped in-index draft store is exercised indirectly by nightshift e2e run assertions. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:19:52.950Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {drafts:[]} (truthful empty). KNOWN coverage gap: no direct HTTP test asserts this route; filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-nightshift-focus",
@@ -1419,20 +1425,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "quest-store.js is exercised at store level (quests.test.js, stationquests/workquests/maintquests.test.js) but no test asserts the GET /api/quests HTTP path. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:19:52.950Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {ok:true,quests:[]}. KNOWN HTTP-path coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-quests-refresh",
@@ -1726,20 +1733,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP-path test for GET /api/spotify/status. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:23:57.953Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connected:false,hasClientId:false,scope:'',expiresAt:0,redirectUri:...} — booleans only, tokens stay server-side. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-state-snapshot",
@@ -1791,20 +1799,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP-path test for GET /api/study/proposals. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:23:57.953Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent&run=none → 200 {runId:none,agentId:agent,proposals:[]}. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-subagents",
@@ -1950,20 +1959,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP-path test for GET /api/toolsets. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:23:57.953Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {toolsets:[{id:web,label,glyph,desc,...},...]} with enabled state. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-transcript",
@@ -2045,20 +2055,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP-path test for GET /api/widgets. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:23:57.953Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {widgets:[]} — durable widget.set records verbatim (empty on fresh seed), never synthesized. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/get-api-workshop-backlog",
@@ -2139,20 +2150,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP-path test for GET /api/workspace/dir. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:23:57.953Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {dir:<jailed workspace path>} read-only, never lists contents. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/post-api-activity",
@@ -2169,20 +2181,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP test asserts this beacon; behavior is a single clock write. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:19:52.950Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {} → 200 {ok:true,at:1784337298558}. KNOWN coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/post-api-agent-delete",
@@ -3588,20 +3601,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "Dev-mode-gated route with no direct HTTP-path test in test/; the ingress it mimics is covered by channels.telegram.e2e.test.js. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:19:52.950Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 (DEV_MODE on) — POST {text:''} → 400 {error:'text required'} (honest; NOT the 404 dev-off path, confirming DEV gating is active). KNOWN coverage gap filed to ledger."
+      "notes": "HTTP path now guarded by routes-coverage.http.test.js: the non-dev 404 gate is asserted (the production contract). The dev-only happy path (mimics ingress, drives a real run) stays dev-gated by nature — audited, not machine-asserted."
     },
     {
       "id": "route/post-api-dossier",
@@ -4229,20 +4243,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "Store-level only (quest-store.confirmAttest); no HTTP-path assertion. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:19:52.950Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {} (no id) → 400 {ok:false,error:'which quest?'}. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/post-api-quests-dismiss",
@@ -4260,20 +4275,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "Store-level only (quest-store.dismiss); no HTTP-path assertion. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:19:52.950Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {} (no id) → 400 {ok:false,error:'which quest?'}. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/post-api-quests-mint",
@@ -4291,20 +4307,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "Store-level only (quests.test.js exercises quest-store.mint); no HTTP-path assertion for POST /api/quests/mint. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:19:52.950Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {title:x} (no contract) → 400 {ok:false,error:'a quest needs a valid completion contract'} (honest guard). KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/post-api-quests-refresh-northstar",
@@ -4383,20 +4400,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "Store-level only (quest-store.tickStep/attest); no HTTP-path assertion. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:19:52.950Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {op:tickStep} (no id) → 400 {ok:false,error:'which quest?'}. KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP-path guarded by routes-coverage.http.test.js (happy + honest-failure over real sockets, zero model spend). Atlas finding 43edd6f5 remediated."
     },
     {
       "id": "route/post-api-roster",
@@ -5286,20 +5304,21 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "No direct HTTP-path test for POST /api/workshop/remove; the workshop queue flow is covered indirectly by workshop.e2e.test.js + workshop-store units. EL-3 gap tracked in ledger."
+          "kind": "test",
+          "ref": "routes-coverage.http.test.js",
+          "gate": "test:http"
         }
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:19:52.950Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:04:22.614Z"
       },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.712Z",
       "lastSeen": "2026-07-18T00:54:02.712Z",
       "missing": false,
-      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:nope} → 404 {ok:false,error:'that idea is no longer on the queue'} (honest). KNOWN HTTP coverage gap filed to ledger."
+      "notes": "HTTP path now guarded by routes-coverage.http.test.js: the honest-failure branches (invalid agentId 400, unknown idea 404) are asserted. The happy 200 remove needs a seeded workshop backlog idea — covered indirectly by workshop.e2e.test.js, not by this direct test."
     },
     {
       "id": "route/post-api-workshop-shift",
