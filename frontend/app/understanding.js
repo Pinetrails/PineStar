@@ -39,7 +39,9 @@
     { key: 'identity',        weight: 1 },
     { key: 'stack',           weight: 1 },
     { key: 'style',           weight: 1 },
-    { key: 'standing_orders', weight: 1 }
+    { key: 'standing_orders', weight: 1 },
+    { key: 'people',          weight: 1 },
+    { key: 'schedule',        weight: 1 }
   ];
   const DIM_KEYS = DIMS.map(d => d.key);
   const WEIGHT = DIMS.reduce((m, d) => (m[d.key] = d.weight, m), {});

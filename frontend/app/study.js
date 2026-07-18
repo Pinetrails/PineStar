@@ -26,13 +26,13 @@
 
   // the dossier dimensions the study may tag a proposal with — MUST match dossier.js DIM_KEYS (kept inline so
   // study stays standalone + node-loadable without a hard dossier.js dependency; a mismatch is caught by test).
-  const DIMS = ['identity', 'stack', 'goals', 'style', 'standing_orders', 'pain', 'ambition'];
+  const DIMS = ['identity', 'stack', 'goals', 'style', 'standing_orders', 'pain', 'ambition', 'people', 'schedule'];
   const DIM_SET = new Set(DIMS);
   // the model tags a line "<DIM> <ADD|RETIRE>: <text>". ADD = a new belief; RETIRE = drift/obsoletion of an
   // existing one ("this goal looks shipped"). Anything else is ignored (conservative, like reflect.parse).
-  const LINE = /^\s*[-*•]?\s*(identity|stack|goals?|style|standing[_\s-]?orders?|pain|ambition|ambitions?)\s+(add|retire|new|drift|done|shipped|obsolete)\s*[:\-—]\s*(.+?)\s*$/i;
+  const LINE = /^\s*[-*•]?\s*(identity|stack|goals?|style|standing[_\s-]?orders?|pain|ambition|ambitions?|people|audience|schedule|cadence)\s+(add|retire|new|drift|done|shipped|obsolete)\s*[:\-—]\s*(.+?)\s*$/i;
   // normalise the model's loose dimension word to a canonical DIM key.
-  const DIM_ALIAS = { goal: 'goals', ambitions: 'ambition', 'standing order': 'standing_orders', 'standingorders': 'standing_orders', 'standing-orders': 'standing_orders' };
+  const DIM_ALIAS = { goal: 'goals', ambitions: 'ambition', 'standing order': 'standing_orders', 'standingorders': 'standing_orders', 'standing-orders': 'standing_orders', audience: 'people', cadence: 'schedule' };
   // which tag words mean "retire this belief" vs "add a new one".
   const RETIRE_WORDS = new Set(['retire', 'drift', 'done', 'shipped', 'obsolete']);
 
@@ -130,7 +130,7 @@
     return 'You just finished a task for your Commander. From the WORK below, update what the station believes ' +
       'about them. Propose ONLY durable, evidenced belief changes — one per line, tagged with a dimension and ' +
       'ADD (a new belief) or RETIRE (a belief that now looks stale/shipped). Dimensions: goals, pain, ambition, ' +
-      'stack, style, identity, standing_orders. Examples:\n' +
+      'stack, style, identity, standing_orders, people, schedule. Examples:\n' +
       'goals ADD: shipping a local-first agent harness\nstyle ADD: prefers terse, verified answers\n' +
       'goals RETIRE: ship the dossier (this work shows it landed)\n' +
       'Skip anything transient, guessed, or already known. If nothing changed, reply NONE.\n\n' +

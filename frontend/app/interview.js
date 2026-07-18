@@ -72,6 +72,27 @@
         { label: 'skip', value: '', skip: true }
       ] },
 
+    { dim: 'people',
+      pre: 'work is always FOR someone —',
+      ask: 'who do you work with or build for — a team, clients, an audience?',
+      chips: [
+        { label: 'Just me', value: 'Works solo; the deliverables are for themselves.' },
+        { label: 'A team', value: 'Works with a team; deliverables are often shared with teammates.' },
+        { label: 'Clients', value: 'Builds for clients; deliverables are client-facing.' },
+        { label: 'An audience', value: 'Builds for a public audience (content, community, customers).' },
+        { label: 'skip', value: '', skip: true }
+      ] },
+
+    { dim: 'schedule',
+      pre: 'so i can time things right — schedules, night work, when to have things ready —',
+      ask: 'what timezone are you in, and when do you actually work?',
+      chips: [
+        { label: 'Early bird', value: 'Works mostly mornings; wants overnight work ready by early morning.' },
+        { label: 'Night owl', value: 'Works mostly evenings and nights.' },
+        { label: 'Always on', value: 'Works at all hours; no fixed schedule.' },
+        { label: 'skip', value: '', skip: true }
+      ] },
+
     { dim: 'standing_orders',
       pre: 'last one — the lines i hold to no matter what.',
       ask: 'any standing rules every agent should always follow?',

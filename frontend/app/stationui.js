@@ -6275,12 +6275,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const bs = ds.beliefs(d.key);
       const sec = el('div', 'cd-sec' + (bs.length ? ' known' : ''));
       sec.appendChild(el('div', 'cd-sech', '<span class="cd-dim">' + esc(d.label) + '</span><span class="cd-dn">' + (bs.length || '—') + '</span>'));
+      const addRow = cdAddRow(d.key);
       if (!bs.length) {
         const e = el('div', 'cd-empty'); e.textContent = 'unknown — the station hasn’t learned this yet.'; sec.appendChild(e);
+        // an empty dimension shows its starter chips INLINE (tap → the editor opens prefilled) so filling
+        // the dossier in is one tap + a finished sentence, not a blank textarea behind a "+ add".
+        const st = cdStarterChips(d.key, s => addRow._open(s));
+        if (st) sec.appendChild(st);
         sec.appendChild(cdCurioRow(d));   // the question-state readout (asked / paused) + re-enable, when relevant
       }
       else for (const b of bs) sec.appendChild(cdCard(d.key, b, block));
-      sec.appendChild(cdAddRow(d.key));
+      sec.appendChild(addRow);
       grid.appendChild(sec);
     }
     body.appendChild(grid);
@@ -6407,13 +6412,47 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     cancel.onclick = () => rerender('commander');
   }
 
-  // a "+ add" affordance per dimension: expands to a textarea so the Commander can teach the station directly.
+  // guided starters per dimension — the "+ add" editor and empty dimensions surface these so filling the
+  // dossier in never starts from a blank textarea (the "it feels bare" fix). A chip only INSERTS its starter
+  // text for the Commander to finish; nothing is saved until they hit Save — a nudge, never a fabricated belief.
+  const CD_PROMPTS = {
+    identity:        [{ c: 'your role', s: 'I’m a ' }, { c: 'what you’re building', s: 'I’m building ' }, { c: 'where you’re based', s: 'I’m based in ' }],
+    stack:           [{ c: 'languages', s: 'I mostly work in ' }, { c: 'daily tools', s: 'My daily tools are ' }, { c: 'don’t use', s: 'Don’t reach for ' }],
+    goals:           [{ c: 'right now', s: 'Right now I’m trying to ' }, { c: 'this quarter', s: 'This quarter I want to ' }, { c: 'the big one', s: 'The long-term goal is ' }],
+    style:           [{ c: 'report style', s: 'Report to me ' }, { c: 'autonomy', s: 'Before acting on anything significant, ' }, { c: 'formatting', s: 'Deliverables should be ' }],
+    standing_orders: [{ c: 'an always', s: '- Always ' }, { c: 'a never', s: '- Never ' }],
+    pain:            [{ c: 'what eats your time', s: 'I lose the most time to ' }, { c: 'work you want gone', s: 'I never want to have to ' }],
+    ambition:        [{ c: 'back-burner project', s: 'I keep meaning to ' }, { c: 'a skill', s: 'I’ve always wanted to learn ' }],
+    people:          [{ c: 'who you build for', s: 'I build for ' }, { c: 'your team', s: 'I work with ' }, { c: 'who sees the work', s: 'My deliverables are read by ' }],
+    schedule:        [{ c: 'timezone', s: 'My timezone is ' }, { c: 'work hours', s: 'I usually work ' }, { c: 'when work should land', s: 'Have overnight work ready by ' }]
+  };
+  // the starter-chip row for a dimension; onPick receives the starter string. null when a dim has no prompts.
+  function cdStarterChips(dim, onPick) {
+    const ps = CD_PROMPTS[dim];
+    if (!ps || !ps.length) return null;
+    const row = el('div', 'cd-starters');
+    for (const p of ps) {
+      const b = el('button', 'cd-starter'); b.textContent = p.c;
+      b.title = 'start with: “' + p.s + '…” — you finish the sentence';
+      b.onclick = () => { sfx('click'); onPick(p.s); };
+      row.appendChild(b);
+    }
+    return row;
+  }
+
+  // a "+ add" affordance per dimension: expands to starter chips + a textarea so the Commander can teach the
+  // station directly. row._open(starter) lets an empty dimension's inline chips jump straight into the editor.
   function cdAddRow(dim) {
     const row = el('div', 'cd-add');
     const btn = el('button', 'cd-addbtn'); btn.textContent = '+ add'; row.appendChild(btn);
-    btn.onclick = () => {
+    const open = starter => {
       row.innerHTML = '';
-      const ta = el('textarea', 'cd-edit'); ta.placeholder = 'Tell the station something about yourself…'; ta.spellcheck = false; row.appendChild(ta); ta.focus();
+      const ta = el('textarea', 'cd-edit'); ta.placeholder = 'Tell the station something about yourself…'; ta.spellcheck = false;
+      const chips = cdStarterChips(dim, s => { ta.value = s; ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {} });
+      if (chips) row.appendChild(chips);
+      row.appendChild(ta);
+      if (starter) ta.value = starter;
+      ta.focus(); try { ta.setSelectionRange(ta.value.length, ta.value.length); } catch (_) {}
       const btns = el('div', 'consent-btns cd-acts'); row.appendChild(btns);
       const save = el('button', 'consent-btn'); save.textContent = 'Save'; btns.appendChild(save);
       const cancel = el('button', 'consent-btn'); cancel.textContent = 'Cancel'; btns.appendChild(cancel);
@@ -6421,6 +6460,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       save.onclick = () => { if (saving) return; const v = ta.value.trim(); if (!v) { ta.focus(); return; } saving = true; CDS().upsert(dim, { text: v, source: 'commander' }); sfx('click'); rerender('commander'); };
       cancel.onclick = () => rerender('commander');
     };
+    btn.onclick = () => open('');
+    row._open = open;
     return row;
   }
 
