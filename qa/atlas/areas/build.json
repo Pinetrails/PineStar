@@ -1,6 +1,6 @@
 {
   "area": "build",
-  "updatedAt": "2026-07-18T04:05:01.295Z",
+  "updatedAt": "2026-07-18T04:05:21.631Z",
   "entries": [
     {
       "id": "state/build-connectors",
@@ -213,232 +213,272 @@
       "kind": "ui",
       "area": "build",
       "name": "Close TOOLSETS & CONNECTORS",
-      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
-      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
+      "purpose": "Window chrome for the CONNECTORS console — close / minimize / resize / search, following the station window law.",
+      "promise": "Close dismisses the panel; minimize sends it to the minimized strip; resize adjusts the window; search filters the connector/toolset rows.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the connectors window chrome render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button[aria-label=\"Close TOOLSETS & CONNECTORS\"]",
       "state": "build-connectors",
-      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
+      "notes": "Live: connectors window close/minimize/resize/search controls present (shared window primitive). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-enable-file-cabinet",
       "kind": "ui",
       "area": "build",
       "name": "Enable FILE CABINET",
-      "purpose": "Enable/disable a built-in toolset station-wide (file cabinet, web/browser, workbench code-exec, memory notebook, media studio, task delegation, jukebox).",
-      "promise": "Ticking a toolset checkbox enables that capability station-wide via data-ts-toggle; the checkbox state reflects the persisted enabled flag.",
+      "purpose": "A built-in toolset enable toggle (web/browser, file cabinet, workbench, task delegation, media studio, memory notebook, jukebox) — turns that capability on for the agent.",
+      "promise": "Toggling an Enable switch turns that toolset on/off in backend capability state; installed connectors also appear as dynamic 'Enable connector <id>' toggles.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the toolset enable toggle render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable FILE CABINET\"]",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the TOOLSETS enable checkbox (data-ts-toggle, stationui.js:3659). One per built-in toolset."
+      "notes": "Live (TOOLSETS tab): 7 built-in Enable toggles present + a dynamic 'Enable connector aws-knowledge' toggle appeared for the connector added this session (backend-backed, truthful). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-enable-jukebox-spotify",
       "kind": "ui",
       "area": "build",
       "name": "Enable JUKEBOX (SPOTIFY)",
-      "purpose": "Enable/disable a built-in toolset station-wide (file cabinet, web/browser, workbench code-exec, memory notebook, media studio, task delegation, jukebox).",
-      "promise": "Ticking a toolset checkbox enables that capability station-wide via data-ts-toggle; the checkbox state reflects the persisted enabled flag.",
+      "purpose": "A built-in toolset enable toggle (web/browser, file cabinet, workbench, task delegation, media studio, memory notebook, jukebox) — turns that capability on for the agent.",
+      "promise": "Toggling an Enable switch turns that toolset on/off in backend capability state; installed connectors also appear as dynamic 'Enable connector <id>' toggles.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the toolset enable toggle render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable JUKEBOX (SPOTIFY)\"]",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the TOOLSETS enable checkbox (data-ts-toggle, stationui.js:3659). One per built-in toolset."
+      "notes": "Live (TOOLSETS tab): 7 built-in Enable toggles present + a dynamic 'Enable connector aws-knowledge' toggle appeared for the connector added this session (backend-backed, truthful). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-enable-media-studio",
       "kind": "ui",
       "area": "build",
       "name": "Enable MEDIA STUDIO",
-      "purpose": "Enable/disable a built-in toolset station-wide (file cabinet, web/browser, workbench code-exec, memory notebook, media studio, task delegation, jukebox).",
-      "promise": "Ticking a toolset checkbox enables that capability station-wide via data-ts-toggle; the checkbox state reflects the persisted enabled flag.",
+      "purpose": "A built-in toolset enable toggle (web/browser, file cabinet, workbench, task delegation, media studio, memory notebook, jukebox) — turns that capability on for the agent.",
+      "promise": "Toggling an Enable switch turns that toolset on/off in backend capability state; installed connectors also appear as dynamic 'Enable connector <id>' toggles.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the toolset enable toggle render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable MEDIA STUDIO\"]",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the TOOLSETS enable checkbox (data-ts-toggle, stationui.js:3659). One per built-in toolset."
+      "notes": "Live (TOOLSETS tab): 7 built-in Enable toggles present + a dynamic 'Enable connector aws-knowledge' toggle appeared for the connector added this session (backend-backed, truthful). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-enable-memory-notebook",
       "kind": "ui",
       "area": "build",
       "name": "Enable MEMORY NOTEBOOK",
-      "purpose": "Enable/disable a built-in toolset station-wide (file cabinet, web/browser, workbench code-exec, memory notebook, media studio, task delegation, jukebox).",
-      "promise": "Ticking a toolset checkbox enables that capability station-wide via data-ts-toggle; the checkbox state reflects the persisted enabled flag.",
+      "purpose": "A built-in toolset enable toggle (web/browser, file cabinet, workbench, task delegation, media studio, memory notebook, jukebox) — turns that capability on for the agent.",
+      "promise": "Toggling an Enable switch turns that toolset on/off in backend capability state; installed connectors also appear as dynamic 'Enable connector <id>' toggles.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the toolset enable toggle render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable MEMORY NOTEBOOK\"]",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the TOOLSETS enable checkbox (data-ts-toggle, stationui.js:3659). One per built-in toolset."
+      "notes": "Live (TOOLSETS tab): 7 built-in Enable toggles present + a dynamic 'Enable connector aws-knowledge' toggle appeared for the connector added this session (backend-backed, truthful). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-enable-task-delegation",
       "kind": "ui",
       "area": "build",
       "name": "Enable TASK DELEGATION",
-      "purpose": "Enable/disable a built-in toolset station-wide (file cabinet, web/browser, workbench code-exec, memory notebook, media studio, task delegation, jukebox).",
-      "promise": "Ticking a toolset checkbox enables that capability station-wide via data-ts-toggle; the checkbox state reflects the persisted enabled flag.",
+      "purpose": "A built-in toolset enable toggle (web/browser, file cabinet, workbench, task delegation, media studio, memory notebook, jukebox) — turns that capability on for the agent.",
+      "promise": "Toggling an Enable switch turns that toolset on/off in backend capability state; installed connectors also appear as dynamic 'Enable connector <id>' toggles.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the toolset enable toggle render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable TASK DELEGATION\"]",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the TOOLSETS enable checkbox (data-ts-toggle, stationui.js:3659). One per built-in toolset."
+      "notes": "Live (TOOLSETS tab): 7 built-in Enable toggles present + a dynamic 'Enable connector aws-knowledge' toggle appeared for the connector added this session (backend-backed, truthful). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-enable-web-browser",
       "kind": "ui",
       "area": "build",
       "name": "Enable WEB & BROWSER",
-      "purpose": "Enable/disable a built-in toolset station-wide (file cabinet, web/browser, workbench code-exec, memory notebook, media studio, task delegation, jukebox).",
-      "promise": "Ticking a toolset checkbox enables that capability station-wide via data-ts-toggle; the checkbox state reflects the persisted enabled flag.",
+      "purpose": "A built-in toolset enable toggle (web/browser, file cabinet, workbench, task delegation, media studio, memory notebook, jukebox) — turns that capability on for the agent.",
+      "promise": "Toggling an Enable switch turns that toolset on/off in backend capability state; installed connectors also appear as dynamic 'Enable connector <id>' toggles.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the toolset enable toggle render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable WEB & BROWSER\"]",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the TOOLSETS enable checkbox (data-ts-toggle, stationui.js:3659). One per built-in toolset."
+      "notes": "Live (TOOLSETS tab): 7 built-in Enable toggles present + a dynamic 'Enable connector aws-knowledge' toggle appeared for the connector added this session (backend-backed, truthful). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-enable-workbench-code-execution",
       "kind": "ui",
       "area": "build",
       "name": "Enable WORKBENCH (CODE EXECUTION)",
-      "purpose": "Enable/disable a built-in toolset station-wide (file cabinet, web/browser, workbench code-exec, memory notebook, media studio, task delegation, jukebox).",
-      "promise": "Ticking a toolset checkbox enables that capability station-wide via data-ts-toggle; the checkbox state reflects the persisted enabled flag.",
+      "purpose": "A built-in toolset enable toggle (web/browser, file cabinet, workbench, task delegation, media studio, memory notebook, jukebox) — turns that capability on for the agent.",
+      "promise": "Toggling an Enable switch turns that toolset on/off in backend capability state; installed connectors also appear as dynamic 'Enable connector <id>' toggles.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the toolset enable toggle render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input[aria-label=\"Enable WORKBENCH (CODE EXECUTION)\"]",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the TOOLSETS enable checkbox (data-ts-toggle, stationui.js:3659). One per built-in toolset."
+      "notes": "Live (TOOLSETS tab): 7 built-in Enable toggles present + a dynamic 'Enable connector aws-knowledge' toggle appeared for the connector added this session (backend-backed, truthful). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-minimize-field-manual",
@@ -512,29 +552,34 @@
       "kind": "ui",
       "area": "build",
       "name": "Minimize TOOLSETS & CONNECTORS",
-      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
-      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
+      "purpose": "Window chrome for the CONNECTORS console — close / minimize / resize / search, following the station window law.",
+      "promise": "Close dismisses the panel; minimize sends it to the minimized strip; resize adjusts the window; search filters the connector/toolset rows.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the connectors window chrome render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize TOOLSETS & CONNECTORS\"]",
       "state": "build-connectors",
-      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
+      "notes": "Live: connectors window close/minimize/resize/search controls present (shared window primitive). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-read-the-1-3-1-decision-framework-recipe",
@@ -1423,50 +1468,68 @@
       "kind": "ui",
       "area": "build",
       "name": "Resize TOOLSETS & CONNECTORS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Window chrome for the CONNECTORS console — close / minimize / resize / search, following the station window law.",
+      "promise": "Close dismisses the panel; minimize sends it to the minimized strip; resize adjusts the window; search filters the connector/toolset rows.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the connectors window chrome render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "button[aria-label=\"Resize TOOLSETS & CONNECTORS\"]",
-      "state": "build-connectors"
+      "state": "build-connectors",
+      "notes": "Live: connectors window close/minimize/resize/search controls present (shared window primitive). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-search-connectors",
       "kind": "ui",
       "area": "build",
       "name": "Search connectors",
-      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
-      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
+      "purpose": "Window chrome for the CONNECTORS console — close / minimize / resize / search, following the station window law.",
+      "promise": "Close dismisses the panel; minimize sends it to the minimized strip; resize adjusts the window; search filters the connector/toolset rows.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the connectors window chrome render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input[aria-label=\"Search connectors\"]",
       "state": "build-connectors",
-      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
+      "notes": "Live: connectors window close/minimize/resize/search controls present (shared window primitive). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-search-skills",
@@ -2349,25 +2412,30 @@
       "promise": "Clicking a tab swaps the console body to that section; CATALOG lazily fetches /api/connectors/catalog and renders the grouped cards.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "ref": "KNOWN: no dedicated machine assertion for the console sub-tab switch render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#con-tab-connectors-catalog",
       "state": "build-connectors",
-      "notes": "Console sub-tab of the connectors panel. CATALOG tab drives the 37===37 render contract proven live (build3-verify.mjs)."
+      "notes": "Live: all three con-rail sub-tabs present; clicking CATALOG renders 37 cards, MCP renders the manual form, TOOLSETS renders the enable toggles. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/con-tab-connectors-mcp",
@@ -2378,25 +2446,30 @@
       "promise": "Clicking a tab swaps the console body to that section; CATALOG lazily fetches /api/connectors/catalog and renders the grouped cards.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "ref": "KNOWN: no dedicated machine assertion for the console sub-tab switch render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#con-tab-connectors-mcp",
       "state": "build-connectors",
-      "notes": "Console sub-tab of the connectors panel. CATALOG tab drives the 37===37 render contract proven live (build3-verify.mjs)."
+      "notes": "Live: all three con-rail sub-tabs present; clicking CATALOG renders 37 cards, MCP renders the manual form, TOOLSETS renders the enable toggles. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/con-tab-connectors-toolsets",
@@ -2407,25 +2480,30 @@
       "promise": "Clicking a tab swaps the console body to that section; CATALOG lazily fetches /api/connectors/catalog and renders the grouped cards.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "ref": "KNOWN: no dedicated machine assertion for the console sub-tab switch render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#con-tab-connectors-toolsets",
       "state": "build-connectors",
-      "notes": "Console sub-tab of the connectors panel. CATALOG tab drives the 37===37 render contract proven live (build3-verify.mjs)."
+      "notes": "Live: all three con-rail sub-tabs present; clicking CATALOG renders 37 cards, MCP renders the manual form, TOOLSETS renders the enable toggles. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/con-tab-skills-agent",
@@ -5699,586 +5777,612 @@
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-10",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-11",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-12",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-13",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-14",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-15",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-16",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-2",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-3",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-4",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-5",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-6",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-7",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-8",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-9",
       "kind": "ui",
       "area": "build",
       "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "purpose": "Begin the provider OAuth flow for an OAuth-capable catalog connector, instead of pasting a key.",
+      "promise": "A 'Sign in' button renders on each OAuth catalog card; count === oauth connectors that are available (18 oauth − 2 coming-soon = 16).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the OAuth sign-in button render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-sign-in-1. Live: 16 Sign-in buttons === 16 available oauth connectors (18 oauth − 2 soon); OAuth start NOT completed (external). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-soon-1",
       "kind": "ui",
       "area": "build",
       "name": "not directly wired yet — see the note",
-      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
-      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
+      "purpose": "A disabled placeholder on catalog connectors not yet wired for install — signals 'coming soon' without a dead action.",
+      "promise": "Coming-soon cards render a non-actionable 'Soon' control (no upsert); count === not-yet-available catalog entries (2).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the coming-soon disabled control render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-soon-1. Live: 2 Soon controls present, non-actionable. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-soon-2",
       "kind": "ui",
       "area": "build",
       "name": "not directly wired yet — see the note",
-      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
-      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
+      "purpose": "A disabled placeholder on catalog connectors not yet wired for install — signals 'coming soon' without a dead action.",
+      "promise": "Coming-soon cards render a non-actionable 'Soon' control (no upsert); count === not-yet-available catalog entries (2).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the coming-soon disabled control render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-soon-1. Live: 2 Soon controls present, non-actionable. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-mc-transport-http-1",
@@ -8314,370 +8418,340 @@
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "The paste-a-key field on each api-key catalog card — the credential the connector needs to install.",
+      "promise": "Each api-key catalog card renders one key input; count === apikey connectors (10). The value is posted to /api/connectors, never placed in a URL.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the per-card paste-a-key input render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-input-cc-list-1. Live: 10 per-card inputs === 10 apikey connectors in catalog. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-input-cc-list-10",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "The paste-a-key field on each api-key catalog card — the credential the connector needs to install.",
+      "promise": "Each api-key catalog card renders one key input; count === apikey connectors (10). The value is posted to /api/connectors, never placed in a URL.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the per-card paste-a-key input render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-input-cc-list-1. Live: 10 per-card inputs === 10 apikey connectors in catalog. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-input-cc-list-2",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "The paste-a-key field on each api-key catalog card — the credential the connector needs to install.",
+      "promise": "Each api-key catalog card renders one key input; count === apikey connectors (10). The value is posted to /api/connectors, never placed in a URL.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the per-card paste-a-key input render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-input-cc-list-1. Live: 10 per-card inputs === 10 apikey connectors in catalog. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-input-cc-list-3",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "The paste-a-key field on each api-key catalog card — the credential the connector needs to install.",
+      "promise": "Each api-key catalog card renders one key input; count === apikey connectors (10). The value is posted to /api/connectors, never placed in a URL.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the per-card paste-a-key input render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-input-cc-list-1. Live: 10 per-card inputs === 10 apikey connectors in catalog. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-input-cc-list-4",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "The paste-a-key field on each api-key catalog card — the credential the connector needs to install.",
+      "promise": "Each api-key catalog card renders one key input; count === apikey connectors (10). The value is posted to /api/connectors, never placed in a URL.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the per-card paste-a-key input render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-input-cc-list-1. Live: 10 per-card inputs === 10 apikey connectors in catalog. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-input-cc-list-5",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "The paste-a-key field on each api-key catalog card — the credential the connector needs to install.",
+      "promise": "Each api-key catalog card renders one key input; count === apikey connectors (10). The value is posted to /api/connectors, never placed in a URL.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the per-card paste-a-key input render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-input-cc-list-1. Live: 10 per-card inputs === 10 apikey connectors in catalog. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-input-cc-list-6",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "The paste-a-key field on each api-key catalog card — the credential the connector needs to install.",
+      "promise": "Each api-key catalog card renders one key input; count === apikey connectors (10). The value is posted to /api/connectors, never placed in a URL.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the per-card paste-a-key input render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-input-cc-list-1. Live: 10 per-card inputs === 10 apikey connectors in catalog. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-input-cc-list-7",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "The paste-a-key field on each api-key catalog card — the credential the connector needs to install.",
+      "promise": "Each api-key catalog card renders one key input; count === apikey connectors (10). The value is posted to /api/connectors, never placed in a URL.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the per-card paste-a-key input render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-input-cc-list-1. Live: 10 per-card inputs === 10 apikey connectors in catalog. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-input-cc-list-8",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "The paste-a-key field on each api-key catalog card — the credential the connector needs to install.",
+      "promise": "Each api-key catalog card renders one key input; count === apikey connectors (10). The value is posted to /api/connectors, never placed in a URL.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the per-card paste-a-key input render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-input-cc-list-1. Live: 10 per-card inputs === 10 apikey connectors in catalog. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-input-cc-list-9",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "The paste-a-key field on each api-key catalog card — the credential the connector needs to install.",
+      "promise": "Each api-key catalog card renders one key input; count === apikey connectors (10). The value is posted to /api/connectors, never placed in a URL.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
+          "kind": "audit",
+          "ref": "KNOWN: no dedicated machine assertion for the per-card paste-a-key input render; connectors-ui.test.js + mcp.catalog.test.js guard the panel seam, live-proven this session — coverage gap noted (EL-3), routed to connectors lane"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-input-cc-list-1. Live: 10 per-card inputs === 10 apikey connectors in catalog. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     }
   ]
 }
