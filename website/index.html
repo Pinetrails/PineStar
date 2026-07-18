@@ -50,8 +50,9 @@
   <nav class="topnav">
     <a href="#station">STATION</a>
     <a href="#features">FEATURES</a>
-    <a href="#start">GET STARTED</a>
+    <a href="#difference">WHY STARNET</a>
     <a href="#download">DOWNLOAD</a>
+    <a href="docs/index.html">DOCS</a>
     <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
   </nav>
   <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
@@ -71,7 +72,7 @@
         <a id="cta-download" class="btn btn-primary" href="#download">[ DOWNLOAD ]</a>
         <a class="btn" href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">[ VIEW SOURCE ]</a>
       </div>
-      <div class="hero-meta"><span id="ver-badge">v0.5.2</span> &middot; MIT open source &middot; Windows / macOS / Linux &middot; bring your own keys</div>
+      <div class="hero-meta"><span id="ver-badge">v0.5.2</span> &middot; MIT open source &middot; Windows + macOS installers day one &middot; Linux too &middot; bring your own keys</div>
     </div>
   </section>
 
@@ -137,17 +138,139 @@
     </div>
   </section>
 
+  <!-- ===== deep dives ===== -->
+  <section id="difference" class="section">
+    <div class="section-head">
+      <span class="section-no">03</span>
+      <h2>WHAT MAKES THE HARNESS DIFFERENT</h2>
+    </div>
+
+    <div class="dive">
+      <div class="dive-copy">
+        <div class="dive-no">// 3.1</div>
+        <h3>TRUTHFUL TELEMETRY</h3>
+        <p>Most agent dashboards decorate. StarNet's core law is that <b>the app never asserts
+        state the harness can't prove</b> — no fake progress bars, no idle animations pretending
+        to be work, no invented "agents online" counters. If the station shows an agent at a
+        desk mid-run, there is a live model run behind it. That's what makes the window worth
+        glancing at: watching the floor tells you what is actually happening.</p>
+        <a class="dive-link" href="docs/station.html">&gt; read: the station &amp; truthful telemetry</a>
+      </div>
+      <div class="dive-panel" aria-hidden="true"><pre>
+&gt; run #4821 :: MARKETER-02
+&gt; model call ............ live
+&gt; tool: browser.open .... granted (uplink desk)
+&gt; cost so far ........... $0.0113 (real)
+&gt; floor shows ........... exactly this</pre></div>
+    </div>
+
+    <div class="dive dive-flip">
+      <div class="dive-copy">
+        <div class="dive-no">// 3.2</div>
+        <h3>THE LAYOUT IS THE PERMISSION SYSTEM</h3>
+        <p>No YAML, no policy files. Draw a room and you've scoped a team; place a prop and
+        you've granted a tool; cut a doorway and you've authorized a handoff. Capability
+        boundaries you can literally see — and redraw in seconds. Full power from minute one:
+        nothing is gated behind progression, ever.</p>
+        <a class="dive-link" href="docs/station.html">&gt; read: object = capability</a>
+      </div>
+      <div class="dive-panel" aria-hidden="true"><pre>
+&gt; place TERMINAL in LAB-1
+&gt; LAB-1 team gains: shell (scoped)
+&gt; remove prop → grant revoked
+&gt; org chart = floor plan</pre></div>
+    </div>
+
+    <div class="dive">
+      <div class="dive-copy">
+        <div class="dive-no">// 3.3</div>
+        <h3>A WHOLE ROSTER, RUNNING AT ONCE</h3>
+        <p>Every bay you place can run <b>concurrently</b> — genuinely distinct, bounded agent
+        runs, not one queue in costumes. Pin a different model to each agent (heavy reasoning on
+        the architect, fast-and-cheap on the intern), let teams spawn sub-workers, and watch the
+        conveyor carry real work between rooms.</p>
+        <a class="dive-link" href="docs/agents.html">&gt; read: agents &amp; teams</a>
+      </div>
+      <div class="dive-panel" aria-hidden="true"><pre>
+&gt; RESEARCH-BAY .... 2 runs live
+&gt; BUILD-LAB ....... 1 run live
+&gt; MARKETING ....... queued x2
+&gt; each = its own bounded run</pre></div>
+    </div>
+
+    <div class="dive dive-flip">
+      <div class="dive-copy">
+        <div class="dive-no">// 3.4</div>
+        <h3>NIGHT SHIFT: AWAY, BUT ON A LEASH</h3>
+        <p>Step away and the station keeps working — on standing goals, queued work, and ideas
+        worth exploring — strictly inside the leash you set. Away-runs are jailed to a workshop
+        sandbox, and when you return you get an honest digest: what ran, what it made, what it
+        cost, what got declined. Deliverables open in one click.</p>
+        <a class="dive-link" href="docs/autonomy.html">&gt; read: autonomy &amp; night shift</a>
+      </div>
+      <div class="dive-panel" aria-hidden="true"><pre>
+&gt; you left 23:40 → returned 08:12
+&gt; 3 runs completed, 1 declined (leash)
+&gt; built: "Obsidian content pipeline kit"
+&gt; spend: $0.62 · every line provable</pre></div>
+    </div>
+
+    <div class="dive">
+      <div class="dive-copy">
+        <div class="dive-no">// 3.5</div>
+        <h3>PLAYS WELL WITH YOUR OTHER HARNESSES</h3>
+        <p>Already live in Claude Code, Hermes, or OpenClaw? StarNet doesn't demand a divorce.
+        An MCP stdio bridge and an OpenAI-style ingress endpoint let other tools drive StarNet
+        capabilities — and let your station sit alongside the harnesses you already run, as
+        shared infrastructure instead of another silo.</p>
+        <a class="dive-link" href="docs/connectors.html">&gt; read: connectors &amp; interop</a>
+      </div>
+      <div class="dive-panel" aria-hidden="true"><pre>
+&gt; mcp bridge ........ stdio, ready
+&gt; /v1 ingress ....... OpenAI-style
+&gt; your harness → our station
+&gt; no silo, no lock-in</pre></div>
+    </div>
+  </section>
+
+  <!-- ===== works with ===== -->
+  <section id="stack" class="section">
+    <div class="section-head">
+      <span class="section-no">04</span>
+      <h2>WORKS WITH YOUR STACK</h2>
+    </div>
+    <p class="dl-sub">Five provider families, fourteen built-in tool families, MCP for everything else.</p>
+    <div class="chips">
+      <span class="chip">OPENROUTER</span>
+      <span class="chip">ANTHROPIC</span>
+      <span class="chip">OPENAI-COMPAT / LOCAL</span>
+      <span class="chip">GEMINI</span>
+      <span class="chip">GROK OAUTH</span>
+      <span class="chip">KIMI OAUTH</span>
+      <span class="chip">TELEGRAM</span>
+      <span class="chip">DISCORD</span>
+      <span class="chip">MCP CONNECTORS</span>
+      <span class="chip">OAUTH 2.1 DCR</span>
+      <span class="chip">BROWSER AUTOMATION</span>
+      <span class="chip">WEB SEARCH</span>
+      <span class="chip">FILES + SHELL</span>
+      <span class="chip">NOTEBOOKS</span>
+      <span class="chip">SCHEDULES / CRON</span>
+      <span class="chip">OS KEYCHAIN</span>
+    </div>
+  </section>
+
   <!-- ===== get started ===== -->
   <section id="start" class="section">
     <div class="section-head">
-      <span class="section-no">03</span>
+      <span class="section-no">05</span>
       <h2>GET STARTED</h2>
     </div>
     <ol class="steps">
       <li>
         <span class="step-no">STEP 1</span>
         <h3>INSTALL THE STATION</h3>
-        <p><a href="#download">Download</a> the desktop build for your platform and run the installer. Early builds are not yet OS code-signed, so Windows and macOS will warn you first &mdash; the <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness/blob/main/INSTALL.md" target="_blank" rel="noopener">install guide</a> walks you through exactly what you'll see.</p>
+        <p><a href="#download">Download</a> the installer for your platform &mdash; Windows and macOS are both first-class targets from day one. Early builds aren't yet OS code-signed, so you'll get a one-time warning; the <a href="docs/getting-started.html">getting-started guide</a> walks you through exactly what you'll see.</p>
       </li>
       <li>
         <span class="step-no">STEP 2</span>
@@ -173,10 +296,10 @@ node sidecar/index.js</code></pre>
   <!-- ===== download ===== -->
   <section id="download" class="section">
     <div class="section-head">
-      <span class="section-no">04</span>
+      <span class="section-no">06</span>
       <h2>DOWNLOAD STARNET</h2>
     </div>
-    <p class="dl-sub">Desktop builds for every platform, published on the <a id="rel-page" href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">releases page</a> and updated through a signed feed. Current version: <span class="ver">v0.5.2</span>.</p>
+    <p class="dl-sub"><b>Windows and macOS installers are fully supported from day one</b>, and Linux ships from the same signed release train. All builds publish on the <a id="rel-page" href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">releases page</a> and update through the same verified feed. Current version: <span class="ver">v0.5.2</span>.</p>
     <div class="dl-grid">
       <article class="dl-card" data-os="windows">
         <div class="dl-os">WINDOWS</div>
@@ -209,13 +332,31 @@ node sidecar/index.js</code></pre>
         <div class="dl-note">chmod +x, then run.</div>
       </article>
     </div>
-    <p class="dl-honesty">// honesty note: builds are cryptographically signed for auto-updates, but not yet OS code-signed (no Authenticode / Apple notarization). Your OS will warn you before first run &mdash; the <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness/blob/main/INSTALL.md" target="_blank" rel="noopener">install guide</a> shows exactly what to expect on each platform. Windows is the most-tested target at launch; macOS and Linux ship from the same release train with less real-world coverage. Something broken? Tell us: <a href="mailto:androo.agi@gmail.com">androo.agi@gmail.com</a>.</p>
+    <p class="dl-honesty">// honesty note: every build is cryptographically signed for auto-updates, but early builds aren't yet OS code-signed (no Authenticode / Apple notarization), so Windows and macOS will each show a one-time "unknown publisher" warning before first run. The <a href="docs/getting-started.html">getting-started guide</a> shows exactly what to click on each platform. Something broken? Tell us: <a href="mailto:androo.agi@gmail.com">androo.agi@gmail.com</a>.</p>
+  </section>
+
+  <!-- ===== docs teaser ===== -->
+  <section id="docs" class="section">
+    <div class="section-head">
+      <span class="section-no">07</span>
+      <h2>READ THE DOCS</h2>
+    </div>
+    <div class="docs-teaser">
+      <a class="teaser-card" href="docs/getting-started.html"><span class="tc-title">GETTING STARTED</span><span class="tc-sub">install, first-run warnings, first agent</span></a>
+      <a class="teaser-card" href="docs/providers.html"><span class="tc-title">PROVIDERS &amp; KEYS</span><span class="tc-sub">BYOK, OAuth sign-ins, service keys</span></a>
+      <a class="teaser-card" href="docs/station.html"><span class="tc-title">THE STATION</span><span class="tc-sub">rooms, props, capability grants</span></a>
+      <a class="teaser-card" href="docs/agents.html"><span class="tc-title">AGENTS &amp; TEAMS</span><span class="tc-sub">classes, dossiers, concurrency</span></a>
+      <a class="teaser-card" href="docs/autonomy.html"><span class="tc-title">AUTONOMY &amp; NIGHT SHIFT</span><span class="tc-sub">the leash, away digests, schedules</span></a>
+      <a class="teaser-card" href="docs/skills.html"><span class="tc-title">SKILLS &middot; RECIPES &middot; ROUTINES</span><span class="tc-sub">the how, the what, the when</span></a>
+      <a class="teaser-card" href="docs/connectors.html"><span class="tc-title">CONNECTORS &amp; INTEROP</span><span class="tc-sub">MCP, channels, harness bridge</span></a>
+      <a class="teaser-card" href="docs/troubleshooting.html"><span class="tc-title">TROUBLESHOOTING</span><span class="tc-sub">every warning, honestly documented</span></a>
+    </div>
   </section>
 
   <!-- ===== FAQ ===== -->
   <section id="faq" class="section">
     <div class="section-head">
-      <span class="section-no">05</span>
+      <span class="section-no">08</span>
       <h2>TRANSMISSION LOG // FAQ</h2>
     </div>
     <div class="faq">
@@ -237,7 +378,7 @@ node sidecar/index.js</code></pre>
       </details>
       <details>
         <summary>Why does my OS warn me during install?</summary>
-        <p>Early builds aren't yet code-signed with a paid OS certificate, so SmartScreen and Gatekeeper flag them as "unknown publisher." The <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness/blob/main/INSTALL.md" target="_blank" rel="noopener">install guide</a> documents every warning honestly, including the one Windows 11 Smart App Control case we can't bypass.</p>
+        <p>Early builds aren't yet code-signed with a paid OS certificate, so SmartScreen and Gatekeeper flag them as "unknown publisher." The <a href="docs/troubleshooting.html">troubleshooting guide</a> documents every warning honestly, including the one Windows 11 Smart App Control case we can't bypass.</p>
       </details>
     </div>
   </section>
@@ -249,7 +390,8 @@ node sidecar/index.js</code></pre>
   <div class="footer-links">
     <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
     <a href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
-    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness/blob/main/INSTALL.md" target="_blank" rel="noopener">INSTALL GUIDE</a>
+    <a href="docs/index.html">DOCS</a>
+    <a href="docs/getting-started.html">INSTALL GUIDE</a>
     <a href="mailto:androo.agi@gmail.com">CONTACT</a>
   </div>
   <div class="footer-fine">MIT license &middot; <span id="ver-foot">v0.5.2</span> &middot; &copy; <span id="year">2026</span> StarNet</div>
