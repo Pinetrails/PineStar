@@ -20,8 +20,8 @@ into StarNet — this is launch-conversion work. Shipped in this lane:
   roster rows `vex` (default model, unparsed-config honesty) and `cassandra` (anthropic/claude-opus-4.6
   pin, bare id); composed system prompts carry persona+orders+memory, zero secret bytes in any
   response/prompt (planted fake keys never leaked). test:fast + test:http green in-branch.
-- [ ] Open: merge to trunk (ritual), MIGRATING.md guide for the launch content push, session-history
-  import deliberately out of scope v1.
+- [x] MERGED to trunk 77f40138 (digest in qa/STATUS.md). Open: MIGRATING.md guide for the launch
+  content push; session-history import deliberately out of scope v1; exe rebuild bundles the flow.
 
 ## 2026-07-18 — CONCURRENT SESSIONS ON ONE AGENT (branch `claude/multiple-concurrent-sessions-736e68`)
 
