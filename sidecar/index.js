@@ -106,6 +106,7 @@ const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
 const connectorCatalog = require('./mcp/catalog.js');       // curated one-click MCP connector catalog (pure data + selectors)
+const serviceKeysMod = require('./servicekeys.js');         // KEYS tab: custom service API keys (pure core — env injection + masked list)
 const mcpOauth = require('./mcp/oauth.js');                 // generic OAuth 2.1 client for MCP connectors (discover/DCR/PKCE/refresh)
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
@@ -2456,6 +2457,46 @@ function saveConnectorConfigs() {
     return true;
   } catch (e) { console.warn('[connectors] persist failed:', (e && e.message) || e); return false; }
 }
+/* ---- Custom service API keys (the KEYS tab's "add an unlisted platform"): a third credential class beside
+   provider keys and connector tokens. Persisted in a PROTECTED sibling file (outside the fs jail, never on the
+   bus; /api/servicekeys responses carry a masked last4, never the value). Enabled keys are applied to
+   process.env (shell.exec children inherit it — that is HOW a pasted key actually works for an agent), with
+   servicekeys.applyEnv's ownership guard so an operator-exported ambient var is never clobbered. The prompt
+   seam advertises the env-var NAMES only, gated on shell.exec being in the run's resolved tools. ---- */
+const SERVICEKEYS_FILE = path.join(CONNECTORS_DIR, 'servicekeys.json');
+// Every model-provider keyEnv name (+ its STARNET_/SKYNET_ scoped forms, which ENV() also reads): a KEYS
+// paste deriving one of these would silently become billing credentials via providerRuntimeKey → envFirst.
+// upsert refuses them; applyEnv skips them (belt for pre-guard persisted records).
+const SERVICEKEYS_RESERVED_ENV = (() => {
+  const names = new Set();
+  try {
+    for (const p of listProviderProfiles({ includeInactive: true, public: false })) {
+      for (const n of (p.keyEnv || [])) { names.add(n); names.add('STARNET_' + n); names.add('SKYNET_' + n); }
+    }
+  } catch (e) { console.warn('[servicekeys] reserved-env build failed:', (e && e.message) || e); }
+  return names;
+})();
+function loadServiceKeys() {
+  try { const raw = loadResilient(SERVICEKEYS_FILE, 'servicekeys'); return (raw && Array.isArray(raw.keys)) ? raw.keys : []; }
+  catch (_) { return []; }
+}
+let serviceKeys = loadServiceKeys();
+let serviceKeysOwnedEnv = {};   // env vars WE set (the applyEnv clobber guard) — rebuilt on every apply
+function applyServiceKeysEnv() { serviceKeysOwnedEnv = serviceKeysMod.applyEnv(serviceKeys, process.env, serviceKeysOwnedEnv, { reservedEnv: SERVICEKEYS_RESERVED_ENV }); }
+applyServiceKeysEnv();          // boot: persisted keys are live for the first run without any UI touch
+// Verified persist (secret-durability law): ok ONLY when a read-back proves the write reached disk. On
+// ok:false the in-memory list stays live but the route reports the failure — never a false "saved".
+function saveServiceKeys() {
+  const intended = JSON.stringify({ version: 1, keys: serviceKeys });
+  const r = saveJsonVerified({
+    mkdir: () => fs.mkdirSync(CONNECTORS_DIR, { recursive: true }),
+    save: () => saveResilient(SERVICEKEYS_FILE, { version: 1, keys: serviceKeys }),
+    load: () => loadResilient(SERVICEKEYS_FILE, 'servicekeys'),
+    proof: (raw) => { try { return JSON.stringify(raw) === intended; } catch (_) { return false; } }
+  });
+  if (!r.ok) console.warn('[servicekeys] persist UNVERIFIED after retry (' + (r.error || '?') + ')');
+  return r.ok;
+}
 const connectors = makeConnectorManager({
   makeTransport: (cfg) => cfg && cfg.transport === 'stdio' ? makeStdioTransport(cfg) : makeHttpTransport(cfg),
   clock: { now: () => Date.now() }, timeoutMs: CAPS.toolTimeoutMs,
@@ -4688,6 +4729,10 @@ function dispatchRoute(req, res) {
   if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
   if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
+  if (req.method === 'GET' && req.url === '/api/servicekeys') return handleServiceKeysList(req, res);
+  if (req.method === 'POST' && req.url === '/api/servicekeys') return handleServiceKeyUpsert(req, res);
+  if (req.method === 'POST' && req.url === '/api/servicekeys/toggle') return handleServiceKeyToggle(req, res);
+  if (req.method === 'POST' && req.url === '/api/servicekeys/remove') return handleServiceKeyRemove(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/toolsets') === 0) return handleToolsetsList(req, res);
   if (req.method === 'POST' && req.url.indexOf('/api/toolsets/') === 0) return handleToolsetToggle(req, res);
   if (req.method === 'GET' && req.url.indexOf('/api/slash/catalog') === 0) return serveSlashCatalog(req, res);
@@ -5244,6 +5289,7 @@ async function handleConfigReset(req, res) {
       break;
     }
     case 'connectors': connectorConfigs = []; saveConnectorConfigs(); break;
+    case 'servicekeys': serviceKeys = []; applyServiceKeysEnv(); saveServiceKeys(); break;   // scrubs the injected env vars too
     default: return json(400, { error: 'unknown or non-resettable section: ' + (section || '(empty)') });
   }
   return json(200, { ok: true, section });
@@ -5425,6 +5471,43 @@ async function handleToolsetToggle(req, res) {
 function handleConnectorsList(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ connectors: connectors.list() }));
+}
+/* ---- /api/servicekeys: the KEYS tab's custom platform keys. The value is accepted on POST, persisted to the
+   protected sibling file, applied to process.env, and NEVER echoed back (the list carries a masked last4). ---- */
+function handleServiceKeysList(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ keys: serviceKeys.map(serviceKeysMod.toPublic).sort((a, b) => a.name.localeCompare(b.name)) }));
+}
+async function handleServiceKeyUpsert(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const r = serviceKeysMod.upsert(serviceKeys, { name: body.name, key: body.key, docsUrl: body.docsUrl }, Date.now(), { reservedEnv: SERVICEKEYS_RESERVED_ENV });
+  if (r.error) return json(400, { error: r.error });
+  serviceKeys = r.list;
+  applyServiceKeysEnv();
+  const saved = saveServiceKeys();   // verified read-back; on false the key is LIVE but not durable — say so honestly
+  return json(saved ? 200 : 500, { ok: saved, saved, key: serviceKeysMod.toPublic(r.record), error: saved ? undefined : 'key is active for this session but could not be verified on disk' });
+}
+async function handleServiceKeyToggle(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 12)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  if (typeof body.enabled !== 'boolean') return json(400, { error: 'enabled must be a boolean' });
+  const r = serviceKeysMod.setEnabled(serviceKeys, body.id, body.enabled);
+  if (r.error) return json(404, { error: r.error });
+  serviceKeys = r.list;
+  applyServiceKeysEnv();
+  const saved = saveServiceKeys();
+  return json(saved ? 200 : 500, { ok: saved, saved, key: serviceKeysMod.toPublic(r.record) });
+}
+async function handleServiceKeyRemove(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 12)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const r = serviceKeysMod.remove(serviceKeys, body.id);
+  if (r.error) return json(404, { error: r.error });
+  serviceKeys = r.list;
+  applyServiceKeysEnv();   // scrubs the owned env var so the very next run no longer sees it
+  const saved = saveServiceKeys();
+  return json(saved ? 200 : 500, { ok: saved, saved, removed: String(body.id || '') });
 }
 /* GET /api/connectors/catalog — the curated one-click catalog (pure data). Annotated with `installed`
    by cross-referencing the live connector configs (by id), so the browse panel can show what's already
@@ -8267,7 +8350,18 @@ async function runOnce(o) {
   } catch (_) {}
   let taskIntentNote = '';
   if (taskBrief) taskIntentNote = '\n\n' + TaskIntent.directive(taskContextBlock);
-  const sys = withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+  // SERVICE KEYS (KEYS tab): advertise the env-var NAMES of the Commander's connected platform keys — value never
+  // rides the prompt. TRUTHFUL-TELEMETRY GATE: the block says "available to your shell commands", so it composes
+  // ONLY when shell.exec is in THIS run's resolved tool set (same discipline as the quest block above). A user with
+  // no service keys gets a byte-identical prompt (promptBlock('') === ''). Fail-open: never breaks a run.
+  let serviceKeysBlock = '';
+  try {
+    if (isTask && resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('shell.exec') >= 0) {
+      const b = serviceKeysMod.promptBlock(serviceKeys);
+      if (b) serviceKeysBlock = '\n\n' + b;
+    }
+  } catch (_) { serviceKeysBlock = ''; }
+  const sys = withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real

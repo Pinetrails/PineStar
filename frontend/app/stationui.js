@@ -5374,13 +5374,33 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<b class="cc-lg-key">API key</b> you paste a key · <b class="cc-lg-oauth">OAUTH</b> a secure browser sign-in.</span></p>' +
       '<div id="cc-list" class="cc-list"><span class="loading pulse">loading catalog…</span></div>' +
       '<div id="cc-msg" class="msg"></div>' +
-      '<p class="set-about dim">Need something not listed? Add any MCP server by URL or local command in <b>MCP CONNECTORS</b>.</p>';
+      '<p class="set-about dim">Need something not listed? Add any MCP server by URL or local command in <b>MCP CONNECTORS</b>, or paste a bare API key for any platform in <b>KEYS</b>.</p>';
+    // ---- KEYS pane markup: every platform key the agents hold, in one place. Top = keyed CATALOG/MCP platforms
+    //      currently connected (truth from /api/connectors — managed on their own tab, read-only here). Bottom =
+    //      custom keys for UNLISTED platforms (POST /api/servicekeys): the sidecar exposes each as an env var in
+    //      the agents' shell, so an agent can call ANY service's API with it. Values render masked, never whole. ----
+    const secKeys =
+      '<div class="sec"><span class="sec-l">CONNECTED PLATFORMS</span><span class="sec-tag" id="ky-plat-n">0</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<div id="ky-platforms" class="mc-list"><span class="loading pulse">loading…</span></div>' +
+      '<div class="sec"><span class="sec-l">UNLISTED PLATFORM KEYS</span><span class="sec-tag" id="ky-mine-n">0</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<div id="ky-list" class="mc-list"></div>' +
+      '<div class="sec"><span class="sec-l">ADD AN UNLISTED PLATFORM</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<div class="mc-form">' +
+        '<input id="ky-name" class="key-input" placeholder="platform name — e.g. Resend" autocomplete="off" spellcheck="false" maxlength="64">' +
+        '<input id="ky-key" type="password" class="key-input" placeholder="API key" autocomplete="off" spellcheck="false">' +
+        '<input id="ky-docs" class="key-input" placeholder="API docs URL (optional — helps agents use the service)" autocomplete="off" spellcheck="false">' +
+        '<div class="mc-hint">Stored locally by the sidecar and shown as ····last4 only. Agents get it as an environment variable ' +
+          '(e.g. <code>RESEND_API_KEY</code>) in their shell, so they can call the platform’s API directly.</div>' +
+        '<div class="mc-acts"><button class="bb sm" id="ky-add">+ SAVE KEY</button></div>' +
+      '</div>' +
+      '<div id="ky-msg" class="msg"></div>';
     const frag = h => (el => { el.innerHTML = h; });
     // TOOLSETS first (audit finding 5): the dock button says TOOLSETS, so the panel must open on the tab it's
     // named for — a first click used to land on the CATALOG storefront, which read as "TOOLSETS = connectors".
     mountConsole(body, 'connectors', [
       { id: 'toolsets', label: 'TOOLSETS', glyph: '▤', desc: 'Every capability your agents can use, grouped and switchable. A prop grants a toolset; the switch is the kill-switch on top.', build: frag(secToolsets) },
       { id: 'catalog', label: 'CATALOG', glyph: '⊞', desc: 'One-click connectors — browse vetted services (docs, search, automation, payments…) and plug them in as agent tools.', build: frag(secCatalog) },
+      { id: 'keys', label: 'KEYS', glyph: '⊟', desc: 'Every platform API key your agents hold, in one place — and a safe drop for any service the catalog doesn’t list.', build: frag(secKeys) },
       { id: 'mcp', label: 'MCP CONNECTORS', glyph: '⧉', desc: 'External tool servers your agents can call — GitHub, Slack, a database. Their tools run through the same approval gate as the built-ins.', build: frag(secMcp) }
     ], { search: true, searchPlaceholder: 'search toolsets & connectors…' });
 
@@ -5765,6 +5785,112 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       else if (act === 'signin-cancel') { ccCancelSignIn(id); }
     });
     ccRefresh();
+
+    // ===== KEYS: connected keyed platforms (truth from /api/connectors + catalog) + custom /api/servicekeys =====
+    const kyPlatEl = body.querySelector('#ky-platforms');
+    const kyListEl = body.querySelector('#ky-list');
+    const kyMsgEl = body.querySelector('#ky-msg');
+    const kyNameEl = body.querySelector('#ky-name');
+    const kyKeyEl = body.querySelector('#ky-key');
+    const kyDocsEl = body.querySelector('#ky-docs');
+    // TOP: platforms whose credential is a saved key/token on a live connector config. Read-only here — each is
+    // managed where it was added (its CATALOG card / MCP CONNECTORS row). hasToken is the backend's honest flag;
+    // we never see (or show) the value. OAuth connectors are keyless by design and stay off this list.
+    async function kyPlatformsRefresh() {
+      try {
+        const [cj, gj] = await Promise.all([
+          (await fetch('/api/connectors')).json(),
+          (await fetch('/api/connectors/catalog')).json()
+        ]);
+        const byId = {};
+        for (const e of ((gj && gj.connectors) || [])) byId[e.id] = e;
+        const keyed = ((cj && cj.connectors) || []).filter(c => c.hasToken && !c.oauth);
+        const n = body.querySelector('#ky-plat-n'); if (n) n.textContent = String(keyed.length);
+        if (!keyed.length) {
+          kyPlatEl.innerHTML = '<div class="mc-detail">No keyed platform connected yet — add one from the CATALOG (the entries marked <b style="color:var(--gold)">API key</b>).</div>';
+          return;
+        }
+        kyPlatEl.innerHTML = keyed.map((c, i) => {
+          const cat = byId[c.id];
+          const b = c.state === 'up' ? ['var(--ok)', '● connected'] : (c.state === 'error' ? ['var(--bad)', '✕ error'] : ['var(--ph-dim)', '○ ' + esc(c.state || 'off')]);
+          return '<div class="mc-row" style="--ci:' + i + '">' +
+            '<div class="mc-top"><b>' + esc((cat && cat.name) || c.label || c.id) + '</b> <span class="dim">' + esc(c.id) + '</span>' +
+              '<span class="mc-state" style="color:' + b[0] + '">' + b[1] + (c.toolCount ? ' · ' + c.toolCount + ' tool' + (c.toolCount === 1 ? '' : 's') : '') + '</span></div>' +
+            '<div class="mc-url dim"><span class="mc-tag">token saved</span> managed in ' + (cat ? 'CATALOG' : 'MCP CONNECTORS') + '</div>' +
+          '</div>';
+        }).join('');
+      } catch (_) { kyPlatEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to see connected platforms.</div>'; }
+    }
+    // BOTTOM: the custom store. Checkbox = kill-switch (key stays saved, agents stop seeing it); ✕ deletes.
+    function kyRow(k, i) {
+      const docs = k.docsUrl ? ' <a class="dim" href="' + esc(k.docsUrl) + '" target="_blank" rel="noopener">docs ↗</a>' : '';
+      return '<div class="mc-row" data-id="' + esc(k.id) + '" style="--ci:' + (i || 0) + '">' +
+        '<div class="mc-top">' +
+          '<span class="set-row mc-enable"><input type="checkbox" data-ky-act="toggle"' + (k.enabled ? ' checked' : '') + ' aria-label="Enable key ' + esc(k.name) + '"></span>' +
+          '<b>' + esc(k.name) + '</b> <span class="dim">' + esc(k.last4) + '</span>' +
+          '<span class="mc-state" style="color:' + (k.enabled ? 'var(--ok)' : 'var(--ph-dim)') + '">' + (k.enabled ? '● live for agents' : '○ off') + '</span></div>' +
+        '<div class="mc-url dim">shell env var <code>' + esc(k.envVar) + '</code>' + docs + '</div>' +
+        '<div class="mc-acts"><button class="bb xs danger" data-ky-act="remove">✕ REMOVE</button></div>' +
+      '</div>';
+    }
+    async function kyRefresh() {
+      try {
+        const j = await (await fetch('/api/servicekeys')).json();
+        const list = (j && j.keys) || [];
+        const n = body.querySelector('#ky-mine-n'); if (n) n.textContent = String(list.length);
+        kyListEl.innerHTML = list.length ? list.map(kyRow).join('')
+          : '<div class="mc-detail">Nothing yet — paste a name + key below and any agent with a shell can use that platform.</div>';
+      } catch (_) { kyListEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to manage keys.</div>'; }
+    }
+    body.querySelector('#ky-add').addEventListener('click', async () => {
+      const name = (kyNameEl.value || '').trim(), key = (kyKeyEl.value || '').trim(), docsUrl = (kyDocsEl.value || '').trim();
+      kyMsgEl.classList.remove('ok');
+      if (!name) { kyMsgEl.textContent = 'give the platform a name first'; sfx('bad'); kyNameEl.focus(); return; }
+      if (!key) { kyMsgEl.textContent = 'paste the API key'; sfx('bad'); kyKeyEl.focus(); return; }
+      try {
+        const j = await (await postJSON('/api/servicekeys', { name, key, docsUrl })).json().catch(() => ({}));
+        if (j.error && !j.key) { kyMsgEl.textContent = '✕ ' + j.error; sfx('bad'); return; }
+        // saved:false still means LIVE this session — surface the persistence truth instead of a flat "saved".
+        kyMsgEl.classList.toggle('ok', j.saved !== false);
+        kyMsgEl.textContent = j.saved === false
+          ? '⚠ ' + name + ' is active for this session, but saving to disk failed — it may not survive a restart'
+          : '✓ ' + name + ' saved — agents can use ' + ((j.key && j.key.envVar) || 'it') + ' in their shell';
+        sfx(j.saved === false ? 'bad' : 'click');
+        if (j.saved !== false) notify('Key "' + name + '" saved', 'good');
+        kyNameEl.value = ''; kyKeyEl.value = ''; kyDocsEl.value = '';
+      } catch (e) { kyMsgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
+      kyRefresh();
+    });
+    kyListEl.addEventListener('click', async ev => {
+      const btn = ev.target.closest('button[data-ky-act]'); if (!btn) return;
+      const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
+      if (btn.dataset.kyAct === 'remove') {
+        try {
+          const j = await (await postJSON('/api/servicekeys/remove', { id })).json().catch(() => ({}));
+          if (j.error && !j.ok) { kyMsgEl.classList.remove('ok'); kyMsgEl.textContent = '✕ ' + j.error; sfx('bad'); }
+          else { sfx('tick'); notify('Key removed'); }
+        } catch (_) { sfx('bad'); }
+        kyRefresh();
+      }
+    });
+    kyListEl.addEventListener('change', async ev => {
+      const cb = ev.target.closest('input[data-ky-act="toggle"]'); if (!cb) return;
+      const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
+      cb.disabled = true;
+      try {
+        const j = await (await postJSON('/api/servicekeys/toggle', { id, enabled: cb.checked })).json().catch(() => ({}));
+        if (j.error && !j.ok) { cb.checked = !cb.checked; sfx('bad'); notify('✕ ' + j.error); }
+        else sfx('tick');
+      } catch (_) { cb.checked = !cb.checked; sfx('bad'); }
+      cb.disabled = false;
+      kyRefresh();
+    });
+    kyPlatformsRefresh();
+    kyRefresh();
+    // panes mount once and tab clicks only toggle visibility — re-poll both lists when the Commander
+    // lands on KEYS, so a connector keyed on the CATALOG tab moments ago shows up without a window reopen.
+    const kyTab = body.querySelector('#con-tab-connectors-keys');
+    if (kyTab) kyTab.addEventListener('click', () => { kyPlatformsRefresh(); kyRefresh(); });
   }
 
   /* ---- SPOTIFY connect (OAuth PKCE): open the consent window, then poll /api/spotify/status until the

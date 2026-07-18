@@ -19,6 +19,27 @@ agent staying at its workstation until the LAST run ends. Shipped:
 - [ ] Follow-up candidates: crew-panel ×N run marker; lease-wait surfaced as a COMMS beat;
   hub.js supersede-retry comment is now historical (behavior unaffected).
 
+## 2026-07-18 — KEYS tab: custom service API keys (branch `claude/custom-api-key-storage-000c3f`)
+
+Andrew's ask: a safe place to paste an API key for ANY platform (not a provider key, not a full MCP
+connector) — a KEYS tab in TOOLSETS & CONNECTORS under CATALOG. Shipped in this lane:
+- `sidecar/servicekeys.js` (pure core) + `/api/servicekeys` (GET/POST/toggle/remove): protected store
+  `connectors/servicekeys.json`, verified read-back persist, list responses masked (never the value).
+- Consumption path: enabled keys → `process.env` (ownership guard — ambient env vars always win) so
+  shell.exec children inherit e.g. `RESEND_API_KEY`; names-only `<service_keys>` prompt block at the
+  system-prompt seam, gated on shell.exec in resolved tools (truthful-telemetry).
+- KEYS pane: connected keyed platforms (truth = /api/connectors hasToken, oauth excluded, read-only)
+  + custom rows (kill-switch, masked last4, env-var readout, docs link) + add-unlisted form.
+- Polish pass: RESERVED-ENV guard — a paste named after a model provider ('OpenRouter' →
+  OPENROUTER_API_KEY) would have become billing credentials via providerRuntimeKey's process.env read;
+  upsert now refuses every registry keyEnv name (+ STARNET_/SKYNET_ scoped forms), applyEnv skips them
+  as belt. KEYS lists re-poll on tab entry; one-click REMOVE (mc-row idiom). W0 re-stamped in-branch
+  (65ffffde over shipped bytes 9638869c).
+- Gates: test:fast 363 green at final bytes; servicekeys.http e2e (28 asserts, restart round-trip +
+  provider refusal) added to test:http. Live-proven on seed :9207 (add/mask/toggle/remove/platforms/
+  provider-refusal DOM round-trips; no secret in responses; ⊟ glyph measured non-tofu).
+- [ ] Open: live proof of a real agent shell run reading the env var; per-agent scoping if wanted later.
+
 ## 2026-07-17 — AUTONOMY TUNING (direction dial) — merging this pass (claude/agent-autonomy-tuning-89786e)
 
 Andrew's ask: let users guide WHERE the agent's autonomous work goes, as a release cherry-on-top.
