@@ -1,5 +1,13 @@
 # QA STATION — dashboard
 
+**2026-07-18 Atlas wave 3 — COVERAGE + tails (release-polish lane, 5 parallel agents):** the audited→perfected converter wave. Registry now 1154 entries (model-harvest collapse −369), only 34 unmapped remain. Gauge 279 fresh + 201 audited standing; 551 derived-STALE — expected: mid-wave trunk merges (session-tools removal 83292661, delivery-legibility, EL-11 frontend) touched stationui.js/index.js and staleness law expires judgments wired there; the map + tests are the durable output, freshness re-proves per cycle. Shipped:
+- COVERAGE (9 new suites, ~420 assertions, all green in the gates): world-setskin 107 · capprop-map.contract 101 (every prop→capability id fails by name if dropped) · routes-coverage.http 75 (19 routes) · theme-custom-phosphor 36 · window-minimize 18 · nightshift-steer-ui 17 · workshop-toggle-ui 16 · atlas-events.emit 13 (workitem.superseded + workshop.decided by name) · dock-terms-open 9 · plus scripts/qa/work-console-journey.mjs (26/26 live, negative-control proven; npm run qa:work-console). Registered: 7 in fast.list (gate 362), 2 in test:http chain.
+- PROMOTIONS from coverage: work +68 · routes +17 · props +10 · skins cluster +26 · events +2 · world +2. Held-at-audited where live re-proof was itself the gap (theme/minimize/steer clusters) — honest, not lazy.
+- BUILD TAIL: 296/296 fully judged (181 perfected + 115 audited at stamp time) — connectors + skills card grids renderer-judged with live truthful-telemetry probes PASS (no card falsely claims CONNECTED; READY chip prop-gated). Findings 7fb9212b/35adafb1 = remaining card-control coverage.
+- TOOLING: model-picker over-harvest FIXED (DATA_DRIVEN_LISTS collapse, test-locked; world.json 474→106, judgment migrated). Dead session-tools minimize entry retired.
+- FINDINGS: 10 resolved fixed (43edd6f5 40203e5e cf61a8e9 e08db5b6 5c8f6921 d87c49c9 e9e4fab6 bec0f139 d2121f51 e9d24ac6) · 1 superseded (b916c508, retired window) · 1 routed-partial (3b7b52c8 away-loop dispatch half).
+**Standing after 3 waves: every area fully mapped or queued-thin; zero product truthfulness defects across ~1,500 judged entries; open product items = jukebox tier (818768f7) + ui id/aria anchors (d8bc2554, cea0899f). Wave-4 = periodic re-proof cycle once the frontend settles (post exe cut).**
+
 **2026-07-18 Atlas Perfectionist wave 2 + tooling cleanup (release-polish lane, 5 parallel agents):** gauge 12% → **PERFECTED-fresh 274/1523 (18%)** + 478 audited; missing cruft 277→15; registry 1786→1523 after verified retirements. Per-area digests:
 - Atlas events — audited +44 (5 live-proven run-lifecycle stream on :8968, 39 trace+gate) · perfected 0 (consumer-render journeys absent, uniform honest cap) · 2 stale dead-contract notes CORRECTED (notify + workshop.built are live-wired) · findings 40203e5e workitem.superseded + cf61a8e9 workshop.decided gate gaps.
 - Atlas props — 95/95 judged (desk perfected, 94 audited-by-trace) · object=capability spine verified honest end-to-end · findings 818768f7 JUKEBOX tier:cosmetic grants real spotify_* tools (taxonomy call for owner) + e08db5b6 only studio has per-id CAP_PROP_MAP test.
@@ -175,7 +183,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
 | Janitor | What's rotting in the workshop? | 2026-07-01 | 106 findings | 106 |
-| Cartographer | Is every surface element mapped and perfected? | 2026-07-18 02:49Z @ 129d1b8d | PERFECTED-fresh 274 / total 1523 (18%) | 187 |
+| Cartographer | Is every surface element mapped and perfected? | 2026-07-18 04:18Z @ bc28c86f | PERFECTED-fresh 279 / total 1154 (24%) | 34 |
 | Dogfood | Does StarNet survive being USED like a real user uses it? | 2026-07-07 (proof shift · mock) @ e01831ab | SURVIVED — 0 anomalies (mock seam shift) | 0 |
 
 _The rows above are the Q5 **movie test** (2026-07-01): one real cycle of every headless
