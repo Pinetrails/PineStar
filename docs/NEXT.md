@@ -1,17 +1,42 @@
 # NEXT.md — current priorities & task queue
 
-## 2026-07-17 — AUTONOMY TUNING (direction dial) — BUILT on claude/agent-autonomy-tuning-89786e, UNMERGED
+## 2026-07-17 — AUTONOMY TUNING (direction dial) — merging this pass (claude/agent-autonomy-tuning-89786e)
 
 Andrew's ask: let users guide WHERE the agent's autonomous work goes, as a release cherry-on-top.
-Shipped in-branch (3 commits + W0 re-stamp `92ab40ad`, candidate `eebf7f11`):
+Shipped (feature `d7821054`+`eebf7f11`, W0 re-stamps in-branch; digest in qa/STATUS.md):
 - **AVOID directive** (nightfocus.js + POST/DELETE /api/nightshift/avoid): durable off-limits list the
   focus resolver can never pick; latest-directive-wins on steer/avoid conflict; resolver fails toward
   not acting; restart-safe. Pure tests 55 assertions green.
 - **Steer → scout cross-wire**: scoutDirectionBlock now leads with the live steer (same steerActive gate).
 - **DIRECTION block in the AUTONOMY settings tab**: focus readout + steer + OFF-LIMITS (RULE OUT /
   ALLOW AGAIN) + evidence-cited LEARNED INTERESTS from /api/scout. Live-proven full cycle on seeded app.
-- [ ] Merge to trunk (starnet-merge-ritual; test:fast 353/353 in-branch, test:http run pending at write time).
 - [ ] Later (not this lane): thread steer/avoid into quest refresh + First Pitch grounding blocks.
+
+## 2026-07-17 — SESSION TOOLS window retired (branch `claude/sessions-panel-removal-b3278e`)
+
+Andrew's directive. The SYSTEM ▸ SESSION TOOLS window + parked `#ws-tools` panel are removed;
+clear/bulk-archive/undo UI died with it (the pure `workstreams.js` store keeps every invariant;
+`/clear` + per-row archive cover the real needs). Survivors: **title+transcript search now lives
+directly on the sessions rail** (`#ws-rail-search`; PROJECTS view hides it; hit-click opens the
+session) and **export .md/.json moved into the row ⋯ menu** (targets the exact row session).
+QA followed: journey rewritten (10/10 live PASS on seed :9095), `sys-sessiontools` shooter state +
+golden dropped, atlas retired-control entries deleted + ws-search/ws-export re-pointed, wiring test
+re-pinned, v0.5.2 release-notes bullet updated, in-branch W0 re-stamps over `83292661` and the
+trunk-sync. Merging to trunk this pass (digest in qa/STATUS.md); next desktop exe rebuild picks it up.
+
+## 2026-07-16 — CLASS ROSTER REDESIGN LANDED (agent-class-redesign lane)
+
+The recruit catalog is now 12 SPECIALIZED business-grade builtins (strategist · opportunist ·
+researcher · engineer · analyst · marketer · publisher · producer · writer · prospector ·
+treasurer · scout) + 18 archetypes (8 demoted generalists, 6 kept deep cuts, 3 new long-tail
+seeds closer/steward/optimizer, + envoy demoted 2026-07-17 on Andrew's call). liaison/publicist/
+bookkeeper RETIRED (superseded by envoy / marketer+publisher / treasurer). Typed-ASCII class
+marks REMOVED — the engraved SVG coin seal is the one emblem system again. Scout matchArchetype
+now coverage-scores (majority-token rule); prospect directive demands specialized roles. 7 new
+kit-grounded skills (+ opportunity-scan). W0 re-stamped post-merge.
+Open follow-ups: regenerate qa/atlas crew evidence (stale "18 builtins" notes); consider a
+first-run default-class experiment (strategist is now the bay's default card).
+>>>>>>> feat/harness-backend
 
 ## 2026-07-17 — FULL-RELEASE CAMPAIGN (active; Fable-orchestrated)
 
@@ -1067,6 +1092,12 @@ Gauge: `npm run qa:atlas:status`. Trunk re-sweep 2026-07-07 (39b9c569): **1339 e
 The whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
 
 _Active claims: (none)._
+
+Wave-1+2 (2026-07-18, release-polish lane): gauge 0% → 18% fresh (274/1523) + 478 audited; zero
+product truthfulness defects across 1,200+ judged entries; digests in qa/STATUS.md. Wave-3 queue:
+build connectors tail (136 unmapped) · model-harvest collapse (finding e9d24ac6) · coverage wave
+(the ~20 filed coverage-gap findings convert audited→perfected) · jukebox tier taxonomy call
+(818768f7) · stable id/aria anchors for skill-card + high-traffic controls (cea0899f, d8bc2554).
 
 _**CAMPAIGN COMPLETE 2026-07-07** (7 waves, 17 lanes, every merge through the full ritual):
 **0 unmapped / 1288.** End gauge: 184 perfected·fresh · 235 audited · 842 mapped · 27

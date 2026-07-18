@@ -1,85 +1,114 @@
-# ▲ STARNET — Real Gamified AI-Agent Harness
+# StarNet
 
-A **real**, downloadable desktop app where you create AI agents, raise them through a gamified
-onboarding, and watch them do real work — real model calls, real tools, real cost — inside a living
-pixel-art station **you build yourself**.
+StarNet is a local-first desktop harness where you create AI agents, organize them into a
+pixel-art station, and watch them perform real work with real models and tools. The station is
+not just decoration: rooms define capability-scoped teams, hallways define handoff paths, and
+placed objects grant bounded tools.
 
-It's a **station builder**: you spawn into one shabby starter room and expand outward — placing rooms,
-dragging hallways, painting floors, upgrading from rusty to pristine. The twist: **the way you build the
-station literally configures your real multi-agent org.** A room is a capability-scoped team, a hallway is
-an authorized handoff lane, a placed object is a real capability grant — projected onto the agent's allowed
-tools every turn (`sidecar/capability/resolve.js`). The layout you draw *is* the workflow the agents run.
+The product contract is literal: **A room is a capability-scoped team**, **a hallway is** an
+authorized handoff lane, and **a placed object is a real capability grant**. **The layout you draw *is* the workflow**
+the agents run. Start with one agent, then place bays or summon
+specialists to run **more, concurrently**—each is a **genuinely distinct, bounded agent run**.
+The harness performs **real model calls, real tools, real cost** rather than animating a
+simulation.
 
-You start with **one** real agent; place bays or summon specialists to run **more, concurrently** — each a
-genuinely distinct, bounded agent run, not a cosmetic sprite.
+> **Early release:** Windows is the most-tested desktop target. macOS and Linux builds use the
+> same release train but have less real-world coverage. See [INSTALL.md](INSTALL.md) for current
+> platform caveats, including operating-system signing warnings.
 
-## Quick start
+## Download
 
-**Requirements:** [Node.js](https://nodejs.org) 18+. The sidecar itself runs on Node core modules
-alone, so **no `npm install` is needed to run the harness**. `npm install` is only for the
-desktop build/dev tooling (the `@tauri-apps/cli` devDependency); building the desktop installer
-additionally needs Rust + the Tauri CLI.
+Desktop builds are published on the
+[StarNet releases page](https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest).
+Choose the installer for your platform and follow [the installation guide](INSTALL.md).
+
+StarNet's updater verifies release artifacts with a key embedded in the app. That updater
+signature protects artifact integrity; it is separate from Windows Authenticode and Apple
+notarization, which are not yet enabled.
+
+## Run from source
+
+Requirements:
+
+- Node.js 18 or newer (Node.js 22 is used by the release train)
+- Git
+- Rust and the Tauri prerequisites only if you want to build the desktop shell
+
+The sidecar uses Node core modules, so it can run without installing npm dependencies:
 
 ```bash
-# 1. run the harness (the Node sidecar serves the frontend AND the agent runtime)
+git clone https://github.com/nonfungiblefunyuns-ship-it/skynet-harness.git
+cd skynet-harness
 node sidecar/index.js
-# then open http://localhost:8787 and connect:
-#   • bring your own OpenRouter API key (BYOK), or
-#   • sign in with a ChatGPT subscription (Codex OAuth)
-
-# 2. run the headless test gate
-npm run test:fast
-
-# 3. (optional) build the Windows desktop app — Tauri shell around the sidecar
-npm run desktop:dev      # run the desktop shell against your source
-npm run desktop:build    # produce the NSIS installer
 ```
 
-> Data (agent memory, spend ledger, saves, secrets) is stored per-user under your OS app-data dir
-> (desktop app: `%APPDATA%\ai.skynet.harness\workspaces` on Windows; bare dev sidecar:
-> `%LOCALAPPDATA%\StarNet`). Secrets are held by the sidecar / OS keychain, never in the frontend.
+Open <http://localhost:8787>, then connect a provider with your own API key or supported OAuth
+sign-in: **bring your own OpenRouter API key (BYOK)** or use a supported OAuth flow. Provider
+requests leave your machine when you run an agent; station state, transcripts, memory, and ledgers
+stay in the local StarNet workspace unless you explicitly use a network tool or connector.
+
+For desktop development:
+
+```bash
+npm ci
+npm run desktop:dev
+```
+
+To build installers locally, install the platform-specific
+[Tauri prerequisites](https://v2.tauri.app/start/prerequisites/), then run:
+
+```bash
+npm run desktop:build
+```
+
+## What is real
+
+- Model calls stream through the local Node sidecar.
+- Tools operate through explicit capability and consent checks.
+- Agent memory, transcripts, spend records, tasks, and schedules persist on disk.
+- Multiple agents can run concurrently with separate workspaces and bounded permissions.
+- The visual station projects the same runtime state the harness can prove.
+
+StarNet does not simulate revenue, completed work, model activity, or spend. Its core product law
+is that the interface must never assert state the harness cannot prove.
+
+## Architecture
+
+| Path | Responsibility |
+| --- | --- |
+| `frontend/` | Vanilla JavaScript station world and desktop UI. |
+| `sidecar/` | Local Node agent runtime, providers, tools, persistence, budgets, and consent. |
+| `shared/` | Additive cross-boundary event and schema contracts. |
+| `src-tauri/` | Rust/Tauri desktop shell and bundled runtime. |
+| `test/` | Unit, contract, integration, and release gates. |
+| `qa/` | Live QA receipts, journeys, findings ledger, and release-readiness authority. |
+
+The frontend consumes real sidecar events over localhost HTTP/NDJSON and SSE. Secrets belong to
+the local authority: **Secrets are held by the sidecar / OS keychain, never in the frontend**.
+
+Start with [docs/INDEX.md](docs/INDEX.md) for the living documentation. Older planning documents
+remain in the repository as design history and are labeled accordingly.
 
 ## Testing
 
 ```bash
-npm run test:fast   # the merge gate — must be green before any change lands
-npm test            # the full suite (validate + world + fast + long HTTP/e2e)
+npm run test:fast          # required merge gate
+npm run test:http          # live sidecar HTTP/E2E suite
+npm test                   # validation + world + fast + HTTP suites
+npm run security:secrets   # full-history scan; requires Gitleaks in PATH
 ```
 
-`test:fast` is the fast headless gate; `npm test` also runs the slower end-to-end HTTP suite.
-Contributors: see [CONTRIBUTING.md](CONTRIBUTING.md).
+The release aggregate is `npm run qa:ready`. It is candidate-bound: any new commit invalidates
+the prior READY receipt until the affected live gates are rerun.
 
-## How it works (the one-line bet)
+## Contributing and security
 
-Keep v7 StarNet's entire vanilla-JS canvas world (renderer, tile map, movement/sit/work state machine, sprite
-recolor, CRT theme) and make it real by replacing the simulation with a **thin bridge that re-emits real
-agent-runtime events** onto the same `U.bus` event vocabulary the frontend already listens for. The agent
-loop, tools (web/files/notebook/MCP connectors), cost accounting, memory (Cortex), and budget governance
-all live in the **Node sidecar**.
+Contributions are welcome. Read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a pull request,
+and follow the [Code of Conduct](CODE_OF_CONDUCT.md).
 
-## Stack
+Do not report vulnerabilities in a public issue. Follow [SECURITY.md](SECURITY.md) for private
+reporting instructions.
 
-Tauri desktop shell · Node.js agent-host sidecar (owns secrets) · OpenRouter as the default model gateway
-(plus ChatGPT-subscription via Codex OAuth) · **JSON-file persistence on disk** (a SQLite store is planned) ·
-**newline-delimited JSON over localhost HTTP** for the run stream, with SSE for channel/work-item telemetry,
-carrying the frozen `U.bus` event schema (`shared/events.js`).
+## License
 
-## Design history
-
-> These are preserved design history and may not reflect the current code — for living docs see
-> [docs/](docs/) (start with [docs/INDEX.md](docs/INDEX.md)).
-
-The original product + architecture plans (written before the build) live alongside the code and are kept
-as design history, not as the entry point:
-
-- **[SKYNET_BUILD_PLAN.md](SKYNET_BUILD_PLAN.md)** — product plan: locked decisions, the object→capability
-  abstraction, onboarding, monetization.
-- **[BUILDER_AND_WORLD_FOUNDATION.md](BUILDER_AND_WORLD_FOUNDATION.md)** — the `Station` data model, Mutation
-  API, save versioning, renderer, and station-as-workflow.
-- **[INCREMENTAL_ROADMAP.md](INCREMENTAL_ROADMAP.md)** — the step-by-step port order with per-step DoD.
-- **[docs/](docs/)** — subsystem analysis, design proposals, and the memory/context (Cortex), cron, and
-  channels integration plans.
-
-## Source project
-
-The v7 StarNet simulation this was grown from lives at `../v7` — we copied its engine + assets in unchanged.
+StarNet is available under the [MIT License](LICENSE).

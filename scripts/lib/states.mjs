@@ -77,7 +77,7 @@ export const dismissRefitGuide = `(() => {
   return n;
 })()`;
 
-// Every key UI state: the floor at rest + each of the 16 dock panels.
+// Every key UI state: the floor at rest + each of the 17 dock panels.
 export function buildStates() {
   return [
     { name: 'ingame',          drive: closeOnly,                                   wait: 900 },
@@ -91,6 +91,12 @@ export function buildStates() {
     { name: 'work-tasks',      drive: openSel('[data-term="tasks"]', 'TASKS') },
     { name: 'work-recipes',    drive: openSel('#bb-missions', 'RECIPES') },
     { name: 'work-routines',   drive: openSel('[data-term="routines"]', 'ROUTINES') },
+    // DELIVERABLES (WORK group): the backend-backed run-artifact + Workshop library. Its dock button
+    // carries [data-term="deliverables"] (frontend/index.html). Registered as state/work-deliverables in
+    // the Atlas; buildStates() previously omitted it, so every sweep false-flagged the entry missing
+    // (finding 206d3ceb). The panel fetches GET /api/deliverables on open, so give it a wait to let the
+    // async rows/toolbar settle before the enumerator probe runs.
+    { name: 'work-deliverables', drive: openSel('[data-term="deliverables"]', 'DELIVERABLES'), wait: 1200 },
     // BUILD group
     { name: 'build-station',   drive: openSel('#bb-build', 'BUILD STATION'),       wait: 2000 },
     { name: 'build-manual',    drive: openSel('[data-term="manual"]', 'MANUAL') },
@@ -100,7 +106,6 @@ export function buildStates() {
     { name: 'sys-settings',    drive: openSel('[data-term="settings"]', 'SETTINGS') },
     { name: 'sys-messaging',   drive: openSel('[data-term="messaging"]', 'MESSAGING') },
     { name: 'sys-rewind',      drive: openSel('[data-term="rewind"]', 'REWIND') },
-    { name: 'sys-sessiontools',drive: openSel('[data-term="sessiontools"]', 'SESSION TOOLS') },
     { name: 'sys-logbook',     drive: openSel('[data-term="logbook"]', 'LOGBOOK') },
     { name: 'sys-notifs',      drive: openStableNotifs },
   ];
