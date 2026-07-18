@@ -1564,7 +1564,7 @@
       "claim": "Agents and messaging continue working after the app closes.",
       "surfaceLocators": [
         {
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "even with this window closed, as long as the station app is running"
         }
       ],
@@ -1679,12 +1679,12 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "id: 'telegram'"
         },
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "id: 'discord'"
         },
         {
@@ -1718,17 +1718,17 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "id: 'slack'"
         },
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "id: 'matrix'"
         },
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "id: 'signal'"
         }
       ],
@@ -1774,7 +1774,7 @@
         },
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "Both tokens are stored locally by the sidecar and never displayed"
         }
       ],
@@ -2581,7 +2581,7 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "even with this window closed, as long as the station app is running"
         },
         {

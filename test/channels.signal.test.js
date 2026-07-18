@@ -15,7 +15,7 @@ const envOf = (over, dmOver) => ({ envelope: Object.assign({ sourceNumber: '+155
   // ---- PU-06: Signal is tokenless, so its destructive action removes endpoint/account configuration. ----
   {
     const idx = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
-    const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
+    const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'windows', 'messaging.js'), 'utf8');
     const disconnect = (idx.split('async function handleGenericChannelDisconnect')[1] || '').split('/* ----------------------- Codex')[0];
     A.ok(/id\s*===\s*'signal'[\s\S]*delete\s+next\.endpoint[\s\S]*delete\s+next\.account/.test(disconnect), 'Signal purge removes its endpoint and account configuration');
     A.ok(/removedConfiguration/.test(disconnect), 'Signal removal response reports a separately proven configuration-removal bit');
