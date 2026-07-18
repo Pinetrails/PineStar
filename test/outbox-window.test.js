@@ -16,7 +16,7 @@ const fs = require('fs');
 const path = require('path');
 
 const read = f => fs.readFileSync(path.join(__dirname, '..', f), 'utf8');
-const station = read('frontend/app/stationui.js');
+const station = read('frontend/app/windows/outbox.js');   // the OUTBOX window extracted from stationui.js (BUILDERS split)
 const chat = read('frontend/app/chat.js');
 const rstore = read('frontend/app/returnstore.js');
 const app = read('frontend/app/app.js');
@@ -24,12 +24,12 @@ const world = read('frontend/app/world.js');
 const css = read('frontend/css/app.css');
 
 /* ---- the window exists and is the chute's click-through ---- */
-A.ok(/outbox:\s*\['OUTBOX — FINISHED WORK',\s*buildOutbox/.test(station), 'BUILDERS registers the OUTBOX window (buildOutbox)');
+A.ok(/registerWindow\('outbox',\s*'OUTBOX — FINISHED WORK',\s*buildOutbox/.test(station), 'the OUTBOX window registers itself (StationUI.registerWindow → the same BUILDERS slot)');
 A.ok(/setOnOutbox\(\(\)\s*=>\s*\{[^}]*openTerm\('outbox'\)/.test(app), "the world's OUTBOX click opens the window (never the old one-crate beat)");
 A.ok(!/reviewNext\(\)/.test(app), 'app.js no longer drives the one-crate-at-a-time review beat from the chute');
 
 /* ---- collapsed row = title + real-output description + meta, and NOTHING else ---- */
-const buildFn = station.slice(station.indexOf('function buildOutbox'), station.indexOf('/* ============== lifecycle'));
+const buildFn = station.slice(station.indexOf('function buildOutbox'), station.indexOf('StationUI.registerWindow('));
 A.ok(buildFn.length > 200, 'buildOutbox body located');
 A.ok(/ReturnStore\.pendingRows/.test(buildFn) || /RS\.pendingRows/.test(buildFn), 'rows come only from the durable pending ledger (ReturnStore.pendingRows)');
 const headHtml = /'<div class="ob-head"[\s\S]*?<\/div>'\s*\+\s*'<div class="ob-body"/.exec(buildFn);
