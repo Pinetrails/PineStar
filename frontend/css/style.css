@@ -509,8 +509,11 @@ body.no-scan .crt-scan { display: none; }
 }
 .bb.active:hover::before, .bb.active:hover::after { color: var(--ph); }
 .bb.sm { font-size: 13px; padding: 3px 9px; border: 1px solid var(--ph-dim); }
-.bb.sm:hover::before, .bb.sm:hover::after { content: none; }
-.bb.sm:hover { background: var(--ph-faint); }
+/* compact buttons (.sm/.xs) have too little padding for the absolute [..] brackets —
+   they'd overprint the label. Both use the quiet background hover instead. */
+.bb.sm:hover::before, .bb.sm:hover::after,
+.bb.xs:hover::before, .bb.xs:hover::after { content: none; }
+.bb.sm:hover, .bb.xs:hover { background: var(--ph-faint); }
 .bb.danger { color: var(--bad); }
 .badge {
   display: none; position: absolute; top: -5px; right: -4px;
