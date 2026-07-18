@@ -7374,6 +7374,34 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     outbox:   ['OUTBOX — FINISHED WORK', buildOutbox,    { w: '620px' }]    // the OUTBOX prop's click-through: all uncollected finished runs, readable + rateable in place
   };
 
+  /* ============== EXTRACTED-WINDOW SEAM (frontend/app/windows/*.js) ==============
+     Per-window builders extracted out of this file register themselves here at load time —
+     their <script> tags follow stationui.js in index.html, and init()/openTerm() resolve
+     BUILDERS[key] lazily at click time, so a registration landing after this file parses is
+     always in place before any window can open. registerWindow is additive: same slot shape
+     ([title, buildFn, opts]) the inline entries above use.
+     StationUI.h is the DELIBERATE, enumerated helper surface those extracted files may close
+     over — nothing else in this closure is reachable from outside. Mutable core state
+     (present / sel / store) is exposed as getters so an extracted builder always reads the
+     LIVE value; sel writes stay in core (wireRosterSwitch). Do not grow this surface
+     casually: anything sharing mutable state with the 1s tick / ctx gauge / notifications
+     stays in this file instead of being extracted. */
+  function registerWindow(key, title, buildFn, opts) { BUILDERS[key] = [title, buildFn, opts || {}]; }
+  const h = {
+    // dom + format primitives
+    esc, mkEl, sfx, clock, ts, fmtRel,
+    // hud + window plumbing
+    notify, toast, mountConsole, rerender, openTerm, openSignIn,
+    // shared window fragments (roster switcher for the per-agent windows; dossier memory loader)
+    rosterSwitchHtml, wireRosterSwitch, loadMemoryCore,
+    // workstream + persistence seams
+    WS, persistWS, save, consoleSection,
+    // live core state (read-only views — never reassign through these)
+    get present() { return present; },
+    get sel() { return sel; },
+    get store() { return store; }
+  };
+
   function init() {
     applySettings();
     document.querySelectorAll('.bb[data-term]').forEach(b =>
@@ -7479,7 +7507,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // GROWTH Tier 3: repaint the Settings AUTONOMY panel's EARNED badge if it is open (no-op otherwise — the paint fn
   // queries its own (possibly detached) host nodes, so a closed panel costs nothing). Called after a trust accept.
   const repaintAutonomy = () => { try { if (repaintAutonomyDial) repaintAutonomyDial(); } catch (_) {} };
-  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => agentLive(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), pokeQuests, setTheme, getTheme, repaintAutonomy };
+  return { init, enter, setRoster, leave, clearRunning, runningCount: () => runningAgents.size, isAgentRunning: (id) => agentLive(id), notify, flashSave, openAgent, openArcade, toggleTerm, openTerm, rerender, refreshBoard: () => rerender('tasks'), pokeQuests, setTheme, getTheme, repaintAutonomy, registerWindow, h };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { visibleTerminalRect, clampTerminalSize };
