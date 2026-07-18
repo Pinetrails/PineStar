@@ -33,6 +33,7 @@
     "test:fast:raw": "node scripts/run-fast-tests.mjs",
     "test": "npm run validate && npm run test:world && npm run test:fast && npm run test:http",
     "start": "node sidecar/index.js",
+    "mcp:serve": "node sidecar/mcp/serve.js",
     "app": "node sidecar/index.js",
     "sidecar": "node sidecar/index.js",
     "dev:seed": "node dev/seed.js",
