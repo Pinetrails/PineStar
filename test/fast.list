@@ -351,6 +351,7 @@ test/mcp.oauth.test.js
 test/mcp-serve.test.js
 test/connectors-ui.test.js
 test/toolsets.test.js
+test/commander-dossier-css.test.js
 test/channels.discord-wire.test.js
 test/widgets.test.js
 test/widgetfeed.test.js
