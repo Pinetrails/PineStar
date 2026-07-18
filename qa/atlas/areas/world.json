@@ -1,6 +1,6 @@
 {
   "area": "world",
-  "updatedAt": "2026-07-18T00:54:02.711Z",
+  "updatedAt": "2026-07-18T02:11:33.943Z",
   "entries": [
     {
       "id": "state/ingame",
@@ -587,42 +587,74 @@
       "kind": "ui",
       "area": "world",
       "name": "Attach a photo or file",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Attach control on the COMMS composer — opens the native file picker so an image or file rides the next message.",
+      "promise": "Clicking (title 'Attach a photo or file') opens the hidden #chat-attach-input file dialog; a chosen file becomes an attachment on the composer and is sent with the next directive.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/chat.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "attachments.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "e2e.attachments.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "583fbfbd608a2184dbe3f39655b06e8c7108abe1",
+        "date": "2026-07-18T02:11:33.943Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#chat-attach",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ 583fbfbd: #chat-attach button visible (38x34, title correct), enabled; hidden #chat-attach-input type=file present. AUDITED not perfected: the native file-picker open cannot be driven headlessly, so the full attach->send flow was not live-driven here (guarded by attachments.test.js / e2e.attachments.test.js)."
     },
     {
       "id": "ui/world/chat-attach-input",
       "kind": "ui",
       "area": "world",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The hidden <input type=file> backing the COMMS attach button — the actual OS file-dialog surface.",
+      "promise": "Never visible on its own (offscreen); #chat-attach.click() triggers it; a selected file is read into an attachment for the next send.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/chat.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "attachments.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "e2e.attachments.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "583fbfbd608a2184dbe3f39655b06e8c7108abe1",
+        "date": "2026-07-18T02:11:33.943Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#chat-attach-input",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ 583fbfbd: present, type=file, correctly non-visible (0x0, offsetParent null). File-selection path guarded by attachments tests; not headlessly driveable."
     },
     {
       "id": "ui/world/chat-input",
@@ -656,8 +688,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "583fbfbd608a2184dbe3f39655b06e8c7108abe1",
+        "date": "2026-07-18T02:11:33.943Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -665,7 +697,7 @@
       "missing": false,
       "selector": "#chat-input",
       "state": "ingame",
-      "notes": "Live: DOM round-trip — set value + dispatch Enter keydown; input clears to \"\" and a .cmsg.user row with the typed text appears in #chat-log (.uiatlas/world2-evidence/comms-composer-probe.txt, send-roundtrip). textarea/VT323/maxlength=500/aria-label all confirmed."
+      "notes": "Live @ 583fbfbd: #chat-input textarea visible on floor (241x35, title 'Message your agent'); typed text + #chat-send click cleared the box and posted a .cmsg.user row into #chat-log. Seam frontend/app/chat.js intact."
     },
     {
       "id": "ui/world/chat-mic",
@@ -689,8 +721,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "583fbfbd608a2184dbe3f39655b06e8c7108abe1",
+        "date": "2026-07-18T02:11:33.943Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -698,28 +730,46 @@
       "missing": false,
       "selector": "#chat-mic",
       "state": "ingame",
-      "notes": "Live: at rest aria-pressed=false, title \"push to talk\", not .rec (.uiatlas/world2-evidence/comms-composer-probe.txt, chat-mic). voice.button.test.js drives the full reliability lane: start()-throw recovery, orphan-instance late-onend wedge, gUM hang timeout + deny cue."
+      "notes": "Live @ 583fbfbd: #chat-mic button visible on floor (38x34, title 'push to talk'), type=submit, enabled. Seam frontend/app/chat.js + voice.button.test.js intact."
     },
     {
       "id": "ui/world/chat-send",
       "kind": "ui",
       "area": "world",
       "name": "Send message",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The COMMS send button — commits the composer's text as a directive to the agent on the line (the click-equivalent of Enter).",
+      "promise": "Clicking (title 'Enter sends · Shift+Enter = newline') posts the composer text as a .cmsg.user row in #chat-log, clears #chat-input, and fires a run (or queues a type-ahead pill while a stream is busy).",
       "wiring": {
-        "files": [],
-        "events": []
+        "files": [
+          "frontend/index.html",
+          "frontend/app/chat.js"
+        ],
+        "events": [
+          "agent.run.start"
+        ]
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "J1"
+        },
+        {
+          "kind": "test",
+          "ref": "agent-model-select.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "583fbfbd608a2184dbe3f39655b06e8c7108abe1",
+        "date": "2026-07-18T02:11:33.943Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#chat-send",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ 583fbfbd: clicking #chat-send after typing cleared #chat-input and appended one .cmsg.user row ('atlas world probe — please ignore') to #chat-log."
     },
     {
       "id": "ui/world/chat-stop",
@@ -738,8 +788,8 @@
       "coverage": [],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "583fbfbd608a2184dbe3f39655b06e8c7108abe1",
+        "date": "2026-07-18T02:11:33.943Z"
       },
       "findings": [
         "bd391f68"
@@ -749,7 +799,7 @@
       "missing": false,
       "selector": "#chat-stop",
       "state": "ingame",
-      "notes": "AUDITED not perfected: idle half live-proven (#chat-stop hidden=true while idle, handler=stopActive wired, title/aria honest — .uiatlas/world2-evidence/comms-composer-probe.txt, chat-stop-idle), but the busy-shown half + click-interrupt path has NO machine assertion. J2a/b/c drive interrupt truth via the GLOBAL Alt+H E-STOP only, never #chat-stop.click. Coverage gap filed (fp bd391f68 → journey-corps)."
+      "notes": "Live @ 583fbfbd: #chat-stop present and correctly HIDDEN while idle (0x0, offsetParent null; title 'Stop the running turn (Esc)') — truthful state. Active-turn visibility not driven here (seed uses a placeholder key so runs do not sustain a stream). Seam frontend/app/chat.js intact."
     },
     {
       "id": "ui/world/comms-agent-select",
@@ -774,8 +824,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "583fbfbd608a2184dbe3f39655b06e8c7108abe1",
+        "date": "2026-07-18T02:11:33.943Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -783,49 +833,67 @@
       "missing": false,
       "selector": "#comms-agent-select",
       "state": "ingame",
-      "notes": "Live: options == App.agents() ([{agent,NOVA}]); #comms-agent-model reads \"CLAUDE HAIKU 4.5\" matching the seeded agent's pin; bar not hidden with a roster present (.uiatlas/world2-evidence/comms-composer-probe.txt, comms-agent-select). renderIdBar/wireIdBar/App.agents seam asserted by agent-model-select.test.js:77-87."
+      "notes": "Live @ 583fbfbd: #comms-agent-select visible (title 'Select agent on the line'), 1 option value='agent' — truthful for the single-agent seed roster. Seam frontend/app/chat.js intact."
     },
     {
       "id": "ui/world/crew-hide",
       "kind": "ui",
       "area": "world",
       "name": "Hide the crew rail",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Collapses the crew rail to reclaim floor space; its counterpart #crew-show restores it.",
+      "promise": "Clicking (title 'Hide the crew rail') hides the crew rail and reveals #crew-show in its place.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/leftrail.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "583fbfbd608a2184dbe3f39655b06e8c7108abe1",
+        "date": "2026-07-18T02:11:33.943Z"
+      },
+      "findings": [
+        "3faa57ff"
+      ],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#crew-hide",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ 583fbfbd: clicking #crew-hide hid it (offsetParent null) and made #crew-show visible; the reverse click restored it. AUDITED (no dedicated machine assertion for the rail-collapse toggle — coverage gap filed KNOWN)."
     },
     {
       "id": "ui/world/crew-show",
       "kind": "ui",
       "area": "world",
       "name": "Show the crew rail",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Restores the crew rail after it was collapsed by #crew-hide.",
+      "promise": "Hidden while the rail is open; when the rail is collapsed it becomes visible, and clicking it (title 'Show the crew rail') restores the rail and re-hides itself.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html",
+          "frontend/app/leftrail.js"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "583fbfbd608a2184dbe3f39655b06e8c7108abe1",
+        "date": "2026-07-18T02:11:33.943Z"
+      },
+      "findings": [
+        "3faa57ff"
+      ],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#crew-show",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ 583fbfbd: after #crew-hide, #crew-show visible; clicking it restored the rail and re-hid itself. AUDITED (no dedicated machine assertion — coverage gap filed KNOWN)."
     },
     {
       "id": "ui/world/data-term-agents",
@@ -1384,21 +1452,32 @@
       "kind": "ui",
       "area": "world",
       "name": "Emergency stop — halt all runs (Alt+H)",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The always-on emergency stop — halts every live run everywhere (browser + messaging-hub) in one click; also bound to Alt+H.",
+      "promise": "Visible in the topbar status cluster (title 'E-STOP — kill every live run, everywhere, now (Alt+H)'); clicking (or Alt+H) calls /api/halt via Harness.haltAll, aborts local streams, and toasts the real stopped-run count.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/safety.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "halt.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "583fbfbd608a2184dbe3f39655b06e8c7108abe1",
+        "date": "2026-07-18T02:11:33.943Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#estop-btn",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ 583fbfbd: #estop-btn present+visible (59x18) with the exact E-STOP title; created dynamically by safety.js into #topbar .tb-status. Halt action (/api/halt) not fired live (no runs to kill) but is guarded by test/halt.test.js and the server-counts-before-local-teardown honesty is documented in safety.js."
     },
     {
       "id": "ui/world/file-import",
