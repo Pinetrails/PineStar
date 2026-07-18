@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-18T01:34:24.576Z",
+  "updatedAt": "2026-07-18T01:38:07.236Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -975,8 +975,8 @@
       "kind": "ui",
       "area": "system",
       "name": "Close NOTIFICATIONS",
-      "purpose": "Close the NOTIFICATIONS window — the standard window-chrome ✕ control, aria-labelled for screen readers.",
-      "promise": "Clicking it dismisses the NOTIFICATIONS window; the aria-label reads \"Close NOTIFICATIONS\" (label = window-title law).",
+      "purpose": "Close the NOTIFICATIONS window — the shared window-chrome ✕ (class term-x), aria-labelled for screen readers.",
+      "promise": "Clicking it dismisses the NOTIFICATIONS window via requestCloseTerm; the aria-label reads \"Close NOTIFICATIONS\".",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -991,8 +991,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1000,7 +1000,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Close NOTIFICATIONS\"]",
       "state": "sys-notifs",
-      "notes": "Live CDP :8967 — button[aria-label=\"Close NOTIFICATIONS\"] present on the open window (openTerm chrome, stationui.js:384). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: button[aria-label=\"Close NOTIFICATIONS\"] (class term-x) present+visible (last2.json). Behavior covered by the atlas sweep CLOSE helper which clicks .term-x (scripts/lib/states.mjs:23). Coverage tightened to the real shoot guard. Evidence last2.json."
     },
     {
       "id": "ui/system/aria-close-restore-points",
@@ -1167,8 +1167,8 @@
       "kind": "ui",
       "area": "system",
       "name": "Minimize NOTIFICATIONS",
-      "purpose": "Minimize the NOTIFICATIONS window to the dock without losing its state.",
-      "promise": "Clicking it collapses the NOTIFICATIONS window; the aria-label reads \"Minimize NOTIFICATIONS\".",
+      "purpose": "Minimize the NOTIFICATIONS window to a dock strip chip (keeps it logically open).",
+      "promise": "Clicking it collapses the NOTIFICATIONS window via minimizeTerm; the aria-label reads \"Minimize NOTIFICATIONS\".",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -1181,10 +1181,10 @@
           "ref": "sys-notifs"
         }
       ],
-      "status": "perfected",
+      "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1192,7 +1192,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize NOTIFICATIONS\"]",
       "state": "sys-notifs",
-      "notes": "Live CDP :8967 — button[aria-label=\"Minimize NOTIFICATIONS\"] present (openTerm chrome, stationui.js:379). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize NOTIFICATIONS\"] (class term-min) present+visible (last2.json). Held audited (downgraded from a stale perfected for consistency with the other minimize entries): the aria-label is shoot-covered but no assertion exercises the minimizeTerm collapse. KNOWN coverage gap. Evidence last2.json."
     },
     {
       "id": "ui/system/aria-minimize-restore-points",
@@ -5558,8 +5558,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -5567,7 +5567,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"BUILD\" rendered with tooltip \"does a few small grounded jobs a day on \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the AUTONOMY INITIATIVE dial renders all 4 rungs [data-init=wait/propose/leash/free] (dials.json). autonomy-ui.test.js:17 source-locks an Initiative button for EVERY Au.INITIATIVE engine enum. Positional harvest key (peer rungs all perfected). Evidence .uiatlas/system-evidence/dials.json."
     },
     {
       "id": "ui/system/txt-button-auto-init-free-1",
@@ -5595,8 +5595,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -5604,7 +5604,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"FREE\" rendered with tooltip \"picks & does work toward your goals whil\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the AUTONOMY INITIATIVE dial renders all 4 rungs [data-init=wait/propose/leash/free] (dials.json). autonomy-ui.test.js:17 source-locks an Initiative button for EVERY Au.INITIATIVE engine enum. Positional harvest key (peer rungs all perfected). Evidence .uiatlas/system-evidence/dials.json."
     },
     {
       "id": "ui/system/txt-button-auto-init-suggest-1",
@@ -5632,8 +5632,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -5641,7 +5641,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"SUGGEST\" rendered with tooltip \"lines up suggestions you approve — never\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the AUTONOMY INITIATIVE dial renders all 4 rungs [data-init=wait/propose/leash/free] (dials.json). autonomy-ui.test.js:17 source-locks an Initiative button for EVERY Au.INITIATIVE engine enum. Positional harvest key (peer rungs all perfected). Evidence .uiatlas/system-evidence/dials.json."
     },
     {
       "id": "ui/system/txt-button-auto-init-wait-1",
@@ -5669,8 +5669,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -5678,7 +5678,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"WAIT\" rendered with tooltip \"nothing runs unless you ask\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the AUTONOMY INITIATIVE dial renders all 4 rungs [data-init=wait/propose/leash/free] (dials.json). autonomy-ui.test.js:17 source-locks an Initiative button for EVERY Au.INITIATIVE engine enum. Positional harvest key (peer rungs all perfected). Evidence .uiatlas/system-evidence/dials.json."
     },
     {
       "id": "ui/system/txt-button-auto-pace-busy-1",
@@ -5706,8 +5706,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -5715,7 +5715,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"BUSY\" rendered with tooltip \"a busier station — up to 6 jobs a day\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: the AUTONOMY PACE row renders all 4 rungs [data-pace=1/3/6/12] jobs/day (dials.json). autonomy-ui.test.js:23 source-locks a PACE button per Au leash bound. Positional harvest key. Evidence dials.json."
     },
     {
       "id": "ui/system/txt-button-auto-pace-light-1",
@@ -5743,8 +5743,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -5752,7 +5752,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"LIGHT\" rendered with tooltip \"one small job a day\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: the AUTONOMY PACE row renders all 4 rungs [data-pace=1/3/6/12] jobs/day (dials.json). autonomy-ui.test.js:23 source-locks a PACE button per Au leash bound. Positional harvest key. Evidence dials.json."
     },
     {
       "id": "ui/system/txt-button-auto-pace-max-1",
@@ -5780,8 +5780,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -5789,7 +5789,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"MAX\" rendered with tooltip \"as much as it's allowed — up to 12 jobs \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: the AUTONOMY PACE row renders all 4 rungs [data-pace=1/3/6/12] jobs/day (dials.json). autonomy-ui.test.js:23 source-locks a PACE button per Au leash bound. Positional harvest key. Evidence dials.json."
     },
     {
       "id": "ui/system/txt-button-auto-pace-standard-1",
@@ -5817,8 +5817,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -5826,7 +5826,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"STANDARD\" rendered with tooltip \"a few small jobs a day — the default\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: the AUTONOMY PACE row renders all 4 rungs [data-pace=1/3/6/12] jobs/day (dials.json). autonomy-ui.test.js:23 source-locks a PACE button per Au leash bound. Positional harvest key. Evidence dials.json."
     },
     {
       "id": "ui/system/txt-button-auto-reach-observe-1",
@@ -5854,8 +5854,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -5863,7 +5863,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"OBSERVE\" rendered with tooltip \"read / research only — writes nothing\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: the AUTONOMY REACH row renders [data-reach=observe/sandbox/reach] (dials.json). autonomy-ui.test.js:18 source-locks a Reach button for every Au.REACH enum. Positional harvest key. Evidence dials.json."
     },
     {
       "id": "ui/system/txt-button-auto-reach-sandbox-1",
@@ -5891,8 +5891,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -5900,7 +5900,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"SANDBOX\" rendered with tooltip \"build & write locally — nothing leaves t\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: the AUTONOMY REACH row renders [data-reach=observe/sandbox/reach] (dials.json). autonomy-ui.test.js:18 source-locks a Reach button for every Au.REACH enum. Positional harvest key. Evidence dials.json."
     },
     {
       "id": "ui/system/txt-button-auto-reach-send-publish-1",
@@ -6009,8 +6009,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -6018,7 +6018,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — GRANT button present. Autonomy write + ledger covered by autonomy-ui/autonomy-ledger tests. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: the PERMISSIONS #perm-grants standing-grant list renders with its grant control (dials.json). permissions-ui.test.js:26 source-locks #perm-grants present. Positional harvest key. Evidence dials.json."
     },
     {
       "id": "ui/system/txt-button-perm-level-build-drafts-1",
@@ -6046,8 +6046,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -6055,7 +6055,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"DRAFT FOR ME\" rendered with tooltip \"acts on its own and leaves drafts — writ\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: the PERMISSIONS level dial (#perm-level) renders all 4 rungs [data-level=never/suggest/draft/full] (dials.json). permissions-ui.test.js:16 source-locks #perm-level present. Positional harvest key. Evidence dials.json."
     },
     {
       "id": "ui/system/txt-button-perm-level-free-fully-autonomous-1",
@@ -6083,8 +6083,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -6092,7 +6092,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"FULLY AUTONOMOUS\" rendered with tooltip \"acts AND writes real files on its own — \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: the PERMISSIONS level dial (#perm-level) renders all 4 rungs [data-level=never/suggest/draft/full] (dials.json). permissions-ui.test.js:16 source-locks #perm-level present. Positional harvest key. Evidence dials.json."
     },
     {
       "id": "ui/system/txt-button-perm-level-suggest-1",
@@ -6120,8 +6120,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -6129,7 +6129,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"SUGGEST\" rendered with tooltip \"lines up ideas you approve — never acts \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: the PERMISSIONS level dial (#perm-level) renders all 4 rungs [data-level=never/suggest/draft/full] (dials.json). permissions-ui.test.js:16 source-locks #perm-level present. Positional harvest key. Evidence dials.json."
     },
     {
       "id": "ui/system/txt-button-perm-level-wait-1",
@@ -6157,8 +6157,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:38:07.236Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -6166,7 +6166,7 @@
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"NEVER\" rendered with tooltip \"does nothing on its own — you drive ever\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: the PERMISSIONS level dial (#perm-level) renders all 4 rungs [data-level=never/suggest/draft/full] (dials.json). permissions-ui.test.js:16 source-locks #perm-level present. Positional harvest key. Evidence dials.json."
     },
     {
       "id": "ui/system/txt-button-prov-key-edit-anthropic-save-1",
