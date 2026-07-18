@@ -1,6 +1,6 @@
 {
   "area": "routes",
-  "updatedAt": "2026-07-18T01:29:33.695Z",
+  "updatedAt": "2026-07-18T01:32:01.449Z",
   "entries": [
     {
       "id": "route/get-api-agent-skills",
@@ -49,13 +49,29 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Method-label harvest artifact (see note); the real POST logout is exercised by codexsignin.test.js + codex-status.e2e.test.js. EL-3 gap tracked in ledger fp 43edd6f5."
+        },
+        {
+          "kind": "test",
+          "ref": "codex-status.e2e.test.js",
+          "gate": "test:http"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:32:01.449Z"
+      },
+      "findings": [
+        "43edd6f5"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "RECONCILE: the harvester labeled this GET, but the real route is POST /api/auth/codex/logout. LIVE :8964 @ HEAD 0a009ec2 — GET → 404 not found (phantom GET); POST → 200 {connected:false} (real token clear, no secret echoed). The entry documents the codex logout contract; the GET method label is a Cartographer method-variant artifact (same class as fp 15d5b43c)."
     },
     {
       "id": "route/get-api-auth-codex-models",
@@ -3430,12 +3446,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:32:01.449Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {id:<minted>} → 200 NDJSON stream beginning {name:'agent.run.start',payload:{agentId,runId,trigger:'schedule',model}} (fires the job immediately; placeholder key → the run then fails upstream, no spend); an unknown id → 404 {error:'no such routine'}. Full recorded-run outcome guarded by cron.run-now.e2e.test.js."
     },
     {
       "id": "route/post-api-cron-update",
@@ -4022,13 +4042,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:32:01.449Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-08T21:11:49.342Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Handler traced (index.js:8723 handleNightshiftBeatNow). Not driven live this session: firing a beat drives a real agent run (would attempt a provider call). Guarded by nightshift-beat-halt/act/contextpack/focus e2e tests."
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST → 200 {name:'nightshift.beat.result',payload:{delivered:false,reason:'not-ready:cold'}} — the beat fired and honestly reported not-ready (dormant/cold, no run spent). The delivered:true build path (away+warm) is guarded by nightshift-act/beat-halt/contextpack/focus e2e tests."
     },
     {
       "id": "route/post-api-notebook-restore",
@@ -4567,12 +4590,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:32:01.449Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — POST {maxIters:55} → 200 with saved:55/effective:55 (envLocked:false so overridable); GET /api/runtime/knobs reflected saved:55. Env-locked knobs are not overridable. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/post-api-save",
