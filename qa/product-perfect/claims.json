@@ -1796,7 +1796,7 @@
       "claim": "Users can connect HTTP or local stdio MCP servers and discover their tools.",
       "surfaceLocators": [
         {
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/connectors.js",
           "needle": "Remote http(s) servers, or a local"
         }
       ],
@@ -1842,7 +1842,7 @@
         },
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/connectors.js",
           "needle": "cc-lg-oauth"
         }
       ],
