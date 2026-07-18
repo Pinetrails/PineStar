@@ -1500,3 +1500,19 @@ End every substantive session by:
 3. A 3-line summary in your final report: **Landed** (verified how) / **Open** (what you
    did NOT verify) / **Next** (the single highest-leverage follow-up).
 Do not create new `*_PLAN.md` files for work under ~a week; use this queue.
+# READY TO MERGE 2026-07-18 — RELEASE BLOCKER CLEAN (`agent/release-blocker-clean`)
+
+Guardian on current trunk `e1407f5f` found three visual P1s. `crew-commander` was a genuine
+lost-work regression: later merges retained the Commander Dossier briefing/grid/starter markup
+from `9069a855`/`c77f6e52` but dropped its CSS. Branch commits `e43fbef3` + `4ea5666f` restore the
+coupled styles, add a 30-assertion fast-gate contract that prevents markup-without-CSS recurrence,
+review and re-bless the repaired golden frame, and re-stamp W0 release-surface authority.
+
+Live seeded DOM proof: the Commander window is 760px with `scrollWidth === clientWidth`, briefing
+text wraps with `scrollWidth === clientWidth`, the dimensions resolve to two 348px columns, and all
+16 starter chips carry the VT323/dashed-button styling. `build-skills` and `sys-rewind` were visually
+coherent animation-noise findings (immediate no-code recaptures crossed above/below 1.5); dismissed
+with exact evidence in the lane ledger. Final lane receipts: ledger 0 P0 / 0 P1 / 0 P2; GOLDEN PASS;
+`test:fast` 364/364 green; full `test:http` green. `qa:ready` remains correctly NOT READY until this
+branch is merged and Guardian/journeys/beginner/installed receipts are regenerated on that exact
+integration commit. No merge or publish performed.
