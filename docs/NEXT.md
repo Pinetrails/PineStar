@@ -1,5 +1,18 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-17 — AUTONOMY TUNING (direction dial) — BUILT on claude/agent-autonomy-tuning-89786e, UNMERGED
+
+Andrew's ask: let users guide WHERE the agent's autonomous work goes, as a release cherry-on-top.
+Shipped in-branch (3 commits + W0 re-stamp `92ab40ad`, candidate `eebf7f11`):
+- **AVOID directive** (nightfocus.js + POST/DELETE /api/nightshift/avoid): durable off-limits list the
+  focus resolver can never pick; latest-directive-wins on steer/avoid conflict; resolver fails toward
+  not acting; restart-safe. Pure tests 55 assertions green.
+- **Steer → scout cross-wire**: scoutDirectionBlock now leads with the live steer (same steerActive gate).
+- **DIRECTION block in the AUTONOMY settings tab**: focus readout + steer + OFF-LIMITS (RULE OUT /
+  ALLOW AGAIN) + evidence-cited LEARNED INTERESTS from /api/scout. Live-proven full cycle on seeded app.
+- [ ] Merge to trunk (starnet-merge-ritual; test:fast 353/353 in-branch, test:http run pending at write time).
+- [ ] Later (not this lane): thread steer/avoid into quest refresh + First Pitch grounding blocks.
+
 ## 2026-07-17 — FULL-RELEASE CAMPAIGN (active; Fable-orchestrated)
 
 Goal: full public release clean on Windows AND macOS; subscriptions = the NEXT official update.
