@@ -2750,7 +2750,7 @@
         {
           "kind": "contains",
           "path": "sidecar/index.js",
-          "needle": "req.url === '/api/version'"
+          "needle": "exact: '/api/version'"
         }
       ],
       "refsChecked": [

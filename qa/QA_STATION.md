@@ -338,7 +338,8 @@ session (§7c) — one enumerates, the other judges.
 One `--sweep` does two enumerations and merges the result into a sharded registry:
 
 1. **Static** (no browser): slash commands (`sidecar/slash.js` catalog, built-ins only), API routes
-   (every `req.method === … && <url match>` form in `sidecar/index.js`; the sweep report prints
+   (every `req.method === … && <url match>` guard form AND every declarative `ROUTES` table entry
+   — `{ m: '<METHOD>', exact|qsplit|prefix|qprefix: '/api/…' }` — in `sidecar/index.js`; the sweep report prints
    *matched vs. method-guard count* so a miss is visible), bus events (`shared/events.js` `EVENTS`
    keys — READ ONLY, an owned contract file), and shoot states (`buildStates()` from
    `scripts/lib/states.mjs`).

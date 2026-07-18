@@ -201,16 +201,22 @@ export function harvestRoutes(src) {
   const routeRe = /req\.method\s*===\s*'([A-Z]+)'(?:(?!\breturn\b|;)[\s\S]){0,240}?(?:req\.url(?:\.split\('\?'\)\[0\])?\s*===\s*'(\/api[^']*)'|req\.url\.indexOf\('(\/api[^']*)'\)\s*===\s*0|req\.url\.startsWith\('(\/api[^']*)'\)|apiauth\.pathOf\(req\.url\)\s*===\s*'(\/api[^']*)')/g;
   const seen = new Set();
   const out = [];
-  let m;
-  while ((m = routeRe.exec(str(src)))) {
-    const method = m[1];
-    const p = m[2] || m[3] || m[4] || m[5] || '';
-    if (!p) continue;
+  const add = (method, p) => {
+    if (!p) return;
     const key = method + '-' + p;
-    if (seen.has(key)) continue;
+    if (seen.has(key)) return;
     seen.add(key);
     out.push({ method, path: p, key });
-  }
+  };
+  let m;
+  while ((m = routeRe.exec(str(src)))) add(m[1], m[2] || m[3] || m[4] || m[5] || '');
+  // The declarative ROUTES table form (sidecar/index.js dispatchRoute refactor): one-line entries like
+  //   { m: 'GET', exact: '/api/version', h: handleVersion }
+  //   { m: ['GET', 'POST', 'DELETE'], qsplit: '/api/nightshift/focus', h: handleNightshiftFocus }
+  // Same harvest contract as the guard form: only /api literal paths; a multi-method entry binds its
+  // FIRST method (mirrors the OR-guard behavior above); dedup by method+path, first wins.
+  const tableRe = /\bm:\s*(?:'([A-Z]+)'|\[\s*'([A-Z]+)')[^}\n]*?\b(?:exact|qsplit|prefix|qprefix):\s*'(\/api[^']*)'/g;
+  while ((m = tableRe.exec(str(src)))) add(m[1] || m[2], m[3] || '');
   return out;
 }
 

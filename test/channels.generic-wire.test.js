@@ -29,9 +29,9 @@ const ids = () => { let i = 0; return () => 'r' + (++i); };
   A.ok(/function startTelegram/.test(idx) && /function startDiscord/.test(idx), 'telegram/discord starters preserved (not regressed)');
 
   // the generic route family is wired into the dispatcher and covers exactly the three new channels.
-  A.ok(idx.indexOf('(slack|matrix|signal)\\/(connect|sync|disconnect|status)') >= 0, 'generic route matcher covers slack|matrix|signal × the four verbs');
+  A.ok(['connect', 'sync', 'disconnect', 'status'].every(v => idx.indexOf('(slack|matrix|signal)\\/' + v) >= 0), 'generic route matcher covers slack|matrix|signal × the four verbs');
   A.ok(/handleGenericChannelConnect/.test(idx) && /handleGenericChannelSync/.test(idx) && /handleGenericChannelDisconnect/.test(idx) && /handleGenericChannelStatus/.test(idx), 'the four generic handlers exist and are routed');
-  A.ok(/req\.url === '\/api\/channels\/status'/.test(idx) && /function handleChannelsStatusAll/.test(idx), 'bulk GET /api/channels/status exists (one poll paints the panel)');
+  A.ok(/exact: '\/api\/channels\/status'/.test(idx) && /function handleChannelsStatusAll/.test(idx), 'bulk GET /api/channels/status exists (one poll paints the panel)');
 
   // lifecycle: connect starts through the ONE generic path; disconnect stops it; boot auto-starts saved configs.
   A.ok(/function startGenericChannel/.test(idx) && /function stopGenericChannel/.test(idx), 'generic start/stop lifecycle present');
