@@ -740,7 +740,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 
 /* COMMANDER DOSSIER (Phase A): the station-wide glass box — one model of the user, every belief editable */
 .cd-fam { display: inline-flex; align-items: center; gap: 7px; }
-.cd-fk { display: inline-block; width: 84px; height: 6px; border-radius: 3px; background: var(--ph-faint); border: 1px solid var(--ph-dim); overflow: hidden; vertical-align: middle; }
+.cd-fk { display: inline-block; width: 120px; height: 6px; border-radius: 3px; background: var(--ph-faint); border: 1px solid var(--ph-dim); overflow: hidden; vertical-align: middle; }
 .cd-ff { display: block; height: 100%; background: var(--gold); }
 .cd-fpct { color: var(--ph-bright); font-size: 12px; letter-spacing: 0.5px; }
 .cd-sub { font-size: 12px; color: var(--ph-dim); margin: 8px 0 6px; letter-spacing: 0.3px; }
@@ -749,14 +749,33 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
    Reads PrideStore.snapshot(); a counter with no real sample yet shows "—" (never a fabricated 0). */
 .cd-record { margin: 12px 0 4px; padding: 9px 11px; background: var(--ph-faint); border-left: 2px solid var(--gold); border-radius: 0 5px 5px 0; }
 .cd-record-h { font-family: inherit; font-size: 10px; letter-spacing: .16em; color: var(--gold); opacity: .9; margin-bottom: 8px; }
-.cd-record-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px 14px; }
+.cd-record-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px 14px; }   /* 4-up in the widened (760px) dossier; collapses via the narrow fallback below */
 .cd-stat { display: flex; flex-direction: column; gap: 2px; }
 .cd-stat-n { font-size: 21px; line-height: .95; color: var(--ph-bright); letter-spacing: .5px; text-shadow: 0 0 10px var(--ph-glow2); }
 .cd-stat-n.dim { color: var(--ph-dim); text-shadow: none; }
 .cd-stat-l { font-size: 10px; letter-spacing: .1em; color: var(--ph-dim); text-transform: uppercase; }
 .cd-founded { margin-top: 9px; font-size: 11px; color: var(--ph-dim); letter-spacing: .3px; }
 .cd-founded b { color: var(--ph); }
-.cd-sec { margin-top: 14px; }
+/* AGENT BRIEFING — the verbatim Commander block agents receive (the panel's practical payoff): a recessed
+   terminal well in the CRT vocabulary; the text glows softly because it IS live prompt material. */
+.cd-brief { margin: 12px 0 2px; padding: 10px 12px; background: var(--ink); border: 1px solid var(--ph-dim); border-radius: 5px; box-shadow: inset 0 0 18px rgba(var(--ph-rgb), .06); }
+.cd-brief-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 7px; }
+.cd-brief-h { font-size: 10px; letter-spacing: .16em; color: var(--ph-bright); }
+.cd-brief-meter { font-size: 10px; color: var(--ph-dim); letter-spacing: .08em; white-space: nowrap; cursor: help; }
+.cd-brief-text { margin: 0; font: inherit; font-size: 13px; line-height: 1.45; color: var(--ph); white-space: pre-wrap; word-break: break-word; max-height: 190px; overflow-y: auto; text-shadow: 0 0 4px var(--ph-glow2); }
+.cd-brief-empty { font-style: italic; color: var(--ph-dim); font-size: 12px; }
+.cd-brief-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 9px; flex-wrap: wrap; }
+.cd-flows { display: flex; flex-wrap: wrap; gap: 5px; }
+.cd-flow { font-size: 10px; letter-spacing: .06em; color: var(--ph-dim); border: 1px solid var(--ph-faint); border-radius: 3px; padding: 1px 7px; cursor: help; }
+.cd-flow:hover { color: var(--ph); border-color: var(--ph-dim); }
+.cd-brief-copy { white-space: nowrap; }
+/* a belief the char cap shortened/dropped from the composed briefing — gold = "needs your attention" */
+.cd-trim-tag { display: inline-block; margin-right: 6px; padding: 0 5px; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--gold); border: 1px dashed rgba(var(--gold-rgb), .6); border-radius: 2px; cursor: help; }
+/* the dimension sections: a two-column grid in the widened window (single column of short cards wasted it) */
+.cd-dims { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 22px; align-items: start; }
+.cd-sec { margin-top: 14px; min-width: 0; }
+.cd-sec.known .cd-sech { border-bottom-color: var(--ph-dim); }
+@media (max-width: 820px) { .cd-dims { grid-template-columns: 1fr; } .cd-record-grid { grid-template-columns: repeat(2, 1fr); } }
 .cd-sech { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; border-bottom: 1px solid var(--ph-faint); padding-bottom: 3px; }
 .cd-dim { color: var(--ph-bright); font-size: 13px; letter-spacing: 0.5px; text-transform: uppercase; }
 .cd-dn { color: var(--ph-dim); font-size: 11px; }

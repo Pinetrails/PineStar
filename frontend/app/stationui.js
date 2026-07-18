@@ -6239,11 +6239,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="mc-note">This dossier is <b>shared by every agent on your station</b> and folds into each one\'s briefing, so a freshly-deployed agent already knows you. It is <b>local-first</b> — it never leaves this machine. Add, edit, pin, or forget anything below; you own it.</div>');
     body.appendChild(head);
 
-    // STATION RECORD (G3a pride layer): the durable lifetime counters, honest by construction — a counter
-    // with no real sample yet renders "—" (never a fabricated 0). Rendered here, on the station-wide dossier,
-    // because it IS the colony's whole-lifetime track record. Absent store → silently omit (nothing to show).
-    const rec = cdStationRecord();
-    if (rec) body.appendChild(rec);
+    // AGENT BRIEFING — the practical payoff surface: the VERBATIM Commander block every agent receives.
+    body.appendChild(cdBriefing(ds));
 
     // the active "get to know you" trigger — runs the intake interview in COMMS, folding answers into the
     // dossier through the same upsert path the cards use. Gated on a free agent + not-already-running.
@@ -6269,19 +6266,77 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     actRow.appendChild(goBtn);
     body.appendChild(actRow);
 
-    // one section per dimension
+    // one section per dimension, laid out as a two-column grid (the window is 760px wide — a single
+    // column of short cards wasted half of it). The composed block is passed down so each card can
+    // honestly flag "trimmed from briefing" when the char cap cut it out of the prompt.
+    const block = ds.composeBlock();
+    const grid = el('div', 'cd-dims');
     for (const d of dims) {
       const bs = ds.beliefs(d.key);
-      const sec = el('div', 'cd-sec');
+      const sec = el('div', 'cd-sec' + (bs.length ? ' known' : ''));
       sec.appendChild(el('div', 'cd-sech', '<span class="cd-dim">' + esc(d.label) + '</span><span class="cd-dn">' + (bs.length || '—') + '</span>'));
       if (!bs.length) {
         const e = el('div', 'cd-empty'); e.textContent = 'unknown — the station hasn’t learned this yet.'; sec.appendChild(e);
         sec.appendChild(cdCurioRow(d));   // the question-state readout (asked / paused) + re-enable, when relevant
       }
-      else for (const b of bs) sec.appendChild(cdCard(d.key, b));
+      else for (const b of bs) sec.appendChild(cdCard(d.key, b, block));
       sec.appendChild(cdAddRow(d.key));
-      body.appendChild(sec);
+      grid.appendChild(sec);
     }
+    body.appendChild(grid);
+
+    // STATION RECORD (G3a pride layer): the durable lifetime counters, honest by construction — a counter
+    // with no real sample yet renders "—" (never a fabricated 0). Rendered here, on the station-wide dossier,
+    // because it IS the colony's whole-lifetime track record. Absent store → silently omit (nothing to show).
+    const rec = cdStationRecord();
+    if (rec) body.appendChild(rec);
+  }
+
+  // AGENT BRIEFING — the panel's practical payoff: renders the VERBATIM Commander block that
+  // composeSystemPrompt appends to every agent's system prompt (and DossierStore.pushToSidecar mirrors to
+  // server-composed cron/night-shift runs via SK.dossierInject.withDossier). Showing the exact live string —
+  // never a summary — is what keeps the glass box honest: what you read here IS what agents are told.
+  // Empty dossier → an honest "cold" state (agents receive no block at all), never a fabricated preview.
+  function cdBriefing(ds) {
+    const block = ds.composeBlock();
+    const cap = (typeof Dossier !== 'undefined' && Dossier.BLOCK_CHARS) ? Dossier.BLOCK_CHARS : 1200;
+    const wrap = el('div', 'cd-brief');
+    const head = el('div', 'cd-brief-head', '<span class="cd-brief-h">AGENT BRIEFING // WHAT EVERY AGENT IS TOLD ABOUT YOU</span>');
+    if (block) {
+      const meter = el('span', 'cd-brief-meter');
+      meter.textContent = block.length + ' / ' + cap + ' chars';
+      meter.title = 'the briefing composes from your beliefs below, capped at ' + cap + ' characters — past the cap, every known dimension keeps a fair share and the rest is trimmed';
+      head.appendChild(meter);
+    }
+    wrap.appendChild(head);
+    if (!block) {
+      const e = el('div', 'cd-brief-empty');
+      e.textContent = 'cold — the station knows nothing yet, so agents receive no Commander block. Run the interview or add a belief below and this briefing writes itself.';
+      wrap.appendChild(e);
+    } else {
+      const pre = el('pre', 'cd-brief-text'); pre.textContent = block;   // textContent — belief text is never interpreted
+      wrap.appendChild(pre);
+    }
+    // WIRED INTO — states the wiring (each chip names a real code path), never a wish. Cold station: the
+    // chips still state where the block WILL flow, phrased as wiring, since the paths exist regardless.
+    const foot = el('div', 'cd-brief-foot');
+    const flows = el('div', 'cd-flows',
+      '<span class="cd-flow" title="composeSystemPrompt folds this block into the system prompt of every agent on the station — including a freshly-summoned one">▸ every agent’s briefing</span>' +
+      '<span class="cd-flow" title="mirrored to the sidecar so autonomous scheduled runs (cron, night shift) that compose their own persona still know who they serve">▸ autonomous &amp; scheduled runs</span>' +
+      '<span class="cd-flow" title="the pitch engine and recruitment matcher read your goals, pain points and ambitions to propose work and crew">▸ pitches &amp; recruitment</span>' +
+      '<span class="cd-flow" title="the quest board turns still-blank dimensions into get-to-know-you quests">▸ quest board</span>');
+    foot.appendChild(flows);
+    if (block) {
+      const copy = el('button', 'consent-btn cd-brief-copy'); copy.textContent = 'copy briefing';
+      copy.onclick = () => {
+        try { navigator.clipboard.writeText(block); } catch (_) {}
+        copy.textContent = 'copied ✓'; sfx('click');
+        setTimeout(() => { copy.textContent = 'copy briefing'; }, 1500);
+      };
+      foot.appendChild(copy);
+    }
+    wrap.appendChild(foot);
+    return wrap;
   }
 
   // the curiosity question-state for a still-blank dimension: has the station asked about it, and did the Commander
@@ -6307,13 +6362,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return row;
   }
 
-  function cdCard(dim, b) {
+  function cdCard(dim, b, block) {
     const card = el('div', 'cd-rec' + (b.pinned ? ' pinned' : '') + (b.source === 'study' ? ' cd-observed' : ''));
     const txt = el('div', 'cd-body'); txt.textContent = b.text; card.appendChild(txt);   // textContent — belief text is never interpreted
     const metaRow = el('div', 'cd-meta');
     // GROWTH Tier 1: a STUDY-sourced belief (the station learned it from real work, not the Commander authoring it)
     // gets a distinct "observed" tag so the glass box stays honest about provenance.
     if (b.source === 'study') { const tag = el('span', 'cd-observed-tag'); tag.textContent = 'observed'; tag.title = 'the station proposed this from your work; you kept it'; metaRow.appendChild(tag); }
+    // BRIEFING HONESTY: the composed block trims past its char cap (fair-share per dimension), so a belief can
+    // exist in the dossier yet be shortened/dropped from the prompt. An exact-substring check against the LIVE
+    // block flags that state — otherwise the panel implies every belief reaches the agents, which can be false.
+    if (typeof block === 'string' && block && block.indexOf(b.text) < 0) {
+      const tt = el('span', 'cd-trim-tag'); tt.textContent = 'trimmed from briefing';
+      tt.title = 'the briefing hit its character cap, so this belief was shortened or dropped from what agents are told — pin or shorten what matters most';
+      metaRow.appendChild(tt);
+    }
     const meta = el('span', 'cd-src');
     const when = (Number.isFinite(b.observedAt) && b.observedAt > 0) ? b.observedAt : b.createdAt;
     meta.textContent = (b.pinned ? '★ pinned · ' : '') + (CD_SOURCE[b.source] || 'you told the station') + (when ? ' · ' + new Date(when).toLocaleDateString() : '');
@@ -6944,7 +7007,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   /* ============== lifecycle ============== */
   const BUILDERS = {
     agents:   ['AGENT DOSSIER',          buildAgents,    { console: true, feature: true }],
-    commander:['COMMANDER DOSSIER',      buildCommander, { w: '560px' }],
+    commander:['COMMANDER DOSSIER',      buildCommander, { w: '760px' }],
     skills:   ['SKILLS & CAPABILITIES',  buildSkills,    { console: true }],
     tasks:    ['TASK BOARD',             buildTasks,     { w: '760px' }],
     deliverables:['DELIVERABLES',         body => { if (typeof Deliverables !== 'undefined') Deliverables.mount(body); }, { w: '760px' }],
