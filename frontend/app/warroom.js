@@ -73,11 +73,11 @@
     const hud = $('#stage-wrap .cam-hud');
     if (hud && !hud.querySelector('.cam-cine')) {
       const b = document.createElement('button');
-      b.className = 'cam-cine'; b.textContent = '▣ CINEMA'; b.title = 'fill the frame with the station (C)';
+      b.className = 'cam-cine'; b.textContent = '▣ CINEMA'; b.title = 'fill the frame with the station';
       b.addEventListener('click', toggleCinema); hud.appendChild(b);
     }
     if (!$('#wr-cine-hint')) {
-      const hint = document.createElement('div'); hint.id = 'wr-cine-hint'; hint.textContent = 'CINEMA — press C to exit';
+      const hint = document.createElement('div'); hint.id = 'wr-cine-hint'; hint.textContent = 'CINEMA — press ESC to exit';
       document.body.appendChild(hint);
     }
   }
@@ -96,7 +96,6 @@
       toggleCinema();
       return;
     }
-    if (e.key === 'c' || e.key === 'C') toggleCinema();
   });
 
   /* ---------------- CAMERA MODE chip (honest cinecam / follow-lock readout) ---------------- */
