@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-18T01:19:33.987Z",
+  "updatedAt": "2026-07-18T01:22:43.218Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -703,8 +703,8 @@
       "kind": "ui",
       "area": "system",
       "name": "Close CHANNELS",
-      "purpose": "Close the CHANNELS window — the standard window-chrome ✕ control, aria-labelled for screen readers.",
-      "promise": "Clicking it dismisses the CHANNELS window; the aria-label reads \"Close CHANNELS\" (label = window-title law).",
+      "purpose": "Close the CHANNELS window — the shared window-chrome ✕ (class term-x), aria-labelled for screen readers.",
+      "promise": "Clicking it dismisses the CHANNELS window via requestCloseTerm (unsaved-draft guard on the path); the aria-label reads \"Close CHANNELS\" (label = window-title law).",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -713,22 +713,14 @@
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/channels.telegram.e2e.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/channels.sse.test.js"
-        },
-        {
           "kind": "shoot",
           "ref": "sys-messaging"
         }
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -736,15 +728,15 @@
       "missing": false,
       "selector": "button[aria-label=\"Close CHANNELS\"]",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — button[aria-label=\"Close CHANNELS\"] present on the open window (openTerm chrome, stationui.js:384). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): button[aria-label=\"Close CHANNELS\"] present. Behavior covered by the atlas sweep CLOSE helper which clicks .term-x between states (scripts/lib/states.mjs:23) + shoot sys-messaging enumerates the label. Coverage tightened from the prior (settings-p1) refs to the actual shoot guard. Evidence union.json."
     },
     {
       "id": "ui/system/aria-close-logbook",
       "kind": "ui",
       "area": "system",
       "name": "Close LOGBOOK",
-      "purpose": "Close the LOGBOOK window — the standard window-chrome ✕ control, aria-labelled for screen readers.",
-      "promise": "Clicking it dismisses the LOGBOOK window; the aria-label reads \"Close LOGBOOK\" (label = window-title law).",
+      "purpose": "Close the LOGBOOK window — the shared window-chrome ✕ (class term-x), aria-labelled for screen readers.",
+      "promise": "Clicking it dismisses the LOGBOOK window via requestCloseTerm (unsaved-draft guard on the path); the aria-label reads \"Close LOGBOOK\" (label = window-title law).",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -759,8 +751,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -768,7 +760,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Close LOGBOOK\"]",
       "state": "sys-logbook",
-      "notes": "Live CDP :8967 — button[aria-label=\"Close LOGBOOK\"] present on the open window (openTerm chrome, stationui.js:384). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): button[aria-label=\"Close LOGBOOK\"] present. Behavior covered by the atlas sweep CLOSE helper which clicks .term-x between states (scripts/lib/states.mjs:23) + shoot sys-logbook enumerates the label. Coverage tightened from the prior (settings-p1) refs to the actual shoot guard. Evidence union.json."
     },
     {
       "id": "ui/system/aria-close-notifications",
@@ -807,8 +799,8 @@
       "kind": "ui",
       "area": "system",
       "name": "Close RESTORE POINTS",
-      "purpose": "Close the RESTORE POINTS window — the standard window-chrome ✕ control, aria-labelled for screen readers.",
-      "promise": "Clicking it dismisses the RESTORE POINTS window; the aria-label reads \"Close RESTORE POINTS\" (label = window-title law).",
+      "purpose": "Close the RESTORE POINTS window — the shared window-chrome ✕ (class term-x), aria-labelled for screen readers.",
+      "promise": "Clicking it dismisses the RESTORE POINTS window via requestCloseTerm (unsaved-draft guard on the path); the aria-label reads \"Close RESTORE POINTS\" (label = window-title law).",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -816,10 +808,6 @@
         "events": []
       },
       "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/checkpoint-store.test.js"
-        },
         {
           "kind": "shoot",
           "ref": "sys-rewind"
@@ -827,8 +815,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -836,36 +824,15 @@
       "missing": false,
       "selector": "button[aria-label=\"Close RESTORE POINTS\"]",
       "state": "sys-rewind",
-      "notes": "Live CDP :8967 — button[aria-label=\"Close RESTORE POINTS\"] present on the open window (openTerm chrome, stationui.js:384). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): button[aria-label=\"Close RESTORE POINTS\"] present. Behavior covered by the atlas sweep CLOSE helper which clicks .term-x between states (scripts/lib/states.mjs:23) + shoot sys-rewind enumerates the label. Coverage tightened from the prior (settings-p1) refs to the actual shoot guard. Evidence union.json."
     },
     {
       "id": "ui/system/aria-close-session-tools",
       "kind": "ui",
       "area": "system",
       "name": "Close SESSION TOOLS",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-18T00:54:02.719Z",
-      "lastSeen": "2026-07-18T00:54:02.719Z",
-      "missing": false,
-      "selector": "button[aria-label=\"Close SESSION TOOLS\"]",
-      "state": "sys-sessiontools"
-    },
-    {
-      "id": "ui/system/aria-close-settings",
-      "kind": "ui",
-      "area": "system",
-      "name": "Close SETTINGS",
-      "purpose": "Close the SETTINGS window — the standard window-chrome ✕ control, aria-labelled for screen readers.",
-      "promise": "Clicking it dismisses the SETTINGS window; the aria-label reads \"Close SETTINGS\" (label = window-title law).",
+      "purpose": "Close the SESSION TOOLS window — the shared window-chrome ✕ (class term-x), aria-labelled for screen readers.",
+      "promise": "Clicking it dismisses the SESSION TOOLS window via requestCloseTerm (unsaved-draft guard on the path); the aria-label reads \"Close SESSION TOOLS\" (label = window-title law).",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -874,13 +841,37 @@
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/settings-p1-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/settings-p1-backend.test.js"
-        },
+          "kind": "shoot",
+          "ref": "sys-sessiontools"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-18T00:54:02.719Z",
+      "lastSeen": "2026-07-18T00:54:02.719Z",
+      "missing": false,
+      "selector": "button[aria-label=\"Close SESSION TOOLS\"]",
+      "state": "sys-sessiontools",
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): button[aria-label=\"Close SESSION TOOLS\"] present. Behavior covered by the atlas sweep CLOSE helper which clicks .term-x between states (scripts/lib/states.mjs:23) + shoot sys-sessiontools enumerates the label. Coverage tightened from the prior (settings-p1) refs to the actual shoot guard. Evidence union.json."
+    },
+    {
+      "id": "ui/system/aria-close-settings",
+      "kind": "ui",
+      "area": "system",
+      "name": "Close SETTINGS",
+      "purpose": "Close the SETTINGS window — the shared window-chrome ✕ (class term-x), aria-labelled for screen readers.",
+      "promise": "Clicking it dismisses the SETTINGS window via requestCloseTerm (unsaved-draft guard on the path); the aria-label reads \"Close SETTINGS\" (label = window-title law).",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
         {
           "kind": "shoot",
           "ref": "sys-settings"
@@ -888,8 +879,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -897,15 +888,15 @@
       "missing": false,
       "selector": "button[aria-label=\"Close SETTINGS\"]",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button[aria-label=\"Close SETTINGS\"] present on the open window (openTerm chrome, stationui.js:384). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): button[aria-label=\"Close SETTINGS\"] present. Behavior covered by the atlas sweep CLOSE helper which clicks .term-x between states (scripts/lib/states.mjs:23) + shoot sys-settings enumerates the label. Coverage tightened from the prior (settings-p1) refs to the actual shoot guard. Evidence union.json."
     },
     {
       "id": "ui/system/aria-minimize-channels",
       "kind": "ui",
       "area": "system",
       "name": "Minimize CHANNELS",
-      "purpose": "Minimize the CHANNELS window to the dock without losing its state.",
-      "promise": "Clicking it collapses the CHANNELS window; the aria-label reads \"Minimize CHANNELS\".",
+      "purpose": "Minimize the CHANNELS window to a dock strip chip (keeps it logically open).",
+      "promise": "Clicking it collapses the CHANNELS window via minimizeTerm; the aria-label reads \"Minimize CHANNELS\".",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -914,22 +905,14 @@
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/channels.telegram.e2e.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/channels.sse.test.js"
-        },
-        {
           "kind": "shoot",
           "ref": "sys-messaging"
         }
       ],
-      "status": "perfected",
+      "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -937,15 +920,15 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize CHANNELS\"]",
       "state": "sys-messaging",
-      "notes": "Live CDP :8967 — button[aria-label=\"Minimize CHANNELS\"] present (openTerm chrome, stationui.js:379). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize CHANNELS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json."
     },
     {
       "id": "ui/system/aria-minimize-logbook",
       "kind": "ui",
       "area": "system",
       "name": "Minimize LOGBOOK",
-      "purpose": "Minimize the LOGBOOK window to the dock without losing its state.",
-      "promise": "Clicking it collapses the LOGBOOK window; the aria-label reads \"Minimize LOGBOOK\".",
+      "purpose": "Minimize the LOGBOOK window to a dock strip chip (keeps it logically open).",
+      "promise": "Clicking it collapses the LOGBOOK window via minimizeTerm; the aria-label reads \"Minimize LOGBOOK\".",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -958,10 +941,10 @@
           "ref": "sys-logbook"
         }
       ],
-      "status": "perfected",
+      "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -969,7 +952,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize LOGBOOK\"]",
       "state": "sys-logbook",
-      "notes": "Live CDP :8967 — button[aria-label=\"Minimize LOGBOOK\"] present (openTerm chrome, stationui.js:379). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize LOGBOOK\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json."
     },
     {
       "id": "ui/system/aria-minimize-notifications",
@@ -1008,8 +991,8 @@
       "kind": "ui",
       "area": "system",
       "name": "Minimize RESTORE POINTS",
-      "purpose": "Minimize the RESTORE POINTS window to the dock without losing its state.",
-      "promise": "Clicking it collapses the RESTORE POINTS window; the aria-label reads \"Minimize RESTORE POINTS\".",
+      "purpose": "Minimize the RESTORE POINTS window to a dock strip chip (keeps it logically open).",
+      "promise": "Clicking it collapses the RESTORE POINTS window via minimizeTerm; the aria-label reads \"Minimize RESTORE POINTS\".",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -1018,18 +1001,14 @@
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/checkpoint-store.test.js"
-        },
-        {
           "kind": "shoot",
           "ref": "sys-rewind"
         }
       ],
-      "status": "perfected",
+      "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.412Z",
@@ -1037,36 +1016,79 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize RESTORE POINTS\"]",
       "state": "sys-rewind",
-      "notes": "Live CDP :8967 — button[aria-label=\"Minimize RESTORE POINTS\"] present (openTerm chrome, stationui.js:379). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize RESTORE POINTS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json."
     },
     {
       "id": "ui/system/aria-minimize-session-tools",
       "kind": "ui",
       "area": "system",
       "name": "Minimize SESSION TOOLS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Minimize the SESSION TOOLS window to a dock strip chip (keeps it logically open).",
+      "promise": "Clicking it collapses the SESSION TOOLS window via minimizeTerm; the aria-label reads \"Minimize SESSION TOOLS\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-sessiontools"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.719Z",
       "lastSeen": "2026-07-18T00:54:02.719Z",
       "missing": false,
       "selector": "button[aria-label=\"Minimize SESSION TOOLS\"]",
-      "state": "sys-sessiontools"
+      "state": "sys-sessiontools",
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize SESSION TOOLS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json."
     },
     {
       "id": "ui/system/aria-minimize-settings",
       "kind": "ui",
       "area": "system",
       "name": "Minimize SETTINGS",
-      "purpose": "Minimize the SETTINGS window to the dock without losing its state.",
-      "promise": "Clicking it collapses the SETTINGS window; the aria-label reads \"Minimize SETTINGS\".",
+      "purpose": "Minimize the SETTINGS window to a dock strip chip (keeps it logically open).",
+      "promise": "Clicking it collapses the SETTINGS window via minimizeTerm; the aria-label reads \"Minimize SETTINGS\".",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:54:02.711Z",
+      "missing": false,
+      "selector": "button[aria-label=\"Minimize SETTINGS\"]",
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize SETTINGS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json."
+    },
+    {
+      "id": "ui/system/aria-resize-channels",
+      "kind": "ui",
+      "area": "system",
+      "name": "Resize CHANNELS",
+      "purpose": "Resize the CHANNELS window — the shared ◢ grip (class term-resize), aria-labelled for screen readers.",
+      "promise": "Dragging (pointer/touch/pen) or arrow-keying it resizes the CHANNELS window within clamped min/max; the aria-label reads \"Resize CHANNELS\".",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -1076,71 +1098,61 @@
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/settings-p1-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/settings-p1-backend.test.js"
+          "ref": "test/terminal-resize.test.js"
         },
         {
           "kind": "shoot",
-          "ref": "sys-settings"
+          "ref": "sys-messaging"
         }
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
       },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false,
-      "selector": "button[aria-label=\"Minimize SETTINGS\"]",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — button[aria-label=\"Minimize SETTINGS\"] present (openTerm chrome, stationui.js:379). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/aria-resize-channels",
-      "kind": "ui",
-      "area": "system",
-      "name": "Resize CHANNELS",
-      "purpose": "",
-      "promise": "",
-      "wiring": {
-        "files": [],
-        "events": []
-      },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Resize CHANNELS\"]",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Resize CHANNELS\"] present. terminal-resize.test.js:21-25 source-locks the one shared term-resize affordance with pointer+keyboard+clamp behavior and an explicit accessible name. Evidence union.json."
     },
     {
       "id": "ui/system/aria-resize-logbook",
       "kind": "ui",
       "area": "system",
       "name": "Resize LOGBOOK",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Resize the LOGBOOK window — the shared ◢ grip (class term-resize), aria-labelled for screen readers.",
+      "promise": "Dragging (pointer/touch/pen) or arrow-keying it resizes the LOGBOOK window within clamped min/max; the aria-label reads \"Resize LOGBOOK\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/terminal-resize.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-logbook"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.719Z",
       "lastSeen": "2026-07-18T00:54:02.719Z",
       "missing": false,
       "selector": "button[aria-label=\"Resize LOGBOOK\"]",
-      "state": "sys-logbook"
+      "state": "sys-logbook",
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Resize LOGBOOK\"] present. terminal-resize.test.js:21-25 source-locks the one shared term-resize affordance with pointer+keyboard+clamp behavior and an explicit accessible name. Evidence union.json."
     },
     {
       "id": "ui/system/aria-resize-notifications",
@@ -1168,63 +1180,108 @@
       "kind": "ui",
       "area": "system",
       "name": "Resize RESTORE POINTS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Resize the RESTORE POINTS window — the shared ◢ grip (class term-resize), aria-labelled for screen readers.",
+      "promise": "Dragging (pointer/touch/pen) or arrow-keying it resizes the RESTORE POINTS window within clamped min/max; the aria-label reads \"Resize RESTORE POINTS\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/terminal-resize.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-rewind"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.719Z",
       "lastSeen": "2026-07-18T00:54:02.719Z",
       "missing": false,
       "selector": "button[aria-label=\"Resize RESTORE POINTS\"]",
-      "state": "sys-rewind"
+      "state": "sys-rewind",
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Resize RESTORE POINTS\"] present. terminal-resize.test.js:21-25 source-locks the one shared term-resize affordance with pointer+keyboard+clamp behavior and an explicit accessible name. Evidence union.json."
     },
     {
       "id": "ui/system/aria-resize-session-tools",
       "kind": "ui",
       "area": "system",
       "name": "Resize SESSION TOOLS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Resize the SESSION TOOLS window — the shared ◢ grip (class term-resize), aria-labelled for screen readers.",
+      "promise": "Dragging (pointer/touch/pen) or arrow-keying it resizes the SESSION TOOLS window within clamped min/max; the aria-label reads \"Resize SESSION TOOLS\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/terminal-resize.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-sessiontools"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.719Z",
       "lastSeen": "2026-07-18T00:54:02.719Z",
       "missing": false,
       "selector": "button[aria-label=\"Resize SESSION TOOLS\"]",
-      "state": "sys-sessiontools"
+      "state": "sys-sessiontools",
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Resize SESSION TOOLS\"] present. terminal-resize.test.js:21-25 source-locks the one shared term-resize affordance with pointer+keyboard+clamp behavior and an explicit accessible name. Evidence union.json."
     },
     {
       "id": "ui/system/aria-resize-settings",
       "kind": "ui",
       "area": "system",
       "name": "Resize SETTINGS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Resize the SETTINGS window — the shared ◢ grip (class term-resize), aria-labelled for screen readers.",
+      "promise": "Dragging (pointer/touch/pen) or arrow-keying it resizes the SETTINGS window within clamped min/max; the aria-label reads \"Resize SETTINGS\".",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/terminal-resize.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "button[aria-label=\"Resize SETTINGS\"]",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Resize SETTINGS\"] present. terminal-resize.test.js:21-25 source-locks the one shared term-resize affordance with pointer+keyboard+clamp behavior and an explicit accessible name. Evidence union.json."
     },
     {
       "id": "ui/system/aria-search-settings",
@@ -1232,7 +1289,7 @@
       "area": "system",
       "name": "Search settings",
       "purpose": "Search box that filters the SETTINGS console rail/sections to the matching controls.",
-      "promise": "Typing narrows the visible SETTINGS sections, hides irrelevant headings, and highlights the first matching section without replacing the user's persisted section; the aria-label reads \"Search settings\".",
+      "promise": "Typing narrows the visible SETTINGS sections, hides irrelevant headings, and highlights the first matching section without replacing the persisted section; the aria-label reads \"Search settings\".",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -1249,10 +1306,10 @@
           "ref": "sys-settings"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:22:43.218Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
@@ -1260,7 +1317,7 @@
       "missing": false,
       "selector": "input[aria-label=\"Search settings\"]",
       "state": "sys-settings",
-      "notes": "Live: input[aria-label=\"Search settings\"] rendered by mountConsole({search:true}). Held at audited: search-filter behavior not machine-asserted. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Re-proven live @ HEAD 0a009ec2: input[aria-label=\"Search settings\"] present in SETTINGS chrome. poweruser-shell-repairs.test.js:24 (PL-07) asserts settings search highlights a matching section and hides irrelevant headings. Evidence union.json."
     },
     {
       "id": "ui/system/aria-sign-in-to-grok-xai",
