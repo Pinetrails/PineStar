@@ -28,14 +28,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/compaction.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (compaction.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/agent-cost",
@@ -199,14 +207,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/iteration-budget.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (iteration-budget.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/agent-run-start",
@@ -331,14 +347,26 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (contract.test.js + tools.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/agent-tool-result",
@@ -367,14 +395,26 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (contract.test.js + tools.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/budget-threshold",
@@ -1071,14 +1111,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/iteration-budget.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: EMIT-ONLY by design — emit machine-guarded in the gate (iteration-budget.test.js); trace confirms NO frontend consumer (intentional observability/telemetry, not a dead surface). Capped at audited.]"
     },
     {
       "id": "event/level",
@@ -1143,14 +1191,26 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/trust.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/reflect.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (trust.test.js + reflect.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/memory-forget",
@@ -1178,14 +1238,26 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/sidecar.http.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (contract.test.js + sidecar.http.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/memory-proposed",
@@ -1212,14 +1284,26 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/contract.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/study.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (contract.test.js + study.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/memory-recall",
@@ -1246,14 +1330,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/contract.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (contract.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/memory-used",
@@ -1281,14 +1373,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/memcore.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (memcore.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/memory-write",
@@ -1318,14 +1418,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/notebook.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (notebook.test.js) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/notify",
@@ -1629,14 +1737,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/floorstats.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: emit+payload machine-guarded in the gate (floorstats.test.js (asserts the FloorStats failover fold — a consumer-side guard)) + frozen-shape guard events-contract.test.js; emit site + frontend consumer both traced live at HEAD. KNOWN: consumer-render lacks a dedicated journey → capped at audited.]"
     },
     {
       "id": "event/queue-status",
@@ -1901,14 +2017,22 @@
         {
           "kind": "test",
           "ref": "test/lint-emits.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/contract.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "[wave-2 events-H @ HEAD c06bdef7: EMIT-ONLY by design — emit machine-guarded in the gate (contract.test.js); trace confirms NO frontend consumer (intentional observability/telemetry, not a dead surface). Capped at audited.]"
     },
     {
       "id": "event/verify-result",
