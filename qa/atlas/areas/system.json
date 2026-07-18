@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-18T01:09:48.824Z",
+  "updatedAt": "2026-07-18T01:16:03.811Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -1924,21 +1924,37 @@
       "kind": "ui",
       "area": "system",
       "name": "☾NIGHT SHIFT",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Switches the SETTINGS console to the NIGHT SHIFT panel (what the station is doing unattended plus its recent decision trail).",
+      "promise": "Clicking it activates the NIGHT SHIFT rail item and paints that panel's live controls (steer input, STEER/CLEAR, LAST REPORT), fed from GET /api/nightshift/status + /api/autonomy/ledger.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        },
+        {
+          "kind": "test",
+          "ref": "test/nightshift-focus.e2e.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:16:03.811Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "#con-tab-settings-nightshift",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): clicking #con-tab-settings-nightshift set activeTab to itself and painted #ns-steer/#ns-steer-set/#ns-report-btn. Panel routes covered by nightshift-focus.e2e. Evidence .uiatlas/system-evidence/settings-dump.json."
     },
     {
       "id": "ui/system/con-tab-settings-notifs",
@@ -1985,21 +2001,36 @@
       "kind": "ui",
       "area": "system",
       "name": "⊘PERMISSIONS",
-      "purpose": "",
-      "promise": "",
+      "purpose": "Switches the SETTINGS console to the PERMISSIONS panel (the standing approvals that let an agent act unattended: the level dial plus grant list).",
+      "promise": "Clicking it activates the PERMISSIONS rail item and paints that panel's controls (#perm-level chooser + #perm-grants standing-grant list).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        },
+        {
+          "kind": "test",
+          "ref": "test/permissions-ui.test.js"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:16:03.811Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "#con-tab-settings-permissions",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped+proven live @ HEAD 0a009ec2: clicking #con-tab-settings-permissions set activeTab to itself and painted the panel; permissions-ui.test.js source-locks #perm-level + #perm-grants present. Evidence settings-dump.json."
     },
     {
       "id": "ui/system/con-tab-settings-providers",
@@ -2616,84 +2647,144 @@
       "kind": "ui",
       "area": "system",
       "name": "▤ LAST REPORT",
-      "purpose": "",
-      "promise": "",
+      "purpose": "LAST REPORT — reveals the most recent night-shift run report inline.",
+      "promise": "Clicking it fetches + renders the latest night-shift report into #ns-report.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:16:03.811Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#ns-report-btn",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: #ns-report-btn submit present in NIGHT SHIFT panel. Held audited: no committed test asserts the report fetch+render; only shoot-state presence. KNOWN coverage gap. Evidence settings-dump.json."
     },
     {
       "id": "ui/system/ns-steer",
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The night-shift steer text input — the project folder path or focus phrase passed to STEER.",
+      "promise": "Its value is the body of the POST /api/nightshift/focus that STEER fires; empty by default.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        },
+        {
+          "kind": "test",
+          "ref": "test/nightshift-focus.e2e.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:16:03.811Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#ns-steer",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: #ns-steer type=text, value='' present in NIGHT SHIFT panel. Held audited: the input->fetch-body wiring is proven live but not by a committed source-lock (the e2e drives the route directly, not the DOM input). KNOWN coverage gap. Evidence settings-dump.json."
     },
     {
       "id": "ui/system/ns-steer-clear",
       "kind": "ui",
       "area": "system",
       "name": "CLEAR",
-      "purpose": "",
-      "promise": "",
+      "purpose": "CLEAR — drops the standing night-shift steer so focus falls back to the station's own choice.",
+      "promise": "Clicking CLEAR DELETEs /api/nightshift/focus; the readout repaints from the route (focus no longer steer-sourced). Hidden until a steer is set.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/nightshift-focus.e2e.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:16:03.811Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#ns-steer-clear",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Mapped @ HEAD 0a009ec2: #ns-steer-clear present in DOM (display:none until a steer exists - conditional reveal, truthful). DELETE contract asserted by nightshift-focus.e2e.test.js:252. Evidence settings-dump.json."
     },
     {
       "id": "ui/system/ns-steer-set",
       "kind": "ui",
       "area": "system",
       "name": "STEER",
-      "purpose": "",
-      "promise": "",
+      "purpose": "STEER — commits the night-shift focus (a project folder or free text) the station works on unattended.",
+      "promise": "Clicking STEER POSTs /api/nightshift/focus with the #ns-steer value; the readout then reports focus.source==='steer' (server truth).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/nightshift-focus.e2e.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:16:03.811Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#ns-steer-set",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: #ns-steer-set submit present in NIGHT SHIFT panel. Backend contract asserted by nightshift-focus.e2e.test.js:249 (POST /api/nightshift/focus sets a durable steer reported as steer-sourced). Held audited: the DOM-click-fires-POST link was not driven live this session (only presence + committed route test). KNOWN. Evidence settings-dump.json."
     },
     {
       "id": "ui/system/ntp-crondigest",
@@ -3404,42 +3495,69 @@
       "kind": "ui",
       "area": "system",
       "name": "re-read this agent's restore points",
-      "purpose": "",
-      "promise": "",
+      "purpose": "REFRESH — re-reads the selected agent's restore points in the REWIND panel.",
+      "promise": "Clicking it shows a loading state and re-fetches the agent's checkpoint list, repainting the rows.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-rewind"
+        },
+        {
+          "kind": "test",
+          "ref": "test/checkpoint-store.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:16:03.811Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.719Z",
       "lastSeen": "2026-07-18T00:54:02.719Z",
       "missing": false,
       "selector": "#rw-refresh",
-      "state": "sys-rewind"
+      "state": "sys-rewind",
+      "notes": "Proven live @ HEAD 0a009ec2: #rw-refresh submit present in REWIND panel (stationui.js:6040 wires click -> loading -> refresh()). Held audited: the re-read handler has no committed UI assertion; checkpoint-store.test.js covers the data layer. KNOWN coverage gap on the click behavior. Evidence union.json."
     },
     {
       "id": "ui/system/set-autostart",
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "LAUNCH AT LOGIN — register StarNet to start automatically at sign-in (desktop app only).",
+      "promise": "On desktop the toggle reflects the real OS autostart state (Lifecycle.autostartStatus) and registers/unregisters on change; in browser/dev it renders disabled with a 'desktop app only' note.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:16:03.811Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#set-autostart",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: #set-autostart type=checkbox DISABLED in dev/browser, matching the desktop-only guard (truthful - never claims what dev cannot do). Held audited: OS autostart register path unverifiable in dev + no committed assertion. KNOWN coverage gap. Evidence union.json."
     },
     {
       "id": "ui/system/set-awake",
@@ -3549,63 +3667,96 @@
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "GLOW slider (0-150%) — CRT bloom intensity for the CUSTOM phosphor theme.",
+      "promise": "Dragging it sets store.settings.themeGlow and adjusts the bloom overlay opacity live; percent readout updates.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:16:03.811Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#set-glow",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: #set-glow type=range min=0 max=150 value=100 present. Held audited: no committed behavior assertion (only shoot presence). KNOWN coverage gap. Evidence settings-dump.json."
     },
     {
       "id": "ui/system/set-hue",
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "HUE slider (0-359 degrees) for the CUSTOM phosphor theme derivation.",
+      "promise": "Dragging it sets store.settings.themeHue, switches theme to custom, re-derives the palette live and updates the degree readout; value persisted with the settings payload.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:16:03.811Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#set-hue",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: #set-hue type=range min=0 max=359 value=35 present. Held audited: dragging->persist behavior has no committed assertion (only shoot presence). KNOWN coverage gap. Evidence settings-dump.json."
     },
     {
       "id": "ui/system/set-sat",
       "kind": "ui",
       "area": "system",
       "name": "input",
-      "purpose": "",
-      "promise": "",
+      "purpose": "SATURATION slider (0-100%) for the CUSTOM phosphor theme derivation.",
+      "promise": "Dragging it sets store.settings.themeSat, switches theme to custom, re-derives the palette live and updates the percent readout.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:16:03.811Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#set-sat",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: #set-sat type=range value=100 present. Held audited: no committed behavior assertion (only shoot presence). KNOWN coverage gap. Evidence settings-dump.json."
     },
     {
       "id": "ui/system/set-sound",
@@ -3648,21 +3799,32 @@
       "kind": "ui",
       "area": "system",
       "name": "CUSTOM",
-      "purpose": "",
-      "promise": "",
+      "purpose": "CUSTOM phosphor theme swatch — selects the user-derived (hue/sat/glow) CRT palette over the presets.",
+      "promise": "Clicking it sets store.settings.theme='custom' and applies the derived phosphor palette; the swatch chip tints to the current derivation.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:16:03.811Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "#set-theme-custom",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2: #set-theme-custom present in APPEARANCE panel with derived --sw swatch. Held audited: no committed test asserts theme='custom' apply/persist; only shoot presence. KNOWN coverage gap. Evidence settings-dump.json."
     },
     {
       "id": "ui/system/set-updates-auto",
