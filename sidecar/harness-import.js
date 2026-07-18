@@ -163,8 +163,26 @@
       }
       out += c;
     }
-    // trailing commas before a closing } or ]
-    return out.replace(/,(\s*[}\]])/g, '$1');
+    // trailing commas — STRING-AWARE second pass (a naive regex would eat a comma inside a string literal, e.g.
+    // {a:"x,]"}). After the first pass every string is double-quoted, so walk those spans and only drop a ','
+    // whose next significant char OUTSIDE a string is } or ].
+    let res = '';
+    for (let i = 0; i < out.length; i++) {
+      const c = out[i];
+      if (c === '"') {
+        res += c;
+        let esc = false;
+        for (i++; i < out.length; i++) { const d = out[i]; res += d; if (esc) { esc = false; continue; } if (d === '\\') { esc = true; continue; } if (d === '"') break; }
+        continue;
+      }
+      if (c === ',') {
+        let k = i + 1;
+        while (k < out.length && /[ \t\r\n]/.test(out[k])) k++;
+        if (out[k] === '}' || out[k] === ']') continue;   // trailing comma — drop it (the whitespace stays)
+      }
+      res += c;
+    }
+    return res;
   }
 
   // parseJson5(text) -> object|null. Fail-soft: an unparseable config yields null (caller notes it, never throws).
@@ -270,12 +288,13 @@
     return { raw: id ? clampStr(id, MODEL_MAX) : null, model: id ? clampStr(id, MODEL_MAX) : null, provider: provider ? clampStr(provider, MODEL_MAX) : null };
   }
 
-  // first `# Heading` line of a markdown doc (the persona's title). null if none.
+  // first heading line of a markdown doc, ANY level (# .. ######) — a SOUL.md that opens with '## Nyx' still names
+  // the agent. Returns the heading text, null if none.
   function firstHeading(md) {
     if (!nonEmpty(md)) return null;
     const lines = String(md).split(/\r?\n/);
     for (const l of lines) {
-      const m = l.match(/^\s{0,3}#\s+(.+?)\s*#*\s*$/);
+      const m = l.match(/^\s{0,3}#{1,6}\s+(.+?)\s*#*\s*$/);
       if (m && nonEmpty(m[1])) return clampStr(m[1].trim(), NAME_MAX);
     }
     return null;
@@ -376,11 +395,10 @@
   }
 
   return {
-    TEXT_MAX, NAME_MAX, MODEL_MAX, SECRET_WARNING, SECRET_KEY_RE,
+    TEXT_MAX,
     detectCandidates, filesWanted, scanProfile,
-    // low-level parsers exported so index.js (detect enumeration) and tests can reuse them:
-    scrubJson5, parseJson5, configHasSecret, splitModelId,
-    openclawModel, openclawAgents, hermesModel,
-    firstHeading, nameFromIdentity, clampStr, joinPath
+    // parseJson5 + openclawAgents power index.js's detect enumeration; openclawModel/hermesModel ride along for
+    // the pure tests. Everything else stays internal.
+    parseJson5, openclawAgents, openclawModel, hermesModel
   };
 });

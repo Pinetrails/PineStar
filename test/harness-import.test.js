@@ -88,6 +88,11 @@ eq(sq.note, 'it\'s // "fine"', 'escaped quote + // + inner double-quotes survive
 const strUrl = H.parseJson5('{ "agents": { "defaults": { "model": { "primary": "openrouter/x" } } }, "note": "see http://x.example" }');
 eq(strUrl.note, 'see http://x.example', 'a // inside a string survives the comment scrubber');
 
+// a ",]" or ",}" INSIDE a string is not mistaken for a trailing comma (the naive-regex bug: {a:"x,]"} -> {a:"x]"})
+eq(H.parseJson5('{ a: "x,]" }').a, 'x,]', 'a comma before ] inside a string survives trailing-comma removal');
+eq(H.parseJson5('{ a: "y,}", b: [1, 2,], }').a, 'y,}', 'a comma before } inside a string survives');
+ok(Array.isArray(H.parseJson5('{ a: "y,}", b: [1, 2,], }').b) && H.parseJson5('{ a: "y,}", b: [1, 2,], }').b.length === 2, 'real trailing commas still removed alongside the string-guarded ones');
+
 // ---- Hermes YAML model extraction (quoted + unquoted, block + inline) ----
 eq(H.hermesModel('model:\n  default: "anthropic/claude-3"\n  provider: anthropic\n').provider, 'anthropic', 'hermes block: provider scalar read');
 const hUq = H.hermesModel('model:\n  default: claude-3\n  provider: anthropic\n');
@@ -128,6 +133,8 @@ eq(clamped.persona.length, 16000, 'persona clipped to 16000 chars');
 eq(H.scanProfile({ harness: 'openclaw', files: { 'IDENTITY.md': '# Ada Lovelace\nfoo' } }).name, 'Ada Lovelace', 'openclaw name from IDENTITY.md # heading');
 eq(H.scanProfile({ harness: 'openclaw', files: { 'IDENTITY.md': 'Name: Turing\n' } }).name, 'Turing', 'openclaw name from a Name: line');
 eq(H.scanProfile({ harness: 'hermes', files: { 'SOUL.md': '# Nyx\nA night owl.' } }).name, 'Nyx', 'hermes name from SOUL.md # heading');
+eq(H.scanProfile({ harness: 'hermes', files: { 'SOUL.md': '## Nyx\nA night owl.' } }).name, 'Nyx', 'a ## (any-level) heading still yields the name');
+eq(H.scanProfile({ harness: 'openclaw', files: { 'IDENTITY.md': '### Deep Thought\n' } }).name, 'Deep Thought', 'openclaw IDENTITY.md ### heading yields the name');
 eq(H.scanProfile({ harness: 'openclaw', files: { 'SOUL.md': 'no heading here' } }).name, null, 'no name markers => null');
 
 // ---- sources + dailyCount ----
