@@ -35,10 +35,10 @@ function fakeFetch() { return async () => ({ ok: true, status: 200, async json()
   A.ok(/function startTelegram/.test(idx), 'startTelegram still present');
 
   // the four Discord routes are wired into the request dispatcher
-  A.ok(/req\.url === '\/api\/channels\/discord\/connect'/.test(idx), 'POST /api/channels/discord/connect routed');
-  A.ok(/req\.url === '\/api\/channels\/discord\/disconnect'/.test(idx), 'POST /api/channels/discord/disconnect routed');
-  A.ok(/req\.url === '\/api\/channels\/discord\/status'/.test(idx), 'GET /api/channels/discord/status routed');
-  A.ok(/req\.url === '\/api\/channels\/discord\/sync'/.test(idx), 'POST /api/channels/discord/sync routed');
+  A.ok(/m: 'POST', exact: '\/api\/channels\/discord\/connect'/.test(idx), 'POST /api/channels/discord/connect routed');
+  A.ok(/m: 'POST', exact: '\/api\/channels\/discord\/disconnect'/.test(idx), 'POST /api/channels/discord/disconnect routed');
+  A.ok(/m: 'GET', exact: '\/api\/channels\/discord\/status'/.test(idx), 'GET /api/channels/discord/status routed');
+  A.ok(/m: 'POST', exact: '\/api\/channels\/discord\/sync'/.test(idx), 'POST /api/channels/discord/sync routed');
 
   // each route dispatches to its handler
   A.ok(/function handleDiscordConnect/.test(idx), 'handleDiscordConnect defined');

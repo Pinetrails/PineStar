@@ -4640,221 +4640,278 @@ function routeFailure(res, err) {
   } catch (_) { try { res.destroy(); } catch (_) {} }
 }
 
-function dispatchRoute(req, res) {
-  if (req.method === 'POST' && req.url === '/api/session') return handleApiSession(req, res);
-  if (req.method === 'POST' && req.url === '/api/run') return handleRun(req, res).catch((e) => runRouteFailure(res, e, redact));
-  // TTS/STT honor the 200-always media contract (backend law): a thrown failure must still answer 200 with an
-  // error payload, NOT flow into routeFailure's 500 — the frontend voice loop depends on it. So these keep an
-  // explicit catch that resolves 200 (never an empty/5xx body) instead of falling through to the central guard.
-  if (req.method === 'POST' && req.url === '/api/tts') return handleTts(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: redact('tts failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } });
-  if (req.method === 'POST' && (req.url === '/api/stt' || req.url.indexOf('/api/stt?') === 0)) return handleStt(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason: redact('stt failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } });
-  if (req.method === 'POST' && req.url === '/api/cancel') return handleCancel(req, res);
-  if (req.method === 'POST' && req.url === '/api/run/steer') return handleRunSteer(req, res);
-  if (req.method === 'GET' && req.url === '/api/version') return handleVersion(req, res);
-  if (req.method === 'GET' && req.url === '/api/diagnostics') return handleDiagnostics(req, res);   // T3.9 paste-ready bug report
-  if (req.method === 'POST' && req.url === '/api/halt') return handleHalt(req, res);
-  if (req.method === 'POST' && req.url === '/api/consent') return handleConsent(req, res);
-  if (req.method === 'POST' && req.url === '/api/consent/ack') return handleConsentAck(req, res);   // EL-11: the browser attests the prompt is human-visible
-  if (req.method === 'GET' && req.url === '/api/permissions') return handlePermissionsList(req, res);
-  if (req.method === 'POST' && req.url === '/api/permissions/grant') return handlePermissionsGrant(req, res);
-  if (req.method === 'POST' && req.url === '/api/permissions/revoke') return handlePermissionsRevoke(req, res);
-  if (req.method === 'GET' && req.url === '/api/projects') return handleProjectsList(req, res);   // NS-5: the known blessed-project roots (autonomy surface)
-  if (req.method === 'POST' && req.url === '/api/projects/bless') return handleProjectBless(req, res);   // NS-5c: ADD a project (interactive-only, blesses through the same path-grant machinery)
-  if (req.method === 'POST' && req.url === '/api/projects/pickfolder') return handleProjectPickFolder(req, res);   // Projects rail "browse": native OS folder chooser (grants nothing)
-  if (req.method === 'POST' && req.url === '/api/autonomy/write') return handleAutonomyWrite(req, res);
+/* ---- route error policies (data, not scattered catches) ----------------------------------------
+   The DEFAULT for every route is the central async-route guard above: a thrown/rejected handler
+   flows into routeFailure's 500 JSON envelope (or a destroyed socket mid-stream). The named
+   policies below are the ONLY divergences, kept as explicit `errorPolicy` fields on the route
+   table so the contract is visible as data:
+   - runFailPolicy       — /api/run streams NDJSON; a failure writes a run-shaped NDJSON error line
+                           (runroute.js contract) instead of the generic 500 envelope.
+   - ttsFailOpenPolicy / sttFailOpenPolicy — the 200-always media contract (backend law, LOCKED in
+                           DECISIONS.md): a thrown failure must still answer 200 with an error
+                           payload, NOT flow into routeFailure's 500 — the frontend voice loop
+                           depends on it.
+   - devInboundFailPolicy — DEV-ONLY inbound injection keeps its own try/catch → always JSON (500
+                           with a redacted error), never an empty socket.
+   - attachmentFailPolicy — upload failures answer a JSON {ok:false} envelope (500) so the COMMS
+                           attach flow shows an honest error instead of a broken fetch. */
+function runFailPolicy(res, e) { return runRouteFailure(res, e, redact); }
+function ttsFailOpenPolicy(res, e) { try { if (!res.headersSent) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ error: redact('tts failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } }
+function sttFailOpenPolicy(res, e) { try { if (!res.headersSent) { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ text: '', reason: redact('stt failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } }
+function devInboundFailPolicy(res, e) { try { if (!res.headersSent) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: redact('dev inbound failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) {} }
+function attachmentFailPolicy(res, e) { try { if (!res.headersSent) { res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ ok: false, error: redact('upload failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } }
+
+/* ---- ROUTES — the declarative dispatch table -----------------------------------------------------
+   One entry per route, IN CHAIN ORDER (order is load-bearing: earlier entries win, exactly like the
+   old if-chain). Adding a route = appending ONE line in the right section — never re-derive the loop.
+
+   Entry shape: { m, <match>, h, errorPolicy? }
+   - m: HTTP method string, or an array for multi-method routes. Method mismatch falls through to the
+     NEXT entry (and ultimately serveStatic → 404), same as the old chain.
+   - exactly ONE match key, preserving each route's exact query-string semantics (a live bug class —
+     do NOT "normalize" a route onto a different matcher):
+       exact:   req.url === path                      (query string makes it MISS — intentional)
+       qsplit:  req.url.split('?')[0] === path        (path match; the url may carry ?token= etc.)
+       prefix:  req.url.indexOf(path) === 0           (raw prefix; query string rides along)
+       qprefix: req.url.split('?')[0].indexOf(path) === 0
+       rx:      req.url.match(rx) — the match array is passed to h as its 3rd arg
+       qrx:     rx.test(req.url.split('?')[0])
+   - h: the handler (req, res[, match]).
+   - errorPolicy: OPTIONAL divergence from the central routeFailure guard (see the named policies
+     above). Routes without it inherit the default 500 envelope on a rejected promise. */
+const GENERIC_CHANNEL_RX = {
+  // generic channels (slack/matrix/signal): one route family, same verbs as telegram/discord
+  connect: /^\/api\/channels\/(slack|matrix|signal)\/connect$/,
+  sync: /^\/api\/channels\/(slack|matrix|signal)\/sync$/,
+  disconnect: /^\/api\/channels\/(slack|matrix|signal)\/disconnect$/,
+  status: /^\/api\/channels\/(slack|matrix|signal)\/status$/
+};
+const ROUTES = [
+  { m: 'POST', exact: '/api/session', h: handleApiSession },
+  { m: 'POST', exact: '/api/run', h: handleRun, errorPolicy: runFailPolicy },
+  { m: 'POST', exact: '/api/tts', h: handleTts, errorPolicy: ttsFailOpenPolicy },
+  // stt: qsplit == the old (url === '/api/stt' || url.indexOf('/api/stt?') === 0) disjunction, verbatim.
+  { m: 'POST', qsplit: '/api/stt', h: handleStt, errorPolicy: sttFailOpenPolicy },
+  { m: 'POST', exact: '/api/cancel', h: handleCancel },
+  { m: 'POST', exact: '/api/run/steer', h: handleRunSteer },
+  { m: 'GET', exact: '/api/version', h: handleVersion },
+  { m: 'GET', exact: '/api/diagnostics', h: handleDiagnostics },   // T3.9 paste-ready bug report
+  { m: 'POST', exact: '/api/halt', h: handleHalt },
+  { m: 'POST', exact: '/api/consent', h: handleConsent },
+  { m: 'POST', exact: '/api/consent/ack', h: handleConsentAck },   // EL-11: the browser attests the prompt is human-visible
+  { m: 'GET', exact: '/api/permissions', h: handlePermissionsList },
+  { m: 'POST', exact: '/api/permissions/grant', h: handlePermissionsGrant },
+  { m: 'POST', exact: '/api/permissions/revoke', h: handlePermissionsRevoke },
+  { m: 'GET', exact: '/api/projects', h: handleProjectsList },   // NS-5: the known blessed-project roots (autonomy surface)
+  { m: 'POST', exact: '/api/projects/bless', h: handleProjectBless },   // NS-5c: ADD a project (interactive-only, blesses through the same path-grant machinery)
+  { m: 'POST', exact: '/api/projects/pickfolder', h: handleProjectPickFolder },   // Projects rail "browse": native OS folder chooser (grants nothing)
+  { m: 'POST', exact: '/api/autonomy/write', h: handleAutonomyWrite },
   // NS-1: the SERVER copy of the dial + a read-only beliefs snapshot (the driver reads ONLY this); the throttled
   // activity beacon (away detection); and the truthful night-shift status telemetry.
-  if (req.method === 'POST' && req.url === '/api/autonomy/posture') return handleAutonomyPosture(req, res);
-  if (req.method === 'GET' && req.url === '/api/autonomy/posture') return handleAutonomyPostureGet(req, res);
-  if (req.method === 'POST' && req.url === '/api/activity') return handleActivityBeacon(req, res);
-  if (req.method === 'GET' && req.url === '/api/nightshift/status') return handleNightshiftStatus(req, res);
-  if (req.method === 'POST' && req.url === '/api/nightshift/beat') return handleNightshiftBeatNow(req, res);
-  if ((req.method === 'GET' || req.method === 'POST' || req.method === 'DELETE') && req.url.split('?')[0] === '/api/nightshift/focus') return handleNightshiftFocus(req, res);   // NS-5b: the durable focus steer
-  if ((req.method === 'POST' || req.method === 'DELETE') && req.url.split('?')[0] === '/api/nightshift/avoid') return handleNightshiftAvoid(req, res);   // autonomy-tuning: the off-limits directive
-  if (req.method === 'GET' && req.url.indexOf('/api/nightshift/drafts') === 0) return handleNightshiftDrafts(req, res);   // NS-4: night-shift drafts for the morning report
+  { m: 'POST', exact: '/api/autonomy/posture', h: handleAutonomyPosture },
+  { m: 'GET', exact: '/api/autonomy/posture', h: handleAutonomyPostureGet },
+  { m: 'POST', exact: '/api/activity', h: handleActivityBeacon },
+  { m: 'GET', exact: '/api/nightshift/status', h: handleNightshiftStatus },
+  { m: 'POST', exact: '/api/nightshift/beat', h: handleNightshiftBeatNow },
+  { m: ['GET', 'POST', 'DELETE'], qsplit: '/api/nightshift/focus', h: handleNightshiftFocus },   // NS-5b: the durable focus steer
+  { m: ['POST', 'DELETE'], qsplit: '/api/nightshift/avoid', h: handleNightshiftAvoid },   // autonomy-tuning: the off-limits directive
+  { m: 'GET', prefix: '/api/nightshift/drafts', h: handleNightshiftDrafts },   // NS-4: night-shift drafts for the morning report
   // SCOUT: learned interests + server-drafted bay options (prospects/recipes) + the honest attempt ledger
-  if (req.method === 'GET' && req.url === '/api/scout') return handleScoutGet(req, res);
-  if (req.method === 'POST' && req.url === '/api/scout/context') return handleScoutContext(req, res);
-  if (req.method === 'POST' && req.url === '/api/scout/decide') return handleScoutDecide(req, res);
-  if (req.method === 'POST' && req.url === '/api/scout/telemetry') return handleScoutTelemetry(req, res);
-  if (req.method === 'POST' && req.url === '/api/summon/ack') return handleSummonAck(req, res);
-  if (req.method === 'POST' && req.url === '/api/key') return handleSetKey(req, res);
-  if (req.method === 'POST' && req.url === '/api/channels/token') return handleSetChannelToken(req, res);
-  if (req.method === 'POST' && req.url === '/api/channels/telegram/connect') return handleChannelConnect(req, res);
-  if (req.method === 'POST' && req.url === '/api/channels/telegram/sync') return handleChannelSync(req, res);
-  if (req.method === 'POST' && req.url === '/api/roster') return handleRoster(req, res);
-  if (req.method === 'POST' && req.url === '/api/agent/delete') return handleAgentDelete(req, res);
-  if (req.method === 'POST' && req.url === '/api/dossier') return handleDossier(req, res);
-  if (req.method === 'POST' && req.url === '/api/goals') return handleGoals(req, res);   // GROWTH Tier 2: the active goal-arc summary for cron personas
-  if (req.method === 'POST' && req.url === '/api/channels/telegram/disconnect') return handleChannelDisconnect(req, res);
-  if (req.method === 'POST' && req.url === '/api/channels/discord/connect') return handleDiscordConnect(req, res);
-  if (req.method === 'POST' && req.url === '/api/channels/discord/sync') return handleDiscordSync(req, res);
-  if (req.method === 'POST' && req.url === '/api/channels/discord/disconnect') return handleDiscordDisconnect(req, res);
-  if (req.method === 'GET' && req.url === '/api/channels/discord/status') return handleDiscordStatus(req, res);
-  if (req.method === 'POST' && req.url === '/api/channels/notify') return handleChannelNotify(req, res);
+  { m: 'GET', exact: '/api/scout', h: handleScoutGet },
+  { m: 'POST', exact: '/api/scout/context', h: handleScoutContext },
+  { m: 'POST', exact: '/api/scout/decide', h: handleScoutDecide },
+  { m: 'POST', exact: '/api/scout/telemetry', h: handleScoutTelemetry },
+  { m: 'POST', exact: '/api/summon/ack', h: handleSummonAck },
+  { m: 'POST', exact: '/api/key', h: handleSetKey },
+  { m: 'POST', exact: '/api/channels/token', h: handleSetChannelToken },
+  { m: 'POST', exact: '/api/channels/telegram/connect', h: handleChannelConnect },
+  { m: 'POST', exact: '/api/channels/telegram/sync', h: handleChannelSync },
+  { m: 'POST', exact: '/api/roster', h: handleRoster },
+  { m: 'POST', exact: '/api/agent/delete', h: handleAgentDelete },
+  { m: 'POST', exact: '/api/dossier', h: handleDossier },
+  { m: 'POST', exact: '/api/goals', h: handleGoals },   // GROWTH Tier 2: the active goal-arc summary for cron personas
+  { m: 'POST', exact: '/api/channels/telegram/disconnect', h: handleChannelDisconnect },
+  { m: 'POST', exact: '/api/channels/discord/connect', h: handleDiscordConnect },
+  { m: 'POST', exact: '/api/channels/discord/sync', h: handleDiscordSync },
+  { m: 'POST', exact: '/api/channels/discord/disconnect', h: handleDiscordDisconnect },
+  { m: 'GET', exact: '/api/channels/discord/status', h: handleDiscordStatus },
+  { m: 'POST', exact: '/api/channels/notify', h: handleChannelNotify },
   // DEV-ONLY (404s unless SKYNET_DEV): inject an inbound message through the real channel hub — floor
-  // routing / classifier / crate telemetry testable without a live bot token. Own try/catch → always JSON.
-  if (req.method === 'POST' && req.url === '/api/dev/inbound') return handleDevInbound(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(500, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: redact('dev inbound failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) {} });
-  if (req.method === 'GET' && req.url === '/api/channels/telegram/status') return handleChannelStatus(req, res);
-  if (req.method === 'GET' && req.url === '/api/channels/status') return handleChannelsStatusAll(req, res);   // one bulk poll paints the whole CHANNELS panel
-  { // generic channels (slack/matrix/signal): one route family, same verbs as telegram/discord
-    const gm = req.url.match(/^\/api\/channels\/(slack|matrix|signal)\/(connect|sync|disconnect|status)$/);
-    if (gm) {
-      if (req.method === 'POST' && gm[2] === 'connect') return handleGenericChannelConnect(req, res, gm[1]);
-      if (req.method === 'POST' && gm[2] === 'sync') return handleGenericChannelSync(req, res, gm[1]);
-      if (req.method === 'POST' && gm[2] === 'disconnect') return handleGenericChannelDisconnect(req, res, gm[1]);
-      if (req.method === 'GET' && gm[2] === 'status') return handleGenericChannelStatus(req, res, gm[1]);
-    }
-  }
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/channels/events') return handleChannelEvents(req, res);   // path match: the SSE url carries a ?token= query now
-  if (req.method === 'POST' && req.url === '/api/routing') return handleRouting(req, res);
-  if (req.method === 'GET' && req.url === '/api/budget/status') return handleBudgetStatus(req, res);
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/credits') return handleCredits(req, res);   // 404s (no surface) unless managed credits are configured
-  if (req.method === 'POST' && req.url === '/api/budget/caps') return handleBudgetCaps(req, res);
-  if (req.method === 'POST' && req.url === '/api/budget/resume') return handleBudgetResume(req, res);
-  if (req.method === 'GET' && req.url === '/api/fallback/chain') return handleFallbackStatus(req, res);
-  if (req.method === 'POST' && req.url === '/api/fallback/chain') return handleFallbackChain(req, res);
-  if (req.method === 'POST' && req.url === '/api/config/export') return handleConfigExport(req, res);   // P1-7 station backup
-  if (req.method === 'POST' && req.url === '/api/config/import') return handleConfigImport(req, res);
-  if (req.method === 'POST' && req.url === '/api/config/reset') return handleConfigReset(req, res);
-  if (req.method === 'GET' && req.url === '/api/runtime/knobs') return handleRuntimeKnobsGet(req, res);   // P1-9 advanced knobs
-  if (req.method === 'POST' && req.url === '/api/runtime/knobs') return handleRuntimeKnobsSet(req, res);
-  if (req.method === 'POST' && req.url === '/api/auth/codex/start') return handleCodexStart(req, res);
-  if (req.method === 'POST' && req.url === '/api/auth/codex/poll') return handleCodexPoll(req, res);
-  if (req.method === 'GET' && req.url === '/api/auth/codex/status') return handleCodexStatus(req, res);
-  if (req.method === 'GET' && req.url === '/api/auth/codex/models') return handleCodexModels(req, res);
+  // routing / classifier / crate telemetry testable without a live bot token. Own errorPolicy → always JSON.
+  { m: 'POST', exact: '/api/dev/inbound', h: handleDevInbound, errorPolicy: devInboundFailPolicy },
+  { m: 'GET', exact: '/api/channels/telegram/status', h: handleChannelStatus },
+  { m: 'GET', exact: '/api/channels/status', h: handleChannelsStatusAll },   // one bulk poll paints the whole CHANNELS panel
+  { m: 'POST', rx: GENERIC_CHANNEL_RX.connect, h: (req, res, gm) => handleGenericChannelConnect(req, res, gm[1]) },
+  { m: 'POST', rx: GENERIC_CHANNEL_RX.sync, h: (req, res, gm) => handleGenericChannelSync(req, res, gm[1]) },
+  { m: 'POST', rx: GENERIC_CHANNEL_RX.disconnect, h: (req, res, gm) => handleGenericChannelDisconnect(req, res, gm[1]) },
+  { m: 'GET', rx: GENERIC_CHANNEL_RX.status, h: (req, res, gm) => handleGenericChannelStatus(req, res, gm[1]) },
+  { m: 'GET', qsplit: '/api/channels/events', h: handleChannelEvents },   // path match: the SSE url carries a ?token= query now
+  { m: 'POST', exact: '/api/routing', h: handleRouting },
+  { m: 'GET', exact: '/api/budget/status', h: handleBudgetStatus },
+  { m: 'GET', qsplit: '/api/credits', h: handleCredits },   // 404s (no surface) unless managed credits are configured
+  { m: 'POST', exact: '/api/budget/caps', h: handleBudgetCaps },
+  { m: 'POST', exact: '/api/budget/resume', h: handleBudgetResume },
+  { m: 'GET', exact: '/api/fallback/chain', h: handleFallbackStatus },
+  { m: 'POST', exact: '/api/fallback/chain', h: handleFallbackChain },
+  { m: 'POST', exact: '/api/config/export', h: handleConfigExport },   // P1-7 station backup
+  { m: 'POST', exact: '/api/config/import', h: handleConfigImport },
+  { m: 'POST', exact: '/api/config/reset', h: handleConfigReset },
+  { m: 'GET', exact: '/api/runtime/knobs', h: handleRuntimeKnobsGet },   // P1-9 advanced knobs
+  { m: 'POST', exact: '/api/runtime/knobs', h: handleRuntimeKnobsSet },
+  { m: 'POST', exact: '/api/auth/codex/start', h: handleCodexStart },
+  { m: 'POST', exact: '/api/auth/codex/poll', h: handleCodexPoll },
+  { m: 'GET', exact: '/api/auth/codex/status', h: handleCodexStatus },
+  { m: 'GET', exact: '/api/auth/codex/models', h: handleCodexModels },
   // Grok / Kimi subscription device-OAuth — the SAME five-verb shape as codex, keyed by provider id. Tokens
   // live only in WORKSPACES/<id>/tokens.json and never ride any response payload (status is booleans/strings).
-  if (req.method === 'POST' && req.url === '/api/auth/grok/start') return handleOAuthStart(req, res, 'grok');
-  if (req.method === 'POST' && req.url === '/api/auth/grok/poll') return handleOAuthPoll(req, res, 'grok');
-  if (req.method === 'GET' && req.url === '/api/auth/grok/status') return handleOAuthStatus(req, res, 'grok');
-  if (req.method === 'GET' && req.url === '/api/auth/grok/models') return handleOAuthModels(req, res, 'grok');
-  if (req.method === 'POST' && req.url === '/api/auth/grok/logout') return handleOAuthLogout(req, res, 'grok');
-  if (req.method === 'POST' && req.url === '/api/auth/kimi/start') return handleOAuthStart(req, res, 'kimi');
-  if (req.method === 'POST' && req.url === '/api/auth/kimi/poll') return handleOAuthPoll(req, res, 'kimi');
-  if (req.method === 'GET' && req.url === '/api/auth/kimi/status') return handleOAuthStatus(req, res, 'kimi');
-  if (req.method === 'GET' && req.url === '/api/auth/kimi/models') return handleOAuthModels(req, res, 'kimi');
-  if (req.method === 'POST' && req.url === '/api/auth/kimi/logout') return handleOAuthLogout(req, res, 'kimi');
-  if (req.method === 'GET' && req.url === '/api/providers') return handleProviders(req, res);
-  if (req.method === 'POST' && req.url === '/api/providers/probe') return handleProviderProbe(req, res);
-  // /api/models/openrouter is served by this same prefix (id='openrouter'); the old dedicated branch below it was
-  // dead code (shadowed by this line) and has been removed. handleProviderModels answers 200 with {models:[]}
-  // + error on any catalog failure, so it never throws into the central guard.
-  if (req.method === 'GET' && req.url.split('?')[0].indexOf('/api/models/') === 0) return handleProviderModels(req, res);
-  if (req.method === 'POST' && req.url === '/api/auth/codex/logout') return handleCodexLogout(req, res);
-  if (req.method === 'GET' && req.url === '/api/connectors/catalog') return handleConnectorCatalog(req, res);
-  if (req.method === 'POST' && req.url === '/api/connectors/oauth/start') return handleConnectorOauthStart(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/connectors/oauth/callback') === 0) return handleConnectorOauthCallback(req, res);
-  if (req.method === 'GET' && req.url === '/api/connectors') return handleConnectorsList(req, res);
-  if (req.method === 'POST' && req.url === '/api/connectors') return handleConnectorUpsert(req, res);
-  if (req.method === 'POST' && req.url === '/api/connectors/remove') return handleConnectorRemove(req, res);
-  if (req.method === 'POST' && req.url === '/api/connectors/refresh') return handleConnectorRefresh(req, res);
-  if (req.method === 'GET' && req.url === '/api/servicekeys') return handleServiceKeysList(req, res);
-  if (req.method === 'POST' && req.url === '/api/servicekeys') return handleServiceKeyUpsert(req, res);
-  if (req.method === 'POST' && req.url === '/api/servicekeys/toggle') return handleServiceKeyToggle(req, res);
-  if (req.method === 'POST' && req.url === '/api/servicekeys/remove') return handleServiceKeyRemove(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/toolsets') === 0) return handleToolsetsList(req, res);
-  if (req.method === 'POST' && req.url.indexOf('/api/toolsets/') === 0) return handleToolsetToggle(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/slash/catalog') === 0) return serveSlashCatalog(req, res);
-  if (req.method === 'POST' && req.url === '/api/slash/dispatch') return handleSlashDispatch(req, res);
-  if (req.method === 'POST' && req.url === '/api/skills/toggle') return handleSkillToggle(req, res);
-  if (req.method === 'POST' && req.url === '/api/agent-skills/manage') return handleAgentSkillManage(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/agent-skills') === 0) return serveAgentSkills(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/skills') === 0) return serveSkills(req, res);
-  if (req.method === 'POST' && req.url === '/api/spotify/auth/start') return handleSpotifyStart(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/spotify/callback') === 0) return handleSpotifyCallback(req, res);
-  if (req.method === 'GET' && req.url === '/api/spotify/status') return handleSpotifyStatus(req, res);
-  if (req.method === 'POST' && req.url === '/api/spotify/disconnect') return handleSpotifyDisconnect(req, res);
-  if (req.method === 'GET' && req.url === '/api/widgets') return handleWidgetsList(req, res);   // WIDGET RAILS Phase 2: the agent-fed readouts the chrome rails poll
-  if (req.method === 'GET' && req.url === '/api/state/snapshot') return handleStateSnapshot(req, res);   // reconnect reconciliation (frontend lane consumes it)
-  if (req.method === 'GET' && req.url === '/api/lifecycle/armed') return handleLifecycleArmed(req, res);   // Lane 4D: tray supervisor's close-decision truth
-  if (req.method === 'GET' && req.url === '/api/cron') return handleCronList(req, res);
-  if (req.method === 'POST' && req.url === '/api/cron') return handleCronCreate(req, res);
-  if (req.method === 'POST' && req.url === '/api/cron/update') return handleCronUpdate(req, res);
-  if (req.method === 'POST' && req.url === '/api/cron/remove') return handleCronRemove(req, res);
-  if (req.method === 'POST' && req.url === '/api/cron/preview') return handleCronPreview(req, res);
-  if (req.method === 'POST' && req.url === '/api/cron/arm') return handleCronArm(req, res);
-  if (req.method === 'POST' && req.url === '/api/cron/run') return handleCronRun(req, res);
+  { m: 'POST', exact: '/api/auth/grok/start', h: (req, res) => handleOAuthStart(req, res, 'grok') },
+  { m: 'POST', exact: '/api/auth/grok/poll', h: (req, res) => handleOAuthPoll(req, res, 'grok') },
+  { m: 'GET', exact: '/api/auth/grok/status', h: (req, res) => handleOAuthStatus(req, res, 'grok') },
+  { m: 'GET', exact: '/api/auth/grok/models', h: (req, res) => handleOAuthModels(req, res, 'grok') },
+  { m: 'POST', exact: '/api/auth/grok/logout', h: (req, res) => handleOAuthLogout(req, res, 'grok') },
+  { m: 'POST', exact: '/api/auth/kimi/start', h: (req, res) => handleOAuthStart(req, res, 'kimi') },
+  { m: 'POST', exact: '/api/auth/kimi/poll', h: (req, res) => handleOAuthPoll(req, res, 'kimi') },
+  { m: 'GET', exact: '/api/auth/kimi/status', h: (req, res) => handleOAuthStatus(req, res, 'kimi') },
+  { m: 'GET', exact: '/api/auth/kimi/models', h: (req, res) => handleOAuthModels(req, res, 'kimi') },
+  { m: 'POST', exact: '/api/auth/kimi/logout', h: (req, res) => handleOAuthLogout(req, res, 'kimi') },
+  { m: 'GET', exact: '/api/providers', h: handleProviders },
+  { m: 'POST', exact: '/api/providers/probe', h: handleProviderProbe },
+  // /api/models/openrouter is served by this same prefix (id='openrouter'). handleProviderModels answers 200
+  // with {models:[]} + error on any catalog failure, so it never throws into the central guard.
+  { m: 'GET', qprefix: '/api/models/', h: handleProviderModels },
+  { m: 'POST', exact: '/api/auth/codex/logout', h: handleCodexLogout },
+  { m: 'GET', exact: '/api/connectors/catalog', h: handleConnectorCatalog },
+  { m: 'POST', exact: '/api/connectors/oauth/start', h: handleConnectorOauthStart },
+  { m: 'GET', prefix: '/api/connectors/oauth/callback', h: handleConnectorOauthCallback },
+  { m: 'GET', exact: '/api/connectors', h: handleConnectorsList },
+  { m: 'POST', exact: '/api/connectors', h: handleConnectorUpsert },
+  { m: 'POST', exact: '/api/connectors/remove', h: handleConnectorRemove },
+  { m: 'POST', exact: '/api/connectors/refresh', h: handleConnectorRefresh },
+  { m: 'GET', exact: '/api/servicekeys', h: handleServiceKeysList },
+  { m: 'POST', exact: '/api/servicekeys', h: handleServiceKeyUpsert },
+  { m: 'POST', exact: '/api/servicekeys/toggle', h: handleServiceKeyToggle },
+  { m: 'POST', exact: '/api/servicekeys/remove', h: handleServiceKeyRemove },
+  { m: 'GET', prefix: '/api/toolsets', h: handleToolsetsList },
+  { m: 'POST', prefix: '/api/toolsets/', h: handleToolsetToggle },
+  { m: 'GET', prefix: '/api/slash/catalog', h: serveSlashCatalog },
+  { m: 'POST', exact: '/api/slash/dispatch', h: handleSlashDispatch },
+  { m: 'POST', exact: '/api/skills/toggle', h: handleSkillToggle },
+  { m: 'POST', exact: '/api/agent-skills/manage', h: handleAgentSkillManage },
+  { m: 'GET', prefix: '/api/agent-skills', h: serveAgentSkills },
+  { m: 'GET', prefix: '/api/skills', h: serveSkills },
+  { m: 'POST', exact: '/api/spotify/auth/start', h: handleSpotifyStart },
+  { m: 'GET', prefix: '/api/spotify/callback', h: handleSpotifyCallback },
+  { m: 'GET', exact: '/api/spotify/status', h: handleSpotifyStatus },
+  { m: 'POST', exact: '/api/spotify/disconnect', h: handleSpotifyDisconnect },
+  { m: 'GET', exact: '/api/widgets', h: handleWidgetsList },   // WIDGET RAILS Phase 2: the agent-fed readouts the chrome rails poll
+  { m: 'GET', exact: '/api/state/snapshot', h: handleStateSnapshot },   // reconnect reconciliation (frontend lane consumes it)
+  { m: 'GET', exact: '/api/lifecycle/armed', h: handleLifecycleArmed },   // Lane 4D: tray supervisor's close-decision truth
+  { m: 'GET', exact: '/api/cron', h: handleCronList },
+  { m: 'POST', exact: '/api/cron', h: handleCronCreate },
+  { m: 'POST', exact: '/api/cron/update', h: handleCronUpdate },
+  { m: 'POST', exact: '/api/cron/remove', h: handleCronRemove },
+  { m: 'POST', exact: '/api/cron/preview', h: handleCronPreview },
+  { m: 'POST', exact: '/api/cron/arm', h: handleCronArm },
+  { m: 'POST', exact: '/api/cron/run', h: handleCronRun },
   // ---- away workshop (W1/W2): grant toggle, backlog queue, pending deliverables, decide, force-fire a shift ----
-  if (req.method === 'POST' && req.url === '/api/workshop/grant') return handleWorkshopGrant(req, res);
-  if (req.method === 'POST' && req.url === '/api/workshop/queue') return handleWorkshopQueue(req, res);
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/backlog') return handleWorkshopBacklog(req, res);
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/workshop/pending') return handleWorkshopPending(req, res);
-  if (req.method === 'POST' && req.url === '/api/workshop/decide') return handleWorkshopDecide(req, res);
-  if (req.method === 'POST' && req.url === '/api/workshop/undo') return handleWorkshopUndo(req, res);   // EL-11 #8: reverse a keep — remove the out-of-jail copy + restore pending
-  if (req.method === 'POST' && req.url === '/api/workshop/remove') return handleWorkshopRemove(req, res);
-  if (req.method === 'POST' && req.url === '/api/workshop/shift') return handleWorkshopShiftNow(req, res);
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/deliverables') return handleDeliverablesList(req, res);
-  if (req.method === 'POST' && req.url === '/api/deliverables/cleanup-preview') return handleDeliverablesCleanupPreview(req, res);
-  if (req.method === 'POST' && req.url === '/api/deliverables/cleanup') return handleDeliverablesCleanup(req, res);
-  if (req.method === 'POST' && req.url === '/api/deliverables/cleanup-undo') return handleDeliverablesCleanupUndo(req, res);
+  { m: 'POST', exact: '/api/workshop/grant', h: handleWorkshopGrant },
+  { m: 'POST', exact: '/api/workshop/queue', h: handleWorkshopQueue },
+  { m: 'GET', qsplit: '/api/workshop/backlog', h: handleWorkshopBacklog },
+  { m: 'GET', qsplit: '/api/workshop/pending', h: handleWorkshopPending },
+  { m: 'POST', exact: '/api/workshop/decide', h: handleWorkshopDecide },
+  { m: 'POST', exact: '/api/workshop/undo', h: handleWorkshopUndo },   // EL-11 #8: reverse a keep — remove the out-of-jail copy + restore pending
+  { m: 'POST', exact: '/api/workshop/remove', h: handleWorkshopRemove },
+  { m: 'POST', exact: '/api/workshop/shift', h: handleWorkshopShiftNow },
+  { m: 'GET', qsplit: '/api/deliverables', h: handleDeliverablesList },
+  { m: 'POST', exact: '/api/deliverables/cleanup-preview', h: handleDeliverablesCleanupPreview },
+  { m: 'POST', exact: '/api/deliverables/cleanup', h: handleDeliverablesCleanup },
+  { m: 'POST', exact: '/api/deliverables/cleanup-undo', h: handleDeliverablesCleanupUndo },
   // ---- QUEST V2 §A: the harness-owned quest ledger (frontend polls /api/quests on the existing 1s tick) ----
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/quests') return handleQuestsList(req, res);
-  if (req.method === 'POST' && req.url === '/api/quests/mint') return handleQuestsMint(req, res);
-  if (req.method === 'POST' && req.url === '/api/quests/update') return handleQuestsUpdate(req, res);
-  if (req.method === 'POST' && req.url === '/api/quests/confirm') return handleQuestsConfirm(req, res);
-  if (req.method === 'POST' && req.url === '/api/quests/dismiss') return handleQuestsDismiss(req, res);
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/quests/refresh') return handleQuestsRefreshStatus(req, res);   // QUEST V3: north star + refresh ledger + due state
-  if (req.method === 'POST' && req.url === '/api/quests/refresh/run') return handleQuestsRefreshRun(req, res);               // QUEST V3: force a refresh cycle NOW (manual override)
-  if (req.method === 'POST' && req.url === '/api/quests/refresh/northstar') return handleQuestsRefreshNorthStar(req, res);  // QUEST V3: confirm/decline a proposed (inferred) north star
+  { m: 'GET', qsplit: '/api/quests', h: handleQuestsList },
+  { m: 'POST', exact: '/api/quests/mint', h: handleQuestsMint },
+  { m: 'POST', exact: '/api/quests/update', h: handleQuestsUpdate },
+  { m: 'POST', exact: '/api/quests/confirm', h: handleQuestsConfirm },
+  { m: 'POST', exact: '/api/quests/dismiss', h: handleQuestsDismiss },
+  { m: 'GET', qsplit: '/api/quests/refresh', h: handleQuestsRefreshStatus },   // QUEST V3: north star + refresh ledger + due state
+  { m: 'POST', exact: '/api/quests/refresh/run', h: handleQuestsRefreshRun },               // QUEST V3: force a refresh cycle NOW (manual override)
+  { m: 'POST', exact: '/api/quests/refresh/northstar', h: handleQuestsRefreshNorthStar },  // QUEST V3: confirm/decline a proposed (inferred) north star
   // W7 — OPEN the deliverable, don't display its code. Two routes let the Commander RUN/OPEN what an agent built:
-  //   POST /api/workshop/open  — shell-open a REAL jailed file with the OS default app (interactive user-click only).
-  if (req.method === 'POST' && req.url === '/api/workshop/open') return handleWorkshopOpen(req, res);
+  //   POST /api/workshop/open — shell-open a REAL jailed file with the OS default app (interactive user-click only).
+  { m: 'POST', exact: '/api/workshop/open', h: handleWorkshopOpen },
   //   GET/HEAD /workshop-run/<agentId>/<runId>/<path...> — jailed, read-only static serving so a built web tool
   //   actually RUNS in a browser tab (correct content-types, no dir listing, ?token= like /api/file, no-store).
   //   This is NOT under /api/ so it never touches the /api CORS/token gate above — the handler enforces its own token.
-  if ((req.method === 'GET' || req.method === 'HEAD') && req.url.split('?')[0].indexOf('/workshop-run/') === 0) return serveWorkshopRun(req, res);
+  { m: ['GET', 'HEAD'], qprefix: '/workshop-run/', h: serveWorkshopRun },
   // ADDITIVE (Lane B / ux-run-truth): read-only stat of a user-chosen KEEP destination folder, so the return
   // card can validate the typed path inline instead of failing silently on Keep. Strictly less powerful than
   // the existing keep copy (which already writes to an arbitrary destPath) — this only reports exists/isDir.
-  if (req.method === 'GET' && req.url.split('?')[0] === '/api/fs/dirstat') return handleDirStat(req, res);
-  if (req.method === 'POST' && req.url === '/api/checkpoint/restore') return handleCheckpointRestore(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/checkpoint') === 0) return handleCheckpointList(req, res);
-  if (req.method === 'GET' && req.url === '/api/health') { res.writeHead(200); return res.end('ok'); }
-  if (req.method === 'GET' && req.url === '/api/execution') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify(executionEnvironment.describe())); }
-  if (req.method === 'GET' && req.url.indexOf('/api/subagents') === 0) return handleSubagentsList(req, res);
-  if (req.method === 'POST' && req.url === '/api/subagents/interrupt') return handleSubagentInterrupt(req, res);
+  { m: 'GET', qsplit: '/api/fs/dirstat', h: handleDirStat },
+  { m: 'POST', exact: '/api/checkpoint/restore', h: handleCheckpointRestore },
+  { m: 'GET', prefix: '/api/checkpoint', h: handleCheckpointList },
+  { m: 'GET', exact: '/api/health', h: (req, res) => { res.writeHead(200); return res.end('ok'); } },
+  { m: 'GET', exact: '/api/execution', h: (req, res) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify(executionEnvironment.describe())); } },
+  { m: 'GET', prefix: '/api/subagents', h: handleSubagentsList },
+  { m: 'POST', exact: '/api/subagents/interrupt', h: handleSubagentInterrupt },
   // honest concurrency surface: how many distinct agents can RUN at once (the gate that silently 'refuses'
   // excess parallel workers). The summon bay reads this so the ceiling is visible BEFORE a fan-out, not only
   // inside the model's tool result. (WIRING_AUDIT P4: lie #7.)
-  if (req.method === 'GET' && req.url === '/api/limits') { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ maxConcurrentAgents: concurrencyGate.max() })); }
-  if ((req.method === 'GET' || req.method === 'HEAD') && req.url.indexOf('/api/file') === 0) return serveWorkspaceFile(req, res);
+  { m: 'GET', exact: '/api/limits', h: (req, res) => { res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); return res.end(JSON.stringify({ maxConcurrentAgents: concurrencyGate.max() })); } },
+  { m: ['GET', 'HEAD'], prefix: '/api/file', h: serveWorkspaceFile },
   // USER ATTACHMENTS (COMMS): the Commander attached a photo/file to a message. Saves it into the agent's
   // workspace (.attachments/, jailed) and returns a lightweight reference the message history stores; the run
   // path later expands the reference into a provider content block. Served back for thumbnails via /api/file.
-  if (req.method === 'POST' && req.url === '/api/attachments') return handleAttachmentUpload(req, res).catch((e) => { try { if (!res.headersSent) { res.writeHead(500, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ ok: false, error: redact('upload failure: ' + ((e && e.message) || e)) })); } else res.end(); } catch (_) { try { res.end(); } catch (_) {} } });
+  { m: 'POST', exact: '/api/attachments', h: handleAttachmentUpload, errorPolicy: attachmentFailPolicy },
   // ADDITIVE (Lane B / ux-run-truth): the absolute per-agent workspace directory, so the COMMS
   // "open folder" affordance on a file deliverable can show the Commander the REAL path on disk
   // where their output landed (the frontend otherwise only knows the relative filename). Read-only,
   // jailed via resolveInside (same proof the /api/file route uses); never lists or exposes contents.
-  if (req.method === 'GET' && req.url.indexOf('/api/workspace/dir') === 0) return serveWorkspaceDir(req, res);
-  if (req.method === 'POST' && req.url === '/api/notebook/restore') return handleNotebookRestore(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/notebook') === 0) return serveNotebook(req, res);
-  if (req.method === 'POST' && req.url === '/api/save/recovery-ack') return handleSaveRecoveryAck(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/save') === 0) return serveSaveLoad(req, res);
-  if (req.method === 'POST' && req.url === '/api/save') return handleSaveWrite(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/insights') === 0) return serveInsights(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/runs') === 0) return serveRuns(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/autonomy/ledger') === 0) return serveAutonomyLedger(req, res);   // NS-0: recent autonomy decisions
-  if (req.method === 'GET' && req.url.indexOf('/api/transcript') === 0) return serveTranscript(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/memory/proposals') === 0) return serveProposals(req, res);
-  if (req.method === 'POST' && req.url === '/api/memory/turnin') return handleMemoryTurnin(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/study/proposals') === 0) return serveStudyProposals(req, res);   // GROWTH Tier 1: dossier belief-update proposals for a run
-  if (req.method === 'POST' && req.url === '/api/study/resolve') return handleStudyResolve(req, res);   // GROWTH Tier 1: consume one decided study proposal + mirror the denylist
-  if (req.method === 'GET' && req.url.indexOf('/api/threads/proposals') === 0) return serveThreadProposals(req, res);   // NS-6: pending mined thread candidates for a run (turn-in)
-  if (req.method === 'POST' && req.url === '/api/threads/turnin') return handleThreadTurnin(req, res);   // NS-6: keep/edit → commit an open thread; discard → permanently deny the fingerprint
-  if (req.method === 'GET' && req.url.indexOf('/api/threads') === 0) return serveThreads(req, res);   // NS-6: the durable thread ledger (read surface)
-  if (req.method === 'GET' && req.url.indexOf('/api/task-briefs') === 0) return serveTaskBriefs(req, res); // durable intent-context truth
-  if (req.method === 'POST' && req.url === '/api/memory/reset') return handleMemoryReset(req, res);
-  if (req.method === 'POST' && req.url === '/api/memory/declined/restore') return handleDeclinedRestore(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/memory/declined') === 0) return serveDeclined(req, res);
-  if (req.method === 'GET' && req.url.indexOf('/api/memory/records') === 0) return serveMemoryRecords(req, res);
-  if (req.method === 'POST' && req.url === '/api/memory/pin') return handleMemoryPin(req, res);
-  if (req.method === 'POST' && req.url === '/api/memory/edit') return handleMemoryEdit(req, res);
-  if (req.method === 'POST' && req.url === '/api/memory/forget') return handleMemoryForget(req, res);
-  if (req.method === 'GET' && req.url === '/api/memory/config') return handleMemoryConfigGet(req, res);   // P1-10 memory controls
-  if (req.method === 'POST' && req.url === '/api/memory/config') return handleMemoryConfigSet(req, res);
-  if (req.method === 'GET' && /^\/shared\//.test((req.url || '').split('?')[0])) return serveShared(req, res);
+  { m: 'GET', prefix: '/api/workspace/dir', h: serveWorkspaceDir },
+  { m: 'POST', exact: '/api/notebook/restore', h: handleNotebookRestore },
+  { m: 'GET', prefix: '/api/notebook', h: serveNotebook },
+  { m: 'POST', exact: '/api/save/recovery-ack', h: handleSaveRecoveryAck },
+  { m: 'GET', prefix: '/api/save', h: serveSaveLoad },
+  { m: 'POST', exact: '/api/save', h: handleSaveWrite },
+  { m: 'GET', prefix: '/api/insights', h: serveInsights },
+  { m: 'GET', prefix: '/api/runs', h: serveRuns },
+  { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
+  { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
+  { m: 'GET', prefix: '/api/memory/proposals', h: serveProposals },
+  { m: 'POST', exact: '/api/memory/turnin', h: handleMemoryTurnin },
+  { m: 'GET', prefix: '/api/study/proposals', h: serveStudyProposals },   // GROWTH Tier 1: dossier belief-update proposals for a run
+  { m: 'POST', exact: '/api/study/resolve', h: handleStudyResolve },   // GROWTH Tier 1: consume one decided study proposal + mirror the denylist
+  { m: 'GET', prefix: '/api/threads/proposals', h: serveThreadProposals },   // NS-6: pending mined thread candidates for a run (turn-in)
+  { m: 'POST', exact: '/api/threads/turnin', h: handleThreadTurnin },   // NS-6: keep/edit → commit an open thread; discard → permanently deny the fingerprint
+  { m: 'GET', prefix: '/api/threads', h: serveThreads },   // NS-6: the durable thread ledger (read surface)
+  { m: 'GET', prefix: '/api/task-briefs', h: serveTaskBriefs }, // durable intent-context truth
+  { m: 'POST', exact: '/api/memory/reset', h: handleMemoryReset },
+  { m: 'POST', exact: '/api/memory/declined/restore', h: handleDeclinedRestore },
+  { m: 'GET', prefix: '/api/memory/declined', h: serveDeclined },
+  { m: 'GET', prefix: '/api/memory/records', h: serveMemoryRecords },
+  { m: 'POST', exact: '/api/memory/pin', h: handleMemoryPin },
+  { m: 'POST', exact: '/api/memory/edit', h: handleMemoryEdit },
+  { m: 'POST', exact: '/api/memory/forget', h: handleMemoryForget },
+  { m: 'GET', exact: '/api/memory/config', h: handleMemoryConfigGet },   // P1-10 memory controls
+  { m: 'POST', exact: '/api/memory/config', h: handleMemoryConfigSet },
+  { m: 'GET', qrx: /^\/shared\//, h: serveShared }
+];
+
+function dispatchRoute(req, res) {
+  const url = req.url || '';
+  const bare = url.split('?')[0];
+  for (let i = 0; i < ROUTES.length; i++) {
+    const r = ROUTES[i];
+    if (Array.isArray(r.m) ? r.m.indexOf(req.method) < 0 : r.m !== req.method) continue;
+    let gm = null;
+    if (r.exact !== undefined) { if (url !== r.exact) continue; }
+    else if (r.qsplit !== undefined) { if (bare !== r.qsplit) continue; }
+    else if (r.prefix !== undefined) { if (url.indexOf(r.prefix) !== 0) continue; }
+    else if (r.qprefix !== undefined) { if (bare.indexOf(r.qprefix) !== 0) continue; }
+    else if (r.rx) { gm = url.match(r.rx); if (!gm) continue; }
+    else if (r.qrx) { if (!r.qrx.test(bare)) continue; }
+    else continue;   // malformed entry: never match (fail closed to the static fallthrough)
+    const out = r.h(req, res, gm);
+    return r.errorPolicy ? out.catch((e) => r.errorPolicy(res, e)) : out;
+  }
   return serveStatic(req, res);
 }
 server.on('error', (e) => {
