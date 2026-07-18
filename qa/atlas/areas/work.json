@@ -1,6 +1,6 @@
 {
   "area": "work",
-  "updatedAt": "2026-07-18T00:54:02.711Z",
+  "updatedAt": "2026-07-18T04:09:42.296Z",
   "entries": [
     {
       "id": "state/work-deliverables",
@@ -69,20 +69,22 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): #bb-missions opens the .mkt overlay; render contract Recipes.builtins()===50===.mkt-card count (all data-id); category filter DEVELOPER->13/ALL->50; SAVE A RECIPE + TWEAK + EXPORT proven; LAUNCH: morning-brief SET UP & LAUNCH -> 2 params -> RUN NOW -> Workstreams kind:task \"Morning Brief\". recipes.test.js guards store primitives; DOM seams not journey-guarded (finding 72f74d2c, EL-3) -> AUDITED."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): #bb-missions opens the .mkt overlay; render contract Recipes.builtins()===50===.mkt-card count (all data-id); category filter DEVELOPER->13/ALL->50; SAVE A RECIPE + TWEAK + EXPORT proven; LAUNCH: morning-brief SET UP & LAUNCH -> 2 params -> RUN NOW -> Workstreams kind:task \"Morning Brief\". recipes.test.js guards store primitives; DOM seams not journey-guarded (finding 72f74d2c, EL-3) -> AUDITED. COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "state/work-routines",
@@ -111,20 +113,22 @@
         {
           "kind": "test",
           "ref": "test/cron.run-now.e2e.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-ROUTINES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "4ea9fcb561b3723eb091bb61223f27ef66b90fd7",
-        "date": "2026-07-18T01:35:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "7e02c493"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): create (GET /api/cron 0->1, server-parsed schedule {interval,30m}), preview (POST /api/cron/preview -> honest next-fires), active list (RUN NOW/DISABLE/DELETE), arm (POST /api/cron/arm flips enabled false->true), remove (POST /api/cron/remove -> 0). Every displayed state reads from authoritative GET /api/cron. AUDITED: route-tested (cron.api/arm/run-now) but the DOM button->route seam is not journey-guarded (finding 7e02c493, EL-3)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): create (GET /api/cron 0->1, server-parsed schedule {interval,30m}), preview (POST /api/cron/preview -> honest next-fires), active list (RUN NOW/DISABLE/DELETE), arm (POST /api/cron/arm flips enabled false->true), remove (POST /api/cron/remove -> 0). Every displayed state reads from authoritative GET /api/cron. AUDITED: route-tested (cron.api/arm/run-now) but the DOM button->route seam is not journey-guarded (finding 7e02c493, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-ROUTINES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "state/work-tasks",
@@ -401,22 +405,24 @@
         {
           "kind": "test",
           "ref": "test/cron.run-now.e2e.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-ROUTINES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
-        "date": "2026-07-18T01:35:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "7e02c493"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#con-tab-routines-active",
       "state": "work-routines",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #con-tab-routines-active shows #rt-list with the created job (name, every 30m, ● scheduled, runs as NOVA, next in 30m, last never run) and ▶ RUN NOW / ⏸ DISABLE / ✕ DELETE row actions from GET /api/cron. AUDITED: route-tested; UI seam not journey-guarded (finding 7e02c493)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #con-tab-routines-active shows #rt-list with the created job (name, every 30m, ● scheduled, runs as NOVA, next in 30m, last never run) and ▶ RUN NOW / ⏸ DISABLE / ✕ DELETE row actions from GET /api/cron. AUDITED: route-tested; UI seam not journey-guarded (finding 7e02c493). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-ROUTINES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/con-tab-routines-create",
@@ -437,22 +443,24 @@
         {
           "kind": "test",
           "ref": "test/cron.api.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-ROUTINES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
-        "date": "2026-07-18T01:35:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "7e02c493"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#con-tab-routines-create",
       "state": "work-routines",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #con-tab-routines-create reveals the create pane (name/prompt/sched/agent + live server-math preview + ADD). AUDITED: route-tested; tab switch not journey-guarded (finding 7e02c493)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #con-tab-routines-create reveals the create pane (name/prompt/sched/agent + live server-math preview + ADD). AUDITED: route-tested; tab switch not journey-guarded (finding 7e02c493). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-ROUTINES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/kb-add",
@@ -545,24 +553,22 @@
       },
       "coverage": [
         {
-          "kind": "KNOWN",
-          "ref": "no machine assertion guards the empty-board OUTBOX footnote render-condition or its openTerm('outbox') click — ledger finding filed (EL-3 recorded reason)"
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-OUTBOX"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "d6878efa43804db2211f5aebf14522ea840eaf8e",
-        "date": "2026-07-18T01:21:39Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "46cab512"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "#kb-outbox-link",
       "state": "work-tasks",
-      "notes": "Live-proven @HEAD 0a009ec2 (.uiatlas/work-probe/tasks-evidence.txt): with 0 task workstreams #kb-outbox-link renders (text \"▸ OUTBOX\"); click → openTerm('outbox') → window titled \"OUTBOX — FINISHED WORK\". With cards present the footnote is absent (stationui.js ~2479 `streams.length ? '' : ...`). AUDITED not PERFECTED: no dedicated machine assertion for the render-condition/click — KNOWN gap + ledger finding per EL-3."
+      "notes": "Live-proven @HEAD 0a009ec2 (.uiatlas/work-probe/tasks-evidence.txt): with 0 task workstreams #kb-outbox-link renders (text \"▸ OUTBOX\"); click → openTerm('outbox') → window titled \"OUTBOX — FINISHED WORK\". With cards present the footnote is absent (stationui.js ~2479 `streams.length ? '' : ...`). AUDITED not PERFECTED: no dedicated machine assertion for the render-condition/click — KNOWN gap + ledger finding per EL-3. COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-OUTBOX drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/mkt-import-file",
@@ -615,22 +621,24 @@
         {
           "kind": "test",
           "ref": "test/cron.api.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-ROUTINES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
-        "date": "2026-07-18T01:35:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "7e02c493"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-add",
       "state": "work-routines",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): filled sched/name/prompt -> #rt-add -> GET /api/cron count 0->1 with the new job (schedule {interval,30m}); renders in ACTIVE ROUTINES. cron.api.test.js guards POST /api/cron. AUDITED: button->route seam not journey-guarded (finding 7e02c493)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): filled sched/name/prompt -> #rt-add -> GET /api/cron count 0->1 with the new job (schedule {interval,30m}); renders in ACTIVE ROUTINES. cron.api.test.js guards POST /api/cron. AUDITED: button->route seam not journey-guarded (finding 7e02c493). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-ROUTINES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/rt-agent",
@@ -687,22 +695,24 @@
         {
           "kind": "test",
           "ref": "test/cron.arm.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-ROUTINES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
-        "date": "2026-07-18T01:35:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "7e02c493"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-arm",
       "state": "work-routines",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #rt-arm \"▶ ENABLE SCHEDULING\" -> click -> POST /api/cron/arm -> GET /api/cron enabled false->true, label -> \"⏸ DISABLE SCHEDULING\" (authoritative). cron.arm.test.js guards the route. AUDITED: button->route seam not journey-guarded (finding 7e02c493)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #rt-arm \"▶ ENABLE SCHEDULING\" -> click -> POST /api/cron/arm -> GET /api/cron enabled false->true, label -> \"⏸ DISABLE SCHEDULING\" (authoritative). cron.arm.test.js guards the route. AUDITED: button->route seam not journey-guarded (finding 7e02c493). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-ROUTINES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/rt-empty-cta",
@@ -757,22 +767,24 @@
         {
           "kind": "test",
           "ref": "test/cron.api.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-ROUTINES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
-        "date": "2026-07-18T01:35:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "7e02c493"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-name",
       "state": "work-routines",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #rt-name feeds body.name; the created job showed name \"Probe Routine A\" in GET /api/cron + the active list. AUDITED: form field, route-tested, no field-level journey (finding 7e02c493)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #rt-name feeds body.name; the created job showed name \"Probe Routine A\" in GET /api/cron + the active list. AUDITED: form field, route-tested, no field-level journey (finding 7e02c493). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-ROUTINES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/rt-prompt",
@@ -793,22 +805,24 @@
         {
           "kind": "test",
           "ref": "test/cron.api.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-ROUTINES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
-        "date": "2026-07-18T01:35:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "7e02c493"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-prompt",
       "state": "work-routines",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #rt-prompt feeds body.prompt; create with prompt \"summarize the day\" produced a job. AUDITED: form field, route-tested (finding 7e02c493)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #rt-prompt feeds body.prompt; create with prompt \"summarize the day\" produced a job. AUDITED: form field, route-tested (finding 7e02c493). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-ROUTINES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/rt-propose",
@@ -861,22 +875,24 @@
         {
           "kind": "test",
           "ref": "test/cron.api.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-ROUTINES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "5fddea23cb0f51d36f9ead91610c44995455deb8",
-        "date": "2026-07-18T01:35:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "7e02c493"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#rt-sched",
       "state": "work-routines",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #rt-sched \"every 30m\" -> debounced POST /api/cron/preview -> #rt-preview shows honest next-fire times; feeds body.schedule (server parsed {interval,30m}). AUDITED: form field, route-tested (finding 7e02c493)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/routines-evidence.txt): #rt-sched \"every 30m\" -> debounced POST /api/cron/preview -> #rt-preview shows honest next-fire times; feeds body.schedule (server parsed {interval,30m}). AUDITED: form field, route-tested (finding 7e02c493). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-ROUTINES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-agents-1",
@@ -932,22 +948,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-creator12-1",
@@ -968,22 +986,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical filter seam (representative: DEVELOPER+ALL asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-developer13-1",
@@ -1004,22 +1024,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-general1-1",
@@ -1040,22 +1062,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical filter seam (representative: DEVELOPER+ALL asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-import-1",
@@ -1108,22 +1132,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical filter seam (representative: DEVELOPER+ALL asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-ops11-1",
@@ -1144,22 +1170,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical filter seam (representative: DEVELOPER+ALL asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-bar-recipes-1",
@@ -1216,22 +1244,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): the .mkt-bar category tab filters the grid to its lane (proven: DEVELOPER13->13 cards, ALL50->50). AUDITED: filter is UI-only, store-covered; DOM filter seam not journey-guarded (finding 72f74d2c). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical filter seam (representative: DEVELOPER+ALL asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-dossier-export-1",
@@ -1287,22 +1317,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): ▸ SET UP & LAUNCH (.mkt-launch) opens the #mkt-stage launch form; filling params + RUN NOW (.mkt-do-launch) created a kind:task workstream \"Morning Brief\". AUDITED: fillTask store-covered; button->dispatch seam not journey-guarded (finding 72f74d2c)."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): ▸ SET UP & LAUNCH (.mkt-launch) opens the #mkt-stage launch form; filling params + RUN NOW (.mkt-do-launch) created a kind:task workstream \"Morning Brief\". AUDITED: fillTask store-covered; button->dispatch seam not journey-guarded (finding 72f74d2c). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-dossier-tweak-1",
@@ -1360,22 +1392,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-bug-triagesort-a-pile-of-bugs-by-what-",
@@ -1397,22 +1431,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-build-a-featureadd-something-end-to-en",
@@ -1434,22 +1470,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-caption-variantsthe-same-post-tuned-pe",
@@ -1471,22 +1509,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-changelog-draftturn-commits-into-a-rea",
@@ -1508,22 +1548,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-code-reviewadversarial-review-passcode",
@@ -1545,22 +1587,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-comment-digestwhat-your-audience-is-ac",
@@ -1582,22 +1626,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-competitor-trackingwhat-a-rival-shippe",
@@ -1619,22 +1665,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-daily-standupyour-day-focused-before-i",
@@ -1656,22 +1704,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-decision-memoone-page-to-make-the-call",
@@ -1693,22 +1743,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-deep-dive-researchsourced-brief-on-a-q",
@@ -1730,22 +1782,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-deep-fact-checkverify-a-claim-across-t",
@@ -1767,22 +1821,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-dependency-auditwhat-is-outdated-risky",
@@ -1804,22 +1860,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-draft-a-replyanswer-a-message-in-your-",
@@ -1841,22 +1899,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-error-log-triagecluster-the-noise-into",
@@ -1878,22 +1938,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-fact-checkverify-a-claim-with-sourcesr",
@@ -1915,22 +1977,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-feed-watchkeep-an-eye-on-a-source-for-",
@@ -1952,22 +2016,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-fix-a-bugdiagnose-patch-a-defectcode-1",
@@ -1989,22 +2055,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-flaky-test-huntfind-the-tests-that-fai",
@@ -2026,22 +2094,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-forget-1",
@@ -2124,22 +2194,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-inbox-triagewhat-in-your-inbox-actuall",
@@ -2161,22 +2233,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-learning-plana-path-from-zero-to-compe",
@@ -2198,22 +2272,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-literature-reviewmap-what-is-known-on-",
@@ -2235,22 +2311,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-market-watcha-pulse-on-what-you-hold-o",
@@ -2272,22 +2350,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-meeting-prepwalk-in-ready-not-coldops-",
@@ -2309,22 +2389,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-morning-briefdaily-what-changed-digest",
@@ -2346,22 +2428,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — directly asserted live (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-newsletter-draftan-issue-drafted-in-yo",
@@ -2383,22 +2467,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-onboard-a-codebaseget-oriented-in-unfa",
@@ -2420,22 +2506,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-pause-learning-1",
@@ -2486,22 +2574,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-plan-a-projectbreak-a-goal-into-a-plan",
@@ -2523,22 +2613,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-posting-plana-publishing-cadence-you-c",
@@ -2560,22 +2652,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-pr-sweepreview-the-open-prs-worst-risk",
@@ -2597,22 +2691,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-price-watchtell-me-when-it-movesops-2-",
@@ -2634,22 +2730,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-question-miningthe-content-ideas-hidin",
@@ -2671,22 +2769,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-refactor-scoutfind-the-code-most-worth",
@@ -2708,22 +2808,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-release-noteswrite-the-notes-users-wil",
@@ -2745,22 +2847,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-repurpose-contentone-piece-into-many-f",
@@ -2782,22 +2886,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-research-digesta-themed-roundup-on-you",
@@ -2819,22 +2925,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-save-a-recipe-1",
@@ -2892,22 +3000,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-source-comparewhere-the-sources-actual",
@@ -2929,22 +3039,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-station-familiaritycalibratingstill-ge",
@@ -2998,22 +3110,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-summarize-a-paperthe-paper-minus-the-j",
@@ -3035,22 +3149,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-summarizetl-dr-of-anythingops-1-inputt",
@@ -3072,22 +3188,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-thumbnail-conceptsvisual-directions-fo",
@@ -3109,22 +3227,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-tighten-thiscut-filler-keep-the-meanin",
@@ -3146,22 +3266,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-title-a-b-ideastitles-worth-testing-ag",
@@ -3183,22 +3305,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-topic-monitorstanding-watch-on-a-subje",
@@ -3220,22 +3344,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-travel-plana-trip-mapped-end-to-endops",
@@ -3257,22 +3383,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-trend-scanwhat-is-rising-in-a-spaceres",
@@ -3294,22 +3422,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-mkt-roster-weekly-reviewclose-the-week-aim-the-ne",
@@ -3331,22 +3461,24 @@
         {
           "kind": "test",
           "ref": "test/recipes.test.js"
+        },
+        {
+          "kind": "journey",
+          "ref": "scripts/qa/work-console-journey.mjs#JW-RECIPES"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "ed83ce6937f94d2fb5b15f82c40624324d7010da",
-        "date": "2026-07-18T01:45:00Z"
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T04:09:42.296Z"
       },
-      "findings": [
-        "72f74d2c"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-18T00:54:02.715Z",
       "lastSeen": "2026-07-18T00:54:02.715Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
-      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3)."
+      "notes": "Recipe-catalog roster tile (one of 50 builtins, marketplace.js). CLASS-PROVEN @HEAD 0a009ec2 (.uiatlas/work-probe/recipes-evidence.txt): render contract 50 store === 50 .mkt-card (all data-id); the representative morning-brief tile drove select→dossier→SET UP & LAUNCH→2 params→RUN NOW→Workstreams kind:task \"Morning Brief\" end-to-end. Clones share the identical render+data-id+dispatch seam, store-covered by recipes.test.js. AUDITED: per-tile DOM dispatch not journey-guarded (finding 72f74d2c, EL-3). COVERED + PROMOTED 2026-07-18 (HEAD 43936bd2): scripts/qa/work-console-journey.mjs JW-RECIPES drives this seam — class-identical card-select seam (representative: Morning Brief asserted live) (26/26 green; negative-control proven by inverting the render/dispatch condition). audited→perfected."
     },
     {
       "id": "ui/work/txt-button-terms-add-one-1",
