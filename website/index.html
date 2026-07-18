@@ -7,8 +7,12 @@
 <meta name="description" content="StarNet is a local-first desktop harness where you recruit AI agents into a living pixel-art station and watch them do real work with real models and tools. Open source. Windows, macOS, Linux.">
 <meta property="og:title" content="StarNet — Give your AI a world to work in">
 <meta property="og:description" content="Recruit AI agents into a living station on your machine, put them to work, and build your empire. Local-first. Open source. BYOK.">
-<meta property="og:image" content="assets/station-iso.png">
+<meta property="og:image" content="assets/og-card.png">
 <meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="StarNet — Give your AI a world to work in">
+<meta name="twitter:description" content="Recruit AI agents into a living station on your machine, put them to work, and build your empire. Local-first. Open source. BYOK.">
+<meta name="twitter:image" content="assets/og-card.png">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -55,7 +59,11 @@
     <a href="docs/index.html">DOCS</a>
     <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
   </nav>
-  <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
+  <span class="topbar-right">
+    <a class="social-link" data-social="discord" href="" hidden>DISCORD</a>
+    <a class="social-link" data-social="x" href="" hidden>X</a>
+    <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
+  </span>
 </header>
 
 <main id="top">
@@ -73,6 +81,32 @@
         <a class="btn" href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">[ VIEW SOURCE ]</a>
       </div>
       <div class="hero-meta"><span id="ver-badge">v0.5.2</span> &middot; MIT open source &middot; Windows + macOS installers day one &middot; Linux too &middot; bring your own keys</div>
+    </div>
+  </section>
+
+  <!-- ===== live feed ===== -->
+  <section id="live" class="section">
+    <div class="section-head">
+      <span class="section-no">00</span>
+      <h2>LIVE FEED // THE REAL APP</h2>
+    </div>
+    <figure class="bezel feed-bezel">
+      <video src="assets/demo-loop.mp4" poster="assets/demo-poster.jpg" autoplay muted loop playsinline></video>
+      <figcaption>// actual capture &mdash; commanding an agent from COMMS, deliverables landing in real time</figcaption>
+    </figure>
+    <div class="shots">
+      <figure class="bezel">
+        <a href="assets/shot-commanddeck.png" target="_blank" rel="noopener"><img src="assets/shot-commanddeck.png" alt="StarNet command deck: crew roster, live camera feed of an agent on the station floor, and COMMS with a completed task" loading="lazy"></a>
+        <figcaption>// the command deck &mdash; crew, live floor cam, COMMS</figcaption>
+      </figure>
+      <figure class="bezel">
+        <a href="assets/shot-deliverable.png" target="_blank" rel="noopener"><img src="assets/shot-deliverable.png" alt="A StarNet agent's full report after building a playable FPS game prototype from one prompt, shown in a purple theme" loading="lazy"></a>
+        <figcaption>// one prompt &rarr; a playable game build, honestly reported</figcaption>
+      </figure>
+      <figure class="bezel">
+        <a href="assets/shot-providers.png" target="_blank" rel="noopener"><img src="assets/shot-providers.png" alt="StarNet providers settings: OpenRouter key, ChatGPT sign-in active, Grok and Kimi OAuth, and direct API key slots" loading="lazy"></a>
+        <figcaption>// your providers, your keys &mdash; stored on this machine only</figcaption>
+      </figure>
     </div>
   </section>
 
@@ -223,7 +257,7 @@
         An MCP stdio bridge and an OpenAI-style ingress endpoint let other tools drive StarNet
         capabilities — and let your station sit alongside the harnesses you already run, as
         shared infrastructure instead of another silo.</p>
-        <a class="dive-link" href="docs/connectors.html">&gt; read: connectors &amp; interop</a>
+        <a class="dive-link" href="docs/migrating.html">&gt; read: coming from OpenClaw or Hermes?</a>
       </div>
       <div class="dive-panel" aria-hidden="true"><pre>
 &gt; mcp bridge ........ stdio, ready
@@ -249,6 +283,10 @@
       <span class="chip">KIMI OAUTH</span>
       <span class="chip">TELEGRAM</span>
       <span class="chip">DISCORD</span>
+      <span class="chip">SLACK</span>
+      <span class="chip">MATRIX</span>
+      <span class="chip">SIGNAL</span>
+      <span class="chip">SPOTIFY</span>
       <span class="chip">MCP CONNECTORS</span>
       <span class="chip">OAUTH 2.1 DCR</span>
       <span class="chip">BROWSER AUTOMATION</span>
@@ -349,6 +387,7 @@ node sidecar/index.js</code></pre>
       <a class="teaser-card" href="docs/autonomy.html"><span class="tc-title">AUTONOMY &amp; NIGHT SHIFT</span><span class="tc-sub">the leash, away digests, schedules</span></a>
       <a class="teaser-card" href="docs/skills.html"><span class="tc-title">SKILLS &middot; RECIPES &middot; ROUTINES</span><span class="tc-sub">the how, the what, the when</span></a>
       <a class="teaser-card" href="docs/connectors.html"><span class="tc-title">CONNECTORS &amp; INTEROP</span><span class="tc-sub">MCP, channels, harness bridge</span></a>
+      <a class="teaser-card" href="docs/migrating.html"><span class="tc-title">FROM OPENCLAW / HERMES</span><span class="tc-sub">concept map + keep your setup</span></a>
       <a class="teaser-card" href="docs/troubleshooting.html"><span class="tc-title">TROUBLESHOOTING</span><span class="tc-sub">every warning, honestly documented</span></a>
     </div>
   </section>
@@ -392,9 +431,13 @@ node sidecar/index.js</code></pre>
     <a href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
     <a href="docs/index.html">DOCS</a>
     <a href="docs/getting-started.html">INSTALL GUIDE</a>
+    <a class="social-link" data-social="discord" href="" hidden>DISCORD</a>
+    <a class="social-link" data-social="x" href="" hidden>X / TWITTER</a>
+    <a href="legal/privacy.html">PRIVACY</a>
+    <a href="legal/terms.html">TERMS</a>
     <a href="mailto:androo.agi@gmail.com">CONTACT</a>
   </div>
-  <div class="footer-fine">MIT license &middot; <span id="ver-foot">v0.5.2</span> &middot; &copy; <span id="year">2026</span> StarNet</div>
+  <div class="footer-fine">MIT license &middot; <span id="ver-foot">v0.5.2</span> &middot; &copy; <span id="year">2026</span> StarNet &middot; no telemetry, no tracking &mdash; <a href="legal/privacy.html">we collect nothing</a></div>
 </footer>
 
 <script src="site.js"></script>

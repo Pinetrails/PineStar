@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coming from OpenClaw or Hermes — StarNet Docs</title>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<div class="crt-scan" aria-hidden="true"></div>
+<div class="crt-vignette" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="brand" href="../index.html">STARNET TERMLINK</a>
+  <nav class="topnav">
+    <a href="../index.html#features">FEATURES</a>
+    <a href="../index.html#download">DOWNLOAD</a>
+    <a href="index.html">DOCS</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
+  </nav>
+  <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <div class="side-title">// DOCS</div>
+    <a href="index.html">DOCS</a>
+    <a href="getting-started.html">GETTING STARTED</a>
+    <a href="providers.html">PROVIDERS & KEYS</a>
+    <a href="station.html">THE STATION</a>
+    <a href="agents.html">AGENTS & TEAMS</a>
+    <a href="autonomy.html">AUTONOMY & NIGHT SHIFT</a>
+    <a href="skills.html">SKILLS, RECIPES, ROUTINES</a>
+    <a href="connectors.html">CONNECTORS & INTEROP</a>
+    <a href="migrating.html" class="active">FROM OPENCLAW / HERMES</a>
+    <a href="troubleshooting.html">TROUBLESHOOTING</a>
+  </aside>
+  <main class="docs-main">
+<h1>COMING FROM OPENCLAW OR HERMES?</h1>
+<p class="doc-sub">// your concepts map cleanly — and your existing setup keeps working</p>
+
+<p>StarNet is a different shape of harness: instead of one assistant living in your chat apps,
+it's a <b>station of many agents</b> whose floor plan defines the workflow. But almost
+everything you already know translates directly.</p>
+
+<h2>Concept map</h2>
+<table>
+<tr><th>You know it as</th><th>In StarNet</th></tr>
+<tr><td>Persona / soul file</td><td>The agent <b>dossier</b> — personality, beliefs, goals, shaped at recruitment and evolving as you work</td></tr>
+<tr><td>Skills</td><td><b>Skills</b> — same idea, capability-gated by the station floor (a skill that needs an ungranted tool stays visibly dormant)</td></tr>
+<tr><td>Cron jobs / heartbeats</td><td><b>Routines</b> — scheduled real runs that surface as readable sessions afterwards</td></tr>
+<tr><td>Chat channels</td><td><b>Channels</b> — Telegram, Discord, Slack, Matrix, and Signal (via your signal-cli bridge) connect the same way: your bot token, your server</td></tr>
+<tr><td>One assistant, many contexts</td><td><b>Many agents, one station</b> — each with its own model, memory, desk, and tool grants, running concurrently</td></tr>
+<tr><td>Config files for permissions</td><td><b>The floor plan</b> — rooms scope teams, placed props grant tools; redraw instead of re-config</td></tr>
+<tr><td>MCP servers</td><td><b>MCP connectors</b> — same protocol, curated catalog plus anything you run yourself</td></tr>
+</table>
+
+<h2>You don't have to switch</h2>
+<p>StarNet exposes an <b>MCP stdio bridge</b> and an OpenAI-style <b>/v1 ingress endpoint</b>, so
+the harness you already run can drive StarNet capabilities directly. Keep your daily driver;
+give it a station to command. Interop details in
+<a href="connectors.html">Connectors &amp; interop</a>.</p>
+
+<h2>What's genuinely different</h2>
+<ul>
+<li><b>Truthful telemetry.</b> The station renders only provable harness state — the visual
+layer is an instrument, not a costume.</li>
+<li><b>The layout is the permission system.</b> Capability boundaries you can see and redraw,
+not config you have to remember.</li>
+<li><b>Concurrency as furniture.</b> More bays = more genuinely parallel bounded runs.</li>
+</ul>
+
+<div class="callout"><b>Agent importer:</b> a direct importer that carries an existing OpenClaw or
+Hermes agent (persona, memory, config) into a StarNet dossier is built and in the release
+pipeline. Until it ships in a public build, recruiting a fresh agent and pasting your persona
+notes into the interview gets you 90% of the way.</div>
+
+<div class="doc-next"><a href="connectors.html">&larr; CONNECTORS &amp; INTEROP</a><a href="troubleshooting.html">NEXT: TROUBLESHOOTING &rarr;</a></div>
+  </main>
+</div>
+
+<footer class="footer">
+  <div class="footer-links">
+    <a href="../index.html">HOME</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
+    <a href="mailto:androo.agi@gmail.com">CONTACT</a>
+  </div>
+  <div class="footer-fine">MIT license &middot; StarNet</div>
+</footer>
+
+</body>
+</html>

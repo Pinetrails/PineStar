@@ -236,6 +236,18 @@ a:hover{ color:var(--amber); }
 }
 .card p{ margin:0; font-size:17px; line-height:1.5; color:var(--ink-d); }
 
+/* live feed */
+.feed-bezel video{ width:100%; height:auto; display:block; }
+.shots{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:16px; }
+@media (max-width:860px){ .shots{ grid-template-columns:1fr; } }
+.shots .bezel img{ width:100%; height:auto; display:block; }
+.shots .bezel a{ display:block; }
+
+/* topbar social */
+.topbar-right{ display:flex; align-items:center; gap:18px; }
+.topbar .social-link{ color:var(--amber-d); text-decoration:none; font-size:16px; letter-spacing:1.5px; }
+.topbar .social-link:hover{ color:var(--amber-b); }
+
 /* deep dives */
 .dive{
   display:grid; grid-template-columns:1.15fr .85fr; gap:clamp(22px,4vw,46px);
