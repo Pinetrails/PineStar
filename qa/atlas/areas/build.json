@@ -24,24 +24,21 @@
         {
           "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [
-        "cbc5b114"
+        "cbc5b114",
+        "0a808216"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live-proven (.uiatlas/build3-evidence/build3-verify.json): /api/connectors/catalog count=37 === 37 .cc-card DOM nodes across 10 category groups, 37 site links, 21 ADD buttons. Truthful: rendered cards equal the catalog. Machine-guarded by connectors-ui.test.js + mcp.catalog.test.js."
+      "notes": "CONNECTORS live: /api/connectors/catalog count=37 === 37 .cc-card DOM nodes across 10 category groups, each with ADD/SIGN-IN + site link; title TOOLSETS and CONNECTORS. Truthful count. Machine-guarded by connectors-ui.test.js (64) + mcp.catalog.test.js (both pass at HEAD). Dead build3-verify.mjs audit ref removed (finding 0a808216). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "state/build-manual",
@@ -60,21 +57,22 @@
       "coverage": [
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+          "ref": "KNOWN: qa/atlas/build3-verify.mjs removed (ledger:0a808216) — no machine assertion guards the manual tab-swap; live-proven this session"
         }
       ],
-      "status": "perfected",
+      "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [
-        "75af5388"
+        "75af5388",
+        "0a808216"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Manual is a static help console (buildManual in frontend/app/stationui.js); tabs are section swaps, no backend claim. Left audited-not-perfected class exemplars; tabs mapped as clones (see MAN finding note)."
+      "notes": "FIELD MANUAL live: 5 section tabs FIRST STEPS/THE LOOP/GROWTH/GEAR/WIRING; clicking WIRING swaps the manual body (312->1484 chars). Dropped perfected->audited: only prior coverage (qa/atlas/build3-verify.mjs) removed, no machine assertion remains (finding 0a808216). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "state/build-skills",
@@ -94,24 +92,21 @@
         {
           "kind": "test",
           "ref": "test/skills.library.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:skills/render-contract"
         }
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [
-        "cbc5b114"
+        "cbc5b114",
+        "0a808216"
       ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live-proven (.uiatlas/build3-evidence/build3-verify.json): /api/skills catalog=38 === 38 .sk-card DOM nodes, 38 switches (one per card); sum reads \"38 recipes · 5 active for NOVA\". Truthful: the count equals the sidecar catalog. Machine-guarded by skills.library.test.js."
+      "notes": "SKILLS LIBRARY live: /api/skills catalog=40 === 40 .sk-card nodes with 40 switches + 21 PLACE buttons; CAPABILITIES is default aria-selected tab. Truthful count. Machine-guarded by skills.library.test.js (199, pass at HEAD). Dead build3-verify.mjs audit ref removed (finding 0a808216). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "state/build-station",
@@ -131,22 +126,20 @@
         {
           "kind": "test",
           "ref": "test/worldmodel.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
         }
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
-      "findings": [],
+      "findings": [
+        "0a808216"
+      ],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "REFIT palette proven reachable live (.uiatlas/build3-evidence/build3-verify.json); room kinds come from station.KIND_ORDER (frontend/app/build.js). Room-kind tiles mapped as clones."
+      "notes": "REFIT reachable via #bb-build; ROOM tool active by default; room-kind palette = WorldModel.KIND_ORDER rendered HAB/BRIDGE/LAB/FOUNDRY/QUARTERS/STORAGE (factory kind label=FOUNDRY, truthful). Machine-guarded by worldmodel.test.js (222, pass at HEAD). Dead build3-verify.mjs audit ref removed (finding 0a808216). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-close-field-manual",
@@ -200,8 +193,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -209,7 +202,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Close SKILLS & CAPABILITIES\"]",
       "state": "build-skills",
-      "notes": "Live: button[aria-label=\"Close SKILLS & CAPABILITIES\"] present (title matches window title law). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "Live: button[aria-label=Close SKILLS and CAPABILITIES] present in build-skills state (shared mountConsole close primitive). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-close-toolsets-connectors",
@@ -495,8 +488,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -504,7 +497,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize SKILLS & CAPABILITIES\"]",
       "state": "build-skills",
-      "notes": "Live: button[aria-label=\"Minimize SKILLS & CAPABILITIES\"] present. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "Live: button[aria-label=Minimize SKILLS and CAPABILITIES] present in build-skills state. [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-minimize-toolsets-connectors",
@@ -1488,8 +1481,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -1497,7 +1490,7 @@
       "missing": false,
       "selector": "input[aria-label=\"Search skills\"]",
       "state": "build-skills",
-      "notes": "Live: input[aria-label=\"Search skills\"] present and wired by mountConsole opts.search. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "Live: input[aria-label=Search skills] present; typing marks matching rows .con-hit (query a -> 7 con-hit rows), clearing restores. Filter behavior proven. [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/aria-turn-off-1-3-1-decision-framework",
@@ -2447,8 +2440,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -2456,7 +2449,7 @@
       "missing": false,
       "selector": "#con-tab-skills-agent",
       "state": "build-skills",
-      "notes": "Live: tab present in the tablist (con-tab-skills-agent). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "Live: #con-tab-skills-agent present; clicking sets aria-selected=true (swaps to AGENT SKILLS pane). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/con-tab-skills-caps",
@@ -2479,8 +2472,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -2488,7 +2481,7 @@
       "missing": false,
       "selector": "#con-tab-skills-caps",
       "state": "build-skills",
-      "notes": "Live: tab present, aria-selected=true on open (default land). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "Live: #con-tab-skills-caps is the default-landed tab (aria-selected=true on fresh open). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/con-tab-skills-library",
@@ -2511,8 +2504,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -2520,7 +2513,7 @@
       "missing": false,
       "selector": "#con-tab-skills-library",
       "state": "build-skills",
-      "notes": "Live: clicking con-tab-skills-library rendered 38 recipe cards with switches. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "Live: #con-tab-skills-library present; clicking renders 40 .sk-card recipe cards (switch + PLACE buttons). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-add",
@@ -3033,8 +3026,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -3042,7 +3035,7 @@
       "missing": false,
       "selector": "#refit-done",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-done/closes+persists — after DONE, World.heroCaps still holds the placed workbench cap through the re-bake."
+      "notes": "Live: placed comms_dish (grants dish) then #refit-done -> refit-on=false, Build.isOpen=false (REFIT closed) and World.heroCaps still holds dish through the re-bake (persist). Machine-guarded by worldmodel bayObjects test (pass at HEAD). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/refit-fit",
@@ -3057,21 +3050,27 @@
         ],
         "events": []
       },
-      "coverage": [],
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: EL-3 coverage gap (ledger:b2420742) — live-proven this session, no journey/test guards this promise yet"
+        }
+      ],
       "status": "audited",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [
-        "b0db4e45"
+        "b0db4e45",
+        "b2420742"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#refit-fit",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-fit/reframes. UX-only (no truth-bearing state); no dedicated machine assertion => KNOWN finding b46cf4ac (stays audited, not perfected, per EL-3 no-unguarded-promise law)."
+      "notes": "Live: #refit-fit present in REFIT; click reframes without throwing (recompute zoom/pan). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/refit-guide-go",
@@ -3086,21 +3085,27 @@
         ],
         "events": []
       },
-      "coverage": [],
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: EL-3 coverage gap (ledger:b2420742) — live-proven this session, no journey/test guards this promise yet"
+        }
+      ],
       "status": "audited",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [
-        "b0db4e45"
+        "b0db4e45",
+        "b2420742"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#refit-guide-go",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-help/guide+start — the START BUILDING button is present with correct label and dismisses. Shares KNOWN uncovered-UX finding b46cf4ac."
+      "notes": "Live: #refit-guide-go dismisses the .refit-guide card and persists starnet.refit.seen=1 (localStorage). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/refit-help",
@@ -3115,21 +3120,27 @@
         ],
         "events": []
       },
-      "coverage": [],
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: EL-3 coverage gap (ledger:b2420742) — live-proven this session, no journey/test guards this promise yet"
+        }
+      ],
       "status": "audited",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [
-        "b0db4e45"
+        "b0db4e45",
+        "b2420742"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#refit-help",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-help/guide+start PASS. UX-only; no dedicated machine assertion => KNOWN finding b46cf4ac."
+      "notes": "Live: #refit-help present; the .refit-guide card renders with a START BUILDING (#refit-guide-go) dismiss button. [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/refit-redo",
@@ -3153,8 +3164,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -3162,7 +3173,7 @@
       "missing": false,
       "selector": "#refit-redo",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-redo/regrants-cap — redo after undo re-adds the workbench and World.heroCaps regains workbench. Machine-guarded by worldmodel undo/redo round-trip test."
+      "notes": "Live: place studio -> undo (revoke) -> #refit-redo click -> World.heroCaps regains studio (regrant). Machine-guarded by worldmodel undo/redo round-trip (pass at HEAD). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/refit-test",
@@ -3177,21 +3188,27 @@
         ],
         "events": []
       },
-      "coverage": [],
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "KNOWN: EL-3 coverage gap (ledger:b2420742) — live-proven this session, no journey/test guards this promise yet"
+        }
+      ],
       "status": "audited",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [
-        "b0db4e45"
+        "b0db4e45",
+        "b2420742"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#refit-test",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-test/fires — button fires without throwing. The animated belt demo has no golden/journey guard => KNOWN finding b46cf4ac (stays audited)."
+      "notes": "Live: #refit-test present in REFIT; click spawns the belt dry-run without throwing. [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/refit-undo",
@@ -3215,8 +3232,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -3224,7 +3241,7 @@
       "missing": false,
       "selector": "#refit-undo",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-undo/revokes-cap — after undo, World.heroCaps no longer holds workbench. Truthful inverse of place-grants-cap. Machine-guarded by worldmodel undo/redo round-trip test."
+      "notes": "Live: placeCapProp(studio) grants studio -> #refit-undo click -> World.heroCaps loses studio (revoke; truthful inverse of place-grant). Machine-guarded by worldmodel undo/redo round-trip (pass at HEAD). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/sp-client",
@@ -4561,14 +4578,15 @@
         "date": "2026-07-07T21:55:44.491Z"
       },
       "findings": [
-        "11c69e21"
+        "11c69e21",
+        "cea0899f"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
       "missing": true,
       "selector": "button",
       "state": "build-skills",
-      "notes": "Live: 24 expand buttons (title=\"Read the recipe\") rendered in the library; bodies ship in the /api/skills payload so expand needs no 2nd fetch. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "KEPT missing: the live button (Read the recipe) still exists in the SKILLS library pane (live-proven: 40 switches + 21 PLACE CTAs present at HEAD c06bdef7) but the control has no id/aria anchor, so the sweep loses it as a shifting positional key. Not superseded by an anchored replacement — retirement deferred until the buttons get stable selectors (ledger:cea0899f)."
     },
     {
       "id": "ui/build/txt-button-408",
@@ -7197,14 +7215,15 @@
         "date": "2026-07-07T21:55:44.491Z"
       },
       "findings": [
-        "11c69e21"
+        "11c69e21",
+        "cea0899f"
       ],
       "firstSeen": "2026-07-07T08:25:37.301Z",
       "lastSeen": "2026-07-07T08:25:37.301Z",
       "missing": true,
       "selector": "button",
       "state": "build-skills",
-      "notes": "Live: 33 OFF switches on a bare seed; toggle round-trip verified truthful (same POST/reload path as the ON case). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "KEPT missing: the live button (Turn ON this skill station-wide) still exists in the SKILLS library pane (live-proven: 40 switches + 21 PLACE CTAs present at HEAD c06bdef7) but the control has no id/aria anchor, so the sweep loses it as a shifting positional key. Not superseded by an anchored replacement — retirement deferred until the buttons get stable selectors (ledger:cea0899f)."
     },
     {
       "id": "ui/build/txt-button-off-418",
@@ -8290,14 +8309,15 @@
         "date": "2026-07-07T21:55:44.491Z"
       },
       "findings": [
-        "11c69e21"
+        "11c69e21",
+        "cea0899f"
       ],
       "firstSeen": "2026-07-07T08:25:37.301Z",
       "lastSeen": "2026-07-07T08:25:37.301Z",
       "missing": true,
       "selector": "button",
       "state": "build-skills",
-      "notes": "Live round-trip: flipped decision-1-3-1 -> DOM sk-switch off/aria-checked=false/label OFF AND GET /api/skills enabled=false; re-flip restored enabled=true. Switch=user choice mirrors persisted prefs; compose() gates the run by the SAME isEnabled&&isAvailable (dossier-SKILLS-honesty law holds). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "KEPT missing: the live button (Turn OFF this skill station-wide) still exists in the SKILLS library pane (live-proven: 40 switches + 21 PLACE CTAs present at HEAD c06bdef7) but the control has no id/aria anchor, so the sweep loses it as a shifting positional key. Not superseded by an anchored replacement — retirement deferred until the buttons get stable selectors (ledger:cea0899f)."
     },
     {
       "id": "ui/build/txt-button-on-407",
@@ -8456,14 +8476,15 @@
         "date": "2026-07-07T21:06:49.519Z"
       },
       "findings": [
-        "11c69e21"
+        "11c69e21",
+        "cea0899f"
       ],
       "firstSeen": "2026-07-07T08:25:37.301Z",
       "lastSeen": "2026-07-07T08:25:37.301Z",
       "missing": true,
       "selector": "button",
       "state": "build-skills",
-      "notes": "Live: clicked \"→ PLACE CABINET\" -> body.refit-on=true, .refit-overlay present, .refit-proptile[data-prop=safe].active, prop tool active (deep-link truly navigates). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "KEPT missing: the live button (Open REFIT to place a CABINET) still exists in the SKILLS library pane (live-proven: 40 switches + 21 PLACE CTAs present at HEAD c06bdef7) but the control has no id/aria anchor, so the sweep loses it as a shifting positional key. Not superseded by an anchored replacement — retirement deferred until the buttons get stable selectors (ledger:cea0899f)."
     },
     {
       "id": "ui/build/txt-button-place-cabinet-419",
@@ -9153,14 +9174,15 @@
         "date": "2026-07-07T21:06:49.519Z"
       },
       "findings": [
-        "11c69e21"
+        "11c69e21",
+        "cea0899f"
       ],
       "firstSeen": "2026-07-07T08:25:37.301Z",
       "lastSeen": "2026-07-07T08:25:37.301Z",
       "missing": true,
       "selector": "button",
       "state": "build-skills",
-      "notes": "Live: PLACE-dish variant shares placeGearForSkill(dish->comms_dish); cabinet path proven end-to-end this session (identical code path per SK_PLACE map). live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "KEPT missing: the live button (Open REFIT to place a DISH) still exists in the SKILLS library pane (live-proven: 40 switches + 21 PLACE CTAs present at HEAD c06bdef7) but the control has no id/aria anchor, so the sweep loses it as a shifting positional key. Not superseded by an anchored replacement — retirement deferred until the buttons get stable selectors (ledger:cea0899f)."
     },
     {
       "id": "ui/build/txt-button-place-dish-479",
@@ -9577,14 +9599,15 @@
         "date": "2026-07-07T21:06:49.519Z"
       },
       "findings": [
-        "11c69e21"
+        "11c69e21",
+        "cea0899f"
       ],
       "firstSeen": "2026-07-07T08:25:37.301Z",
       "lastSeen": "2026-07-07T08:25:37.301Z",
       "missing": true,
       "selector": "button",
       "state": "build-skills",
-      "notes": "Live: PLACE-workbench variant shares placeGearForSkill(workbench->workbench, cat=workstation); cabinet path proven end-to-end this session. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "KEPT missing: the live button (Open REFIT to place a WORKBENCH) still exists in the SKILLS library pane (live-proven: 40 switches + 21 PLACE CTAs present at HEAD c06bdef7) but the control has no id/aria anchor, so the sweep loses it as a shifting positional key. Not superseded by an anchored replacement — retirement deferred until the buttons get stable selectors (ledger:cea0899f)."
     },
     {
       "id": "ui/build/txt-button-place-workbench-447",
@@ -10284,8 +10307,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -10293,7 +10316,7 @@
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — belt tool present, hint CLICK one machine, then another (7); reclaim setup laid a 3-belt run via placeBeltRun. Machine-covered in conveyor + worldmodel belt tests."
+      "notes": "Live: BELT tool (key 7) present, hint CLICK one machine then another the belt lays itself. belt-model machine-covered in conveyor.test.js + placeBeltRun in worldmodel.test.js (both pass at HEAD). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-tools-dupe-8-1",
@@ -10338,8 +10361,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -10347,7 +10370,7 @@
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — hall tool present, hint (2). placeHallway machine-covered in worldmodel test."
+      "notes": "Live: HALLWAY tool (key 2) present, hint drag along an axis to run a corridor. placeHallway machine-covered in worldmodel.test.js (pass at HEAD). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-tools-move-4-1",
@@ -10371,8 +10394,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -10380,7 +10403,7 @@
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — move tool present, hint (4). moveProp+undo machine-covered in worldmodel test."
+      "notes": "Live: MOVE tool (key 4) present, hint drag a room to relocate it. moveProp+undo machine-covered in worldmodel.test.js (pass at HEAD). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-tools-paint-3-1",
@@ -10404,8 +10427,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -10413,7 +10436,7 @@
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — paint tool present, hint (3). setFloor/paintTiles machine-covered in worldmodel test."
+      "notes": "Live: PAINT tool (key 3) present, hint drag to paint deck tiles / click a room to fill it. setFloor/paintTiles machine-covered in worldmodel.test.js (pass at HEAD). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-tools-prop-6-1",
@@ -10445,8 +10468,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -10454,7 +10477,7 @@
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): truthful/place-grants-cap — placeCapProp(workbench) makes World.heroCaps gain workbench; undo revokes it. Prop tile shows the truthful grant word (comms_dish -> WEB). Guarded by audit moat + prop-place and worldmodel bayObjects test."
+      "notes": "Live: PROP tool (key 6) present, hint click to place furniture / agents walk around it; place=grant proven via placeCapProp (heroCaps gains cap). bayObjects machine-covered in worldmodel.test.js (pass at HEAD). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-tools-reclaim-5-1",
@@ -10482,8 +10505,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -10491,7 +10514,7 @@
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-reclaim/drag-clear-one-undo — a 3-belt run cleared to 0 and ONE undo restored all 3 (belt-reclaim one-undo-slot law, 7/06). removeProp+undo and one-undo belt removal machine-covered in worldmodel/conveyor tests."
+      "notes": "Live: RECLAIM tool (key 5) present, hint click a room prop or belt to tear it down / drag across a belt to clear the whole run (UNDO restores it). removeProp/one-undo-belt machine-covered in worldmodel.test.js + conveyor.test.js (both pass at HEAD). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-tools-room-1-1",
@@ -10515,8 +10538,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
@@ -10524,7 +10547,7 @@
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — room tool present with hint drag on the grid to place a room (1). addRoom machine-covered in worldmodel test."
+      "notes": "Live: REFIT tools belt shows ROOM (key 1), hint drag on the grid to place a room, active by default. addRoom machine-covered in worldmodel.test.js (pass at HEAD). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-cabinet-1",
@@ -11219,18 +11242,19 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
+        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
+        "date": "2026-07-18T02:21:47.861Z"
       },
       "findings": [
-        "11c69e21"
+        "11c69e21",
+        "cea0899f"
       ],
       "firstSeen": "2026-07-07T08:25:37.301Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-skills",
-      "notes": "Live: PLACE-studio variant shares placeGearForSkill(studio->studio); cabinet path proven end-to-end this session. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
+      "notes": "Live: an Open REFIT to place a STUDIO CTA button present in the SKILLS library pane. Positional key (button has no stable anchor — see ledger:cea0899f). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-sk-lib-place-workbench-1",
