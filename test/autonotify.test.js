@@ -4,6 +4,8 @@
 // correlate without a runId on that event — see autonotify.js header). Plus wiring source-locks.
 const assert = require('assert');
 const { makeAutoNotifier, composeMessage } = require('../sidecar/autonotify.js');
+const { makeChannelAdapter } = require('../sidecar/channels/adapter.js');
+const cronStore = require('../sidecar/cron-store.js');
 
 let n = 0; const ok = (c, m) => { assert.ok(c, m); n++; };
 const eq = (a, b, m) => { assert.deepStrictEqual(a, b, m); n++; };
@@ -88,6 +90,38 @@ const deliveryOutcomes = [];
   mode = 'fail';
   nf.onEvent('cron.result', { jobId: 'j1', outcome: 'ok' });
 }
+// --- DELIVERY RETRY SEAM: real adapter resend -> one final, durable cron outcome ---
+// Compose the production modules so their hand-off is locked, not merely each module in isolation.
+const retrySeam = { attempts: 0, waits: [], outcomes: [] };
+{
+  const T = Date.UTC(2026, 6, 18, 12, 0, 0);
+  let jobs = [cronStore.makeJob({
+    id: 'retry-seam', name: 'Retry seam', agentId: 'agent',
+    schedule: { kind: 'once', at: new Date(T + 60000).toISOString() }
+  }, { now: T })];
+  const adapter = makeChannelAdapter({
+    name: 'telegram', clock: { now: () => T }, normalize: () => null,
+    sleep: (ms) => { retrySeam.waits.push(ms); return Promise.resolve(); },
+    transport: {
+      getUpdates: async () => [],
+      send: async () => (++retrySeam.attempts === 1
+        ? { ok: false, error: 'rate limited', retryable: true, retryAfter: 2 }
+        : { ok: true, messageId: 'delivered-after-retry' })
+    }
+  });
+  const nf = makeAutoNotifier({
+    send: (chatId, text, channel) => adapter.send(chatId, text, { channel }),
+    chatsFor: () => [{ chatId: '111', channel: 'telegram' }],
+    jobName: () => 'Retry seam', jobAgent: () => 'agent',
+    onDelivery: (jobId, result) => {
+      retrySeam.outcomes.push(result);
+      jobs = cronStore.markDelivery(jobs, jobId, result, { now: T + 2000 });
+      retrySeam.job = cronStore.getJob(jobs, jobId);
+    }
+  });
+  nf.onEvent('cron.result', { jobId: 'retry-seam', runId: 'run-1', outcome: 'ok' });
+}
+
 // --- a SYNCHRONOUSLY-throwing send also reports a failed delivery (and a hostile onDelivery never escapes) ---
 {
   const outcomes = [];
@@ -132,5 +166,10 @@ setImmediate(() => {
   eq([deliveryOutcomes[0].r.ok, deliveryOutcomes[0].r.channel], [true, 'telegram'], 'a delivered ping reports ok:true');
   eq(deliveryOutcomes[1].r.ok, false, 'a rejected send reports ok:false — never swallowed');
   ok(/rate limited/.test(deliveryOutcomes[1].r.error), 'the failure carries the transport error');
+  eq(retrySeam.attempts, 2, 'retryable autonomous delivery gets one bounded resend');
+  eq(retrySeam.waits, [2000], 'autonomous resend honors the transport retry_after window');
+  eq(retrySeam.outcomes.length, 1, 'cron bookkeeping receives one final outcome, not an intermediate failure');
+  eq([retrySeam.outcomes[0].ok, retrySeam.outcomes[0].channel], [true, 'telegram'], 'final retry success keeps its channel identity');
+  eq([retrySeam.job.lastDeliveryOk, retrySeam.job.lastDeliveryError], [true, null], 'successful retry is durably reducible on the routine record');
   console.log('autonotify.test.js OK —', n, 'assertions');
 });
