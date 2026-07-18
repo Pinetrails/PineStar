@@ -1,5 +1,20 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-18 — KEYS tab: custom service API keys (branch `claude/custom-api-key-storage-000c3f`)
+
+Andrew's ask: a safe place to paste an API key for ANY platform (not a provider key, not a full MCP
+connector) — a KEYS tab in TOOLSETS & CONNECTORS under CATALOG. Shipped in this lane:
+- `sidecar/servicekeys.js` (pure core) + `/api/servicekeys` (GET/POST/toggle/remove): protected store
+  `connectors/servicekeys.json`, verified read-back persist, list responses masked (never the value).
+- Consumption path: enabled keys → `process.env` (ownership guard — ambient env vars always win) so
+  shell.exec children inherit e.g. `RESEND_API_KEY`; names-only `<service_keys>` prompt block at the
+  system-prompt seam, gated on shell.exec in resolved tools (truthful-telemetry).
+- KEYS pane: connected keyed platforms (truth = /api/connectors hasToken, oauth excluded, read-only)
+  + custom rows (kill-switch, masked last4, env-var readout, docs link) + add-unlisted form.
+- Gates: test:fast 363 green; servicekeys.http e2e (25 asserts, restart round-trip) added to test:http.
+  Live-proven on seed :9207 (add/mask/toggle/remove/platforms DOM round-trips; no secret in responses).
+- [ ] Open: live proof of a real agent shell run reading the env var; per-agent scoping if wanted later.
+
 ## 2026-07-17 — AUTONOMY TUNING (direction dial) — merging this pass (claude/agent-autonomy-tuning-89786e)
 
 Andrew's ask: let users guide WHERE the agent's autonomous work goes, as a release cherry-on-top.
