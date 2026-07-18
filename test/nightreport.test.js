@@ -187,6 +187,7 @@ A.eq(NR.panelModel({ status: stBase, tzOffsetMin: 0 }).readinessText, '', 'absen
 // the new binding phrases are real sentences, not the forward-compat fallback.
 A.ok(!/held back by/.test(NR.bindingPhrase('budget')), 'budget binding has a plain phrase');
 A.ok(!/held back by/.test(NR.bindingPhrase('no-provider')), 'no-provider binding has a plain phrase');
+A.ok(/verify|check/i.test(NR.bindingPhrase('precheck-error')) && /stood down safely/i.test(NR.bindingPhrase('precheck-error')), 'precheck-error explains the unproven safety read and safe stand-down in plain language');
 
 /* ---------- trailLine(): one honest ledger row for the panel ---------- */
 A.eq(NR.trailLine({ ts: T0610Z, kind: 'decline', binding: 'leash' }, -300), '1:10 AM · declined · the daily leash was already spent', 'a decline row: local time · declined · gate reason');

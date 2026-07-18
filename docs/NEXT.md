@@ -4,6 +4,13 @@
 
 Goal: full public release clean on Windows AND macOS; subscriptions = the NEXT official update.
 
+- [x] **READY TO MERGE — `agent/release-reliability-audit` · night-shift precheck fail-closed.**
+      Trunk failed open when budget/provider/readiness inspection threw, spending a leash unit and starting
+      unattended work through an unproven safety gate. The driver + composition root now stand down before
+      spend as `precheck-error`; status, durable ledger, and morning-report copy all explain it truthfully.
+      Verified: focused 51+107 assertions; `test:fast` 351/351; full `test:http`; real fault-injected sidecar
+      over HTTP reported `beatsUsedToday:0` and persisted `detail.preSpend:true` (`nightshift-budget.e2e` 11/11).
+
 **MERGED: Wave 4D supervised background lifecycle** (agent/lifecycle-4d → trunk `7f3af0be`,
 claims re-stamp `bc4ac138`; full digest in qa/STATUS.md 2026-07-17). The owner-decision
 checkpoint below (POWERUSER_FIX_PLAN Lane 4D) is CLEARED — Andrew approved the recommended

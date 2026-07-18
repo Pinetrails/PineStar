@@ -3531,7 +3531,8 @@ function nightshiftContextPack() {
 // model call, "could a beat even reach a model call right now?" — the same readiness/eligibility conditions the act
 // pipeline checks first. Dossier OR substantial recent activity counts as grounding (Autopilot.readiness folds both).
 // Returns { ok, reason }. Called by the driver BEFORE the leash is spent, so a stand-down that no model call could
-// have avoided (cold on both paths → tier not hot, or nothing eligible) costs no budget. Best-effort; fail OPEN.
+// have avoided (cold on both paths → tier not hot, or nothing eligible) costs no budget. Safety reads fail closed:
+// an unproven budget/provider/readiness gate stands down as `precheck-error` and is retried on a later tick.
 function nightshiftPrecheck() {
   try {
     // LANE L — COST GATE (pre-spend). The leash is spent at ACCEPT time; a beat's FIRST model call then dies with
@@ -3541,15 +3542,16 @@ function nightshiftPrecheck() {
     // {scope,usd,cap} (truthy) or null. Checked FIRST so an exhausted pool names the ACTIONABLE reason ('budget',
     // which the Commander clears by resume/raising the cap) rather than a downstream 'no-provider'/'readiness'.
     let b = null;
-    try { b = budget.check(null, NIGHTSHIFT_AGENT, 0, Date.now(), null); } catch (_) { b = null; }
+    try { b = budget.check(null, NIGHTSHIFT_AGENT, 0, Date.now(), null); }
+    catch (_) { return { ok: false, reason: 'precheck-error' }; }
     if (b) return { ok: false, reason: 'budget' };
     // LANE L — CAPABILITY GATE (pre-spend, same wart): with no runnable provider/credential a beat stands down at
     // 'no-capability' AFTER the leash was spent (runNightshiftBeat). Read it locally (no model call) and decline
-    // before the spend. Best-effort — a lookup hiccup falls through to the readiness gate (never wedge the tick).
+    // before the spend. A lookup hiccup stands down visibly; uncertainty is not unattended-work permission.
     try {
       const provider = cronProviderFor({ agentId: NIGHTSHIFT_AGENT });
       if (!cronModelFor({ agentId: NIGHTSHIFT_AGENT }) || !cronHasCredential(provider, cronKeyFor(provider))) return { ok: false, reason: 'no-provider' };
-    } catch (_) { /* fall through to readiness */ }
+    } catch (_) { return { ok: false, reason: 'precheck-error' }; }
     const snap = commanderPosture.beliefs() || {};
     const summary = { known: Array.isArray(snap.known) ? snap.known : Object.keys((snap.beliefs) || {}) };
     const beliefsByDim = (dim) => (snap.beliefs && snap.beliefs[dim]) || [];
@@ -3559,7 +3561,7 @@ function nightshiftPrecheck() {
     const eligible = Autopilot.eligibleArchetypes(rd.usableDims, { activityGrounded: rd.groundedBy === 'activity' });
     if (rd.tier !== 'hot' || !eligible.length) return { ok: false, reason: 'readiness' };
     return { ok: true };
-  } catch (_) { return { ok: true }; }   // fail open → NS-1 behavior (spend + let the pipeline decide)
+  } catch (_) { return { ok: false, reason: 'precheck-error' }; }
 }
 
 // the READINESS view for the status route — the SAME computation nightshiftPrecheck gates on, exposed as provable

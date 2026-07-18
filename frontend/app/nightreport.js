@@ -40,6 +40,7 @@
     cooldown: 'it wasn’t time for the next beat yet',
     concurrency: 'the desk was busy with another run',
     'in-flight': 'a beat was still running',
+    'precheck-error': 'the station could not verify its budget, provider, or readiness checks, so it stood down safely',
     'persist-failed': 'the station couldn’t safely record the work, so it stood down'
   };
 
