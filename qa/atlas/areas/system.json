@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-18T01:28:46.579Z",
+  "updatedAt": "2026-07-18T01:31:50.639Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -7331,42 +7331,74 @@
       "kind": "ui",
       "area": "system",
       "name": "ANTHROPICapi.anthropic.com/v1 · Claude native API○ NO KEY＋ A",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The ANTHROPIC provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows ANTHROPIC’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the ANTHROPIC card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). provider-connections-ui.test.js:42/51 locks the card status on the live harness probe (never DEVMODE-fabricated). Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-cerebrasapi-cerebras-ai-v1-cerebras-ap-1",
       "kind": "ui",
       "area": "system",
       "name": "CEREBRASapi.cerebras.ai/v1 · Cerebras API○ NO KEY＋ ADD KEYSA",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The CEREBRAS provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows CEREBRAS’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the CEREBRAS card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). provider-connections-ui.test.js:42/51 locks the card status on the live harness probe (never DEVMODE-fabricated). Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-chatgpt-codex-oauth-chatgpt-subscript-1",
@@ -7412,42 +7444,74 @@
       "kind": "ui",
       "area": "system",
       "name": "CUSTOMany /v1 base URL · bring your endpoint○ NO ENDPOINT＋ A",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The CUSTOM provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows CUSTOM’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the CUSTOM card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). provider-connections-ui.test.js:42/51 locks the card status on the live harness probe (never DEVMODE-fabricated). Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-deepseekapi-deepseek-com-deepseek-api-1",
       "kind": "ui",
       "area": "system",
       "name": "DEEPSEEKapi.deepseek.com · DeepSeek API○ NO KEY＋ ADD KEYSAVE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The DEEPSEEK provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows DEEPSEEK’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the DEEPSEEK card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). provider-connections-ui.test.js:42/51 locks the card status on the live harness probe (never DEVMODE-fabricated). Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-fireworksapi-fireworks-ai-inference-v1-1",
@@ -7532,210 +7596,370 @@
       "kind": "ui",
       "area": "system",
       "name": "GROK (XAI)OAuth · SuperGrok / X Premium+ · sign-in, no API k",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The GROK (xAI) provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows GROK (xAI)’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-oauth-rows.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the GROK (xAI) card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). settings-oauth-rows.test.js locks the OAuth-card truthful gating. Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-groqapi-groq-com-openai-v1-fast-infere-1",
       "kind": "ui",
       "area": "system",
       "name": "GROQapi.groq.com/openai/v1 · fast inference○ NO KEY＋ ADD KEY",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The GROQ provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows GROQ’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the GROQ card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). provider-connections-ui.test.js:42/51 locks the card status on the live harness probe (never DEVMODE-fabricated). Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-kimi-for-codingoauth-moonshot-subscrip-1",
       "kind": "ui",
       "area": "system",
       "name": "KIMI FOR CODINGOAuth · Moonshot subscription · sign-in, no A",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The KIMI FOR CODING provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows KIMI FOR CODING’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-oauth-rows.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the KIMI FOR CODING card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). settings-oauth-rows.test.js locks the OAuth-card truthful gating. Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-mistralapi-mistral-ai-v1-mistral-api-1",
       "kind": "ui",
       "area": "system",
       "name": "MISTRALapi.mistral.ai/v1 · Mistral API○ NO KEY＋ ADD KEYSAVE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The MISTRAL provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows MISTRAL’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the MISTRAL card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). provider-connections-ui.test.js:42/51 locks the card status on the live harness probe (never DEVMODE-fabricated). Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-ollama127-0-0-1-11434-v1-local-models-1",
       "kind": "ui",
       "area": "system",
       "name": "OLLAMA127.0.0.1:11434/v1 · local models○ LOCAL ENDPOINT CONF",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The OLLAMA provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows OLLAMA’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the OLLAMA card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). provider-connections-ui.test.js:42/51 locks the card status on the live harness probe (never DEVMODE-fabricated). Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-openai-apiapi-openai-com-v1-openai-com-1",
       "kind": "ui",
       "area": "system",
       "name": "OPENAI APIapi.openai.com/v1 · OpenAI-compatible○ NO KEY＋ ADD",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The OPENAI API provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows OPENAI API’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the OPENAI API card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). provider-connections-ui.test.js:42/51 locks the card status on the live harness probe (never DEVMODE-fabricated). Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-openrouteropenrouter-ai-api-v1-one-key-1",
       "kind": "ui",
       "area": "system",
       "name": "OPENROUTERopenrouter.ai/api/v1 · one key · 300+ models● KEY ",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The OPENROUTER provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows OPENROUTER’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.717Z",
       "lastSeen": "2026-07-18T00:54:02.717Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the OPENROUTER card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). provider-connections-ui.test.js:42/51 locks the card status on the live harness probe (never DEVMODE-fabricated). Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-perplexityapi-perplexity-ai-sonar-api-1",
       "kind": "ui",
       "area": "system",
       "name": "PERPLEXITYapi.perplexity.ai · Sonar API○ NO KEY＋ ADD KEYSAVE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The PERPLEXITY provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows PERPLEXITY’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the PERPLEXITY card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). provider-connections-ui.test.js:42/51 locks the card status on the live harness probe (never DEVMODE-fabricated). Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-togetherapi-together-ai-v1-together-ap-1",
       "kind": "ui",
       "area": "system",
       "name": "TOGETHERapi.together.ai/v1 · Together API○ NO KEY＋ ADD KEYSA",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The TOGETHER provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows TOGETHER’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the TOGETHER card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). provider-connections-ui.test.js:42/51 locks the card status on the live harness probe (never DEVMODE-fabricated). Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-terms-xaiapi-x-ai-v1-grok-api-no-key-add-k-1",
       "kind": "ui",
       "area": "system",
       "name": "XAIapi.x.ai/v1 · Grok API○ NO KEY＋ ADD KEYSAVE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The XAI provider card in SETTINGS > PROVIDERS — its selectable row showing the endpoint/auth summary and a status pill.",
+      "promise": "The card shows XAI’s endpoint (or OAuth) summary and a status pill that TRUTHFULLY reflects the real credential/sign-in state (○ NO KEY / ● KEY SAVED / ○ NOT SIGNED IN), never a fabricated connected label.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-oauth-rows.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "div",
-      "state": "sys-settings"
+      "state": "sys-settings",
+      "notes": "Proven live @ HEAD 0a009ec2 (sidecar :8961/CDP :9361): the XAI card (data-provider) renders with a truthful status pill under the keyless seed (textnodes.json). settings-oauth-rows.test.js locks the OAuth-card truthful gating. Held audited: TRUTHFUL+DISCOVERABLE proven, but this entry carries a POSITIONAL harvest key (txt-div-...-1) that will re-mint/vanish on any PROVIDERS-panel reorder (same class as the missing txt-div-*-N predecessors) - a Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-div-togetherapi-together-ai-v1-together-ap-10",
@@ -7820,105 +8044,180 @@
       "kind": "ui",
       "area": "system",
       "name": "SETUP GUIDE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The DISCORD channel SETUP GUIDE disclosure in the CHANNELS panel — expands step-by-step connect instructions.",
+      "promise": "Clicking the SETUP GUIDE summary expands the DISCORD setup steps (where to get the token/endpoint); collapsed by default.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "summary",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: the DISCORD card exposes a SETUP GUIDE <summary> (textnodes.json shows 5 SETUP GUIDE disclosures across the 5 channel cards; expandable per drive2). generic-wire.test.js:65 locks the Signal guide points at the signal-cli bridge. Held audited: POSITIONAL harvest key (txt-summary-...-1) - Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-summary-ch-card-matrix-setup-guide-1",
       "kind": "ui",
       "area": "system",
       "name": "SETUP GUIDE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The MATRIX channel SETUP GUIDE disclosure in the CHANNELS panel — expands step-by-step connect instructions.",
+      "promise": "Clicking the SETUP GUIDE summary expands the MATRIX setup steps (where to get the token/endpoint); collapsed by default.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "summary",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: the MATRIX card exposes a SETUP GUIDE <summary> (textnodes.json shows 5 SETUP GUIDE disclosures across the 5 channel cards; expandable per drive2). generic-wire.test.js:65 locks the Signal guide points at the signal-cli bridge. Held audited: POSITIONAL harvest key (txt-summary-...-1) - Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-summary-ch-card-signal-setup-guide-1",
       "kind": "ui",
       "area": "system",
       "name": "SETUP GUIDE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The SIGNAL channel SETUP GUIDE disclosure in the CHANNELS panel — expands step-by-step connect instructions.",
+      "promise": "Clicking the SETUP GUIDE summary expands the SIGNAL setup steps (where to get the token/endpoint); collapsed by default.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "summary",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: the SIGNAL card exposes a SETUP GUIDE <summary> (textnodes.json shows 5 SETUP GUIDE disclosures across the 5 channel cards; expandable per drive2). generic-wire.test.js:65 locks the Signal guide points at the signal-cli bridge. Held audited: POSITIONAL harvest key (txt-summary-...-1) - Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-summary-ch-card-slack-setup-guide-1",
       "kind": "ui",
       "area": "system",
       "name": "SETUP GUIDE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The SLACK channel SETUP GUIDE disclosure in the CHANNELS panel — expands step-by-step connect instructions.",
+      "promise": "Clicking the SETUP GUIDE summary expands the SLACK setup steps (where to get the token/endpoint); collapsed by default.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "summary",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: the SLACK card exposes a SETUP GUIDE <summary> (textnodes.json shows 5 SETUP GUIDE disclosures across the 5 channel cards; expandable per drive2). generic-wire.test.js:65 locks the Signal guide points at the signal-cli bridge. Held audited: POSITIONAL harvest key (txt-summary-...-1) - Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     },
     {
       "id": "ui/system/txt-summary-ch-card-telegram-setup-guide-1",
       "kind": "ui",
       "area": "system",
       "name": "SETUP GUIDE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The TELEGRAM channel SETUP GUIDE disclosure in the CHANNELS panel — expands step-by-step connect instructions.",
+      "promise": "Clicking the SETUP GUIDE summary expands the TELEGRAM setup steps (where to get the token/endpoint); collapsed by default.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/stationui.js"
+        ],
         "events": []
       },
-      "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/channels.generic-wire.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-messaging"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:31:50.639Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.718Z",
       "lastSeen": "2026-07-18T00:54:02.718Z",
       "missing": false,
       "selector": "summary",
-      "state": "sys-messaging"
+      "state": "sys-messaging",
+      "notes": "Proven live @ HEAD 0a009ec2: the TELEGRAM card exposes a SETUP GUIDE <summary> (textnodes.json shows 5 SETUP GUIDE disclosures across the 5 channel cards; expandable per drive2). generic-wire.test.js:65 locks the Signal guide points at the signal-cli bridge. Held audited: POSITIONAL harvest key (txt-summary-...-1) - Cartographer-harvest fragility, not a product defect. Evidence textnodes.json."
     }
   ]
 }
