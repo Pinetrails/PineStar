@@ -1,6 +1,6 @@
 {
   "area": "crew",
-  "updatedAt": "2026-07-18T01:15:30.865Z",
+  "updatedAt": "2026-07-18T00:00:00.000Z",
   "entries": [
     {
       "id": "state/crew-agents",
@@ -24,6 +24,10 @@
         {
           "kind": "test",
           "ref": "test/settings-p1-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/workshop-toggle-ui.test.js"
         }
       ],
       "status": "audited",
@@ -35,7 +39,7 @@
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Re-proof @ 0a009ec2: AGENTS panel -> roster row (NOVA), Search agents box, mission-control reflection (on/cooldown/save), per-agent CONFIG controls all present + functional. Held audited: the /api/memory/config reflection persist round-trip was not re-driven this wave. Ev .uiatlas/crew-perfwave/run1-full.json."
+      "notes": "Re-proof @ 0a009ec2: AGENTS panel -> roster row (NOVA), Search agents box, mission-control reflection (on/cooldown/save), per-agent CONFIG controls all present + functional. Held audited: the /api/memory/config reflection persist round-trip was not re-driven this wave. Ev .uiatlas/crew-perfwave/run1-full.json. [wave-3] AWAY-WORKSHOP toggle (#ag-workshop-on): machine assertion test/workshop-toggle-ui.test.js now guards the durable grant round-trip (workshop-store, restart-safe) + the #ag-workshop-on->setWorkshop->POST /api/workshop/grant UI wire with truthful revert-on-failure. Held audited: the away-loop DISPATCH half (background driver reads the grant) is not headlessly drivable — finding 3b7b52c8 stays open for that dispatch journey."
     },
     {
       "id": "state/crew-commander",
@@ -432,9 +436,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -447,7 +455,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Alien\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Alien\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Alien\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-back-to-the-class-roster",
@@ -499,9 +507,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -514,7 +526,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Beach Babe\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Beach Babe\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Beach Babe\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-blank",
@@ -534,9 +546,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "78351f3eeb3595ac7b1c8bfe5b227d3d2b6bf8f3",
         "date": "2026-07-07T21:12:48Z"
@@ -549,7 +565,7 @@
       "missing": true,
       "selector": "button[aria-label=\"Blank\"]",
       "state": "crew-agents",
-      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to crew feature lane). Ev crew2-proof.json (new_batch_proofs.skin_picker). [retire-pass: KEPT missing:true — honest sweep blind spot (deep-render skin-picker tile inside AGENT DOSSIER > BRIEF > CHANGE SKIN the state-walk never opens), NOT positional-key cruft.]"
+      "notes": "Live 78351f3e: this tile is a .ag-skin-thumb[data-skin] in the BRIEF skin picker (15 thumbs, \"blank\" selected = hero.skin). PROVEN the flow: clicked robot -> hero.skin blank->robot, selected tile moved, reverted to blank (World.setSkin round-trip + roster persist). PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev crew2-proof.json (new_batch_proofs.skin_picker). [retire-pass: KEPT missing:true — honest sweep blind spot (deep-render skin-picker tile inside AGENT DOSSIER > BRIEF > CHANGE SKIN the state-walk never opens), NOT positional-key cruft.]"
     },
     {
       "id": "ui/crew/aria-blank-amber",
@@ -569,9 +585,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -584,7 +604,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Blank Amber\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Blank Amber\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Blank Amber\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-blank-blue",
@@ -604,9 +624,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -619,7 +643,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Blank Blue\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Blank Blue\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Blank Blue\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-blank-green",
@@ -639,9 +663,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -654,7 +682,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Blank Green\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Blank Green\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Blank Green\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-blank-red",
@@ -674,9 +702,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -689,7 +721,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Blank Red\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Blank Red\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Blank Red\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-build-a-custom-class",
@@ -745,9 +777,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -760,7 +796,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Cadet\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Cadet\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Cadet\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-capybara",
@@ -780,9 +816,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -795,7 +835,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Capybara\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Capybara\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Capybara\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-close-agent-dossier",
@@ -911,9 +951,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -926,7 +970,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Crewmate\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Crewmate\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Crewmate\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-crt-head",
@@ -946,9 +990,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -961,7 +1009,7 @@
       "missing": false,
       "selector": "button[aria-label=\"CRT Head\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"CRT Head\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"CRT Head\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-dario",
@@ -981,9 +1029,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -996,7 +1048,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Dario\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Dario\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Dario\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-endoskeleton",
@@ -1016,9 +1068,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1031,7 +1087,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Endoskeleton\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Endoskeleton\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Endoskeleton\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-grim-reaper",
@@ -1051,9 +1107,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1066,7 +1126,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Grim Reaper\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Grim Reaper\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Grim Reaper\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-heisenberg",
@@ -1086,9 +1146,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1101,7 +1165,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Heisenberg\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Heisenberg\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Heisenberg\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-minimize-agent-dossier",
@@ -1185,9 +1249,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1200,7 +1268,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Pepe\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Pepe\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Pepe\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-plague-doctor",
@@ -1220,9 +1288,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1235,7 +1307,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Plague Doctor\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Plague Doctor\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Plague Doctor\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-resize-agent-dossier",
@@ -1297,9 +1369,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1312,7 +1388,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Retro Astronaut\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Retro Astronaut\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Retro Astronaut\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-robot",
@@ -1332,9 +1408,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1347,7 +1427,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Robot\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Robot\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Robot\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-sam",
@@ -1367,9 +1447,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1382,7 +1466,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Sam\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Sam\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Sam\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-search-agents",
@@ -1426,9 +1510,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1441,7 +1529,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Secret Agent\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Secret Agent\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Secret Agent\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-skeleton",
@@ -1461,9 +1549,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1476,7 +1568,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Skeleton\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Skeleton\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Skeleton\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-steve",
@@ -1496,9 +1588,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1511,7 +1607,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Steve\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Steve\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Steve\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-teddy-bear",
@@ -1531,9 +1627,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1546,7 +1646,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Teddy Bear\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Teddy Bear\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Teddy Bear\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-ultron",
@@ -1587,9 +1687,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"
@@ -1602,7 +1706,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Vault Boy\"]",
       "state": "crew-agents",
-      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Vault Boy\") is present in the live set. AUDITED not perfected — no machine assertion guards setSkin (finding d2121f51, KNOWN coverage gap routed to the crew feature lane). Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
+      "notes": "Re-proof @ 0a009ec2: skin picker is a 27-tile [data-skin] grid; PROVEN the round-trip (blank -> bear -> reverted to blank; the .sel marker followed each click). This named tile (\"Vault Boy\") is present in the live set. PERFECTED (wave-3): machine assertion test/world-setskin.test.js guards the DATA.SKINS catalog + the setSkin/setAgentSkin validate->persist(roster)->re-render wiring; the live sprite round-trip + .sel move were live-proven @0a009ec2 (canvas pixel stays sweep-only). Finding d2121f51 resolved. Ev .uiatlas/crew-perfwave/run1-full.json (skin-picker) + skin-list enumeration."
     },
     {
       "id": "ui/crew/aria-void-wizard",
@@ -1781,9 +1885,13 @@
         {
           "kind": "shoot",
           "ref": "crew-agents"
+        },
+        {
+          "kind": "test",
+          "ref": "test/world-setskin.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
         "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
         "date": "2026-07-18T01:15:30.865Z"

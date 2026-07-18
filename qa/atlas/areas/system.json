@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-18T01:40:40.654Z",
+  "updatedAt": "2026-07-18T00:00:00.000Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -1115,6 +1115,10 @@
         {
           "kind": "shoot",
           "ref": "sys-messaging"
+        },
+        {
+          "kind": "test",
+          "ref": "test/window-minimize.test.js"
         }
       ],
       "status": "audited",
@@ -1130,7 +1134,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize CHANNELS\"]",
       "state": "sys-messaging",
-      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize CHANNELS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json."
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize CHANNELS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json. [wave-3] Machine assertion test/window-minimize.test.js now guards the minimizeTerm collapse/restore round-trip (element kept alive + hidden not destroyed, geometry captured into termPos only when term-moved, placeTerm re-applies it on restore) plus the exported clampTerminalSize geometry primitive. Finding e9e4fab6 resolved. HELD audited: the finding itself flagged the live COLLAPSE behavior as never proven (only the aria render was shoot-covered) — a live collapse round-trip at HEAD is still owed before perfected."
     },
     {
       "id": "ui/system/aria-minimize-logbook",
@@ -1149,6 +1153,10 @@
         {
           "kind": "shoot",
           "ref": "sys-logbook"
+        },
+        {
+          "kind": "test",
+          "ref": "test/window-minimize.test.js"
         }
       ],
       "status": "audited",
@@ -1164,7 +1172,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize LOGBOOK\"]",
       "state": "sys-logbook",
-      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize LOGBOOK\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json."
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize LOGBOOK\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json. [wave-3] Machine assertion test/window-minimize.test.js now guards the minimizeTerm collapse/restore round-trip (element kept alive + hidden not destroyed, geometry captured into termPos only when term-moved, placeTerm re-applies it on restore) plus the exported clampTerminalSize geometry primitive. Finding e9e4fab6 resolved. HELD audited: the finding itself flagged the live COLLAPSE behavior as never proven (only the aria render was shoot-covered) — a live collapse round-trip at HEAD is still owed before perfected."
     },
     {
       "id": "ui/system/aria-minimize-notifications",
@@ -1183,6 +1191,10 @@
         {
           "kind": "shoot",
           "ref": "sys-notifs"
+        },
+        {
+          "kind": "test",
+          "ref": "test/window-minimize.test.js"
         }
       ],
       "status": "audited",
@@ -1198,7 +1210,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize NOTIFICATIONS\"]",
       "state": "sys-notifs",
-      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize NOTIFICATIONS\"] (class term-min) present+visible (last2.json). Held audited (downgraded from a stale perfected for consistency with the other minimize entries): the aria-label is shoot-covered but no assertion exercises the minimizeTerm collapse. KNOWN coverage gap. Evidence last2.json."
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize NOTIFICATIONS\"] (class term-min) present+visible (last2.json). Held audited (downgraded from a stale perfected for consistency with the other minimize entries): the aria-label is shoot-covered but no assertion exercises the minimizeTerm collapse. KNOWN coverage gap. Evidence last2.json. [wave-3] Machine assertion test/window-minimize.test.js now guards the minimizeTerm collapse/restore round-trip (element kept alive + hidden not destroyed, geometry captured into termPos only when term-moved, placeTerm re-applies it on restore) plus the exported clampTerminalSize geometry primitive. Finding e9e4fab6 resolved. HELD audited: the finding itself flagged the live COLLAPSE behavior as never proven (only the aria render was shoot-covered) — a live collapse round-trip at HEAD is still owed before perfected."
     },
     {
       "id": "ui/system/aria-minimize-restore-points",
@@ -1217,6 +1229,10 @@
         {
           "kind": "shoot",
           "ref": "sys-rewind"
+        },
+        {
+          "kind": "test",
+          "ref": "test/window-minimize.test.js"
         }
       ],
       "status": "audited",
@@ -1232,41 +1248,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize RESTORE POINTS\"]",
       "state": "sys-rewind",
-      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize RESTORE POINTS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json."
-    },
-    {
-      "id": "ui/system/aria-minimize-session-tools",
-      "kind": "ui",
-      "area": "system",
-      "name": "Minimize SESSION TOOLS",
-      "purpose": "Minimize the SESSION TOOLS window to a dock strip chip (keeps it logically open).",
-      "promise": "Clicking it collapses the SESSION TOOLS window via minimizeTerm; the aria-label reads \"Minimize SESSION TOOLS\".",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "shoot",
-          "ref": "sys-sessiontools"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
-        "date": "2026-07-18T01:22:43.218Z"
-      },
-      "findings": [
-        "e9e4fab6"
-      ],
-      "firstSeen": "2026-07-18T00:54:02.719Z",
-      "lastSeen": "2026-07-18T00:54:02.719Z",
-      "missing": false,
-      "selector": "button[aria-label=\"Minimize SESSION TOOLS\"]",
-      "state": "sys-sessiontools",
-      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize SESSION TOOLS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json."
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize RESTORE POINTS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json. [wave-3] Machine assertion test/window-minimize.test.js now guards the minimizeTerm collapse/restore round-trip (element kept alive + hidden not destroyed, geometry captured into termPos only when term-moved, placeTerm re-applies it on restore) plus the exported clampTerminalSize geometry primitive. Finding e9e4fab6 resolved. HELD audited: the finding itself flagged the live COLLAPSE behavior as never proven (only the aria render was shoot-covered) — a live collapse round-trip at HEAD is still owed before perfected."
     },
     {
       "id": "ui/system/aria-minimize-settings",
@@ -1285,6 +1267,10 @@
         {
           "kind": "shoot",
           "ref": "sys-settings"
+        },
+        {
+          "kind": "test",
+          "ref": "test/window-minimize.test.js"
         }
       ],
       "status": "audited",
@@ -1300,7 +1286,7 @@
       "missing": false,
       "selector": "button[aria-label=\"Minimize SETTINGS\"]",
       "state": "sys-settings",
-      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize SETTINGS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json."
+      "notes": "Proven live @ HEAD 0a009ec2: button[aria-label=\"Minimize SETTINGS\"] (class term-min) present. Held audited: the shoot state proves the aria-label renders but no committed assertion (and the sweep CLOSE helper does not) exercises the minimizeTerm collapse. KNOWN coverage gap on the collapse behavior. Evidence union.json. [wave-3] Machine assertion test/window-minimize.test.js now guards the minimizeTerm collapse/restore round-trip (element kept alive + hidden not destroyed, geometry captured into termPos only when term-moved, placeTerm re-applies it on restore) plus the exported clampTerminalSize geometry primitive. Finding e9e4fab6 resolved. HELD audited: the finding itself flagged the live COLLAPSE behavior as never proven (only the aria render was shoot-covered) — a live collapse round-trip at HEAD is still owed before perfected."
     },
     {
       "id": "ui/system/aria-resize-channels",
@@ -3118,6 +3104,10 @@
         {
           "kind": "shoot",
           "ref": "sys-settings"
+        },
+        {
+          "kind": "test",
+          "ref": "test/nightshift-steer-ui.test.js"
         }
       ],
       "status": "audited",
@@ -3133,7 +3123,7 @@
       "missing": false,
       "selector": "#ns-report-btn",
       "state": "sys-settings",
-      "notes": "Proven live @ HEAD 0a009ec2: #ns-report-btn submit present in NIGHT SHIFT panel. Held audited: no committed test asserts the report fetch+render; only shoot-state presence. KNOWN coverage gap. Evidence settings-dump.json."
+      "notes": "Proven live @ HEAD 0a009ec2: #ns-report-btn submit present in NIGHT SHIFT panel. Held audited: no committed test asserts the report fetch+render; only shoot-state presence. KNOWN coverage gap. Evidence settings-dump.json. [wave-3] Machine assertion test/nightshift-steer-ui.test.js now guards the DOM half: a genuine NightReport.compose unit (empty night -> hasReport:false; an act -> a real headline) plus a source-lock of the #ns-steer.value->POST /api/nightshift/focus body wire, the CLEAR DELETE, and LAST REPORT's three-surface fetch+compose. The route contract stays covered by nightshift-focus.e2e. Finding bec0f139 resolved. HELD audited: the live type->POST->readout DOM round-trip was not driven at HEAD this pass (stationui.js moved since 0a009ec2)."
     },
     {
       "id": "ui/system/ns-steer",
@@ -3157,6 +3147,10 @@
         {
           "kind": "test",
           "ref": "test/nightshift-focus.e2e.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/nightshift-steer-ui.test.js"
         }
       ],
       "status": "audited",
@@ -3172,7 +3166,7 @@
       "missing": false,
       "selector": "#ns-steer",
       "state": "sys-settings",
-      "notes": "Proven live @ HEAD 0a009ec2: #ns-steer type=text, value='' present in NIGHT SHIFT panel. Held audited: the input->fetch-body wiring is proven live but not by a committed source-lock (the e2e drives the route directly, not the DOM input). KNOWN coverage gap. Evidence settings-dump.json."
+      "notes": "Proven live @ HEAD 0a009ec2: #ns-steer type=text, value='' present in NIGHT SHIFT panel. Held audited: the input->fetch-body wiring is proven live but not by a committed source-lock (the e2e drives the route directly, not the DOM input). KNOWN coverage gap. Evidence settings-dump.json. [wave-3] Machine assertion test/nightshift-steer-ui.test.js now guards the DOM half: a genuine NightReport.compose unit (empty night -> hasReport:false; an act -> a real headline) plus a source-lock of the #ns-steer.value->POST /api/nightshift/focus body wire, the CLEAR DELETE, and LAST REPORT's three-surface fetch+compose. The route contract stays covered by nightshift-focus.e2e. Finding bec0f139 resolved. HELD audited: the live type->POST->readout DOM round-trip was not driven at HEAD this pass (stationui.js moved since 0a009ec2)."
     },
     {
       "id": "ui/system/ns-steer-clear",
@@ -3233,6 +3227,10 @@
         {
           "kind": "shoot",
           "ref": "sys-settings"
+        },
+        {
+          "kind": "test",
+          "ref": "test/nightshift-steer-ui.test.js"
         }
       ],
       "status": "audited",
@@ -3248,7 +3246,7 @@
       "missing": false,
       "selector": "#ns-steer-set",
       "state": "sys-settings",
-      "notes": "Proven live @ HEAD 0a009ec2: #ns-steer-set submit present in NIGHT SHIFT panel. Backend contract asserted by nightshift-focus.e2e.test.js:249 (POST /api/nightshift/focus sets a durable steer reported as steer-sourced). Held audited: the DOM-click-fires-POST link was not driven live this session (only presence + committed route test). KNOWN. Evidence settings-dump.json."
+      "notes": "Proven live @ HEAD 0a009ec2: #ns-steer-set submit present in NIGHT SHIFT panel. Backend contract asserted by nightshift-focus.e2e.test.js:249 (POST /api/nightshift/focus sets a durable steer reported as steer-sourced). Held audited: the DOM-click-fires-POST link was not driven live this session (only presence + committed route test). KNOWN. Evidence settings-dump.json. [wave-3] Machine assertion test/nightshift-steer-ui.test.js now guards the DOM half: a genuine NightReport.compose unit (empty night -> hasReport:false; an act -> a real headline) plus a source-lock of the #ns-steer.value->POST /api/nightshift/focus body wire, the CLEAR DELETE, and LAST REPORT's three-surface fetch+compose. The route contract stays covered by nightshift-focus.e2e. Finding bec0f139 resolved. HELD audited: the live type->POST->readout DOM round-trip was not driven at HEAD this pass (stationui.js moved since 0a009ec2)."
     },
     {
       "id": "ui/system/ntp-crondigest",
@@ -4185,6 +4183,10 @@
         {
           "kind": "shoot",
           "ref": "sys-settings"
+        },
+        {
+          "kind": "test",
+          "ref": "test/theme-custom-phosphor.test.js"
         }
       ],
       "status": "audited",
@@ -4200,7 +4202,7 @@
       "missing": false,
       "selector": "#set-glow",
       "state": "sys-settings",
-      "notes": "Proven live @ HEAD 0a009ec2: #set-glow type=range min=0 max=150 value=100 present. Held audited: no committed behavior assertion (only shoot presence). KNOWN coverage gap. Evidence settings-dump.json."
+      "notes": "Proven live @ HEAD 0a009ec2: #set-glow type=range min=0 max=150 value=100 present. Held audited: no committed behavior assertion (only shoot presence). KNOWN coverage gap. Evidence settings-dump.json. [wave-3] Machine assertion test/theme-custom-phosphor.test.js now guards the CUSTOM phosphor seam: the pure deriveCustomTheme computation (extracted+exercised for real — hue/sat determinism, glow scales only the bloom vars, clamping) AND the persistence + theme-bezel-var trap (derived vars written on document.body, NOT :root; theme='custom' + themeHue/Sat/Glow persist to localStorage and re-derive on load). Finding d87c49c9 resolved. HELD audited (not perfected): the live drag->apply DOM round-trip was not re-driven at HEAD this pass and stationui.js moved since 0a009ec2 (derived-stale) — ready to promote on a live re-audit."
     },
     {
       "id": "ui/system/set-hue",
@@ -4219,6 +4221,10 @@
         {
           "kind": "shoot",
           "ref": "sys-settings"
+        },
+        {
+          "kind": "test",
+          "ref": "test/theme-custom-phosphor.test.js"
         }
       ],
       "status": "audited",
@@ -4234,7 +4240,7 @@
       "missing": false,
       "selector": "#set-hue",
       "state": "sys-settings",
-      "notes": "Proven live @ HEAD 0a009ec2: #set-hue type=range min=0 max=359 value=35 present. Held audited: dragging->persist behavior has no committed assertion (only shoot presence). KNOWN coverage gap. Evidence settings-dump.json."
+      "notes": "Proven live @ HEAD 0a009ec2: #set-hue type=range min=0 max=359 value=35 present. Held audited: dragging->persist behavior has no committed assertion (only shoot presence). KNOWN coverage gap. Evidence settings-dump.json. [wave-3] Machine assertion test/theme-custom-phosphor.test.js now guards the CUSTOM phosphor seam: the pure deriveCustomTheme computation (extracted+exercised for real — hue/sat determinism, glow scales only the bloom vars, clamping) AND the persistence + theme-bezel-var trap (derived vars written on document.body, NOT :root; theme='custom' + themeHue/Sat/Glow persist to localStorage and re-derive on load). Finding d87c49c9 resolved. HELD audited (not perfected): the live drag->apply DOM round-trip was not re-driven at HEAD this pass and stationui.js moved since 0a009ec2 (derived-stale) — ready to promote on a live re-audit."
     },
     {
       "id": "ui/system/set-sat",
@@ -4253,6 +4259,10 @@
         {
           "kind": "shoot",
           "ref": "sys-settings"
+        },
+        {
+          "kind": "test",
+          "ref": "test/theme-custom-phosphor.test.js"
         }
       ],
       "status": "audited",
@@ -4268,7 +4278,7 @@
       "missing": false,
       "selector": "#set-sat",
       "state": "sys-settings",
-      "notes": "Proven live @ HEAD 0a009ec2: #set-sat type=range value=100 present. Held audited: no committed behavior assertion (only shoot presence). KNOWN coverage gap. Evidence settings-dump.json."
+      "notes": "Proven live @ HEAD 0a009ec2: #set-sat type=range value=100 present. Held audited: no committed behavior assertion (only shoot presence). KNOWN coverage gap. Evidence settings-dump.json. [wave-3] Machine assertion test/theme-custom-phosphor.test.js now guards the CUSTOM phosphor seam: the pure deriveCustomTheme computation (extracted+exercised for real — hue/sat determinism, glow scales only the bloom vars, clamping) AND the persistence + theme-bezel-var trap (derived vars written on document.body, NOT :root; theme='custom' + themeHue/Sat/Glow persist to localStorage and re-derive on load). Finding d87c49c9 resolved. HELD audited (not perfected): the live drag->apply DOM round-trip was not re-driven at HEAD this pass and stationui.js moved since 0a009ec2 (derived-stale) — ready to promote on a live re-audit."
     },
     {
       "id": "ui/system/set-sound",
@@ -4323,6 +4333,10 @@
         {
           "kind": "shoot",
           "ref": "sys-settings"
+        },
+        {
+          "kind": "test",
+          "ref": "test/theme-custom-phosphor.test.js"
         }
       ],
       "status": "audited",
@@ -4338,7 +4352,7 @@
       "missing": false,
       "selector": "#set-theme-custom",
       "state": "sys-settings",
-      "notes": "Proven live @ HEAD 0a009ec2: #set-theme-custom present in APPEARANCE panel with derived --sw swatch. Held audited: no committed test asserts theme='custom' apply/persist; only shoot presence. KNOWN coverage gap. Evidence settings-dump.json."
+      "notes": "Proven live @ HEAD 0a009ec2: #set-theme-custom present in APPEARANCE panel with derived --sw swatch. Held audited: no committed test asserts theme='custom' apply/persist; only shoot presence. KNOWN coverage gap. Evidence settings-dump.json. [wave-3] Machine assertion test/theme-custom-phosphor.test.js now guards the CUSTOM phosphor seam: the pure deriveCustomTheme computation (extracted+exercised for real — hue/sat determinism, glow scales only the bloom vars, clamping) AND the persistence + theme-bezel-var trap (derived vars written on document.body, NOT :root; theme='custom' + themeHue/Sat/Glow persist to localStorage and re-derive on load). Finding d87c49c9 resolved. HELD audited (not perfected): the live drag->apply DOM round-trip was not re-driven at HEAD this pass and stationui.js moved since 0a009ec2 (derived-stale) — ready to promote on a live re-audit."
     },
     {
       "id": "ui/system/set-updates-auto",

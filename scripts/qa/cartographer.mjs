@@ -130,13 +130,29 @@ export function enumerateProps(catalog, hasRenderer) {
   });
 }
 
+// DATA-DRIVEN LIST AUTHORITY. Some surfaces render an UNBOUNDED, data-driven list of near-identical
+// rows from a warmed catalog (e.g. the COMMS model dock's #model-dock-list, whose rows come from the
+// live provider catalog). Enumerating one Atlas entry PER row is a lie: the rows are unjudgeable
+// individually and churn (missing/staleness) on every catalog refresh. The FIX is at the harvester —
+// any ANONYMOUS element (no id / data-term / aria-label, so it would otherwise get a positional
+// txt-fallback key) whose NEAREST id-bearing ancestor is a listed container collapses to ONE
+// deterministic representative key, so N rows dedup to a single entry. Keyed by that ancestor selector
+// ('#'+id) -> { key: the representative slug-key, label: a stable honest name for the collapsed row }.
+// Only anonymous descendants collapse: a row that carries its OWN id/data-term/aria-label is
+// individually judgeable and keeps its own key (the #id / [data-term] / aria branches win first).
+// ADD a container here ONLY when it exhibits the SAME pattern (unbounded, data-driven, identical rows).
+export const DATA_DRIVEN_LISTS = Object.freeze({
+  '#model-dock-list': { key: 'model-list-row', label: 'a model row in the model dock (data-driven from the provider catalog)' }
+});
+
 // Pure, browser-free MIRROR of ENUM_PROBE's key-assignment logic. Given an ordered list of node
 // descriptors { id?, dataTerm?, ariaLabel?, tag, txt, anc } (`anc` = '#'+id of the nearest
 // id-bearing ancestor, '' if none), it returns the SAME key each element would get in-page, using the
-// SAME precedence (#id > [data-term] > aria-label > txt:tag:anc:txt:n) and the SAME per-(tag,anc,txt)
-// ordinal bucket. This exists so the failure mode — a positional key that shifts under unrelated DOM
-// growth — can be locked in a Chrome-free unit test. It MUST stay byte-for-byte in step with the
-// ENUM_PROBE string in the CLI IO shell below (see the NOTE there).
+// SAME precedence (#id > [data-term] > aria-label > data-driven-list collapse > txt:tag:anc:txt:n) and
+// the SAME per-(tag,anc,txt) ordinal bucket. This exists so the failure modes — a positional key that
+// shifts under unrelated DOM growth, AND the over-harvest of a data-driven list — can be locked in a
+// Chrome-free unit test. It MUST stay byte-for-byte in step with the ENUM_PROBE string in the CLI IO
+// shell below (see the NOTE there).
 export function computeProbeKeys(nodes) {
   const bucket = new Map();
   return arr(nodes).map((el) => {
@@ -145,8 +161,12 @@ export function computeProbeKeys(nodes) {
     if (str(el.id)) return '#' + str(el.id);
     if (str(el.dataTerm)) return '[data-term=' + str(el.dataTerm) + ']';
     if (str(el.ariaLabel)) return 'aria:' + str(el.ariaLabel).slice(0, 40);
-    const txt = str(el.txt).trim().replace(/\s+/g, ' ').slice(0, 40);
     const anc = str(el.anc);
+    // DATA-DRIVEN LIST COLLAPSE: an anonymous row inside a listed container collapses to ONE
+    // representative key so an unbounded catalog list never enumerates as N per-row atlas entries.
+    const ddl = DATA_DRIVEN_LISTS[anc];
+    if (ddl) return str(ddl.key);
+    const txt = str(el.txt).trim().replace(/\s+/g, ' ').slice(0, 40);
     const bk = tag + '|' + anc + '|' + txt;
     const n = (bucket.get(bk) || 0) + 1; bucket.set(bk, n);
     return 'txt:' + tag + ':' + anc + ':' + txt + ':' + n;
@@ -713,11 +733,13 @@ if (INVOKED_DIRECTLY) {
   // global per-tag counter). Anchoring to the nearest id-bearing ancestor keeps the fallback key
   // stable under unrelated DOM growth elsewhere on the page; the ordinal disambiguates only true
   // same-labeled siblings. Dedup within a state by key.
-  //   NOTE: the txt-fallback formula here is mirrored, byte-for-byte, by the pure exported
-  //   `computeProbeKeys()` (used by test/qa-cartographer.test.js to lock the failure mode without a
-  //   browser). If you change the key shape below, change computeProbeKeys() to match.
+  //   NOTE: the key-assignment formula here (including the DATA-DRIVEN LIST collapse and the
+  //   txt-fallback) is mirrored, byte-for-byte, by the pure exported `computeProbeKeys()` +
+  //   `DATA_DRIVEN_LISTS` (used by test/qa-cartographer.test.js to lock the failure modes without a
+  //   browser). If you change the key shape OR the collapse map below, change those to match.
   const ENUM_PROBE = `(() => {
     const SEL = 'button, [role="button"], [role="menuitem"], [role="tab"], a[href], input, select, textarea, summary, [onclick], [data-term]';
+    const DDL = ${JSON.stringify(DATA_DRIVEN_LISTS)};   // anc('#'+id) -> { key, label }; injected from DATA_DRIVEN_LISTS (kept in step by that single source)
     const nodes = Array.from(document.querySelectorAll(SEL));
     const out = [];
     const seen = new Set();
@@ -725,23 +747,29 @@ if (INVOKED_DIRECTLY) {
     const txtBucket = new Map();   // (tag|anc|txt) -> ordinal; disambiguates only true same-labeled siblings
     for (const el of nodes) {
       const tag = el.tagName.toLowerCase();
-      let key = '', selector = '';
+      let key = '', selector = '', ddlLabel = '';
       if (el.id) { key = '#' + el.id; selector = '#' + cssEsc(el.id); }
       else if (el.getAttribute && el.getAttribute('data-term')) { const t = el.getAttribute('data-term'); key = '[data-term=' + t + ']'; selector = '[data-term="' + t + '"]'; }
       else if (el.getAttribute && el.getAttribute('aria-label')) { const a = el.getAttribute('aria-label'); key = 'aria:' + a.slice(0, 40); selector = tag + '[aria-label="' + a.replace(/"/g, '\\\\"') + '"]'; }
       else {
-        const txt = (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40);
         // nearest ancestor carrying an element id anchors the key so DOM growth elsewhere never shifts it.
         let anc = '';
         for (let p = el.parentElement; p; p = p.parentElement) { if (p.id) { anc = '#' + p.id; break; } }
-        const bk = tag + '|' + anc + '|' + txt;
-        const n = (txtBucket.get(bk) || 0) + 1; txtBucket.set(bk, n);
-        key = 'txt:' + tag + ':' + anc + ':' + txt + ':' + n;
-        selector = tag + (txt ? '' : '');   // best-effort; the session refines the selector
+        if (DDL[anc]) {
+          // DATA-DRIVEN LIST COLLAPSE: an anonymous row inside a listed container collapses to ONE
+          // representative entry (unbounded catalog rows must never enumerate as N per-row entries).
+          key = DDL[anc].key; ddlLabel = DDL[anc].label; selector = anc + ' ' + tag;
+        } else {
+          const txt = (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40);
+          const bk = tag + '|' + anc + '|' + txt;
+          const n = (txtBucket.get(bk) || 0) + 1; txtBucket.set(bk, n);
+          key = 'txt:' + tag + ':' + anc + ':' + txt + ':' + n;
+          selector = tag + (txt ? '' : '');   // best-effort; the session refines the selector
+        }
       }
       if (seen.has(key)) continue;
       seen.add(key);
-      const label = (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))) || (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 60) || tag;
+      const label = ddlLabel || (el.getAttribute && (el.getAttribute('aria-label') || el.getAttribute('title'))) || (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 60) || tag;
       let visible = false;
       try {
         const r = el.getBoundingClientRect();

@@ -1,6 +1,6 @@
 {
   "area": "props",
-  "updatedAt": "2026-07-18T02:15:26.725Z",
+  "updatedAt": "2026-07-18T04:06:15.100Z",
   "entries": [
     {
       "id": "prop/airlock",
@@ -384,20 +384,23 @@
         {
           "kind": "test",
           "ref": "qa-cartographer.test"
+        },
+        {
+          "kind": "test",
+          "ref": "test/capprop-map.contract.test.js",
+          "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:15:26.725Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:06:15.100Z"
       },
-      "findings": [
-        "e08db5b6"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (worldmodel.test, capgate.test, routing.b5.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6)."
+      "notes": "Every CAP_PROP_MAP prop id → registered CAP_REGISTRY objectType is now locked table-driven in test/capprop-map.contract.test.js (a dropped/renamed id fails BY NAME). Combined with the objectType-level gates (capgate/routing.b5) this closes the per-prop-id gap. Atlas finding e08db5b6 remediated."
     },
     {
       "id": "prop/bigscreen",
@@ -1137,20 +1140,23 @@
         {
           "kind": "test",
           "ref": "qa-cartographer.test"
+        },
+        {
+          "kind": "test",
+          "ref": "test/capprop-map.contract.test.js",
+          "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:15:26.725Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:06:15.100Z"
       },
-      "findings": [
-        "e08db5b6"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (worldmodel.test, capgate.test, routing.b5.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6)."
+      "notes": "Every CAP_PROP_MAP prop id → registered CAP_REGISTRY objectType is now locked table-driven in test/capprop-map.contract.test.js (a dropped/renamed id fails BY NAME). Combined with the objectType-level gates (capgate/routing.b5) this closes the per-prop-id gap. Atlas finding e08db5b6 remediated."
     },
     {
       "id": "prop/consolel",
@@ -1234,20 +1240,23 @@
         {
           "kind": "test",
           "ref": "qa-cartographer.test"
+        },
+        {
+          "kind": "test",
+          "ref": "test/capprop-map.contract.test.js",
+          "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:15:26.725Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:06:15.100Z"
       },
-      "findings": [
-        "e08db5b6"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (capgate.test, routing.b5.test, toolprops.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6)."
+      "notes": "Every CAP_PROP_MAP prop id → registered CAP_REGISTRY objectType is now locked table-driven in test/capprop-map.contract.test.js (a dropped/renamed id fails BY NAME). Combined with the objectType-level gates (capgate/routing.b5) this closes the per-prop-id gap. Atlas finding e08db5b6 remediated."
     },
     {
       "id": "prop/couch",
@@ -1408,20 +1417,23 @@
         {
           "kind": "test",
           "ref": "qa-cartographer.test"
+        },
+        {
+          "kind": "test",
+          "ref": "test/capprop-map.contract.test.js",
+          "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:15:26.725Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:06:15.100Z"
       },
-      "findings": [
-        "e08db5b6"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (worldmodel.test, capgate.test, routing.b5.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6)."
+      "notes": "Every CAP_PROP_MAP prop id → registered CAP_REGISTRY objectType is now locked table-driven in test/capprop-map.contract.test.js (a dropped/renamed id fails BY NAME). Combined with the objectType-level gates (capgate/routing.b5) this closes the per-prop-id gap. Atlas finding e08db5b6 remediated."
     },
     {
       "id": "prop/djbooth",
@@ -2016,6 +2028,11 @@
         {
           "kind": "test",
           "ref": "qa-cartographer.test"
+        },
+        {
+          "kind": "test",
+          "ref": "test/capprop-map.contract.test.js",
+          "gate": "test:fast"
         }
       ],
       "status": "audited",
@@ -2024,13 +2041,12 @@
         "date": "2026-07-18T02:15:26.725Z"
       },
       "findings": [
-        "818768f7",
-        "e08db5b6"
+        "818768f7"
       ],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (toolprops.test, propanchor.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6)."
+      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (toolprops.test, propanchor.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6). CAP_PROP_MAP per-prop-id lock added (test/capprop-map.contract.test.js); finding e08db5b6 remediated. Stays audited: separate finding 818768f7 remains open."
     },
     {
       "id": "prop/merger",
@@ -2223,20 +2239,23 @@
         {
           "kind": "test",
           "ref": "qa-cartographer.test"
+        },
+        {
+          "kind": "test",
+          "ref": "test/capprop-map.contract.test.js",
+          "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:15:26.725Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:06:15.100Z"
       },
-      "findings": [
-        "e08db5b6"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (worldmodel.test, capgate.test, routing.b5.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6)."
+      "notes": "Every CAP_PROP_MAP prop id → registered CAP_REGISTRY objectType is now locked table-driven in test/capprop-map.contract.test.js (a dropped/renamed id fails BY NAME). Combined with the objectType-level gates (capgate/routing.b5) this closes the per-prop-id gap. Atlas finding e08db5b6 remediated."
     },
     {
       "id": "prop/plant",
@@ -2595,20 +2614,23 @@
         {
           "kind": "test",
           "ref": "qa-cartographer.test"
+        },
+        {
+          "kind": "test",
+          "ref": "test/capprop-map.contract.test.js",
+          "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:15:26.725Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:06:15.100Z"
       },
-      "findings": [
-        "e08db5b6"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (capgate.test, routing.b5.test, toolprops.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6)."
+      "notes": "Every CAP_PROP_MAP prop id → registered CAP_REGISTRY objectType is now locked table-driven in test/capprop-map.contract.test.js (a dropped/renamed id fails BY NAME). Combined with the objectType-level gates (capgate/routing.b5) this closes the per-prop-id gap. Atlas finding e08db5b6 remediated."
     },
     {
       "id": "prop/rackv",
@@ -2863,20 +2885,23 @@
         {
           "kind": "test",
           "ref": "qa-cartographer.test"
+        },
+        {
+          "kind": "test",
+          "ref": "test/capprop-map.contract.test.js",
+          "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:15:26.725Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:06:15.100Z"
       },
-      "findings": [
-        "e08db5b6"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (capgate.test, routing.b5.test, toolprops.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6)."
+      "notes": "Every CAP_PROP_MAP prop id → registered CAP_REGISTRY objectType is now locked table-driven in test/capprop-map.contract.test.js (a dropped/renamed id fails BY NAME). Combined with the objectType-level gates (capgate/routing.b5) this closes the per-prop-id gap. Atlas finding e08db5b6 remediated."
     },
     {
       "id": "prop/screens",
@@ -2947,20 +2972,23 @@
         {
           "kind": "test",
           "ref": "qa-cartographer.test"
+        },
+        {
+          "kind": "test",
+          "ref": "test/capprop-map.contract.test.js",
+          "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:15:26.725Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:06:15.100Z"
       },
-      "findings": [
-        "e08db5b6"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (capgate.test, routing.b5.test, toolprops.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6)."
+      "notes": "Every CAP_PROP_MAP prop id → registered CAP_REGISTRY objectType is now locked table-driven in test/capprop-map.contract.test.js (a dropped/renamed id fails BY NAME). Combined with the objectType-level gates (capgate/routing.b5) this closes the per-prop-id gap. Atlas finding e08db5b6 remediated."
     },
     {
       "id": "prop/speaker",
@@ -3486,20 +3514,23 @@
         {
           "kind": "test",
           "ref": "qa-cartographer.test"
+        },
+        {
+          "kind": "test",
+          "ref": "test/capprop-map.contract.test.js",
+          "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:15:26.725Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:06:15.100Z"
       },
-      "findings": [
-        "e08db5b6"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (capgate.test, routing.b5.test, toolprops.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6)."
+      "notes": "Every CAP_PROP_MAP prop id → registered CAP_REGISTRY objectType is now locked table-driven in test/capprop-map.contract.test.js (a dropped/renamed id fails BY NAME). Combined with the objectType-level gates (capgate/routing.b5) this closes the per-prop-id gap. Atlas finding e08db5b6 remediated."
     },
     {
       "id": "prop/war-intelcab",
@@ -3723,20 +3754,23 @@
         {
           "kind": "test",
           "ref": "qa-cartographer.test"
+        },
+        {
+          "kind": "test",
+          "ref": "test/capprop-map.contract.test.js",
+          "gate": "test:fast"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
-        "date": "2026-07-18T02:15:26.725Z"
+        "sha": "c3ec18964ddfaa94b093be20f01139dbc7ceac69",
+        "date": "2026-07-18T04:06:15.100Z"
       },
-      "findings": [
-        "e08db5b6"
-      ],
+      "findings": [],
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (capgate.test, toolprops.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6)."
+      "notes": "Every CAP_PROP_MAP prop id → registered CAP_REGISTRY objectType is now locked table-driven in test/capprop-map.contract.test.js (a dropped/renamed id fails BY NAME). Combined with the objectType-level gates (capgate/routing.b5) this closes the per-prop-id gap. Atlas finding e08db5b6 remediated."
     }
   ]
 }
