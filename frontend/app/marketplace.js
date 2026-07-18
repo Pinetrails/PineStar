@@ -51,6 +51,13 @@ const Marketplace = (() => {
   let buildKit = [], buildSkills = [], buildEffort = null;   // the custom-class builder's picked loadout (Class Loadouts S3)
   let buildDraft = null;            // Slice 4: a station-drafted prospect pre-filling the builder (name/tagline/purpose/manual/emoji)
   let acceptingProspectId = null;   // Slice 4: the prospect id being reviewed → removed from staging on a successful CREATE
+  // ---- IMPORT AGENT (Hermes / OpenClaw migration) — the view='harnessImport' flow's working state ----
+  // importStep: 'detect' (list found installs / PICK FOLDER) → 'preview' (the dossier-style scan card).
+  // importFound = the /api/harness/detect list (null until the detect call lands, [] = nothing found).
+  // importScan = the /api/harness/scan result being previewed; importOrigin = { harness, root } that produced it.
+  // All strings shown come straight from the scan (truthful telemetry) — no invented placeholders.
+  let importStep = 'detect', importFound = null, importDetecting = false, importScanning = false;
+  let importScan = null, importOrigin = null, importName = '', importErr = '';
 
   const hasRecipes = () => typeof Recipes !== 'undefined';
   const hasIcons = () => typeof ClassIcons !== 'undefined';
@@ -192,6 +199,8 @@ const Marketplace = (() => {
     ctx = context || {};
     view = 'grid'; editingId = null; editingRecipeId = null; launchId = null; pendingMintKey = null; pendingMintTemplate = null; pendingScoutRecipeId = null; scoutSeedDraft = null;
     editForkedFrom = null; editSourceRunId = null;
+    importStep = 'detect'; importFound = null; importDetecting = false; importScanning = false;
+    importScan = null; importOrigin = null; importName = ''; importErr = '';
     laneFilter = 'all'; catFilter = 'all'; query = '';
     lastDecodedHero = null;   // a fresh bay open replays the hero decode beat once
     // SCOUT: re-read server truth on open (fresh drafts/interests land) and push the browser-only dedup context.
@@ -382,6 +391,12 @@ const Marketplace = (() => {
       let rail = lane('all', 'ALL') + lane('code', 'CODE') + lane('research', 'RESEARCH') + lane('general', 'OPS');
       if (customs.length) rail += lane('mine', 'MINE');
       html += '<span class="mkt-lanes-lbl">FILTER</span><div class="mkt-lanes">' + rail + '</div>';
+      // IMPORT AGENT: the one-click migration door from OpenClaw / Hermes. Only meaningful when the bay can MINT a
+      // new agent (summon/pick mode carries ctx.onPick) — a deploy-only bay has no agent to create. Mirrors the
+      // recipes-tab ⇪ IMPORT control's look (mkt-import pushes it to the right; bb sm is the shared button chrome).
+      if (ctx && ctx.onPick) {
+        html += '<button class="mkt-import mkt-import-agent bb sm" title="bring an agent over from OpenClaw or Hermes">⇪ IMPORT AGENT</button>';
+      }
     }
     bar.innerHTML = html;
     // per-tab search placeholder (audit item 8): name what "search" actually spans on this tab.
@@ -405,6 +420,8 @@ const Marketplace = (() => {
       catFilter = next; sfx('click'); renderBar(); renderStage();
       const again = root.querySelector('.mkt-lane[data-cat="' + next + '"]'); if (again) again.focus();
     }));
+    const impAgent = bar.querySelector('.mkt-import-agent');
+    if (impAgent) impAgent.addEventListener('click', () => { sfx('click'); enterHarnessImport(); });
     wireImport(bar);
   }
   function syncSub() { const s = root && root.querySelector('#mkt-sub'); if (s) s.textContent = subtitle(); }
@@ -420,13 +437,14 @@ const Marketplace = (() => {
   /* ---------- stage: two-pane (roster + dossier) OR a full-width form ---------- */
   function renderStage() {
     const stage = root && root.querySelector('#mkt-stage'); if (!stage) return;
-    if (view === 'save' || view === 'recipesave' || view === 'launch' || view === 'build') {
+    if (view === 'save' || view === 'recipesave' || view === 'launch' || view === 'build' || view === 'harnessImport') {
       stage.className = 'mkt-stage form';
       stage.innerHTML = view === 'save' ? saveFormHTML() : view === 'recipesave' ? recipeSaveFormHTML()
-        : view === 'build' ? buildFormHTML() : launchFormHTML();
+        : view === 'build' ? buildFormHTML() : view === 'harnessImport' ? harnessImportHTML() : launchFormHTML();
       if (view === 'save') wireSaveForm(stage);
       else if (view === 'recipesave') wireRecipeSaveForm(stage);
       else if (view === 'build') wireBuildForm(stage);
+      else if (view === 'harnessImport') wireHarnessImport(stage);
       else wireLaunchForm(stage);
       return;
     }
@@ -1787,6 +1805,238 @@ const Marketplace = (() => {
       reader.onerror = () => { sfx('bad'); note('could not read that file', 'bad'); };
       reader.readAsText(f);
     });
+  }
+
+  /* ---------- IMPORT AGENT — the Hermes / OpenClaw migration flow ----------
+     A one-click path for a Commander arriving from OpenClaw or hermes-agent: detect installs (or pick a folder),
+     preview exactly what the scan found, then RECRUIT mints a StarNet agent with the persona/orders/memory
+     pre-filled. Every field shown comes straight from /api/harness/scan — nothing is invented (truthful telemetry).
+     Keys are NEVER read or transferred; the preview says so and the KEYS tab is where the Commander re-enters them.
+     Backend routes (built in parallel this session): POST /api/harness/detect, POST /api/harness/scan. The folder
+     fallback reuses the existing POST /api/projects/pickfolder. If a route is missing the flow degrades to an honest
+     empty/error state — it never fakes a detection or a scan. */
+  const up = s => String(s == null ? '' : s).toUpperCase();
+  // Is this scan's provider a StarNet provider id we can actually pin to? ModelDock.normalizeProvider maps every
+  // known alias to its canonical id and buckets anything unknown into 'openrouter' — so 'openrouter' only counts
+  // when the raw string literally names it, otherwise an unknown provider would be silently mis-pinned. Returns the
+  // canonical id or null (→ no pin; the station's default model runs instead). No ModelDock → null (honest: can't verify).
+  function recognizeProvider(raw) {
+    const r = String(raw || '').trim().toLowerCase();
+    if (!r || typeof ModelDock === 'undefined' || !ModelDock.normalizeProvider) return null;
+    const norm = ModelDock.normalizeProvider(r);
+    if (norm === 'openrouter' && !/^open[\s_-]?router$/.test(r)) return null;
+    return norm;
+  }
+  // enter the flow: reset to the detect step and kick the machine scan.
+  function enterHarnessImport() {
+    view = 'harnessImport'; importStep = 'detect';
+    importFound = null; importScan = null; importOrigin = null; importErr = ''; importScanning = false; importName = '';
+    renderStage();
+    runDetect();
+  }
+  function runDetect() {
+    importDetecting = true;
+    fetch('/api/harness/detect', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      .then(r => r.ok ? r.json() : { ok: false, found: [] })
+      .then(d => { importDetecting = false; importFound = (d && d.ok && Array.isArray(d.found)) ? d.found : []; if (view === 'harnessImport' && importStep === 'detect') renderStage(); })
+      .catch(() => { importDetecting = false; importFound = []; if (view === 'harnessImport' && importStep === 'detect') renderStage(); });
+  }
+  // scan a folder as each harness in `harnesses` (in order), stopping at the first ok:true. A detected row passes a
+  // single known harness; PICK FOLDER passes ['openclaw','hermes'] (try both). On ok:true → preview step; on total
+  // miss → the last honest reason inline.
+  function scanHarness(rootPath, harnesses) {
+    importScanning = true; importErr = ''; renderStage();
+    let lastReason = '';
+    const tryOne = i => {
+      if (i >= harnesses.length) {
+        importScanning = false;
+        importErr = lastReason || 'no OpenClaw or Hermes agent found in that folder';
+        if (view === 'harnessImport') renderStage();
+        return;
+      }
+      fetch('/api/harness/scan', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ harness: harnesses[i], root: rootPath }) })
+        .then(r => r.ok ? r.json() : { ok: false, reason: 'scan failed (http ' + r.status + ')' })
+        .then(res => {
+          if (res && res.ok) {
+            importScanning = false; importScan = res;
+            importOrigin = { harness: res.harness || harnesses[i], root: rootPath };
+            importName = String(res.name || '').trim();
+            importStep = 'preview';
+            if (view === 'harnessImport') renderStage();
+          } else { lastReason = (res && res.reason) || 'no agent found'; tryOne(i + 1); }
+        })
+        .catch(() => { lastReason = 'scan request failed'; tryOne(i + 1); });
+    };
+    tryOne(0);
+  }
+  // the first non-heading, non-rule line of the persona, clamped — the honest one-line "what it's for". Neutral
+  // default when the persona is empty/all-headings so the agent still lands with a real (if generic) purpose.
+  function derivePurpose(persona, harnessLabel) {
+    const lines = String(persona || '').split(/\r?\n/);
+    for (const raw of lines) {
+      const t = raw.trim();
+      if (!t || /^#+\s*$/.test(t) || /^[-*=_]{2,}$/.test(t)) continue;
+      let p = t.replace(/^#+\s*/, '').replace(/^[-*]\s+/, '').trim();
+      if (!p) continue;
+      if (p.length > 140) p = p.slice(0, 139).replace(/\s+\S*$/, '') + '…';
+      return p;
+    }
+    return 'Imported from ' + up(harnessLabel) + ' — tell it what you need.';
+  }
+  // context.md body: the harness USER.md + the curated memory, each under a labeled header so the agent knows the
+  // provenance. Only present sources are included (truthful telemetry). Scan pre-clamps every string server-side;
+  // a defensive overall cap keeps a pathological payload from bloating the composed prompt.
+  function buildContextDoc(s, harnessLabel) {
+    const H = up(harnessLabel);
+    const parts = [];
+    const uc = String((s && s.userContext) || '').trim();
+    const mem = String((s && s.memory && s.memory.curated) || '').trim();
+    if (uc) parts.push('## From ' + H + ' USER.md\n' + uc);
+    if (mem) parts.push('## Curated memory — from ' + H + '\n' + mem);
+    let doc = parts.join('\n\n');
+    if (doc.length > 8000) doc = doc.slice(0, 8000);
+    return doc;
+  }
+  function harnessImportHTML() {
+    return importStep === 'preview' ? harnessPreviewHTML() : harnessDetectHTML();
+  }
+  function harnessDetectHTML() {
+    let rows;
+    if (importDetecting || importFound == null) {
+      rows = '<p class="mkt-hint">◌ scanning this machine for OpenClaw / Hermes installs…</p>';
+    } else if ((importFound || []).length) {
+      rows = importFound.map((f, i) => {
+        // the backend label already reads "OpenClaw — main" / "Hermes — profile X"; fall back to the bare harness id.
+        const label = up(f.label || f.harness);
+        return '<button type="button" class="mkt-imp-row" data-idx="' + i + '">' +
+          '<span class="mkt-imp-row-h">' + esc(label) + '</span>' +
+          '<span class="mkt-imp-row-path">' + esc(f.root || '') + '</span></button>';
+      }).join('');
+    } else {
+      rows = '<div class="mkt-empty">no Hermes or OpenClaw install detected on this machine — pick a folder to import from instead.</div>';
+    }
+    const pick = '<button type="button" class="mkt-imp-row mkt-imp-pick">' +
+      '<span class="mkt-imp-row-h">▸ PICK FOLDER…</span>' +
+      '<span class="mkt-imp-row-path">choose an OpenClaw / Hermes agent folder</span></button>';
+    const scanning = importScanning ? '<p class="mkt-hint">◌ reading the agent…</p>' : '';
+    const err = importErr ? '<div class="mkt-r-warn">⚠ ' + esc(importErr) + '</div>' : '';
+    return '<div class="mkt-save mkt-imp">' +
+      '<div class="mkt-save-h">⇪ IMPORT AGENT</div>' +
+      '<p class="mkt-hint">bring an agent over from OpenClaw or Hermes — its persona, standing orders and memory come with it. keys never transfer.</p>' +
+      '<div class="mkt-imp-rows">' + rows + pick + '</div>' +
+      scanning + err +
+      '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button></div>' +
+    '</div>';
+  }
+  function harnessPreviewHTML() {
+    const s = importScan || {};
+    const H = up(s.harness || (importOrigin && importOrigin.harness) || 'harness');
+    const rootPath = (importOrigin && importOrigin.root) || '';
+    const persona = String(s.persona || '').trim();
+    const excerpt = persona
+      ? esc(persona.slice(0, 400)) + (persona.length > 400 ? '…' : '')
+      : '<span class="mkt-imp-dim">no persona text found</span>';
+    const mem = s.memory || {};
+    const memChars = String(mem.curated || '').length;
+    const dailyCount = +mem.dailyCount || 0;
+    const dash = '<span class="mkt-imp-dim">—</span>';
+    const t = (k, v) => '<div class="mkt-imp-t"><span class="mkt-imp-t-k">' + k + '</span><span class="mkt-imp-t-v">' + v + '</span></div>';
+    let transfers =
+      t('INSTRUCTIONS', String(s.instructions || '').trim() ? 'present' : dash) +
+      t('USER CONTEXT', String(s.userContext || '').trim() ? 'present' : dash) +
+      t('MEMORY', (memChars || dailyCount) ? (memChars + ' chars curated · ' + dailyCount + ' daily') : '<span class="mkt-imp-dim">none</span>');
+    // MODEL: a recognized StarNet provider becomes the agent's pin; anything else shows the raw string with an
+    // honest note that the station default runs instead (no pin is set).
+    const m = s.model || {};
+    const rec = recognizeProvider(m.provider);
+    if (rec) {
+      const lbl = (typeof ModelDock !== 'undefined' && ModelDock.providerLabel) ? ModelDock.providerLabel(rec) : up(rec);
+      transfers += t('MODEL', esc(lbl) + ' · ' + esc(String(m.model || m.raw || '')));
+    } else {
+      transfers += t('MODEL', esc(String(m.raw || 'unknown')) + ' <span class="mkt-imp-dim">— unrecognized here; station default model will be used</span>');
+    }
+    // warnings: render every entry the scan returned verbatim, and ALWAYS state the keys-never-transfer truth
+    // (added only if the scan didn't already say it).
+    const warns = Array.isArray(s.warnings) ? s.warnings.slice() : [];
+    if (!warns.some(w => /key/i.test(w) && /transfer/i.test(w))) warns.push('keys never transfer — re-enter them in the KEYS tab');
+    const warnHTML = warns.map(w => '<div class="mkt-r-warn dim">⚠ ' + esc(w) + '</div>').join('');
+    return '<div class="mkt-save mkt-imp mkt-imp-preview">' +
+      '<div class="mkt-save-h">⇪ IMPORT — ' + esc(s.name || H) + '</div>' +
+      '<label class="mkt-lbl">NAME<input class="mkt-in" id="mkt-imp-name" type="text" autocomplete="off" spellcheck="false" value="' + esc(importName || s.name || '') + '"></label>' +
+      '<div class="mkt-imp-origin">' + esc(H) + ' · <span class="mkt-imp-row-path">' + esc(rootPath) + '</span></div>' +
+      '<div class="mkt-imp-sect">PERSONA</div><div class="mkt-imp-persona">' + excerpt + '</div>' +
+      '<div class="mkt-imp-sect">WHAT TRANSFERS</div><div class="mkt-imp-transfers">' + transfers + '</div>' +
+      warnHTML +
+      '<div class="mkt-save-acts"><button class="bb sm mkt-cancel">‹ BACK</button>' +
+        '<button class="bb sm mkt-imp-recruit">▸ RECRUIT</button></div>' +
+    '</div>';
+  }
+  function wireHarnessImport(stage) {
+    const back = stage.querySelector('.mkt-cancel');
+    if (back) back.addEventListener('click', () => {
+      sfx('click');
+      // preview BACK steps to detect (never discards the whole flow); detect BACK returns to the roster.
+      if (importStep === 'preview') { importStep = 'detect'; importScan = null; importOrigin = null; importErr = ''; renderStage(); }
+      else { view = 'grid'; renderStage(); }
+    });
+    stage.querySelectorAll('.mkt-imp-row[data-idx]').forEach(b => b.addEventListener('click', () => {
+      const f = (importFound || [])[+b.dataset.idx]; if (!f) return;
+      sfx('click'); scanHarness(f.root, [f.harness]);
+    }));
+    const pick = stage.querySelector('.mkt-imp-pick');
+    if (pick) pick.addEventListener('click', () => {
+      sfx('click'); importErr = ''; importScanning = true; renderStage();
+      fetch('/api/projects/pickfolder', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+        .then(r => r.ok ? r.json() : { ok: false })
+        .then(d => {
+          if (d && d.ok && d.path) scanHarness(d.path, ['openclaw', 'hermes']);
+          else { importScanning = false; if (view === 'harnessImport') renderStage(); }   // cancelled → quietly stay on detect
+        })
+        .catch(() => { importScanning = false; importErr = 'could not open the folder picker'; if (view === 'harnessImport') renderStage(); });
+    });
+    const recruit = stage.querySelector('.mkt-imp-recruit');
+    if (recruit) recruit.addEventListener('click', confirmImport);
+  }
+  // RECRUIT: mint the agent through the real summon seam (ctx.onPick === App.summonAgent), then write its docs
+  // through the canonical dossier editor seam (App.applyConfig, exactly what the CONFIG card's Save uses —
+  // recompose + persist + pushRoster). Construction-time fields (name/skin/model pin) ride the summon spec because
+  // summonAgent bakes them in at creation; the markdown docs go through applyConfig on the freshly-focused new
+  // agent (summon with activate:true focuses it), so we reuse the one docs write-path instead of inventing another.
+  // The persona is APPENDED under a labeled header beneath the station's own baseIdentity — replacing identity
+  // wholesale would strip the locked real-tools/honesty grounding, so we preserve it and add the imported voice.
+  function confirmImport() {
+    if (!importScan || !(ctx && ctx.onPick)) { close(); return; }
+    const s = importScan;
+    const harnessLabel = s.harness || (importOrigin && importOrigin.harness) || 'harness';
+    const nameIn = root && root.querySelector('#mkt-imp-name');
+    const editedName = (nameIn && nameIn.value) || importName || s.name || '';
+    const m = s.model || {};
+    const rec = recognizeProvider(m.provider);
+    const modelId = String(m.model || m.raw || '').trim();
+    const modelPin = (rec && modelId) ? { model: modelId, provider: rec, effort: '' } : null;
+    const spec = {
+      name: s.name || harnessLabel,
+      agentName: editedName,
+      skin: (typeof DATA !== 'undefined' && DATA.DEFAULT_SKIN) || undefined,
+      modelPin: modelPin
+    };
+    sfx('click');
+    const created = ctx.onPick(spec, { activate: true });
+    try {
+      const cur = (typeof App !== 'undefined' && App.currentAgent) ? App.currentAgent() : null;
+      if (created && cur && cur.id === created.id && typeof App !== 'undefined' && App.applyConfig) {
+        const baseId = (created.docs && created.docs.identity) || '';
+        const persona = String(s.persona || '').trim();
+        const identity = persona ? (baseId + '\n\n## IMPORTED PERSONA — from ' + up(harnessLabel) + '\n' + persona) : baseId;
+        App.applyConfig({
+          identity: identity,
+          manual: String(s.instructions || '').trim(),
+          context: buildContextDoc(s, harnessLabel),
+          purpose: derivePurpose(s.persona, harnessLabel)
+        });
+      }
+    } catch (_) {}
+    close();
   }
 
   /* ---------- launch a recipe ---------- */
