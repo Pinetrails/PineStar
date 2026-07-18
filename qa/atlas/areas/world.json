@@ -1,6 +1,6 @@
 {
   "area": "world",
-  "updatedAt": "2026-07-18T02:18:21.743Z",
+  "updatedAt": "2026-07-18T02:26:14.507Z",
   "entries": [
     {
       "id": "state/ingame",
@@ -33,39 +33,6 @@
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "notes": "Live-proven 2026-07-07T22:17:15.768Z (port 8968/CDP 9368): the seeded station loaded directly into the ingame state (376 model rows, dock tiles, widget rails all present). states.mjs:83 name:ingame drive:closeOnly. This IS the state every other world entry was harvested under."
-    },
-    {
-      "id": "ui/world/adv-toggle",
-      "kind": "ui",
-      "area": "world",
-      "name": "▸ fine-tune the voice — dials & your own words (optional)",
-      "purpose": "The \"fine-tune the voice\" progressive-disclosure toggle that reveals the trait dials + free-text voice box on the connect screen.",
-      "promise": "Collapsed by default (aria-expanded=false, caret ▸); clicking reveals #adv-body (caret ▾, aria-expanded=true) and clicking again collapses it — pure disclosure, no behaviour change (inputs stay in the DOM so onWake reads them either way).",
-      "wiring": {
-        "files": [
-          "frontend/index.html",
-          "frontend/app/app.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "known",
-          "ref": "no-machine-assertion"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.402Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "#adv-toggle",
-      "state": "ingame",
-      "notes": "Live-proven cold boot — before {expanded:false,bodyHidden:true}, after click {expanded:true,bodyHidden:false,caret:▾}, re-click collapses. app.js setAdvanced/wireAdvancedToggle (1635-1647). KNOWN: no journey/test asserts this DOM toggle; candidate for a beginner-run sub-step. Evidence cold.json#probes.advToggle."
     },
     {
       "id": "ui/world/aria-add-a-widget-to-this-rail",
@@ -1707,8 +1674,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:16:20.560Z"
+        "sha": "bdcf5063d7182b466191408a50d21db2025775af",
+        "date": "2026-07-18T02:21:54.693Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1716,7 +1683,7 @@
       "missing": false,
       "selector": "#model-dock-refresh",
       "state": "ingame",
-      "notes": "Present + wired (modeldock.js:676 refresh.onclick→fetchModels(true)); label \"REFRESH\" live 2026-07-07T22:16:20.560Z. Audited (not perfected: force-refetch network effect not asserted by a test)."
+      "notes": "Live @ HEAD: #model-dock-refresh visible (label 'REFRESH'), click threw no error. AUDITED: the provider refetch effect is not cleanly observable under the placeholder-key seed; guarded by modelpicker.test.js."
     },
     {
       "id": "ui/world/model-dock-search",
@@ -1741,8 +1708,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:16:20.560Z"
+        "sha": "bdcf5063d7182b466191408a50d21db2025775af",
+        "date": "2026-07-18T02:21:54.693Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -1750,7 +1717,7 @@
       "missing": false,
       "selector": "#model-dock-search",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T22:16:20.560Z (port 8968): typing \"opus\" filtered 376→10 rows. renderList() reads #model-dock-search value (modeldock.js:421-427); wired at :675. Evidence dock-chrome.json."
+      "notes": "Live @ HEAD: typing 'claude' into #model-dock-search filtered the dock list 382 -> 31 buttons; clearing restored. Seam modeldock.js, covered by modelpicker.test.js."
     },
     {
       "id": "ui/world/model-dock-settings",
@@ -1775,8 +1742,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:16:20.560Z"
+        "sha": "bdcf5063d7182b466191408a50d21db2025775af",
+        "date": "2026-07-18T02:21:54.693Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1784,7 +1751,7 @@
       "missing": false,
       "selector": "#model-dock-settings",
       "state": "ingame",
-      "notes": "Present + wired (modeldock.js:677→openSettings→clicks settings bb); label \"SETTINGS\" live 2026-07-07T22:16:20.560Z. Audited (not perfected: Settings-open not asserted by a test)."
+      "notes": "Live @ HEAD: #model-dock-settings visible (label 'SETTINGS'), wired to open the SETTINGS term. AUDITED: open-effect not isolated live (SETTINGS term already open from an earlier batch during this session); guarded by modelpicker.test.js."
     },
     {
       "id": "ui/world/model-dock-toggle",
@@ -1809,8 +1776,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "bdcf5063d7182b466191408a50d21db2025775af",
+        "date": "2026-07-18T02:21:54.693Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -1818,7 +1785,7 @@
       "missing": false,
       "selector": "#model-dock-toggle",
       "state": "ingame",
-      "notes": "Live: chip \"MED\"; click → aria-expanded=true, dock shows current-model \"claude haiku 4.5\", provider OPENROUTER, 388 catalog rows, efforts [OFF,MIN,LOW,MED,HIGH,XHIGH,MAX] with MED aria-selected/.sel (.uiatlas/world2-evidence/comms-composer-probe.txt, model-dock-toggle-after + reason-efforts). Persistence (setAgentModelPin 4-arg effort, per-agent) asserted by agent-model-select.test.js:33-47,72-73."
+      "notes": "Live @ HEAD: #model-dock-toggle (title 'Model selector') click opened #model-dock (visible); 382 model buttons rendered. Seam modeldock.js."
     },
     {
       "id": "ui/world/nav-coach-x",
@@ -1893,146 +1860,6 @@
       "missing": false,
       "selector": "#sp-press",
       "state": "ingame"
-    },
-    {
-      "id": "ui/world/txt-button-aionlabs-aion-1-0-minimed-40",
-      "kind": "ui",
-      "area": "world",
-      "name": "aion-labs/aion-1.0-mini",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"aion-labs/aion-1.0-mini\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.402Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-aionlabs-aion-1-0med-39",
-      "kind": "ui",
-      "area": "world",
-      "name": "aion-labs/aion-1.0",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"aion-labs/aion-1.0\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.402Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-arcee-ai-coder-largeoff-65",
-      "kind": "ui",
-      "area": "world",
-      "name": "arcee-ai/coder-large",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"arcee-ai/coder-large\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.403Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-arcee-ai-trinity-minimed-67",
-      "kind": "ui",
-      "area": "world",
-      "name": "arcee-ai/trinity-mini",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"arcee-ai/trinity-mini\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.403Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
     },
     {
       "id": "ui/world/txt-button-bottombar-build-1",
@@ -2225,317 +2052,6 @@
       "state": "ingame"
     },
     {
-      "id": "ui/world/txt-button-chatgpt-no-key-1",
-      "kind": "ui",
-      "area": "world",
-      "name": "CHATGPT — NO KEY",
-      "purpose": "duplicate harvest of the model-dock no-key warning (a provider-specific \"<PROVIDER> — NO KEY\" variant of the ADD IN SETTINGS chip).",
-      "promise": "Same contract as ui/world/txt-button-add-in-settings-17: shown only when the active provider lacks a stored credential; opens Settings.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.402Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-add-in-settings-17 — same renderKeyWarning seam, provider label differs (CHATGPT). State-conditional, not shown in seeded state. FUTURE-DEDUP."
-    },
-    {
-      "id": "ui/world/txt-button-cohere-command-r-08-2024-off-78",
-      "kind": "ui",
-      "area": "world",
-      "name": "cohere/command-r-plus-08-2024",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"cohere/command-r-plus-08-2024\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.403Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-google-gemini-2-5-flash-lite-preview-09-95",
-      "kind": "ui",
-      "area": "world",
-      "name": "google/gemini-2.5-flash-lite-preview-09-2025",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"google/gemini-2.5-flash-lite-preview-09-2025\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.403Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-google-nano-banana-2-gemini-3-1-flash-118",
-      "kind": "ui",
-      "area": "world",
-      "name": "google/gemini-3.1-flash-image",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"google/gemini-3.1-flash-image\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.403Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-google-nano-banana-pro-gemini-3-pro-im-121",
-      "kind": "ui",
-      "area": "world",
-      "name": "google/gemini-3-pro-image",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"google/gemini-3-pro-image\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.403Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-gpt-5-3-codex-sparkmed-25",
-      "kind": "ui",
-      "area": "world",
-      "name": "gpt-5.3-codex-spark",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"gpt-5.3-codex-spark\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.402Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-gpt-5-4-minimed-27",
-      "kind": "ui",
-      "area": "world",
-      "name": "gpt-5.4-mini",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"gpt-5.4-mini\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.402Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-gpt-5-4med-26",
-      "kind": "ui",
-      "area": "world",
-      "name": "gpt-5.4",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"gpt-5.4\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.402Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-gpt-5-5med-28",
-      "kind": "ui",
-      "area": "world",
-      "name": "gpt-5.5",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"gpt-5.5\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.402Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
       "id": "ui/world/txt-button-key-cta-add-in-settings-1",
       "kind": "ui",
       "area": "world",
@@ -2565,181 +2081,6 @@
       "selector": "button",
       "state": "ingame",
       "notes": "State-conditional model-dock chrome (renderKeyWarning modeldock.js:551-571). Not shown in the seeded key-present state, so not live-audited here; seam understood. Mapped."
-    },
-    {
-      "id": "ui/world/txt-button-liquidai-lfm2-24b-a2boff-132",
-      "kind": "ui",
-      "area": "world",
-      "name": "liquid/lfm-2-24b-a2b",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"liquid/lfm-2-24b-a2b\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.403Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-liquidai-lfm2-5-1-2b-instruct-free-off-133",
-      "kind": "ui",
-      "area": "world",
-      "name": "liquid/lfm-2.5-1.2b-instruct:free",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"liquid/lfm-2.5-1.2b-instruct:free\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.403Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-liquidai-lfm2-5-1-2b-thinking-free-med-134",
-      "kind": "ui",
-      "area": "world",
-      "name": "liquid/lfm-2.5-1.2b-thinking:free",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"liquid/lfm-2.5-1.2b-thinking:free\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.403Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-meta-llama-3-2-11b-vision-instructoff-139",
-      "kind": "ui",
-      "area": "world",
-      "name": "meta-llama/llama-3.2-11b-vision-instruct",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"meta-llama/llama-3.2-11b-vision-instruct\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.403Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-meta-llama-3-8b-instructoff-136",
-      "kind": "ui",
-      "area": "world",
-      "name": "meta-llama/llama-3-8b-instruct",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"meta-llama/llama-3-8b-instruct\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.403Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
     },
     {
       "id": "ui/world/txt-button-model-dock-efforts-high-1",
@@ -3019,13 +2360,15 @@
         "sha": "296c8ee866614531a87cbb918070805c60928503",
         "date": "2026-07-07T22:11:56.490Z"
       },
-      "findings": [],
+      "findings": [
+        "e9d24ac6"
+      ],
       "firstSeen": "2026-07-07T08:11:07.405Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "ingame",
-      "notes": "CANONICAL model-dock row. Live-proven 2026-07-07T22:11:56.490Z (port 8968/CDP 9368): dock opened → 376 .model-dock-row rendered; clicking the claude-opus-4-8 fallback row set Harness model=claude-opus-4-8 + prov openrouter→anthropic + dock closed. renderList() modeldock.js:457-473; applyModel() :478-491. Evidence .uiatlas/world3-evidence/model-dock-seam.json."
+      "notes": "Live @ HEAD: representative model-picker row. Clicking a model button in #model-dock selects it (proven: dock label CLAUDE SONNET 4.6 -> LLAMA 4 SCOUT/GROQ). The ~400 sibling txt-button model rows are over-harvest (finding e9d24ac6)."
     },
     {
       "id": "ui/world/txt-button-model-dock-list-accounts-fireworks-models-kimi-k2",
@@ -15670,216 +15013,6 @@
       "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
     },
     {
-      "id": "ui/world/txt-button-nvidia-llama-3-3-nemotron-super-49b-v1-192",
-      "kind": "ui",
-      "area": "world",
-      "name": "nvidia/llama-3.3-nemotron-super-49b-v1.5",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"nvidia/llama-3.3-nemotron-super-49b-v1.5\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.404Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-openai-gpt-oss-120b-free-med-251",
-      "kind": "ui",
-      "area": "world",
-      "name": "openai/gpt-oss-120b:free",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"openai/gpt-oss-120b:free\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.404Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-openai-gpt-oss-120bmed-383",
-      "kind": "ui",
-      "area": "world",
-      "name": "openai/gpt-oss-120b — fallback (catalog offline, unverified)",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"openai/gpt-oss-120b\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes. Fallback row: title \"(catalog offline, unverified)\".",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-poolside-laguna-xs-2-free-med-281",
-      "kind": "ui",
-      "area": "world",
-      "name": "poolside/laguna-xs.2:free",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"poolside/laguna-xs.2:free\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.404Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-poolside-laguna-xs-2med-280",
-      "kind": "ui",
-      "area": "world",
-      "name": "poolside/laguna-xs.2",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"poolside/laguna-xs.2\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.404Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/txt-button-sao10k-llama-3-1-70b-hanami-x1off-337",
-      "kind": "ui",
-      "area": "world",
-      "name": "sao10k/l3.1-70b-hanami-x1",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"sao10k/l3.1-70b-hanami-x1\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
       "id": "ui/world/txt-button-screen-connect-anthropic-1",
       "kind": "ui",
       "area": "world",
@@ -16424,74 +15557,6 @@
       "notes": "Seam = warroom.js:106-123 (.cam-cine button, toggles cinema on the wr grid — NOT body). Button live-present 2026-07-07T22:16:20.560Z with title \"fill the frame with the station (C)\"; full toggle in the war-room feed state not driven here. Mapped (honest: not audited)."
     },
     {
-      "id": "ui/world/txt-button-switchpoint-routermed-342",
-      "kind": "ui",
-      "area": "world",
-      "name": "switchpoint/router",
-      "purpose": "duplicate harvest of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 (a .model-dock-row clone; this row = model \"switchpoint/router\").",
-      "promise": "Same contract as ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392: click → Harness.setModel/setProv/setReasoningEffort then dock closes.",
-      "wiring": {
-        "files": [
-          "frontend/app/modeldock.js",
-          "frontend/index.html",
-          "frontend/css/comms.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/modelpicker.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "button",
-      "state": "ingame",
-      "notes": "CLONE of ui/world/txt-button-accounts-fireworks-models-deepseek-v3p1m-392 — same renderList() .model-dock-row seam (modeldock.js:457-473), differs only in the model id. Class-proof: 376 identical rows live-proven 2026-07-07T22:11:56.490Z. FUTURE-DEDUP: cartographer should collapse the model-dock row list to one canonical entry."
-    },
-    {
-      "id": "ui/world/voice-custom",
-      "kind": "ui",
-      "area": "world",
-      "name": "textarea",
-      "purpose": "The free-text \"in your own words\" voice-note textarea (inside the fine-tune reveal) that overrides the preset personality.",
-      "promise": "Revealed with #adv-body; accepts free text that onWake() folds into the agent's voice spec, overriding the archetype where they conflict.",
-      "wiring": {
-        "files": [
-          "frontend/index.html",
-          "frontend/app/app.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "known",
-          "ref": "no-machine-assertion"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.402Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": true,
-      "selector": "#voice-custom",
-      "state": "ingame",
-      "notes": "Live-proven cold boot — hidden until adv-toggle opens, then visible + accepts typed text (app.js reads it at 1475). KNOWN: no test/journey guards the textarea → voice-spec seam. Evidence cold.json#probes.advToggle.typed."
-    },
-    {
       "id": "ui/world/voice-mode",
       "kind": "ui",
       "area": "world",
@@ -16577,12 +15642,12 @@
       "kind": "ui",
       "area": "world",
       "name": "archived sessions footer reveal",
-      "purpose": "The archived-sessions reveal — a quiet footer row at the end of the sessions list (the rail head carries only SESSIONS/PROJECTS + NEW), shown only when ≥1 session is archived.",
-      "promise": "Clicking calls toggleArchived() and shows/hides archived session rows; label \"▸ N archived\" / \"▾ hide archived\".",
+      "purpose": "The archived-sessions footer reveal in the workstreams rail — a conditional row that appears only when archived sessions exist, expanding to list them.",
+      "promise": "When the workstreams list has archived sessions, a #workstreams .ws-arch-row footer appears; clicking it reveals the archived entries. Absent (missing:true) when there are none — truthful conditional render.",
       "wiring": {
         "files": [
-          "frontend/app/app.js",
-          "frontend/css/app.css"
+          "frontend/index.html",
+          "frontend/app/app.js"
         ],
         "events": []
       },
@@ -16599,7 +15664,7 @@
       "missing": true,
       "selector": "#workstreams .ws-arch-row",
       "state": "ingame",
-      "notes": "REDESIGNED 2026-07-08: the #ws-archived head button was removed (Commander directive — rail head is SESSIONS/PROJECTS + NEW only); the reveal moved to a footer row inside #workstreams (updateArchivedToggle). Prior audit no longer applies — demoted to mapped, needs re-audit."
+      "notes": "KEPT (missing:true is honest): #workstreams .ws-arch-row is a CONDITIONAL footer that only renders when archived sessions exist; the seed workspace has none, so the sweep correctly does not find it. Still wired in app.js. Not retired."
     },
     {
       "id": "ui/world/ws-bulk-apply",
@@ -17001,38 +16066,6 @@
       "missing": false,
       "selector": "#ws-tools-archived",
       "state": "ingame"
-    },
-    {
-      "id": "ui/world/ws-tools-btn",
-      "kind": "ui",
-      "area": "world",
-      "name": "SESSION TOOLS window entry",
-      "purpose": "Expose session search, export, clear, bulk archive, and recovery controls in a SESSION TOOLS floating window opened from the SYSTEM dock menu.",
-      "promise": "Clicking SYSTEM ▸ SESSION TOOLS opens a floating window that adopts the parked #ws-tools panel and focuses search; closing re-parks the panel hidden. The sessions rail head stays SESSIONS/PROJECTS + NEW only.",
-      "wiring": {
-        "files": [
-          "frontend/index.html",
-          "frontend/app/app.js",
-          "frontend/app/stationui.js",
-          "frontend/css/app.css"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/session-power-tools.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-16T07:46:38.407Z",
-      "lastSeen": "2026-07-16T07:47:13.046Z",
-      "missing": true,
-      "selector": ".bb[data-term=\"sessiontools\"]",
-      "state": "ingame",
-      "notes": "REDESIGNED 2026-07-16: the inline #ws-tools-btn rail toggle was removed (Commander directive — rail head is SESSIONS/PROJECTS + NEW only, same directive that removed #ws-archived); the panel now opens as a StationUI term window (BUILDERS.sessiontools). Prior physical-click audit no longer applies."
     },
     {
       "id": "ui/world/ws-undo",
