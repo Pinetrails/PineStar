@@ -33,7 +33,7 @@
   function makeWorkspaceLease(opts) {
     opts = opts || {};
     const waitMs = (typeof opts.waitMs === 'number' && isFinite(opts.waitMs) && opts.waitMs >= 0) ? opts.waitMs : DEFAULT_WAIT_MS;
-    const now = typeof opts.now === 'function' ? opts.now : Date.now;
+    const now = typeof opts.now === 'function' ? opts.now : (() => 0);   // clock is INJECTED (lint-determinism); un-clocked hosts get a flat 0 `since`
     const setT = typeof opts.setTimeout === 'function' ? opts.setTimeout : setTimeout;
     const clearT = typeof opts.clearTimeout === 'function' ? opts.clearTimeout : clearTimeout;
     // agentId -> { holder: { runId, since }, queue: [{ runId, resolve, timer, promise }] }

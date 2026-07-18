@@ -4053,7 +4053,10 @@ const mutatesWorkspace = (name) => /^fs\.(write|append|edit)$/.test(name) || /^(
 // workspace-MUTATING tool call. Held from first touch until run end (checkpoint chain stays contiguous per
 // run); a sibling's mutating tool waits up to WORKSPACE_LEASE_WAIT_MS then fails truthfully naming the holder.
 const _leaseWaitMs = Number(ENV('WORKSPACE_LEASE_WAIT_MS'));
-const workspaceLease = makeWorkspaceLease((_leaseWaitMs >= 0 && isFinite(_leaseWaitMs)) ? { waitMs: Math.floor(_leaseWaitMs) } : {});
+const workspaceLease = makeWorkspaceLease(Object.assign(
+  { now: () => Date.now() },
+  (_leaseWaitMs >= 0 && isFinite(_leaseWaitMs)) ? { waitMs: Math.floor(_leaseWaitMs) } : {}
+));
 function runGit(args, opts) {   // resolves (never rejects); a missing/failing git becomes a fail-open skip upstream
   return new Promise((resolve) => {
     try {

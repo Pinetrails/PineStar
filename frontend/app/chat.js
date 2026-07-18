@@ -902,8 +902,10 @@ const Chat = (() => {
   }
   function isBusy() { return !!(activeWs && typeof Channels !== 'undefined' && Channels.isBusy(activeWs.id)); }
   function isActiveWs(ws) { return !!(ws && activeWs && activeWs.id === ws.id); }   // is THIS stream the one on screen right now?
-  // The backend mutex is per AGENT/workspace, not per session. Resolve that same scope locally so a fresh
-  // session never claims ONLINE or accepts a doomed turn while another session owns this agent's run.
+  // CONCURRENT SESSIONS (2026-07-18): the backend now ADMITS concurrent runs of one agent (the workspace is
+  // guarded by a run-scoped lease sidecar-side; the world's overlap refcount keeps the desk pose truthful).
+  // This resolver survives as the SOFT indicator's source — "this agent is also running in <session>" — and
+  // must never re-become a send gate: a peer run is information, not a refusal.
   function busyPeerFor(ws) {
     if (!ws || typeof Workstreams === 'undefined' || typeof Channels === 'undefined') return null;
     const aid = ws.agentId || 'agent';
@@ -917,7 +919,7 @@ const Chat = (() => {
     const rowEl = old || document.createElement('div');
     rowEl.id = 'comms-agent-busy'; rowEl.className = 'choice-row comms-agent-busy'; rowEl.textContent = '';
     const label = document.createElement('span'); label.className = 'dim';
-    label.textContent = peer ? ('BUSY IN ' + streamLabel(peer).toUpperCase()) : String(detail || 'AGENT BUSY');
+    label.textContent = peer ? ('ALSO RUNNING IN ' + streamLabel(peer).toUpperCase()) : String(detail || 'AGENT BUSY');
     rowEl.appendChild(label);
     if (peer) {
       const view = document.createElement('button'); view.type = 'button'; view.className = 'choice'; view.textContent = 'VIEW ACTIVE RUN';
@@ -952,7 +954,10 @@ const Chat = (() => {
     let down = false;
     try { const ls = (typeof World !== 'undefined' && World.linkState) ? World.linkState() : null; down = !!(ls && ls.bridged && !ls.paused && ls.down); } catch (_) {}
     const peer = !isBusy() ? busyPeerFor(activeWs) : null;
-    status(p ? 'awaiting your approval…' : (isBusy() ? (channelStatus || 'thinking…') : (peer ? ('busy in ' + streamLabel(peer)) : (down ? 'station unreachable' : 'online'))));
+    // a peer run no longer blocks THIS session — the status stays an honest 'online' (send is allowed) with
+    // the peer named beside it; the soft #comms-agent-busy row below carries the VIEW ACTIVE RUN route.
+    // ('running', not 'busy'/'working': status() classifies by substring and this session is NOT the one working.)
+    status(p ? 'awaiting your approval…' : (isBusy() ? (channelStatus || 'thinking…') : (peer ? ('online · also running in ' + streamLabel(peer)) : (down ? 'station unreachable' : 'online'))));
     renderAgentBusy(peer);
     // keep the elapsed readout matched to the DISPLAYED stream — switching to a busy stream picks up its
     // live count, switching to an idle one clears it. (send() also starts it the instant a run begins.)
@@ -993,7 +998,7 @@ const Chat = (() => {
   function maybeEmptyState() {
     if (!log || interview) return;
     if (activeWs && activeWs.history && activeWs.history.length) return;
-    if (busyPeerFor(activeWs)) return;   // never pair BUSY IN … with the contradictory "COMMS online" empty hint
+    if (busyPeerFor(activeWs)) return;   // the ALSO RUNNING IN row owns an empty busy-peer session — starter chips would fight it for attention
     if (isBusy() || log.querySelector('.cmsg')) return;
     const s = (typeof Channels !== 'undefined' && activeWs) ? Channels.snapshot(activeWs.id) : null;
     if (s && ((s.toolEvents && s.toolEvents.length) || s.tools.length || s.acc || s.pending)) return;
@@ -3989,10 +3994,13 @@ const Chat = (() => {
   // switch + turn-end) and at send() start (status goes 'thinking…' without a syncStatus).
   function updateControls() {
     const stop = el('chat-stop'); if (stop) stop.hidden = !isBusy();
+    // CONCURRENT SESSIONS: a peer run on this agent no longer disables the composer — the backend admits
+    // concurrent same-agent runs (workspace lease guards the real collision). The peer surfaces as the soft
+    // status row + a tooltip; send stays live.
     const peer = !isBusy() ? busyPeerFor(activeWs) : null;
-    if (input) { input.disabled = !!peer; input.title = peer ? ('This agent is busy in ' + streamLabel(peer)) : ''; }
-    const sendBtn = el('chat-send'); if (sendBtn) sendBtn.disabled = !!peer;
-    const attachBtn = el('chat-attach'); if (attachBtn) attachBtn.disabled = !!peer;
+    if (input) { input.disabled = false; input.title = peer ? ('This agent is also running in ' + streamLabel(peer)) : ''; }
+    const sendBtn = el('chat-send'); if (sendBtn) sendBtn.disabled = false;
+    const attachBtn = el('chat-attach'); if (attachBtn) attachBtn.disabled = false;
     renderQueued();
   }
 
@@ -5012,8 +5020,9 @@ const Chat = (() => {
     if (interview) { clearChoices(); interview(text); return; }   // THE AWAKENING owns the input: typed answers retire any stale chip row
     const ws = activeWs;   // CAPTURE the origin stream now — a mid-run switch must not cross-post its cost/files
     if (!ws) return;
-    const preflightPeer = busyPeerFor(ws);
-    if (preflightPeer) { renderAgentBusy(preflightPeer); syncStatus(); return; }
+    // CONCURRENT SESSIONS: no agent-global preflight refusal — a peer run on this agent is allowed to coexist
+    // with this turn (the sidecar admits it; the workspace lease guards the one real collision). The peer stays
+    // visible via the soft status row, and the per-STREAM gate below still holds.
     const pending = pendingTaskQuestion && pendingTaskQuestion.streamId === ws.id ? pendingTaskQuestion : null;
     const routedTaskReply = pending && typeof TaskIntent !== 'undefined' && TaskIntent.routeReply ? TaskIntent.routeReply(text) : null;
     const taskAction = (opts && opts.taskAction) || (routedTaskReply && routedTaskReply.action) || '';
