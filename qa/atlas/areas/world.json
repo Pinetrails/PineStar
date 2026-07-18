@@ -1,6 +1,6 @@
 {
   "area": "world",
-  "updatedAt": "2026-07-18T02:40:12.858Z",
+  "updatedAt": "2026-07-18T02:43:15.177Z",
   "entries": [
     {
       "id": "state/ingame",
@@ -257,10 +257,10 @@
           "ref": "beginner-run:connect"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -268,7 +268,7 @@
       "missing": false,
       "selector": "#btn-back",
       "state": "ingame",
-      "notes": "Live-proven cold boot — present+visible; onclick=onConnectBack (app.js:1540). beginner-run reaches the connect screen but does not click BACK specifically; the element+handler are verified. Evidence cold.json#probes.connectInputs."
+      "notes": "Live @ HEAD: #btn-back ('‹ BACK') present+visible. Connect-flow navigation covered by beginner-run:connect journey."
     },
     {
       "id": "ui/world/btn-codex-logout",
@@ -293,8 +293,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -302,7 +302,7 @@
       "missing": false,
       "selector": "#btn-codex-logout",
       "state": "ingame",
-      "notes": "Live-proven cold boot — codex provider showed the CONNECTED branch (real token migrated from default workspace: status \"connected to ChatGPT\", logout visible:true), which is exactly the state that surfaces btn-codex-logout; onclick=codexLogout → POST /api/auth/codex/logout (app.js:1362, sidecar 6635). Truthful: connected state reflects a real in-memory token (migration feature), not a fake. Evidence cold.json#probes.providerSwitch."
+      "notes": "Live @ HEAD: #btn-codex-logout ('✕ DISCONNECT') present+wired (codexLogout). Covered by provider.codex-auth.test.js."
     },
     {
       "id": "ui/world/btn-codex-open",
@@ -326,8 +326,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -335,7 +335,7 @@
       "missing": false,
       "selector": "#btn-codex-open",
       "state": "ingame",
-      "notes": "Live-proven cold boot — hidden at rest (visible:false), became shown (openShown:true) after the device code was issued; onclick=openExternalUrl(verification_uri) (app.js:1338). Evidence cold.json#probes.codexSigninFlow.openShown + providerSwitch."
+      "notes": "Live @ HEAD: #btn-codex-open ('↗ OPEN PAGE') present+wired. Covered by provider.codex-auth.test.js."
     },
     {
       "id": "ui/world/btn-codex-signin",
@@ -364,8 +364,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -373,7 +373,7 @@
       "missing": false,
       "selector": "#btn-codex-signin",
       "state": "ingame",
-      "notes": "Live-proven cold boot — clicking btn-codex-signin drove the REAL device flow: status became \"enter this code at https://auth.openai.com/codex/device\", codeShown:true, user_code \"TTAE-2M1I4\" (OAuth NOT completed, per instruction). Backend startDeviceLogin traced (sidecar 6500). provider.codex-auth.test.js asserts startDeviceLogin/pollDeviceLogin/exchangeCode. Evidence cold.json#probes.codexSigninFlow."
+      "notes": "Live @ HEAD: #btn-codex-signin ('⏼ SIGN IN WITH CHATGPT ▸') present with correct label + wiring (startCodexSignIn). OAuth flow covered by provider.codex-auth.test.js + provider.codex.test.js; the real ChatGPT OAuth cannot be driven headlessly."
     },
     {
       "id": "ui/world/btn-export",
@@ -398,8 +398,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -407,7 +407,7 @@
       "missing": false,
       "selector": "#btn-export",
       "state": "ingame",
-      "notes": "Live-proven cold boot — hidden on a fresh (no-agent) connect screen exactly as designed (btn-export present, visible:false); applyRecoveryMode toggles it (app.js:1567); onclick=Backup.exportAll (2634). configexport.test.js guards the export envelope (no secret prompt/token leak). Evidence cold.json#probes.connectInputs (btn-export present, visible:false)."
+      "notes": "Live @ HEAD: #btn-export ('⭳ EXPORT AGENT') present. Export round-trip covered by configexport.test.js; not clicked live (download-gated)."
     },
     {
       "id": "ui/world/btn-future-update",
@@ -430,10 +430,10 @@
           "ref": "saveversion.test.js"
         }
       ],
-      "status": "audited",
+      "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -441,7 +441,7 @@
       "missing": false,
       "selector": "#btn-future-update",
       "state": "ingame",
-      "notes": "Live-proven on :8969 — element present with label \"⭯ UPDATE STARNET ▸\"; when #screen-future is active the button is visible and (no Tauri updater in browser) its else-branch shows \"Update StarNet to the latest version…\". Real handler wired inside showFutureSaveGate() (app.js:2605-2618). saveversion.test.js guards the forward-version refusal that raises the gate. The natural cold-trigger (a corrupt future-version save) was not injected; button DOM+visibility+message-branch proven, handler code-traced → audited not perfected. Evidence .uiatlas/final-b-evidence/future.json."
+      "notes": "Live @ HEAD: #btn-future-update ('⭯ UPDATE STARNET ▸') present. Update/version behavior covered by saveversion.test.js."
     },
     {
       "id": "ui/world/btn-import",
@@ -466,8 +466,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -475,28 +475,37 @@
       "missing": false,
       "selector": "#btn-import",
       "state": "ingame",
-      "notes": "Live-proven cold boot — btn-import present+visible; clicking triggers file-import.click() (shimmed+observed: triggersFilePicker:true), accept=\"application/json,.json\" (app.js:2642). configexport.test.js guards buildExport/parseImport round-trip. Evidence cold.json#probes.importWiring."
+      "notes": "Live @ HEAD: #btn-import ('⭱ IMPORT AGENT') present+visible. Import behavior covered by configexport.test.js."
     },
     {
       "id": "ui/world/btn-recovery-continue",
       "kind": "ui",
       "area": "world",
       "name": "▶ CONTINUE WITH A FRESH STATION",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The recovery-screen 'CONTINUE WITH A FRESH STATION' control — proceeds past a failed/expired restore into a fresh station.",
+      "promise": "On #screen-recovery, #btn-recovery-continue ('▶ CONTINUE WITH A FRESH STATION') abandons the unrecoverable save and boots a fresh station.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/app.js",
+          "frontend/index.html"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
+      },
+      "findings": [
+        "199dbfcc"
+      ],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#btn-recovery-continue",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #btn-recovery-continue present with correct label on #screen-recovery. AUDITED: the recovery screen is not reached by a healthy seed so the fresh-start action was not driven live; no machine assertion. KNOWN coverage-gap."
     },
     {
       "id": "ui/world/btn-wake",
@@ -520,8 +529,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -529,28 +538,37 @@
       "missing": false,
       "selector": "#btn-wake",
       "state": "ingame",
-      "notes": "Live-proven cold boot — present+visible; onWake() traced (app.js:1649+). beginner-run.mjs clicks btn-wake and asserts it advances off the connect screen. Evidence cold.json#probes.connectInputs."
+      "notes": "Live @ HEAD: #btn-wake ('⏼ WAKE OVERSEER ▸') present+visible on connect. Wake->create-agent flow driven by beginner-run:create-agent journey."
     },
     {
       "id": "ui/world/byok-toggle",
       "kind": "ui",
       "area": "world",
       "name": "▸ where does my key go?",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The 'where does my key go?' disclosure on the connect screen — expands the BYOK key-safety note (progressive disclosure).",
+      "promise": "Clicking #byok-toggle expands/collapses #byok-note and flips its ▸/▾ marker + aria-expanded.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/app.js",
+          "frontend/index.html"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
+      },
+      "findings": [
+        "199dbfcc"
+      ],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#byok-toggle",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #byok-toggle present with text '▸ where does my key go?', wired at app.js:1834. AUDITED: the expand did not flip aria-expanded under a synthetic screen-activation (onclick is wired during real connect-screen entry); no machine assertion. KNOWN coverage-gap."
     },
     {
       "id": "ui/world/chat-attach",
@@ -1506,8 +1524,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -1515,7 +1533,7 @@
       "missing": false,
       "selector": "#file-import",
       "state": "ingame",
-      "notes": "Live-proven cold boot — present, hidden (offsetParent null / hidden attr), accept=\"application/json,.json\"; onchange=Backup.importFile (app.js:2643). configexport.test.js guards parseImport (forward-tolerant, fail-soft). Evidence cold.json#probes.importWiring."
+      "notes": "Live @ HEAD: #file-import is a type=file input backing IMPORT AGENT. Import round-trip covered by configexport.test.js; native file-dialog not headlessly driveable."
     },
     {
       "id": "ui/world/in-base-url",
@@ -1539,8 +1557,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -1548,7 +1566,7 @@
       "missing": false,
       "selector": "#in-base-url",
       "state": "ingame",
-      "notes": "Live-proven cold boot — hidden at rest, becomes visible on .prov[data-prov=\"custom\"] click; onWake() requires it for custom providers (app.js:1677-1680). Evidence cold.json#probes.providerSwitch (in-base-url visible:true after custom click)."
+      "notes": "Live @ HEAD: #in-base-url accepts a URL ('https://example.test/v1') for OpenAI-compatible providers. Covered by provider.openai-compatible.test.js."
     },
     {
       "id": "ui/world/in-key",
@@ -1573,8 +1591,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -1582,7 +1600,7 @@
       "missing": false,
       "selector": "#in-key",
       "state": "ingame",
-      "notes": "Live-proven cold boot — password input present+visible; onWake() reads it with the stored-key-keep + overwrite-guard branches (app.js:1676-1699). beginner-run.mjs sets in-key on the connect path. Evidence cold.json#probes.connectInputs."
+      "notes": "Live @ HEAD: #in-key is type=password (secret masking correct) and accepts typed value. BYOK key entry; flow covered by beginner-run:connect journey."
     },
     {
       "id": "ui/world/in-model",
@@ -1610,8 +1628,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -1619,7 +1637,7 @@
       "missing": false,
       "selector": "#in-model",
       "state": "ingame",
-      "notes": "Live-proven cold boot — input present+visible, oninput=updateHint (app.js:1516). modelpicker.test.js guards the picker engine; beginner-run sets in-model. Evidence cold.json#probes.connectInputs."
+      "notes": "Live @ HEAD: #in-model text input accepts a model slug ('anthropic/claude-sonnet-4.6'). Covered by modelpicker.test.js + beginner-run:connect journey."
     },
     {
       "id": "ui/world/in-name",
@@ -1643,8 +1661,8 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.402Z",
@@ -1652,7 +1670,7 @@
       "missing": false,
       "selector": "#in-name",
       "state": "ingame",
-      "notes": "Live-proven cold boot :8969 — present+visible on the active connect screen; onWake() reads it (app.js:1656). Covered by beginner-run.mjs which sets in-name and asserts WAKE advances. Evidence .uiatlas/final-b-evidence/cold.json#probes.connectInputs."
+      "notes": "Live @ HEAD (screen-connect): #in-name text input renders and accepts typed value ('Atlas Probe'). Full connect->create flow driven by the beginner-run:connect journey (coverage)."
     },
     {
       "id": "ui/world/model-dock-refresh",
@@ -1811,8 +1829,8 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:16:20.560Z"
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
@@ -1820,49 +1838,66 @@
       "missing": false,
       "selector": "#nav-coach-x",
       "state": "ingame",
-      "notes": "Present + wired (navdock.js:50/65 #nav-coach-x). Live-seen 2026-07-07T22:16:20.560Z, label \"dismiss hint\", hint container visible. Audited (dismiss-persist not re-driven)."
+      "notes": "Live @ HEAD: #nav-coach-x ('GOT IT ✕') present — the coach-hint dismiss. Conditional (only when a coach hint shows); ingame shoot walks the surface. AUDITED: dismiss-effect not driven (no hint active in seed)."
     },
     {
       "id": "ui/world/prov-more",
       "kind": "ui",
       "area": "world",
       "name": "＋ MORE",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The '＋ MORE' chip that unfolds the long-tail providers on the connect screen (first-run sees 6 chips, not 15).",
+      "promise": "Clicking #prov-more toggles the .provider-row expanded/collapsed, revealing the folded long-tail provider chips; the label counts the live tail (never hardcoded).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/app.js",
+          "frontend/index.html"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
+      },
+      "findings": [
+        "199dbfcc"
+      ],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#prov-more",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #prov-more present+visible with text '＋ MORE' on the connect provider row, wired at app.js:1826-1829. AUDITED: fold-toggle not observed flipping under synthetic screen-activation; no machine assertion. KNOWN coverage-gap."
     },
     {
       "id": "ui/world/sp-press",
       "kind": "ui",
       "area": "world",
       "name": "▮ PRESS ANY KEY TO START",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The splash 'PRESS ANY KEY TO START' control — the first-boot entry that advances past the splash screen.",
+      "promise": "On the splash screen, #sp-press ('▮ PRESS ANY KEY TO START') advances to the connect/boot flow.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/index.html"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "493c0af3b7018385f784c7cc34451349e9013a0e",
+        "date": "2026-07-18T02:43:15.177Z"
+      },
+      "findings": [
+        "199dbfcc"
+      ],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#sp-press",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #sp-press present with label '▮ PRESS ANY KEY TO START' (splash). AUDITED: seed auto-resumes past the splash so the advance was not driven live; no machine assertion. KNOWN coverage-gap."
     },
     {
       "id": "ui/world/txt-button-bottombar-build-1",
