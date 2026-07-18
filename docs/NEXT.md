@@ -1,5 +1,17 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-17 — AUTONOMY TUNING (direction dial) — merging this pass (claude/agent-autonomy-tuning-89786e)
+
+Andrew's ask: let users guide WHERE the agent's autonomous work goes, as a release cherry-on-top.
+Shipped (feature `d7821054`+`eebf7f11`, W0 re-stamps in-branch; digest in qa/STATUS.md):
+- **AVOID directive** (nightfocus.js + POST/DELETE /api/nightshift/avoid): durable off-limits list the
+  focus resolver can never pick; latest-directive-wins on steer/avoid conflict; resolver fails toward
+  not acting; restart-safe. Pure tests 55 assertions green.
+- **Steer → scout cross-wire**: scoutDirectionBlock now leads with the live steer (same steerActive gate).
+- **DIRECTION block in the AUTONOMY settings tab**: focus readout + steer + OFF-LIMITS (RULE OUT /
+  ALLOW AGAIN) + evidence-cited LEARNED INTERESTS from /api/scout. Live-proven full cycle on seeded app.
+- [ ] Later (not this lane): thread steer/avoid into quest refresh + First Pitch grounding blocks.
+
 ## 2026-07-17 — SESSION TOOLS window retired (branch `claude/sessions-panel-removal-b3278e`)
 
 Andrew's directive. The SYSTEM ▸ SESSION TOOLS window + parked `#ws-tools` panel are removed;
