@@ -1,6 +1,6 @@
 {
   "area": "world",
-  "updatedAt": "2026-07-18T02:34:24.029Z",
+  "updatedAt": "2026-07-18T02:38:44.323Z",
   "entries": [
     {
       "id": "state/ingame",
@@ -15624,21 +15624,31 @@
       "kind": "ui",
       "area": "world",
       "name": "bless a folder as a trusted project",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The +ADD button on the PROJECTS tab — blesses a folder as a trusted project.",
+      "promise": "Visible only on the PROJECTS tab; clicking #ws-addproject starts the folder-trust flow (projects.js).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/app.js",
+          "frontend/app/projects.js",
+          "frontend/index.html"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
+      "findings": [
+        "b916c508"
+      ],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#ws-addproject",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #ws-addproject (+ADD) hidden on SESSIONS tab, revealed when PROJECTS tab activated. AUDITED: folder-trust flow (native picker) not headlessly driveable; no coverage. KNOWN coverage-gap."
     },
     {
       "id": "ui/world/ws-archived",
@@ -15691,15 +15701,18 @@
           "ref": "test/session-power-tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-bulk-apply",
       "state": "ingame",
-      "notes": "Cartographer enumerated the control in the seeded ingame DOM. Exact membership is machine-guarded; physical click proof remains for composed Wave 4."
+      "notes": "Live @ HEAD: #ws-bulk-apply (ARCHIVE PREVIEWED) present, correctly DISABLED until a preview yields matches (truthful gating). Covered by session-power-tools.test.js."
     },
     {
       "id": "ui/world/ws-bulk-completed",
@@ -15722,14 +15735,18 @@
           "ref": "test/session-power-tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-bulk-completed",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #ws-bulk-completed checkbox present+checked (bulk-cleanup criterion 'completed'). Covered by session-power-tools.test.js."
     },
     {
       "id": "ui/world/ws-bulk-days",
@@ -15752,14 +15769,18 @@
           "ref": "test/session-power-tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-bulk-days",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #ws-bulk-days select present with options 30 days/90 days/1 year (age threshold for bulk cleanup). Covered by session-power-tools.test.js."
     },
     {
       "id": "ui/world/ws-bulk-empty",
@@ -15782,14 +15803,18 @@
           "ref": "test/session-power-tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-bulk-empty",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #ws-bulk-empty checkbox present+checked (criterion 'empty'). Covered by session-power-tools.test.js."
     },
     {
       "id": "ui/world/ws-bulk-old",
@@ -15812,14 +15837,18 @@
           "ref": "test/session-power-tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-bulk-old",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #ws-bulk-old checkbox present+checked (criterion 'old'). Covered by session-power-tools.test.js."
     },
     {
       "id": "ui/world/ws-bulk-preview",
@@ -15842,14 +15871,18 @@
           "ref": "test/session-power-tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-bulk-preview",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #ws-bulk-preview (PREVIEW) present+visible; clicking ran without error but matched nothing (single fresh session in seed) so #ws-bulk-apply stayed disabled — truthful. Bulk-archive logic covered by session-power-tools.test.js."
     },
     {
       "id": "ui/world/ws-clear",
@@ -15873,14 +15906,18 @@
           "ref": "test/session-power-tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-clear",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #ws-clear (CLEAR ACTIVE CONVERSATION) present+visible+wired. AUDITED: destructive action not driven live; the clear/checkpoint behavior it calls (W.clearConversation) is covered by session-power-tools.test.js."
     },
     {
       "id": "ui/world/ws-export-json",
@@ -15903,14 +15940,18 @@
           "ref": "test/session-power-tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-export-json",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #ws-export-json (EXPORT .JSON) present+visible+wired. AUDITED: not clicked live (triggers a download, permission-gated); underlying W.exportConversation('json') round-trip is covered by session-power-tools.test.js (MIME + title + visible-dialogue asserts)."
     },
     {
       "id": "ui/world/ws-export-md",
@@ -15933,14 +15974,18 @@
           "ref": "test/session-power-tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-export-md",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #ws-export-md (EXPORT .MD) present+visible+wired. AUDITED: not clicked live (download-gated); W.exportConversation('markdown') heading+MIME covered by session-power-tools.test.js."
     },
     {
       "id": "ui/world/ws-new",
@@ -15963,18 +16008,20 @@
           "ref": "ingame"
         }
       ],
-      "status": "perfected",
+      "status": "audited",
       "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:16:20.560Z"
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
       },
-      "findings": [],
+      "findings": [
+        "b916c508"
+      ],
       "firstSeen": "2026-07-07T08:11:07.402Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-new",
       "state": "ingame",
-      "notes": "Live-proven 2026-07-07T22:16:20.560Z (port 8968): clicking #ws-new grew ws elements 8→14 (new workstream). onclick=newWorkstream app.js:2245. Evidence dock-chrome.json."
+      "notes": "Live @ HEAD: click #ws-new (+NEW) added a .ws-row (count 1 -> 2) = new workstream created. AUDITED not perfected: no machine assertion guards new-session creation (session-power-tools.test.js covers export/clear/undo/bulk only). KNOWN coverage-gap."
     },
     {
       "id": "ui/world/ws-search",
@@ -15998,77 +16045,107 @@
           "ref": "test/session-power-tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-search",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #ws-search input present+visible in SESSION TOOLS; wired + covered by session-power-tools.test.js. AUDITED: live filter effect not cleanly counted (seed has a single session; filter hides rather than removes rows)."
     },
     {
       "id": "ui/world/ws-tab-projects",
       "kind": "ui",
       "area": "world",
       "name": "trusted project folders",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The PROJECTS tab in the workstreams rail head — shows trusted project folders.",
+      "promise": "Clicking #ws-tab-projects activates the PROJECTS tab, swaps the list to trusted project folders, and reveals #ws-addproject.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/app.js",
+          "frontend/app/projects.js",
+          "frontend/index.html"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
+      "findings": [
+        "b916c508"
+      ],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#ws-tab-projects",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: click activated the PROJECTS tab and revealed #ws-addproject (+ADD). AUDITED: tab-swap not machine-asserted. KNOWN coverage-gap."
     },
     {
       "id": "ui/world/ws-tab-sessions",
       "kind": "ui",
       "area": "world",
       "name": "your conversations",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The SESSIONS tab in the workstreams rail head — shows your conversations list.",
+      "promise": "Clicking #ws-tab-sessions activates the SESSIONS tab and shows the conversation list (hiding the projects-only #ws-addproject).",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/app.js",
+          "frontend/index.html"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
-      "findings": [],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
+      "findings": [
+        "b916c508"
+      ],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#ws-tab-sessions",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: click activated the SESSIONS tab and hid #ws-addproject (projects-only control). AUDITED: tab-swap has no machine assertion (session-power-tools.test.js only asserts the rail head has no inline TOOLS button). KNOWN coverage-gap."
     },
     {
       "id": "ui/world/ws-tools-archived",
       "kind": "ui",
       "area": "world",
       "name": "button",
-      "purpose": "",
-      "promise": "",
+      "purpose": "The archived-sessions toggle in SESSION TOOLS — reveals archived conversations.",
+      "promise": "Clicking #ws-tools-archived toggles the archived-sessions view in the SESSION TOOLS window.",
       "wiring": {
-        "files": [],
+        "files": [
+          "frontend/app/app.js",
+          "frontend/index.html"
+        ],
         "events": []
       },
       "coverage": [],
-      "status": "unmapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-18T00:54:02.713Z",
       "lastSeen": "2026-07-18T00:54:02.713Z",
       "missing": false,
       "selector": "#ws-tools-archived",
-      "state": "ingame"
+      "state": "ingame",
+      "notes": "Live @ HEAD: #ws-tools-archived present in SESSION TOOLS (hidden until relevant). AUDITED: toggle effect not driven (seed has no archived sessions); no coverage. KNOWN coverage-gap."
     },
     {
       "id": "ui/world/ws-undo",
@@ -16092,15 +16169,18 @@
           "ref": "test/session-power-tools.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "audited",
+      "auditedAt": {
+        "sha": "08ddbf3149954278f66fafa57592661c3f8ea7b9",
+        "date": "2026-07-18T02:38:44.323Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-16T07:46:38.407Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#ws-undo",
       "state": "ingame",
-      "notes": "Cartographer enumerated the control in the seeded ingame DOM. Recovery is machine-guarded; physical click proof remains for composed Wave 4."
+      "notes": "Live @ HEAD: #ws-undo (UNDO LAST SESSION CHANGE) present+wired, correctly HIDDEN when no undoable change exists (truthful). AUDITED: W.undoLast restore covered by session-power-tools.test.js; live undo not driven (no change to undo in seed)."
     }
   ]
 }
