@@ -1,6 +1,6 @@
 {
   "area": "routes",
-  "updatedAt": "2026-07-18T01:21:14.587Z",
+  "updatedAt": "2026-07-18T01:23:57.953Z",
   "entries": [
     {
       "id": "route/get-api-agent-skills",
@@ -24,12 +24,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {agentId:agent,skills:[]} from the skill store. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-auth-codex-logout",
@@ -67,13 +71,22 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "Live network catalog discovery — not asserted headlessly; the not-signed-in fallback is covered by codexsignin.test.js. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {models:[],default:null,error:'Not signed in to ChatGPT — connect a ChatGPT subscription first.',code:...} (honest not-connected). KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-auth-codex-status",
@@ -90,13 +103,22 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test in test/ asserts GET /api/auth/codex/status; the status payload shape is covered by codex-status.e2e.test.js + codex-auth-state.test.js at the auth-state layer. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connected:false,expired:false,reason:'',last_refresh:''} — booleans/strings only, no tokens. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-auth-grok-models",
@@ -344,12 +366,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connected:false,configured:false,state:down,...} — booleans/state only, no token/key. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-channels-events",
@@ -442,13 +468,22 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for GET /api/channels/telegram/status; the bulk /api/channels/status is covered by channels.generic-wire.test.js. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connected:false,configured:false,state:down,...} — booleans only, no token/key. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-checkpoint",
@@ -477,12 +512,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {enabled:false,snapshots:[]} (checkpoint index). Guarded by checkpoint-store.test.js + sidecar.http.test.js."
     },
     {
       "id": "route/get-api-connectors",
@@ -505,12 +544,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connectors:[]} (no secrets). Guarded by e2e.mcp-connector.test.js."
     },
     {
       "id": "route/get-api-connectors-catalog",
@@ -533,12 +576,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {categories:[...]} curated catalog. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-connectors-oauth-callback",
@@ -591,12 +638,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 404 {configured:false} (managed credits NOT wired → no surface). Honesty law (a control that does nothing must not render) HOLDS. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-cron",
@@ -621,12 +672,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {jobs:[],enabled:false,halted:false,tickMs:60000,health:{...}} — enabled honestly reflects the disarmed tick. Guarded by cron.api.test.js."
     },
     {
       "id": "route/get-api-deliverables",
@@ -718,13 +773,22 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for GET /api/execution; executionEnvironment.describe() is a static capability read. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {backend:local,workspace:<jailed dir>} honest capability surface. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-fallback-chain",
@@ -740,13 +804,22 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for GET /api/fallback/chain; the chain store logic is exercised by fallbackchain units if present but no HTTP assertion found. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {chain:[],saved:false,envDefault:[],maxEntries:8} — honestly flags env-default vs saved. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-file",
@@ -774,12 +847,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?path=../../../../etc/passwd → 403 forbidden (path escape blocked at the fs jail). Happy jailed-stream path guarded by sidecar.http.test.js + e2e.worker-access.test.js."
     },
     {
       "id": "route/get-api-fs-dirstat",
@@ -794,13 +871,22 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for GET /api/fs/dirstat. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?path=C:/Windows → 200 {exists:false,isDir:false,reason:'outside-allowed-roots'} — existence check jailed to allowed roots, never lists contents. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-health",
@@ -822,12 +908,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 ok with no token (TOKEN_EXEMPT liveness). Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-insights",
@@ -850,12 +940,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {totalRuns:0,meteredRuns:0,totalUsd:0,...} aggregate fold, fail-open empty. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-lifecycle-armed",
@@ -908,12 +1002,16 @@
           "ref": "summon"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {maxConcurrentAgents:3} from the real concurrency gate. Guarded by journey summon."
     },
     {
       "id": "route/get-api-memory-config",
@@ -937,12 +1035,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {reflectEnabled:true,reflectCooldownMs:180000,scopeNote:...} driving the memory-controls panel. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-memory-declined",
@@ -965,12 +1067,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {agentId:agent,declined:[]}. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-memory-proposals",
@@ -994,12 +1100,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent&run=none → 200 {runId:none,agentId:agent,proposals:[]}. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-memory-records",
@@ -1023,12 +1133,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {agentId:agent,records:[]}. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-nightshift-drafts",
@@ -1149,12 +1263,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {notes:[]} (agent notebook view). Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-permissions",
@@ -1254,12 +1372,16 @@
           "gate": "test:fast"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {providers:[{id:codex,...,configured},...],keychainMode} — configured tracks a real credential. Guarded by modelpicker.test.js."
     },
     {
       "id": "route/get-api-quests",
@@ -1350,12 +1472,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {runs:[]} (newest-first run history). Guarded by e2e.run.test.js + sidecar.http.test.js."
     },
     {
       "id": "route/get-api-runtime-knobs",
@@ -1378,12 +1504,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {fields:{maxIters:{effective:40,envLocked:false,min:1,max:200},...}} with per-knob envLocked flags. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-save",
@@ -1407,12 +1537,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {save:{schema:starnet.save,version:5,agent:{...}}} durable save envelope. Guarded by sidecar.http.test.js."
     },
     {
       "id": "route/get-api-scout",
@@ -1559,13 +1693,22 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for GET /api/spotify/status. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {connected:false,hasClientId:false,scope:'',expiresAt:0,redirectUri:...} — booleans only, tokens stay server-side. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-state-snapshot",
@@ -1615,13 +1758,22 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for GET /api/study/proposals. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent&run=none → 200 {runId:none,agentId:agent,proposals:[]}. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-subagents",
@@ -1644,12 +1796,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {records:[]} sub-agent worker list. Guarded by e2e.subagent-background.test.js."
     },
     {
       "id": "route/get-api-task-briefs",
@@ -1761,13 +1917,22 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for GET /api/toolsets. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {toolsets:[{id:web,label,glyph,desc,...},...]} with enabled state. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-transcript",
@@ -1790,12 +1955,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent&stream=main → 200 {stream:main,turns:[]} durable transcript. Guarded by cron.session-transcript.e2e.test.js."
     },
     {
       "id": "route/get-api-version",
@@ -1843,13 +2012,22 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for GET /api/widgets. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET → 200 {widgets:[]} — durable widget.set records verbatim (empty on fresh seed), never synthesized. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/get-api-workshop-backlog",
@@ -1872,12 +2050,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {ok:true,granted:false,backlog:[],nextShiftAt:null}. Guarded by workshop.e2e.test.js."
     },
     {
       "id": "route/get-api-workshop-pending",
@@ -1900,12 +2082,16 @@
           "gate": "test:http"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {ok:true,pending:[]} undecided manifests. Guarded by workshop.e2e.test.js."
     },
     {
       "id": "route/get-api-workspace-dir",
@@ -1920,13 +2106,22 @@
         ],
         "events": []
       },
-      "coverage": [],
-      "status": "mapped",
-      "auditedAt": null,
+      "coverage": [
+        {
+          "kind": "KNOWN",
+          "ref": "No direct HTTP-path test for GET /api/workspace/dir. EL-3 gap tracked in ledger."
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "0a009ec2c1506c5c958a0ee9c702a5c9e6035975",
+        "date": "2026-07-18T01:23:57.953Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false
+      "missing": false,
+      "notes": "LIVE :8964 @ HEAD 0a009ec2 — GET ?agent=agent → 200 {dir:<jailed workspace path>} read-only, never lists contents. KNOWN HTTP coverage gap filed to ledger."
     },
     {
       "id": "route/post-api-activity",
