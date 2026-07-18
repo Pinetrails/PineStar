@@ -19,8 +19,16 @@
    lives ONLY in sidecar/index.js.
 
    THE PERSISTED STATE (a small sibling JSON, so a restart resumes the SAME night's focus, not a re-scatter):
-     { v, day, focus:{kind,ref,label,why,source,threadId?,resolvedAt}|null, steer:{ref,kind,setAt}|null }
-   day = the UTC day-bucket the focus belongs to; a new day re-resolves. */
+     { v, day, focus:{kind,ref,label,why,source,threadId?,resolvedAt}|null, steer:{ref,kind,setAt}|null,
+       avoid:[{ref,kind,label,setAt}] }
+   day = the UTC day-bucket the focus belongs to; a new day re-resolves.
+
+   AVOID (autonomy-tuning, 2026-07-17): the EXCLUSION directive — "never pick X as the night's focus on your own."
+   Unlike a steer it does NOT go stale (an off-limits stays until the user removes it): a steer is a nudge, an avoid
+   is a boundary. Conflicts resolve by RECENCY OF DIRECTIVE (the user's latest word wins): steering to X removes X
+   from the avoid list; avoiding X clears a steer at X. The resolver itself still honors avoid over a matching steer
+   (defense in depth — a conflicting persisted pair fails toward NOT acting). An avoid grants nothing and blocks no
+   access the user initiates — it only stops the resolver from DECLARING that target as the autonomous priority. */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -32,6 +40,7 @@
   const STATE_VERSION = 1;
   const DAY_MS = 86400000;
   const STEER_STALE_MS = 7 * DAY_MS;          // a durable steer outranks evidence for ~7 days, then goes stale
+  const AVOID_MAX = 12;                       // off-limits list ceiling (oldest entry evicted first)
   const PROJECT_WINDOW_DAYS = 30;             // a project touched longer ago than this can't be the focus on its own
   const RECENCY_DECAY_DAYS = 30;              // linear recency decay horizon (today = 1.0, 30d ago → 0)
 
@@ -67,6 +76,48 @@
     const s = str(p).replace(/[\\/]+$/, '');
     const i = Math.max(s.lastIndexOf('/'), s.lastIndexOf('\\'));
     return i >= 0 ? s.slice(i + 1) : s;
+  }
+
+  // ---- AVOID ----
+  // ref equality for directive targets. Project refs are filesystem paths the host has already canonicalized, but a
+  // pure compare still folds case + slash direction so a win32 round-trip can't split one root into two identities.
+  function sameRef(kind, a, b) {
+    const x = str(a), y = str(b);
+    if (!x || !y) return false;
+    if (kind === 'project') return x.toLowerCase().replace(/\\/g, '/') === y.toLowerCase().replace(/\\/g, '/');
+    return x === y;
+  }
+  function normAvoid(list) {
+    const out = [];
+    for (const e of (Array.isArray(list) ? list : [])) {
+      if (!e || typeof e !== 'object' || !str(e.ref)) continue;
+      const kind = (e.kind === 'thread' || e.kind === 'goal') ? e.kind : 'project';
+      if (out.some(o => o.kind === kind && sameRef(kind, o.ref, e.ref))) continue;   // dedupe, first (oldest) wins
+      out.push({ ref: str(e.ref), kind, label: str(e.label || '').slice(0, 120) || (kind === 'project' ? baseName(e.ref) : str(e.ref)), setAt: num(e.setAt) });
+    }
+    return out.slice(-AVOID_MAX);   // over-cap: evict the OLDEST entries (list order is insertion order)
+  }
+  // is this (kind, ref) target off-limits? `avoid` is the normalized list.
+  function isAvoided(avoid, kind, ref) {
+    return (Array.isArray(avoid) ? avoid : []).some(e => e && e.kind === kind && sameRef(kind, e.ref, ref));
+  }
+  // add an off-limits entry (stamps setAt from the injected `now`). The user's LATEST word wins: a steer at the same
+  // target is cleared, and a current focus at the same target is dropped so the next ensureFocus re-resolves. Pure.
+  function applyAvoid(state, entry, now) {
+    const s = normalize(state, now);
+    const kind = (entry && (entry.kind === 'thread' || entry.kind === 'goal')) ? entry.kind : 'project';
+    const ref = str(entry && entry.ref);
+    if (!ref) return s;
+    const next = normAvoid(s.avoid.filter(e => !(e.kind === kind && sameRef(kind, e.ref, ref)))
+      .concat([{ ref, kind, label: str(entry.label || ''), setAt: num(now) }]));
+    const steer = (s.steer && s.steer.kind === kind && sameRef(kind, s.steer.ref, ref)) ? null : s.steer;
+    const focus = (s.focus && s.focus.kind === kind && sameRef(kind, s.focus.ref, ref)) ? null : s.focus;
+    return { v: STATE_VERSION, day: s.day, focus, steer, avoid: next };
+  }
+  // remove an off-limits entry by ref (any kind). Pure; unknown ref is a harmless no-op.
+  function removeAvoid(state, ref) {
+    const s = normalize(state, 0);
+    return { v: STATE_VERSION, day: s.day, focus: s.focus, steer: s.steer, avoid: s.avoid.filter(e => !sameRef(e.kind, e.ref, ref)) };
   }
 
   // ---- STEER ----
@@ -112,8 +163,12 @@
     inputs = inputs || {}; opts = opts || {};
     const now = num(opts.now);
 
-    // 1) a fresh STEER outranks all derived evidence and cites the user's directive.
-    if (steerActive(inputs.steer, now)) {
+    const avoid = normAvoid(inputs.avoid);
+
+    // 1) a fresh STEER outranks all derived evidence and cites the user's directive — unless the same target is
+    //    ALSO on the avoid list (a conflicting persisted pair fails toward NOT acting; applySteer/applyAvoid keep
+    //    that pair from forming, so this is defense in depth, not a UI state).
+    if (steerActive(inputs.steer, now) && !isAvoided(avoid, (inputs.steer.kind === 'thread' || inputs.steer.kind === 'goal') ? inputs.steer.kind : 'project', inputs.steer.ref)) {
       const s = inputs.steer;
       const kind = (s.kind === 'thread' || s.kind === 'goal') ? s.kind : 'project';
       const label = kind === 'project' ? baseName(s.ref) : str(s.ref);
@@ -132,6 +187,7 @@
 
     for (const p of (Array.isArray(inputs.projects) ? inputs.projects : [])) {
       if (!p || !str(p.root)) continue;
+      if (isAvoided(avoid, 'project', p.root)) continue;   // off-limits by user directive
       const r = recency(p.lastTouchedAt, now);
       const days = (num(now) - num(p.lastTouchedAt)) / DAY_MS;
       if (num(p.lastTouchedAt) && days > PROJECT_WINDOW_DAYS) continue;   // too stale to lead on its own
@@ -148,6 +204,7 @@
 
     for (const t of (Array.isArray(inputs.threads) ? inputs.threads : [])) {
       if (!t || !str(t.id) || !str(t.title)) continue;
+      if (isAvoided(avoid, 'thread', t.id)) continue;   // off-limits by user directive
       const r = recency(t.updatedAt, now);
       const tag = dayTag(t.updatedAt, now);
       const title = str(t.title).replace(/\s+/g, ' ').trim().slice(0, 120);
@@ -174,7 +231,7 @@
       cands.push({ order: 1, score, focus: { kind: 'quest', ref: str(q.id) || ('quest:' + title), label: title, why, source: 'evidence', resolvedAt: now } });
     }
 
-    const g = inputs.goal;
+    const g = (inputs.goal && !isAvoided(avoid, 'goal', 'goal')) ? inputs.goal : null;
     if (g && str(g.text)) {
       const text = str(g.text).replace(/\s+/g, ' ').trim().slice(0, 140);
       const why = ['your active goal arc: "' + text + '"' + (num(g.total) > 0 ? ' (' + num(g.done) + '/' + num(g.total) + ' done)' : '')];
@@ -208,7 +265,7 @@
   }
 
   // ---- STATE ----
-  function fresh(now) { return { v: STATE_VERSION, day: dayOf(now || 0), focus: null, steer: null }; }
+  function fresh(now) { return { v: STATE_VERSION, day: dayOf(now || 0), focus: null, steer: null, avoid: [] }; }
 
   function normFocus(f) {
     if (!f || typeof f !== 'object' || !str(f.ref)) return null;
@@ -232,6 +289,7 @@
       if (Number.isFinite(raw.day)) s.day = Math.floor(raw.day);
       s.focus = normFocus(raw.focus);
       s.steer = normSteer(raw.steer);
+      s.avoid = normAvoid(raw.avoid);
     }
     return s;
   }
@@ -240,7 +298,9 @@
   function applySteer(state, steer, now) {
     const s = normalize(state, now);
     const ns = normSteer(Object.assign({}, steer, { setAt: num(now) }));
-    return { v: STATE_VERSION, day: s.day, focus: s.focus, steer: ns };
+    // the user's LATEST word wins: steering to a target lifts a standing off-limits at that same target.
+    const avoid = ns ? s.avoid.filter(e => !(e.kind === ns.kind && sameRef(ns.kind, e.ref, ns.ref))) : s.avoid;
+    return { v: STATE_VERSION, day: s.day, focus: s.focus, steer: ns, avoid };
   }
   function clearSteer(state) {
     const s = normalize(state, 0);
@@ -248,7 +308,7 @@
     // deleted directive is still tonight's priority until a day roll. Evidence-derived focus is independent and
     // may remain stable; a steer-derived one must be discarded so ensureFocus resolves fresh evidence (or null).
     const focus = (s.focus && s.focus.source === 'steer') ? null : s.focus;
-    return { v: STATE_VERSION, day: s.day, focus, steer: null };
+    return { v: STATE_VERSION, day: s.day, focus, steer: null, avoid: s.avoid };
   }
 
   /* ensureFocus — the DAY-KEYED, steer-aware resolver the host calls at the start of every beat. Keeps the SAME
@@ -264,10 +324,13 @@
     const s = normalize(state, now);
     const curDay = dayOf(now);
     const steerFresh = !!(s.steer && s.focus && num(s.steer.setAt) > num(s.focus.resolvedAt) && steerActive(s.steer, now));
-    const needsResolve = !s.focus || s.day !== curDay || steerFresh;
+    // an off-limits added after the focus was declared (or a stale persisted pair) must dethrone it — defense in
+    // depth alongside applyAvoid's own focus drop.
+    const focusAvoided = !!(s.focus && isAvoided(s.avoid, s.focus.kind, s.focus.ref));
+    const needsResolve = !s.focus || s.day !== curDay || steerFresh || focusAvoided;
     if (!needsResolve) return { state: s, focus: s.focus, resolved: false };
-    const focus = resolveFocus(Object.assign({}, inputs, { steer: s.steer }), { now });
-    const next = { v: STATE_VERSION, day: curDay, focus: focus || null, steer: s.steer };
+    const focus = resolveFocus(Object.assign({}, inputs, { steer: s.steer, avoid: s.avoid }), { now });
+    const next = { v: STATE_VERSION, day: curDay, focus: focus || null, steer: s.steer, avoid: s.avoid };
     return { state: next, focus: focus || null, resolved: true };
   }
 
@@ -279,12 +342,13 @@
   }
   function toEnvelope(state, now) {
     const s = normalize(state, now);
-    return { v: STATE_VERSION, day: s.day, focus: s.focus, steer: s.steer };
+    return { v: STATE_VERSION, day: s.day, focus: s.focus, steer: s.steer, avoid: s.avoid };
   }
 
   return {
     resolveFocus, focusLine, ensureFocus, steerActive, applySteer, clearSteer, northStarEvidence,
+    applyAvoid, removeAvoid, isAvoided, normAvoid, sameRef,
     fresh, normalize, loadEnvelope, toEnvelope, dayOf, recency, dayTag, baseName,
-    STATE_VERSION, STEER_STALE_MS, DAY_MS, PROJECT_WINDOW_DAYS, FOCUS_KINDS
+    STATE_VERSION, STEER_STALE_MS, DAY_MS, PROJECT_WINDOW_DAYS, FOCUS_KINDS, AVOID_MAX
   };
 });
