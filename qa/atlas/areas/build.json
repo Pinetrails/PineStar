@@ -1,6 +1,6 @@
 {
   "area": "build",
-  "updatedAt": "2026-07-18T00:54:02.711Z",
+  "updatedAt": "2026-07-18T04:05:01.295Z",
   "entries": [
     {
       "id": "state/build-connectors",
@@ -2528,481 +2528,546 @@
       "kind": "ui",
       "area": "build",
       "name": "+ ADD & CONNECT",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-add",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-args",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-args",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-cancel",
       "kind": "ui",
       "area": "build",
       "name": "CANCEL EDIT",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-cancel",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-command",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-command",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-cwd",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-cwd",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-empty-cta",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD A CONNECTOR",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-empty-cta",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-env",
       "kind": "ui",
       "area": "build",
       "name": "textarea",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-env",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-headers",
       "kind": "ui",
       "area": "build",
       "name": "textarea",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-headers",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-id",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-id",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-label",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-label",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-timeout",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-timeout",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-token",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-token",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/mc-url",
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + \"+ ADD & CONNECT\" upserts a connector; the id field shape is exactly what handleConnectorUpsert accepts.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
+          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
+        },
+        {
+          "kind": "test",
           "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#mc-url",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/refit-done",
@@ -3256,1308 +3321,1508 @@
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "The dedicated Spotify (jukebox) connector controls — paste a client id, connect via OAuth, or disconnect.",
-      "promise": "CONNECT SPOTIFY starts the jukebox OAuth; DISCONNECT forgets the tokens + registered client; the client-id input feeds the flow.",
+      "purpose": "The Spotify (Jukebox) OAuth connector card — client input + connect/disconnect, the one first-party OAuth connector wired inline.",
+      "promise": "sp-client input + sp-connect/sp-disconnect controls render and are wired to the Spotify OAuth connect flow (setupSpotify).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "ref": "test/connectors-ui.test.js (setupSpotify + id=sp-connect asserted)"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#sp-client",
       "state": "build-connectors",
-      "notes": "The Spotify jukebox connector controls (client/connect/disconnect). Placed-jukebox=capability; OAuth token honesty guarded by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=sp-connect. Live: sp-client input + sp-connect/sp-disconnect buttons present in MCP tab. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/sp-connect",
       "kind": "ui",
       "area": "build",
       "name": "▶ CONNECT SPOTIFY",
-      "purpose": "The dedicated Spotify (jukebox) connector controls — paste a client id, connect via OAuth, or disconnect.",
-      "promise": "CONNECT SPOTIFY starts the jukebox OAuth; DISCONNECT forgets the tokens + registered client; the client-id input feeds the flow.",
+      "purpose": "The Spotify (Jukebox) OAuth connector card — client input + connect/disconnect, the one first-party OAuth connector wired inline.",
+      "promise": "sp-client input + sp-connect/sp-disconnect controls render and are wired to the Spotify OAuth connect flow (setupSpotify).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "ref": "test/connectors-ui.test.js (setupSpotify + id=sp-connect asserted)"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#sp-connect",
       "state": "build-connectors",
-      "notes": "The Spotify jukebox connector controls (client/connect/disconnect). Placed-jukebox=capability; OAuth token honesty guarded by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=sp-connect. Live: sp-client input + sp-connect/sp-disconnect buttons present in MCP tab. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/sp-disconnect",
       "kind": "ui",
       "area": "build",
       "name": "✕ DISCONNECT",
-      "purpose": "The dedicated Spotify (jukebox) connector controls — paste a client id, connect via OAuth, or disconnect.",
-      "promise": "CONNECT SPOTIFY starts the jukebox OAuth; DISCONNECT forgets the tokens + registered client; the client-id input feeds the flow.",
+      "purpose": "The Spotify (Jukebox) OAuth connector card — client input + connect/disconnect, the one first-party OAuth connector wired inline.",
+      "promise": "sp-client input + sp-connect/sp-disconnect controls render and are wired to the Spotify OAuth connect flow (setupSpotify).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "ref": "test/connectors-ui.test.js (setupSpotify + id=sp-connect asserted)"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "#sp-disconnect",
       "state": "build-connectors",
-      "notes": "The Spotify jukebox connector controls (client/connect/disconnect). Placed-jukebox=capability; OAuth token honesty guarded by connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=sp-connect. Live: sp-client input + sp-connect/sp-disconnect buttons present in MCP tab. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-1",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-10",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-11",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-12",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-13",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-14",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-15",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-16",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-17",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-18",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-19",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-2",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-20",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-21",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-22",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-23",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-24",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-25",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-26",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-27",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-28",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-29",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-3",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-30",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-31",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-32",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-33",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-34",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-35",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-36",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-37",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-4",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-5",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-6",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-7",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-8",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-a-cc-list-site-9",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
-      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own site to get credentials.",
-      "promise": "Each catalog card renders one \"site ↗\" link to that connector's homepage; the number of links equals the catalog count.",
+      "purpose": "The external docs/site link on each MCP catalog card — sends the user to the connector's own homepage to get credentials.",
+      "promise": "Each catalog card renders exactly one 'site ↗' link to that connector's https homepage; link count === catalog count (37).",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (asserts each catalog entry url is https)"
         },
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
+      "notes": "Homogeneous clone of the per-card catalog site link (37 live). Renderer-judged; representative=txt-a-cc-list-site-1. render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-406",
@@ -4636,703 +4901,798 @@
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-10",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-11",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-12",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-13",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-14",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-15",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-16",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-17",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-18",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-19",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-2",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-3",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-4",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-5",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-6",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-7",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-8",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-add-9",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "purpose": "Install this catalog connector in one click — reuses the POST /api/connectors upsert with the id/url pre-filled from the authoritative catalog.",
+      "promise": "Clicking '+ ADD' upserts that connector by its catalog id (never re-typed); one ADD renders per addable (none/apikey) card; the installed card stops offering ADD.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
+          "ref": "test/mcp.catalog.test.js (id upsert-safe)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js (add round-trip)"
         },
         {
           "kind": "test",
           "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+      "notes": "Renderer-judged; representative=txt-button-cc-list-add-1. Live: clicked '+ ADD' on AWS Knowledge -> POST /api/connectors, backend connectors 0->1 with authoritative id 'aws-knowledge'; card then dropped its ADD (installed:true reflected). render contract proven live: /api/connectors/catalog=37 === 37 .cc-card DOM nodes; auth-type census none=9 apikey=10 oauth=18 maps 1:1 to 18 ADD (post-install 18)+16 SIGN-IN(=18 oauth-2 soon)+2 SOON+37 site links+10 apikey paste-key inputs; installed=0 and no card falsely shows CONNECTED/CONFIGURED (truthful telemetry). [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-cc-list-sign-in-1",
@@ -5925,58 +6285,68 @@
       "kind": "ui",
       "area": "build",
       "name": "HTTP",
-      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
-      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
+      "purpose": "Switch the manual MCP form between HTTP and STDIO (local) transport, revealing the fields that transport needs.",
+      "promise": "Selecting HTTP vs STDIO swaps the visible field set (url/headers vs command/args/env/cwd); both options render.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "ref": "test/connectors-ui.test.js (transport toggle http/stdio + field sets asserted)"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
+      "notes": "Renderer-judged; representative=txt-button-mc-transport-http-1. Live: HTTP and STDIO (local) transport buttons present in MCP tab. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-mc-transport-stdio-local-1",
       "kind": "ui",
       "area": "build",
       "name": "STDIO (local)",
-      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
-      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
+      "purpose": "Switch the manual MCP form between HTTP and STDIO (local) transport, revealing the fields that transport needs.",
+      "promise": "Selecting HTTP vs STDIO swaps the visible field set (url/headers vs command/args/env/cwd); both options render.",
       "wiring": {
         "files": [
-          "frontend/app/stationui.js"
+          "frontend/app/stationui.js",
+          "sidecar/mcp/catalog.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/connectors-ui.test.js"
+          "ref": "test/connectors-ui.test.js (transport toggle http/stdio + field sets asserted)"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
+        "date": "2026-07-18T00:00:00.000Z"
+      },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
-      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
+      "notes": "Renderer-judged; representative=txt-button-mc-transport-http-1. Live: HTTP and STDIO (local) transport buttons present in MCP tab. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-off-415",
