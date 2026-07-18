@@ -5506,6 +5506,18 @@ const World = (() => {
       if (dish && PropSprites.pulseProp) PropSprites.pulseProp(dish.id, 'dish');
       hudNote('📤 reply sent · ' + String(p.channel || 'channel').toLowerCase(), 'good');
     });
+    // EL-11 #11 CHANNEL TROUBLE MADE VISIBLE: transport health (channel.connect) used to be seen ONLY inside the open
+    // CHANNELS panel. A drop/fatal-token that happens while you're anywhere else in the station now surfaces a single
+    // honest HUD line naming the channel + state — so a silently-dead channel can't swallow your messages unnoticed.
+    // Enum is FROZEN to ['up','down','error'] (shared/events.js): only the unhealthy states toast; 'up' stays quiet.
+    U.bus.on('channel.connect', p => {
+      if (!p || !p.channel) return;
+      const state = String(p.state || '').toLowerCase();
+      if (state !== 'down' && state !== 'error') return;   // healthy reconnects are not alarms
+      const name = String(p.channel).toUpperCase();
+      const why = p.detail ? ' — ' + String(p.detail) : '';
+      hudNote((state === 'error' ? '⚠ ' + name + ' sign-in/token error' : '⚠ ' + name + ' connection down') + why, 'bad');
+    });
     // G0.5 BUDGET MADE VISIBLE: budget.threshold was alarm-audio only. The payload is the frozen
     // { scope: run|day|global, usd, cap } triple (sidecar/budget.js, one emit per scope+band crossing
     // per run) — the band isn't carried, so derive it from the numbers: at/over cap = stopped.
