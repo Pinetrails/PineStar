@@ -119,7 +119,7 @@ ok(/notifyAutonomous/.test(idx), 'index.js persists/reads the global opt-in flag
 ok(/redact\(text\)/.test(idx), 'the outbound notification text is redacted before send (no secret egress)');
 const hub = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'channels', 'hub.js'), 'utf8');
 ok(/saveChatRecord\(/.test(hub), 'the inbound hub persists the chat→agent binding (so the notifier can find chats)');
-const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
+const ui = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'windows', 'messaging.js'), 'utf8');   // CHANNELS window extracted from stationui.js (BUILDERS split)
 ok(/id="ch-notify"/.test(ui) && /\/api\/channels\/notify/.test(ui), 'the Messaging panel has the (now ONE shared) opt-in toggle + posts it');
 
 ok(/onDelivery:/.test(idx), 'index.js wires the per-send delivery-outcome recorder (onDelivery)');
