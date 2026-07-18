@@ -1078,7 +1078,11 @@ Gauge: `npm run qa:atlas:status`. Trunk re-sweep 2026-07-07 (39b9c569): **1339 e
 (1288 unmapped queue + 51 missing from the skills-legibility redesign — P2s filed, dedup holds).
 The whole surface is the queue. Areas: system, crew, work, build, world, commands, routes, events, props.
 
-_Active claims: (none)._
+_Active claims:_
+- IN PROGRESS — release-polish wave-3 agent 1 · crew + system (coverage promotion)
+- IN PROGRESS — release-polish wave-3 agent 2 · work (coverage promotion)
+- IN PROGRESS — release-polish wave-3 agent 3 · routes + events + props + world (coverage promotion)
+- IN PROGRESS — release-polish wave-3 agent 5 · build (connectors tail)
 
 Wave-1+2 (2026-07-18, release-polish lane): gauge 0% → 18% fresh (274/1523) + 478 audited; zero
 product truthfulness defects across 1,200+ judged entries; digests in qa/STATUS.md. Wave-3 queue:
