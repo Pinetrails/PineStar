@@ -39,14 +39,16 @@
       ],
       "status": "audited",
       "auditedAt": {
-        "sha": "c50b0c645a1f432e17455fa65dcd19c4e304fbe9",
-        "date": "2026-07-16T07:54:58Z"
+        "sha": "f20684ff8a844a9d5da927a9fd676895fc5d3132",
+        "date": "2026-07-18T01:50:00Z"
       },
-      "findings": [],
+      "findings": [
+        "206d3ceb"
+      ],
       "firstSeen": "2026-07-16T08:00:00.000Z",
       "lastSeen": "2026-07-16T08:00:00.000Z",
       "missing": true,
-      "notes": "LIVE J4 @c50b0c64: 13/13 assertions passed. It physically opened DELIVERABLES after building a real Workshop HTML artifact and proved search/filter/refresh/cleanup plus pending Open/Keep/Discard controls. HTTP lifecycle, preview allowlists, cleanup protection/undo, and restart durability are guarded by workshop.e2e. Audited, not perfected: the full visual rubric has not been judged across every viewport."
+      "notes": "RE-PROVED live @HEAD 0a009ec2 (.uiatlas/work-probe/deliverables-evidence.txt): [data-term=deliverables] opens DELIVERABLES / WORKSHOP LIBRARY with the honest non-destructive header, toolbar (#dl-query search, #dl-status ALL/pending/kept/discarded/produced/failed, REFRESH, CLEAN), and GET /api/deliverables -> {ok,items:[],total:0,previewLimits} (authoritative empty for the fresh seed); cleanup-preview honest (0 targets/protected). Row rendering + KEEP/DISCARD (POST /api/workshop/decide) + HTML opaque-origin sandbox + cleanup/undo are guarded by workshop.e2e + deliverable-store + deliverables-ui + J4; not re-driven with a live artifact this batch -> AUDITED. NOTE: missing:true is a FALSE POSITIVE — scripts/lib/states.mjs buildStates() omits work-deliverables so the sweep never re-sights it (finding 206d3ceb routed to Cartographer)."
     },
     {
       "id": "state/work-recipes",
