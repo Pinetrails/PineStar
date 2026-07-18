@@ -130,6 +130,29 @@ export function enumerateProps(catalog, hasRenderer) {
   });
 }
 
+// Pure, browser-free MIRROR of ENUM_PROBE's key-assignment logic. Given an ordered list of node
+// descriptors { id?, dataTerm?, ariaLabel?, tag, txt, anc } (`anc` = '#'+id of the nearest
+// id-bearing ancestor, '' if none), it returns the SAME key each element would get in-page, using the
+// SAME precedence (#id > [data-term] > aria-label > txt:tag:anc:txt:n) and the SAME per-(tag,anc,txt)
+// ordinal bucket. This exists so the failure mode — a positional key that shifts under unrelated DOM
+// growth — can be locked in a Chrome-free unit test. It MUST stay byte-for-byte in step with the
+// ENUM_PROBE string in the CLI IO shell below (see the NOTE there).
+export function computeProbeKeys(nodes) {
+  const bucket = new Map();
+  return arr(nodes).map((el) => {
+    el = el || {};
+    const tag = str(el.tag).toLowerCase();
+    if (str(el.id)) return '#' + str(el.id);
+    if (str(el.dataTerm)) return '[data-term=' + str(el.dataTerm) + ']';
+    if (str(el.ariaLabel)) return 'aria:' + str(el.ariaLabel).slice(0, 40);
+    const txt = str(el.txt).trim().replace(/\s+/g, ' ').slice(0, 40);
+    const anc = str(el.anc);
+    const bk = tag + '|' + anc + '|' + txt;
+    const n = (bucket.get(bk) || 0) + 1; bucket.set(bk, n);
+    return 'txt:' + tag + ':' + anc + ':' + txt + ':' + n;
+  });
+}
+
 export function makeCartographer(opts) {
   opts = opts || {};
   const clock = opts.clock || { now() { return 0; } };
@@ -483,6 +506,7 @@ if (INVOKED_DIRECTLY) {
   const OUT_DIR = path.join(REPO, '.uiatlas');
   const SWEEP_REPORT = path.join(OUT_DIR, 'sweep-report.json');
   const SWEEP_LOG = path.join(OUT_DIR, 'sweep.log');
+  const HARVEST_DUMP = path.join(OUT_DIR, 'harvest.json');
 
   // Cartographer port range (Charter §8): 8920-8929 sidecar, 9320-9329 CDP.
   const PORT = process.env.SKYNET_ATLAS_PORT || '8920';
@@ -658,15 +682,22 @@ if (INVOKED_DIRECTLY) {
   }
 
   // ---- the in-page enumerator probe (collects every interactive element in the current state) ----
-  // Returns a flat list of { key, label, selector, visible }. Stable key: #id | [data-term=..] |
-  // aria-label | text+tag+nth. Dedup within a state by key.
+  // Returns a flat list of { key, label, selector, visible }. Stable key precedence: #id |
+  // [data-term=..] | aria-label | txt:tag:anc:txt:n — where anc = '#'+id of the NEAREST ancestor
+  // carrying an element id ('' if none) and n = ordinal WITHIN the (tag, anc, txt) bucket (NOT a
+  // global per-tag counter). Anchoring to the nearest id-bearing ancestor keeps the fallback key
+  // stable under unrelated DOM growth elsewhere on the page; the ordinal disambiguates only true
+  // same-labeled siblings. Dedup within a state by key.
+  //   NOTE: the txt-fallback formula here is mirrored, byte-for-byte, by the pure exported
+  //   `computeProbeKeys()` (used by test/qa-cartographer.test.js to lock the failure mode without a
+  //   browser). If you change the key shape below, change computeProbeKeys() to match.
   const ENUM_PROBE = `(() => {
     const SEL = 'button, [role="button"], [role="menuitem"], [role="tab"], a[href], input, select, textarea, summary, [onclick], [data-term]';
     const nodes = Array.from(document.querySelectorAll(SEL));
     const out = [];
     const seen = new Set();
     const cssEsc = (s) => (window.CSS && CSS.escape) ? CSS.escape(s) : String(s).replace(/["\\\\#.:\\[\\]]/g, '\\\\$&');
-    const tagNth = new Map();
+    const txtBucket = new Map();   // (tag|anc|txt) -> ordinal; disambiguates only true same-labeled siblings
     for (const el of nodes) {
       const tag = el.tagName.toLowerCase();
       let key = '', selector = '';
@@ -675,8 +706,12 @@ if (INVOKED_DIRECTLY) {
       else if (el.getAttribute && el.getAttribute('aria-label')) { const a = el.getAttribute('aria-label'); key = 'aria:' + a.slice(0, 40); selector = tag + '[aria-label="' + a.replace(/"/g, '\\\\"') + '"]'; }
       else {
         const txt = (el.textContent || '').trim().replace(/\\s+/g, ' ').slice(0, 40);
-        const n = (tagNth.get(tag) || 0) + 1; tagNth.set(tag, n);
-        key = 'txt:' + tag + ':' + txt + ':' + n;
+        // nearest ancestor carrying an element id anchors the key so DOM growth elsewhere never shifts it.
+        let anc = '';
+        for (let p = el.parentElement; p; p = p.parentElement) { if (p.id) { anc = '#' + p.id; break; } }
+        const bk = tag + '|' + anc + '|' + txt;
+        const n = (txtBucket.get(bk) || 0) + 1; txtBucket.set(bk, n);
+        key = 'txt:' + tag + ':' + anc + ':' + txt + ':' + n;
         selector = tag + (txt ? '' : '');   // best-effort; the session refines the selector
       }
       if (seen.has(key)) continue;
@@ -856,6 +891,40 @@ if (INVOKED_DIRECTLY) {
     return merge.missing.length ? 1 : 0;
   }
 
+  // ---- --dump-harvest ----
+  // Run the EXACT same static + live harvest as --sweep, but write the raw enumerated element list to
+  // HARVEST_DUMP and touch NOTHING else — no shard merge, no ledger findings. This is the seam the
+  // one-time key migration (scripts/qa/atlas-migrate-keys.mjs) consumes so it can reason about the NEW
+  // keys BEFORE the registry is churned, reusing this machinery instead of duplicating it.
+  async function runDumpHarvest(staticOnly) {
+    ensureDir(OUT_DIR);
+    try { fs.writeFileSync(SWEEP_LOG, '[atlas] dump-harvest start ' + nowIsoReal() + (staticOnly ? ' (static-only)' : '') + '\n', 'utf8'); } catch (_) {}
+    const sha = gitShell().head();
+
+    let staticResult;
+    try { staticResult = await staticEnumerate(); }
+    catch (e) { errlog('BLOCKED (static): ' + (e && e.message || e)); appendLog('BLOCKED static: ' + (e && e.stack || e)); return 2; }
+    const elements = staticResult.elements.slice();
+    const sweptKinds = new Set(['command', 'route', 'event', 'state', 'prop']);
+    let statesWalked = [];
+
+    if (!staticOnly) {
+      let live;
+      try { live = await liveSweep(); }
+      catch (e) { errlog('BLOCKED (live): ' + (e && e.message || e)); appendLog('BLOCKED live: ' + (e && e.stack || e)); return 2; }
+      for (const el of live.elements) elements.push(el);
+      statesWalked = live.states;
+      sweptKinds.add('ui');
+    }
+
+    fs.writeFileSync(HARVEST_DUMP, JSON.stringify({
+      schemaVersion: 1, ranAt: nowIsoReal(), sha, staticOnly: !!staticOnly,
+      sweptKinds: [...sweptKinds], statesWalked, count: elements.length, elements
+    }, null, 2) + '\n', 'utf8');
+    log('dump-harvest done — ' + elements.length + ' elements -> ' + path.relative(REPO, HARVEST_DUMP).replace(/\\/g, '/'));
+    return 0;
+  }
+
   // ---- --status ----
   function runStatus() {
     const shards = loadShards();
@@ -899,12 +968,14 @@ if (INVOKED_DIRECTLY) {
     const argv = process.argv.slice(2);
     const wantSweep = argv.includes('--sweep');
     const wantStatus = argv.includes('--status');
+    const wantDump = argv.includes('--dump-harvest');
     const staticOnly = argv.includes('--static-only');
 
-    if (wantStatus && !wantSweep) { process.exit(runStatus()); }
+    if (wantDump) { process.exit(await runDumpHarvest(staticOnly)); }
+    else if (wantStatus && !wantSweep) { process.exit(runStatus()); }
     else if (wantSweep) { process.exit(await runSweep(staticOnly)); }
     else {
-      console.error('usage: node scripts/qa/cartographer.mjs [--sweep [--static-only]] [--status]');
+      console.error('usage: node scripts/qa/cartographer.mjs [--sweep [--static-only]] [--dump-harvest [--static-only]] [--status]');
       process.exit(1);
     }
   })().catch(e => { errlog('FATAL: ' + (e && e.stack || e)); try { fileBlocked('FATAL: ' + (e && e.message || e), SWEEP_LOG); } catch (_) {} process.exit(2); });

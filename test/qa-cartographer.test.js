@@ -11,7 +11,7 @@
    Pure + deterministic — every timestamp comes from the injected clock, never Date.now(). */
 'use strict';
 const A = require('./_assert.js');
-const { makeCartographer, enumerateProps, slug, areaOfState, AREAS, STATUSES } = require('../scripts/qa/cartographer.mjs');
+const { makeCartographer, enumerateProps, slug, areaOfState, computeProbeKeys, AREAS, STATUSES } = require('../scripts/qa/cartographer.mjs');
 
 // a fixed clock so firstSeen/lastSeen are deterministic ISO strings.
 let clk = Date.UTC(2026, 6, 7, 12, 0, 0);          // 2026-07-07T12:00:00.000Z
@@ -314,6 +314,71 @@ const fullEntry = (over) => Object.assign({
   A.eq(areaOfState('build-station'), 'build', 'build-* -> build');
   A.ok(AREAS.includes('commands') && AREAS.includes('routes') && AREAS.includes('events') && AREAS.includes('props'), 'the static areas are in the taxonomy');
   A.ok(STATUSES.length === 4 && STATUSES[0] === 'unmapped' && STATUSES[3] === 'perfected', 'the status lifecycle is unmapped..perfected');
+}
+
+// ---- (g) ENUM_PROBE fallback keys are ANCHOR-STABLE, not positional (regression lock) ----
+// The defect: the no-id/no-aria fallback keyed elements as 'txt:'+tag+':'+txt+':'+n where n was a
+// GLOBAL per-tag counter across the page. Any DOM insertion shifted every subsequent unlabeled key,
+// orphaning hundreds of session-judged entries en masse. The fix anchors the key to the nearest
+// id-bearing ancestor and scopes the ordinal to the (tag, anc, txt) bucket. computeProbeKeys is the
+// pure mirror of the in-page ENUM_PROBE, so this locks the shape + stability without a browser.
+{
+  const carto = makeCartographer({ clock, git: fakeGit() });
+
+  // (a) the new key shape is what entryId slugs.
+  const k = computeProbeKeys([{ tag: 'button', anc: '#bay-panel', txt: 'Save' }])[0];
+  A.eq(k, 'txt:button:#bay-panel:Save:1', 'fallback key = txt:tag:anc:txt:ordinal (anchor-scoped)');
+  A.eq(carto.entryId({ kind: 'ui', area: 'system', key: k }), 'ui/system/txt-button-bay-panel-save-1', 'entryId slugs the new key shape');
+
+  // the ordinal disambiguates ONLY true same-(tag,anc,txt) siblings.
+  const sibs = computeProbeKeys([
+    { tag: 'button', anc: '#list', txt: 'X' },
+    { tag: 'button', anc: '#list', txt: 'X' }
+  ]);
+  A.eq(sibs[0], 'txt:button:#list:X:1', 'first same-labeled sibling is ordinal 1');
+  A.eq(sibs[1], 'txt:button:#list:X:2', 'second same-labeled sibling is ordinal 2');
+  // an element under a DIFFERENT ancestor with the SAME text is NOT bumped to :2 (own bucket).
+  const twoAnc = computeProbeKeys([
+    { tag: 'button', anc: '#panelA', txt: 'Go' },
+    { tag: 'button', anc: '#panelB', txt: 'Go' }
+  ]);
+  A.eq(twoAnc[0], 'txt:button:#panelA:Go:1', 'same text under panelA is ordinal 1');
+  A.eq(twoAnc[1], 'txt:button:#panelB:Go:1', 'same text under panelB is ALSO ordinal 1 (separate bucket)');
+
+  // (b) inserting ONE new unlabeled button BEFORE the existing ones does not change the keys of
+  // elements under different ancestors or with different text (the old global counter DID shift them).
+  const before = [
+    { tag: 'button', anc: '#panelA', txt: 'Save' },
+    { tag: 'button', anc: '#panelB', txt: 'Cancel' },
+    { tag: 'button', anc: '#panelA', txt: 'Delete' }
+  ];
+  const after = [
+    { tag: 'button', anc: '#panelC', txt: 'New' },   // freshly inserted at the FRONT of the DOM
+    { tag: 'button', anc: '#panelA', txt: 'Save' },
+    { tag: 'button', anc: '#panelB', txt: 'Cancel' },
+    { tag: 'button', anc: '#panelA', txt: 'Delete' }
+  ];
+  const kBefore = computeProbeKeys(before);
+  const kAfter = computeProbeKeys(after);
+  A.eq(kAfter[1], kBefore[0], 'Save key unchanged by an unrelated front insertion');
+  A.eq(kAfter[2], kBefore[1], 'Cancel key unchanged by an unrelated front insertion');
+  A.eq(kAfter[3], kBefore[2], 'Delete key unchanged by an unrelated front insertion');
+  A.eq(kAfter[0], 'txt:button:#panelC:New:1', 'only the genuinely-new element gets a new key');
+
+  // and the merge treats that stability correctly: seed the registry with `before`, re-sweep with
+  // `after`, and NOTHING churns except one created skeleton (no missing, no re-created originals).
+  const uiHarvest = (nodes, keys) => keys.map((key, i) => ({
+    id: carto.entryId({ kind: 'ui', area: 'system', key }), kind: 'ui', area: 'system',
+    name: nodes[i].txt, selector: 'button', state: 'sys-x'
+  }));
+  const seed = carto.mergeSweep({}, { elements: uiHarvest(before, kBefore), sweptKinds: ['ui'], reportRel: 'r' });
+  A.eq(seed.created, 3, 'seed sweep creates the three original skeletons');
+  const resweep = carto.mergeSweep(seed.shards, { elements: uiHarvest(after, kAfter), sweptKinds: ['ui'], reportRel: 'r' });
+  A.eq(resweep.created, 1, 'the re-sweep creates ONLY the newly-inserted button');
+  A.eq(resweep.missing.length, 0, 'no original entry is orphaned/missing by the insertion');
+  A.eq(resweep.findings.length, 0, 'no dead-entry finding filed (the churn bug is fixed)');
+  const ids = new Set(resweep.shards.system.entries.map(e => e.id));
+  A.ok(ids.has(carto.entryId({ kind: 'ui', area: 'system', key: kBefore[0] })), 'the Save entry survives under its stable id');
 }
 
 A.report('qa-cartographer.test');
