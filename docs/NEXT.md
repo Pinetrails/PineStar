@@ -24,8 +24,8 @@ SHIPPED-with-liveProof-PENDING in qa/product-perfect/claims.json.
       state spawns nothing. Requires installing a fresh trunk build (this machine currently
       runs an older installed build; EBWebView purge recipe applies on exe swap).
 - [ ] macOS runtime proof of the tray/autostart paths (cfg-clean + documented APIs only so far).
-- [ ] **LAUNCH RUNBOOK: docs/LAUNCH_RUNBOOK.md** (committed on claude/starnet-code-prompts-a9d3a7
-      @ 36596f99 — merge or copy forward). KEY FINDING: NOTHING 0.5.x was ever pushed/published —
+- [x] **LAUNCH RUNBOOK: docs/LAUNCH_RUNBOOK.md** — MERGED to trunk (verified present 2026-07-17;
+      the claude/starnet-code-prompts-a9d3a7 copy is patch-identical). KEY FINDING: NOTHING 0.5.x was ever pushed/published —
       origin tags stop at v0.4.0, starnet-releases 404s; launch = the CI train's FIRST live run
       (all 5 platforms) at v0.5.2. Andrew's chain: updater-key backup (NONE exists) + dev-key
       rotation → push trunk+tag → publish → verify-update-host → W1 second-user proof →
@@ -254,20 +254,17 @@ Five-agent audit + the approved fix sequence, all lane-committed (digest lands i
   `archive/codex/...` tags — safe to delete those branches whenever Andrew signs off (tags keep the SHAs).
 
 STILL OPEN from the audit (unclaimed): codex OAuth refresh token keychain home (the one plaintext-only
-credential) · web_fetch/channel-content untrusted-content fence (recall/MCP have one; the highest-volume
-input doesn't) · IPC_TOKEN constant-time compare · index.js channel-route dedup (~9× repeated persist
-shape) · nightshiftPrecheck fails OPEN on exception (budget gate off on throw) · Cartographer re-sweep +
+credential) · index.js channel-route dedup (~9× repeated persist shape) · Cartographer re-sweep +
 re-bless (187 perfected all stale; props/events/routes areas never mapped) · fresh installed-exe smoke
 stamp for qa:ready · remaining orphaned routes (workshop/shift, nightshift/beat force-fire, config/reset,
 execution view, threads-ledger browse).
 
 RE-ARMED-WATCH FALLOUT (found by the watch itself, 2026-07-15 — both are INSTRUMENT-environment, not
 product; the same commit passes all suites in interactive shells):
-- [ ] **Hourly Guardian RED @ every cycle until fixed**: `test/shell-machine-state.test.js` fails ONLY
-      under the Task-Scheduler context ("host accepts safe inline Start-Process -FilePath:cmd.exe form —
-      expected 0, got 9"; guardian-20260715-040003, test-fast step 66/325; http-e2e/shoot/golden/audit/
-      journeys all green same cycle). Fix = make the suite (or the guardian task's execution context)
-      interactive-agnostic; until then the hourly row RED means THIS, not a product regression.
+- [x] **Hourly Guardian RED — RESOLVED** (verified 2026-07-17): the probe now asserts launch not
+      child-exit hygiene (shell-machine-state.test.js ~:189 comment documents the batch-logon
+      $p.ExitCode unreliability) and guardian cycles are GREEN all 6 gates under the real scheduler
+      (guardian-20260717-230002 / -220002 / -210002 all verdict green).
 - [ ] **Integration-tree test:fast stalls at the 600s wrapper** right after lint-evidence-secrets
       (reproduced 2× at 70cdc178; the known `.dogfood` bloat). Gate trunk commits in a clean worktree
       FF'd to the same SHA (receipt pattern used for this merge). Real fix = product-perfect lane makes
@@ -294,11 +291,10 @@ OPEN (routed, repros in the ledger):
   hero tile (3/3); F8 P2 cancelled runs persist `content:""` assistant turns (partial streamed
   text lost from the durable transcript); F9 P2-suspect NIGHT SHIFT trophy minted with zero
   night-shift activity (trophy condition needs reading).
-- KNOWN pre-existing: `test/qa-product-perfect-claims.test.js` is ENVIRONMENT-DEPENDENT — red
-  (9 fails) in ANY fresh worktree because it needs the integration tree's gitignored `.dogfood`
-  candidate state; green in the integration tree (64 assertions). Every lane gating in a clean
-  worktree loses the fast-gate tail behind step ~133 — product-perfect lane should make it
-  skip-honestly (with a visible SKIPPED note) when `.dogfood` is absent.
+- KNOWN pre-existing — SINCE RESOLVED (re-proven 2026-07-17): `test/qa-product-perfect-claims.test.js`
+  now passes in a FRESH clean worktree at trunk head (64 assertions OK; the candidate-git-blob
+  authority landed since this note). A red here in a lane now means the real thing — a shipped-surface
+  change without its in-branch W0 re-stamp — not environment.
 
 ## 2026-07-13 — FLAGSHIP WAVE: last-hop surfaces + cross-wiring (branch `claude/flagship-features-audit-d0e1a1`)
 

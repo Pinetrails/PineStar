@@ -263,6 +263,37 @@ function makeWorkshopStore(deps) {
     });
   }
 
+  // UNDO A KEEP (EL-11 #8): a kept deliverable was copied OUT of the jail and its backlog item retired via
+  // complete(). If the Commander UNDOES that keep (the route removes the out-of-jail copy), the build returns to
+  // PENDING so /pending re-lists it and they can decide again. Additive to the store, idempotent, and honest:
+  //   • already pending (an item with this builtRunId is still/again present) → no change, { restored:false, 'exists' };
+  //   • an id/title the Commander DISCARDED before → refused, { restored:false, 'denied' } (dedup doctrine holds on
+  //     undo too — never silently re-list rejected work);
+  //   • otherwise re-inserts the built item (builtRunId set) so handleWorkshopPending shows it again.
+  // info: { backlogId?, title?, source? } — reconstructed by the caller from the disk manifest (the archive run
+  // dir SURVIVES a keep, so validateWorkshopManifest still resolves title/backlogId). now = injected ms (no
+  // ambient clock in this module, matching queue()/setLastShift()).
+  function restorePending(agentId, runId, info, now) {
+    const rid = String(runId || '');
+    info = info || {};
+    let out = { restored: false, reason: 'noop', item: null };
+    if (!rid) return Promise.resolve(out);
+    return durable.update(keyOf(agentId), (cur) => {
+      const rec = normalize(cur);
+      if (rec.backlog.some(b => b.builtRunId === rid || b.buildingRunId === rid)) { out = { restored: false, reason: 'exists', item: null }; return undefined; }
+      // a valid original backlogId (from the manifest) is reused so re-keep/discard operates on the same identity;
+      // a missing/oversized/legacy id falls back to a deterministic, ID_RE-valid 'undo-<runId>' handle.
+      const bid = (info.backlogId && ID_RE.test(String(info.backlogId))) ? String(info.backlogId) : ('undo-' + rid.replace(/[^A-Za-z0-9_-]/g, '').slice(0, 34));
+      const nt = normTitle(info.title);
+      if (rec.denylist.indexOf(bid) >= 0 || (nt && rec.deniedTitles.indexOf(nt) >= 0)) { out = { restored: false, reason: 'denied', item: null }; return undefined; }
+      const item = { id: bid, title: String(info.title || 'Workshop deliverable').slice(0, 200), detail: '', source: String(info.source || 'workshop').slice(0, 40), ts: Number(now) || 0, builtRunId: rid };
+      rec.backlog.push(item);
+      while (rec.backlog.length > BACKLOG_CAP) rec.backlog.shift();
+      out = { restored: true, reason: 'restored', item: item };
+      return rec;
+    }).then(() => out);
+  }
+
   // find the backlog item a given build run produced (by builtRunId or buildingRunId) — used on decide.
   function itemForRun(agentId, runId) {
     const rid = String(runId || '');
@@ -305,7 +336,7 @@ function makeWorkshopStore(deps) {
 
   return {
     read, hasGrant, setGrant, grantIfUndecided, backlogOf, isDenied,
-    queue, claimNext, sweepStaleClaims, markBuilt, releaseClaim, discard, complete, itemForRun, remove, setLastShift,
+    queue, claimNext, sweepStaleClaims, markBuilt, releaseClaim, discard, complete, restorePending, itemForRun, remove, setLastShift,
     _durable: durable
   };
 }

@@ -2875,6 +2875,20 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           ' · <span class="key-stat">no API key needed</span></div>' +
           '</div></div>';
       }
+      // STATION LINK / base-URL edit (post-onboarding, EL-11 #12): a custom OpenAI-compatible endpoint carries an
+      // editable base URL. Onboarding is the only other place Harness.setBaseUrl is called; without this control the
+      // endpoint was frozen at whatever onboarding stored. Only the 'custom' provider uses a base URL, so gate on it.
+      const isCustomEp = k.provider === 'custom';
+      const baseBtn = isCustomEp
+        ? '<button class="bb sm" data-act="baseurl-edit" data-i="' + i + '" title="change this station link / endpoint URL without re-onboarding">✎ STATION LINK</button>'
+        : '';
+      const baseBlock = isCustomEp
+        ? '<div class="key-edit" id="base-edit-' + i + '" hidden>' +
+            '<input type="url" class="key-input base-input" id="base-in-' + i + '" placeholder="https://your-endpoint/v1" value="' + esc(k.baseUrl || '') + '" autocomplete="off" spellcheck="false">' +
+            '<button class="bb sm" data-act="baseurl-apply" data-i="' + i + '">APPLY</button>' +
+            '<span class="msg" id="base-msg-' + i + '"></span>' +
+          '</div>'
+        : '';
       return '<div class="key-row">' +
         '<span class="conn-dot"></span>' +
         '<div class="key-main">' +
@@ -2885,12 +2899,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '</div>' +
         '<div class="key-acts">' +
         '<button class="bb sm" data-act="edit" data-i="' + i + '">✎ UPDATE</button>' +
+        baseBtn +
         '<button class="bb sm danger" data-act="rm" data-i="' + i + '">✕ REMOVE</button>' +
         '</div></div>' +
         '<div class="key-edit" id="key-edit-' + i + '" hidden>' +
         '<input type="password" class="key-input" id="key-in-' + i + '" placeholder="paste new ' + esc(provName(k.provider)) + ' key…" autocomplete="off" spellcheck="false">' +
         '<button class="bb sm" data-act="save" data-i="' + i + '">SAVE</button>' +
-        '</div>';
+        '</div>' +
+        baseBlock;
     });
     if (providerAcceptsKey(addProvider) && !hasAddProvider) rows.push(addKeyHtml(addProvider, false));
     return rows.join('');
@@ -3013,6 +3029,34 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         if (act === 'edit') {
           const ed = body.querySelector('#key-edit-' + i);
           if (ed) { ed.hidden = !ed.hidden; if (!ed.hidden) { const inp = body.querySelector('#key-in-' + i); if (inp) inp.focus(); } }
+        } else if (act === 'baseurl-edit') {
+          const ed = body.querySelector('#base-edit-' + i);
+          if (ed) { ed.hidden = !ed.hidden; if (!ed.hidden) { const inp = body.querySelector('#base-in-' + i); if (inp) inp.focus(); } }
+        } else if (act === 'baseurl-apply') {
+          // EL-11 #12: apply an edited base URL post-onboarding, then PROVE the result honestly (truthful telemetry).
+          const inp = body.querySelector('#base-in-' + i);
+          const msg = body.querySelector('#base-msg-' + i);
+          const setMsg = (t, cls) => { if (msg && msg.isConnected) { msg.textContent = t; msg.className = 'msg' + (cls ? ' ' + cls : ''); } };
+          const v = inp ? inp.value.trim() : '';
+          if (!v) { sfx('bad'); setMsg('enter your endpoint URL', 'bad'); return; }
+          // Same validation/normalization onboarding relies on: a non-empty URL; a bare host gets an https:// scheme
+          // so the endpoint is well-formed before we store it. Reject anything that still isn't a parseable URL.
+          let norm = v; if (!/^https?:\/\//i.test(norm)) norm = 'https://' + norm.replace(/^\/+/, '');
+          try { new URL(norm); } catch (_) { sfx('bad'); setMsg('that doesn\'t look like a URL', 'bad'); return; }
+          if (inp) inp.value = norm;
+          sfx('click');
+          setMsg('saved — probing endpoint…', '');
+          Promise.resolve(h.setBaseUrl ? h.setBaseUrl(norm, row.provider) : null).then(() => {
+            invalidateProviderHealth(row.provider);
+            // HONEST reachability check against the REAL endpoint — never claim connected without proof. probeProvider
+            // round-trips /api/providers/probe; the same probe result feeds the provider card badge cache.
+            if (!h.probeProvider) { setMsg('saved', 'ok'); return; }
+            return h.probeProvider(row.provider).then(pr => {
+              providerHealth[row.provider] = pr || null;   // keep the card badges consistent with this probe
+              if (pr && pr.reachable) setMsg(pr.credentialVerified ? '✓ endpoint reachable · credentials verified' : '✓ endpoint reachable — not verified', 'ok');
+              else setMsg('✕ endpoint unreachable' + (pr && pr.error ? ' — ' + pr.error : ''), 'bad');
+            });
+          }).catch(() => setMsg('✕ could not reach the sidecar to apply', 'bad'));
         } else if (act === 'save') {
           const inp = body.querySelector('#key-in-' + i);
           const v = inp ? inp.value.trim() : '';
@@ -5385,6 +5429,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const ccMsgEl = body.querySelector('#cc-msg');
     let ccCache = [];   // flat catalog entries, so a click reads the authoritative id/url/name (never re-typed)
     const ccPending = new Set();   // connector ids with an in-flight OAuth sign-in (guards duplicate popups/pollers)
+    const ccTimers = new Map();    // id -> live poll interval, so a CANCEL / panel-close can clear it (EL-11 #13)
+    const ccPendingWin = new Map();// id -> popup window handle (browser) so a CANCEL can close a still-open consent tab
+    // Stop and forget the poll for a connector — used by success/error/cap paths, the CANCEL affordance, and the
+    // panel-leaves-DOM self-terminate guard. Idempotent (a missing id is a no-op).
+    function stopCcPoll(id) { const t = ccTimers.get(id); if (t) { clearInterval(t); ccTimers.delete(id); } }
+    // Restore a signing-in card's action button back to its idle SIGN IN state so a re-click starts fresh.
+    function ccResetSignBtn(id) {
+      const btn = ccListEl && ccListEl.querySelector('.cc-card[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"] button[data-cc-act]');
+      if (btn && (btn.dataset.ccAct === 'signin' || btn.dataset.ccAct === 'signin-cancel')) {
+        btn.dataset.ccAct = 'signin'; btn.textContent = '▸ SIGN IN'; btn.disabled = false;
+        btn.title = 'opens a secure browser sign-in (OAuth)';
+      }
+    }
     // auth tier chip: glyph, label, colour. Drives the honest "what will adding this cost me" cue.
     // CRT glyphs, not emoji (⚡🔑🔒 punched holes in the phosphor look). ▸ = no setup; API key + OAUTH ride as plain
     // colour-coded text chips (gold / dim) — VT323 has no key/lock glyph that renders (⚿ came out as tofu), and the
@@ -5465,18 +5522,38 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         ccMsgEl.textContent = '✕ couldn’t open the sign-in page for ' + label + (opened.where === 'popup' ? ' — allow pop-ups for this site, then try again.' : ' — try again.'); sfx('bad'); ccPending.delete(id); return;
       }
       const win = opened.win;   // popup handle when in a browser; null on desktop (opened in the real browser)
+      ccPendingWin.set(id, win || null);   // remembered so a CANCEL can close a still-open popup
       ccMsgEl.textContent = 'complete the sign-in for ' + label + (opened.where === 'browser' ? ' in your browser…' : ' in the popup window…');
+      // Turn the card's SIGN IN button into a visible CANCEL affordance for the duration of the poll — before this
+      // the only way out of a stalled/abandoned sign-in was to wait out the 5-minute cap (EL-11 #13).
+      const signBtn = ccListEl.querySelector('.cc-card[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"] button[data-cc-act]');
+      if (signBtn) { signBtn.dataset.ccAct = 'signin-cancel'; signBtn.textContent = '✕ CANCEL'; signBtn.disabled = false; signBtn.title = 'stop waiting for this sign-in'; }
       let tries = 0;
       const timer = setInterval(async () => {
+        // Self-terminate the moment the panel body leaves the DOM (window closed / rerendered) — the same guard
+        // buildMessaging._poll uses. Without it an abandoned sign-in kept hitting /api/connectors for ~5 min.
+        if (!document.body.contains(body)) { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); return; }
         tries++;
         try {
           const j = await (await fetch('/api/connectors')).json();
           const c = (j.connectors || []).find(x => x.id === id);
-          if (c && c.state === 'up') { clearInterval(timer); ccPending.delete(id); sfx('click'); notify('Connector "' + label + '" connected', 'good'); ccMsgEl.classList.add('ok'); ccMsgEl.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
-          if (c && c.state === 'error') { clearInterval(timer); ccPending.delete(id); sfx('bad'); ccMsgEl.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); return; }
+          if (c && c.state === 'up') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); sfx('click'); notify('Connector "' + label + '" connected', 'good'); ccMsgEl.classList.add('ok'); ccMsgEl.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
+          if (c && c.state === 'error') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); sfx('bad'); ccMsgEl.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); return; }
         } catch (_) {}
-        if (tries > 150) { clearInterval(timer); ccPending.delete(id); }   // ~5-minute cap so a stalled/abandoned sign-in stops polling
+        if (tries > 150) { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); ccResetSignBtn(id); }   // ~5-minute cap so a stalled/abandoned sign-in stops polling
       }, 2000);
+      ccTimers.set(id, timer);
+    }
+    // CANCEL a still-polling sign-in: clear the timer, drop the in-flight guard, close any popup we opened, and reset
+    // the card so a re-click can start over. Honest neutral message — we are NOT claiming a failure, the user opted out.
+    function ccCancelSignIn(id) {
+      stopCcPoll(id);
+      ccPending.delete(id);
+      const w = ccPendingWin.get(id); ccPendingWin.delete(id);
+      try { if (w && !w.closed) w.close(); } catch (_) {}
+      ccResetSignBtn(id);
+      const e = ccCache.find(x => x.id === id); const label = (e && e.name) || id;
+      ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'sign-in for ' + label + ' cancelled — press SIGN IN to try again.'; sfx('tick');
     }
     ccListEl.addEventListener('click', async ev => {
       const btn = ev.target.closest('button[data-cc-act]'); if (!btn) return;
@@ -5493,6 +5570,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         btn.disabled = true; await ccInstall(id, token);
       }
       else if (act === 'signin') { btn.disabled = true; await ccSignIn(id); btn.disabled = false; }
+      else if (act === 'signin-cancel') { ccCancelSignIn(id); }
     });
     ccRefresh();
   }
@@ -5653,6 +5731,33 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const ok = j.lastStatus === 'ok';
       return '<span class="' + (ok ? 'pos' : '') + '"' + (ok ? '' : ' style="color:var(--bad)"') + '>' + (ok ? '✓ ok' : '✕ ' + esc(j.lastReason || 'error')) + '</span> <span class="dim">' + esc(fmtRel(j.lastRunAt)) + '</span>';
     }
+    // TICKER HEALTH (scheduler-audit GA-9): armed alone can't prove ticks are completing. GET /api/cron carries a
+    // real observed `health` block; render it beside the armed banner. Only meaningful when armed (a disarmed
+    // scheduler is honestly idle — the OFF banner already owns that story), so return '' otherwise.
+    function tickHealthLine(cron) {
+      const hh = cron && cron.health;
+      if (!cron || !cron.enabled || !hh) return '';
+      // cronHealth timestamps are epoch-ms NUMBERS (Date.now()), not ISO strings like the per-job fields — normalize
+      // to ISO so fmtRel (which Date.parse()es a string) reads them instead of falling through to '—'.
+      const relOf = t => fmtRel(typeof t === 'number' ? new Date(t).toISOString() : t);
+      if (hh.healthy) {
+        const age = hh.lastSuccessAt != null ? relOf(hh.lastSuccessAt) : 'just now';
+        return ' <span class="dim">· tick healthy — last success ' + esc(age) + '</span>';
+      }
+      // Armed but not proven healthy: surface WHY, never a fake-green. A real tick error wins; otherwise we honestly
+      // say we're still waiting for the first successful tick (no success timestamp yet).
+      if (hh.lastTickError) return ' <span style="color:var(--bad)">· tick error — ' + esc(hh.lastTickError) + '</span>';
+      return ' <span class="dim">· waiting for first tick…</span>';
+    }
+    // Per-job DELIVERY OUTCOME (scheduler-audit): a routine can succeed while its channel notification fails — that
+    // failure is durable (cron-store markDelivery) and must be visible, never swallowed. Show ONLY a failure (the
+    // error string already carries the channel in [brackets]); a success or a never-delivered job shows nothing
+    // (honest no-signal — we never invent a "delivered" state the job never attempted).
+    function deliveryLine(j) {
+      if (!j.lastDeliveryAt || j.lastDeliveryOk !== false) return '';
+      return '<div class="mc-detail" style="color:var(--bad)">✕ delivery failed — ' + esc(j.lastDeliveryError || 'notification could not be sent') +
+        ' <span class="dim">' + esc(fmtRel(j.lastDeliveryAt)) + '</span></div>';
+    }
     function row(j) {
       const on = j.enabled;
       const stateBadge = on ? '<span style="color:var(--gold)">● scheduled</span>' : '<span class="dim">○ paused</span>';
@@ -5670,6 +5775,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + fromRecipe + '</div>' +
         '<div class="mc-url dim">runs as ' + esc(agentLabel(j.agentId || 'agent')) + ' · next ' + next + ' · last ' + lastResult(j) + '</div>' +
         (j.lastError ? '<div class="mc-detail">' + esc(j.lastError) + '</div>' : '') +
+        deliveryLine(j) +
         '<div class="mc-acts">' +
           '<button class="bb xs" data-act="run">▶ RUN NOW</button>' +
           '<button class="bb xs" data-act="toggle">' + (on ? '⏸ DISABLE' : '▶ ENABLE') + '</button>' +
@@ -5690,7 +5796,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // the fix is one click away. When ON, the calm one-liner + DISABLE control is enough. `#rt-arm`/data-arm
         // stay identical so the arm/disarm wiring below binds unchanged.
         gateEl.innerHTML = j && j.enabled
-          ? '<span style="color:var(--gold)">● scheduler armed</span> <span class="dim">— routines fire automatically.</span> ' +
+          ? '<span style="color:var(--gold)">● scheduler armed</span> <span class="dim">— routines fire automatically.</span>' + tickHealthLine(j) + ' ' +
             '<button class="bb xs" id="rt-arm" data-arm="0">⏸ DISABLE SCHEDULING</button>'
           : '<div class="brief-block" style="border-left-color:var(--bad);margin-bottom:8px">' +
               '<div class="brief-k" style="color:var(--bad)">○ SCHEDULING IS OFF</div>' +

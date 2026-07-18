@@ -2308,6 +2308,38 @@ const Chat = (() => {
             rv.onclick = () => { Promise.resolve(core.invoke('starnet_reveal_path', { path: destPath })).catch(() => { rv.textContent = 'could not open'; setTimeout(() => { rv.textContent = '📂 open folder'; }, 1600); }); };
             chips.appendChild(rv);
           }
+          // UNDO KEEP (EL-11 #8) — reverse the copy-out: delete exactly the files Implement wrote to destPath and
+          // return the build to pending. DESTRUCTIVE-CONTROLS LAW: the chip names its target folder AND its effect,
+          // and single-arms (click to arm, click again to confirm) so it's never a one-tap accident. The resulting
+          // line is driven by the SERVER's honest {removed, missing} — a file the user already moved reads as such,
+          // never as a phantom removal.
+          const un = document.createElement('button'); un.className = 'consent-btn deny'; un.textContent = 'undo keep';
+          un.title = 'UNDO KEEP — removes the copied files from ' + destPath + ' and returns this build to pending';
+          let unArmed = false;
+          un.onclick = async () => {
+            if (un.disabled) return;
+            if (!unArmed) { unArmed = true; un.textContent = 'undo — remove these files?'; setTimeout(() => { if (!un.disabled) { unArmed = false; un.textContent = 'undo keep'; } }, 4000); return; }
+            un.disabled = true; un.textContent = 'undoing…';
+            let j = null;
+            try {
+              const tok = (typeof Harness !== 'undefined' && Harness.apiToken) ? String(Harness.apiToken() || '') : '';
+              const headers = { 'Content-Type': 'application/json' }; if (tok) headers['X-StarNet-Token'] = tok;
+              const rr = await fetch('/api/workshop/undo', { method: 'POST', headers, body: JSON.stringify({ agentId: agentId, runId: m.runId, destPath: destPath }) });
+              j = await rr.json().catch(() => null);
+              if (!rr.ok || !j || j.ok === false) j = null;
+            } catch (_) { j = null; }
+            if (!j) { un.disabled = false; unArmed = false; un.textContent = 'undo keep'; localLine('Could not undo this keep: the station kept the files.'); return; }
+            // honest resulting state, straight from server truth.
+            const nRemoved = (j.removed || []).length, nMissing = (j.missing || []).length;
+            let done;
+            if (nRemoved && !nMissing) done = '↩ keep undone — removed ' + nRemoved + ' file' + (nRemoved === 1 ? '' : 's') + ' from ' + (j.destPath || destPath) + '. This build is pending again.';
+            else if (nRemoved && nMissing) done = '↩ keep undone — removed ' + nRemoved + ', but ' + nMissing + ' file' + (nMissing === 1 ? ' was' : 's were') + ' already moved or gone. This build is pending again.';
+            else done = '↩ nothing to remove — those files were already moved or deleted' + (j.restored ? '. This build is pending again.' : '.');
+            lr.body.textContent = done;   // replaces the label + chips (the destPath is gone, so its chips are moot)
+            try { decideNote(done); } catch (_) {}
+            autoscroll();
+          };
+          chips.appendChild(un);
           lr.body.appendChild(chips);
         }
         autoscroll();
