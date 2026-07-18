@@ -2251,6 +2251,14 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .q-queue + .q-dismiss { margin-left:2px; }
 .q-queue:hover { color:var(--gold); border-color:var(--gold); opacity:1; }
 .q-queue:disabled { opacity:.4; cursor:default; }
+/* §C — the GO ▸ chip: routes to the real surface this quest is done on (task board / dossier / REFIT).
+   A quiet phosphor chip in the header row, never a raw browser button; nowrap so the label can't
+   fold into the title. First of the header's right-aligned trio (GO ▸ · ◈ queue · ✕ dismiss). */
+.q-go { margin-left:auto; flex:0 0 auto; background:none; border:1px solid var(--ph-glow2); border-radius:2px;
+  color:var(--ph-dim); opacity:.8; font-family:inherit; font-size:9px; letter-spacing:.08em;
+  text-transform:uppercase; white-space:nowrap; line-height:1.5; padding:1px 6px; cursor:pointer; }
+.q-go:hover { color:var(--gold); border-color:var(--gold); opacity:1; }
+.q-go + .q-queue, .q-go + .q-dismiss { margin-left:2px; }
 /* shared quest-row vocabulary (F-lane hygiene): the inline styles the rows used to carry, hoisted to classes so the
    markup reads structural and every row speaks one visual language. No behavior change — geometry is identical. */
 .q-hd { display:flex; align-items:center; gap:6px; }        /* the glyph + title header row */
