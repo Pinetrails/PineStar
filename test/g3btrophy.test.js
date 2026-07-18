@@ -47,8 +47,8 @@ A.ok(/SeedReuseStore\.reset/.test(appSrc), '…and resets it on new-hero (a fres
 const psSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/propsprites.js'), 'utf8');
 A.ok(/setTrophyCount/.test(psSrc) && /F\.trophycase\s*=/.test(psSrc), 'propsprites carries the trophy feed + the case sprite');
 
-const uiSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/stationui.js'), 'utf8');
-A.ok(/trophies:\s*\[/.test(uiSrc) && /function buildTrophies\(/.test(uiSrc), 'stationui registers the TROPHY surface builder + its BUILDER entry');
+const uiSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/windows/trophies.js'), 'utf8');   // TROPHY window extracted from stationui.js (BUILDERS split)
+A.ok(/registerWindow\('trophies',\s*'TROPHY CASE',\s*buildTrophies/.test(uiSrc) && /function buildTrophies\(/.test(uiSrc), 'the TROPHY surface builder registers its window entry (StationUI.registerWindow)');
 A.ok(/Trophies\.build/.test(uiSrc), '…and it projects through the pure Trophies engine (real completions only)');
 A.ok(/SeedReuseStore\.livingTools/.test(uiSrc), '…and reads the living-tools shelf from the seed-reuse aggregate');
 A.ok(/date unknown/.test(uiSrc), 'the surface renders "date unknown" (never a fabricated 1969) for an undated completion');

@@ -32,7 +32,9 @@ ok(/STANDING APPROVALS/.test(src), 'the standing-grant section is titled STANDIN
 ok(/data-perm-revoke=/.test(src), 'a REVOKE control is rendered for standing grants');
 ok(/pwhen|grantAgeText/.test(src), 'each row shows WHEN it was granted (provenance line)');
 ok(/emptyApprovals|No standing approvals yet/.test(src), 'teaching empty state ("answer ALWAYS…") is wired');
-ok(/data-perm-revoke\][\s\S]*dataset\.armed/.test(src), 'REVOKE uses the two-step arm/confirm idiom (destructive-action guard)');
+// (the arm state itself lives in the shared ArmConfirm helper — the stray dataset.armed the old needle matched
+// belonged to the REWIND window, which moved to frontend/app/windows/rewind.js in the BUILDERS split)
+ok(/\[data-perm-revoke\]'\)\.forEach\(b => ArmConfirm\.wire\(b/.test(src), 'REVOKE uses the two-step arm/confirm idiom (destructive-action guard)');
 ok(/held\.filter\(k => curated\.indexOf\(k\) < 0\)/.test(src), 'NON-curated standing grants are listed too (nothing hidden/irrevocable)');
 ok(/pre-approve a capability|pre-bless/i.test(src), 'the curated GRANT offer is kept separate from the active-approvals ledger');
 

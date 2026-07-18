@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "77f40138e90238245bfb38bf7ad3d9228e2f0872",
+    "sourceCommit": "fb3d8063a4ac1edee680ef8b2d2f68c7d84972b5",
     "pathSetSha256": "9eeefd91d6d300f96627d4a5036f6c767a4a1fe611b7bce6175e1b94964d750f",
     "files": [
       {
@@ -1498,7 +1498,7 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/routines.js",
           "needle": "ROUTINES"
         },
         {
@@ -1564,7 +1564,7 @@
       "claim": "Agents and messaging continue working after the app closes.",
       "surfaceLocators": [
         {
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "even with this window closed, as long as the station app is running"
         }
       ],
@@ -1679,12 +1679,12 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "id: 'telegram'"
         },
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "id: 'discord'"
         },
         {
@@ -1718,17 +1718,17 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "id: 'slack'"
         },
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "id: 'matrix'"
         },
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "id: 'signal'"
         }
       ],
@@ -1774,7 +1774,7 @@
         },
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "Both tokens are stored locally by the sidecar and never displayed"
         }
       ],
@@ -1796,7 +1796,7 @@
       "claim": "Users can connect HTTP or local stdio MCP servers and discover their tools.",
       "surfaceLocators": [
         {
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/connectors.js",
           "needle": "Remote http(s) servers, or a local"
         }
       ],
@@ -1842,7 +1842,7 @@
         },
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/connectors.js",
           "needle": "cc-lg-oauth"
         }
       ],
@@ -2581,7 +2581,7 @@
       "authorityChecks": [
         {
           "kind": "contains",
-          "path": "frontend/app/stationui.js",
+          "path": "frontend/app/windows/messaging.js",
           "needle": "even with this window closed, as long as the station app is running"
         },
         {

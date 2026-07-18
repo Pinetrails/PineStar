@@ -294,7 +294,7 @@ const root = path.resolve(__dirname, '..');
   A.ok(/function storeChannelToken/.test(harness), 'harness.js exposes storeChannelToken');
   A.ok(/harness_store_channel_token/.test(harness), 'harness.js invokes the Tauri channel-token command');
   A.ok(/if\s*\(!DESKTOP[\s\S]{0,40}\)\s*return Promise\.resolve\(false\)/.test(harness), 'browser build no-ops storeChannelToken (keeps the POST-body path)');
-  const ui = fs.readFileSync(path.join(root, 'frontend', 'app', 'stationui.js'), 'utf8');
+  const ui = fs.readFileSync(path.join(root, 'frontend', 'app', 'windows', 'messaging.js'), 'utf8');
   // one catalog-generated connect handler serves EVERY channel: the keychain park happens once, by channel id.
   A.ok(/Harness\.storeChannelToken\(c\.id, vals\.token\)/.test(ui), 'the generic connect handler parks each channel\'s token in the keychain first');
   A.ok((ui.match(/if \(stored\) bodyToken = ''/g) || []).length >= 1, 'a keychain-stored token is omitted from the connect POST body');

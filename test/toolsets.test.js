@@ -91,7 +91,7 @@ function stationWith(types) {
   A.ok(/disabledCaps:\s*disabledCapsSet\(\)/.test(idx), 'the run path feeds disabledCaps into resolveTools (live-apply)');
 
   // ---------- 4. SOURCE GUARD: frontend surface + every guarded connectors/Spotify string kept ----------
-  const station = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
+  const station = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'windows', 'connectors.js'), 'utf8');   // CONNECTORS window extracted from stationui.js (BUILDERS split)
   A.ok(/TOOLSETS/.test(station), 'the console surfaces a TOOLSETS section');
   A.ok(/\/api\/toolsets/.test(station), 'the frontend reads /api/toolsets');
   // guarded strings from connectors-ui.test.js MUST survive the retitle/reorg:

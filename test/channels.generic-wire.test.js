@@ -52,7 +52,7 @@ const ids = () => { let i = 0; return () => 'r' + (++i); };
   A.ok(/notifyAutonomous/.test(statusBody), 'status surfaces the shared autonomous-ping opt-in');
 
   // ---------- 1b. FRONTEND source-guard: the CHANNELS panel renders all five platforms from ONE catalog ----------
-  const station = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
+  const station = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'windows', 'messaging.js'), 'utf8');
   A.ok(/CHANNEL_CATALOG/.test(station), 'the panel is catalog-driven (adding a platform is a catalog row)');
   for (const t of ['TELEGRAM', 'DISCORD', 'SLACK', 'MATRIX', 'SIGNAL']) A.ok(new RegExp("title: '" + t + "'").test(station), t + ' card present in the catalog');
   // masked secrets: slack's two tokens + matrix's access token are password inputs; endpoints/account are plain text.

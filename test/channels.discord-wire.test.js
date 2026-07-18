@@ -68,7 +68,7 @@ function fakeFetch() { return async () => ({ ok: true, status: 200, async json()
   A.ok(/notifyAutonomous/.test(dcStatusBody), 'status surfaces the shared autonomous-ping opt-in (parity with Telegram)');
 
   // ---------- 2. FRONTEND source-guard: the Messaging Discord card mirrors the Telegram card ----------
-  const station = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'stationui.js'), 'utf8');
+  const station = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'windows', 'messaging.js'), 'utf8');
 
   // Telegram card intact (additive-only): its masked token field + its catalog entry that generates tg-connect
   A.ok(/id="tg-token"/.test(station) && /pre: 'tg'/.test(station), 'Telegram card preserved (not regressed)');
