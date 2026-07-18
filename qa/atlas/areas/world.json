@@ -1,6 +1,6 @@
 {
   "area": "world",
-  "updatedAt": "2026-07-18T02:45:18.222Z",
+  "updatedAt": "2026-07-18T02:46:06.532Z",
   "entries": [
     {
       "id": "state/ingame",
@@ -25,14 +25,14 @@
       ],
       "status": "perfected",
       "auditedAt": {
-        "sha": "296c8ee866614531a87cbb918070805c60928503",
-        "date": "2026-07-07T22:17:15.768Z"
+        "sha": "cc424925ea925e80428b9d6062fc6ac2ac6a0873",
+        "date": "2026-07-18T02:46:06.532Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.409Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live-proven 2026-07-07T22:17:15.768Z (port 8968/CDP 9368): the seeded station loaded directly into the ingame state (376 model rows, dock tiles, widget rails all present). states.mjs:83 name:ingame drive:closeOnly. This IS the state every other world entry was harvested under."
+      "notes": "Live @ HEAD: the seeded app reaches the base in-game state on every boot/reload (READY_EXPR true: #screen-game active + #bottombar visible; window.__STARNET_DEV__ set) — verified repeatedly this wave via the cartographer liveSweep boot on :8967. Covered by the 'ingame' shoot state."
     },
     {
       "id": "ui/world/aria-add-a-widget-to-this-rail",
