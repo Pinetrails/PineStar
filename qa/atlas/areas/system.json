@@ -1,6 +1,6 @@
 {
   "area": "system",
-  "updatedAt": "2026-07-07T22:40:51.000Z",
+  "updatedAt": "2026-07-18T00:52:51.362Z",
   "entries": [
     {
       "id": "state/sys-logbook",
@@ -3524,79 +3524,7 @@
       "notes": "Homogeneous clone: inlineToggle handler (stationui.js:2266) per prov-card. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-button-amber-448",
-      "kind": "ui",
-      "area": "system",
-      "name": "AMBER",
-      "purpose": "Select the AMBER CRT phosphor theme for the whole station.",
-      "promise": "Clicking AMBER sets store.settings.theme='amber', saves, and applySettings() repaints the station's phosphor palette immediately.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/settings-p1-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — theme button \"AMBER\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-blue-450",
-      "kind": "ui",
-      "area": "system",
-      "name": "BLUE",
-      "purpose": "Select the BLUE CRT phosphor theme for the whole station.",
-      "promise": "Clicking BLUE sets store.settings.theme='blue', saves, and applySettings() repaints the station's phosphor palette immediately.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/settings-p1-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — theme button \"BLUE\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-build-434",
+      "id": "ui/system/txt-button-auto-init-build-1",
       "kind": "ui",
       "area": "system",
       "name": "does a few small grounded jobs a day on its own",
@@ -3626,88 +3554,14 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
       "notes": "Live CDP :8967 — button \"BUILD\" rendered with tooltip \"does a few small grounded jobs a day on \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-button-busy-441",
-      "kind": "ui",
-      "area": "system",
-      "name": "a busier station — up to 6 jobs a day",
-      "purpose": "Autonomy cadence level \"BUSY\" — a busier station — up to 6 jobs a day.",
-      "promise": "Clicking it sets the agent's cadence to \"BUSY\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/autonomystore.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/autonomy-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"BUSY\" rendered with tooltip \"a busier station — up to 6 jobs a day\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-draft-for-me-445",
-      "kind": "ui",
-      "area": "system",
-      "name": "acts on its own and leaves drafts — writes no files",
-      "purpose": "Autonomy Reach level \"DRAFT FOR ME\" — acts on its own and leaves drafts — writes no files.",
-      "promise": "Clicking it sets the agent's Reach to \"DRAFT FOR ME\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/autonomystore.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/autonomy-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"DRAFT FOR ME\" rendered with tooltip \"acts on its own and leaves drafts — writ\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-free-435",
+      "id": "ui/system/txt-button-auto-init-free-1",
       "kind": "ui",
       "area": "system",
       "name": "picks & does work toward your goals while you’re away",
@@ -3737,19 +3591,19 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
       "notes": "Live CDP :8967 — button \"FREE\" rendered with tooltip \"picks & does work toward your goals whil\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-button-fully-autonomous-446",
+      "id": "ui/system/txt-button-auto-init-suggest-1",
       "kind": "ui",
       "area": "system",
-      "name": "acts AND writes real files on its own — logged & reversible",
-      "purpose": "Autonomy Reach level \"FULLY AUTONOMOUS\" — acts AND writes real files on its own — logged & reversible.",
-      "promise": "Clicking it sets the agent's Reach to \"FULLY AUTONOMOUS\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
+      "name": "lines up suggestions you approve — never acts on its own",
+      "purpose": "Autonomy Initiative level \"SUGGEST\" — lines up suggestions you approve — never acts on its own.",
+      "promise": "Clicking it sets the agent's Initiative to \"SUGGEST\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -3774,14 +3628,312 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"FULLY AUTONOMOUS\" rendered with tooltip \"acts AND writes real files on its own — \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Live CDP :8967 — button \"SUGGEST\" rendered with tooltip \"lines up suggestions you approve — never\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-button-grant-447",
+      "id": "ui/system/txt-button-auto-init-wait-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "nothing runs unless you ask",
+      "purpose": "Autonomy Initiative level \"WAIT\" — nothing runs unless you ask.",
+      "promise": "Clicking it sets the agent's Initiative to \"WAIT\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/autonomystore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/autonomy-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Live CDP :8967 — button \"WAIT\" rendered with tooltip \"nothing runs unless you ask\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-auto-pace-busy-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "a busier station — up to 6 jobs a day",
+      "purpose": "Autonomy cadence level \"BUSY\" — a busier station — up to 6 jobs a day.",
+      "promise": "Clicking it sets the agent's cadence to \"BUSY\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/autonomystore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/autonomy-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Live CDP :8967 — button \"BUSY\" rendered with tooltip \"a busier station — up to 6 jobs a day\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-auto-pace-light-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "one small job a day",
+      "purpose": "Autonomy cadence level \"LIGHT\" — one small job a day.",
+      "promise": "Clicking it sets the agent's cadence to \"LIGHT\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/autonomystore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/autonomy-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Live CDP :8967 — button \"LIGHT\" rendered with tooltip \"one small job a day\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-auto-pace-max-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "as much as it's allowed — up to 12 jobs a day",
+      "purpose": "Autonomy cadence level \"MAX\" — as much as it's allowed — up to 12 jobs a day.",
+      "promise": "Clicking it sets the agent's cadence to \"MAX\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/autonomystore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/autonomy-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Live CDP :8967 — button \"MAX\" rendered with tooltip \"as much as it's allowed — up to 12 jobs \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-auto-pace-standard-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "a few small jobs a day — the default",
+      "purpose": "Autonomy cadence level \"STANDARD\" — a few small jobs a day — the default.",
+      "promise": "Clicking it sets the agent's cadence to \"STANDARD\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/autonomystore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/autonomy-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Live CDP :8967 — button \"STANDARD\" rendered with tooltip \"a few small jobs a day — the default\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-auto-reach-observe-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "read / research only — writes nothing",
+      "purpose": "Autonomy Reach level \"OBSERVE\" — read / research only — writes nothing.",
+      "promise": "Clicking it sets the agent's Reach to \"OBSERVE\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/autonomystore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/autonomy-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Live CDP :8967 — button \"OBSERVE\" rendered with tooltip \"read / research only — writes nothing\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-auto-reach-sandbox-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "build & write locally — nothing leaves the machine",
+      "purpose": "Autonomy Reach level \"SANDBOX\" — build & write locally — nothing leaves the machine.",
+      "promise": "Clicking it sets the agent's Reach to \"SANDBOX\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/autonomystore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/autonomy-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Live CDP :8967 — button \"SANDBOX\" rendered with tooltip \"build & write locally — nothing leaves t\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-key-edit-0-save-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "SAVE",
+      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
+      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.304Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-perm-grants-grant-1",
       "kind": "ui",
       "area": "system",
       "name": "GRANT",
@@ -3816,55 +3968,19 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
       "notes": "Live CDP :8967 — GRANT button present. Autonomy write + ledger covered by autonomy-ui/autonomy-ledger tests. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-button-green-449",
+      "id": "ui/system/txt-button-perm-level-build-drafts-1",
       "kind": "ui",
       "area": "system",
-      "name": "GREEN",
-      "purpose": "Select the GREEN CRT phosphor theme for the whole station.",
-      "promise": "Clicking GREEN sets store.settings.theme='green', saves, and applySettings() repaints the station's phosphor palette immediately.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/settings-p1-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — theme button \"GREEN\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-light-439",
-      "kind": "ui",
-      "area": "system",
-      "name": "one small job a day",
-      "purpose": "Autonomy cadence level \"LIGHT\" — one small job a day.",
-      "promise": "Clicking it sets the agent's cadence to \"LIGHT\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
+      "name": "acts on its own and leaves drafts — writes no files",
+      "purpose": "Autonomy Reach level \"DRAFT FOR ME\" — acts on its own and leaves drafts — writes no files.",
+      "promise": "Clicking it sets the agent's Reach to \"DRAFT FOR ME\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -3889,19 +4005,19 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"LIGHT\" rendered with tooltip \"one small job a day\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Live CDP :8967 — button \"DRAFT FOR ME\" rendered with tooltip \"acts on its own and leaves drafts — writ\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-button-max-442",
+      "id": "ui/system/txt-button-perm-level-free-fully-autonomous-1",
       "kind": "ui",
       "area": "system",
-      "name": "as much as it's allowed — up to 12 jobs a day",
-      "purpose": "Autonomy cadence level \"MAX\" — as much as it's allowed — up to 12 jobs a day.",
-      "promise": "Clicking it sets the agent's cadence to \"MAX\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
+      "name": "acts AND writes real files on its own — logged & reversible",
+      "purpose": "Autonomy Reach level \"FULLY AUTONOMOUS\" — acts AND writes real files on its own — logged & reversible.",
+      "promise": "Clicking it sets the agent's Reach to \"FULLY AUTONOMOUS\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -3926,14 +4042,51 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"MAX\" rendered with tooltip \"as much as it's allowed — up to 12 jobs \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Live CDP :8967 — button \"FULLY AUTONOMOUS\" rendered with tooltip \"acts AND writes real files on its own — \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-button-never-443",
+      "id": "ui/system/txt-button-perm-level-suggest-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "lines up ideas you approve — never acts on its own",
+      "purpose": "Autonomy Reach level \"SUGGEST\" — lines up ideas you approve — never acts on its own.",
+      "promise": "Clicking it sets the agent's Reach to \"SUGGEST\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/autonomystore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/autonomy-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Live CDP :8967 — button \"SUGGEST\" rendered with tooltip \"lines up ideas you approve — never acts \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-perm-level-wait-1",
       "kind": "ui",
       "area": "system",
       "name": "does nothing on its own — you drive everything",
@@ -3963,66 +4116,30 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
       "notes": "Live CDP :8967 — button \"NEVER\" rendered with tooltip \"does nothing on its own — you drive ever\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-button-observe-436",
+      "id": "ui/system/txt-button-prov-key-edit-anthropic-save-1",
       "kind": "ui",
       "area": "system",
-      "name": "read / research only — writes nothing",
-      "purpose": "Autonomy Reach level \"OBSERVE\" — read / research only — writes nothing.",
-      "promise": "Clicking it sets the agent's Reach to \"OBSERVE\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
+      "name": "SAVE",
+      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
+      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
-          "frontend/app/autonomystore.js"
+          "frontend/app/harness.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/autonomy-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"OBSERVE\" rendered with tooltip \"read / research only — writes nothing\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-purple-451",
-      "kind": "ui",
-      "area": "system",
-      "name": "PURPLE",
-      "purpose": "Select the PURPLE CRT phosphor theme for the whole station.",
-      "promise": "Clicking PURPLE sets store.settings.theme='purple', saves, and applySettings() repaints the station's phosphor palette immediately.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/settings-p1-ui.test.js"
+          "ref": "test/provider-connections-ui.test.js"
         },
         {
           "kind": "shoot",
@@ -4034,13 +4151,444 @@
         "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
         "date": "2026-07-07T22:40:51.000Z"
       },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
-      "notes": "Live CDP :8967 — theme button \"PURPLE\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-prov-key-edit-cerebras-save-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "SAVE",
+      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
+      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-prov-key-edit-custom-save-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "SAVE",
+      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
+      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-prov-key-edit-deepseek-save-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "SAVE",
+      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
+      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-prov-key-edit-fireworks-save-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "SAVE",
+      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
+      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-prov-key-edit-gemini-save-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "SAVE",
+      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
+      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-prov-key-edit-groq-save-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "SAVE",
+      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
+      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-prov-key-edit-mistral-save-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "SAVE",
+      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
+      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-prov-key-edit-openai-save-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "SAVE",
+      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
+      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-prov-key-edit-perplexity-save-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "SAVE",
+      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
+      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-prov-key-edit-together-save-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "SAVE",
+      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
+      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-prov-key-edit-xai-save-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "SAVE",
+      "purpose": "Save an edited key in the connected-providers key-list row (edit-in-place).",
+      "promise": "Clicking SAVE on a key-list row persists the edited key via Harness.setKey and re-renders the row.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Key-list row save (stationui.js:2249 rerender). Same setKey seam. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
       "id": "ui/system/txt-button-reach-out-438",
@@ -4080,7 +4628,151 @@
       "notes": "Live CDP :8967 — button \"REACH OUT\" rendered with tooltip \"can send, publish, or contact external s\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-button-red-452",
+      "id": "ui/system/txt-button-terms-amber-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "AMBER",
+      "purpose": "Select the AMBER CRT phosphor theme for the whole station.",
+      "promise": "Clicking AMBER sets store.settings.theme='amber', saves, and applySettings() repaints the station's phosphor palette immediately.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-p1-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Live CDP :8967 — theme button \"AMBER\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-terms-blue-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "BLUE",
+      "purpose": "Select the BLUE CRT phosphor theme for the whole station.",
+      "promise": "Clicking BLUE sets store.settings.theme='blue', saves, and applySettings() repaints the station's phosphor palette immediately.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-p1-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Live CDP :8967 — theme button \"BLUE\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-terms-green-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "GREEN",
+      "purpose": "Select the GREEN CRT phosphor theme for the whole station.",
+      "promise": "Clicking GREEN sets store.settings.theme='green', saves, and applySettings() repaints the station's phosphor palette immediately.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-p1-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Live CDP :8967 — theme button \"GREEN\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-terms-purple-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "PURPLE",
+      "purpose": "Select the PURPLE CRT phosphor theme for the whole station.",
+      "promise": "Clicking PURPLE sets store.settings.theme='purple', saves, and applySettings() repaints the station's phosphor palette immediately.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/settings-p1-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.411Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "sys-settings",
+      "notes": "Live CDP :8967 — theme button \"PURPLE\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-button-terms-red-1",
       "kind": "ui",
       "area": "system",
       "name": "RED",
@@ -4109,14 +4801,14 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
       "notes": "Live CDP :8967 — theme button \"RED\" rendered (APPEARANCE tab). Held at audited: theme apply-path (applySettings palette swap) is not machine-asserted (settings-p1-ui asserts the notif/adv cards, not theme swatches). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-button-remove-430",
+      "id": "ui/system/txt-button-terms-remove-1",
       "kind": "ui",
       "area": "system",
       "name": "✕ REMOVE",
@@ -4148,669 +4840,14 @@
         "a48393ca"
       ],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
       "notes": "Armed-remove handler stationui.js:2213 (dataset.armed). Destructive-key clear guarded by a two-step. Held at audited on a48393ca; not fired in-audit. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-button-sandbox-437",
-      "kind": "ui",
-      "area": "system",
-      "name": "build & write locally — nothing leaves the machine",
-      "purpose": "Autonomy Reach level \"SANDBOX\" — build & write locally — nothing leaves the machine.",
-      "promise": "Clicking it sets the agent's Reach to \"SANDBOX\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/autonomystore.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/autonomy-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"SANDBOX\" rendered with tooltip \"build & write locally — nothing leaves t\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-406",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
-      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-408",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
-      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-410",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
-      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-412",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
-      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-414",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
-      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-416",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
-      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-418",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
-      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-420",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
-      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-422",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
-      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-424",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
-      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-426",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
-      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-428",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Inline SAVE on a provider card — persist the pasted BYOK key for that provider.",
-      "promise": "Clicking SAVE calls saveInline(provider) → Harness.setKey; empty input is rejected (sfx bad + refocus); a valid key notifies \"✓ connected …\" and re-renders the card connected.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: inlineSave handler (stationui.js:2271) → saveInline. Class-proof via provider-connections-ui.test.js. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-save-431",
-      "kind": "ui",
-      "area": "system",
-      "name": "SAVE",
-      "purpose": "Save an edited key in the connected-providers key-list row (edit-in-place).",
-      "promise": "Clicking SAVE on a key-list row persists the edited key via Harness.setKey and re-renders the row.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Key-list row save (stationui.js:2249 rerender). Same setKey seam. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-standard-440",
-      "kind": "ui",
-      "area": "system",
-      "name": "a few small jobs a day — the default",
-      "purpose": "Autonomy cadence level \"STANDARD\" — a few small jobs a day — the default.",
-      "promise": "Clicking it sets the agent's cadence to \"STANDARD\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/autonomystore.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/autonomy-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"STANDARD\" rendered with tooltip \"a few small jobs a day — the default\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-suggest-433",
-      "kind": "ui",
-      "area": "system",
-      "name": "lines up suggestions you approve — never acts on its own",
-      "purpose": "Autonomy Initiative level \"SUGGEST\" — lines up suggestions you approve — never acts on its own.",
-      "promise": "Clicking it sets the agent's Initiative to \"SUGGEST\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/autonomystore.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/autonomy-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"SUGGEST\" rendered with tooltip \"lines up suggestions you approve — never\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-suggest-444",
-      "kind": "ui",
-      "area": "system",
-      "name": "lines up ideas you approve — never acts on its own",
-      "purpose": "Autonomy Reach level \"SUGGEST\" — lines up ideas you approve — never acts on its own.",
-      "promise": "Clicking it sets the agent's Reach to \"SUGGEST\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/autonomystore.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/autonomy-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"SUGGEST\" rendered with tooltip \"lines up ideas you approve — never acts \". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-update-429",
+      "id": "ui/system/txt-button-terms-update-1",
       "kind": "ui",
       "area": "system",
       "name": "✎ UPDATE",
@@ -4842,51 +4879,14 @@
         "a48393ca"
       ],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
       "notes": "Edit-toggle in the key-list row. Same setKey seam. Held at audited on a48393ca. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-button-wait-432",
-      "kind": "ui",
-      "area": "system",
-      "name": "nothing runs unless you ask",
-      "purpose": "Autonomy Initiative level \"WAIT\" — nothing runs unless you ask.",
-      "promise": "Clicking it sets the agent's Initiative to \"WAIT\" (persisted to the autonomy store) and the dial marks it selected; the tooltip states the exact behavior.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/autonomystore.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/autonomy-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "sys-settings",
-      "notes": "Live CDP :8967 — button \"WAIT\" rendered with tooltip \"nothing runs unless you ask\". autonomy-ui.test.js asserts a button for EVERY data-init/data-reach enum level. [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-button-white-453",
+      "id": "ui/system/txt-button-terms-white-1",
       "kind": "ui",
       "area": "system",
       "name": "WHITE",
@@ -4915,7 +4915,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.411Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
       "missing": false,
       "selector": "button",
       "state": "sys-settings",
@@ -5000,45 +5000,6 @@
       "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
     },
     {
-      "id": "ui/system/txt-div-chatgpt-codex-oauth-chatgpt-subscript-2",
-      "kind": "ui",
-      "area": "system",
-      "name": "CHATGPT (CODEX)OAuth · ChatGPT subscription · sign-in, no AP",
-      "purpose": "The CHATGPT (CODEX) provider card — shows the endpoint + key status and, on click, selects CHATGPT (CODEX) as the active provider.",
-      "promise": "Clicking the card (outside its inline key row) calls Harness.setProv('chatgpt (codex)'), notifies \"selected …\", and re-renders with CHATGPT (CODEX) marked active; the card truthfully shows NO KEY / a connected badge / LOCAL per real store state.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "div",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
       "id": "ui/system/txt-div-customany-v1-base-url-bring-your-endp-15",
       "kind": "ui",
       "area": "system",
@@ -5084,84 +5045,6 @@
       "name": "DEEPSEEKapi.deepseek.com · DeepSeek API○ NO KEY+ ADD KEYSAVE",
       "purpose": "The DEEPSEEK provider card — shows the endpoint + key status and, on click, selects DEEPSEEK as the active provider.",
       "promise": "Clicking the card (outside its inline key row) calls Harness.setProv('deepseek'), notifies \"selected …\", and re-renders with DEEPSEEK marked active; the card truthfully shows NO KEY / a connected badge / LOCAL per real store state.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "div",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-div-fireworksapi-fireworks-ai-inference-v1-11",
-      "kind": "ui",
-      "area": "system",
-      "name": "FIREWORKSapi.fireworks.ai/inference/v1 · Fireworks API○ NO K",
-      "purpose": "The FIREWORKS provider card — shows the endpoint + key status and, on click, selects FIREWORKS as the active provider.",
-      "promise": "Clicking the card (outside its inline key row) calls Harness.setProv('fireworks'), notifies \"selected …\", and re-renders with FIREWORKS marked active; the card truthfully shows NO KEY / a connected badge / LOCAL per real store state.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/harness.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/provider-connections-ui.test.js"
-        },
-        {
-          "kind": "shoot",
-          "ref": "sys-settings"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:40:51.000Z"
-      },
-      "findings": [
-        "a48393ca"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "div",
-      "state": "sys-settings",
-      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
-    },
-    {
-      "id": "ui/system/txt-div-geminigenerativelanguage-googleapis-com-5",
-      "kind": "ui",
-      "area": "system",
-      "name": "GEMINIgenerativelanguage.googleapis.com/v1beta · Google nati",
-      "purpose": "The GEMINI provider card — shows the endpoint + key status and, on click, selects GEMINI as the active provider.",
-      "promise": "Clicking the card (outside its inline key row) calls Harness.setProv('gemini'), notifies \"selected …\", and re-renders with GEMINI marked active; the card truthfully shows NO KEY / a connected badge / LOCAL per real store state.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -5423,6 +5306,123 @@
       ],
       "firstSeen": "2026-07-07T08:11:07.410Z",
       "lastSeen": "2026-07-07T08:25:37.292Z",
+      "missing": false,
+      "selector": "div",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-div-terms-chatgpt-codex-oauth-chatgpt-subscript-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "CHATGPT (CODEX)OAuth · ChatGPT subscription · sign-in, no AP",
+      "purpose": "The CHATGPT (CODEX) provider card — shows the endpoint + key status and, on click, selects CHATGPT (CODEX) as the active provider.",
+      "promise": "Clicking the card (outside its inline key row) calls Harness.setProv('chatgpt (codex)'), notifies \"selected …\", and re-renders with CHATGPT (CODEX) marked active; the card truthfully shows NO KEY / a connected badge / LOCAL per real store state.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "div",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-div-terms-fireworksapi-fireworks-ai-inference-v1-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "FIREWORKSapi.fireworks.ai/inference/v1 · Fireworks API○ NO K",
+      "purpose": "The FIREWORKS provider card — shows the endpoint + key status and, on click, selects FIREWORKS as the active provider.",
+      "promise": "Clicking the card (outside its inline key row) calls Harness.setProv('fireworks'), notifies \"selected …\", and re-renders with FIREWORKS marked active; the card truthfully shows NO KEY / a connected badge / LOCAL per real store state.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "div",
+      "state": "sys-settings",
+      "notes": "Homogeneous clone: prov-card click activate() (stationui.js:2251). Card status text (\"○ NO KEY\"/\"LOCAL\") is store-derived — truthful. Held at audited on a48393ca (provider cluster hold). [wave-7 final-a re-stale: re-proven live at CDP :9366/sidecar :8966 after NS-4 night-shift merge (additive AUTONOMY NIGHT SHIFT panel; autonomy dial WAIT/SUGGEST/BUILD/FREE · OBSERVE/SANDBOX/REACH-OUT · NEVER/SUGGEST/DRAFT/FULLY intact). Evidence system-result.json.]"
+    },
+    {
+      "id": "ui/system/txt-div-terms-geminigenerativelanguage-googleapis-com-1",
+      "kind": "ui",
+      "area": "system",
+      "name": "GEMINIgenerativelanguage.googleapis.com/v1beta · Google nati",
+      "purpose": "The GEMINI provider card — shows the endpoint + key status and, on click, selects GEMINI as the active provider.",
+      "promise": "Clicking the card (outside its inline key row) calls Harness.setProv('gemini'), notifies \"selected …\", and re-renders with GEMINI marked active; the card truthfully shows NO KEY / a connected badge / LOCAL per real store state.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/harness.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/provider-connections-ui.test.js"
+        },
+        {
+          "kind": "shoot",
+          "ref": "sys-settings"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:40:51.000Z"
+      },
+      "findings": [
+        "a48393ca"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
       "missing": false,
       "selector": "div",
       "state": "sys-settings",

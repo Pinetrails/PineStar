@@ -1,6 +1,6 @@
 {
   "area": "build",
-  "updatedAt": "2026-07-07T22:14:53.195Z",
+  "updatedAt": "2026-07-18T00:52:51.354Z",
   "entries": [
     {
       "id": "state/build-connectors",
@@ -1571,7 +1571,7 @@
       "notes": "The Spotify jukebox connector controls (client/connect/disconnect). Placed-jukebox=capability; OAuth token honesty guarded by connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-a-site-1",
+      "id": "ui/build/txt-a-cc-list-site-1",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1597,14 +1597,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.279Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-10",
+      "id": "ui/build/txt-a-cc-list-site-10",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1630,14 +1630,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.283Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-11",
+      "id": "ui/build/txt-a-cc-list-site-11",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1663,14 +1663,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.283Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-12",
+      "id": "ui/build/txt-a-cc-list-site-12",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1696,14 +1696,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.283Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-13",
+      "id": "ui/build/txt-a-cc-list-site-13",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1729,14 +1729,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.283Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-14",
+      "id": "ui/build/txt-a-cc-list-site-14",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1762,14 +1762,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.283Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-15",
+      "id": "ui/build/txt-a-cc-list-site-15",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1795,14 +1795,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.283Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-16",
+      "id": "ui/build/txt-a-cc-list-site-16",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1828,14 +1828,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.283Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-17",
+      "id": "ui/build/txt-a-cc-list-site-17",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1861,14 +1861,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-18",
+      "id": "ui/build/txt-a-cc-list-site-18",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1894,14 +1894,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-19",
+      "id": "ui/build/txt-a-cc-list-site-19",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1927,14 +1927,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-2",
+      "id": "ui/build/txt-a-cc-list-site-2",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1960,14 +1960,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.280Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-20",
+      "id": "ui/build/txt-a-cc-list-site-20",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -1993,14 +1993,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-21",
+      "id": "ui/build/txt-a-cc-list-site-21",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2026,14 +2026,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-22",
+      "id": "ui/build/txt-a-cc-list-site-22",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2059,14 +2059,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-23",
+      "id": "ui/build/txt-a-cc-list-site-23",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2092,14 +2092,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-24",
+      "id": "ui/build/txt-a-cc-list-site-24",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2125,14 +2125,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-25",
+      "id": "ui/build/txt-a-cc-list-site-25",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2158,14 +2158,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-26",
+      "id": "ui/build/txt-a-cc-list-site-26",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2191,14 +2191,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-27",
+      "id": "ui/build/txt-a-cc-list-site-27",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2224,14 +2224,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-28",
+      "id": "ui/build/txt-a-cc-list-site-28",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2257,14 +2257,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-29",
+      "id": "ui/build/txt-a-cc-list-site-29",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2290,14 +2290,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-3",
+      "id": "ui/build/txt-a-cc-list-site-3",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2323,14 +2323,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.280Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-30",
+      "id": "ui/build/txt-a-cc-list-site-30",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2356,14 +2356,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-31",
+      "id": "ui/build/txt-a-cc-list-site-31",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2389,14 +2389,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-32",
+      "id": "ui/build/txt-a-cc-list-site-32",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2422,14 +2422,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-33",
+      "id": "ui/build/txt-a-cc-list-site-33",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2455,14 +2455,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-34",
+      "id": "ui/build/txt-a-cc-list-site-34",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2488,14 +2488,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-35",
+      "id": "ui/build/txt-a-cc-list-site-35",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2521,14 +2521,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-36",
+      "id": "ui/build/txt-a-cc-list-site-36",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2554,14 +2554,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-37",
+      "id": "ui/build/txt-a-cc-list-site-37",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2587,14 +2587,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-4",
+      "id": "ui/build/txt-a-cc-list-site-4",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2620,14 +2620,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.280Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-5",
+      "id": "ui/build/txt-a-cc-list-site-5",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2653,14 +2653,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.280Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-6",
+      "id": "ui/build/txt-a-cc-list-site-6",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2686,14 +2686,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.280Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-7",
+      "id": "ui/build/txt-a-cc-list-site-7",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2719,14 +2719,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.280Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-8",
+      "id": "ui/build/txt-a-cc-list-site-8",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2752,14 +2752,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.280Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the per-card catalog site link. 37 site links === 37 cc-cards === /api/connectors/catalog count proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-a-site-9",
+      "id": "ui/build/txt-a-cc-list-site-9",
       "kind": "ui",
       "area": "build",
       "name": "site ↗",
@@ -2785,7 +2785,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.280Z",
       "missing": false,
       "selector": "a",
       "state": "build-connectors",
@@ -4049,7 +4049,38 @@
       "notes": "Homogeneous clone of the per-skill \"Read the recipe\" action (exemplar ui/build/txt-button-406, audited). One renders per sk-card; render contract 38===38 proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-button-add-405",
+      "id": "ui/build/txt-button-bottombar-system1-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "Station systems — manual, settings, updates, restore, logs, notifications",
+      "purpose": "The FIELD MANUAL help console and its section tabs (first steps / the loop / growth / gear / wiring) — static in-app documentation.",
+      "promise": "Each manual tab swaps the help body to that section; close/minimize follow the window law. No backend claim (pure static help).",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [
+        "75af5388"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-manual",
+      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-add-1",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
@@ -4079,14 +4110,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-add-406",
+      "id": "ui/build/txt-button-cc-list-add-10",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
@@ -4116,14 +4147,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-add-407",
+      "id": "ui/build/txt-button-cc-list-add-11",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
@@ -4153,14 +4184,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-add-408",
+      "id": "ui/build/txt-button-cc-list-add-12",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
@@ -4190,14 +4221,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-add-409",
+      "id": "ui/build/txt-button-cc-list-add-13",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
@@ -4227,14 +4258,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-add-410",
+      "id": "ui/build/txt-button-cc-list-add-14",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
@@ -4264,14 +4295,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-add-411",
+      "id": "ui/build/txt-button-cc-list-add-15",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
@@ -4301,14 +4332,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-add-412",
+      "id": "ui/build/txt-button-cc-list-add-16",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
@@ -4338,310 +4369,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-add-413",
-      "kind": "ui",
-      "area": "build",
-      "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
-    },
-    {
-      "id": "ui/build/txt-button-add-414",
-      "kind": "ui",
-      "area": "build",
-      "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
-    },
-    {
-      "id": "ui/build/txt-button-add-419",
-      "kind": "ui",
-      "area": "build",
-      "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
-    },
-    {
-      "id": "ui/build/txt-button-add-423",
-      "kind": "ui",
-      "area": "build",
-      "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
-    },
-    {
-      "id": "ui/build/txt-button-add-424",
-      "kind": "ui",
-      "area": "build",
-      "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
-    },
-    {
-      "id": "ui/build/txt-button-add-425",
-      "kind": "ui",
-      "area": "build",
-      "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
-    },
-    {
-      "id": "ui/build/txt-button-add-426",
-      "kind": "ui",
-      "area": "build",
-      "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
-    },
-    {
-      "id": "ui/build/txt-button-add-427",
-      "kind": "ui",
-      "area": "build",
-      "name": "+ ADD",
-      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
-      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
-    },
-    {
-      "id": "ui/build/txt-button-add-439",
+      "id": "ui/build/txt-button-cc-list-add-17",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
@@ -4671,14 +4406,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-add-440",
+      "id": "ui/build/txt-button-cc-list-add-18",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
@@ -4708,14 +4443,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-add-441",
+      "id": "ui/build/txt-button-cc-list-add-19",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD",
@@ -4745,90 +4480,19 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-belt-7-411",
+      "id": "ui/build/txt-button-cc-list-add-2",
       "kind": "ui",
       "area": "build",
-      "name": "CLICK one machine, then another — the belt lays itself · (or drag to lay tiles by hand)  (7)",
-      "purpose": "BELT mode (7): wire machines together — click one machine then another and the belt lays itself.",
-      "promise": "With BELT selected, clicking one machine then another lays a belt run; complete INBOX->BAY->OUTBOX lines glow, broken pieces are flagged in words.",
-      "wiring": {
-        "files": [
-          "frontend/app/build.js",
-          "frontend/app/worldmodel.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/conveyor.test.js:belt-model"
-        },
-        {
-          "kind": "test",
-          "ref": "test/worldmodel.test.js:placeBeltRun"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — belt tool present, hint CLICK one machine, then another (7); reclaim setup laid a 3-belt run via placeBeltRun. Machine-covered in conveyor + worldmodel belt tests."
-    },
-    {
-      "id": "ui/build/txt-button-bridge-413",
-      "kind": "ui",
-      "area": "build",
-      "name": "BRIDGE",
-      "purpose": "A ROOM-KIND choice tile in the REFIT room palette — sets which kind (BRIDGE/FOUNDRY/HAB/LAB/QUARTERS/STORAGE) the next room-drag paints.",
-      "promise": "Selecting a room-kind tile sets the active kind; the next room-drag on the grid paints a room of that kind (station.KIND_ORDER).",
-      "wiring": {
-        "files": [
-          "frontend/app/build.js",
-          "frontend/app/worldmodel.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/worldmodel.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-station",
-      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
-    },
-    {
-      "id": "ui/build/txt-button-first-steps-405",
-      "kind": "ui",
-      "area": "build",
-      "name": "FIRST STEPS",
-      "purpose": "The FIELD MANUAL help console and its section tabs (first steps / the loop / growth / gear / wiring) — static in-app documentation.",
-      "promise": "Each manual tab swaps the help body to that section; close/minimize follow the window law. No backend claim (pure static help).",
+      "name": "+ ADD",
+      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
+      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -4837,63 +4501,35 @@
       },
       "coverage": [
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [
-        "75af5388"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-manual",
-      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
-    },
-    {
-      "id": "ui/build/txt-button-foundry-415",
-      "kind": "ui",
-      "area": "build",
-      "name": "FOUNDRY",
-      "purpose": "A ROOM-KIND choice tile in the REFIT room palette — sets which kind (BRIDGE/FOUNDRY/HAB/LAB/QUARTERS/STORAGE) the next room-drag paints.",
-      "promise": "Selecting a room-kind tile sets the active kind; the next room-drag on the grid paints a room of that kind (station.KIND_ORDER).",
-      "wiring": {
-        "files": [
-          "frontend/app/build.js",
-          "frontend/app/worldmodel.js"
-        ],
-        "events": []
-      },
-      "coverage": [
+          "kind": "test",
+          "ref": "test/mcp.catalog.test.js"
+        },
         {
           "kind": "test",
-          "ref": "test/worldmodel.test.js"
+          "ref": "test/connectors-ui.test.js"
         },
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
+          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
       "status": "mapped",
       "auditedAt": null,
       "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station",
-      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-gear-407",
+      "id": "ui/build/txt-button-cc-list-add-3",
       "kind": "ui",
       "area": "build",
-      "name": "GEAR",
-      "purpose": "The FIELD MANUAL help console and its section tabs (first steps / the loop / growth / gear / wiring) — static in-app documentation.",
-      "promise": "Each manual tab swaps the help body to that section; close/minimize follow the window law. No backend claim (pure static help).",
+      "name": "+ ADD",
+      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
+      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -4902,29 +4538,35 @@
       },
       "coverage": [
         {
+          "kind": "test",
+          "ref": "test/mcp.catalog.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
       "status": "mapped",
       "auditedAt": null,
-      "findings": [
-        "75af5388"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "button",
-      "state": "build-manual",
-      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-growth-409",
+      "id": "ui/build/txt-button-cc-list-add-4",
       "kind": "ui",
       "area": "build",
-      "name": "GROWTH",
-      "purpose": "The FIELD MANUAL help console and its section tabs (first steps / the loop / growth / gear / wiring) — static in-app documentation.",
-      "promise": "Each manual tab swaps the help body to that section; close/minimize follow the window law. No backend claim (pure static help).",
+      "name": "+ ADD",
+      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
+      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -4933,91 +4575,801 @@
       },
       "coverage": [
         {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [
-        "75af5388"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-manual",
-      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
-    },
-    {
-      "id": "ui/build/txt-button-hab-412",
-      "kind": "ui",
-      "area": "build",
-      "name": "HAB",
-      "purpose": "A ROOM-KIND choice tile in the REFIT room palette — sets which kind (BRIDGE/FOUNDRY/HAB/LAB/QUARTERS/STORAGE) the next room-drag paints.",
-      "promise": "Selecting a room-kind tile sets the active kind; the next room-drag on the grid paints a room of that kind (station.KIND_ORDER).",
-      "wiring": {
-        "files": [
-          "frontend/app/build.js",
-          "frontend/app/worldmodel.js"
-        ],
-        "events": []
-      },
-      "coverage": [
+          "kind": "test",
+          "ref": "test/mcp.catalog.test.js"
+        },
         {
           "kind": "test",
-          "ref": "test/worldmodel.test.js"
+          "ref": "test/connectors-ui.test.js"
         },
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
+          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
       "status": "mapped",
       "auditedAt": null,
       "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station",
-      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-hallway-2-406",
+      "id": "ui/build/txt-button-cc-list-add-5",
       "kind": "ui",
       "area": "build",
-      "name": "drag along an axis to run a corridor — any length  (2)",
-      "purpose": "HALLWAY mode (2): drag along an axis to run a corridor of the chosen width.",
-      "promise": "With HALL selected, dragging along an axis lays a corridor any length; rooms/halls that touch auto-connect with a door.",
+      "name": "+ ADD",
+      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
+      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
       "wiring": {
         "files": [
-          "frontend/app/build.js",
-          "frontend/app/worldmodel.js"
+          "frontend/app/stationui.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/worldmodel.test.js:placeHallway"
+          "ref": "test/mcp.catalog.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
         }
       ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — hall tool present, hint (2). placeHallway machine-covered in worldmodel test."
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-button-http-442",
+      "id": "ui/build/txt-button-cc-list-add-6",
+      "kind": "ui",
+      "area": "build",
+      "name": "+ ADD",
+      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
+      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/mcp.catalog.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-add-7",
+      "kind": "ui",
+      "area": "build",
+      "name": "+ ADD",
+      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
+      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/mcp.catalog.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-add-8",
+      "kind": "ui",
+      "area": "build",
+      "name": "+ ADD",
+      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
+      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/mcp.catalog.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-add-9",
+      "kind": "ui",
+      "area": "build",
+      "name": "+ ADD",
+      "purpose": "Install this catalog connector in one click — reuses the same POST /api/connectors upsert the manual form uses, with the id/url pre-filled from the catalog.",
+      "promise": "Clicking \"+ ADD\" on a catalog card upserts that connector by its authoritative catalog id (never re-typed); one ADD action renders per addable card.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/mcp.catalog.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:connectors/render-contract"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.284Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog one-click ADD (21 ADD buttons rendered live, build3-verify.mjs). Install path guarded by mcp.catalog.test.js (id shape) + connectors-ui.test.js."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-10",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.286Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-11",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.286Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-12",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.286Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-13",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.286Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-14",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.286Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-15",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-16",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-2",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-3",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-4",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-5",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-6",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.286Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-7",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.286Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-8",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.286Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-sign-in-9",
+      "kind": "ui",
+      "area": "build",
+      "name": "opens a secure browser sign-in (OAuth)",
+      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
+      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/e2e.mcp-connector.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.286Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-soon-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "not directly wired yet — see the note",
+      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
+      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
+    },
+    {
+      "id": "ui/build/txt-button-cc-list-soon-2",
+      "kind": "ui",
+      "area": "build",
+      "name": "not directly wired yet — see the note",
+      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
+      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/connectors-ui.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.408Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-connectors",
+      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
+    },
+    {
+      "id": "ui/build/txt-button-mc-transport-http-1",
       "kind": "ui",
       "area": "build",
       "name": "HTTP",
@@ -5039,78 +5391,40 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
       "missing": false,
       "selector": "button",
       "state": "build-connectors",
       "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
     },
     {
-      "id": "ui/build/txt-button-lab-414",
+      "id": "ui/build/txt-button-mc-transport-stdio-local-1",
       "kind": "ui",
       "area": "build",
-      "name": "LAB",
-      "purpose": "A ROOM-KIND choice tile in the REFIT room palette — sets which kind (BRIDGE/FOUNDRY/HAB/LAB/QUARTERS/STORAGE) the next room-drag paints.",
-      "promise": "Selecting a room-kind tile sets the active kind; the next room-drag on the grid paints a room of that kind (station.KIND_ORDER).",
+      "name": "STDIO (local)",
+      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
+      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
       "wiring": {
         "files": [
-          "frontend/app/build.js",
-          "frontend/app/worldmodel.js"
+          "frontend/app/stationui.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/worldmodel.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
+          "ref": "test/connectors-ui.test.js"
         }
       ],
       "status": "mapped",
       "auditedAt": null,
       "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "firstSeen": "2026-07-07T08:11:07.410Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station",
-      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
-    },
-    {
-      "id": "ui/build/txt-button-move-4-408",
-      "kind": "ui",
-      "area": "build",
-      "name": "drag a room to relocate it  (4)",
-      "purpose": "MOVE mode (4): drag a placed room to relocate it.",
-      "promise": "With MOVE selected, dragging a room relocates it to a valid position (blocked drops refused with a tip).",
-      "wiring": {
-        "files": [
-          "frontend/app/build.js",
-          "frontend/app/worldmodel.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/worldmodel.test.js:moveProp+undo"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — move tool present, hint (4). moveProp+undo machine-covered in worldmodel test."
+      "state": "build-connectors",
+      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
     },
     {
       "id": "ui/build/txt-button-off-415",
@@ -6375,39 +6689,6 @@
       "notes": "Homogeneous clone of the per-skill ON/OFF switch (exemplars txt-button-on-405/off-415, audited). switches=38 === cards=38 proven live (build3-verify.mjs)."
     },
     {
-      "id": "ui/build/txt-button-paint-3-407",
-      "kind": "ui",
-      "area": "build",
-      "name": "drag to paint deck tiles · click a room to fill it  (3)",
-      "purpose": "PAINT mode (3): paint deck tiles or fill a room with the selected floor style.",
-      "promise": "With PAINT selected, dragging paints deck tiles and a click fills the whole room with the chosen swatch.",
-      "wiring": {
-        "files": [
-          "frontend/app/build.js",
-          "frontend/app/worldmodel.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/worldmodel.test.js:setFloor+paintTiles"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
-        "date": "2026-07-07T20:28:13.738Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-station",
-      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — paint tool present, hint (3). setFloor/paintTiles machine-covered in worldmodel test."
-    },
-    {
       "id": "ui/build/txt-button-place-cabinet-416",
       "kind": "ui",
       "area": "build",
@@ -7529,40 +7810,6 @@
       "notes": "Homogeneous clone of the place-gear deep-link (exemplars place-cabinet/dish/studio/workbench-*, audited). object=capability seam PROVEN live: real canvas mouse placed comms_dish → World.heroCaps gained \"dish\" web cap, persisted re-bake (build3-verify.mjs, cites wave-3 scenarioPropPlace)."
     },
     {
-      "id": "ui/build/txt-button-place-studio-425",
-      "kind": "ui",
-      "area": "build",
-      "name": "Open REFIT to place a STUDIO",
-      "purpose": "A deep-link that sends the user to the REAL placement surface for the STUDIO a locked recipe needs — never a fake auto-place.",
-      "promise": "Clicking \"→ PLACE STUDIO\" minimizes SKILLS, opens REFIT (body.refit-on), and drives the palette so the studio prop tile is armed active — the very next floor-click drops it.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "audit",
-          "ref": "ledger:11c69e21 (EL-3 coverage gap — no journey/test guards this promise; live-proven this session)"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "43e860b254af28741405216c2259a2226d106be7",
-        "date": "2026-07-07T21:06:49.519Z"
-      },
-      "findings": [
-        "11c69e21"
-      ],
-      "firstSeen": "2026-07-07T08:25:37.301Z",
-      "lastSeen": "2026-07-07T08:25:37.301Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-skills",
-      "notes": "Live: PLACE-studio variant shares placeGearForSkill(studio->studio); cabinet path proven end-to-end this session. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
-    },
-    {
       "id": "ui/build/txt-button-place-workbench-438",
       "kind": "ui",
       "area": "build",
@@ -8065,7 +8312,347 @@
       "notes": "Homogeneous clone of the place-gear deep-link (exemplars place-cabinet/dish/studio/workbench-*, audited). object=capability seam PROVEN live: real canvas mouse placed comms_dish → World.heroCaps gained \"dish\" web cap, persisted re-bake (build3-verify.mjs, cites wave-3 scenarioPropPlace)."
     },
     {
-      "id": "ui/build/txt-button-prop-6-410",
+      "id": "ui/build/txt-button-refit-palette-bridge-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "BRIDGE",
+      "purpose": "A ROOM-KIND choice tile in the REFIT room palette — sets which kind (BRIDGE/FOUNDRY/HAB/LAB/QUARTERS/STORAGE) the next room-drag paints.",
+      "promise": "Selecting a room-kind tile sets the active kind; the next room-drag on the grid paints a room of that kind (station.KIND_ORDER).",
+      "wiring": {
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-station",
+      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+    },
+    {
+      "id": "ui/build/txt-button-refit-palette-foundry-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "FOUNDRY",
+      "purpose": "A ROOM-KIND choice tile in the REFIT room palette — sets which kind (BRIDGE/FOUNDRY/HAB/LAB/QUARTERS/STORAGE) the next room-drag paints.",
+      "promise": "Selecting a room-kind tile sets the active kind; the next room-drag on the grid paints a room of that kind (station.KIND_ORDER).",
+      "wiring": {
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-station",
+      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+    },
+    {
+      "id": "ui/build/txt-button-refit-palette-hab-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "HAB",
+      "purpose": "A ROOM-KIND choice tile in the REFIT room palette — sets which kind (BRIDGE/FOUNDRY/HAB/LAB/QUARTERS/STORAGE) the next room-drag paints.",
+      "promise": "Selecting a room-kind tile sets the active kind; the next room-drag on the grid paints a room of that kind (station.KIND_ORDER).",
+      "wiring": {
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-station",
+      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+    },
+    {
+      "id": "ui/build/txt-button-refit-palette-lab-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "LAB",
+      "purpose": "A ROOM-KIND choice tile in the REFIT room palette — sets which kind (BRIDGE/FOUNDRY/HAB/LAB/QUARTERS/STORAGE) the next room-drag paints.",
+      "promise": "Selecting a room-kind tile sets the active kind; the next room-drag on the grid paints a room of that kind (station.KIND_ORDER).",
+      "wiring": {
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-station",
+      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+    },
+    {
+      "id": "ui/build/txt-button-refit-palette-quarters-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "QUARTERS",
+      "purpose": "A ROOM-KIND choice tile in the REFIT room palette — sets which kind (BRIDGE/FOUNDRY/HAB/LAB/QUARTERS/STORAGE) the next room-drag paints.",
+      "promise": "Selecting a room-kind tile sets the active kind; the next room-drag on the grid paints a room of that kind (station.KIND_ORDER).",
+      "wiring": {
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-station",
+      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+    },
+    {
+      "id": "ui/build/txt-button-refit-palette-storage-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "STORAGE",
+      "purpose": "A ROOM-KIND choice tile in the REFIT room palette — sets which kind (BRIDGE/FOUNDRY/HAB/LAB/QUARTERS/STORAGE) the next room-drag paints.",
+      "promise": "Selecting a room-kind tile sets the active kind; the next room-drag on the grid paints a room of that kind (station.KIND_ORDER).",
+      "wiring": {
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-station",
+      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+    },
+    {
+      "id": "ui/build/txt-button-refit-tools-belt-7-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "CLICK one machine, then another — the belt lays itself · (or drag to lay tiles by hand)  (7)",
+      "purpose": "BELT mode (7): wire machines together — click one machine then another and the belt lays itself.",
+      "promise": "With BELT selected, clicking one machine then another lays a belt run; complete INBOX->BAY->OUTBOX lines glow, broken pieces are flagged in words.",
+      "wiring": {
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/conveyor.test.js:belt-model"
+        },
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:placeBeltRun"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — belt tool present, hint CLICK one machine, then another (7); reclaim setup laid a 3-belt run via placeBeltRun. Machine-covered in conveyor + worldmodel belt tests."
+    },
+    {
+      "id": "ui/build/txt-button-refit-tools-hallway-2-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "drag along an axis to run a corridor — any length  (2)",
+      "purpose": "HALLWAY mode (2): drag along an axis to run a corridor of the chosen width.",
+      "promise": "With HALL selected, dragging along an axis lays a corridor any length; rooms/halls that touch auto-connect with a door.",
+      "wiring": {
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:placeHallway"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — hall tool present, hint (2). placeHallway machine-covered in worldmodel test."
+    },
+    {
+      "id": "ui/build/txt-button-refit-tools-move-4-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "drag a room to relocate it  (4)",
+      "purpose": "MOVE mode (4): drag a placed room to relocate it.",
+      "promise": "With MOVE selected, dragging a room relocates it to a valid position (blocked drops refused with a tip).",
+      "wiring": {
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:moveProp+undo"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — move tool present, hint (4). moveProp+undo machine-covered in worldmodel test."
+    },
+    {
+      "id": "ui/build/txt-button-refit-tools-paint-3-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "drag to paint deck tiles · click a room to fill it  (3)",
+      "purpose": "PAINT mode (3): paint deck tiles or fill a room with the selected floor style.",
+      "promise": "With PAINT selected, dragging paints deck tiles and a click fills the whole room with the chosen swatch.",
+      "wiring": {
+        "files": [
+          "frontend/app/build.js",
+          "frontend/app/worldmodel.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/worldmodel.test.js:setFloor+paintTiles"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "ce3211719a4a8b9dfcae70af5417d150be18c2e8",
+        "date": "2026-07-07T20:28:13.738Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-station",
+      "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — paint tool present, hint (3). setFloor/paintTiles machine-covered in worldmodel test."
+    },
+    {
+      "id": "ui/build/txt-button-refit-tools-prop-6-1",
       "kind": "ui",
       "area": "build",
       "name": "click to place furniture · agents walk around it  (6)",
@@ -8099,48 +8686,14 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
       "missing": false,
       "selector": "button",
       "state": "build-station",
       "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): truthful/place-grants-cap — placeCapProp(workbench) makes World.heroCaps gain workbench; undo revokes it. Prop tile shows the truthful grant word (comms_dish -> WEB). Guarded by audit moat + prop-place and worldmodel bayObjects test."
     },
     {
-      "id": "ui/build/txt-button-quarters-416",
-      "kind": "ui",
-      "area": "build",
-      "name": "QUARTERS",
-      "purpose": "A ROOM-KIND choice tile in the REFIT room palette — sets which kind (BRIDGE/FOUNDRY/HAB/LAB/QUARTERS/STORAGE) the next room-drag paints.",
-      "promise": "Selecting a room-kind tile sets the active kind; the next room-drag on the grid paints a room of that kind (station.KIND_ORDER).",
-      "wiring": {
-        "files": [
-          "frontend/app/build.js",
-          "frontend/app/worldmodel.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/worldmodel.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-station",
-      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
-    },
-    {
-      "id": "ui/build/txt-button-reclaim-5-409",
+      "id": "ui/build/txt-button-refit-tools-reclaim-5-1",
       "kind": "ui",
       "area": "build",
       "name": "click a room, prop, or belt to tear it down · drag across a belt to clear the whole run (UNDO restores it)  (5)",
@@ -8170,14 +8723,14 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
       "missing": false,
       "selector": "button",
       "state": "build-station",
       "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-reclaim/drag-clear-one-undo — a 3-belt run cleared to 0 and ONE undo restored all 3 (belt-reclaim one-undo-slot law, 7/06). removeProp+undo and one-undo belt removal machine-covered in worldmodel/conveyor tests."
     },
     {
-      "id": "ui/build/txt-button-room-1-405",
+      "id": "ui/build/txt-button-refit-tools-room-1-1",
       "kind": "ui",
       "area": "build",
       "name": "drag on the grid to place a room  (1)",
@@ -8203,19 +8756,19 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
       "missing": false,
       "selector": "button",
       "state": "build-station",
       "notes": "Live-proven (.uiatlas/build2-evidence/refit-verify.json): refit-modes/7-hints — room tool present with hint drag on the grid to place a room (1). addRoom machine-covered in worldmodel test."
     },
     {
-      "id": "ui/build/txt-button-sign-in-415",
+      "id": "ui/build/txt-button-sk-lib-place-studio-1",
       "kind": "ui",
       "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
+      "name": "Open REFIT to place a STUDIO",
+      "purpose": "A deep-link that sends the user to the REAL placement surface for the STUDIO a locked recipe needs — never a fake auto-place.",
+      "promise": "Clicking \"→ PLACE STUDIO\" minimizes SKILLS, opens REFIT (body.refit-on), and drives the palette so the studio prop tile is armed active — the very next floor-click drops it.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js"
@@ -8223,646 +8776,31 @@
         "events": []
       },
       "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-416",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-417",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-418",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-420",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-421",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-422",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-428",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-431",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-432",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-433",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-434",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-435",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-436",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-437",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-sign-in-438",
-      "kind": "ui",
-      "area": "build",
-      "name": "opens a secure browser sign-in (OAuth)",
-      "purpose": "Start a secure browser OAuth sign-in for an oauth-type catalog connector (opens the provider's consent flow via /api/connectors/oauth/start).",
-      "promise": "Clicking \"🔒 SIGN IN\" on an oauth catalog card opens a secure browser sign-in; no token is typed or shown in the panel.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Homogeneous clone of the catalog OAuth SIGN IN action. connectors-ui.test.js locks that the resolved oauth token never leaves the panel summary (honesty invariant)."
-    },
-    {
-      "id": "ui/build/txt-button-soon-429",
-      "kind": "ui",
-      "area": "build",
-      "name": "not directly wired yet — see the note",
-      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
-      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
-    },
-    {
-      "id": "ui/build/txt-button-soon-430",
-      "kind": "ui",
-      "area": "build",
-      "name": "not directly wired yet — see the note",
-      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
-      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
-    },
-    {
-      "id": "ui/build/txt-button-stdio-local-443",
-      "kind": "ui",
-      "area": "build",
-      "name": "STDIO (local)",
-      "purpose": "Window-chrome + secondary controls of the connectors console (close, minimize, search filter, transport toggle, honesty note).",
-      "promise": "Close/minimize follow the window law; Search filters the catalog cards; the HTTP/STDIO toggle picks the manual connector transport.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "build-connectors",
-      "notes": "Window-chrome/secondary control of the connectors console. Standard window-law close/minimize + catalog search + transport toggle."
-    },
-    {
-      "id": "ui/build/txt-button-storage-417",
-      "kind": "ui",
-      "area": "build",
-      "name": "STORAGE",
-      "purpose": "A ROOM-KIND choice tile in the REFIT room palette — sets which kind (BRIDGE/FOUNDRY/HAB/LAB/QUARTERS/STORAGE) the next room-drag paints.",
-      "promise": "Selecting a room-kind tile sets the active kind; the next room-drag on the grid paints a room of that kind (station.KIND_ORDER).",
-      "wiring": {
-        "files": [
-          "frontend/app/build.js",
-          "frontend/app/worldmodel.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/worldmodel.test.js"
-        },
         {
           "kind": "audit",
-          "ref": "qa/atlas/build3-verify.mjs:capprop/build-open"
+          "ref": "ledger:11c69e21 (EL-3 coverage gap — no journey/test guards this promise; live-proven this session)"
         }
       ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "status": "audited",
+      "auditedAt": {
+        "sha": "43e860b254af28741405216c2259a2226d106be7",
+        "date": "2026-07-07T21:06:49.519Z"
+      },
+      "findings": [
+        "11c69e21"
+      ],
+      "firstSeen": "2026-07-07T08:25:37.301Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
       "missing": false,
       "selector": "button",
-      "state": "build-station",
-      "notes": "REFIT room-kind picker tile (clone of the ROOM palette; kinds from station.KIND_ORDER). REFIT palette proven reachable live (build3-verify.mjs)."
+      "state": "build-skills",
+      "notes": "Live: PLACE-studio variant shares placeGearForSkill(studio->studio); cabinet path proven end-to-end this session. live-proven 2026-07-07 via scratchpad/drive-skills.mjs on seeded :8965/CDP:9365 — see finding 11c69e21 evidence"
     },
     {
-      "id": "ui/build/txt-button-system2-404",
+      "id": "ui/build/txt-button-terms-first-steps-1",
       "kind": "ui",
       "area": "build",
-      "name": "Station systems — manual, settings, updates, restore, logs, notifications",
+      "name": "FIRST STEPS",
       "purpose": "The FIELD MANUAL help console and its section tabs (first steps / the loop / growth / gear / wiring) — static in-app documentation.",
       "promise": "Each manual tab swaps the help body to that section; close/minimize follow the window law. No backend claim (pure static help).",
       "wiring": {
@@ -8883,14 +8821,76 @@
         "75af5388"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual",
       "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
     },
     {
-      "id": "ui/build/txt-button-the-loop-406",
+      "id": "ui/build/txt-button-terms-gear-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "GEAR",
+      "purpose": "The FIELD MANUAL help console and its section tabs (first steps / the loop / growth / gear / wiring) — static in-app documentation.",
+      "promise": "Each manual tab swaps the help body to that section; close/minimize follow the window law. No backend claim (pure static help).",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [
+        "75af5388"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-manual",
+      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
+    },
+    {
+      "id": "ui/build/txt-button-terms-growth-1",
+      "kind": "ui",
+      "area": "build",
+      "name": "GROWTH",
+      "purpose": "The FIELD MANUAL help console and its section tabs (first steps / the loop / growth / gear / wiring) — static in-app documentation.",
+      "promise": "Each manual tab swaps the help body to that section; close/minimize follow the window law. No backend claim (pure static help).",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "audit",
+          "ref": "qa/atlas/build3-verify.mjs:boot/app-ready"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [
+        "75af5388"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.285Z",
+      "missing": false,
+      "selector": "button",
+      "state": "build-manual",
+      "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
+    },
+    {
+      "id": "ui/build/txt-button-terms-the-loop-1",
       "kind": "ui",
       "area": "build",
       "name": "THE LOOP",
@@ -8914,14 +8914,14 @@
         "75af5388"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual",
       "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
     },
     {
-      "id": "ui/build/txt-button-wiring-408",
+      "id": "ui/build/txt-button-terms-wiring-1",
       "kind": "ui",
       "area": "build",
       "name": "WIRING",
@@ -8945,14 +8945,14 @@
         "75af5388"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "button",
       "state": "build-manual",
       "notes": "FIELD MANUAL tab/chrome — static help console (buildManual in stationui.js). Tabs are section swaps with no telemetry claim; window-law close/minimize."
     },
     {
-      "id": "ui/build/txt-input-1",
+      "id": "ui/build/txt-input-cc-list-1",
       "kind": "ui",
       "area": "build",
       "name": "input",
@@ -8982,14 +8982,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-input-10",
+      "id": "ui/build/txt-input-cc-list-10",
       "kind": "ui",
       "area": "build",
       "name": "input",
@@ -9019,14 +9019,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-input-2",
+      "id": "ui/build/txt-input-cc-list-2",
       "kind": "ui",
       "area": "build",
       "name": "input",
@@ -9056,14 +9056,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-input-3",
+      "id": "ui/build/txt-input-cc-list-3",
       "kind": "ui",
       "area": "build",
       "name": "input",
@@ -9093,14 +9093,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-input-4",
+      "id": "ui/build/txt-input-cc-list-4",
       "kind": "ui",
       "area": "build",
       "name": "input",
@@ -9130,14 +9130,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-input-5",
+      "id": "ui/build/txt-input-cc-list-5",
       "kind": "ui",
       "area": "build",
       "name": "input",
@@ -9167,14 +9167,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-input-6",
+      "id": "ui/build/txt-input-cc-list-6",
       "kind": "ui",
       "area": "build",
       "name": "input",
@@ -9204,14 +9204,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-input-7",
+      "id": "ui/build/txt-input-cc-list-7",
       "kind": "ui",
       "area": "build",
       "name": "input",
@@ -9241,14 +9241,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.408Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-input-8",
+      "id": "ui/build/txt-input-cc-list-8",
       "kind": "ui",
       "area": "build",
       "name": "input",
@@ -9278,14 +9278,14 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",
       "notes": "Homogeneous clone of the manual MCP add-form fields (mc-* + generic input/textarea). Round-trip covered by e2e.mcp-connector.test.js; secret-never-leaks by connectors-ui.test.js."
     },
     {
-      "id": "ui/build/txt-input-9",
+      "id": "ui/build/txt-input-cc-list-9",
       "kind": "ui",
       "area": "build",
       "name": "input",
@@ -9315,7 +9315,7 @@
       "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "input",
       "state": "build-connectors",

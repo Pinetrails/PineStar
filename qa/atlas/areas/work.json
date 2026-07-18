@@ -1,6 +1,6 @@
 {
   "area": "work",
-  "updatedAt": "2026-07-07T21:47:32.573Z",
+  "updatedAt": "2026-07-18T00:52:51.366Z",
   "entries": [
     {
       "id": "state/work-deliverables",
@@ -20,10 +20,22 @@
         "events": []
       },
       "coverage": [
-        { "kind": "journey", "ref": "J4" },
-        { "kind": "test", "ref": "test/workshop.e2e.test.js" },
-        { "kind": "test", "ref": "test/deliverables-ui.test.js" },
-        { "kind": "test", "ref": "test/deliverable-store.test.js" }
+        {
+          "kind": "journey",
+          "ref": "J4"
+        },
+        {
+          "kind": "test",
+          "ref": "test/workshop.e2e.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/deliverables-ui.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/deliverable-store.test.js"
+        }
       ],
       "status": "audited",
       "auditedAt": {
@@ -723,107 +735,6 @@
       "notes": "Traced seam (stationui.js #rt-sched → parseCronScheduleOr400). Server schedule math re-proven live (.uiatlas/work2-evidence/cron-probe-evidence.txt routines-preview ok:true \"every 30m\"). Left MAPPED — form input."
     },
     {
-      "id": "ui/work/txt-button-add-one-405",
-      "kind": "ui",
-      "area": "work",
-      "name": "+ ADD ONE",
-      "purpose": "The + ADD ONE empty-state CTA in the TO DO column: focuses the add-a-workstream input when the board is empty (focus only, no new behavior).",
-      "promise": "Clicking + ADD ONE in the empty TO DO column focuses #kb-in so the user can immediately type a first directive.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "journey",
-          "ref": "J1"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-tasks",
-      "notes": "Live-verified the control exists and its handler focuses #kb-in (stationui.js kbEmpty + wiring). Left AUDITED not PERFECTED: it is a focus-only affordance with no dedicated machine assertion (J1 never exercises the empty-state CTA). KNOWN: cosmetic focus helper, guarding it is low-value — recorded reason per EL-3."
-    },
-    {
-      "id": "ui/work/txt-button-agents-405",
-      "kind": "ui",
-      "area": "work",
-      "name": "☰ AGENTS",
-      "purpose": "The ☰ AGENTS tab in the recruitment bay: switches the bay from the mission library (RECIPES) to the class roster (specialists to recruit/summon).",
-      "promise": "Clicking ☰ AGENTS shows the CLASS ROSTER (builtin specialties + YOUR SPECIALISTS) with the CODE/RESEARCH/OPS filter rail — the sibling tab of ❒ RECIPES.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/app.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/qa-cartographer.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "The AGENTS tab is the recruit side of the merged bay (marketplace.js renderBar t('agents','☰ AGENTS')). Live-observed present alongside ❒ RECIPES (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering was reached via the RECIPES tab of the same bay). AUDITED: tab switch has no dedicated machine assertion (this is the crew/recruit area's surface, mapped here only because the Cartographer swept it in work-recipes state). KNOWN gap per EL-3."
-    },
-    {
-      "id": "ui/work/txt-button-all50-407",
-      "kind": "ui",
-      "area": "work",
-      "name": "ALL50",
-      "purpose": "The ALL browse chip in the RECIPES rail: filters the catalog to every recipe in the library (builtins + your customs), with a live count.",
-      "promise": "Clicking ALL narrows the recipe grid to every recipe in the library (builtins + your customs); its ▤ count reflects the live number of recipes in that bucket (never a hardcoded figure).",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/recipes.js",
-          "frontend/app/recipe-catalog/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
-      },
-      "findings": [
-        "3717ef2e"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
-    },
-    {
       "id": "ui/work/txt-button-bacbackground-briefwhat-is-on-the-publi-452",
       "kind": "ui",
       "area": "work",
@@ -1009,43 +920,6 @@
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
-      "id": "ui/work/txt-button-caption-variantsthe-same-post-tuned-pe-422",
-      "kind": "ui",
-      "area": "work",
-      "name": "⌯Caption VariantsThe same post, tuned per platformCREATOR",
-      "purpose": "A \"Caption Variants\" recipe tile in the RECIPES catalog: the same post, tuned per platform — selecting it opens the dossier to fill its blanks and launch it as a fresh task.",
-      "promise": "Clicking the \"Caption Variants\" tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → ▸ RUN NOW fills the params once and creates a new kind:\"task\" workstream named \"Caption Variants\" that the agent works on.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/app.js",
-          "frontend/app/recipes.js",
-          "frontend/app/recipe-catalog/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [
-        "3717ef2e"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
-    },
-    {
       "id": "ui/work/txt-button-chachangelog-draftturn-commits-into-a-r-438",
       "kind": "ui",
       "area": "work",
@@ -1192,42 +1066,6 @@
       "selector": "button",
       "state": "work-recipes",
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
-    },
-    {
-      "id": "ui/work/txt-button-creator12-410",
-      "kind": "ui",
-      "area": "work",
-      "name": "CREATOR12",
-      "purpose": "The CREATOR browse chip in the RECIPES rail: filters the catalog to the creator-persona recipes, with a live count.",
-      "promise": "Clicking CREATOR narrows the recipe grid to the creator-persona recipes; its ▤ count reflects the live number of recipes in that bucket (never a hardcoded figure).",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/recipes.js",
-          "frontend/app/recipe-catalog/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
-      },
-      "findings": [
-        "3717ef2e"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
     },
     {
       "id": "ui/work/txt-button-crvcode-reviewadversarial-review-passcod-428",
@@ -1452,42 +1290,6 @@
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
-      "id": "ui/work/txt-button-developer13-408",
-      "kind": "ui",
-      "area": "work",
-      "name": "DEVELOPER13",
-      "purpose": "The DEVELOPER browse chip in the RECIPES rail: filters the catalog to the developer-persona recipes, with a live count.",
-      "promise": "Clicking DEVELOPER narrows the recipe grid to the developer-persona recipes; its ▤ count reflects the live number of recipes in that bucket (never a hardcoded figure).",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/recipes.js",
-          "frontend/app/recipe-catalog/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
-      },
-      "findings": [
-        "3717ef2e"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
-    },
-    {
       "id": "ui/work/txt-button-digdeep-dive-researchsourced-brief-on-a-425",
       "kind": "ui",
       "area": "work",
@@ -1560,41 +1362,6 @@
       "selector": "button",
       "state": "work-recipes",
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
-    },
-    {
-      "id": "ui/work/txt-button-export-475",
-      "kind": "ui",
-      "area": "work",
-      "name": "download this recipe as a portable JSON file",
-      "purpose": "The ⇩ EXPORT button on a recipe dossier: downloads that recipe as a portable JSON file.",
-      "promise": "Clicking ⇩ EXPORT serializes the recipe (exportRecipe) and saves it to downloads; an unknown/failed export reports honestly and downloads nothing.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/recipes.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
-      },
-      "findings": [
-        "3717ef2e"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "Live-proven .uiatlas/work2-evidence/probe-evidence.txt export-serialize: Recipes.exportRecipe('fix-bug') returns a starnetRecipe-stamped JSON object (keys starnetRecipe,id,name,emoji,tagline,blurb,accent,tags). recipes.test.js covers exportRecipe. AUDITED not PERFECTED: the browser download UI path is not driven (headless download out of scope) and the button seam is unguarded — finding 3717ef2e routed to work-recipes."
     },
     {
       "id": "ui/work/txt-button-feefeed-watchkeep-an-eye-on-a-source-fo-444",
@@ -1708,107 +1475,6 @@
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
-      "id": "ui/work/txt-button-forget-419",
-      "kind": "ui",
-      "area": "work",
-      "name": "⌫ FORGET",
-      "purpose": "The ⌫ FORGET button in the STATION FAMILIARITY panel: a two-step armed control that wipes the LOCALLY-LEARNED work-affinity profile (not a recipe).",
-      "promise": "Clicking ⌫ FORGET arms (label → \"SURE? WIPE\", 4s window); a confirming second click clears the local profile + mint stores (ps.forget() / MintStore.forget()) — it is never a one-click wipe, and it removes NO recipes.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/profilestore.js",
-          "frontend/app/mintstore.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "CORRECTED wave-2 mis-mapping: this button wipes the learned STATION FAMILIARITY profile, NOT a \"custom recipe family\" (marketplace.js mkt-fam-forget → ps.forget()/MintStore.forget(), inside glassHTML alongside PAUSE LEARNING). Live-proven .uiatlas/work2-evidence/probe-evidence.txt forget-semantics: label0 \"⌫ FORGET\" → armedLabel \"SURE? WIPE\", armed:true, twoStep:true (two-step arm/confirm holds). Truthful destructive-confirm semantics verified. AUDITED: the arm/confirm has no dedicated assertion; belongs to the profile/mint lane. KNOWN gap per EL-3."
-    },
-    {
-      "id": "ui/work/txt-button-general1-412",
-      "kind": "ui",
-      "area": "work",
-      "name": "GENERAL1",
-      "purpose": "The GENERAL browse chip in the RECIPES rail: filters the catalog to the general-purpose recipes, with a live count.",
-      "promise": "Clicking GENERAL narrows the recipe grid to the general-purpose recipes; its ▤ count reflects the live number of recipes in that bucket (never a hardcoded figure).",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/recipes.js",
-          "frontend/app/recipe-catalog/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
-      },
-      "findings": [
-        "3717ef2e"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
-    },
-    {
-      "id": "ui/work/txt-button-got-it-417",
-      "kind": "ui",
-      "area": "work",
-      "name": "GOT IT",
-      "purpose": "The GOT IT button in the STATION FAMILIARITY consent strip: acknowledges the local-learning disclosure so the strip stops showing.",
-      "promise": "Clicking GOT IT records the acknowledgement (acked) and removes the consent strip; the affinity panel stays, learning continues locally.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/profilestore.js",
-          "frontend/app/mintstore.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "STATION FAMILIARITY glass panel control (marketplace.js glassHTML, mkt-fam-* family). This panel shows/pauses/wipes the LOCALLY-LEARNED work-affinity profile that ranks the recommender shelves — it is NOT recipe management. Live-proven .uiatlas/work2-evidence/probe-evidence.txt forget-semantics. Consent-ack path not driven live (only present when un-acked). Left MAPPED — profile/mint lane."
-    },
-    {
       "id": "ui/work/txt-button-hoohook-draftsten-openings-that-earn-th-455",
       "kind": "ui",
       "area": "work",
@@ -1844,38 +1510,6 @@
       "selector": "button",
       "state": "work-recipes",
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
-    },
-    {
-      "id": "ui/work/txt-button-import-414",
-      "kind": "ui",
-      "area": "work",
-      "name": "import a recipe from a JSON file",
-      "purpose": "The ⇪ IMPORT button: reads a recipe JSON file, validates it, and lands it in YOUR RECIPES.",
-      "promise": "Clicking ⇪ IMPORT opens a file picker; a valid recipe JSON is validated (importRecipe), unknown fields stripped, and the user lands on the imported recipe in the MINE view — a malformed file is refused with an honest error, nothing imported.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/recipes.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [
-        "3717ef2e"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "Traced seam (marketplace.js R6 hidden #mkt-import-file → Recipes.importRecipe). recipes.test.js covers importRecipe/exportRecipe round-trip at the store level. UI file-picker path not driven live (headless file upload out of scope). Left MAPPED. UI-dispatch coverage gap tracked by finding 3717ef2e."
     },
     {
       "id": "ui/work/txt-button-inbinbox-triagewhat-in-your-inbox-actua-464",
@@ -2063,7 +1697,216 @@
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
-      "id": "ui/work/txt-button-mine0-413",
+      "id": "ui/work/txt-button-mkt-bar-agents-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "☰ AGENTS",
+      "purpose": "The ☰ AGENTS tab in the recruitment bay: switches the bay from the mission library (RECIPES) to the class roster (specialists to recruit/summon).",
+      "promise": "Clicking ☰ AGENTS shows the CLASS ROSTER (builtin specialties + YOUR SPECIALISTS) with the CODE/RESEARCH/OPS filter rail — the sibling tab of ❒ RECIPES.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/qa-cartographer.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "The AGENTS tab is the recruit side of the merged bay (marketplace.js renderBar t('agents','☰ AGENTS')). Live-observed present alongside ❒ RECIPES (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering was reached via the RECIPES tab of the same bay). AUDITED: tab switch has no dedicated machine assertion (this is the crew/recruit area's surface, mapped here only because the Cartographer swept it in work-recipes state). KNOWN gap per EL-3."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-bar-all50-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "ALL50",
+      "purpose": "The ALL browse chip in the RECIPES rail: filters the catalog to every recipe in the library (builtins + your customs), with a live count.",
+      "promise": "Clicking ALL narrows the recipe grid to every recipe in the library (builtins + your customs); its ▤ count reflects the live number of recipes in that bucket (never a hardcoded figure).",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
+        "date": "2026-07-07T21:47:32.573Z"
+      },
+      "findings": [
+        "3717ef2e"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-bar-creator12-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "CREATOR12",
+      "purpose": "The CREATOR browse chip in the RECIPES rail: filters the catalog to the creator-persona recipes, with a live count.",
+      "promise": "Clicking CREATOR narrows the recipe grid to the creator-persona recipes; its ▤ count reflects the live number of recipes in that bucket (never a hardcoded figure).",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
+        "date": "2026-07-07T21:47:32.573Z"
+      },
+      "findings": [
+        "3717ef2e"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-bar-developer13-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "DEVELOPER13",
+      "purpose": "The DEVELOPER browse chip in the RECIPES rail: filters the catalog to the developer-persona recipes, with a live count.",
+      "promise": "Clicking DEVELOPER narrows the recipe grid to the developer-persona recipes; its ▤ count reflects the live number of recipes in that bucket (never a hardcoded figure).",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
+        "date": "2026-07-07T21:47:32.573Z"
+      },
+      "findings": [
+        "3717ef2e"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.310Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-bar-general1-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "GENERAL1",
+      "purpose": "The GENERAL browse chip in the RECIPES rail: filters the catalog to the general-purpose recipes, with a live count.",
+      "promise": "Clicking GENERAL narrows the recipe grid to the general-purpose recipes; its ▤ count reflects the live number of recipes in that bucket (never a hardcoded figure).",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
+        "date": "2026-07-07T21:47:32.573Z"
+      },
+      "findings": [
+        "3717ef2e"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-bar-import-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "import a recipe from a JSON file",
+      "purpose": "The ⇪ IMPORT button: reads a recipe JSON file, validates it, and lands it in YOUR RECIPES.",
+      "promise": "Clicking ⇪ IMPORT opens a file picker; a valid recipe JSON is validated (importRecipe), unknown fields stripped, and the user lands on the imported recipe in the MINE view — a malformed file is refused with an honest error, nothing imported.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recipes.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [
+        "3717ef2e"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Traced seam (marketplace.js R6 hidden #mkt-import-file → Recipes.importRecipe). recipes.test.js covers importRecipe/exportRecipe round-trip at the store level. UI file-picker path not driven live (headless file upload out of scope). Left MAPPED. UI-dispatch coverage gap tracked by finding 3717ef2e."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-bar-mine0-1",
       "kind": "ui",
       "area": "work",
       "name": "MINE0",
@@ -2092,11 +1935,500 @@
         "3717ef2e"
       ],
       "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
       "missing": false,
       "selector": "button",
       "state": "work-recipes",
       "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-bar-ops11-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "OPS11",
+      "purpose": "The OPS browse chip in the RECIPES rail: filters the catalog to the ops-persona recipes, with a live count.",
+      "promise": "Clicking OPS narrows the recipe grid to the ops-persona recipes; its ▤ count reflects the live number of recipes in that bucket (never a hardcoded figure).",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
+        "date": "2026-07-07T21:47:32.573Z"
+      },
+      "findings": [
+        "3717ef2e"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-bar-recipes-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "❒ RECIPES",
+      "purpose": "The ❒ RECIPES tab in the recruitment bay: switches the bay to the mission library.",
+      "promise": "Clicking ❒ RECIPES shows the recipe roster (builtin categories + MINE) with SAVE A RECIPE + IMPORT controls.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [
+        "e74ea483"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID mkt-state tabs \"☰ AGENTS ❒ RECIPES\", recipes-view saveAsBtn+importBtn present, 53 recipe els. AUDITED: the tab switch has no dedicated machine assertion (recipes.test.js covers the store, not the tab). KNOWN gap per EL-3."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-bar-research13-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "RESEARCH13",
+      "purpose": "The RESEARCH browse chip in the RECIPES rail: filters the catalog to the research-persona recipes, with a live count.",
+      "promise": "Clicking RESEARCH narrows the recipe grid to the research-persona recipes; its ▤ count reflects the live number of recipes in that bucket (never a hardcoded figure).",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
+        "date": "2026-07-07T21:47:32.573Z"
+      },
+      "findings": [
+        "3717ef2e"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-dossier-export-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "download this recipe as a portable JSON file",
+      "purpose": "The ⇩ EXPORT button on a recipe dossier: downloads that recipe as a portable JSON file.",
+      "promise": "Clicking ⇩ EXPORT serializes the recipe (exportRecipe) and saves it to downloads; an unknown/failed export reports honestly and downloads nothing.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/recipes.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
+        "date": "2026-07-07T21:47:32.573Z"
+      },
+      "findings": [
+        "3717ef2e"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Live-proven .uiatlas/work2-evidence/probe-evidence.txt export-serialize: Recipes.exportRecipe('fix-bug') returns a starnetRecipe-stamped JSON object (keys starnetRecipe,id,name,emoji,tagline,blurb,accent,tags). recipes.test.js covers exportRecipe. AUDITED not PERFECTED: the browser download UI path is not driven (headless download out of scope) and the button seam is unguarded — finding 3717ef2e routed to work-recipes."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-dossier-set-up-launch-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "▸ SET UP & LAUNCH",
+      "purpose": "The ▸ SET UP & LAUNCH button on a recipe dossier: opens the launch form to fill the recipe's params, then RUN NOW dispatches it as a fresh task.",
+      "promise": "Clicking ▸ SET UP & LAUNCH opens the LAUNCH form; filling required params and clicking ▸ RUN NOW creates a new kind:\"task\" workstream named for the recipe and sets the agent to work on the filled directive.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [
+        "e74ea483"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID recipes-launch-open (morning-brief), recipes-runnow-form, recipes-runnow-dispatch: countBefore 1→2, newTasks 1, title \"Morning Brief\", kind \"task\" — the launchRecipe dispatch contract holds. AUDITED not PERFECTED: recipes.test.js covers fillTask (the launch primitive) but NO journey/test drives this UI button→kind:task dispatch. Finding routed to work-recipes lane."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-dossier-tweak-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "✎ TWEAK",
+      "purpose": "The ✎ TWEAK button on every recipe dossier: forks that recipe into a new editable custom (source preserved), prefilled in the editor.",
+      "promise": "Clicking ✎ TWEAK opens the recipe editor titled \"TWEAK RECIPE\" seeded from the source recipe with source:\"fork\" provenance; the builtin is never mutated.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [
+        "3717ef2e"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Live-proven .uiatlas/work2-evidence/probe-evidence.txt tweak-fork: clicking ✎ TWEAK on fix-bug opened the editor titled \"TWEAK RECIPE\" seeded \"Fix a Bug (my version)\" (fork path; builtin untouched, customsBefore 0). recipes.test.js R2 guards forkFrom (source:fork provenance). AUDITED not PERFECTED: the TWEAK button→editor UI seam has no dedicated assertion — finding 3717ef2e (recipe-catalog UI-dispatch) covers it, routed to work-recipes."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-caption-variantsthe-same-post-tuned-pe",
+      "kind": "ui",
+      "area": "work",
+      "name": "⌯Caption VariantsThe same post, tuned per platformCREATOR",
+      "purpose": "A \"Caption Variants\" recipe tile in the RECIPES catalog: the same post, tuned per platform — selecting it opens the dossier to fill its blanks and launch it as a fresh task.",
+      "promise": "Clicking the \"Caption Variants\" tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → ▸ RUN NOW fills the params once and creates a new kind:\"task\" workstream named \"Caption Variants\" that the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [
+        "3717ef2e"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-forget-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "⌫ FORGET",
+      "purpose": "The ⌫ FORGET button in the STATION FAMILIARITY panel: a two-step armed control that wipes the LOCALLY-LEARNED work-affinity profile (not a recipe).",
+      "promise": "Clicking ⌫ FORGET arms (label → \"SURE? WIPE\", 4s window); a confirming second click clears the local profile + mint stores (ps.forget() / MintStore.forget()) — it is never a one-click wipe, and it removes NO recipes.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/profilestore.js",
+          "frontend/app/mintstore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
+        "date": "2026-07-07T21:47:32.573Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "CORRECTED wave-2 mis-mapping: this button wipes the learned STATION FAMILIARITY profile, NOT a \"custom recipe family\" (marketplace.js mkt-fam-forget → ps.forget()/MintStore.forget(), inside glassHTML alongside PAUSE LEARNING). Live-proven .uiatlas/work2-evidence/probe-evidence.txt forget-semantics: label0 \"⌫ FORGET\" → armedLabel \"SURE? WIPE\", armed:true, twoStep:true (two-step arm/confirm holds). Truthful destructive-confirm semantics verified. AUDITED: the arm/confirm has no dedicated assertion; belongs to the profile/mint lane. KNOWN gap per EL-3."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-got-it-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "GOT IT",
+      "purpose": "The GOT IT button in the STATION FAMILIARITY consent strip: acknowledges the local-learning disclosure so the strip stops showing.",
+      "promise": "Clicking GOT IT records the acknowledgement (acked) and removes the consent strip; the affinity panel stays, learning continues locally.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/profilestore.js",
+          "frontend/app/mintstore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "STATION FAMILIARITY glass panel control (marketplace.js glassHTML, mkt-fam-* family). This panel shows/pauses/wipes the LOCALLY-LEARNED work-affinity profile that ranks the recommender shelves — it is NOT recipe management. Live-proven .uiatlas/work2-evidence/probe-evidence.txt forget-semantics. Consent-ack path not driven live (only present when un-acked). Left MAPPED — profile/mint lane."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-pause-learning-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "❚❚ PAUSE LEARNING",
+      "purpose": "The ❚❚ PAUSE LEARNING button: stops the station folding new work-signal into the local affinity profile (toggles to ▸ RESUME).",
+      "promise": "Clicking ❚❚ PAUSE LEARNING sets the profile + mint stores disabled (nothing new folded in) and the label flips to ▸ RESUME LEARNING; clicking again resumes.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/profilestore.js",
+          "frontend/app/mintstore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "STATION FAMILIARITY glass panel control (marketplace.js glassHTML, mkt-fam-* family). This panel shows/pauses/wipes the LOCALLY-LEARNED work-affinity profile that ranks the recommender shelves — it is NOT recipe management. Live-proven .uiatlas/work2-evidence/probe-evidence.txt forget-semantics. Pause toggle not exercised live this batch. Left MAPPED — profile/mint lane, not a recipe control."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-save-a-recipe-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "＋ SAVE A RECIPE",
+      "purpose": "The ＋ SAVE A RECIPE button: opens the recipe editor on a blank create to bottle a reusable parameterized directive.",
+      "promise": "Clicking ＋ SAVE A RECIPE opens the editor titled \"SAVE A RECIPE\" (blank create path) where a user names, templates, and declares params for a new custom recipe.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [
+        "e74ea483"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID recipes-saveas: editorOpen true, title \"SAVE A RECIPE\". AUDITED: the editor-open UI path is not machine-guarded (recipes.test.js validates recipe shape/fillTask, not the editor). Finding routed to work-recipes lane for a UI-dispatch assertion."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-station-familiaritycalibratingstill-ge",
+      "kind": "ui",
+      "area": "work",
+      "name": "◉STATION FAMILIARITYCALIBRATINGstill getting to know you — s",
+      "purpose": "The STATION FAMILIARITY panel header: expands the local learned-affinity profile (what the station has inferred you work on) that powers the recommender shelves.",
+      "promise": "Clicking the STATION FAMILIARITY header toggles the glass panel open/closed, revealing per-tag affinity bars, the local-first privacy note, and PAUSE / FORGET controls — all computed from the on-device profile, 0 bytes sent.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/profilestore.js",
+          "frontend/app/mintstore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "STATION FAMILIARITY glass panel control (marketplace.js glassHTML, mkt-fam-* family). This panel shows/pauses/wipes the LOCALLY-LEARNED work-affinity profile that ranks the recommender shelves — it is NOT recipe management. Live-proven .uiatlas/work2-evidence/probe-evidence.txt forget-semantics. Header expand not driven live this batch (the panel body/forget WERE). Left MAPPED — belongs to the mint/profile lane, not recipes."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-tighten-thiscut-filler-keep-the-meanin",
+      "kind": "ui",
+      "area": "work",
+      "name": "Tighten ThisCut filler, keep the meaningCREATOR",
+      "purpose": "A \"Tighten This\" recipe tile in the RECIPES catalog: cut filler, keep the meaning — selecting it opens the dossier to fill its blanks and launch it as a fresh task.",
+      "promise": "Clicking the \"Tighten This\" tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → ▸ RUN NOW fills the params once and creates a new kind:\"task\" workstream named \"Tighten This\" that the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [
+        "3717ef2e"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
+    },
+    {
+      "id": "ui/work/txt-button-mkt-roster-title-a-b-ideastitles-worth-testing-ag",
+      "kind": "ui",
+      "area": "work",
+      "name": "⊞Title A/B IdeasTitles worth testing against each otherCREAT",
+      "purpose": "A \"Title A/B Ideas\" recipe tile in the RECIPES catalog: titles worth testing against each other — selecting it opens the dossier to fill its blanks and launch it as a fresh task.",
+      "promise": "Clicking the \"Title A/B Ideas\" tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → ▸ RUN NOW fills the params once and creates a new kind:\"task\" workstream named \"Title A/B Ideas\" that the agent works on.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js",
+          "frontend/app/recipes.js",
+          "frontend/app/recipe-catalog/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/recipes.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [
+        "3717ef2e"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-recipes",
+      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
       "id": "ui/work/txt-button-newnewsletter-draftan-issue-drafted-in-462",
@@ -2136,39 +2468,6 @@
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
-      "id": "ui/work/txt-button-novaagent-405",
-      "kind": "ui",
-      "area": "work",
-      "name": "NOVAagent",
-      "purpose": "A routine AGENT pick button (rt-agent-btn) in the CREATE ROUTINE form: choose which roster agent a scheduled job runs as (here NOVA, the seeded agent).",
-      "promise": "Clicking an agent button marks it active (aria-pressed) and writes its id into #rt-agent, so + ADD ROUTINE schedules the job against that agent.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "sidecar/index.js",
-          "frontend/app/autojobstore.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/cron.api.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [
-        "5c6adcaa"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-routines",
-      "notes": "Traced seam (stationui.js agentButton → #rt-agent → body.agentId). Roster-driven (button label = live agent name). Left MAPPED — one of N per-agent pick buttons; the create route it feeds is re-proven live (.uiatlas/work2-evidence/cron-probe-evidence.txt)."
-    },
-    {
       "id": "ui/work/txt-button-onbonboard-a-codebaseget-oriented-in-un-441",
       "kind": "ui",
       "area": "work",
@@ -2204,73 +2503,6 @@
       "selector": "button",
       "state": "work-recipes",
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
-    },
-    {
-      "id": "ui/work/txt-button-ops11-411",
-      "kind": "ui",
-      "area": "work",
-      "name": "OPS11",
-      "purpose": "The OPS browse chip in the RECIPES rail: filters the catalog to the ops-persona recipes, with a live count.",
-      "promise": "Clicking OPS narrows the recipe grid to the ops-persona recipes; its ▤ count reflects the live number of recipes in that bucket (never a hardcoded figure).",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/recipes.js",
-          "frontend/app/recipe-catalog/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
-      },
-      "findings": [
-        "3717ef2e"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
-    },
-    {
-      "id": "ui/work/txt-button-pause-learning-418",
-      "kind": "ui",
-      "area": "work",
-      "name": "❚❚ PAUSE LEARNING",
-      "purpose": "The ❚❚ PAUSE LEARNING button: stops the station folding new work-signal into the local affinity profile (toggles to ▸ RESUME).",
-      "promise": "Clicking ❚❚ PAUSE LEARNING sets the profile + mint stores disabled (nothing new folded in) and the label flips to ▸ RESUME LEARNING; clicking again resumes.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/profilestore.js",
-          "frontend/app/mintstore.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "STATION FAMILIARITY glass panel control (marketplace.js glassHTML, mkt-fam-* family). This panel shows/pauses/wipes the LOCALLY-LEARNED work-affinity profile that ranks the recommender shelves — it is NOT recipe management. Live-proven .uiatlas/work2-evidence/probe-evidence.txt forget-semantics. Pause toggle not exercised live this batch. Left MAPPED — profile/mint lane, not a recipe control."
     },
     {
       "id": "ui/work/txt-button-perperformance-passfind-where-the-time-442",
@@ -2495,42 +2727,6 @@
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
-      "id": "ui/work/txt-button-recipes-406",
-      "kind": "ui",
-      "area": "work",
-      "name": "❒ RECIPES",
-      "purpose": "The ❒ RECIPES tab in the recruitment bay: switches the bay to the mission library.",
-      "promise": "Clicking ❒ RECIPES shows the recipe roster (builtin categories + MINE) with SAVE A RECIPE + IMPORT controls.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/app.js",
-          "frontend/app/recipes.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [
-        "e74ea483"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID mkt-state tabs \"☰ AGENTS ❒ RECIPES\", recipes-view saveAsBtn+importBtn present, 53 recipe els. AUDITED: the tab switch has no dedicated machine assertion (recipes.test.js covers the store, not the tab). KNOWN gap per EL-3."
-    },
-    {
       "id": "ui/work/txt-button-refrefactor-scoutfind-the-code-most-wor-439",
       "kind": "ui",
       "area": "work",
@@ -2642,42 +2838,6 @@
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
-      "id": "ui/work/txt-button-research13-409",
-      "kind": "ui",
-      "area": "work",
-      "name": "RESEARCH13",
-      "purpose": "The RESEARCH browse chip in the RECIPES rail: filters the catalog to the research-persona recipes, with a live count.",
-      "promise": "Clicking RESEARCH narrows the recipe grid to the research-persona recipes; its ▤ count reflects the live number of recipes in that bucket (never a hardcoded figure).",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/recipes.js",
-          "frontend/app/recipe-catalog/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "393e8cdb92799ff1497ad40b1c61e2a59bc66c81",
-        "date": "2026-07-07T21:47:32.573Z"
-      },
-      "findings": [
-        "3717ef2e"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "R6 discovery-rail browse chip (.mkt-lane[data-cat]) — filters the recipe catalog to one persona bucket, count computed live from Recipes.builtins().concat(customs) via railBucket(). Count-truth verified: live catalog is all=50, developer=13, research=13, creator=12, ops=10, general=2 (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering storeBuiltins 50). The name-snapshot counts in this entry are a stale Cartographer harvest (script-owned, re-harvested each sweep); the RENDERED count is always the live bucket size. AUDITED: filtering has no dedicated machine assertion; recipes.test.js guards the catalog the counts derive from. KNOWN gap per EL-3."
-    },
-    {
       "id": "ui/work/txt-button-resresearch-digesta-themed-roundup-on-y-453",
       "kind": "ui",
       "area": "work",
@@ -2752,42 +2912,6 @@
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
-      "id": "ui/work/txt-button-save-a-recipe-415",
-      "kind": "ui",
-      "area": "work",
-      "name": "＋ SAVE A RECIPE",
-      "purpose": "The ＋ SAVE A RECIPE button: opens the recipe editor on a blank create to bottle a reusable parameterized directive.",
-      "promise": "Clicking ＋ SAVE A RECIPE opens the editor titled \"SAVE A RECIPE\" (blank create path) where a user names, templates, and declares params for a new custom recipe.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/app.js",
-          "frontend/app/recipes.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [
-        "e74ea483"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID recipes-saveas: editorOpen true, title \"SAVE A RECIPE\". AUDITED: the editor-open UI path is not machine-guarded (recipes.test.js validates recipe shape/fillTask, not the editor). Finding routed to work-recipes lane for a UI-dispatch assertion."
-    },
-    {
       "id": "ui/work/txt-button-scrscript-outlinea-beat-by-beat-outline-458",
       "kind": "ui",
       "area": "work",
@@ -2825,42 +2949,6 @@
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
-      "id": "ui/work/txt-button-set-up-launch-476",
-      "kind": "ui",
-      "area": "work",
-      "name": "▸ SET UP & LAUNCH",
-      "purpose": "The ▸ SET UP & LAUNCH button on a recipe dossier: opens the launch form to fill the recipe's params, then RUN NOW dispatches it as a fresh task.",
-      "promise": "Clicking ▸ SET UP & LAUNCH opens the LAUNCH form; filling required params and clicking ▸ RUN NOW creates a new kind:\"task\" workstream named for the recipe and sets the agent to work on the filled directive.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/app.js",
-          "frontend/app/recipes.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [
-        "e74ea483"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "Live-proven .uiatlas/work-evidence/probe-evidence.txt EVID recipes-launch-open (morning-brief), recipes-runnow-form, recipes-runnow-dispatch: countBefore 1→2, newTasks 1, title \"Morning Brief\", kind \"task\" — the launchRecipe dispatch contract holds. AUDITED not PERFECTED: recipes.test.js covers fillTask (the launch primitive) but NO journey/test drives this UI button→kind:task dispatch. Finding routed to work-recipes lane."
-    },
-    {
       "id": "ui/work/txt-button-sousource-comparewhere-the-sources-actu-450",
       "kind": "ui",
       "area": "work",
@@ -2896,37 +2984,6 @@
       "selector": "button",
       "state": "work-recipes",
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
-    },
-    {
-      "id": "ui/work/txt-button-station-familiaritycalibratingstill-get-416",
-      "kind": "ui",
-      "area": "work",
-      "name": "◉STATION FAMILIARITYCALIBRATINGstill getting to know you — s",
-      "purpose": "The STATION FAMILIARITY panel header: expands the local learned-affinity profile (what the station has inferred you work on) that powers the recommender shelves.",
-      "promise": "Clicking the STATION FAMILIARITY header toggles the glass panel open/closed, revealing per-tag affinity bars, the local-first privacy note, and PAUSE / FORGET controls — all computed from the on-device profile, 0 bytes sent.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/profilestore.js",
-          "frontend/app/mintstore.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "mapped",
-      "auditedAt": null,
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "STATION FAMILIARITY glass panel control (marketplace.js glassHTML, mkt-fam-* family). This panel shows/pauses/wipes the LOCALLY-LEARNED work-affinity profile that ranks the recommender shelves — it is NOT recipe management. Live-proven .uiatlas/work2-evidence/probe-evidence.txt forget-semantics. Header expand not driven live this batch (the panel body/forget WERE). Left MAPPED — belongs to the mint/profile lane, not recipes."
     },
     {
       "id": "ui/work/txt-button-subsubscription-auditwhat-you-are-payin-469",
@@ -3003,6 +3060,71 @@
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
     },
     {
+      "id": "ui/work/txt-button-terms-add-one-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "+ ADD ONE",
+      "purpose": "The + ADD ONE empty-state CTA in the TO DO column: focuses the add-a-workstream input when the board is empty (focus only, no new behavior).",
+      "promise": "Clicking + ADD ONE in the empty TO DO column focuses #kb-in so the user can immediately type a first directive.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "journey",
+          "ref": "J1"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.305Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-tasks",
+      "notes": "Live-verified the control exists and its handler focuses #kb-in (stationui.js kbEmpty + wiring). Left AUDITED not PERFECTED: it is a focus-only affordance with no dedicated machine assertion (J1 never exercises the empty-state CTA). KNOWN: cosmetic focus helper, guarding it is low-value — recorded reason per EL-3."
+    },
+    {
+      "id": "ui/work/txt-button-terms-novaagent-1",
+      "kind": "ui",
+      "area": "work",
+      "name": "NOVAagent",
+      "purpose": "A routine AGENT pick button (rt-agent-btn) in the CREATE ROUTINE form: choose which roster agent a scheduled job runs as (here NOVA, the seeded agent).",
+      "promise": "Clicking an agent button marks it active (aria-pressed) and writes its id into #rt-agent, so + ADD ROUTINE schedules the job against that agent.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "sidecar/index.js",
+          "frontend/app/autojobstore.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/cron.api.test.js"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [
+        "5c6adcaa"
+      ],
+      "firstSeen": "2026-07-07T08:11:07.406Z",
+      "lastSeen": "2026-07-18T00:52:51.311Z",
+      "missing": false,
+      "selector": "button",
+      "state": "work-routines",
+      "notes": "Traced seam (stationui.js agentButton → #rt-agent → body.agentId). Roster-driven (button label = live agent name). Left MAPPED — one of N per-agent pick buttons; the create route it feeds is re-proven live (.uiatlas/work2-evidence/cron-probe-evidence.txt)."
+    },
+    {
       "id": "ui/work/txt-button-thumbnail-conceptsvisual-directions-for-421",
       "kind": "ui",
       "area": "work",
@@ -3046,80 +3168,6 @@
       "name": "▨THUThumbnail ConceptsVisual directions for the frame that s",
       "purpose": "A \"Thumbnail Concepts\" recipe tile in the RECIPES catalog: visual directions for the frame that sells — selecting it opens the dossier to fill its blanks and launch it as a fresh task.",
       "promise": "Clicking the \"Thumbnail Concepts\" tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → ▸ RUN NOW fills the params once and creates a new kind:\"task\" workstream named \"Thumbnail Concepts\" that the agent works on.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/app.js",
-          "frontend/app/recipes.js",
-          "frontend/app/recipe-catalog/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [
-        "3717ef2e"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
-    },
-    {
-      "id": "ui/work/txt-button-tighten-thiscut-filler-keep-the-meaning-423",
-      "kind": "ui",
-      "area": "work",
-      "name": "Tighten ThisCut filler, keep the meaningCREATOR",
-      "purpose": "A \"Tighten This\" recipe tile in the RECIPES catalog: cut filler, keep the meaning — selecting it opens the dossier to fill its blanks and launch it as a fresh task.",
-      "promise": "Clicking the \"Tighten This\" tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → ▸ RUN NOW fills the params once and creates a new kind:\"task\" workstream named \"Tighten This\" that the agent works on.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/app.js",
-          "frontend/app/recipes.js",
-          "frontend/app/recipe-catalog/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [
-        "3717ef2e"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
-    },
-    {
-      "id": "ui/work/txt-button-title-a-b-ideastitles-worth-testing-aga-420",
-      "kind": "ui",
-      "area": "work",
-      "name": "⊞Title A/B IdeasTitles worth testing against each otherCREAT",
-      "purpose": "A \"Title A/B Ideas\" recipe tile in the RECIPES catalog: titles worth testing against each other — selecting it opens the dossier to fill its blanks and launch it as a fresh task.",
-      "promise": "Clicking the \"Title A/B Ideas\" tile focuses its dossier (▸ SET UP & LAUNCH / ✎ TWEAK / ⇩ EXPORT); ▸ SET UP & LAUNCH → ▸ RUN NOW fills the params once and creates a new kind:\"task\" workstream named \"Title A/B Ideas\" that the agent works on.",
       "wiring": {
         "files": [
           "frontend/app/marketplace.js",
@@ -3334,42 +3382,6 @@
       "selector": "button",
       "state": "work-recipes",
       "notes": "Recipe-catalog tile (one of 50 builtin recipes rendered by marketplace.js recipeCardHTML from Recipes.builtins(), loaded from recipe-catalog/index.js). RENDERING CONTRACT proven live (.uiatlas/work2-evidence/probe-evidence.txt catalog-rendering: storeBuiltins 50 === renderedCards 50 === withDataId 50, mkt-empty honesty present). Representative tiles morning-brief/fix-bug/caption-variants/summarize/deep-research each PROVEN end-to-end: select→dossier exposes ▸ SET UP & LAUNCH + ✎ TWEAK + ⇩ EXPORT; launch-kind-task-dispatch created exactly 1 kind:task workstream (\"Summarize\"). Clones stay AUDITED (class-proof: identical render+dispatch seam, store-covered by recipes.test.js builtins()>=8/fillTask); the button→kind:task DOM dispatch itself is not journey-guarded — finding 3717ef2e routed to work-recipes lane (EL-3 recorded reason)."
-    },
-    {
-      "id": "ui/work/txt-button-tweak-474",
-      "kind": "ui",
-      "area": "work",
-      "name": "✎ TWEAK",
-      "purpose": "The ✎ TWEAK button on every recipe dossier: forks that recipe into a new editable custom (source preserved), prefilled in the editor.",
-      "promise": "Clicking ✎ TWEAK opens the recipe editor titled \"TWEAK RECIPE\" seeded from the source recipe with source:\"fork\" provenance; the builtin is never mutated.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/app.js",
-          "frontend/app/recipes.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/recipes.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [
-        "3717ef2e"
-      ],
-      "firstSeen": "2026-07-07T08:11:07.406Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "work-recipes",
-      "notes": "Live-proven .uiatlas/work2-evidence/probe-evidence.txt tweak-fork: clicking ✎ TWEAK on fix-bug opened the editor titled \"TWEAK RECIPE\" seeded \"Fix a Bug (my version)\" (fork path; builtin untouched, customsBefore 0). recipes.test.js R2 guards forkFrom (source:fork provenance). AUDITED not PERFECTED: the TWEAK button→editor UI seam has no dedicated assertion — finding 3717ef2e (recipe-catalog UI-dispatch) covers it, routed to work-recipes."
     },
     {
       "id": "ui/work/txt-button-weeweekly-reviewclose-the-week-aim-the-466",

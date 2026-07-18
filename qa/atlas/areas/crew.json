@@ -1,6 +1,6 @@
 {
   "area": "crew",
-  "updatedAt": "2026-07-07T22:21:27.981Z",
+  "updatedAt": "2026-07-18T00:52:51.359Z",
   "entries": [
     {
       "id": "state/crew-agents",
@@ -2087,240 +2087,6 @@
       "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
-      "id": "ui/crew/txt-button-add-409",
-      "kind": "ui",
-      "area": "crew",
-      "name": "+ add",
-      "purpose": "COMMANDER DOSSIER per-dimension \"+ add\" — opens an inline composer to add a new belief under that dimension of the user model.",
-      "promise": "Clicking it reveals a text composer whose SAVE upserts a belief (source \"commander\") into that dimension via CDS().upsert, then re-renders; one \"+ add\" exists per dimension.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "shoot",
-          "ref": "crew-commander"
-        },
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "Live 78351f3e: 7 \"+ add\" buttons render (one per known/blank dimension) on the open commander dossier. AUDITED not perfected: the add->compose->upsert->render round-trip not driven to a committed belief this session (dossier.test covers CDS.upsert, not the button wiring). Representative of the 7 \"+ add\" commander entries. Ev crew2-proof.json."
-    },
-    {
-      "id": "ui/crew/txt-button-add-410",
-      "kind": "ui",
-      "area": "crew",
-      "name": "+ add",
-      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
-      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/dossier.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
-    },
-    {
-      "id": "ui/crew/txt-button-add-414",
-      "kind": "ui",
-      "area": "crew",
-      "name": "+ add",
-      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
-      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/dossier.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
-    },
-    {
-      "id": "ui/crew/txt-button-add-415",
-      "kind": "ui",
-      "area": "crew",
-      "name": "+ add",
-      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
-      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/dossier.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
-    },
-    {
-      "id": "ui/crew/txt-button-add-419",
-      "kind": "ui",
-      "area": "crew",
-      "name": "+ add",
-      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
-      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/dossier.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
-    },
-    {
-      "id": "ui/crew/txt-button-add-420",
-      "kind": "ui",
-      "area": "crew",
-      "name": "+ add",
-      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
-      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/dossier.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
-    },
-    {
-      "id": "ui/crew/txt-button-add-421",
-      "kind": "ui",
-      "area": "crew",
-      "name": "+ add",
-      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
-      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/dossier.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
-    },
-    {
       "id": "ui/crew/txt-button-all18-405",
       "kind": "ui",
       "area": "crew",
@@ -2639,43 +2405,6 @@
       "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip). Chip count reflects Specialties.builtins() filtered by lane (ClassIcons.lane)."
     },
     {
-      "id": "ui/crew/txt-button-deploy-to-nova-446",
-      "kind": "ui",
-      "area": "crew",
-      "name": "⏼ DEPLOY TO NOVA ▸",
-      "purpose": "The RECRUITMENT BAY DEPLOY verb — re-specs the CURRENT agent as the focused class instead of minting a new one.",
-      "promise": "In deploy context it re-specs the named agent purpose and standing orders (no new crew member); label and sub-copy name the exact target agent.",
-      "wiring": {
-        "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/app.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "summon"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-recruit",
-      "notes": "Re-proof 78351f3e: recruit ENGINEER detail rendered \"⏼ DEPLOY TO NOVA ▸\". HOLDS. Ev crew2-proof.json"
-    },
-    {
       "id": "ui/crew/txt-button-dsndesignervisuals-assetsops-balanc-435",
       "kind": "ui",
       "area": "crew",
@@ -2919,108 +2648,6 @@
       "notes": "Live: 44 class seals rendered in crew-recruit; representative for the class-seal grid; filter 44->5 on engineer. Ev .bugloops/crew-primary-flow-proof.json"
     },
     {
-      "id": "ui/crew/txt-button-forget-408",
-      "kind": "ui",
-      "area": "crew",
-      "name": "Forget",
-      "purpose": "COMMANDER DOSSIER belief \"Forget\" — removes a belief from the user model.",
-      "promise": "Clicking Forget calls CDS().forget(dim,id) and the card leaves the dossier on re-render; the belief is dropped from the store (local-first, user-owned).",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "shoot",
-          "ref": "crew-commander"
-        },
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "Live 78351f3e: Forget buttons render on commander belief cards. AUDITED not perfected: forget not driven live (would mutate the seeded dossier); dossier.test.js covers the store forget path. Ev crew2-proof.json."
-    },
-    {
-      "id": "ui/crew/txt-button-forget-413",
-      "kind": "ui",
-      "area": "crew",
-      "name": "Forget",
-      "purpose": "Commander-dossier belief control — removes (forgets) a belief from a dossier dimension.",
-      "promise": "Clicking Forget removes the first-matching belief from that dimension (mirrors memcore.applyForget) and re-renders.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/dossier.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
-    },
-    {
-      "id": "ui/crew/txt-button-forget-418",
-      "kind": "ui",
-      "area": "crew",
-      "name": "Forget",
-      "purpose": "Commander-dossier belief control — removes (forgets) a belief from a dossier dimension.",
-      "promise": "Clicking Forget removes the first-matching belief from that dimension (mirrors memcore.applyForget) and re-renders.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/dossier.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
-    },
-    {
       "id": "ui/crew/txt-button-hldheraldscheduled-digests-broadcastsr-444",
       "kind": "ui",
       "area": "crew",
@@ -3103,43 +2730,6 @@
       "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
-      "id": "ui/crew/txt-button-let-the-station-get-to-know-you-405",
-      "kind": "ui",
-      "area": "crew",
-      "name": "▸ LET THE STATION GET TO KNOW YOU",
-      "purpose": "COMMANDER DOSSIER interview trigger — launches the intake interview in COMMS, folding answers into the shared user dossier.",
-      "promise": "Clicking it starts the intake interview (gated on a free, awake agent); answers upsert into the dossier through the same path the belief cards use. Label reads \"GET TO KNOW YOU\" (blank dims) or \"REFINE\" (all known).",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/app.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "shoot",
-          "ref": "crew-commander"
-        },
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "Live 78351f3e: rendered as \".cd-interview\" reading \"▸ LET THE STATION GET TO KNOW YOU\" (blank dims present). AUDITED not perfected: the Intake.start launch path is gated (agent busy/onboarding) and not driven to completion this session; dossier.test covers the upsert store not the interview launch button. Ev crew2-proof.json."
-    },
-    {
       "id": "ui/crew/txt-button-lialiaisontriage-draft-your-messagesop-437",
       "kind": "ui",
       "area": "crew",
@@ -3179,6 +2769,86 @@
       "selector": "button",
       "state": "crew-recruit",
       "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
+    },
+    {
+      "id": "ui/crew/txt-button-mkt-dossier-deploy-to-nova-1",
+      "kind": "ui",
+      "area": "crew",
+      "name": "⏼ DEPLOY TO NOVA ▸",
+      "purpose": "The RECRUITMENT BAY DEPLOY verb — re-specs the CURRENT agent as the focused class instead of minting a new one.",
+      "promise": "In deploy context it re-specs the named agent purpose and standing orders (no new crew member); label and sub-copy name the exact target agent.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "summon"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-recruit",
+      "notes": "Re-proof 78351f3e: recruit ENGINEER detail rendered \"⏼ DEPLOY TO NOVA ▸\". HOLDS. Ev crew2-proof.json"
+    },
+    {
+      "id": "ui/crew/txt-button-mkt-dossier-summon-researcher-1",
+      "kind": "ui",
+      "area": "crew",
+      "name": "⏼ SUMMON RESEARCHER ▸",
+      "purpose": "The RECRUITMENT BAY primary SUMMON CTA — mints a brand-new crew member from the focused class and opens its own chat thread.",
+      "promise": "Clicking it creates a real roster agent (crew grows by one) whose name/voice/purpose are pre-filled from the class; it opens its own workstream — never a silent no-op.",
+      "wiring": {
+        "files": [
+          "frontend/app/marketplace.js",
+          "frontend/app/app.js"
+        ],
+        "events": [
+          "crew.summon.request"
+        ]
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/e2e.summon.test.js"
+        },
+        {
+          "kind": "test",
+          "ref": "test/agent-model-select.test.js"
+        },
+        {
+          "kind": "audit",
+          "ref": "summon"
+        }
+      ],
+      "status": "perfected",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-recruit",
+      "notes": "Re-proof 78351f3e: recruit ENGINEER detail rendered \"⏼ SUMMON ENGINEER ▸\". HOLDS. Ev crew2-proof.json"
     },
     {
       "id": "ui/crew/txt-button-operatorops-automation-scheduleswhy-m-425",
@@ -3297,108 +2967,6 @@
       "selector": "button",
       "state": "crew-recruit",
       "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip). Chip count reflects Specialties.builtins() filtered by lane (ClassIcons.lane)."
-    },
-    {
-      "id": "ui/crew/txt-button-pin-406",
-      "kind": "ui",
-      "area": "crew",
-      "name": "Pin",
-      "purpose": "COMMANDER DOSSIER belief \"Pin\" — locks a belief to the top of recall so agents weight it first.",
-      "promise": "Clicking Pin toggles CDS().setPinned(dim,id,true) and re-renders the card as pinned (label flips to \"Unpin\"); pin state persists in the dossier store.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "shoot",
-          "ref": "crew-commander"
-        },
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "Live 78351f3e: Pin buttons render on commander belief cards (the seeded dossier has 3 known dimensions). AUDITED not perfected: setPinned toggle not driven live this session (no seeded pinnable belief exercised); dossier.test.js covers the store pin path. Ev crew2-proof.json."
-    },
-    {
-      "id": "ui/crew/txt-button-pin-411",
-      "kind": "ui",
-      "area": "crew",
-      "name": "Pin",
-      "purpose": "Commander-dossier belief control — pins a belief so it is always surfaced to agents.",
-      "promise": "Clicking Pin marks the belief pinned in the dossier store so it is always included in the shared context.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/dossier.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
-    },
-    {
-      "id": "ui/crew/txt-button-pin-416",
-      "kind": "ui",
-      "area": "crew",
-      "name": "Pin",
-      "purpose": "Commander-dossier belief control — pins a belief so it is always surfaced to agents.",
-      "promise": "Clicking Pin marks the belief pinned in the dossier store so it is always included in the shared context.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "frontend/app/dossier.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/dossier.test.js"
-        }
-      ],
-      "status": "audited",
-      "auditedAt": {
-        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
-        "date": "2026-07-07T22:34:32Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
-      "missing": false,
-      "selector": "button",
-      "state": "crew-commander",
-      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-pubpublicistannouncements-social-copyo-439",
@@ -3683,47 +3251,479 @@
       "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
-      "id": "ui/crew/txt-button-summon-researcher-445",
+      "id": "ui/crew/txt-button-terms-add-1",
       "kind": "ui",
       "area": "crew",
-      "name": "⏼ SUMMON RESEARCHER ▸",
-      "purpose": "The RECRUITMENT BAY primary SUMMON CTA — mints a brand-new crew member from the focused class and opens its own chat thread.",
-      "promise": "Clicking it creates a real roster agent (crew grows by one) whose name/voice/purpose are pre-filled from the class; it opens its own workstream — never a silent no-op.",
+      "name": "+ add",
+      "purpose": "COMMANDER DOSSIER per-dimension \"+ add\" — opens an inline composer to add a new belief under that dimension of the user model.",
+      "promise": "Clicking it reveals a text composer whose SAVE upserts a belief (source \"commander\") into that dimension via CDS().upsert, then re-renders; one \"+ add\" exists per dimension.",
       "wiring": {
         "files": [
-          "frontend/app/marketplace.js",
-          "frontend/app/app.js"
+          "frontend/app/stationui.js"
         ],
-        "events": [
-          "crew.summon.request"
-        ]
+        "events": []
       },
       "coverage": [
         {
-          "kind": "test",
-          "ref": "test/e2e.summon.test.js"
+          "kind": "shoot",
+          "ref": "crew-commander"
         },
         {
           "kind": "test",
-          "ref": "test/agent-model-select.test.js"
-        },
-        {
-          "kind": "audit",
-          "ref": "summon"
+          "ref": "test/dossier.test.js"
         }
       ],
-      "status": "perfected",
+      "status": "audited",
       "auditedAt": {
         "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
         "date": "2026-07-07T22:34:32Z"
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "button",
-      "state": "crew-recruit",
-      "notes": "Re-proof 78351f3e: recruit ENGINEER detail rendered \"⏼ SUMMON ENGINEER ▸\". HOLDS. Ev crew2-proof.json"
+      "state": "crew-commander",
+      "notes": "Live 78351f3e: 7 \"+ add\" buttons render (one per known/blank dimension) on the open commander dossier. AUDITED not perfected: the add->compose->upsert->render round-trip not driven to a committed belief this session (dossier.test covers CDS.upsert, not the button wiring). Representative of the 7 \"+ add\" commander entries. Ev crew2-proof.json."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-add-2",
+      "kind": "ui",
+      "area": "crew",
+      "name": "+ add",
+      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
+      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-add-3",
+      "kind": "ui",
+      "area": "crew",
+      "name": "+ add",
+      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
+      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-add-4",
+      "kind": "ui",
+      "area": "crew",
+      "name": "+ add",
+      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
+      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-add-5",
+      "kind": "ui",
+      "area": "crew",
+      "name": "+ add",
+      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
+      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-add-6",
+      "kind": "ui",
+      "area": "crew",
+      "name": "+ add",
+      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
+      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-add-7",
+      "kind": "ui",
+      "area": "crew",
+      "name": "+ add",
+      "purpose": "Commander-dossier belief control — adds a belief to a dossier dimension.",
+      "promise": "Clicking + add opens an input; a saved belief is appended to that dimension of the real Commander dossier store and re-rendered.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-forget-1",
+      "kind": "ui",
+      "area": "crew",
+      "name": "Forget",
+      "purpose": "COMMANDER DOSSIER belief \"Forget\" — removes a belief from the user model.",
+      "promise": "Clicking Forget calls CDS().forget(dim,id) and the card leaves the dossier on re-render; the belief is dropped from the store (local-first, user-owned).",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-commander"
+        },
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "Live 78351f3e: Forget buttons render on commander belief cards. AUDITED not perfected: forget not driven live (would mutate the seeded dossier); dossier.test.js covers the store forget path. Ev crew2-proof.json."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-forget-2",
+      "kind": "ui",
+      "area": "crew",
+      "name": "Forget",
+      "purpose": "Commander-dossier belief control — removes (forgets) a belief from a dossier dimension.",
+      "promise": "Clicking Forget removes the first-matching belief from that dimension (mirrors memcore.applyForget) and re-renders.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-forget-3",
+      "kind": "ui",
+      "area": "crew",
+      "name": "Forget",
+      "purpose": "Commander-dossier belief control — removes (forgets) a belief from a dossier dimension.",
+      "promise": "Clicking Forget removes the first-matching belief from that dimension (mirrors memcore.applyForget) and re-renders.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-let-the-station-get-to-know-you-1",
+      "kind": "ui",
+      "area": "crew",
+      "name": "▸ LET THE STATION GET TO KNOW YOU",
+      "purpose": "COMMANDER DOSSIER interview trigger — launches the intake interview in COMMS, folding answers into the shared user dossier.",
+      "promise": "Clicking it starts the intake interview (gated on a free, awake agent); answers upsert into the dossier through the same path the belief cards use. Label reads \"GET TO KNOW YOU\" (blank dims) or \"REFINE\" (all known).",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/app.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-commander"
+        },
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "Live 78351f3e: rendered as \".cd-interview\" reading \"▸ LET THE STATION GET TO KNOW YOU\" (blank dims present). AUDITED not perfected: the Intake.start launch path is gated (agent busy/onboarding) and not driven to completion this session; dossier.test covers the upsert store not the interview launch button. Ev crew2-proof.json."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-pin-1",
+      "kind": "ui",
+      "area": "crew",
+      "name": "Pin",
+      "purpose": "COMMANDER DOSSIER belief \"Pin\" — locks a belief to the top of recall so agents weight it first.",
+      "promise": "Clicking Pin toggles CDS().setPinned(dim,id,true) and re-renders the card as pinned (label flips to \"Unpin\"); pin state persists in the dossier store.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "shoot",
+          "ref": "crew-commander"
+        },
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "Live 78351f3e: Pin buttons render on commander belief cards (the seeded dossier has 3 known dimensions). AUDITED not perfected: setPinned toggle not driven live this session (no seeded pinnable belief exercised); dossier.test.js covers the store pin path. Ev crew2-proof.json."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-pin-2",
+      "kind": "ui",
+      "area": "crew",
+      "name": "Pin",
+      "purpose": "Commander-dossier belief control — pins a belief so it is always surfaced to agents.",
+      "promise": "Clicking Pin marks the belief pinned in the dossier store so it is always included in the shared context.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
+    },
+    {
+      "id": "ui/crew/txt-button-terms-pin-3",
+      "kind": "ui",
+      "area": "crew",
+      "name": "Pin",
+      "purpose": "Commander-dossier belief control — pins a belief so it is always surfaced to agents.",
+      "promise": "Clicking Pin marks the belief pinned in the dossier store so it is always included in the shared context.",
+      "wiring": {
+        "files": [
+          "frontend/app/stationui.js",
+          "frontend/app/dossier.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/dossier.test.js"
+        }
+      ],
+      "status": "audited",
+      "auditedAt": {
+        "sha": "f1934897daeaa69b9f401c1f50eb5c74aabd3ef3",
+        "date": "2026-07-07T22:34:32Z"
+      },
+      "findings": [],
+      "firstSeen": "2026-07-07T08:11:07.405Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
+      "missing": false,
+      "selector": "button",
+      "state": "crew-commander",
+      "notes": "seam traced to the Commander dossier (crew-commander state, already-mapped); dossier belief store guarded by test/dossier.test.js. Individual button DOM-click not re-proven live this wave (mission-control belief mgmt, adjacent to the recruit-bay seal batch). Held at audited."
     },
     {
       "id": "ui/crew/txt-button-tuttutorexplains-topics-builds-study-p-440",
@@ -3767,7 +3767,7 @@
       "notes": "live-proven wave-6: .uiatlas/crew3-evidence/probe-02.json (18 builtins === 18 rendered .mkt-card seals; every class dossier shows its real kit power-words; custom create→delete round-trip)."
     },
     {
-      "id": "ui/crew/txt-span-anthropic-claude-sonnet-4-6-1",
+      "id": "ui/crew/txt-span-terms-anthropic-claude-sonnet-4-6-1",
       "kind": "ui",
       "area": "crew",
       "name": "change this agent’s model",
@@ -3793,14 +3793,14 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "span",
       "state": "crew-agents",
       "notes": "Re-proof 78351f3e: recruit model readout tag renders \"CLAUDE HAIKU / claude haiku latest OPENROUTER\" + full picker. HOLDS. Ev crew2-proof.json"
     },
     {
-      "id": "ui/crew/txt-summary-advanced-type-a-model-id-1",
+      "id": "ui/crew/txt-summary-terms-advanced-type-a-model-id-1",
       "kind": "ui",
       "area": "crew",
       "name": "advanced — type a model id",
@@ -3825,7 +3825,7 @@
       },
       "findings": [],
       "firstSeen": "2026-07-07T08:11:07.405Z",
-      "lastSeen": "2026-07-07T08:25:37.292Z",
+      "lastSeen": "2026-07-18T00:52:51.288Z",
       "missing": false,
       "selector": "summary",
       "state": "crew-agents",
