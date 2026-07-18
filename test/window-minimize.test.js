@@ -32,7 +32,7 @@ const src = fs.readFileSync(path.join(__dirname, '../frontend/app/stationui.js')
 function body(re, label) { const m = re.exec(src); A.ok(m, 'stationui.js still defines ' + label); return m ? m[0] : ''; }
 
 // the control itself
-A.ok(/el\('button', 'term-min'/.test(src), 'every window gets the shared term-min MINIMIZE button');
+A.ok(/mkEl\('button', 'term-min'/.test(src), 'every window gets the shared term-min MINIMIZE button');
 A.ok(/aria-label[^\n]*'Minimize/.test(src), 'the minimize button has an accessible name');
 A.ok(/minimizeTerm\(key\)/.test(src), 'clicking term-min calls minimizeTerm(key)');
 
