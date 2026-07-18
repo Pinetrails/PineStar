@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "9069a855a83dfffdc52ac2239c5f7e67cc839655",
+    "sourceCommit": "c77f6e52603e8a77bbfa53eab8bd394023c5c051",
     "pathSetSha256": "9eeefd91d6d300f96627d4a5036f6c767a4a1fe611b7bce6175e1b94964d750f",
     "files": [
       {
@@ -223,8 +223,8 @@
       },
       {
         "path": "frontend/app/dossier.js",
-        "bytes": 12572,
-        "sha256": "19303c411d5eee39448032810d07d0f8ecbc253ec6b4fc9f43ab94d5f575d861"
+        "bytes": 13079,
+        "sha256": "3b07290d3a37152e8406cc705f777ea15c6019a85e79f8f310f340a66742fb6f"
       },
       {
         "path": "frontend/app/dossierstore.js",
@@ -288,8 +288,8 @@
       },
       {
         "path": "frontend/app/interview.js",
-        "bytes": 6086,
-        "sha256": "c928079d06fd3e7fbaced792f72f2ff36c021bcbe45a248efa890b93e597b1b2"
+        "bytes": 7237,
+        "sha256": "7e932ae5da824a202d2b094aa3fae07129635c30e751f7b3562e50fc1dedc08d"
       },
       {
         "path": "frontend/app/keepawake.js",
@@ -633,13 +633,13 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 511732,
-        "sha256": "d0d51d45789bda617f0aa676d7c499a04a063c5aeee548cde204d8c658f44d06"
+        "bytes": 514876,
+        "sha256": "4718f04822551ae03b860a8396ca0f1cdf1fa4abc60c7491245a1fbfe646ecff"
       },
       {
         "path": "frontend/app/study.js",
-        "bytes": 24415,
-        "sha256": "593e57a1a81703e4b4d30c926b867e8f14f83b05ebab05abc917137fd2ab0ef6"
+        "bytes": 24529,
+        "sha256": "00699e7844b5623c0296d1b5e64ac3ddf4fcf9f45678cf8b1a3deb015b7499a8"
       },
       {
         "path": "frontend/app/studystore.js",
@@ -703,8 +703,8 @@
       },
       {
         "path": "frontend/app/understanding.js",
-        "bytes": 8577,
-        "sha256": "1e2e220bd08a470d729119a9fc36d18f19dd728068087b7a93512b58ab277928"
+        "bytes": 8663,
+        "sha256": "84517938f391aea63c1b7b239d9480a16c35322ffb957374b4b61336f159d6f5"
       },
       {
         "path": "frontend/app/understandingstore.js",
@@ -803,8 +803,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 201041,
-        "sha256": "38aacfe585c0e852097f631b2bd3aadad12060c393b8f4a6f08e5170269ac872"
+        "bytes": 201527,
+        "sha256": "f42a25382f4fe4132828c0f80d29c308b02c43c30bd61e23dc56b24c76bbc3f4"
       },
       {
         "path": "frontend/css/asciifx.css",
