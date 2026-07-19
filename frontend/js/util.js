@@ -216,35 +216,42 @@ const SFX = {
   },
 
   /* ---- designed UI / event sounds — the coherent console voice (see header) ---- */
-  // click: FNV Pip-Boy tick, fitted to spectral analysis of Andrew's reference video (2026-07-19,
-  // 83 clicks measured): a damped resonance at ~2.65kHz with a ~5.7kHz overtone, 11–27ms decay,
-  // ZERO low end — a dry plastic ratchet tick, not a thunk. ±4% pitch drift = separate foley takes.
+  // click: the FNV Pip-Boy hollow knock, fitted to Andrew's chosen reference moment (video 0:18,
+  // time-sliced FFT): a 4ms high splash into a ~890Hz body that FALLS to ~660Hz over 20ms (the
+  // "thunk" settle), inharmonic modes at ~1.9k/2.7k, a faint ~280Hz undertone, ~45ms total. Dry.
   click() {
     if (!SFX._gate('click', 40)) return;
     const pan = (Math.random() - 0.5) * 0.16, drift = 1 + (Math.random() - 0.5) * 0.08;
-    SFX.noise({ dur: 0.006, cut: 4000, type: 'highpass', vol: 0.05, pan });
-    SFX.voice({ freq: 2650 * drift, dur: 0.022, type: 'sine', vol: 0.14, atk: 0.001, cut: 8000, pan });
-    SFX.voice({ freq: 5700 * drift, dur: 0.012, type: 'sine', vol: 0.05, atk: 0.001, cut: 9000, pan });
+    SFX.noise({ dur: 0.005, cut: 7000, type: 'highpass', vol: 0.06, pan });
+    SFX.voice({ freq: 900 * drift, glide: 660 * drift, dur: 0.045, type: 'sine', vol: 0.20, atk: 0.001, cut: 6000, pan });
+    SFX.voice({ freq: 1920 * drift, dur: 0.025, type: 'sine', vol: 0.08, atk: 0.001, cut: 7000, pan });
+    SFX.voice({ freq: 2719 * drift, dur: 0.02, type: 'sine', vol: 0.06, atk: 0.001, cut: 8000, pan });
+    SFX.voice({ freq: 281, dur: 0.05, when: 0.012, type: 'sine', vol: 0.06, atk: 0.003, pan });
   },
   // "got it, thinking…" — a soft descending two-note sine, distinct from click (send) and open (listen-start),
   // so a hands-free user gets instant confirmation their words landed before the agent starts speaking.
   think() { SFX.voice({ freq: 659, dur: 0.09, type: 'sine', vol: 0.16, atk: 0.01, verb: 0.18 }); SFX.voice({ freq: 494, dur: 0.14, type: 'sine', vol: 0.12, when: 0.06, atk: 0.01, verb: 0.22 }); },
   // open/close: a panel physically SLIDING — an air whoosh sweeping up (open) or down (close) under a
   // rising/falling pair on A. The whoosh is what makes the window feel like it moved, not appeared.
-  // open/close: the FNV "select" tock, from the same analysis — one narrow resonance ringing
-  // ~70ms with a faint ~650Hz undertone. Measured pitch pair: brighter ~2580Hz reads as enter
-  // (open), the lower ~2150Hz cousin as back (close). Dry: no whoosh, no hum, no reverb.
+  // open/close: the same 0:18 knock, scaled up a touch for a window-sized action, plus the quiet
+  // mechanical after-rattle the recording shows (~60-90ms later, tiny ~600Hz ticks). Close sits a
+  // few percent lower so direction still reads. Dry: no whoosh, no hum, no reverb.
   open() {
     if (!SFX._gate('open', 80)) return;
-    SFX.noise({ dur: 0.008, cut: 3500, type: 'highpass', vol: 0.05 });
-    SFX.voice({ freq: 2580, dur: 0.07, type: 'sine', vol: 0.15, atk: 0.001, cut: 8000 });
-    SFX.voice({ freq: 660, dur: 0.05, type: 'sine', vol: 0.06, atk: 0.002 });
+    SFX.noise({ dur: 0.005, cut: 7000, type: 'highpass', vol: 0.06 });
+    SFX.voice({ freq: 920, glide: 680, dur: 0.05, type: 'sine', vol: 0.21, atk: 0.001, cut: 6000 });
+    SFX.voice({ freq: 1950, dur: 0.026, type: 'sine', vol: 0.08, atk: 0.001, cut: 7000 });
+    SFX.voice({ freq: 281, dur: 0.05, when: 0.012, type: 'sine', vol: 0.06, atk: 0.003 });
+    SFX.voice({ freq: 620, dur: 0.014, when: 0.065, type: 'sine', vol: 0.045, atk: 0.001 });
+    SFX.voice({ freq: 580, dur: 0.012, when: 0.095, type: 'sine', vol: 0.035, atk: 0.001 });
   },
   close() {
     if (!SFX._gate('close', 80)) return;
-    SFX.noise({ dur: 0.008, cut: 3200, type: 'highpass', vol: 0.045 });
-    SFX.voice({ freq: 2150, dur: 0.075, type: 'sine', vol: 0.14, atk: 0.001, cut: 8000 });
-    SFX.voice({ freq: 500, dur: 0.05, type: 'sine', vol: 0.055, atk: 0.002 });
+    SFX.noise({ dur: 0.005, cut: 6500, type: 'highpass', vol: 0.055 });
+    SFX.voice({ freq: 840, glide: 610, dur: 0.05, type: 'sine', vol: 0.20, atk: 0.001, cut: 6000 });
+    SFX.voice({ freq: 1800, dur: 0.026, type: 'sine', vol: 0.075, atk: 0.001, cut: 7000 });
+    SFX.voice({ freq: 260, dur: 0.05, when: 0.012, type: 'sine', vol: 0.06, atk: 0.003 });
+    SFX.voice({ freq: 540, dur: 0.013, when: 0.07, type: 'sine', vol: 0.04, atk: 0.001 });
   },
   // notify: the station bell — a warm detuned A5/E6 pair with a long room tail. Gated so a burst of
   // pings reads as ONE bell, not a carillon.
