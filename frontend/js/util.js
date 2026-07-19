@@ -151,14 +151,14 @@ const SFX = {
   },
 
   /* ---- licensed UI samples (Interface Bleeps by Bleeoop — see assets/sfx/LICENSE.md),
-     picked by spectral match against the Pip-Boy reference profile Andrew chose. Fetched
-     lazily after boot; until they arrive (or if they 404) the cues fall back to the synth. ---- */
+     per-cue mapping hand-picked by Andrew (2026-07-19). Fetched lazily after boot; until
+     they arrive (or if they 404) each cue falls back to its synth version. ---- */
   _samples: {},
   _loadSamples() {
     if (typeof fetch === 'undefined' || SFX._samplesLoading) return;
     SFX._samplesLoading = true;
-    [['click', 'assets/sfx/ui-click.wav'], ['open', 'assets/sfx/ui-open.wav']].forEach(([name, url]) => {
-      fetch(url).then(r => r.ok ? r.arrayBuffer() : Promise.reject())
+    ['click', 'open', 'alarm', 'chime', 'notify', 'msg', 'ship', 'think', 'idea', 'seed'].forEach(name => {
+      fetch('assets/sfx/ui-' + name + '.wav').then(r => r.ok ? r.arrayBuffer() : Promise.reject())
         .then(ab => SFX.ctx.decodeAudioData(ab))
         .then(buf => { SFX._samples[name] = buf; })
         .catch(() => { /* keep synth fallback */ });
@@ -250,8 +250,8 @@ const SFX = {
   click() {
     if (!SFX._gate('click', 40)) return;
     const pan = (Math.random() - 0.5) * 0.16, drift = 1 + (Math.random() - 0.5) * 0.08;
-    // Click_01 body sits at ~984Hz; 0.905 recenters it on the reference's 891Hz. Drift = foley takes.
-    if (SFX._sample('click', { rate: 0.905 * drift, vol: 0.5, pan })) return;
+    // Click_02 (Andrew's pick) — a tiny bright tick; ±4% drift keeps rapid runs organic.
+    if (SFX._sample('click', { rate: drift, vol: 0.5, pan })) return;
     SFX.noise({ dur: 0.005, cut: 7000, type: 'highpass', vol: 0.06, pan });
     SFX.voice({ freq: 900 * drift, glide: 660 * drift, dur: 0.045, type: 'sine', vol: 0.20, atk: 0.001, cut: 6000, pan });
     SFX.voice({ freq: 1920 * drift, dur: 0.025, type: 'sine', vol: 0.08, atk: 0.001, cut: 7000, pan });
@@ -260,7 +260,7 @@ const SFX = {
   },
   // "got it, thinking…" — a soft descending two-note sine, distinct from click (send) and open (listen-start),
   // so a hands-free user gets instant confirmation their words landed before the agent starts speaking.
-  think() { SFX.voice({ freq: 659, dur: 0.09, type: 'sine', vol: 0.16, atk: 0.01, verb: 0.18 }); SFX.voice({ freq: 494, dur: 0.14, type: 'sine', vol: 0.12, when: 0.06, atk: 0.01, verb: 0.22 }); },
+  think() { if (SFX._sample('think', { rate: 1, vol: 0.45 })) return; SFX.voice({ freq: 659, dur: 0.09, type: 'sine', vol: 0.16, atk: 0.01, verb: 0.18 }); SFX.voice({ freq: 494, dur: 0.14, type: 'sine', vol: 0.12, when: 0.06, atk: 0.01, verb: 0.22 }); },
   // open/close: a panel physically SLIDING — an air whoosh sweeping up (open) or down (close) under a
   // rising/falling pair on A. The whoosh is what makes the window feel like it moved, not appeared.
   // open/close: the same 0:18 knock, scaled up a touch for a window-sized action, plus the quiet
@@ -268,7 +268,7 @@ const SFX = {
   // few percent lower so direction still reads. Dry: no whoosh, no hum, no reverb.
   open() {
     if (!SFX._gate('open', 80)) return;
-    // Confirm_03: same family, body already at the reference 891Hz, brighter + longer = "enter".
+    // Data_Point_04 (Andrew's pick) at full pitch = enter.
     if (SFX._sample('open', { rate: 1, vol: 0.55 })) return;
     SFX.noise({ dur: 0.005, cut: 7000, type: 'highpass', vol: 0.06 });
     SFX.voice({ freq: 920, glide: 680, dur: 0.05, type: 'sine', vol: 0.21, atk: 0.001, cut: 6000 });
@@ -277,8 +277,8 @@ const SFX = {
   },
   close() {
     if (!SFX._gate('close', 80)) return;
-    // the click sample pitched down = the same mechanism releasing; reads as "back" without a new asset.
-    if (SFX._sample('click', { rate: 0.8, vol: 0.5 })) return;
+    // same Data_Point_04, pitched down = the same mechanism releasing; open/close stay directional.
+    if (SFX._sample('open', { rate: 0.85, vol: 0.5 })) return;
     SFX.noise({ dur: 0.005, cut: 6500, type: 'highpass', vol: 0.055 });
     SFX.voice({ freq: 840, glide: 610, dur: 0.05, type: 'sine', vol: 0.20, atk: 0.001, cut: 6000 });
     SFX.voice({ freq: 1800, dur: 0.026, type: 'sine', vol: 0.075, atk: 0.001, cut: 7000 });
@@ -288,6 +288,7 @@ const SFX = {
   // pings reads as ONE bell, not a carillon.
   notify() {
     if (!SFX._gate('notify', 300)) return;
+    if (SFX._sample('notify', { rate: 1, vol: 0.5 })) return;
     SFX.voice({ freq: 880, dur: 0.34, type: 'sine', vol: 0.2, detune: 5, atk: 0.012, verb: 0.45 });
     SFX.voice({ freq: 1318, dur: 0.46, type: 'sine', vol: 0.12, when: 0.09, atk: 0.015, detune: 5, verb: 0.55 });
   },
@@ -295,6 +296,8 @@ const SFX = {
   // bad: a dark exhale — low saw slide with a falling noise wash underneath; heavy, not buzzy.
   bad() {
     if (!SFX._gate('bad', 250)) return;
+    // Bleep_02 (Andrew's pick, shared with alarm) pitched down = negative, related to alarm but smaller.
+    if (SFX._sample('alarm', { rate: 0.9, vol: 0.45 })) return;
     SFX.noise({ dur: 0.16, cut: 900, cut2: 300, vol: 0.07, q: 0.8 });
     SFX.voice({ freq: 196, glide: 110, dur: 0.22, type: 'sawtooth', vol: 0.16, cut: 800, atk: 0.01 });
     SFX.voice({ freq: 147, glide: 92, dur: 0.3, type: 'sawtooth', vol: 0.12, when: 0.08, cut: 620, atk: 0.01 });
@@ -305,10 +308,10 @@ const SFX = {
   quest() { [659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.16, type: 'triangle', vol: 0.19, when: i * 0.055, atk: 0.008, detune: 3, verb: 0.32 })); SFX.voice({ freq: 1976, dur: 0.36, type: 'sine', vol: 0.08, when: 0.19, atk: 0.02, verb: 0.55 }); },
   // idea sting (G3a): a pitch / fresh suggestion / spoken notice slots into the feed — SOFT, two warm sine
   // steps up, quieter and rounder than notify() so a proactive aside lands gently, never startles.
-  idea() { SFX.voice({ freq: 587, dur: 0.13, type: 'sine', vol: 0.11, atk: 0.012, verb: 0.28 }); SFX.voice({ freq: 880, dur: 0.18, type: 'sine', vol: 0.09, when: 0.07, atk: 0.012, verb: 0.35 }); },
+  idea() { if (SFX._sample('idea', { rate: 1, vol: 0.4 })) return; SFX.voice({ freq: 587, dur: 0.13, type: 'sine', vol: 0.11, atk: 0.012, verb: 0.28 }); SFX.voice({ freq: 880, dur: 0.18, type: 'sine', vol: 0.09, when: 0.07, atk: 0.012, verb: 0.35 }); },
   // seed-saved sting (G3a): PLANTING — one warm low tuck + two high sparkles settling over it; deliberately
   // distinct from chime() (one held bell) and sale() (major run) so "saved to your shelf" has its own signature.
-  seed() { SFX.voice({ freq: 262, dur: 0.17, type: 'triangle', vol: 0.17, atk: 0.01, verb: 0.22 }); SFX.voice({ freq: 1568, dur: 0.1, type: 'sine', vol: 0.09, when: 0.10, verb: 0.45 }); SFX.voice({ freq: 2093, dur: 0.24, type: 'sine', vol: 0.07, when: 0.16, verb: 0.55 }); },
+  seed() { if (SFX._sample('seed', { rate: 1, vol: 0.45 })) return; SFX.voice({ freq: 262, dur: 0.17, type: 'triangle', vol: 0.17, atk: 0.01, verb: 0.22 }); SFX.voice({ freq: 1568, dur: 0.1, type: 'sine', vol: 0.09, when: 0.10, verb: 0.45 }); SFX.voice({ freq: 2093, dur: 0.24, type: 'sine', vol: 0.07, when: 0.16, verb: 0.55 }); },
   // milestone sting (G3a): grander than quest() (3 steps), smaller than level() (5 steps) — four rising gold
   // steps under a long high shimmer. A milestone is PERMANENT, so its sting carries a little more weight.
   milestone() { [523, 659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.18, type: 'triangle', vol: 0.2, when: i * 0.06, atk: 0.008, detune: 3, verb: 0.3 })); SFX.voice({ freq: 2637, dur: 0.44, type: 'sine', vol: 0.07, when: 0.26, atk: 0.03, verb: 0.6 }); },
@@ -318,12 +321,14 @@ const SFX = {
   // chime: one held glass bell — memory writes, permission asks. Slow attack so it blooms.
   chime() {
     if (!SFX._gate('chime', 400)) return;
+    if (SFX._sample('chime', { rate: 1, vol: 0.5 })) return;
     SFX.voice({ freq: 1046, dur: 0.55, type: 'sine', vol: 0.14, detune: 4, atk: 0.015, verb: 0.5 });
     SFX.voice({ freq: 1568, dur: 0.7, type: 'sine', vol: 0.09, when: 0.05, atk: 0.02, verb: 0.6 });
   },
   // ship: something REAL left the station — a small launch whoosh under a rising pair.
   ship() {
     if (!SFX._gate('ship', 200)) return;
+    if (SFX._sample('ship', { rate: 1, vol: 0.5 })) return;
     SFX.noise({ dur: 0.1, cut: 700, cut2: 2400, vol: 0.05, q: 0.7 });
     SFX.voice({ freq: 659, dur: 0.12, type: 'triangle', vol: 0.18, atk: 0.006, verb: 0.3 });
     SFX.voice({ freq: 988, dur: 0.2, type: 'triangle', vol: 0.14, when: 0.06, atk: 0.006, detune: 3, verb: 0.38 });
@@ -332,12 +337,14 @@ const SFX = {
   // Widest gate of all: an error cascade must read as one alarm, never a siren wall.
   alarm() {
     if (!SFX._gate('alarm', 700)) return;
+    if (SFX._sample('alarm', { rate: 1, vol: 0.55 })) return;
     SFX.voice({ freq: 220, dur: 0.16, type: 'square', vol: 0.13, cut: 950, q: 1.2, atk: 0.006 });
     SFX.voice({ freq: 165, dur: 0.26, type: 'square', vol: 0.11, when: 0.15, cut: 780, q: 1.2, atk: 0.006, verb: 0.12 });
   },
   // msg: a soft two-note ping for inbound traffic — quieter kin of notify().
   msg() {
     if (!SFX._gate('msg', 250)) return;
+    if (SFX._sample('msg', { rate: 1, vol: 0.4 })) return;
     SFX.voice({ freq: 988, dur: 0.11, type: 'sine', vol: 0.15, atk: 0.008, verb: 0.3 });
     SFX.voice({ freq: 1318, dur: 0.16, type: 'sine', vol: 0.11, when: 0.05, atk: 0.008, verb: 0.35 });
   },
