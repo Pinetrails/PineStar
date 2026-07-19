@@ -1411,7 +1411,9 @@ const App = (() => {
   // opening downward, or flipping above when the field sits low in the console.
   function positionModelPop() {
     const pop = el('model-pop'), inp = el('in-model'); if (!pop || pop.hidden || !inp) return;
-    const r = inp.getBoundingClientRect(), gap = 4, vh = window.innerHeight;
+    // rect/innerHeight are visual px, style px on the fixed pop are body-zoomed (TEXT SIZE) — divide once.
+    const z = U.uiZoom(), r0 = inp.getBoundingClientRect(), gap = 4, vh = window.innerHeight / z;
+    const r = { left: r0.left / z, top: r0.top / z, bottom: r0.bottom / z, width: r0.width / z };
     const below = vh - r.bottom - gap, above = r.top - gap;
     const openUp = below < 220 && above > below;
     pop.style.left = r.left + 'px';
@@ -2865,12 +2867,13 @@ const App = (() => {
     }
     menu.innerHTML = html;
     document.body.appendChild(menu);
-    // clamp to the viewport so a row near an edge still shows the whole menu
-    const r = menu.getBoundingClientRect();
-    const vw = window.innerWidth || document.documentElement.clientWidth;
-    const vh = window.innerHeight || document.documentElement.clientHeight;
-    menu.style.left = Math.max(6, Math.min(x, vw - r.width - 6)) + 'px';
-    menu.style.top = Math.max(6, Math.min(y, vh - r.height - 6)) + 'px';
+    // clamp to the viewport so a row near an edge still shows the whole menu.
+    // x/y/rect/innerWidth are visual px; style px on the body-child menu are zoomed (TEXT SIZE) — /z once.
+    const z = U.uiZoom(), r = menu.getBoundingClientRect();
+    const vw = (window.innerWidth || document.documentElement.clientWidth) / z;
+    const vh = (window.innerHeight || document.documentElement.clientHeight) / z;
+    menu.style.left = Math.max(6, Math.min(x / z, vw - r.width / z - 6)) + 'px';
+    menu.style.top = Math.max(6, Math.min(y / z, vh - r.height / z - 6)) + 'px';
     wsMenuEl = menu;
     menu.querySelectorAll('.ws-menu-item').forEach(btn => {
       const act = btn.dataset.act;
@@ -3186,11 +3189,12 @@ const App = (() => {
     html += (r.blessed ? '<div class="ws-menu-sep"></div>' : '') + item('remove', r.blessed ? 'Remove (revoke trust)' : 'Forget (already revoked)', '✕', 'danger');
     menu.innerHTML = html;
     document.body.appendChild(menu);
-    const rect = menu.getBoundingClientRect();
-    const vw = window.innerWidth || document.documentElement.clientWidth;
-    const vh = window.innerHeight || document.documentElement.clientHeight;
-    menu.style.left = Math.max(6, Math.min(x, vw - rect.width - 6)) + 'px';
-    menu.style.top = Math.max(6, Math.min(y, vh - rect.height - 6)) + 'px';
+    // same visual→zoomed-space conversion as openWsMenu (TEXT SIZE).
+    const z = U.uiZoom(), rect = menu.getBoundingClientRect();
+    const vw = (window.innerWidth || document.documentElement.clientWidth) / z;
+    const vh = (window.innerHeight || document.documentElement.clientHeight) / z;
+    menu.style.left = Math.max(6, Math.min(x / z, vw - rect.width / z - 6)) + 'px';
+    menu.style.top = Math.max(6, Math.min(y / z, vh - rect.height / z - 6)) + 'px';
     projMenuEl = menu;
     menu.querySelectorAll('.ws-menu-item').forEach(btn => {
       const act = btn.dataset.act;

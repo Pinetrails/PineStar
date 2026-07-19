@@ -77,12 +77,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   /* ---------- persistence (user-owned UI state) ---------- */
   // themeHue/themeSat drive the CUSTOM phosphor derivation (theme:'custom'); themeGlow (0–150%) is an
   // independent bloom dial that also tames the hand-tuned presets. 100 = the shipped look, untouched.
-  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, textScale: 100, flicker: true, sound: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
-  // TEXT SIZE steps (percent → chip label). Applied as a body zoom in applySettings(): zoom scales
-  // layout too, so every hard-px face (COMMS included) grows together — a root font-size can't reach
-  // the ~800 px-sized declarations. world.js resize() reads the same zoom back so the station canvas
-  // re-renders at true device resolution instead of upscaling soft.
-  const TEXT_SCALES = [[90, 'COMPACT'], [100, 'STANDARD'], [115, 'LARGE'], [130, 'X-LARGE'], [145, 'HUGE']];
+  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, textScale: 0, flicker: true, sound: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  // TEXT SIZE steps (percent → chip label; 0 = AUTO, the default). Applied as a body zoom in
+  // applySettings(): zoom scales layout too, so every hard-px face (COMMS included) grows together —
+  // a root font-size can't reach the ~800 px-sized declarations. world.js resize() reads the same
+  // zoom back so the station canvas re-renders at true device resolution instead of upscaling soft.
+  const TEXT_SCALES = [[0, 'AUTO'], [90, 'COMPACT'], [100, 'STANDARD'], [115, 'LARGE'], [130, 'X-LARGE'], [145, 'HUGE']];
+  // AUTO: smaller physical screens read at a gently larger face out of the box. screen.width is CSS px
+  // (already reflects OS display scaling), so a 13–15" laptop lands at 1280–1536 and a desktop monitor
+  // at ≥1920. Long edge guards portrait/rotated displays. Honest: the chip shows the resolved %.
+  function autoTextScale() {
+    const scr = window.screen || {};
+    const long = Math.max(Number(scr.width) || 0, Number(scr.height) || 0) || window.innerWidth || 1920;
+    return long <= 1470 ? 115 : long <= 1740 ? 110 : 100;
+  }
+  function resolveTextScale(v) { const n = Number(v) || 0; return n === 0 ? autoTextScale() : clampN(n, 90, 150, 100); }
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
@@ -183,11 +192,20 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // CRT scanlines are part of the fixed shipped look — no user toggle. `no-scan` stays an
     // internal flag (set by scripts/verify-stars2.mjs to flatten the feed for star-pixel
     // checks) and is intentionally never driven by settings here.
-    // TEXT SIZE — one dial for every hard-px UI face at once. Removed (not '1') at 100% so the
-    // shipped default leaves no inline style behind.
-    const tz = clampN(s.textScale, 90, 150, 100);
+    // TEXT SIZE — one dial for every hard-px UI face at once (0/absent = AUTO from screen size).
+    // Removed (not '1') at 100% so the plain-desktop default leaves no inline style behind.
+    const tz = resolveTextScale(s.textScale);
+    const priorZoom = document.body.style.zoom || '';
     if (tz === 100) document.body.style.removeProperty('zoom');
     else document.body.style.zoom = String(tz / 100);
+    // a zoom change rescales every open window's visual footprint without firing a window resize —
+    // re-clamp them into the new local viewport (same pass the resize listener runs) or a window
+    // sized/parked at one scale can hang past the frame at another.
+    if ((document.body.style.zoom || '') !== priorZoom) {
+      requestAnimationFrame(() => {
+        try { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, false); }); } catch (_) {}
+      });
+    }
     document.body.classList.toggle('no-flicker', !s.flicker);
     if (typeof SFX === 'object') SFX.on = !!s.sound;
     syncKeepAwake(!!s.keepComputerAwake);
@@ -273,7 +291,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // on the last section they were on — across a full reload, not just this session. Saved back on drag-end / retab.
   try { Object.assign(termPos, store.termPos || {}); Object.assign(termSize, store.termSize || {}); Object.assign(consoleSection, store.consoleSection || {}); } catch (_) {}
   function saveWindowState() { try { store.termPos = termPos; store.termSize = termSize; store.consoleSection = consoleSection; save(); } catch (_) {} }
-  function terminalViewport() { return { width: window.innerWidth, height: window.innerHeight }; }
+  // TEXT SIZE zoom: element coordinates (style.left / offsetLeft) live in the body-zoomed space while
+  // mouse clientX/innerWidth are visual px — they disagree by the zoom factor. uiZoom() is the one
+  // conversion; terminalViewport() reports the LOCAL (zoomed-space) viewport so every offset-based
+  // clamp below stays consistent, and drag/resize handlers divide their visual mouse reads by it.
+  function uiZoom() { const z = parseFloat(document.body && document.body.style ? document.body.style.zoom : ''); return z > 0 ? z : 1; }
+  function terminalViewport() { const z = uiZoom(); return { width: window.innerWidth / z, height: window.innerHeight / z }; }
   const DEFAULT_TERM_LIMITS = { minWidth: 320, minHeight: 220, maxWidth: 960, maxHeight: 760 };
   const CONSOLE_TERM_LIMITS = { minWidth: 560, minHeight: 360, maxWidth: 1200, maxHeight: 840 };
   function terminalLimits(opts) {
@@ -294,10 +317,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
   function bakeTermRect(w) {
     w.style.animation = 'none';
-    const r = w.getBoundingClientRect();
-    w.style.left = r.left + 'px'; w.style.top = r.top + 'px'; w.style.transform = 'none';
+    const z = uiZoom(), r = w.getBoundingClientRect();
+    // rect is visual px; style.left is zoomed-space — convert so the bake doesn't shift the window.
+    const local = { left: r.left / z, top: r.top / z, width: r.width / z, height: r.height / z };
+    w.style.left = local.left + 'px'; w.style.top = local.top + 'px'; w.style.transform = 'none';
     w.classList.add('term-moved');
-    return r;
+    return local;
   }
   function resizeTermTo(w, key, width, height, persist) {
     if (!w) return null;
@@ -341,9 +366,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const w = termDrag.w;
       // Shared clamp keeps the titlebar and its right-side close control reachable.
       // Its cached size keeps this mousemove path free of layout reads.
+      const z = uiZoom();
       const next = visibleTerminalRect({
-        left: ev.clientX - termDrag.dx,
-        top: ev.clientY - termDrag.dy,
+        left: ev.clientX / z - termDrag.dx,
+        top: ev.clientY / z - termDrag.dy,
         width: termDrag.ww,
         height: termDrag.wh
       }, terminalViewport());
@@ -364,15 +390,16 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   window.addEventListener('pointermove', ev => {
     if (!termResize) return;
     termResize.moved = true;
+    const z = uiZoom();   // mouse deltas are visual px; the window's width/height are zoomed-space
     resizeTermTo(termResize.w, termResize.key,
-      termResize.width + ev.clientX - termResize.x,
-      termResize.height + ev.clientY - termResize.y, false);
+      termResize.width + (ev.clientX - termResize.x) / z,
+      termResize.height + (ev.clientY - termResize.y) / z, false);
     fitTermInViewport(termResize.w, termResize.key, false);
   });
   function finishTermResize() {
     if (!termResize) return;
-    const r = termResize.w.getBoundingClientRect();
-    resizeTermTo(termResize.w, termResize.key, r.width, r.height, true);
+    const z = uiZoom(), r = termResize.w.getBoundingClientRect();
+    resizeTermTo(termResize.w, termResize.key, r.width / z, r.height / z, true);
     fitTermInViewport(termResize.w, termResize.key, true);
     termResize = null;
   }
@@ -383,6 +410,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // by fitTermInViewport (they stay centered); only explicitly-moved windows are pulled back into view.
   let resizeClampTimer = 0;
   window.addEventListener('resize', () => {
+    // AUTO text size re-resolves here so dragging the app to a different monitor picks up that
+    // screen's tier (window.screen re-reads per monitor). No-op while a fixed % is chosen.
+    if (!(Number(store.settings.textScale) || 0)) applySettings();
     clearTimeout(resizeClampTimer);
     requestAnimationFrame(() => { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); });
     resizeClampTimer = setTimeout(() => { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, true); }); }, 120);
@@ -424,9 +454,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const anchorZ = Number(getComputedStyle(anchor.el).zIndex) || 0;
       if (z >= anchorZ) anchor = item;
     });
+    const z = uiZoom();   // anchor rects are visual px; the cascade target is zoomed-space
     const wpx = w.offsetWidth || 480, hpx = w.offsetHeight || 320;
-    const left = anchor.rect.left + CASCADE_STEP;
-    const top = anchor.rect.top + CASCADE_STEP;
+    const left = anchor.rect.left / z + CASCADE_STEP;
+    const top = anchor.rect.top / z + CASCADE_STEP;
     const placed = visibleTerminalRect({ left, top, width: wpx, height: hpx }, terminalViewport());
     // Cascaded windows also use explicit coordinates; the centred keyframes are invalid for them.
     w.style.animation = 'none';
@@ -438,6 +469,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const resolvedKey = key || Object.keys(open).find(k => open[k] === w);
     const savedSize = termSize[resolvedKey];
     if (savedSize) resizeTermTo(w, resolvedKey, savedSize.width, savedSize.height, persist);
+    // A window whose CURRENT box outgrows the viewport (TEXT SIZE zoom-up, or a monitor shrink with
+    // no saved size) gets shrunk to fit — clampTerminalSize caps at the viewport, so every control
+    // stays reachable instead of hanging past the frame.
+    else {
+      const vp = terminalViewport();
+      if (w.offsetWidth > vp.width || w.offsetHeight > vp.height) resizeTermTo(w, resolvedKey, w.offsetWidth, w.offsetHeight, persist);
+    }
     // A never-moved single window stays safely CSS-centered; explicit coordinates are repaired.
     if (!w.classList.contains('term-moved') && !termPos[resolvedKey] && !savedSize && w.style.transform !== 'none') return;
     const repaired = visibleTerminalRect({
@@ -760,13 +798,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // without this a grab mid-open still jumped (and the rect would be read mid-scale). With the
       // animation cleared, the rect reflects the settled centered position and the cursor tracks exactly.
       w.style.animation = 'none';
-      const r = w.getBoundingClientRect();
-      w.style.left = r.left + 'px';
-      w.style.top = r.top + 'px';
+      // rect is visual px, style.left zoomed-space (TEXT SIZE) — divide by uiZoom() so grab doesn't shift.
+      const z = uiZoom(), r = w.getBoundingClientRect();
+      w.style.left = (r.left / z) + 'px';
+      w.style.top = (r.top / z) + 'px';
       w.style.transform = 'none';
       w.classList.add('term-moved');   // close animation must not re-centre a dragged window
       // cache size once at grab (it can't change mid-drag) so the move handler never forces a layout read.
-      termDrag = { w, dx: ev.clientX - r.left, dy: ev.clientY - r.top, ww: r.width, wh: r.height };
+      // dx/dy and ww/wh are LOCAL (zoomed-space) px, matching the mousemove handler's clientX/z reads.
+      termDrag = { w, dx: (ev.clientX - r.left) / z, dy: (ev.clientY - r.top) / z, ww: r.width / z, wh: r.height / z };
       ev.preventDefault();
     });
     // double-click the header (not its buttons) minimizes — cheap muscle-memory. Skip if the last grab was
@@ -3935,9 +3975,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<h4 class="ms-h">DISPLAY</h4>' +
       // TEXT SIZE — the laptop-readability dial (2026-07-19): scales every panel, window and COMMS
       // face together; the station view re-renders sharp at the new scale (world.js resize).
-      '<div class="set-row"><span class="dim">TEXT SIZE — scales all panels &amp; COMMS; the station view stays crisp</span></div>' +
+      '<div class="set-row"><span class="dim">TEXT SIZE — AUTO matches this screen; scales all panels &amp; COMMS, the station view stays crisp</span></div>' +
       '<div class="set-themes" id="set-textsize">' +
-      TEXT_SCALES.map(([v, name]) => '<button class="set-theme ' + (clampN(s.textScale, 90, 150, 100) === v ? 'sel' : '') + '" aria-pressed="' + (clampN(s.textScale, 90, 150, 100) === v ? 'true' : 'false') + '" data-ts="' + v + '" title="' + v + '%">' + name + '</button>').join('') +
+      TEXT_SCALES.map(([v, name]) => {
+        const cur = Number(s.textScale) || 0;
+        const title = v === 0 ? 'match this screen — currently ' + autoTextScale() + '%' : v + '%';
+        return '<button class="set-theme ' + (cur === v ? 'sel' : '') + '" aria-pressed="' + (cur === v ? 'true' : 'false') + '" data-ts="' + v + '" title="' + title + '">' + name + '</button>';
+      }).join('') +
       '</div>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       // TERMINAL AUDIO is a sound control, not a display one — its own header (it also gates notification chimes).
@@ -4074,12 +4118,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // TEXT SIZE chips — instant-apply + persist, same idiom as the theme row above.
     const tsChips = host.querySelectorAll('#set-textsize [data-ts]');
     const syncTextSize = () => tsChips.forEach(x => {
-      const on = Number(x.dataset.ts) === clampN(s.textScale, 90, 150, 100);
+      const on = Number(x.dataset.ts) === (Number(s.textScale) || 0);
       x.classList.toggle('sel', on);
       x.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
     tsChips.forEach(b => b.addEventListener('click', () => {
-      s.textScale = clampN(Number(b.dataset.ts), 90, 150, 100);
+      const v = Number(b.dataset.ts) || 0;
+      s.textScale = v === 0 ? 0 : clampN(v, 90, 150, 100);
       applySettings(); save(); sfx('click');
       syncTextSize();
       flashSaved(appMsg());
