@@ -41,11 +41,14 @@
 }
 .cmsg.agent .cmsg-head .who { background: var(--ph); }
 .cmsg.user  .cmsg-head .who { background: var(--gold); }
-/* dim, quiet timestamp */
+/* dim, quiet timestamp — HOVER-ONLY (the glance law): reference info, not reading info. It keeps its
+   layout slot (no reflow on hover) and simply fades in when the card is inspected. */
 .cmsg .cmsg-ts {
   flex: 0 0 auto; font-size: 10.5px; letter-spacing: 1px;
-  color: var(--ph-dim); opacity: .7; font-variant-numeric: tabular-nums;
+  color: var(--ph-dim); opacity: 0; font-variant-numeric: tabular-nums;
+  transition: opacity var(--t-fast) var(--ease-soft);
 }
+.cmsg:hover .cmsg-ts, .cmsg:focus-within .cmsg-ts { opacity: .7; }
 
 /* GROUPING — a same-speaker continuation collapses its whole header (chip + stamp), so a run of turns
    reads as one card, matching the base grouping law (which only hid the bare .who). A tool rail / beat

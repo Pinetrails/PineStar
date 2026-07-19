@@ -285,6 +285,9 @@ const Chat = (() => {
       };
       card.addEventListener('click', toggle);
       card.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
+      // ERROR HONESTY: a FAILED run's work log self-exposes — collapsing machinery is for successes;
+      // when something broke the evidence must not hide behind a click.
+      if (isErr) toggle();
     } else {
       card.setAttribute('role', 'note');
     }
