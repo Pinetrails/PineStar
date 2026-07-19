@@ -77,7 +77,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   /* ---------- persistence (user-owned UI state) ---------- */
   // themeHue/themeSat drive the CUSTOM phosphor derivation (theme:'custom'); themeGlow (0–150%) is an
   // independent bloom dial that also tames the hand-tuned presets. 100 = the shipped look, untouched.
-  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, flicker: true, sound: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, textScale: 100, flicker: true, sound: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  // TEXT SIZE steps (percent → chip label). Applied as a body zoom in applySettings(): zoom scales
+  // layout too, so every hard-px face (COMMS included) grows together — a root font-size can't reach
+  // the ~800 px-sized declarations. world.js resize() reads the same zoom back so the station canvas
+  // re-renders at true device resolution instead of upscaling soft.
+  const TEXT_SCALES = [[90, 'COMPACT'], [100, 'STANDARD'], [115, 'LARGE'], [130, 'X-LARGE'], [145, 'HUGE']];
   // P1-8 notification preferences: per-category on/off + a notification sound toggle. Every category defaults ON
   // (no silent regression); each is HONORED at emit time in notify() below (a decorative toggle would be a bug).
   function notifyDefaults() { return { runComplete: true, needsApproval: true, cronDigest: true, sound: true }; }
@@ -178,6 +183,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // CRT scanlines are part of the fixed shipped look — no user toggle. `no-scan` stays an
     // internal flag (set by scripts/verify-stars2.mjs to flatten the feed for star-pixel
     // checks) and is intentionally never driven by settings here.
+    // TEXT SIZE — one dial for every hard-px UI face at once. Removed (not '1') at 100% so the
+    // shipped default leaves no inline style behind.
+    const tz = clampN(s.textScale, 90, 150, 100);
+    if (tz === 100) document.body.style.removeProperty('zoom');
+    else document.body.style.zoom = String(tz / 100);
     document.body.classList.toggle('no-flicker', !s.flicker);
     if (typeof SFX === 'object') SFX.on = !!s.sound;
     syncKeepAwake(!!s.keepComputerAwake);
@@ -3923,6 +3933,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<label class="set-slider"><span class="set-slider-name">SATURATION</span><input type="range" id="set-sat" min="0" max="100" step="1" value="' + clampN(s.themeSat, 0, 100, 100) + '"><span class="set-slider-val" id="set-sat-val">' + clampN(s.themeSat, 0, 100, 100) + '%</span></label>' +
       '<label class="set-slider"><span class="set-slider-name">GLOW</span><input type="range" id="set-glow" min="0" max="150" step="5" value="' + clampN(s.themeGlow, 0, 150, 100) + '"><span class="set-slider-val" id="set-glow-val">' + clampN(s.themeGlow, 0, 150, 100) + '%</span></label>' +
       '<h4 class="ms-h">DISPLAY</h4>' +
+      // TEXT SIZE — the laptop-readability dial (2026-07-19): scales every panel, window and COMMS
+      // face together; the station view re-renders sharp at the new scale (world.js resize).
+      '<div class="set-row"><span class="dim">TEXT SIZE — scales all panels &amp; COMMS; the station view stays crisp</span></div>' +
+      '<div class="set-themes" id="set-textsize">' +
+      TEXT_SCALES.map(([v, name]) => '<button class="set-theme ' + (clampN(s.textScale, 90, 150, 100) === v ? 'sel' : '') + '" aria-pressed="' + (clampN(s.textScale, 90, 150, 100) === v ? 'true' : 'false') + '" data-ts="' + v + '" title="' + v + '%">' + name + '</button>').join('') +
+      '</div>' +
       '<label class="set-row"><input type="checkbox" id="set-flicker" ' + (s.flicker ? 'checked' : '') + '> SCREEN FLICKER</label>' +
       // TERMINAL AUDIO is a sound control, not a display one — its own header (it also gates notification chimes).
       '<h4 class="ms-h">SOUND</h4>' +
@@ -4055,6 +4071,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireSlider(glowIn, v => { s.themeGlow = clampN(v, 0, 150, 100); sliderVal('#set-glow-val', s.themeGlow + '%'); });
     const bind = (id, key) => host.querySelector(id).addEventListener('change', ev => { s[key] = ev.target.checked; applySettings(); save(); flashSaved(appMsg()); });
     bind('#set-flicker', 'flicker'); bind('#set-sound', 'sound');
+    // TEXT SIZE chips — instant-apply + persist, same idiom as the theme row above.
+    const tsChips = host.querySelectorAll('#set-textsize [data-ts]');
+    const syncTextSize = () => tsChips.forEach(x => {
+      const on = Number(x.dataset.ts) === clampN(s.textScale, 90, 150, 100);
+      x.classList.toggle('sel', on);
+      x.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    tsChips.forEach(b => b.addEventListener('click', () => {
+      s.textScale = clampN(Number(b.dataset.ts), 90, 150, 100);
+      applySettings(); save(); sfx('click');
+      syncTextSize();
+      flashSaved(appMsg());
+    }));
     const awakeToggle = host.querySelector('#set-awake');
     if (awakeToggle) awakeToggle.addEventListener('change', ev => {
       const desired = !!ev.target.checked;
