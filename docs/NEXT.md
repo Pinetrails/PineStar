@@ -1,5 +1,19 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-19 — COMMS CLEAN-UP: two-tier transcript (BUILT branch `claude/nifty-williamson-f903bb` @ 1c584581, OPEN merge)
+
+Andrew: "comms still feels like a cluttered mess." Diagnosis (live + full code audit): the
+transcript was a WORK-LOG — every turn permanently deposited a "■ RUN COMPLETE" row + tool-chip
+rails between speech, trophy/quest broadcasts each took a full row, and 9 gold .turnin variants
+shouted as loud as a blocking consent. Fix (chat.js + comms.css only, FNV/CRT vocabulary intact):
+(1) RUN FOLD — resolvePresence absorbs the run's tool rails into the resolved line
+("RUN COMPLETE · 8s · N tools ▸"), collapsed, click/Enter toggles, rails moved never deleted;
+(2) broadcast COALESCING — consecutive station lines stack in ONE hairline block (tone per-line);
+(3) beat hierarchy — passive .turnin family whispers (1px gold rail, no glow, 14px), only
+.consent keeps full lit gold. Live-proven on a real haiku+fs.list run (seed :9281); gate 369/369
+green incl. comms-presence lock; W0 re-stamped in-branch 11223bd7.
+- [ ] MERGE to trunk (starnet-merge-ritual), then exe rebuild picks it up.
+
 ## 2026-07-19 — SESSION TITLING: real model summaries, not first-words (MERGED trunk 9fe9bbe1)
 
 Andrew's report from other-hardware testing: session titles were "whatever the first few words the
