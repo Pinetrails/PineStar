@@ -59,7 +59,23 @@
         maxBtn.setAttribute('aria-label', maximized ? 'Restore' : 'Maximize');
       }
     }
-    if (body && body.classList) body.classList.toggle('sn-fs', fullscreen);
+    if (body && body.classList) {
+      const cl = body.classList;
+      const before = typeof cl.contains === 'function' ? cl.contains('sn-fs') : null;
+      cl.toggle('sn-fs', fullscreen);
+      // sn-fs re-seats every .screen by the titlebar strip height after the window's
+      // resize event already fired — fixed trackers (#logo via app.js positionLogo)
+      // are stale until a resize re-fires. Only announce on a REAL flip: applyState
+      // runs from the resize probe itself, so an unconditional dispatch would loop.
+      if (before !== null && before !== fullscreen) {
+        try {
+          const win = body.ownerDocument && body.ownerDocument.defaultView;
+          if (win && typeof win.dispatchEvent === 'function' && typeof win.Event === 'function') {
+            win.dispatchEvent(new win.Event('resize'));
+          }
+        } catch (_) {}
+      }
+    }
     return { maximized, fullscreen };
   }
 

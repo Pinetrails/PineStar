@@ -33,9 +33,20 @@ https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest
 - Gate unblock (recorded): 4 stale `w0-candidate-*` source snapshots (2026-07-13) in
   `.dogfood/` made lint-evidence-secrets take 10min and fail on fixture keys; MOVED to
   `C:\Users\andro\gen-trees\..\gen-quarantine\dogfood\` (nothing referenced them).
-- Still open (operator): mac/linux platforms absent from latest.json (5-platform bar =
-  CI-train launch, unchanged); trunk + `v0.5.3` tag NOT pushed to origin — tag push fires
-  release-train (known blocked at P1.5), so that stays Andrew's call; updater-key backup.
+- **Mac test build SHIPPED (2026-07-19):** trunk pushed to origin (branch only, 1261 commits
+  — tag deliberately NOT pushed; release-train stays untriggered), `desktop-build.yml`
+  dispatched with publish-test. Mac legs first failed on the empty-`APPLE_CERTIFICATE`
+  env trap (Tauri codesign-imports zero bytes) — fixed in-workflow (`adddaedf`, unset empty
+  signing vars). All 4 platforms then built; CI publish job 403'd (RELEASES_TOKEN secret is
+  a stale/underscoped PAT — needs re-mint) so artifacts were published from the operator
+  machine instead. Pre-release `test-v0.5.3-r3` LIVE on starnet-releases with both DMGs
+  (aarch64 + x64) + exe + AppImage + deb; updater "latest" feed verified undisturbed.
+  Gitleaks push-gate: 3 findings = test fixtures, reviewed into `.gitleaksignore`
+  (`3f6f5384`), scan clean.
+- Still open (operator): re-mint RELEASES_TOKEN secret on skynet-harness (CI publish);
+  mac/linux platforms absent from the UPDATER manifest (5-platform bar = CI-train launch,
+  unchanged); `v0.5.3` tag push (fires the blocked release-train) = Andrew's call;
+  updater-key backup; Apple codesign/notarization secrets for public mac distribution.
 
 ## 2026-07-18 — IMPORT AGENT from Hermes/OpenClaw (branch `claude/agent-transfer-hermes-openclaw-9f0efb`)
 
