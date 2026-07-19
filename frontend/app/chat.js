@@ -5465,7 +5465,9 @@ const Chat = (() => {
   function cleanTitle(raw) {
     let t = String(raw == null ? '' : raw).trim();
     if (!t) return '';
+    t = t.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();    // a reasoning model's leaked think block is never the title
     t = (t.split(/\r?\n/).find(l => l.trim()) || '').trim();   // first non-empty line only
+    t = t.replace(/^#+\s*/, '').replace(/^title\s*[:\-—]\s*/i, '');   // drop a markdown heading / "Title:" label wrapper
     t = t.replace(/^["'`*\s]+|["'`*\s]+$/g, '').replace(/[\s.:;,—–-]+$/g, '').replace(/\s+/g, ' ').trim();
     if (!t || t.length > 64) return '';                        // empty or a paragraph came back → keep placeholder
     if (/\b(sorry|cannot|can't|unable|as an ai|here(?:'s| is)|i (?:can|am|will|would))\b/i.test(t)) return '';   // refusal / chatty

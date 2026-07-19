@@ -7462,6 +7462,11 @@ async function handleRun(req, res) {
   catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }   // over-limit already answered 413
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels, fallbackProviders } = body || {};
   const recurring = !!(body && body.recurring);   // the browser's mint detector saw this task SHAPE before → salience boost for reflection
+  // REASON-ONLY SELF-TALK (retitle / goal-judge / pitch / autopilot): the caller composed a complete strict-format
+  // prompt and parses the raw reply. runOnce keeps that system prompt VERBATIM (no manual/capability/skill/memory
+  // dressing — which buries a "reply with ONLY a 3-6 word title" instruction and makes models answer chattily),
+  // and the away clock is never stamped for it: agent self-talk is not user presence (NS away-detection contract).
+  const internal = !!(body && body.internal);
   const runProvider = normalizeProvider(provider);
   const reasoningEffort = resolveReasoningEffort(runProvider, body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort)));
   const preloadSkills = Array.isArray(body && body.preloadSkills) ? body.preloadSkills.map(s => String(s || '').trim()).filter(Boolean).slice(0, 8) : [];
@@ -7521,7 +7526,7 @@ async function handleRun(req, res) {
   // night-shift driver treats the Commander as PRESENT. Cron/workshop/night-shift runs go through runOnce with
   // surface:'autonomous' and NEVER reach this route, so they can't reset the away clock (which would make the
   // station perpetually think the user is here and never run the night shift).
-  noteUserActivity(Date.now());
+  if (!internal) noteUserActivity(Date.now());   // self-talk is machine-triggered — it must not read as presence
   const pending = new Map();          // promptId -> finish(decision); the consent prompts awaiting a human
   pendingByRun.set(runId, pending);
   const pendingSummon = new Map();    // requestId -> finish(newAgentId|null); the team.summon requests awaiting the browser
@@ -7604,7 +7609,7 @@ async function handleRun(req, res) {
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
       key, model, system: projectLine ? (String(system || '') + projectLine) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
-      emit, signal: ac.signal, runId, trigger: 'directive',
+      emit, signal: ac.signal, runId, trigger: 'directive', internal,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
 
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
@@ -7625,7 +7630,7 @@ async function handleRun(req, res) {
   } finally {
     runs.delete(runId);
     runsMeta.delete(runId);
-    noteUserActivity(Date.now());       // the away clock starts when the user's run ENDS, not when it started (a long run must not read as absence)
+    if (!internal) noteUserActivity(Date.now());   // the away clock starts when the user's run ENDS, not when it started (a long run must not read as absence); self-talk never stamps it
     dropSteer(runId, 'handleRun');      // drop any un-drained steering notes so they can't leak to a later run; logs a count if non-empty
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
@@ -7646,6 +7651,7 @@ async function handleRun(req, res) {
    `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
 async function runOnce(o) {
   const { key, system, messages = [], agentId = 'agent', signal, runId } = o;
+  const internal = !!o.internal;   // reason-only self-talk: system prompt stays VERBATIM, no memory/transcript injection
   let isTask = !!o.isTask;
   // A short channel reply such as "operators" is not independently task-shaped. Durable brief continuity is
   // stronger evidence than the generic classifier, so resume it as task work without asking the user to restate it.
@@ -8441,14 +8447,20 @@ async function runOnce(o) {
       if (b) serviceKeysBlock = '\n\n' + b;
     }
   } catch (_) { serviceKeysBlock = ''; }
-  const sys = withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+  // INTERNAL (reason-only self-talk): the caller's strict-format instruction IS the whole prompt. Appending the
+  // operator manual / capability summary / skill catalog here buried "reply with ONLY a 3-6 word title" under
+  // pages of station doctrine and made models answer as a chatty station agent — the parser then rejected the
+  // reply, so e.g. session titles silently stayed on their first-words placeholder.
+  const sys = internal
+    ? String(system || '')
+    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
   // history the caller already supplied; gated to an explicit streamId (the global catch-all is not auto-seeded).
   let convo = messages;
   try {
-    if (streamId && Array.isArray(messages) && messages.filter(m => m && m.role !== 'system').length <= 1) {
+    if (!internal && streamId && Array.isArray(messages) && messages.filter(m => m && m.role !== 'system').length <= 1) {
       const seed = transcriptStore.reconstruct(streamId, { limit: 100 });
       if (seed.length) convo = seed.concat(messages);   // prior dialogue first, the new directive stays last
     }
@@ -8459,7 +8471,9 @@ async function runOnce(o) {
   // message, and emit memory.used per surfaced record (-> useCount/trust + the XP reuse path). The recency
   // floor keeps recent notes recallable on an off-topic turn (no M-mem.1 regression). Empty notebook =>
   // nothing injected (byte-identical to a memoryless run). Never fails the run.
-  try {
+  // internal self-talk never receives the memory fence — and must not bump useCount/recency on stored records
+  // (a title call crediting memory.used would fake the Memory Core stats).
+  if (!internal) try {
     const stored = notebookStore.get('notebook:' + agentId);
     const recs = Array.isArray(stored) ? stored : [];
     let q = '';
