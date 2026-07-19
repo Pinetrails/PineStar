@@ -607,8 +607,11 @@ const Onboarding = (() => {
       if (!running) return;
       if (tuesdayT) {
         bumpTruth();
+        // the dig is the ceremony's FIRST live call — a cold wire + wake-time aux contention can push it past
+        // 30s (proven live 2026-07-19: the reply landed perfect at ~35s and died at the old ceiling, costing
+        // the whole personalized-chips cascade). It gets the synthesis ceiling; the patter carries the wait.
         const pending = brainReady() ? llmCall(WakeMind.buildDigReply({ tuesday: tuesdayT, name: NAME })) : null;
-        digReply = await mindWait(pending, WakeMind.parseDigReply, DIG_PATTER, PAIN_REPLY_MS);
+        digReply = await mindWait(pending, WakeMind.parseDigReply, DIG_PATTER, SYNTHESIS_MS);
         if (!running) return;
         if (digReply) {
           upsertSynthBeliefs(digReply.beliefs);
