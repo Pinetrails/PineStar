@@ -153,15 +153,21 @@ const QuestLedgerStore = (() => {
     const ev = String((q.attest && q.attest.evidence) || '').replace(/\s+/g, ' ').trim();
     const evShort = ev.length > 120 ? ev.slice(0, 117) + '…' : ev;
     const title = String(q.title || q.id).toUpperCase();
-    const busy = (typeof Chat.isBusy === 'function') ? Chat.isBusy() : false;
+    // the moment is claimed when a run is live OR any ask beat / unanswered task question holds the COMMS slot
+    // (Chat.beatBusy) — a confirm nudge stacked over a pending clarifying question wiped its answer chips
+    // (the duplicate-popups bug, 2026-07-19). Blocked → the ambient ticker line instead.
+    const busy = ((typeof Chat.isBusy === 'function') ? Chat.isBusy() : false)
+      || ((typeof Chat.beatBusy === 'function') ? Chat.beatBusy() : false);
+    let shown = null;
     if (!busy && typeof Chat.nudge === 'function') {
       if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }
       const line = '⚑ your agent reports a quest complete — “' + (evShort || q.title) + '”. confirm it?';
-      Chat.nudge(line, [{ label: 'Confirm ✓', value: 'yes' }, { label: 'Review in QUEST LOG', value: 'log', skip: true }], choice => {
+      shown = Chat.nudge(line, [{ label: 'Confirm ✓', value: 'yes' }, { label: 'Review in QUEST LOG', value: 'log', skip: true }], choice => {
         if (choice && choice.value === 'yes') { confirm(q.id, true).then(() => { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('quests'); }); }
         else if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('quests');   // Review → open the log where the row's confirm lives
       });
-    } else if (typeof Chat.broadcast === 'function') {
+    }
+    if (!shown && typeof Chat.broadcast === 'function') {   // nudge refused (a question/beat won the race) → same ambient fallback as busy
       try { Chat.broadcast('QUEST READY TO CONFIRM · ' + title, { highlight: title }); } catch (_) {}
     }
   }

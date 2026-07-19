@@ -84,16 +84,22 @@ const QuestRefreshStore = (() => {
     const key = nrm(ns.text);
     if (!key || beaten.has(key)) return;
     beaten.add(key);
-    const busy = (typeof Chat.isBusy === 'function') ? Chat.isBusy() : false;
+    // the moment is claimed when a run is live OR any ask beat / unanswered task question holds the COMMS slot
+    // (Chat.beatBusy) — stacking this confirm over a pending clarifying question read as "popup after popup"
+    // and its choices() wiped the question's own answer chips (live-caught 2026-07-19). Blocked → ambient line.
+    const busy = ((typeof Chat.isBusy === 'function') ? Chat.isBusy() : false)
+      || ((typeof Chat.beatBusy === 'function') ? Chat.beatBusy() : false);
+    let shown = null;
     if (!busy && typeof Chat.nudge === 'function') {
       if (typeof SFX !== 'undefined' && SFX.idea) { try { SFX.idea(); } catch (_) {} }
       const line = '◆ your north star looks like: “' + ns.text + '”. is that the direction to steer your quests by?';
-      Chat.nudge(line, [{ label: 'Confirm ✓', value: 'yes' }, { label: 'Not quite', value: 'no' }, { label: 'Open QUEST LOG', value: 'log', skip: true }], choice => {
+      shown = Chat.nudge(line, [{ label: 'Confirm ✓', value: 'yes' }, { label: 'Not quite', value: 'no' }, { label: 'Open QUEST LOG', value: 'log', skip: true }], choice => {
         if (choice && choice.value === 'yes') { verdict('confirm').then(afterVerdict); }
         else if (choice && choice.value === 'no') { verdict('decline').then(afterVerdict); }
         else if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('quests');
       });
-    } else if (typeof Chat.broadcast === 'function') {
+    }
+    if (!shown && typeof Chat.broadcast === 'function') {   // nudge refused (a question/beat won the race) → same ambient fallback as busy
       try { Chat.broadcast('NORTH STAR TO CONFIRM · ' + String(ns.text).toUpperCase()); } catch (_) {}
     }
   }
