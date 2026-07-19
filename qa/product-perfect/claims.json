@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "d2b335ba24f60122c0c954ab42194045699fe604",
+    "sourceCommit": "4a16ecf32530e35fb9b28e0c428f23168200ddea",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -793,8 +793,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 33927,
-        "sha256": "137241a9604edcfb846dfb58773e5b397587cec0d0a0ef7d6532c2b907c467fa"
+        "bytes": 34192,
+        "sha256": "63c81055d1799f772b8ec7e85ea7e204750c92433187bc59b70faa41ade9852e"
       },
       {
         "path": "frontend/app/worksignal.js",
@@ -808,8 +808,8 @@
       },
       {
         "path": "frontend/app/workstreams.js",
-        "bytes": 27289,
-        "sha256": "cea6ce5213c61c26b380fd21fe06c383acd888a0720ca9a7fd1c2ab6060a67d8"
+        "bytes": 27902,
+        "sha256": "482054d874c2f5f076ae2e81888ee6c491fba26adcda2712b6db325ef0be445c"
       },
       {
         "path": "frontend/app/world.js",
