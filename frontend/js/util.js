@@ -146,7 +146,35 @@ const SFX = {
       const wet = c.createGain(); wet.gain.value = 0.45;
       send.connect(verb); verb.connect(wet); wet.connect(master);
       SFX.ctx = c; SFX.master = master; SFX.fx = send; SFX._noise = SFX._noiseBuf(c, 1.5);
+      SFX._loadSamples();
     } catch (e) { /* no Web Audio (e.g. headless node) — stay silent */ }
+  },
+
+  /* ---- licensed UI samples (Interface Bleeps by Bleeoop — see assets/sfx/LICENSE.md),
+     picked by spectral match against the Pip-Boy reference profile Andrew chose. Fetched
+     lazily after boot; until they arrive (or if they 404) the cues fall back to the synth. ---- */
+  _samples: {},
+  _loadSamples() {
+    if (typeof fetch === 'undefined' || SFX._samplesLoading) return;
+    SFX._samplesLoading = true;
+    [['click', 'assets/sfx/ui-click.wav'], ['open', 'assets/sfx/ui-open.wav']].forEach(([name, url]) => {
+      fetch(url).then(r => r.ok ? r.arrayBuffer() : Promise.reject())
+        .then(ab => SFX.ctx.decodeAudioData(ab))
+        .then(buf => { SFX._samples[name] = buf; })
+        .catch(() => { /* keep synth fallback */ });
+    });
+  },
+  // play a sample through the master chain (so volume, shelf and limiter still apply)
+  _sample(name, o) {
+    const buf = SFX._samples[name];
+    if (!SFX.on || !SFX.ctx || !buf) return false;
+    o = o || {};
+    const c = SFX.ctx, src = c.createBufferSource(), g = c.createGain();
+    src.buffer = buf; src.playbackRate.value = o.rate || 1;
+    g.gain.value = (o.vol != null ? o.vol : 0.5) * SFX.vol;
+    src.connect(g); g.connect(SFX._out(c, o.pan));
+    src.start(); src.stop(c.currentTime + buf.duration / (o.rate || 1) + 0.05);
+    return true;
   },
 
   /* ---- buffer factories (browser-only; only ever called from boot) ---- */
@@ -222,6 +250,8 @@ const SFX = {
   click() {
     if (!SFX._gate('click', 40)) return;
     const pan = (Math.random() - 0.5) * 0.16, drift = 1 + (Math.random() - 0.5) * 0.08;
+    // Click_01 body sits at ~984Hz; 0.905 recenters it on the reference's 891Hz. Drift = foley takes.
+    if (SFX._sample('click', { rate: 0.905 * drift, vol: 0.5, pan })) return;
     SFX.noise({ dur: 0.005, cut: 7000, type: 'highpass', vol: 0.06, pan });
     SFX.voice({ freq: 900 * drift, glide: 660 * drift, dur: 0.045, type: 'sine', vol: 0.20, atk: 0.001, cut: 6000, pan });
     SFX.voice({ freq: 1920 * drift, dur: 0.025, type: 'sine', vol: 0.08, atk: 0.001, cut: 7000, pan });
@@ -238,20 +268,21 @@ const SFX = {
   // few percent lower so direction still reads. Dry: no whoosh, no hum, no reverb.
   open() {
     if (!SFX._gate('open', 80)) return;
+    // Confirm_03: same family, body already at the reference 891Hz, brighter + longer = "enter".
+    if (SFX._sample('open', { rate: 1, vol: 0.55 })) return;
     SFX.noise({ dur: 0.005, cut: 7000, type: 'highpass', vol: 0.06 });
     SFX.voice({ freq: 920, glide: 680, dur: 0.05, type: 'sine', vol: 0.21, atk: 0.001, cut: 6000 });
     SFX.voice({ freq: 1950, dur: 0.026, type: 'sine', vol: 0.08, atk: 0.001, cut: 7000 });
     SFX.voice({ freq: 281, dur: 0.05, when: 0.012, type: 'sine', vol: 0.06, atk: 0.003 });
-    SFX.voice({ freq: 620, dur: 0.014, when: 0.065, type: 'sine', vol: 0.045, atk: 0.001 });
-    SFX.voice({ freq: 580, dur: 0.012, when: 0.095, type: 'sine', vol: 0.035, atk: 0.001 });
   },
   close() {
     if (!SFX._gate('close', 80)) return;
+    // the click sample pitched down = the same mechanism releasing; reads as "back" without a new asset.
+    if (SFX._sample('click', { rate: 0.8, vol: 0.5 })) return;
     SFX.noise({ dur: 0.005, cut: 6500, type: 'highpass', vol: 0.055 });
     SFX.voice({ freq: 840, glide: 610, dur: 0.05, type: 'sine', vol: 0.20, atk: 0.001, cut: 6000 });
     SFX.voice({ freq: 1800, dur: 0.026, type: 'sine', vol: 0.075, atk: 0.001, cut: 7000 });
     SFX.voice({ freq: 260, dur: 0.05, when: 0.012, type: 'sine', vol: 0.06, atk: 0.003 });
-    SFX.voice({ freq: 540, dur: 0.013, when: 0.07, type: 'sine', vol: 0.04, atk: 0.001 });
   },
   // notify: the station bell — a warm detuned A5/E6 pair with a long room tail. Gated so a burst of
   // pings reads as ONE bell, not a carillon.
