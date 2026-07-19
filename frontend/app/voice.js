@@ -228,6 +228,7 @@ const Voice = (() => {
      this is the enforcement the prompt can't guarantee. Pure + cheap; runs on every spoken line. */
   function speakable(s) {
     s = String(s || '');
+    s = s.replace(/\b(?:FORK|TASK_QUESTION)\s*:[^\n]*/gi, ' ');     // choice markers (chips carry them; spoken they're "pipe pipe" + every option) — chat.js suppresses these upstream, this is the last line of defense
     s = s.replace(/```[\s\S]*?```/g, ' ');                          // code fences
     s = s.replace(/`([^`]+)`/g, '$1');                              // inline code
     s = s.replace(/!?\[([^\]]*)\]\(([^)]+)\)/g, '$1');              // [label](url) / ![alt](url) → label

@@ -14,8 +14,13 @@ const path = require('path');
 
 /* ---------- 1. source guard: cede to a due suggestion BEFORE curiosity, then return ---------- */
 const chatSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/chat.js'), 'utf8');
+// V3 §7 note: CuriosityStore.consider() now ALSO appears earlier in the file (the session-opener hunt chip
+// + startHuntAsk) — this suite locks the POST-RUN slot's ordering, so the curiosity anchor is the first
+// occurrence INSIDE wireCuriosity, not in the whole file.
+const iWireAnchor = chatSrc.indexOf('function wireCuriosity');
+A.ok(iWireAnchor > 0, 'chat.js still defines wireCuriosity (the post-run beat slot)');
 const iSuggest = chatSrc.indexOf('SuggestStore.willSuggest()');
-const iCuriosity = chatSrc.indexOf('CuriosityStore.consider()');
+const iCuriosity = chatSrc.indexOf('CuriosityStore.consider()', iWireAnchor);
 A.ok(iSuggest > 0, 'chat.js consults SuggestStore.willSuggest() in the post-run beat slot');
 A.ok(iCuriosity > 0, 'chat.js still consults CuriosityStore.consider()');
 A.ok(iSuggest < iCuriosity, 'a due suggestion is checked BEFORE curiosity (it takes the one beat; curiosity stands down)');
@@ -55,6 +60,8 @@ global.localStorage = { getItem: k => (Object.prototype.hasOwnProperty.call(mem,
 const bus = A.makeBus(); global.U = { bus };
 let dsFam = 0.4; const dsKnown = ['goals', 'identity'];
 global.DossierStore = { summary: () => ({ known: dsKnown, blank: ['stack'], familiarity: dsFam }) };
+// V3 §6: the shared readiness gate (fail-closed) — this suite is about BEAT COORDINATION, so the gate is open.
+global.UnderstandingStore = { readiness: () => ({ ready: true, reasons: [] }) };
 let pitchDoneFlag = true; global.PitchStore = { done: () => pitchDoneFlag };
 global.Recipes = { list: () => [], get: () => null, requiredMissing: () => [] };
 global.Chat = { nudge() {}, isBusy: () => false };

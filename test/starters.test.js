@@ -1,10 +1,13 @@
 /* node test/starters.test.js — the pure session-opener chip engine (frontend/app/starters.js)
    plus LaunchMemory.recent() (its "usual recipe" signal). Locks:
      - FRESH STATION: the classic orientation set, verbatim (tour / first recipe / station brief)
-     - RETURNING: usual recipe (most recent launch, prefilled + ↺-marked), discovery, pitch ask
+     - RETURNING: only EARNED chips — usual recipe (prefilled + ↺), cadence-due recipe,
+       next-step-on-session, pitch ask; cap 3
+     - NO random discovery: off-cadence hours never pitch an unlaunched catalog recipe
+     - a returning Commander NEVER sees the orientation chips (tour / station brief)
      - usual skips launches whose recipe left the catalog; prefill values ride the chip
-     - cadence: a 'morning' recipe is due 05–11 only; off-hours it is kept OUT of discovery
-     - discovery rotates deterministically by day over never-launched recipes
+     - cadence: a 'morning' recipe is due 05–11 only
+     - session chip: most recent titled session, truncated label, no state assertion
      - fail-open: garbage signals / empty catalog still yield tappable chips, never a throw
      - LaunchMemory.recent(): newest-first, capped, corrupt store → [] */
 'use strict';
@@ -21,7 +24,7 @@ const CATALOG = [
 
 // ---- fresh station: the classic orientation set, unchanged ----
 {
-  const chips = Starters.pick({ recipes: CATALOG, recent: [], returning: false, hour: 9, day: 3 });
+  const chips = Starters.pick({ recipes: CATALOG, recent: [], returning: false, hour: 9 });
   A.eq(chips.length, 3, 'fresh: three chips');
   A.eq(chips[0].label, 'what can you do here', 'fresh: tour chip first');
   A.ok(chips[1].kind === 'recipe' && chips[1].recipe.id === 'morning-brief', 'fresh: first catalog recipe second');
@@ -29,57 +32,86 @@ const CATALOG = [
   A.eq(chips[2].label, 'brief me on this station', 'fresh: station brief third');
 }
 
-// ---- returning: usual (prefilled) + discovery + pitch ----
+// ---- returning: usual (prefilled) + session next-step + pitch — no random catalog pushes ----
 {
   const vals = { 'deep-dive': { topic: 'AI agents' } };
   const chips = Starters.pick({
     recipes: CATALOG,
     recent: [{ id: 'deep-dive', at: 200 }, { id: 'morning-brief', at: 100 }],
     valuesOf: id => vals[id] || null,
-    returning: true, hour: 20, day: 0
+    sessions: [{ title: 'Ship the landing page', at: 500 }, { title: 'Old thing', at: 100 }],
+    returning: true, hour: 20
   });
   A.eq(chips.length, 3, 'returning: three chips');
   A.ok(chips[0].kind === 'recipe' && chips[0].recipe.id === 'deep-dive', 'returning: usual = most recent launch');
   A.eq(chips[0].values, { topic: 'AI agents' }, 'returning: usual carries last inputs');
   A.eq(chips[0].label, '↺ Deep Dive', 'returning: prefilled chip wears the ↺ mark');
-  A.ok(chips[1].kind === 'recipe' && chips[1].recipe.id !== 'deep-dive', 'returning: discovery is a different recipe');
-  A.ok(chips[1].recipe.id !== 'morning-brief', 'returning: 8pm discovery never suggests a morning recipe');
+  A.eq(chips[1].label, 'next step: ship the landing page', 'returning: slot 2 = next step on the latest titled session');
+  A.ok(chips[1].send.indexOf('"Ship the landing page"') >= 0, 'returning: session title rides the send verbatim');
   A.eq(chips[2].label, 'pitch me an idea', 'returning: pitch ask third');
 }
 
-// ---- cadence-due beats rotation: morning hour surfaces the morning recipe ----
+// ---- no random discovery: off-cadence + no sessions → usual + pitch ONLY, never a catalog push ----
 {
   const chips = Starters.pick({
-    recipes: CATALOG, recent: [{ id: 'deep-dive', at: 200 }], returning: true, hour: 8, day: 5
+    recipes: CATALOG, recent: [{ id: 'deep-dive', at: 200 }], returning: true, hour: 20
+  });
+  A.eq(chips.length, 2, 'no-signal: two chips only — no padding');
+  A.ok(chips[0].kind === 'recipe' && chips[0].recipe.id === 'deep-dive', 'no-signal: usual first');
+  A.eq(chips[1].label, 'pitch me an idea', 'no-signal: pitch second');
+  A.ok(chips.every(c => c.label !== 'brief me on this station' && c.label !== 'what can you do here'),
+    'no-signal: returning never sees orientation chips');
+}
+
+// ---- cadence-due survives: morning hour surfaces the morning recipe in slot 2 ----
+{
+  const chips = Starters.pick({
+    recipes: CATALOG, recent: [{ id: 'deep-dive', at: 200 }], returning: true, hour: 8
   });
   A.ok(chips[1].kind === 'recipe' && chips[1].recipe.id === 'morning-brief', 'cadence: 8am slot 2 = morning recipe');
+}
+
+// ---- cap 3: usual + due + session squeezes the pitch out ----
+{
+  const chips = Starters.pick({
+    recipes: CATALOG, recent: [{ id: 'deep-dive', at: 200 }],
+    sessions: [{ title: 'Ship the landing page', at: 500 }],
+    returning: true, hour: 8
+  });
+  A.eq(chips.length, 3, 'cap: three chips max');
+  A.eq(chips.map(c => c.label)[2], 'next step: ship the landing page', 'cap: session chip kept, pitch dropped');
+}
+
+// ---- session chip: long titles truncate in the label, ride full in the send ----
+{
+  const title = 'Rebuild the entire onboarding flow end to end';
+  const chips = Starters.pick({ sessions: [{ title, at: 1 }], returning: true, hour: 20 });
+  A.ok(chips[0].label.length <= 'next step: '.length + 28, 'session: label truncated');
+  A.ok(chips[0].send.indexOf('"' + title + '"') >= 0, 'session: full title in the send');
+  A.ok(chips[0].label.indexOf('…') >= 0, 'session: truncation is visible');
+}
+
+// ---- session chip: blank/garbage titles are skipped, not rendered ----
+{
+  const chips = Starters.pick({ sessions: [{ title: '   ', at: 9 }, { title: 'Real work', at: 1 }, null], returning: true, hour: 20 });
+  A.eq(chips[0].label, 'next step: real work', 'session: blank titles skipped for the next real one');
 }
 
 // ---- usual skips a launch whose recipe left the catalog ----
 {
   const chips = Starters.pick({
-    recipes: CATALOG, recent: [{ id: 'gone-recipe', at: 300 }, { id: 'bug-hunt', at: 100 }], returning: true, hour: 20, day: 0
+    recipes: CATALOG, recent: [{ id: 'gone-recipe', at: 300 }, { id: 'bug-hunt', at: 100 }], returning: true, hour: 20
   });
   A.ok(chips[0].kind === 'recipe' && chips[0].recipe.id === 'bug-hunt', 'usual: dead catalog id skipped for the next real one');
-}
-
-// ---- discovery rotates by day over never-launched recipes, deterministically ----
-{
-  const sig = day => ({ recipes: CATALOG, recent: [{ id: 'morning-brief', at: 100 }], returning: true, hour: 20, day });
-  const d0 = Starters.pick(sig(0))[1].recipe.id;
-  const d1 = Starters.pick(sig(1))[1].recipe.id;
-  const d0b = Starters.pick(sig(0))[1].recipe.id;
-  A.eq(d0, d0b, 'discovery: same day → same pick (deterministic)');
-  A.ok(d0 !== d1, 'discovery: different day → rotated pick');
-  A.ok(d0 !== 'morning-brief' && d1 !== 'morning-brief', 'discovery: usual/launched recipe not re-pitched off-hours');
 }
 
 // ---- fail-open: garbage signals and empty catalog still yield chips ----
 {
   A.notThrows(() => Starters.pick(null), 'fail-open: null signals');
-  A.notThrows(() => Starters.pick({ recipes: 'nope', recent: 42, valuesOf: 7, hour: 'x', day: NaN, returning: true }), 'fail-open: garbage signals');
-  const none = Starters.pick({ recipes: [], recent: [], returning: true, hour: 10, day: 1 });
-  A.ok(none.length >= 2 && none.every(c => c.kind === 'send'), 'fail-open: empty catalog → send chips only');
+  A.notThrows(() => Starters.pick({ recipes: 'nope', recent: 42, valuesOf: 7, hour: 'x', sessions: 'bad', returning: true }), 'fail-open: garbage signals');
+  const none = Starters.pick({ recipes: [], recent: [], returning: true, hour: 10 });
+  A.ok(none.length >= 1 && none.every(c => c.kind === 'send'), 'fail-open: empty catalog → live send chip(s), no throw');
+  A.eq(none[none.length - 1].label, 'pitch me an idea', 'fail-open: pitch always survives');
   const freshNone = Starters.pick({ recipes: [], returning: false });
   A.eq(freshNone.map(c => c.label), ['what can you do here', 'brief me on this station'], 'fail-open: fresh + empty catalog → classic send pair');
 }
@@ -101,6 +133,27 @@ const CATALOG = [
   A.eq(LaunchMemory.recent(2).map(e => e.id), ['b', 'c'], 'recent: cap honored');
   mem[LaunchMemory.KEY] = '{corrupt';
   A.eq(LaunchMemory.recent(), [], 'recent: corrupt store → [] (never a crash)');
+}
+
+// ---- V3 §6: the pitch chip rides the shared readiness gate ----
+{
+  const sig = { recipes: CATALOG, recent: [{ id: 'morning-brief', at: 5 }], valuesOf: () => null, returning: true, hour: 20 };
+  A.ok(Starters.pick(Object.assign({}, sig, { ready: true })).some(c => c.label === 'pitch me an idea'), 'ready station keeps the pitch chip');
+  const gated = Starters.pick(Object.assign({}, sig, { ready: false }));
+  A.eq(gated.some(c => c.label === 'pitch me an idea'), false, 'below the readiness gate the pitch chip is gone');
+  A.ok(gated.every(c => c.label !== 'brief me on this station' && c.label !== 'what can you do here'),
+    'the gated slot never falls back to orientation pads (earned-chips law holds)');
+  A.ok(Starters.pick(sig).some(c => c.label === 'pitch me an idea'), 'undefined ready keeps legacy behavior (callers without the read)');
+
+  // V3 §7: below the gate WITH a live probe, the pitch slot hunts instead of padding.
+  const hunting = Starters.pick(Object.assign({}, sig, { ready: false, hunt: true }));
+  A.ok(hunting.some(c => c.kind === 'hunt'), 'below the gate the pitch slot becomes the hunt probe');
+  A.eq(hunting.some(c => c.label === 'pitch me an idea'), false, 'the hunt slot never coexists with the pitch chip');
+  A.eq(Starters.pick(Object.assign({}, sig, { ready: true, hunt: true })).some(c => c.kind === 'hunt'), false,
+    'a ready station never hunts from the opener row (the pitch chip owns the slot)');
+  // fresh station: the third orientation chip yields to the probe while hunting.
+  const freshHunt = Starters.pick({ recipes: CATALOG, returning: false, ready: false, hunt: true });
+  A.ok(freshHunt.some(c => c.kind === 'hunt'), 'a fresh hunting station spends its third slot on the probe');
 }
 
 A.report('starters');

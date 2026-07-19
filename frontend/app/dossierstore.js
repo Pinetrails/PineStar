@@ -49,10 +49,17 @@ const DossierStore = (() => {
       const snap = {};
       const known = [];
       for (const k of dimKeys) {
-        const arr = (beliefs(k) || []).map(b => ({ text: String((b && b.text) || ''), updatedAt: Number(b && b.updatedAt) || 0, createdAt: Number(b && b.createdAt) || 0 })).filter(b => b.text);
+        // V3: the snapshot carries each belief's evidence WEIGHT so server-side surfaces gate on the same
+        // grounded-vs-seed distinction the frontend does (weightOf infers honestly for legacy records).
+        const arr = (beliefs(k) || []).map(b => ({ text: String((b && b.text) || ''), weight: Dossier.weightOf(b), updatedAt: Number(b && b.updatedAt) || 0, createdAt: Number(b && b.createdAt) || 0 })).filter(b => b.text);
         if (arr.length) { snap[k] = arr; known.push(k); }
       }
-      fetch('/api/autonomy/posture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ beliefs: { known: known, beliefs: snap } }) }).catch(() => {});
+      // V3 §6: the READY verdict rides along — the ONE shared recommendation gate, computed here (the dossier's
+      // owner) so server surfaces (scout mint, quest refresh) never re-derive it with a private variant. A missing
+      // engine syncs ready:null, which every consumer treats as NOT ready (fail-closed).
+      const rd = (typeof Understanding !== 'undefined' && Understanding.readiness) ? Understanding.readiness(dossier) : null;
+      const readyV = rd ? { ok: !!rd.ready, reasons: Array.isArray(rd.reasons) ? rd.reasons : [] } : null;
+      fetch('/api/autonomy/posture', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ beliefs: { known: known, beliefs: snap, ready: readyV } }) }).catch(() => {});
     } catch (_) {}
   }
 

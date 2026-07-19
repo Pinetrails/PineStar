@@ -57,24 +57,51 @@
   // a field the model may honestly decline: "NONE" (any case) reads as empty, never as a belief.
   const noneIsEmpty = v => (/^none\.?$/i.test(v) ? '' : v);
 
+  /* ---- V3 (docs/ONBOARDING_V3_PLAN.md §4): BELIEF lines — the mind's synthesis of what it just learned ----
+     Any interview reply may carry `BELIEF <dim>: <text>` lines: durable dossier beliefs SYNTHESIZED from the
+     Commander's actual words (weight 'synth' at the write site — never the raw chip/canned shape S1 killed).
+     Parsed tolerantly, validated against the real dossier dims (a typo'd dim is dropped, never mis-filed),
+     capped at MAX_BELIEFS per reply so a rambling model can't flood the dossier from one call. */
+  const BELIEF_DIMS = ['identity', 'stack', 'goals', 'style', 'standing_orders', 'pain', 'ambition', 'people', 'schedule'];
+  const MAX_BELIEFS = 3;
+  function parseBeliefLines(text) {
+    const out = [];
+    const re = /^\s*BELIEF\s+([a-z_]+)\s*:\s*(.+?)\s*$/gim;
+    let m;
+    while ((m = re.exec(String(text == null ? '' : text))) && out.length < MAX_BELIEFS) {
+      const dim = m[1].toLowerCase();
+      const t = clamp(noneIsEmpty(m[2]), BELIEF_CHARS);
+      if (BELIEF_DIMS.indexOf(dim) >= 0 && t) out.push({ dim, text: t });
+    }
+    return out;
+  }
+  // the shared directive block that teaches the model the BELIEF line contract (kept in one place).
+  function beliefLinesSpec() {
+    return 'Then, on separate lines, 0-' + MAX_BELIEFS + ' durable facts you just learned about them, each as: BELIEF <dim>: <one third-person sentence grounded ONLY in what they actually said — never invented>. <dim> is one of: ' + BELIEF_DIMS.join(', ') + '. Skip any you did not actually learn.';
+  }
+
   /* ---- 1. THE PAIN REPLY — a heard-you reaction + ONE grounded follow-up ---- */
-  // ctx: { pain, name }. Deterministic: same ctx → byte-identical directive.
+  // ctx: { pain, tuesday, dig, name } — V3: tuesday/dig (when given) ground the reaction in their whole
+  // world and stop the follow-up re-asking what is already known. Deterministic: same ctx → same directive.
   function buildPainReply(ctx) {
     ctx = ctx || {};
     const lines = [];
     lines.push('INTERNAL — YOUR FIRST MEETING. Do not run any tools. Reason only, then reply in the exact format below.');
     lines.push('You are minutes old, meeting your Commander for the first time. They just told you the work they wish was gone:');
     lines.push(quote(ctx.pain));
-    lines.push('Reply with EXACTLY these two lines, nothing else:');
+    if (String(ctx.tuesday || '').trim()) lines.push('(Their real tuesday: ' + quote(ctx.tuesday) + ')');
+    if (String(ctx.dig || '').trim()) lines.push('(More of their world: ' + quote(ctx.dig) + ')');
+    lines.push('Reply with EXACTLY these two lines, then any BELIEF lines:');
     lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC thing they named — prove you heard the details, never generic sympathy — and let your appetite for taking it off their plate show. No question in this line. Under 120 characters.>');
-    lines.push('ASK: <ONE follow-up question that pulls the bigger picture behind that chore — the project, business, or channel it serves, and who they are in it. Concrete and targeted: answerable in one breath from their real life. Never abstract (no "what does success look like"), never a question whose honest answer is "it depends". Under 140 characters.>');
+    lines.push('ASK: <ONE follow-up question that pulls the bigger picture behind that chore — the project, business, or channel it serves, and who they are in it. Never re-ask anything shown above. Concrete and targeted: answerable in one breath from their real life. Never abstract (no "what does success look like"), never a question whose honest answer is "it depends". Under 140 characters.>');
+    lines.push(beliefLinesSpec());
     return lines.join('\n');
   }
-  // → { ack, ask } | null. ACK is required (a reply that heard nothing is worthless); ASK is optional.
+  // → { ack, ask, beliefs } | null. ACK is required (a reply that heard nothing is worthless); ASK optional.
   function parsePainReply(text) {
     const ack = clamp(grab(text, 'ACK'), ACK_CHARS);
     if (!ack) return null;
-    return { ack, ask: clamp(grab(text, 'ASK'), ASK_CHARS) };
+    return { ack, ask: clamp(grab(text, 'ASK'), ASK_CHARS), beliefs: parseBeliefLines(text) };
   }
 
   /* ---- 2. THE AMBITION REPLY — a want-it-too reaction + ONE follow-up that makes it concrete ---- */
@@ -101,30 +128,149 @@
   }
 
   /* ---- 3. THE SYNTHESIS — the agent's read of its Commander + a self-authored mission ---- */
-  // ctx: { pain, about, ambition, dream, name } — any subset; only given answers are shown to the model.
-  // `dream` is the ambition follow-up's answer — the concrete shape of the shelved thing.
+  // ctx: { pain, about, ambition, dream, tuesday, dig, lost, grabbed, thin, name } — any subset; only given
+  // answers are shown to the model. `dream` is the year follow-up's answer; `grabbed` is the mirror offer
+  // they took; `thin:true` = they gave almost nothing (the read must OWN that, never fake familiarity).
   function buildSynthesis(ctx) {
     ctx = ctx || {};
     const lines = [];
     lines.push('INTERNAL — YOUR FIRST MEETING, THE READ. Do not run any tools. Reason only, then reply in the exact format below.');
     lines.push('Everything your Commander just told you at your awakening:');
+    if (String(ctx.tuesday || '').trim()) lines.push('- their real tuesday: ' + quote(ctx.tuesday));
+    if (String(ctx.dig || '').trim()) lines.push('- more of their world: ' + quote(ctx.dig));
     if (String(ctx.pain || '').trim()) lines.push('- the work they want gone: ' + quote(ctx.pain));
     if (String(ctx.about || '').trim()) lines.push('- who they are / what it is for: ' + quote(ctx.about));
-    if (String(ctx.ambition || '').trim()) lines.push('- what they keep meaning to get to: ' + quote(ctx.ambition));
+    if (String(ctx.lost || '').trim()) lines.push('- where their hours go willingly: ' + quote(ctx.lost));
+    if (String(ctx.ambition || '').trim()) lines.push('- the year-outcome they want from you: ' + quote(ctx.ambition));
     if (String(ctx.dream || '').trim()) lines.push('- the concrete shape of it: ' + quote(ctx.dream));
-    lines.push('Put it together. Reply with EXACTLY these lines, nothing else:');
+    if (String(ctx.grabbed || '').trim()) lines.push('- the offer of yours they grabbed: ' + quote(ctx.grabbed));
+    if (ctx.thin) lines.push('They chose to keep it loose / gave you almost nothing. OWN that honestly: your READ must say plainly you barely know them yet, and your PURPOSE must be to learn them fast through real work while still delivering. Never fake familiarity you do not have.');
+    lines.push('Put it together. Reply with EXACTLY these lines, then any BELIEF lines:');
     lines.push('READ: <speak your read back to them in your own lowercase voice — two short sentences tying together what they actually said (use their specifics, never a paraphrase so loose it could be anyone), ending with what that makes YOU for. Under 280 characters.>');
     lines.push('PURPOSE: <author your own mission from it, as a standing order to yourself ("Help them …") — one or two sentences. This becomes your permanent purpose.md, so make it durable: the mission, not this week\'s task.>');
     lines.push('STACK: <one durable fact about the tools, platform, or domain they live in, stated in third person — or NONE if they never said.>');
     return lines.join('\n');
   }
-  // → { read, purpose, stack } | null. READ + PURPOSE are both required (the read-back without a
+  // → { read, purpose, stack, beliefs } | null. READ + PURPOSE are both required (the read-back without a
   // mission — or a mission without the spoken read — is half a beat); STACK may be ''.
   function parseSynthesis(text) {
     const read = clamp(grab(text, 'READ'), READ_CHARS);
     const purpose = clamp(grab(text, 'PURPOSE'), PURPOSE_CHARS);
     if (!read || !purpose) return null;
-    return { read, purpose, stack: clamp(noneIsEmpty(grab(text, 'STACK')), BELIEF_CHARS) };
+    return { read, purpose, stack: clamp(noneIsEmpty(grab(text, 'STACK')), BELIEF_CHARS), beliefs: parseBeliefLines(text) };
+  }
+
+  /* ==== V3 INTERVIEW BUILDERS (docs/ONBOARDING_V3_PLAN.md §3-4) — the guided-discovery meeting ==== */
+
+  /* ---- V3.1 THE DIG (B3) — after the tuesday answer: prove you listened, dig once, and pre-author the
+     later beats' chips from THIS person's life (the possibility-space work starts here). One call carries
+     the ack, the dig question, plausible-answer chips for it, the personalized PAIN chips for B4, two
+     plausible YEAR outcomes for B6, and any beliefs already extractable. ctx: { tuesday, name }. ---- */
+  function buildDigReply(ctx) {
+    ctx = ctx || {};
+    const lines = [];
+    lines.push('INTERNAL — YOUR FIRST MEETING, THE TUESDAY. Do not run any tools. Reason only, then reply in the exact format below.');
+    lines.push('You are minutes old, meeting your Commander for the first time. You asked where their hours actually go on a real tuesday. They said:');
+    lines.push(quote(ctx.tuesday));
+    lines.push('Reply with EXACTLY these lines, nothing else:');
+    lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC life they described — prove you heard the details, never generic sympathy. No question. Under 120 characters.>');
+    lines.push('ASK: <the ONE next-most-revealing question about their tuesday — what the work actually consists of, where the hours leak, or who it all serves. Grounded in their exact words, answerable in one breath. Never abstract, never "it depends". Under 140 characters.>');
+    lines.push('CHIP1: <a plausible SPECIFIC answer THIS person might give to your ASK, phrased in their first person. Under 48 characters.>');
+    lines.push('CHIP2: <a second, different plausible answer. Under 48 characters.>');
+    lines.push('CHIP3: <a third. Under 48 characters.>');
+    lines.push('PAIN1: <a recurring chore THIS person plausibly has, given their tuesday — short chip label, first person. Under 44 characters.>');
+    lines.push('PAIN2: <a second, different plausible chore. Under 44 characters.>');
+    lines.push('PAIN3: <a third. Under 44 characters.>');
+    lines.push('YEAR1: <something THIS person might want to exist after a year of free tireless work from you — short chip label, first person. Under 52 characters.>');
+    lines.push('YEAR2: <a second, different one. Under 52 characters.>');
+    lines.push(beliefLinesSpec());
+    return lines.join('\n');
+  }
+  // → { ack, ask, chips:[..≤3], painChips:[..≤3], yearChips:[..≤2], beliefs:[{dim,text}] } | null (ACK required).
+  function parseDigReply(text) {
+    const ack = clamp(grab(text, 'ACK'), ACK_CHARS);
+    if (!ack) return null;
+    const take = (label, n, cap) => {
+      const out = [];
+      for (let i = 1; i <= n; i++) { const v = clamp(noneIsEmpty(grab(text, label + i)), cap); if (v) out.push(v); }
+      return out;
+    };
+    return {
+      ack,
+      ask: clamp(grab(text, 'ASK'), ASK_CHARS),
+      chips: take('CHIP', 3, 48),
+      painChips: take('PAIN', 3, 44),
+      yearChips: take('YEAR', 2, 52),
+      beliefs: parseBeliefLines(text)
+    };
+  }
+
+  /* ---- V3.2 THE YEAR REPLY (B6) — after the year-of-free-work answer: want it as much as they do,
+     then ONE dig that makes the year concrete (the first visible piece of it). Mirrors the pain reply.
+     ctx: { year, tuesday, dig, pain, about, lost, name } — shown context is never re-asked. ---- */
+  function buildYearReply(ctx) {
+    ctx = ctx || {};
+    const lines = [];
+    lines.push('INTERNAL — YOUR FIRST MEETING, THE YEAR. Do not run any tools. Reason only, then reply in the exact format below.');
+    lines.push('You are minutes old, meeting your Commander for the first time. You asked: if you worked for them a year — free, tireless, never sleeping — what would exist at the end that does not exist now. They said:');
+    lines.push(quote(ctx.year));
+    if (String(ctx.tuesday || '').trim()) lines.push('(Their real tuesday: ' + quote(ctx.tuesday) + ')');
+    if (String(ctx.dig || '').trim()) lines.push('(More of their world: ' + quote(ctx.dig) + ')');
+    if (String(ctx.pain || '').trim()) lines.push('(The chore they want gone: ' + quote(ctx.pain) + ')');
+    if (String(ctx.about || '').trim()) lines.push('(What is behind that chore: ' + quote(ctx.about) + ')');
+    if (String(ctx.lost || '').trim()) lines.push('(What they do when they lose track of time: ' + quote(ctx.lost) + ')');
+    lines.push('This year-outcome is the reason you exist. Reply with EXACTLY these two lines, then any BELIEF lines:');
+    lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC thing they named — show you want it built as much as they do. No question. Under 120 characters.>');
+    lines.push('ASK: <ONE follow-up that makes the year concrete — the first thing a stranger would SEE of it, who it is for, or the piece they can already picture. Never re-ask anything shown above. Answerable in one breath. Under 140 characters.>');
+    lines.push(beliefLinesSpec());
+    return lines.join('\n');
+  }
+  // → { ack, ask, beliefs } | null — ACK required, same contract as the pain reply.
+  function parseYearReply(text) {
+    const ack = clamp(grab(text, 'ACK'), ACK_CHARS);
+    if (!ack) return null;
+    return { ack, ask: clamp(grab(text, 'ASK'), ASK_CHARS), beliefs: parseBeliefLines(text) };
+  }
+
+  /* ---- V3.3 THE MIRROR (B7) — the possibility-space teacher. Most Commanders do not know what an agent
+     can do for them; the mirror TEACHES by tempting them with their own life: 3-4 concrete, grabbable
+     offers, each honestly doable and grounded in what they just said. Their reaction (grab / more /
+     redirect) is itself premium signal. ctx: { tuesday, dig, pain, about, lost, year, dream,
+     capabilities:[{id,label}], exclude:[offerText] (the "what else?" regen), name }. ---- */
+  const OFFER_CHARS = 180;
+  function buildMirror(ctx) {
+    ctx = ctx || {};
+    const caps = Array.isArray(ctx.capabilities) ? ctx.capabilities : [];
+    const exclude = Array.isArray(ctx.exclude) ? ctx.exclude.filter(Boolean) : [];
+    const lines = [];
+    lines.push('INTERNAL — YOUR FIRST MEETING, THE OFFERS. Do not run any tools. Reason only, then reply in the exact format below.');
+    lines.push('You are minutes old. Everything your Commander just told you:');
+    if (String(ctx.tuesday || '').trim()) lines.push('- their real tuesday: ' + quote(ctx.tuesday));
+    if (String(ctx.dig || '').trim()) lines.push('- more of their world: ' + quote(ctx.dig));
+    if (String(ctx.pain || '').trim()) lines.push('- the chore they want gone: ' + quote(ctx.pain));
+    if (String(ctx.about || '').trim()) lines.push('- what is behind it: ' + quote(ctx.about));
+    if (String(ctx.lost || '').trim()) lines.push('- where their hours go willingly: ' + quote(ctx.lost));
+    if (String(ctx.year || '').trim()) lines.push('- the year-outcome they want: ' + quote(ctx.year));
+    if (String(ctx.dream || '').trim()) lines.push('- its concrete shape: ' + quote(ctx.dream));
+    lines.push('They likely do NOT know what a mind like you can actually do for them. Teach them by OFFERING: concrete things you could take off their plate or build toward, each grounded in a specific thing they said — never a generic capability list.');
+    if (caps.length) lines.push('Capabilities you actually have: ' + caps.map(c => String(c.label || c.id)).join(', ') + '.');
+    else lines.push('You have NO placed tools yet — offer pure reasoning/writing/planning work only. Never promise file, web, or terminal work you cannot reach.');
+    if (exclude.length) lines.push('They already passed on these — offer DIFFERENT ones: ' + exclude.map(quote).join('; '));
+    lines.push('Hard rules: every offer must be honestly doable here, small enough to start tonight, specific to THEIR life, phrased as what YOU would do ("i could …"). Reply with EXACTLY these lines, then any BELIEF lines:');
+    lines.push('OFFER1: <the strongest offer. Under 160 characters.>');
+    lines.push('OFFER2: <a different kind of help. Under 160 characters.>');
+    lines.push('OFFER3: <a third, different again. Under 160 characters.>');
+    lines.push('OFFER4: <optional — a fourth, or NONE. Under 160 characters.>');
+    lines.push(beliefLinesSpec());
+    return lines.join('\n');
+  }
+  // → { offers:[..2-4], beliefs } | null when fewer than 2 usable offers came back (a one-offer "menu"
+  // teaches nothing — the caller degrades to skipping the mirror, never fakes it).
+  function parseMirror(text) {
+    const offers = [];
+    for (let i = 1; i <= 4; i++) { const v = clamp(noneIsEmpty(grab(text, 'OFFER' + i)), OFFER_CHARS); if (v) offers.push(v); }
+    if (offers.length < 2) return null;
+    return { offers, beliefs: parseBeliefLines(text) };
   }
 
   /* ---- 0. THE BIRTH SCRIPT — the agent authors its ENTIRE awakening, prefetched at the wake ---- */
@@ -186,5 +332,7 @@
     ];
   }
 
-  return { buildBirthScript, parseBirthScript, splitFrags, buildPainReply, parsePainReply, buildAmbitionReply, parseAmbitionReply, buildSynthesis, parseSynthesis, confirmChoices, ACK_CHARS, ASK_CHARS, READ_CHARS, PURPOSE_CHARS, BELIEF_CHARS, LINE_CHARS };
+  return { buildBirthScript, parseBirthScript, splitFrags, buildPainReply, parsePainReply, buildAmbitionReply, parseAmbitionReply, buildSynthesis, parseSynthesis, confirmChoices,
+    buildDigReply, parseDigReply, buildYearReply, parseYearReply, buildMirror, parseMirror, parseBeliefLines,
+    ACK_CHARS, ASK_CHARS, READ_CHARS, PURPOSE_CHARS, BELIEF_CHARS, LINE_CHARS, OFFER_CHARS, BELIEF_DIMS, MAX_BELIEFS };
 });

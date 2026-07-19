@@ -121,18 +121,56 @@ A.ok(/permanent operating file/.test(src),
 A.ok(/vague in, vague out/.test(src),
   'the stakes beat states the give-to-get trade plainly (vague in, vague out)');
 
-/* ---------- the AMBITION dig: the live mind reacts + asks once, and the answer is KEPT ---------- */
-// the ambition beat gets the same listened-to treatment as pain: a generated ack + ONE follow-up.
-A.ok(/llmCall\(WakeMind\.buildAmbitionReply\(/.test(src),
-  'the ambition answer gets a live-mind reply (buildAmbitionReply), not just a canned ack');
-A.ok(/mindWait\([^)]*parseAmbitionReply[^)]*AMBITION_PATTER/.test(src),
-  'the ambition reply waits with patience patter, bounded by the reply ceiling');
-// the follow-up answer becomes a SECOND ambition belief — the concrete shape of the shelved thing —
-// so the dossier keeps the real version, not just the chip category.
+/* ---------- V3: the YEAR dig (B6) — the live mind reacts + asks once, and the answer is KEPT ---------- */
+// the year beat gets the listened-to treatment: a generated ack + ONE follow-up that makes it concrete.
+A.ok(/llmCall\(WakeMind\.buildYearReply\(/.test(src),
+  'the year answer gets a live-mind reply (buildYearReply), not just a canned ack');
+A.ok(/mindWait\([^)]*parseYearReply[^)]*AMBITION_PATTER/.test(src),
+  'the year reply waits with patience patter, bounded by the reply ceiling');
+// the follow-up answer becomes a SECOND ambition belief — the concrete shape of the year-outcome —
+// so the dossier keeps the real version, not just the headline.
 A.ok(/DossierStore\.upsert\('ambition',\s*\{\s*text:\s*dreamT/.test(src),
-  'the ambition follow-up answer is kept as a second ambition belief (dreamT)');
+  'the year follow-up answer is kept as a second ambition belief (dreamT)');
 // and it feeds the synthesized read, so the self-authored mission is built from the richest version.
 A.ok(/buildSynthesis\(\{[^}]*dream:\s*dreamT/.test(src),
-  'the dug ambition detail rides into the synthesis (dream: dreamT)');
+  'the dug year detail rides into the synthesis (dream: dreamT)');
+
+/* ---------- V3 arc locks (docs/ONBOARDING_V3_PLAN.md §3) ---------- */
+// B1 the fork: depth is the Commander's call — the loose path is a first-class chip, recorded as a SEED
+// note (it must never convince the readiness gate the station knows anyone).
+A.ok(/keep it loose — learn me as we go/.test(src), 'the fork offers the loose path as a first-class choice');
+A.ok(/Chose to be figured out through the work[\s\S]{0,120}weight:\s*'seed'/.test(src),
+  'the loose choice is recorded as a seed note, never grounded evidence');
+// B2 the tuesday: the identity question is a SCENE, not an abstraction.
+A.ok(/paint me your tuesday\. not the calendar version/.test(src), 'the tuesday question is scene-based');
+// B3 the dig: generated off their exact words; a quiet mind SKIPS it (no canned fake-listening dig).
+A.ok(/llmCall\(WakeMind\.buildDigReply\(\{\s*tuesday:\s*tuesdayT/.test(src),
+  'the dig is generated from the actual tuesday answer');
+// B6 the year: the signature question, with the honest no-idea out recorded as a seed note.
+A.ok(/say i work for you for a year\. free\. tireless\./.test(src), 'the year question is the signature ask');
+A.ok(/Direction open — wants the station to help discover what to build\.[\s\S]{0,80}weight:\s*'seed'/.test(src),
+  'the no-idea-yet out lands as a seed note (LOW-BY-CHOICE, hunt mode inherits)');
+// B7 the mirror: offers are generated (possibility-space teaching); a grab arms the proof beat.
+A.ok(/llmCall\(WakeMind\.buildMirror\(/.test(src), 'the mirror offers are generated, never canned');
+A.ok(/PitchStore\.armFirstMove\(grabbedMove\)/.test(src),
+  'a grabbed offer arms the post-tour first move (the one below-gate starter allowed)');
+// B8 thin honesty: a loose/empty run synthesizes with thin:true and its purpose lands as a SEED belief.
+A.ok(/thin:\s*!gaveAnything/.test(src), 'a thin run tells the synthesis to own the thinness');
+A.ok(/gaveAnything\s*\?\s*'synth'\s*:\s*'seed'/.test(src),
+  'a thin-run purpose never lands as grounded evidence (seed, gate stays shut)');
+// every synth-belief write flows through the one helper with weight synth.
+A.ok(/weight:\s*'synth'\s*\}\);\s*\}\s*\}/.test(src.replace(/\r/g, '')) || /upsertSynthBeliefs/.test(src),
+  'mind-reply beliefs land through the synth-weight chokepoint');
+
+/* ---------- S5: brain-before-interview (plan §8) ---------- */
+// a keyless wake gets NO fake interview: the honest holding line, the required scripted beats, and a
+// persisted IOU the first live-brain session pays via one gentle offer (spent on OFFER — never a nag).
+A.ok(/if \(!brainReady\(\)\) \{[\s\S]{0,700}setDeferred\(\);[\s\S]{0,200}fallbackPurposeStep\(\)/.test(src),
+  'a keyless meeting banks the IOU and still lands purpose.md (no fake deep interview)');
+A.ok(/my wire is dark/.test(src), 'the keyless holding line owns the dead wire honestly');
+A.ok(/function offerDeferred/.test(src) && /clearDeferred\(\);\s*\/\/ spent on OFFER/i.test(src.replace(/ /g, ' ')) || /clearDeferred\(\);/.test(src),
+  'the deferred offer exists and spends its flag on offer (one-shot)');
+A.ok(/offerDeferred[\s\S]{0,400}deferredPending\(\)[\s\S]{0,200}brainReady\(\)/.test(src),
+  'the deferred offer requires both the pending IOU and a live brain');
 
 A.report('onboarding.test');

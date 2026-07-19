@@ -391,11 +391,14 @@ const Widgets = (() => {
       for (const slug of feed.keys()) addItem('feed:' + slug, defOf('feed:' + slug));
     }
     document.body.appendChild(popEl);
+    // TEXT SIZE zoom: rect + innerWidth are visual px, style.left/top on a body child is zoomed-space
+    // — divide everything by the body zoom so the popover still hugs its rail button at any scale.
+    const uz = (() => { const z = parseFloat(document.body.style.zoom); return z > 0 ? z : 1; })();
     const r = btn.getBoundingClientRect();
     const below = r.top < window.innerHeight / 2;   // top rail → open downward; bottom rail → upward
-    popEl.style.left = Math.max(8, Math.min(window.innerWidth - 228, r.left - 40)) + 'px';
-    if (below) popEl.style.top = (r.bottom + 6) + 'px';
-    else popEl.style.bottom = (window.innerHeight - r.top + 6) + 'px';
+    popEl.style.left = Math.max(8, Math.min(window.innerWidth / uz - 228, r.left / uz - 40)) + 'px';
+    if (below) popEl.style.top = (r.bottom / uz + 6) + 'px';
+    else popEl.style.bottom = ((window.innerHeight - r.top) / uz + 6) + 'px';
     popEl.addEventListener('click', e => e.stopPropagation());
     setTimeout(() => document.addEventListener('click', closePop), 0);
   }

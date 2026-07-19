@@ -53,6 +53,10 @@
     state = state || {};
     if (state.alreadyPitched) return { go: false, reason: 'already-pitched' };
     if (!state.firstTaskDone) return { go: false, reason: 'awaiting-first-task' };
+    // V3 §6: the shared readiness gate (Understanding.readiness, supplied by the caller). Explicit false —
+    // an under-informed station is structurally FORBIDDEN to advise; hunt mode owns the gap. `undefined`
+    // preserves the legacy known-dims-only gate for callers that predate the readiness read.
+    if (state.ready === false) return { go: false, reason: 'not-ready' + (state.readyWhy ? ':' + state.readyWhy : '') };
     const known = Array.isArray(state.knownDims) ? state.knownDims : [];
     const require = Array.isArray(state.requireDims) ? state.requireDims : REQUIRE_DIMS;
     const minKnown = Number.isFinite(state.minKnown) ? state.minKnown : MIN_KNOWN;
@@ -76,6 +80,9 @@
   function shouldSuggest(state) {
     state = state || {};
     if (!state.firstPitchDone) return { go: false, reason: 'no-first-pitch' };
+    // V3 §6: same shared readiness gate as shouldPitch — ongoing ideas need the station to STILL honestly
+    // know its Commander (beliefs decay; a forgotten dossier re-shuts the gate rather than guessing).
+    if (state.ready === false) return { go: false, reason: 'not-ready' + (state.readyWhy ? ':' + state.readyWhy : '') };
     const known = Array.isArray(state.knownDims) ? state.knownDims : [];
     const require = Array.isArray(state.requireDims) ? state.requireDims : REQUIRE_DIMS;
     for (const d of require) if (known.indexOf(d) < 0) return { go: false, reason: 'missing:' + d };

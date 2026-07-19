@@ -1,5 +1,52 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-19 — ONBOARDING V3 lane (branch `claude/onboarding-questions-update-7e28b3`) — S1-S5 BUILT
+
+Andrew's mandate: blitzing onboarding chips yielded a fake dossier → random awful recommendations.
+Full plan (Andrew-approved direction, wording in red-pen): `docs/ONBOARDING_V3_PLAN.md`.
+- **S1 SHIPPED in-branch (`2189df8b`)**: chips STEER, never answer (canned belief strings deleted);
+  beliefs carry evidence WEIGHT (stated/synth/observed/seed); doc seeds + canned intake chips = 'seed'.
+- **S2 SHIPPED in-branch**: ONE shared gate `Understanding.readiness()` (grounded direction + grounded
+  person + breadth ≥ 0.33) enforced fail-closed at: First Pitch/handoff, generated starter, ongoing
+  suggestions, session-opener pitch chip, scout cold-start (server, via synced verdict on the posture
+  beliefs snapshot), quest-refresh minting (explicit goal/north star still counts).
+- LIVE-VERIFIED on onboard-fresh (port 8819, real key): chip click → steering follow-up, blitz-through →
+  dossier = 1 seed belief / grounded 0 / ready:false(3 reasons) synced server-side; typed beliefs flip
+  ready:true. Gate 369/369 green (incl. new weight/readiness/starter-gate locks).
+- Also fixed pre-existing trunk gate red: opensource-readiness baseline 18→21 (3f6f5384 added 3
+  reviewed fixture keys without bumping the lock).
+- **S3 SHIPPED in-branch (`f06ebf05` + `3afc3ad2`, W0 restamped `6192c963`)**: the guided-discovery
+  meeting B0-B10 (fork / tuesday / generated dig with personalized chips / pain dig / lost-time / the
+  year / the MIRROR offers / thin-honest read / proof beat → PitchStore.armFirstMove). LIVE deep-path
+  walkthrough on :8819: 8 stated+synth beliefs, ready:true, 4 life-grounded mirror offers, first move
+  armed for the tour close. Trap fixed: first ceremony call needs the 40s ceiling (cold wire).
+- SUPERSEDED: `claude/onboarding-blitzproof-c268c1` (accidental sibling; covered by S1+S3) — tear down.
+- **S4+S5 SHIPPED in-branch (`7312be5b`, W0 restamped `46460dde`)**: HUNT MODE (curiosity hunt profile —
+  work floor waived + cap 2 below the gate, dismissed/stop-forever intact; opener pitch slot becomes the
+  'ask me one real question' probe → one-question intake at the top-VOI dim; intake bank rewritten into
+  the scene register) + BRAIN-GATING (keyless wake = honest holding line + scripted mission/cadence + a
+  persisted IOU; first live-brain session offers the real interview once — spent on offer). LIVE-PROVEN:
+  loose station → hunting:true, probe chip → year question → typed answer landed 'stated'; deferred flag →
+  boot offer → accept launched the full meeting in-game.
+- OPEN: Andrew red-pen of the live wording + his own live pass; merge ritual; exe rebuild after merge.
+  Not live-walked (honest): the keyless-wake branch itself (source-locked; needs an unconfigured-brain
+  state the dev harness can't produce naturally) and a completed deferred meeting (same runLeadMeeting
+  machinery proven live in S3).
+
+## 2026-07-19 — COMMS CLEAN-UP: two-tier transcript (MERGED trunk f734e15a)
+
+Andrew: "comms still feels like a cluttered mess." Diagnosis (live + full code audit): the
+transcript was a WORK-LOG — every turn permanently deposited a "■ RUN COMPLETE" row + tool-chip
+rails between speech, trophy/quest broadcasts each took a full row, and 9 gold .turnin variants
+shouted as loud as a blocking consent. Fix (chat.js + comms.css only, FNV/CRT vocabulary intact):
+(1) RUN FOLD — resolvePresence absorbs the run's tool rails into the resolved line
+("RUN COMPLETE · 8s · N tools ▸"), collapsed, click/Enter toggles, rails moved never deleted;
+(2) broadcast COALESCING — consecutive station lines stack in ONE hairline block (tone per-line);
+(3) beat hierarchy — passive .turnin family whispers (1px gold rail, no glow, 14px), only
+.consent keeps full lit gold. Live-proven on a real haiku+fs.list run (seed :9281); gate 369/369
+green incl. comms-presence lock; W0 re-stamped in-branch 11223bd7.
+- [x] MERGED to trunk f734e15a + W0 70a99f2d (digest in qa/STATUS.md). Also shipped: hover-only timestamps + failed-run fold self-expands. Andrew declined: tb-read fold, receipts coalesce, chip removal. OPEN: exe rebuild.
+
 ## 2026-07-19 — SESSION TITLING: real model summaries, not first-words (MERGED trunk 9fe9bbe1)
 
 Andrew's report from other-hardware testing: session titles were "whatever the first few words the

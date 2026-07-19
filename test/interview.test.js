@@ -44,7 +44,12 @@ A.ok(q0 && q0.dim === 'stack', 'questionFor finds a dimension question');
 A.eq(I.questionFor('nonsense'), null, 'questionFor returns null for an unknown dimension');
 
 const b = I.beliefFromAnswer(q0, '  Rust and a little Go  ');
-A.eq(b, { dim: 'stack', text: 'Rust and a little Go', source: 'interview' }, 'beliefFromAnswer trims + stamps dim/source');
+A.eq(b, { dim: 'stack', text: 'Rust and a little Go', source: 'interview', weight: 'stated' }, 'beliefFromAnswer trims + stamps dim/source; typed words are weight stated');
+// V3 §5: an answer that IS a canned chip string is mechanically-produced — weight 'seed' (informs the prompt,
+// never opens the readiness gate). Only the Commander's own typed words are 'stated'.
+const cannedVal = (q0.chips.find(c => c.value) || {}).value;
+A.ok(cannedVal, 'the stack question still carries at least one canned chip (fixture guard)');
+A.eq(I.beliefFromAnswer(q0, cannedVal).weight, 'seed', 'a canned chip answer lands as weight seed');
 A.eq(I.beliefFromAnswer(q0, '   '), null, 'a blank answer yields no belief');
 A.eq(I.beliefFromAnswer(q0, ''), null, 'an empty answer yields no belief');
 A.eq(I.beliefFromAnswer(q0, null), null, 'a null answer yields no belief');

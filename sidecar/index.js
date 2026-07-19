@@ -1226,10 +1226,15 @@ const commanderPosture = {
   // the derived read surface the driver gates on (actsUnattended, leashPerDay, …) — the SAME shape the dial exposes.
   summary() { return Autonomy.summary(this.posture()); },
   beliefs() { return this._beliefs; },
+  // V3 §6: the ONE shared recommendation gate, server-side read. The verdict is COMPUTED by the dossier's
+  // owner (frontend Understanding.readiness) and synced inside the snapshot — the sidecar never re-derives it
+  // with a private variant. FAIL-CLOSED: no snapshot / no verdict / not-ok all read as NOT ready, so a cold or
+  // legacy-frontend station never gets server-minted recommendations it can't justify.
+  ready() { return !!(this._beliefs && this._beliefs.ready && this._beliefs.ready.ok); },
   set(posture, beliefs) {
     if (posture && typeof posture === 'object') this._posture = Autonomy.normalize(posture);
     if (beliefs && typeof beliefs === 'object') {
-      // normalize the snapshot defensively: a bounded known[] + a bounded per-dim belief list (text + stamps only).
+      // normalize the snapshot defensively: a bounded known[] + a bounded per-dim belief list (text + stamps + weight).
       const known = Array.isArray(beliefs.known) ? beliefs.known.filter(x => typeof x === 'string').slice(0, 24) : [];
       const src = (beliefs.beliefs && typeof beliefs.beliefs === 'object') ? beliefs.beliefs : {};
       const out = {};
@@ -1237,11 +1242,16 @@ const commanderPosture = {
         const arr = Array.isArray(src[dim]) ? src[dim] : [];
         out[dim] = arr.slice(0, 40).map(b => ({
           text: String((b && b.text) || '').slice(0, 400),
+          weight: (typeof (b && b.weight) === 'string' && ['stated', 'synth', 'observed', 'seed'].indexOf(b.weight) >= 0) ? b.weight : null,   // V3 evidence weight (null = legacy sync)
           updatedAt: Number(b && b.updatedAt) || 0,
           createdAt: Number(b && b.createdAt) || 0
         })).filter(b => b.text);
       }
-      this._beliefs = { known: known, beliefs: out, at: Date.now() };
+      // the synced readiness verdict (V3): {ok,reasons} or null when the frontend couldn't compute one.
+      const rd = (beliefs.ready && typeof beliefs.ready === 'object')
+        ? { ok: !!beliefs.ready.ok, reasons: Array.isArray(beliefs.ready.reasons) ? beliefs.ready.reasons.filter(x => typeof x === 'string').slice(0, 8) : [] }
+        : null;
+      this._beliefs = { known: known, beliefs: out, ready: rd, at: Date.now() };
     }
     try {
       fs.mkdirSync(WORKSPACES, { recursive: true });
@@ -3355,9 +3365,11 @@ async function runScoutCycle(o) {
     // 2) MINT ATTEMPT — at most one per cycle; the pure gates decide if and which kind. A non-firing gate is
     //    NOT ledger-noise (it binds most runs by design); GET /api/scout reports the live binding instead.
     const warm = Interests.warm(interestsState, Date.now());
-    // lane E cold-start: a pushed Commander dossier is day-one evidence — it unlocks exactly ONE recipe attempt
+    // lane E cold-start: a READY Commander dossier is day-one evidence — it unlocks exactly ONE recipe attempt
     // while interests are still cold (Scout.decide owns the one-shot; the attempt spends it whatever the outcome).
-    const dossierWarm = !!String(commanderDossier.get() || '').trim();
+    // V3 §6: readiness (the shared gate, synced from the frontend), NOT mere non-emptiness — a blitzed/seeded
+    // dossier block used to buy a day-one mint off zero real context; now only grounded knowledge does.
+    const dossierWarm = commanderPosture.ready();
     scoutSweep();   // age out stale drafts first — an undecided-draft backlog must not wedge the gate at 'full'
     const d = Scout.decide(scoutState, { now: Date.now(), warm: warm, dossierWarm: dossierWarm });
     if (!d.fire) return;
@@ -3455,7 +3467,7 @@ function handleScoutGet(req, res) {
   scoutSweep();   // purge aged-out drafts even on an idle station (no runs) so the status read is truthful
   const now = Date.now();
   // the SAME dossierWarm the cycle uses (lane E) — the bay's gate display must never disagree with the mint path.
-  const gate = Scout.decide(scoutState, { now: now, warm: Interests.warm(interestsState, now), dossierWarm: !!String(commanderDossier.get() || '').trim() });
+  const gate = Scout.decide(scoutState, { now: now, warm: Interests.warm(interestsState, now), dossierWarm: commanderPosture.ready() });
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({
     warm: Interests.warm(interestsState, now),
@@ -4001,7 +4013,14 @@ async function runQuestRefreshCycle(why) {
     const completed = rec.quests.filter(q => q.status === 'done')
       .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 5);
     const goalNote = commanderGoals.note();
-    const dossierBlock = commanderDossier.get();
+    // V3 §6: a dossier the shared readiness gate has JUDGED not-ready (a synced verdict with ok:false —
+    // e.g. a blitzed onboarding whose only beliefs are seeds) is INADMISSIBLE as quest evidence: it neither
+    // satisfies hasEvidence nor reaches the directive. A save with NO verdict (server-only boot, legacy
+    // frontend) keeps the old behavior — unknown is not proven-not-ready, and this surface still has its
+    // own evidence floor + grounding veto. Explicit direction (goal note / north star) is untouched.
+    const rdSnap = commanderPosture.beliefs();
+    const dossierNotReady = !!(rdSnap && rdSnap.ready && rdSnap.ready.ok === false);
+    const dossierBlock = dossierNotReady ? '' : commanderDossier.get();
     const evidenceCtx = {
       goalNote: goalNote,
       // ground on the EFFECTIVE star: a pending (unconfirmed) inference still steers the directive so the cycle
@@ -4086,6 +4105,9 @@ async function runQuestRefreshCycle(why) {
 function questRefreshTick() {
   if (process.env.SKYNET_QUEST_REFRESH === '0') return;
   if (questRefreshingNow) return;
+  // V3 §6 note: the readiness gate is applied INSIDE the cycle as dossier ADMISSIBILITY (a synced not-ready
+  // verdict blanks the dossier out of the evidence, so a blitzed onboarding can't mint quests) — never here
+  // at the tick, so the cadence still spends and the honest 'skipped' ledger semantics survive.
   const d = QuestRefresh.decide(questRefreshState, { now: Date.now(), openCount: questRefreshOpenCount() });
   if (!d.fire) return;
   questRefreshState = QuestRefresh.stampCycle(questRefreshState, { now: Date.now() });

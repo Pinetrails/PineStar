@@ -630,6 +630,8 @@ const Tutorial = (() => {
   function placeCoach() {
     if (!coach) return;
     const a = coach.anchor, b = coach.bubble;
+    // anchor rects/viewport are visual px; ring+bubble style px are body-zoomed (TEXT SIZE) — /z once.
+    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
     // kit-out coaches are CSS-pinned to a safe zone (.tut-coach.kit); only the ring tracks the live target, and a
     // momentarily-missing target (palette re-render) just hides the ring rather than tearing down the bubble.
     if (coach.kit) {
@@ -637,8 +639,8 @@ const Tutorial = (() => {
         if (a && document.contains(a)) {
           const r = a.getBoundingClientRect(), p = 5;
           coach.ring.style.display = '';
-          coach.ring.style.left = (r.left - p) + 'px'; coach.ring.style.top = (r.top - p) + 'px';
-          coach.ring.style.width = (r.width + p * 2) + 'px'; coach.ring.style.height = (r.height + p * 2) + 'px';
+          coach.ring.style.left = (r.left / z - p) + 'px'; coach.ring.style.top = (r.top / z - p) + 'px';
+          coach.ring.style.width = (r.width / z + p * 2) + 'px'; coach.ring.style.height = (r.height / z + p * 2) + 'px';
         } else { coach.ring.style.display = 'none'; }
       }
       coach.raf = requestAnimationFrame(placeCoach);
@@ -646,10 +648,11 @@ const Tutorial = (() => {
     }
     if (a && !document.contains(a)) { clearCoach(); return; }
     if (a) {
-      const r = a.getBoundingClientRect();
+      const r0 = a.getBoundingClientRect();
+      const r = { left: r0.left / z, top: r0.top / z, bottom: r0.bottom / z, width: r0.width / z, height: r0.height / z };
       if (coach.ring) { const p = 5; coach.ring.style.left = (r.left - p) + 'px'; coach.ring.style.top = (r.top - p) + 'px'; coach.ring.style.width = (r.width + p * 2) + 'px'; coach.ring.style.height = (r.height + p * 2) + 'px'; }
       const bw = b.offsetWidth || 300, bh = b.offsetHeight || 90, gap = 12;
-      const vw = window.innerWidth || 1280, vh = window.innerHeight || 800;   // fallback so a 0×0 report can't fling it off-screen
+      const vw = (window.innerWidth || 1280) / z, vh = (window.innerHeight || 800) / z;   // fallback so a 0×0 report can't fling it off-screen
       const left = Math.max(8, Math.min(r.left, vw - bw - 8));               // clamp-min last: never below 8, even in a narrow window
       let top = r.bottom + gap;
       if (top + bh > vh - 8) top = Math.max(8, r.top - bh - gap);            // flip above if it would clip the bottom
@@ -757,11 +760,13 @@ const Tutorial = (() => {
   // covering the rail's controls. Recomputed on resize. Falls back to a fixed inset if the rail is absent.
   function placeBrief() {
     if (!briefEl) return;
+    // rects/innerWidth are visual px; the brief's style px are body-zoomed (TEXT SIZE) — /z once.
+    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
     const rail = document.getElementById('left');
-    const railRight = rail && rail.getBoundingClientRect ? rail.getBoundingClientRect().right : 0;
+    const railRight = rail && rail.getBoundingClientRect ? rail.getBoundingClientRect().right / z : 0;
     const comms = document.getElementById('chat-panel');
-    const vw = window.innerWidth || 1280;
-    const commsLeft = comms && comms.getBoundingClientRect ? comms.getBoundingClientRect().left : vw;
+    const vw = (window.innerWidth || 1280) / z;
+    const commsLeft = comms && comms.getBoundingClientRect ? comms.getBoundingClientRect().left / z : vw;
     const bw = briefEl.offsetWidth || 246;
     let left = railRight > 0 ? railRight + 12 : 14;
     left = Math.min(left, commsLeft - bw - 12, vw - bw - 12);   // never overlap COMMS or run off the right edge (narrow windows)

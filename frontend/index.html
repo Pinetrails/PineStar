@@ -319,6 +319,39 @@
   </div>
 </section>
 
+<!-- ============ SAVE-UNKNOWN GATE ============ -->
+<!-- Blocking screen raised when boot has NO local save cache AND the durable sidecar mirror could not be READ
+     (service unreachable, or the per-launch auth token was refused). Presenting the first-run creation ceremony
+     here would assert "you have no save" when the harness proved no such thing — a user with an intact durable
+     save would see their station "deleted" (July-19 incident). Reuses the gate CRT chrome. app.js
+     showSaveUnreachableGate() wires it: auto-retry until the sidecar answers definitively, then reload. -->
+<section id="screen-unreachable" class="screen">
+  <div class="panel connect-panel ov-panel">
+    <span class="cc-bracket cc-tl">┌</span><span class="cc-bracket cc-tr">┐</span>
+    <span class="cc-bracket cc-bl">└</span><span class="cc-bracket cc-br">┘</span>
+    <header class="cc-console-head ov-head">
+      <div class="cc-titlebar"><span class="cc-tb-tag">STARNET</span><span class="cc-tb-rule"></span><span class="cc-tb-mode">RECONNECTING</span><span class="cc-tb-rec">● HOLD</span></div>
+      <div class="cc-title-row ov-title-row">
+        <h2>▮ STATION DATA UNREACHABLE</h2>
+        <span id="unreachable-sub" class="ov-sub"></span>
+      </div>
+      <div class="ov-recovery" role="alert">
+        StarNet <b>could not read your saved station</b> — the local station service didn't answer.
+        Your save has <b>not</b> been deleted or touched; it just can't be reached right now.
+        StarNet is retrying automatically and will resume your station the moment it reconnects.
+      </div>
+    </header>
+    <div class="ov-foot">
+      <div class="ov-foot-data">
+        <span class="ov-foot-cap" id="unreachable-status">＋ retrying…</span>
+      </div>
+      <div class="connect-actions ov-actions">
+        <button id="btn-unreachable-retry" class="btn-xl">⟳ RETRY NOW</button>
+      </div>
+    </div>
+  </div>
+</section>
+
 <!-- ============ GAME ============ -->
 <!-- BRAND MARK — deliberately OUTSIDE the .screen sections: it must paint ABOVE the CRT glass
      overlays (body::before/::after at z 940/950) so the amber wordmark stays crisp instead of

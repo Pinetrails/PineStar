@@ -25,6 +25,10 @@ let dsKnown = ['goals', 'identity'];
 let dsFam = 0.4;
 global.DossierStore = { summary: () => ({ known: dsKnown, familiarity: dsFam, blank: [] }) };
 
+// V3 §6: the shared readiness gate — willSuggest reads it FAIL-CLOSED, so the fake mirrors the real API.
+let readyState = { ready: true, reasons: [] };
+global.UnderstandingStore = { readiness: () => readyState };
+
 let pitchDoneFlag = false;
 global.PitchStore = { done: () => pitchDoneFlag };
 
@@ -94,6 +98,16 @@ A.eq(SuggestStore._state().tasksSinceLast, 2, 'counter is at 2 from the two base
 A.eq(SuggestStore.willSuggest(), false, 'holds for the task cooldown even with something new to say');
 emitDone();   // → 3
 A.eq(SuggestStore.willSuggest(), true, 'suggests once it has grown AND the cooldown has passed');
+
+// V3 §6: the shared readiness gate — a shut gate (or a missing read) structurally blocks ongoing ideas.
+readyState = { ready: false, reasons: ['no-direction'] };
+A.eq(SuggestStore.willSuggest(), false, 'a shut readiness gate blocks the ongoing idea');
+const _us = global.UnderstandingStore;
+global.UnderstandingStore = undefined;
+A.eq(SuggestStore.willSuggest(), false, 'no readiness read = FAIL-CLOSED (no idea without provable readiness)');
+global.UnderstandingStore = _us;
+readyState = { ready: true, reasons: [] };
+A.eq(SuggestStore.willSuggest(), true, 'the reopened gate lets the same due idea through');
 
 // defensive: a missing dossier summary must not crash the gate — it just stays quiet
 const _summ = global.DossierStore.summary;

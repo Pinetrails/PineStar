@@ -63,6 +63,7 @@ test/updatecore.test.js
 test/quitguard.test.js
 test/cloudsavecore.test.js
 test/cloudsave-refusal.test.js
+test/cloudsave-unknown.test.js
 test/fullscreen.test.js
 test/titlebar.test.js
 test/keepawake.test.js

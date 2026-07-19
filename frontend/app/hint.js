@@ -82,9 +82,12 @@
   // place the bubble above the anchor by default; flip below if it would clip the top, then clamp X into view.
   function place(anchor) {
     const b = bubble; if (!b || !anchor) return;
-    const r = anchor.getBoundingClientRect();
-    const vw = window.innerWidth || doc.documentElement.clientWidth;
-    const vh = window.innerHeight || doc.documentElement.clientHeight;
+    // anchor rect + viewport are visual px; the bubble's style px are body-zoomed (TEXT SIZE) — /z once.
+    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+    const r0 = anchor.getBoundingClientRect();
+    const r = { left: r0.left / z, top: r0.top / z, bottom: r0.bottom / z, width: r0.width / z };
+    const vw = (window.innerWidth || doc.documentElement.clientWidth) / z;
+    const vh = (window.innerHeight || doc.documentElement.clientHeight) / z;
     const bw = b.offsetWidth, bh = b.offsetHeight;
 
     // vertical: prefer above; if not enough room above, drop below.

@@ -13,6 +13,11 @@ const U = {
   _id: 1,
   id() { return 't' + (U._id++); },
 
+  /* TEXT SIZE zoom (stationui applySettings sets body.style.zoom): element style px live in the
+     body-zoomed space while getBoundingClientRect / clientX / innerWidth are visual px — they
+     disagree by this factor. Any code writing style coordinates from visual reads divides by it. */
+  uiZoom() { const z = parseFloat(document.body && document.body.style ? document.body.style.zoom : ''); return z > 0 ? z : 1; },
+
   /* shared window stacking order — every floating window (UI terms + prop
      terminals) pulls from one counter so click-to-front works across both */
   _z: 500,

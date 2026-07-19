@@ -123,6 +123,14 @@ const UnderstandingStore = (() => {
     return text ? { dim: best.dim, text } : null;
   }
 
+  // V3 §6: the live recommendation-gate read — the shared Understanding.readiness predicate over the live
+  // dossier. null when the engine is absent (callers treat null as NOT ready: a station that can't prove
+  // readiness doesn't recommend — fail-closed, matching truthful telemetry).
+  function readiness() {
+    if (!hasEngine() || typeof Understanding.readiness !== 'function') return null;
+    try { return Understanding.readiness(dossierShape()); } catch (_) { return null; }
+  }
+
   // compose the full read (understanding + the goal it points at). null only if the engine isn't loaded.
   function compute() {
     if (!hasEngine()) return null;
@@ -173,7 +181,7 @@ const UnderstandingStore = (() => {
   // a brand-new hero starts with no learned corroboration (own key; mirrors the sibling growth stores).
   function reset() { corrob = {}; try { localStorage.removeItem(KEY); } catch (_) {} prevOverall = 0; refresh(false); }
 
-  return { init, reset, read, refresh, subscribe, noteRating, noteProbe, noteEvidence, probeTarget, _onRunEnd: onRunEnd, _compute: compute };
+  return { init, reset, read, refresh, subscribe, readiness, noteRating, noteProbe, noteEvidence, probeTarget, _onRunEnd: onRunEnd, _compute: compute };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { UnderstandingStore };

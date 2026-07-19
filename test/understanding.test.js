@@ -131,4 +131,38 @@ A.eq(JSON.stringify(U.understanding(dWarm, { now: 1000 })), JSON.stringify(warm)
 A.eq(U.understanding(D.fresh(), {}).workSamples, null, 'workSamples is null when not supplied (never guessed)');
 A.eq(U.understanding(D.fresh(), { workSamples: 7.9 }).workSamples, 7, 'workSamples passes through as a floored count');
 
+/* ---------- V3 §6: readiness — the ONE shared recommendation gate ---------- */
+{
+  // cold station: every requirement unmet, honestly named.
+  const cold = U.readiness(D.fresh());
+  A.eq(cold.ready, false, 'a cold station is not ready');
+  A.eq(cold.reasons, ['no-direction', 'no-person', 'too-thin'], 'a cold gate names every unmet requirement');
+
+  // the blitz case: seed-weight beliefs everywhere (canned chips / doc copies) — breadth exists, grounding doesn't.
+  const blitz = D.fresh();
+  D.upsert(blitz, 'goals', { text: 'canned purpose', weight: 'seed' }, 1);
+  D.upsert(blitz, 'pain', { text: 'canned pain', weight: 'seed' }, 2);
+  D.upsert(blitz, 'ambition', { text: 'canned ambition', weight: 'seed' }, 3);
+  const b = U.readiness(blitz);
+  A.eq(b.ready, false, 'seed-only beliefs NEVER open the gate (the blitzed-onboarding poison)');
+  A.eq(b.grounded.goals, 0, 'a seed belief counts zero grounded evidence');
+  A.ok(b.familiarity > 0.3, 'breadth alone reads high — which is exactly why breadth alone cannot open the gate');
+
+  // the earned case: direction (goals|ambition) + person (pain|identity) + breadth ≥ floor.
+  const warm = D.fresh();
+  D.upsert(warm, 'ambition', { text: 'wants to ship the channel', source: 'onboarding', weight: 'stated' }, 1);
+  D.upsert(warm, 'identity', { text: 'runs a one-person shop', source: 'onboarding', weight: 'stated' }, 2);
+  A.eq(U.readiness(warm).ready, false, 'two grounded dims but breadth below the floor → still not ready');
+  D.upsert(warm, 'stack', { text: 'lives in premiere + sheets', source: 'onboarding', weight: 'synth' }, 3);
+  const w = U.readiness(warm);
+  A.eq(w.ready, true, 'grounded direction + grounded person + breadth ≥ floor opens the gate');
+  A.eq(w.reasons, [], 'an open gate carries no reasons');
+  A.eq(w.grounded.ambition, 1, 'grounded counts are honest per-dim telemetry');
+
+  // legacy inference mirrors dossier.js weightOf (the two engines stay independently loadable).
+  A.eq(U.beliefWeightOf({ text: 'x' }), 'stated', 'legacy record without weight infers stated');
+  A.eq(U.beliefWeightOf({ text: 'x', source: 'study' }), 'observed', 'legacy study record infers observed');
+  A.eq(U.beliefWeightOf({ text: 'x', weight: 'seed' }), 'seed', 'a declared seed stays seed');
+}
+
 A.report('understanding.test');

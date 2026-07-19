@@ -234,6 +234,7 @@ const Chat = (() => {
   }
   function startPresence(ws) {
     presenceCurTool = null;
+    runRails = [];   // a fresh run folds only ITS OWN rails — never an earlier run's history
     if (isActiveWs(ws)) { renderPresence(); ensureElapsedTimer(); }   // the elapsed tick also drives the presence update
   }
   function presenceToolCall(ws, name) { presenceCurTool = name || null; if (isActiveWs(ws)) renderPresence(); }
@@ -258,8 +259,38 @@ const Chat = (() => {
     if (dur) bits.push(dur);
     if (typeof opts.steps === 'number' && opts.steps > 0) bits.push(opts.steps + (opts.steps === 1 ? ' step' : ' steps'));
     if (typeof opts.cost === 'number' && opts.cost > 0) bits.push(U.usd(opts.cost));
-    card.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
-    card.setAttribute('role', 'note');
+    // TWO-TIER TRANSCRIPT: the run's tool rails FOLD under this resolved line so the machinery recedes
+    // and the speech stays contiguous. The rails are MOVED, never deleted — the full work log is one
+    // click away (truthful telemetry intact, just collapsed).
+    const rails = runRails.filter(r => r && r.isConnected && r.childElementCount > 0);
+    runRails = [];
+    const tools = rails.reduce((n, r) => n + r.childElementCount, 0);
+    if (tools > 0) bits.push(tools + (tools === 1 ? ' tool' : ' tools'));
+    card.textContent = '';
+    const sum = document.createElement('span'); sum.className = 'cp-sum';
+    sum.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
+    card.appendChild(sum);
+    if (rails.length) {
+      const chev = document.createElement('span'); chev.className = 'cp-chev'; chev.setAttribute('aria-hidden', 'true'); chev.textContent = '▸';
+      card.appendChild(chev);
+      const fold = document.createElement('div'); fold.className = 'run-fold'; fold.hidden = true;
+      rails.forEach(r => fold.appendChild(r));
+      card.parentNode.insertBefore(fold, card.nextSibling);
+      card.classList.add('has-fold');
+      card.setAttribute('role', 'button'); card.tabIndex = 0; card.setAttribute('aria-expanded', 'false');
+      const toggle = () => {
+        const open = card.classList.toggle('open');
+        fold.hidden = !open;
+        card.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+      card.addEventListener('click', toggle);
+      card.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
+      // ERROR HONESTY: a FAILED run's work log self-exposes — collapsing machinery is for successes;
+      // when something broke the evidence must not hide behind a click.
+      if (isErr) toggle();
+    } else {
+      card.setAttribute('role', 'note');
+    }
     autoscroll();
   }
   // POST-RUN DEDUPE: when a recap card is about to render (it owns cost · duration · model + the artifact list),
@@ -268,8 +299,9 @@ const Chat = (() => {
   function foldPresenceIntoRecap() {
     const card = log && log.querySelector('#comms-presence.resolved');
     if (!card) return;
-    const label = String(card.textContent || '').split(' · ')[0];
-    if (label && card.textContent !== label) card.textContent = label;
+    const tgt = card.querySelector('.cp-sum') || card;   // metrics live in the summary span (the fold chevron survives)
+    const label = String(tgt.textContent || '').split(' · ')[0];
+    if (label && tgt.textContent !== label) tgt.textContent = label;
   }
 
   // CRASH HONESTY (Theme 2) — after a run stream died on a network drop, poll /api/health until the sidecar is
@@ -978,13 +1010,28 @@ const Chat = (() => {
     // returning = any OTHER session ever had a real row, or anything was ever launched from the catalog.
     // (maybeEmptyState only renders when the ACTIVE session is empty, so it can't vouch for itself.)
     let returning = recent.length > 0;
+    // sessions = the OTHER titled sessions with real history, newest first — the engine's earned
+    // context for the "next step: <title>" chip. Same fail-open stance as every other signal.
+    let sessions = [];
     try {
-      if (!returning && typeof Workstreams !== 'undefined' && Workstreams.list) {
-        returning = (Workstreams.list() || []).some(w => w && w !== activeWs && w.history && w.history.length > 0);
+      if (typeof Workstreams !== 'undefined' && Workstreams.list) {
+        const others = (Workstreams.list() || []).filter(w => w && w !== activeWs && w.history && w.history.length > 0);
+        returning = returning || others.length > 0;
+        sessions = others
+          .filter(w => w.title)
+          .sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0))
+          .map(w => ({ title: w.title, at: w.lastActiveAt || 0 }));
       }
     } catch (_) {}
     const now = new Date();
-    const sig = { recipes, recent, valuesOf, returning, hour: now.getHours(), day: Math.floor(now.getTime() / 86400000) };
+    // V3 §6: the pitch chip is gated on the shared readiness read (fail-closed: no read → no pitch chip).
+    let ready = false;
+    try { const r = (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) ? UnderstandingStore.readiness() : null; ready = !!(r && r.ready); } catch (_) {}
+    // V3 §7: below the gate, the pitch slot becomes a HUNT probe — but only when a live question actually
+    // exists (consider() honors dismissed/stop-forever/session budget, so a worn-out bank offers nothing).
+    let hunt = false;
+    try { hunt = !ready && typeof CuriosityStore !== 'undefined' && !!CuriosityStore.consider(); } catch (_) {}
+    const sig = { recipes, recent, valuesOf, returning, sessions, hour: now.getHours(), ready, hunt };
     if (typeof Starters !== 'undefined' && Starters.pick) {
       try { const out = Starters.pick(sig); if (out && out.length) return out; } catch (_) {}
     }
@@ -1018,6 +1065,7 @@ const Chat = (() => {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'choice cmsg-starter'; b.textContent = st.label;
       b.addEventListener('click', () => {
         if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+        if (st.kind === 'hunt') { startHuntAsk(); return; }              // V3 §7: the probe chip — the click IS the consent
         if (st.recipe) { insertRecipe(st.recipe, st.values); return; }   // fill the directive to edit, don't auto-fire
         if (input) { input.value = st.send; autoGrowInput(); }
         submitComposer();
@@ -1202,10 +1250,22 @@ const Chat = (() => {
     opts = opts || {};
     lastBroadcastAt = Date.now();
     clearEmptyState();
-    const d = document.createElement('div');
-    d.className = 'cmsg broadcast' + (opts.tone === 'gold' ? ' broadcast-gold' : '');
-    d.setAttribute('role', 'status');   // a live-region system line for AT (it renders no speaker chip)
-    const line = document.createElement('span'); line.className = 'bc-line';
+    // COALESCE INTO ONE BLOCK: consecutive station lines share a single broadcast row (a centered stack
+    // inside the same hairline chrome) instead of each claiming a full transcript row — four trophies
+    // land as one quiet moment, not four rows wedged between the Commander and their agent.
+    let d = null, stack = null;
+    const last = log.lastElementChild;
+    if (last && last.classList && last.classList.contains('broadcast')) { d = last; stack = d.querySelector('.bc-stack'); }
+    if (!d || !stack) {
+      d = document.createElement('div');
+      d.className = 'cmsg broadcast' + (opts.tone === 'gold' ? ' broadcast-gold' : '');
+      d.setAttribute('role', 'status');   // a live-region system line for AT (it renders no speaker chip)
+      stack = document.createElement('span'); stack.className = 'bc-stack';
+      d.appendChild(stack);
+      log.appendChild(d);
+    }
+    const line = document.createElement('span');
+    line.className = 'bc-line' + (opts.tone === 'gold' ? ' bc-gold' : '');   // tone rides the LINE (a shared block can mix tones)
     const raw = String(text == null ? '' : text);
     const hi = opts.highlight ? String(opts.highlight) : '';
     const ix = hi ? raw.indexOf(hi) : -1;
@@ -1221,8 +1281,7 @@ const Chat = (() => {
     } else {
       line.appendChild(document.createTextNode(raw));
     }
-    d.appendChild(line);
-    log.appendChild(d);
+    stack.appendChild(line);
     autoscroll();
     // ASCII-motion (asciifx.js): the station line DECODES out of glyph-static — the eerie register the
     // broadcast asks for (a signal resolving, never a party). scramble walks leaf text nodes only, so the
@@ -1250,6 +1309,7 @@ const Chat = (() => {
      view (full args + result summary, length-capped). Cheap by design: a one-time fade-in per chip, no
      per-chip looping animation, and the expanded text is capped so a long run stays DOM-lean. */
   let toolRail = null;                 // the currently-open .tool-rail container (consecutive chips join it)
+  let runRails = [];                   // every rail this run opened — folded under the resolved summary on run end
   const pendingChips = new Map();      // callId -> chip element awaiting its result (for call→result folding)
   const CHIP_CAP = 600;                // cap on stored expand text length — a long run must not bloat the DOM
   const cap = s => { s = String(s == null ? '' : s); return s.length > CHIP_CAP ? s.slice(0, CHIP_CAP) + '…' : s; };
@@ -1285,6 +1345,7 @@ const Chat = (() => {
     if (toolRail && toolRail.isConnected) return toolRail;
     clearEmptyState();
     toolRail = document.createElement('div'); toolRail.className = 'tool-rail';
+    runRails.push(toolRail);   // remembered so resolvePresence can fold this run's machinery away
     log.appendChild(toolRail); autoscroll();
     return toolRail;
   }
@@ -3494,7 +3555,7 @@ const Chat = (() => {
         const skip = Dossier.DIM_KEYS.filter(k => k !== dim);   // ask ONLY this dimension (plan() returns just its question)
         Intake.start({
           skip: skip,
-          onCommit: b => { if (typeof DossierStore !== 'undefined') DossierStore.upsert(b.dim, { text: b.text, source: 'curiosity' }); if (typeof CuriosityStore !== 'undefined' && CuriosityStore.markAnswered) CuriosityStore.markAnswered(b.dim); briefingReceipt(b.dim); },   // R4: the answer visibly pays off — one provable "now in every agent's briefing" line (this was the ONE commit path with zero acknowledgment)
+          onCommit: b => { if (typeof DossierStore !== 'undefined') DossierStore.upsert(b.dim, { text: b.text, source: 'curiosity', weight: b.weight }); if (typeof CuriosityStore !== 'undefined' && CuriosityStore.markAnswered) CuriosityStore.markAnswered(b.dim); briefingReceipt(b.dim); },   // R4: the answer visibly pays off — one provable "now in every agent's briefing" line (this was the ONE commit path with zero acknowledgment). V3: b.weight rides through (a canned chip stays 'seed' — never opens the readiness gate)
           onDone: () => { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('commander'); },
           // LEAVING the curiosity-launched interview = the same "not now" wave-off: mark the dimension dismissed so it
           // isn't raised again this session (existing store, no new persistence — mirrors the choice-row "not now").
@@ -3505,6 +3566,22 @@ const Chat = (() => {
       }
     });
     activeNudge = { row: r.d, choiceRow: choiceRow, dim: dim };   // track both halves so a turn-in can retire the whole nudge
+  }
+
+  // V3 §7 HUNT MODE — the session-opener probe chip. Tapping it IS the consent, so it goes straight into
+  // the one-question intake for the next live dimension (no second "want to tell me?" ask). Shares every
+  // curiosity budget/anti-nag mark: the shown dim is tallied, an answer clears it, leaving marks it dismissed.
+  function startHuntAsk() {
+    if (typeof CuriosityStore === 'undefined' || typeof Intake === 'undefined' || typeof Dossier === 'undefined') return;
+    const dim = CuriosityStore.consider();
+    if (!dim) return;
+    CuriosityStore.markShown(dim);
+    Intake.start({
+      skip: Dossier.DIM_KEYS.filter(k => k !== dim),   // exactly this one question
+      onCommit: b => { if (typeof DossierStore !== 'undefined') DossierStore.upsert(b.dim, { text: b.text, source: 'curiosity', weight: b.weight }); if (typeof CuriosityStore !== 'undefined' && CuriosityStore.markAnswered) CuriosityStore.markAnswered(b.dim); briefingReceipt(b.dim); },
+      onDone: () => { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('commander'); },
+      onLeave: () => { if (typeof CuriosityStore !== 'undefined') CuriosityStore.markDismissed(dim); }
+    });
   }
   // a reusable GENTLE post-run beat (used by the ongoing-suggestion engine, suggeststore.js) — the same quiet
   // register as the curiosity nudge: a .nudge aside, never the lit .reply headline. text = the line; options =
@@ -5144,11 +5221,25 @@ const Chat = (() => {
     // streams — so it starts talking while the rest is still generating, instead of after the whole reply
     // is done + synthesized. spokenIdx tracks how much of `acc` we've already queued.
     let spokenIdx = 0, finalReply = '', titleOk = false;
+    let voiceQuestion = '';   // VOICE-AWARE CHOICES: the parsed FORK/TASK_QUESTION question — spoken naturally at reply end (options stay on-screen chips, never read aloud)
     let busyRefusal = null;   // race-time server mutex refusal: restore the directive instead of minting failed turns
     let goalJudgeReply = null;   // GOAL LOOP: set to the clean assistant reply when a turn should be judged; fired in finally
+    // VOICE-AWARE CHOICES: never let TTS read the FORK:/TASK_QUESTION: choice markers (they render as
+    // one-tap chips; spoken aloud they come out as "TASK QUESTION … pipe pipe …" + every option verbatim).
+    // speakSafe truncates the spoken view at the first marker LINE, and holds back a still-streaming
+    // partial prefix at the buffer tail ("TASK_QU…" hasn't matched yet but must not be flushed).
+    const SPEAK_MARKER = /(^|\n)\s*(?:FORK|TASK_QUESTION)\s*:/i;
+    const speakSafe = (s) => {
+      const m = SPEAK_MARKER.exec(s);
+      if (m) return s.slice(0, m.index);
+      const nl = s.lastIndexOf('\n');
+      const tail = s.slice(nl + 1).replace(/^\s+/, '').toUpperCase();
+      if (tail && tail.length <= 14 && ('TASK_QUESTION:'.startsWith(tail) || 'FORK:'.startsWith(tail))) return s.slice(0, nl + 1);
+      return s;
+    };
     const pushSpeech = (finalize, finalText) => {
       if (typeof Voice === 'undefined' || !willSpeak || !Voice.speakChunk) return;
-      const src = finalize ? (finalText || acc) : acc;
+      const src = speakSafe(finalize ? (finalText || acc) : acc);
       const pending = src.slice(spokenIdx);
       if (!pending) return;
       if (finalize) { if (pending.trim()) { Voice.speakChunk(pending, name); spokenIdx = src.length; } return; }
@@ -5272,6 +5363,7 @@ const Chat = (() => {
             if (clarificationRuns.size > 60) clarificationRuns.delete(clarificationRuns.values().next().value);
           }
           replyText = TaskIntent.strip(replyText);
+          if (taskQuestion.question) voiceQuestion = taskQuestion.question;   // spoken (question only, no options) at reply end
           if (isActiveWs(ws) && activeLiveRow && activeLiveRow.cleanTaskIntent) activeLiveRow.cleanTaskIntent();
         }
         finalReply = replyText;
@@ -5313,7 +5405,7 @@ const Chat = (() => {
         // one-tap chips at the run boundary; a malformed marker parses null and stays plain text.
         if (isActiveWs(ws) && replyText && typeof Fork !== 'undefined' && Fork.parse) {
           const fk = Fork.parse(replyText);
-          if (fk) offerFork(fk);
+          if (fk) { offerFork(fk); if (!voiceQuestion && fk.question) voiceQuestion = fk.question; }
         }
         // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
         // it arrives (onToken → pushSpeech) and flushed in the finally.
@@ -5431,7 +5523,13 @@ const Chat = (() => {
       if (titleOk && (firstTurn || (typeof Workstreams !== 'undefined' && Workstreams.needsModelTitle && Workstreams.needsModelTitle(ws.id)))) maybeRetitle(ws, text, finalReply);
       // flush any trailing spoken text and CLOSE the speech stream — the last chunk's end re-arms the
       // hands-free mic (this is the heartbeat for spoken turns; onTurnEnd covers silent/no-speech turns).
-      if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) { pushSpeech(true, finalReply); Voice.endReply(); }
+      if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) {
+        pushSpeech(true, finalReply);
+        // VOICE-AWARE CHOICES: the choice itself is spoken as a natural question — question text only;
+        // the 2-3 options are on-screen chips (reading them out was the "reads every option" glitch).
+        if (voiceQuestion && Voice.speakChunk) Voice.speakChunk('Quick question. ' + voiceQuestion, name);
+        Voice.endReply();
+      }
       // hands-free voice mode: the run is done — let Voice re-open the mic for the next turn.
       if (typeof Voice !== 'undefined' && Voice.onTurnEnd) Voice.onTurnEnd();
       // TYPE-AHEAD: the stream just freed — send its next queued follow-up (after this call fully unwinds).

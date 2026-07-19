@@ -30,6 +30,11 @@ global.U = { bus };
 let knownDims = ['goals', 'identity'];
 global.DossierStore = { summary: () => ({ known: knownDims, blank: [] }) };
 
+// V3 §6: the shared readiness gate. The store reads UnderstandingStore.readiness() FAIL-CLOSED (no read = no
+// pitch), so the fake mirrors the real API shape; tests flip `readyState` to drive the gate.
+let readyState = { ready: true, reasons: [] };
+global.UnderstandingStore = { readiness: () => readyState };
+
 // recipe fakes shaped like the REAL Recipes API: get() returns null for an unknown id; a recipe can carry
 // required params; requiredMissing() reports which required params lack a value (mirrors recipes.js).
 global.Recipes = {
@@ -88,6 +93,15 @@ A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: true, reaso
 knownDims = ['identity', 'stack'];
 A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: false, reason: 'missing:goals' }, 'cannot pitch without knowing the goal');
 knownDims = ['goals', 'identity'];
+
+/* ---------- V3 §6: the shared readiness gate, wired through decide ---------- */
+readyState = { ready: false, reasons: ['no-direction'] };
+A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: false, reason: 'not-ready:no-direction' }, 'a shut readiness gate structurally blocks the pitch (with the honest reason)');
+const savedUS = global.UnderstandingStore;
+global.UnderstandingStore = undefined;
+A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }).reason, 'not-ready:no-readiness-read', 'no readiness read = FAIL-CLOSED (a station that cannot prove readiness never advises)');
+global.UnderstandingStore = savedUS;
+readyState = { ready: true, reasons: [] };
 
 dlg._open = true;
 A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: false, reason: 'dialogue-open' }, 'never stomps an open Dialogue (awakening/tutorial)');
@@ -254,6 +268,26 @@ A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: true, reaso
     A.eq(await PitchStore.offerAtHandoff('demo-run'), false, 'a model hiccup at handoff resolves false (the tour falls back to its classic close)');
     A.eq(PitchStore._state().pitched, false, 'and the un-fired pitch stays ARMED for a later real task');
     delete deps.wasTaskRun;
+
+    /* ---------- V3 B10: the interview-grabbed first move — armed, persisted, offered ONCE at the floor ---------- */
+    {
+      clearFakes(); PitchStore.reset(); PitchStore.init(deps);
+      const nudges = [];
+      global.Chat = { nudge: (text, chips, cb) => { nudges.push({ text, chips, cb }); }, isBusy: () => false, clearNudge() {} };
+      PitchStore.armFirstMove('  draft your sponsor-brief replies each morning  ');
+      A.eq(PitchStore._state().firstMove, 'draft your sponsor-brief replies each morning', 'armFirstMove trims + persists the grabbed move');
+      readyState = { ready: false, reasons: ['no-direction'] };   // the grab outranks the gate — the Commander chose it
+      A.eq(await PitchStore.offerStarter(), true, 'the armed first move is offered even below the readiness gate');
+      A.eq(nudges.length, 1, 'exactly one nudge');
+      A.ok(/the move you picked at my wake/.test(nudges[0].text), 'the nudge names the interview grab, never a generated guess');
+      A.eq(hn.calls.length, 0, 'an armed move needs NO model call');
+      A.eq(PitchStore._state().firstMove, undefined, 'the armed move is consumed on offer (one-shot)');
+      nudges[0].cb({ value: 'run' });
+      A.eq(launchedDirective, 'draft your sponsor-brief replies each morning', '"run it" launches the grabbed move as a real directive');
+      A.eq(await PitchStore.offerStarter(), false, 'the floor never re-offers (starterDone spent)');
+      readyState = { ready: true, reasons: [] };
+      delete global.Chat;
+    }
 
     /* ---------- source-locks: tutorial.js wires the handoff honestly (browser IIFE — lock the source) ---------- */
     const tutSrc = require('fs').readFileSync(require('path').join(__dirname, '../frontend/app/tutorial.js'), 'utf8');

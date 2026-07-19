@@ -157,4 +157,35 @@ A.eq(new Set(ids).size, 3, 'hydrate re-issues duplicate/missing ids so all are u
 D.upsert(fixed, 'identity', { text: 'four' }, 9);
 A.eq(new Set(fixed.dims.identity.map(b => b.id)).size, 4, 'a post-hydrate add never collides with a re-issued id');
 
+/* ---------- V3 §5: evidence WEIGHT — the readiness gate's substrate ---------- */
+{
+  const d = D.fresh();
+  D.upsert(d, 'pain', { text: 'typed by the commander', source: 'onboarding' }, 10);
+  A.eq(d.dims.pain[0].weight, 'stated', 'a plain upsert defaults to weight stated (the Commander\'s words)');
+  D.upsert(d, 'goals', { text: 'a synthesized mission', source: 'onboarding', weight: 'synth' }, 11);
+  A.eq(d.dims.goals[0].weight, 'synth', 'a declared weight is honored');
+  D.upsert(d, 'stack', { text: 'observed from work', source: 'study', observedAt: 12 }, 12);
+  A.eq(d.dims.stack[0].weight, 'observed', 'a study/observed belief infers weight observed');
+  D.upsert(d, 'style', { text: 'bad weight', weight: 'nonsense' }, 13);
+  A.eq(d.dims.style[0].weight, 'stated', 'an invalid weight falls back to the honest inference, never stored raw');
+
+  // doc seeds carry weight 'seed' (they inform the prompt but never open the readiness gate)…
+  const d2 = D.fresh();
+  D.seedFromDocs(d2, { purpose: 'Help me write, debug, and ship software.' }, 20);
+  A.eq(d2.dims.goals[0].weight, 'seed', 'a doc-seeded belief is weight seed');
+  // …and the seed DEDUPES against an identical belief the interview already wrote (no duplicate prompt line).
+  const d3 = D.fresh();
+  D.upsert(d3, 'goals', { text: 'Ship the real thing.', source: 'onboarding', weight: 'synth' }, 30);
+  D.seedFromDocs(d3, { purpose: 'Ship the real thing.' }, 31);
+  A.eq(d3.dims.goals.length, 1, 'seedFromDocs dedupes an identical pre-written belief (no double line)');
+  A.eq(d3.dims.goals[0].weight, 'synth', 'the grounded belief survives; the seed adds nothing');
+  A.ok(d3.seededFrom.purpose, 'the doc still counts as seeded (first-seed-wins holds)');
+
+  // hydrate: a valid weight round-trips; a legacy record without one infers honestly.
+  const h = D.hydrate({ dims: { goals: [{ id: 'cd_1', text: 'kept', weight: 'seed' }], pain: [{ id: 'cd_2', text: 'legacy typed' }], stack: [{ id: 'cd_3', text: 'legacy observed', source: 'study', observedAt: 5 }] } });
+  A.eq(h.dims.goals[0].weight, 'seed', 'hydrate preserves a valid weight');
+  A.eq(h.dims.pain[0].weight, 'stated', 'hydrate infers stated for a legacy commander-authored record');
+  A.eq(h.dims.stack[0].weight, 'observed', 'hydrate infers observed for a legacy study record');
+}
+
 A.report('dossier.test');
