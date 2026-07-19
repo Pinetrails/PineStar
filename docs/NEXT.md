@@ -15,8 +15,14 @@ Full plan (Andrew-approved direction, wording in red-pen): `docs/ONBOARDING_V3_P
   ready:true. Gate 369/369 green (incl. new weight/readiness/starter-gate locks).
 - Also fixed pre-existing trunk gate red: opensource-readiness baseline 18→21 (3f6f5384 added 3
   reviewed fixture keys without bumping the lock).
-- OPEN: S3 interview v3 (beat script in the plan §3 — Andrew red-pens wording), S4 hunt mode,
-  S5 brain-gating + proof beat; merge ritual + W0 re-stamp at merge; exe rebuild after merge.
+- **S3 SHIPPED in-branch (`f06ebf05` + `3afc3ad2`, W0 restamped `6192c963`)**: the guided-discovery
+  meeting B0-B10 (fork / tuesday / generated dig with personalized chips / pain dig / lost-time / the
+  year / the MIRROR offers / thin-honest read / proof beat → PitchStore.armFirstMove). LIVE deep-path
+  walkthrough on :8819: 8 stated+synth beliefs, ready:true, 4 life-grounded mirror offers, first move
+  armed for the tour close. Trap fixed: first ceremony call needs the 40s ceiling (cold wire).
+- SUPERSEDED: `claude/onboarding-blitzproof-c268c1` (accidental sibling; covered by S1+S3) — tear down.
+- OPEN: S4 hunt mode, S5 brain-gating + first-brainReady interview offer; Andrew red-pen of the live
+  wording; merge ritual; exe rebuild after merge.
 
 ## 2026-07-18 — v0.5.3 CUT + PUBLISHED (Windows) — desktop exe rebuild CLOSED
 
