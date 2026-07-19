@@ -5144,11 +5144,25 @@ const Chat = (() => {
     // streams — so it starts talking while the rest is still generating, instead of after the whole reply
     // is done + synthesized. spokenIdx tracks how much of `acc` we've already queued.
     let spokenIdx = 0, finalReply = '', titleOk = false;
+    let voiceQuestion = '';   // VOICE-AWARE CHOICES: the parsed FORK/TASK_QUESTION question — spoken naturally at reply end (options stay on-screen chips, never read aloud)
     let busyRefusal = null;   // race-time server mutex refusal: restore the directive instead of minting failed turns
     let goalJudgeReply = null;   // GOAL LOOP: set to the clean assistant reply when a turn should be judged; fired in finally
+    // VOICE-AWARE CHOICES: never let TTS read the FORK:/TASK_QUESTION: choice markers (they render as
+    // one-tap chips; spoken aloud they come out as "TASK QUESTION … pipe pipe …" + every option verbatim).
+    // speakSafe truncates the spoken view at the first marker LINE, and holds back a still-streaming
+    // partial prefix at the buffer tail ("TASK_QU…" hasn't matched yet but must not be flushed).
+    const SPEAK_MARKER = /(^|\n)\s*(?:FORK|TASK_QUESTION)\s*:/i;
+    const speakSafe = (s) => {
+      const m = SPEAK_MARKER.exec(s);
+      if (m) return s.slice(0, m.index);
+      const nl = s.lastIndexOf('\n');
+      const tail = s.slice(nl + 1).replace(/^\s+/, '').toUpperCase();
+      if (tail && tail.length <= 14 && ('TASK_QUESTION:'.startsWith(tail) || 'FORK:'.startsWith(tail))) return s.slice(0, nl + 1);
+      return s;
+    };
     const pushSpeech = (finalize, finalText) => {
       if (typeof Voice === 'undefined' || !willSpeak || !Voice.speakChunk) return;
-      const src = finalize ? (finalText || acc) : acc;
+      const src = speakSafe(finalize ? (finalText || acc) : acc);
       const pending = src.slice(spokenIdx);
       if (!pending) return;
       if (finalize) { if (pending.trim()) { Voice.speakChunk(pending, name); spokenIdx = src.length; } return; }
@@ -5272,6 +5286,7 @@ const Chat = (() => {
             if (clarificationRuns.size > 60) clarificationRuns.delete(clarificationRuns.values().next().value);
           }
           replyText = TaskIntent.strip(replyText);
+          if (taskQuestion.question) voiceQuestion = taskQuestion.question;   // spoken (question only, no options) at reply end
           if (isActiveWs(ws) && activeLiveRow && activeLiveRow.cleanTaskIntent) activeLiveRow.cleanTaskIntent();
         }
         finalReply = replyText;
@@ -5313,7 +5328,7 @@ const Chat = (() => {
         // one-tap chips at the run boundary; a malformed marker parses null and stays plain text.
         if (isActiveWs(ws) && replyText && typeof Fork !== 'undefined' && Fork.parse) {
           const fk = Fork.parse(replyText);
-          if (fk) offerFork(fk);
+          if (fk) { offerFork(fk); if (!voiceQuestion && fk.question) voiceQuestion = fk.question; }
         }
         // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
         // it arrives (onToken → pushSpeech) and flushed in the finally.
@@ -5431,7 +5446,13 @@ const Chat = (() => {
       if (titleOk && (firstTurn || (typeof Workstreams !== 'undefined' && Workstreams.needsModelTitle && Workstreams.needsModelTitle(ws.id)))) maybeRetitle(ws, text, finalReply);
       // flush any trailing spoken text and CLOSE the speech stream — the last chunk's end re-arms the
       // hands-free mic (this is the heartbeat for spoken turns; onTurnEnd covers silent/no-speech turns).
-      if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) { pushSpeech(true, finalReply); Voice.endReply(); }
+      if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) {
+        pushSpeech(true, finalReply);
+        // VOICE-AWARE CHOICES: the choice itself is spoken as a natural question — question text only;
+        // the 2-3 options are on-screen chips (reading them out was the "reads every option" glitch).
+        if (voiceQuestion && Voice.speakChunk) Voice.speakChunk('Quick question. ' + voiceQuestion, name);
+        Voice.endReply();
+      }
       // hands-free voice mode: the run is done — let Voice re-open the mic for the next turn.
       if (typeof Voice !== 'undefined' && Voice.onTurnEnd) Voice.onTurnEnd();
       // TYPE-AHEAD: the stream just freed — send its next queued follow-up (after this call fully unwinds).
