@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "8214ca7dcaa718f2dcf922f49f34edbbcbef7d40",
+    "sourceCommit": "ee811e3a2c9e183ecf5529c71ee25b0ad3bc5b5b",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 408473,
-        "sha256": "169dc880f42b0077e1e3bd09907c772ff86897de1d34b34a5f990753b3943e48"
+        "bytes": 408900,
+        "sha256": "5a89ab790377f59a24b72e61c202f8bac05c6a3ca4ad7a9a8f46aec458498bfd"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -613,8 +613,8 @@
       },
       {
         "path": "frontend/app/starters.js",
-        "bytes": 6673,
-        "sha256": "148dd0b8c8c954520b7a0ce78e91f6a2e12054b7a9f322aecf2d62df0d57d050"
+        "bytes": 7374,
+        "sha256": "c3e2ef1860a4029eb60449502dc0c69ccae6d96973b6d62fe465d3c06f4b5e3e"
       },
       {
         "path": "frontend/app/stationbake.js",
@@ -1464,7 +1464,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/chat.js",
-          "needle": "openItBtn.textContent = '▶ Open it — try it in a tab'"
+          "needle": "openItBtn.textContent = '\u25b6 Open it \u2014 try it in a tab'"
         },
         {
           "kind": "contains",
@@ -1568,7 +1568,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/autonomy.js",
-          "needle": "run free toward my goals while i’m away"
+          "needle": "run free toward my goals while i\u2019m away"
         },
         {
           "kind": "contains",
