@@ -64,6 +64,23 @@ function fakeClassList() {
   A.ok(body.classList.contains('sn-fs'), 'fullscreen -> bar hidden (sn-fs)');
   A.eq(labels[labels.length - 1], 'Maximize', 'restored -> Maximize label');
 
+  // --- sn-fs flip re-announces layout: fixed trackers (#logo) hold stale pixel
+  //     coords because the class moves the topbar AFTER the resize event fired ---
+  {
+    let resizes = 0;
+    const win = {
+      Event: function (type) { this.type = type; },
+      dispatchEvent(ev) { if (ev && ev.type === 'resize') resizes++; }
+    };
+    const rzBody = { classList: fakeClassList(), ownerDocument: { defaultView: win } };
+    Titlebar.applyState({ maximized: false, fullscreen: true }, rzBody, null);
+    A.eq(resizes, 1, 'entering fullscreen dispatches a resize for fixed trackers');
+    Titlebar.applyState({ maximized: false, fullscreen: true }, rzBody, null);
+    A.eq(resizes, 1, 'same-state probe does NOT re-dispatch (no resize loop)');
+    Titlebar.applyState({ maximized: false, fullscreen: false }, rzBody, null);
+    A.eq(resizes, 2, 'exiting fullscreen re-announces too');
+  }
+
   // --- readState probes honestly: missing/broken probes read as false ---
   const s1 = await Titlebar.readState({ isMaximized: () => Promise.resolve(true), isFullscreen: () => Promise.resolve(false) });
   A.eq(s1.maximized, true, 'isMaximized true flows through');

@@ -3860,7 +3860,11 @@ async function runNightshiftActShift(opts) {
     try { await workshopStore.releaseClaim(agentId, runId, { failed: true }); } catch (_) {}
     return { delivered: false, reason: threw ? 'run-failed' : 'no-manifest', runId };
   }
-  try { await workshopStore.markBuilt(agentId, backlogId, runId); } catch (_) {}
+  // the build-landed moment (manifest just disk-validated) — stamped durably on the backlog item AND onto the
+  // emitted manifest, so every surface (rail session, /pending, /deliverables) shows the REAL production time.
+  const builtAt = Date.now();
+  try { await workshopStore.markBuilt(agentId, backlogId, runId, builtAt); } catch (_) {}
+  manifest.builtAt = builtAt;
   recordNightshiftAct(runId, sel.selected.archetype, sel.selected.threadId);   // so a keep/discard verdict feeds the RIGHT archetype into LEARN (+ NS-6: delivers/declines the cited thread)
   // WHY-THIS: the card's provenance line — the grounding-veto-checked GROUNDS quote this job was selected on.
   manifest.because = workshopBecause({ grounds: sel.selected.grounds, detail: sel.selected.spec, title: manifest.title });
@@ -6486,7 +6490,10 @@ async function runWorkshopShift(agentId, opts) {
     noteShift({ reason: threw ? 'run-failed' : 'no-manifest', runId: runId, title: item.title, parkedTitle: (rel && rel.parked) ? (rel.parked.title || rel.parked.id) : undefined });
     return { fired: true, runId: runId, reason: threw ? 'run-failed' : 'no-manifest', parked: !!(rel && rel.parked) };
   }
-  await workshopStore.markBuilt(id, item.id, runId);
+  // the build-landed moment (manifest just disk-validated) — durable on the item + rides the manifest out.
+  const wsBuiltAt = Date.now();
+  await workshopStore.markBuilt(id, item.id, runId, wsBuiltAt);
+  manifest.builtAt = wsBuiltAt;
   noteShift({ reason: 'built', runId: runId, title: manifest.title });
   // WHY-THIS: the card's provenance line, from the REAL backlog ask that queued this build.
   manifest.because = workshopBecause(item);
@@ -6720,7 +6727,10 @@ function lifecycleRow(status, agentId, runId, item, man) {
   return {
     id: 'workshop:' + agentId + ':' + runId, agentId, runId,
     title: man.title || item.title || 'Workshop deliverable', source: item.source || 'workshop', status,
-    kind: man.kind || 'files', summary: man.summary || '', files: man.files || [], createdAt: item.ts || Date.now()
+    kind: man.kind || 'files', summary: man.summary || '', files: man.files || [],
+    // timestamp honesty: created = when the deliverable was BUILT (item.builtAt / manifest stamp), never the
+    // queue time when one exists. A failed build never landed, so its row honestly falls to the queue ts.
+    createdAt: Number(item.builtAt) > 0 ? Number(item.builtAt) : (Number(man.builtAt) > 0 ? Number(man.builtAt) : (item.ts || Date.now()))
   };
 }
 async function deliverableRows() {
@@ -6749,7 +6759,11 @@ async function deliverableRows() {
         const id = 'workshop:' + agentId + ':' + item.builtRunId; if (seen.has(id)) continue;
         const man = await validateWorkshopManifest(agentId, item.builtRunId); if (!man) continue;
         const files = man.files.map(f => deliverableFile(agentId, item.builtRunId, f, true));
-        rows.push({ id, agentId, runId: item.builtRunId, title: man.title, source: item.source || 'workshop', status: 'pending', kind: man.kind || 'files', summary: man.summary || '', files, size: deliverableSize(files), createdAt: item.ts || 0, updatedAt: item.ts || 0, actions: { open: files.length > 0, keep: true, discard: true } });
+        // timestamp honesty: a pending row's created/updated = when the build LANDED (builtAt, with the run
+        // record's end time as the legacy fallback), never the queue time — the old item.ts made an
+        // overnight build sort and display as if it were days old (or, post-undo, freshly re-queued).
+        const bts = workshopBuiltAtOf(item) || item.ts || 0;
+        rows.push({ id, agentId, runId: item.builtRunId, title: man.title, source: item.source || 'workshop', status: 'pending', kind: man.kind || 'files', summary: man.summary || '', files, size: deliverableSize(files), createdAt: bts, updatedAt: bts, actions: { open: files.length > 0, keep: true, discard: true } });
         seen.add(id);
       } else if ((Number(item.attempts) || 0) >= 2) {
         const id = 'workshop-failed:' + agentId + ':' + item.id; if (seen.has(id)) continue;
@@ -6844,6 +6858,19 @@ async function handleWorkshopRemove(req, res) {
   return json(404, { ok: false, error: 'that idea is no longer on the queue' });
 }
 
+// the honest "when was this built" for a backlog item (timestamp-honesty law): the durable builtAt stamp;
+// for items built before the stamp existed, the run record's end time (runStore ts — stamped at the real
+// run completion in runOnce's finally); else 0 — never the queue time, never "now".
+function workshopBuiltAtOf(item) {
+  if (item && Number(item.builtAt) > 0) return Number(item.builtAt);
+  const rid = item && item.builtRunId;
+  if (!rid) return 0;
+  try {
+    const row = runStore.list(null, { limit: 1000 }).find(r => String(r.runId) === String(rid));
+    return (row && Number(row.ts)) || 0;
+  } catch (_) { return 0; }
+}
+
 // GET /api/workshop/pending?agent=<id> — undecided deliverable manifests (built, not yet kept/discarded/dismissed).
 // Reads each built item's on-disk manifest (re-validated so a wiped/edited dir never shows a phantom deliverable).
 async function handleWorkshopPending(req, res) {
@@ -6861,6 +6888,7 @@ async function handleWorkshopPending(req, res) {
     try { man.implementPlan = workshopImplementPlan(man); } catch (_) {}
     // WHY-THIS: provenance from the REAL backlog item that queued this build (grounds quote, else the ask detail).
     try { man.because = workshopBecause(it); } catch (_) {}
+    man.builtAt = workshopBuiltAtOf(it);   // when the build actually landed — the frontend session stamps from THIS
     out.push(man);
   }
   json(200, { ok: true, agentId: agentId, pending: out });
@@ -7116,7 +7144,10 @@ async function handleWorkshopUndo(req, res) {
   // FLIP DURABLE STATE BACK → pending: re-list the built item under /pending so the Commander can decide again.
   let restored = false;
   try {
-    const r = await workshopStore.restorePending(agentId, runId, { backlogId: (man && man.backlogId) || '', title: (man && man.title) || keptRow.title, source: keptRow.source }, Date.now());
+    // timestamp honesty: the restored pending item keeps its ORIGINAL build time (run record end time, else
+    // the kept row's created stamp) — an undo relocates the copy, it does not re-produce the work.
+    const origBuiltAt = workshopBuiltAtOf({ builtRunId: runId }) || Number(keptRow.createdAt) || 0;
+    const r = await workshopStore.restorePending(agentId, runId, { backlogId: (man && man.backlogId) || '', title: (man && man.title) || keptRow.title, source: keptRow.source, builtAt: origBuiltAt }, Date.now());
     restored = !!(r && r.restored);
   } catch (_) {}
   // No workshop.decided emit: undo is not one of the enum'd decisions (keep|discard|later) on the OWNED bus
@@ -7482,6 +7513,11 @@ async function handleRun(req, res) {
   catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }   // over-limit already answered 413
   const { model, system, messages = [], agentId = 'agent', isTask = false, provider, fallbackModels, fallbackProviders } = body || {};
   const recurring = !!(body && body.recurring);   // the browser's mint detector saw this task SHAPE before → salience boost for reflection
+  // REASON-ONLY SELF-TALK (retitle / goal-judge / pitch / autopilot): the caller composed a complete strict-format
+  // prompt and parses the raw reply. runOnce keeps that system prompt VERBATIM (no manual/capability/skill/memory
+  // dressing — which buries a "reply with ONLY a 3-6 word title" instruction and makes models answer chattily),
+  // and the away clock is never stamped for it: agent self-talk is not user presence (NS away-detection contract).
+  const internal = !!(body && body.internal);
   const runProvider = normalizeProvider(provider);
   const reasoningEffort = resolveReasoningEffort(runProvider, body && (body.reasoningEffort || body.reasoning_effort || (body.reasoning && body.reasoning.effort)));
   const preloadSkills = Array.isArray(body && body.preloadSkills) ? body.preloadSkills.map(s => String(s || '').trim()).filter(Boolean).slice(0, 8) : [];
@@ -7541,7 +7577,7 @@ async function handleRun(req, res) {
   // night-shift driver treats the Commander as PRESENT. Cron/workshop/night-shift runs go through runOnce with
   // surface:'autonomous' and NEVER reach this route, so they can't reset the away clock (which would make the
   // station perpetually think the user is here and never run the night shift).
-  noteUserActivity(Date.now());
+  if (!internal) noteUserActivity(Date.now());   // self-talk is machine-triggered — it must not read as presence
   const pending = new Map();          // promptId -> finish(decision); the consent prompts awaiting a human
   pendingByRun.set(runId, pending);
   const pendingSummon = new Map();    // requestId -> finish(newAgentId|null); the team.summon requests awaiting the browser
@@ -7624,7 +7660,7 @@ async function handleRun(req, res) {
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
       key, model, system: projectLine ? (String(system || '') + projectLine) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
-      emit, signal: ac.signal, runId, trigger: 'directive',
+      emit, signal: ac.signal, runId, trigger: 'directive', internal,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
 
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
@@ -7645,7 +7681,7 @@ async function handleRun(req, res) {
   } finally {
     runs.delete(runId);
     runsMeta.delete(runId);
-    noteUserActivity(Date.now());       // the away clock starts when the user's run ENDS, not when it started (a long run must not read as absence)
+    if (!internal) noteUserActivity(Date.now());   // the away clock starts when the user's run ENDS, not when it started (a long run must not read as absence); self-talk never stamps it
     dropSteer(runId, 'handleRun');      // drop any un-drained steering notes so they can't leak to a later run; logs a count if non-empty
     grantsSession.delete(runId);     // drop this run's session-scoped grants
     const p = pendingByRun.get(runId);   // deny any prompt still open (belt-and-suspenders; the loop normally awaits)
@@ -7666,6 +7702,7 @@ async function handleRun(req, res) {
    `prompt` for the watched browser; 'autonomous' (default-deny on ungranted mutation) for a headless chat. */
 async function runOnce(o) {
   const { key, system, messages = [], agentId = 'agent', signal, runId } = o;
+  const internal = !!o.internal;   // reason-only self-talk: system prompt stays VERBATIM, no memory/transcript injection
   let isTask = !!o.isTask;
   // A short channel reply such as "operators" is not independently task-shaped. Durable brief continuity is
   // stronger evidence than the generic classifier, so resume it as task work without asking the user to restate it.
@@ -8461,14 +8498,20 @@ async function runOnce(o) {
       if (b) serviceKeysBlock = '\n\n' + b;
     }
   } catch (_) { serviceKeysBlock = ''; }
-  const sys = withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
+  // INTERNAL (reason-only self-talk): the caller's strict-format instruction IS the whole prompt. Appending the
+  // operator manual / capability summary / skill catalog here buried "reply with ONLY a 3-6 word title" under
+  // pages of station doctrine and made models answer as a chatty station agent — the parser then rejected the
+  // reply, so e.g. session titles silently stayed on their first-words placeholder.
+  const sys = internal
+    ? String(system || '')
+    : withQuests((system || '') + runtimeBlock + toolNote + teamNote + manualBlock + summarizeCapabilities(resolved, { surface }) + skillBlock + runtimeSkillBlock + preloadedSkillBlock + serviceKeysBlock + taskIntentNote, questsBlock);   // ground-truth caps + task-context doctrine share the one final prompt seam
   // H1.2: bulletproof resume — if this run arrives with NO prior history (a fresh restart whose browser save was
   // wiped, or any caller that only sent the new directive) AND it names an explicit workstream, seed the
   // conversation from the durable server transcript so the agent remembers the dialogue. Never overrides real
   // history the caller already supplied; gated to an explicit streamId (the global catch-all is not auto-seeded).
   let convo = messages;
   try {
-    if (streamId && Array.isArray(messages) && messages.filter(m => m && m.role !== 'system').length <= 1) {
+    if (!internal && streamId && Array.isArray(messages) && messages.filter(m => m && m.role !== 'system').length <= 1) {
       const seed = transcriptStore.reconstruct(streamId, { limit: 100 });
       if (seed.length) convo = seed.concat(messages);   // prior dialogue first, the new directive stays last
     }
@@ -8479,7 +8522,9 @@ async function runOnce(o) {
   // message, and emit memory.used per surfaced record (-> useCount/trust + the XP reuse path). The recency
   // floor keeps recent notes recallable on an off-topic turn (no M-mem.1 regression). Empty notebook =>
   // nothing injected (byte-identical to a memoryless run). Never fails the run.
-  try {
+  // internal self-talk never receives the memory fence — and must not bump useCount/recency on stored records
+  // (a title call crediting memory.used would fake the Memory Core stats).
+  if (!internal) try {
     const stored = notebookStore.get('notebook:' + agentId);
     const recs = Array.isArray(stored) ? stored : [];
     let q = '';

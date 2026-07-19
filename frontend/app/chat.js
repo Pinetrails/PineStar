@@ -234,6 +234,7 @@ const Chat = (() => {
   }
   function startPresence(ws) {
     presenceCurTool = null;
+    runRails = [];   // a fresh run folds only ITS OWN rails — never an earlier run's history
     if (isActiveWs(ws)) { renderPresence(); ensureElapsedTimer(); }   // the elapsed tick also drives the presence update
   }
   function presenceToolCall(ws, name) { presenceCurTool = name || null; if (isActiveWs(ws)) renderPresence(); }
@@ -258,8 +259,38 @@ const Chat = (() => {
     if (dur) bits.push(dur);
     if (typeof opts.steps === 'number' && opts.steps > 0) bits.push(opts.steps + (opts.steps === 1 ? ' step' : ' steps'));
     if (typeof opts.cost === 'number' && opts.cost > 0) bits.push(U.usd(opts.cost));
-    card.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
-    card.setAttribute('role', 'note');
+    // TWO-TIER TRANSCRIPT: the run's tool rails FOLD under this resolved line so the machinery recedes
+    // and the speech stays contiguous. The rails are MOVED, never deleted — the full work log is one
+    // click away (truthful telemetry intact, just collapsed).
+    const rails = runRails.filter(r => r && r.isConnected && r.childElementCount > 0);
+    runRails = [];
+    const tools = rails.reduce((n, r) => n + r.childElementCount, 0);
+    if (tools > 0) bits.push(tools + (tools === 1 ? ' tool' : ' tools'));
+    card.textContent = '';
+    const sum = document.createElement('span'); sum.className = 'cp-sum';
+    sum.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
+    card.appendChild(sum);
+    if (rails.length) {
+      const chev = document.createElement('span'); chev.className = 'cp-chev'; chev.setAttribute('aria-hidden', 'true'); chev.textContent = '▸';
+      card.appendChild(chev);
+      const fold = document.createElement('div'); fold.className = 'run-fold'; fold.hidden = true;
+      rails.forEach(r => fold.appendChild(r));
+      card.parentNode.insertBefore(fold, card.nextSibling);
+      card.classList.add('has-fold');
+      card.setAttribute('role', 'button'); card.tabIndex = 0; card.setAttribute('aria-expanded', 'false');
+      const toggle = () => {
+        const open = card.classList.toggle('open');
+        fold.hidden = !open;
+        card.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+      card.addEventListener('click', toggle);
+      card.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
+      // ERROR HONESTY: a FAILED run's work log self-exposes — collapsing machinery is for successes;
+      // when something broke the evidence must not hide behind a click.
+      if (isErr) toggle();
+    } else {
+      card.setAttribute('role', 'note');
+    }
     autoscroll();
   }
   // POST-RUN DEDUPE: when a recap card is about to render (it owns cost · duration · model + the artifact list),
@@ -268,8 +299,9 @@ const Chat = (() => {
   function foldPresenceIntoRecap() {
     const card = log && log.querySelector('#comms-presence.resolved');
     if (!card) return;
-    const label = String(card.textContent || '').split(' · ')[0];
-    if (label && card.textContent !== label) card.textContent = label;
+    const tgt = card.querySelector('.cp-sum') || card;   // metrics live in the summary span (the fold chevron survives)
+    const label = String(tgt.textContent || '').split(' · ')[0];
+    if (label && tgt.textContent !== label) tgt.textContent = label;
   }
 
   // CRASH HONESTY (Theme 2) — after a run stream died on a network drop, poll /api/health until the sidecar is
@@ -978,9 +1010,17 @@ const Chat = (() => {
     // returning = any OTHER session ever had a real row, or anything was ever launched from the catalog.
     // (maybeEmptyState only renders when the ACTIVE session is empty, so it can't vouch for itself.)
     let returning = recent.length > 0;
+    // sessions = the OTHER titled sessions with real history, newest first — the engine's earned
+    // context for the "next step: <title>" chip. Same fail-open stance as every other signal.
+    let sessions = [];
     try {
-      if (!returning && typeof Workstreams !== 'undefined' && Workstreams.list) {
-        returning = (Workstreams.list() || []).some(w => w && w !== activeWs && w.history && w.history.length > 0);
+      if (typeof Workstreams !== 'undefined' && Workstreams.list) {
+        const others = (Workstreams.list() || []).filter(w => w && w !== activeWs && w.history && w.history.length > 0);
+        returning = returning || others.length > 0;
+        sessions = others
+          .filter(w => w.title)
+          .sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0))
+          .map(w => ({ title: w.title, at: w.lastActiveAt || 0 }));
       }
     } catch (_) {}
     const now = new Date();
@@ -991,7 +1031,7 @@ const Chat = (() => {
     // exists (consider() honors dismissed/stop-forever/session budget, so a worn-out bank offers nothing).
     let hunt = false;
     try { hunt = !ready && typeof CuriosityStore !== 'undefined' && !!CuriosityStore.consider(); } catch (_) {}
-    const sig = { recipes, recent, valuesOf, returning, hour: now.getHours(), day: Math.floor(now.getTime() / 86400000), ready, hunt };
+    const sig = { recipes, recent, valuesOf, returning, sessions, hour: now.getHours(), ready, hunt };
     if (typeof Starters !== 'undefined' && Starters.pick) {
       try { const out = Starters.pick(sig); if (out && out.length) return out; } catch (_) {}
     }
@@ -1210,10 +1250,22 @@ const Chat = (() => {
     opts = opts || {};
     lastBroadcastAt = Date.now();
     clearEmptyState();
-    const d = document.createElement('div');
-    d.className = 'cmsg broadcast' + (opts.tone === 'gold' ? ' broadcast-gold' : '');
-    d.setAttribute('role', 'status');   // a live-region system line for AT (it renders no speaker chip)
-    const line = document.createElement('span'); line.className = 'bc-line';
+    // COALESCE INTO ONE BLOCK: consecutive station lines share a single broadcast row (a centered stack
+    // inside the same hairline chrome) instead of each claiming a full transcript row — four trophies
+    // land as one quiet moment, not four rows wedged between the Commander and their agent.
+    let d = null, stack = null;
+    const last = log.lastElementChild;
+    if (last && last.classList && last.classList.contains('broadcast')) { d = last; stack = d.querySelector('.bc-stack'); }
+    if (!d || !stack) {
+      d = document.createElement('div');
+      d.className = 'cmsg broadcast' + (opts.tone === 'gold' ? ' broadcast-gold' : '');
+      d.setAttribute('role', 'status');   // a live-region system line for AT (it renders no speaker chip)
+      stack = document.createElement('span'); stack.className = 'bc-stack';
+      d.appendChild(stack);
+      log.appendChild(d);
+    }
+    const line = document.createElement('span');
+    line.className = 'bc-line' + (opts.tone === 'gold' ? ' bc-gold' : '');   // tone rides the LINE (a shared block can mix tones)
     const raw = String(text == null ? '' : text);
     const hi = opts.highlight ? String(opts.highlight) : '';
     const ix = hi ? raw.indexOf(hi) : -1;
@@ -1229,8 +1281,7 @@ const Chat = (() => {
     } else {
       line.appendChild(document.createTextNode(raw));
     }
-    d.appendChild(line);
-    log.appendChild(d);
+    stack.appendChild(line);
     autoscroll();
     // ASCII-motion (asciifx.js): the station line DECODES out of glyph-static — the eerie register the
     // broadcast asks for (a signal resolving, never a party). scramble walks leaf text nodes only, so the
@@ -1258,6 +1309,7 @@ const Chat = (() => {
      view (full args + result summary, length-capped). Cheap by design: a one-time fade-in per chip, no
      per-chip looping animation, and the expanded text is capped so a long run stays DOM-lean. */
   let toolRail = null;                 // the currently-open .tool-rail container (consecutive chips join it)
+  let runRails = [];                   // every rail this run opened — folded under the resolved summary on run end
   const pendingChips = new Map();      // callId -> chip element awaiting its result (for call→result folding)
   const CHIP_CAP = 600;                // cap on stored expand text length — a long run must not bloat the DOM
   const cap = s => { s = String(s == null ? '' : s); return s.length > CHIP_CAP ? s.slice(0, CHIP_CAP) + '…' : s; };
@@ -1293,6 +1345,7 @@ const Chat = (() => {
     if (toolRail && toolRail.isConnected) return toolRail;
     clearEmptyState();
     toolRail = document.createElement('div'); toolRail.className = 'tool-rail';
+    runRails.push(toolRail);   // remembered so resolvePresence can fold this run's machinery away
     log.appendChild(toolRail); autoscroll();
     return toolRail;
   }
@@ -1974,11 +2027,11 @@ const Chat = (() => {
     const onRated = (opts && opts.onRated) || (() => {});
     // session-open coordination: never collide with a live run, the awakening/interview, a focused
     // panel, an open turn-in deck, or a live gentle beat (incl. the autopilot welcome-back nudge).
-    const blocked = isBusy() || interview || activeTurnin || activeNudge
+    const blocked = isBusy() || interview || activeTurnin || activeNudge || taskQuestionLive()
       || (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning())
       || (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning())
       || (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen());
-    if (blocked) {   // defer — a gate is up (interview / focused panel / live turn-in / welcome-back nudge).
+    if (blocked) {   // defer — a gate is up (interview / focused panel / live turn-in / welcome-back nudge / unanswered task question).
       // "deferred" must NEVER become "lost": the crates are already pending in the OUTBOX (ReturnStore
       // folded them before this beat), but the digest beat itself keeps waiting for a free moment.
       // Fast cadence (7s) while the moment is likely to free soon, then a low-frequency retry (60s) that
@@ -2096,7 +2149,7 @@ const Chat = (() => {
     // stop (no retry) — chat.js load() re-fires WorkshopStore.presentFor when the Commander comes back.
     const inOwnSession = () => !opts.sessionId || !!(activeWs && activeWs.id === opts.sessionId);
     if (!inOwnSession()) return;
-    const blocked = isBusy() || interview || activeTurnin || activeNudge
+    const blocked = isBusy() || interview || activeTurnin || activeNudge || taskQuestionLive()
       || (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning())
       || (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning())
       || (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen());
@@ -2735,6 +2788,7 @@ const Chat = (() => {
   // the conversation as the Commander's next message so the task proceeds with it. "you decide" banks
   // nothing and hands the choice back. One fork per reply by construction (parse reads the first marker).
   function offerFork(fk) {
+    clearNudge();   // same law as offerTaskQuestion: the fork claims the moment; a live nudge leaves WITH its chips
     const items = fk.options.map(o => ({ label: o, value: o }));
     items.push({ label: 'you decide', value: '', skip: true });
     const q = row('agent'); q.d.classList.add('nudge');
@@ -2762,7 +2816,17 @@ const Chat = (() => {
 
   // A task-specific decision resumes the sidecar-owned brief. It is deliberately NOT banked into the global dossier.
   let pendingTaskQuestion = null;
+  // Is an unanswered Task Brief question up on the DISPLAYED stream? The run itself stopped to ask it, so it
+  // OWNS the COMMS moment: no gentle beat (curiosity / suggestion / north-star / quest-attest nudge) may claim
+  // the slot while it waits — nudge()'s choices() would clearChoices() the question's own answer chips, leaving
+  // the question as dead text and forcing the Commander to re-ask the task (live-caught 2026-07-19). Cleared by
+  // the next send() on that stream (answering OR typing anything releases the moment).
+  function taskQuestionLive() {
+    return !!(pendingTaskQuestion && activeWs && pendingTaskQuestion.streamId === activeWs.id);
+  }
   function offerTaskQuestion(tq) {
+    clearNudge();   // the question CLAIMS the moment: a live gentle nudge leaves whole (prompt + chips) — its chip
+                    // row would be wiped by choices() below anyway, and a stuck activeNudge would mute beats forever
     pendingTaskQuestion = Object.assign({}, tq, { streamId: activeWs && activeWs.id });
     // The host-validated recommended default (brief_ask path) gets the gold suggested chip + a one-line why.
     // A marker-path question stores no recommendation, so rec resolves empty and this renders plain chips.
@@ -3479,6 +3543,7 @@ const Chat = (() => {
   }
   function curiosityNudge(dim) {
     if (!log) return;
+    if (taskQuestionLive()) return;   // an unanswered task question owns the moment — never steal its answer chips
     clearNudge();   // one gentle beat at a time: retire any prior unanswered nudge before this one (no cross-run stacking)
     const r = row('agent'); r.d.classList.add('nudge');   // a quiet aside, NOT the lit headline (.reply) — it was reading as a 2nd reply
     r.body.textContent = '✦ one curious thing — i still don’t know your ' + dimLabel(dim).toLowerCase() + '. want to tell me? it sharpens how every agent here works for you.';
@@ -3523,6 +3588,7 @@ const Chat = (() => {
   // [{label,value,skip}]; onPick(item) fires on a choice (the choice row removes itself on pick).
   function nudge(text, options, onPick) {
     if (!log) return null;
+    if (taskQuestionLive()) return null;   // a pending task question owns the moment
     clearNudge();   // one gentle beat at a time: retire any prior unanswered nudge before this one (no cross-run stacking)
     const r = row('agent'); r.d.classList.add('nudge');
     r.body.textContent = String(text == null ? '' : text);
@@ -3573,6 +3639,7 @@ const Chat = (() => {
     // any live/in-flight ask beat owns the moment — the aside must stand down (drop).
     if (isBusy() || interview) return true;
     if (activeNudge) return true;                                   // a gentle suggestion/curiosity beat is up
+    if (taskQuestionLive()) return true;                            // an unanswered task question owns the moment (its chips are live)
     if (activeTurnin || turninQueue.length) return true;            // a memory-review deck is live/queued
     if (typeof studyBusy === 'function' && studyBusy()) return true;// a study card is visible
     if (beatSlot && beatSlot.visibleBeat()) return true;            // the arbiter says a beat holds the slot
@@ -3763,6 +3830,7 @@ const Chat = (() => {
     if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return false;
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return false;     // a focused panel is up
     if (activeNudge) return false;                                                                  // a gentle beat is already live — one at a time
+    if (taskQuestionLive()) return false;   // a pending task question owns the moment
     if (typeof CuriosityStore === 'undefined') return false;
     const dim = CuriosityStore.consider();                                                          // null once the session cap is spent / nothing live to ask
     if (!dim) return false;
@@ -4253,6 +4321,7 @@ const Chat = (() => {
   function goalBlocked(ws) {
     if (interview) return true;
     if (activeTurnin || activeNudge || studyBusy() || threadBusy()) return true;   // a visible review/beat is up
+    if (taskQuestionLive()) return true;   // an unanswered task question is up — the human decides it before the loop piles on
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return true;
     if (ws && typeof Channels !== 'undefined' && Channels.pendingOf && Channels.pendingOf(ws.id)) return true;   // a tool approval is pending
     return false;
@@ -5152,11 +5221,25 @@ const Chat = (() => {
     // streams — so it starts talking while the rest is still generating, instead of after the whole reply
     // is done + synthesized. spokenIdx tracks how much of `acc` we've already queued.
     let spokenIdx = 0, finalReply = '', titleOk = false;
+    let voiceQuestion = '';   // VOICE-AWARE CHOICES: the parsed FORK/TASK_QUESTION question — spoken naturally at reply end (options stay on-screen chips, never read aloud)
     let busyRefusal = null;   // race-time server mutex refusal: restore the directive instead of minting failed turns
     let goalJudgeReply = null;   // GOAL LOOP: set to the clean assistant reply when a turn should be judged; fired in finally
+    // VOICE-AWARE CHOICES: never let TTS read the FORK:/TASK_QUESTION: choice markers (they render as
+    // one-tap chips; spoken aloud they come out as "TASK QUESTION … pipe pipe …" + every option verbatim).
+    // speakSafe truncates the spoken view at the first marker LINE, and holds back a still-streaming
+    // partial prefix at the buffer tail ("TASK_QU…" hasn't matched yet but must not be flushed).
+    const SPEAK_MARKER = /(^|\n)\s*(?:FORK|TASK_QUESTION)\s*:/i;
+    const speakSafe = (s) => {
+      const m = SPEAK_MARKER.exec(s);
+      if (m) return s.slice(0, m.index);
+      const nl = s.lastIndexOf('\n');
+      const tail = s.slice(nl + 1).replace(/^\s+/, '').toUpperCase();
+      if (tail && tail.length <= 14 && ('TASK_QUESTION:'.startsWith(tail) || 'FORK:'.startsWith(tail))) return s.slice(0, nl + 1);
+      return s;
+    };
     const pushSpeech = (finalize, finalText) => {
       if (typeof Voice === 'undefined' || !willSpeak || !Voice.speakChunk) return;
-      const src = finalize ? (finalText || acc) : acc;
+      const src = speakSafe(finalize ? (finalText || acc) : acc);
       const pending = src.slice(spokenIdx);
       if (!pending) return;
       if (finalize) { if (pending.trim()) { Voice.speakChunk(pending, name); spokenIdx = src.length; } return; }
@@ -5280,6 +5363,7 @@ const Chat = (() => {
             if (clarificationRuns.size > 60) clarificationRuns.delete(clarificationRuns.values().next().value);
           }
           replyText = TaskIntent.strip(replyText);
+          if (taskQuestion.question) voiceQuestion = taskQuestion.question;   // spoken (question only, no options) at reply end
           if (isActiveWs(ws) && activeLiveRow && activeLiveRow.cleanTaskIntent) activeLiveRow.cleanTaskIntent();
         }
         finalReply = replyText;
@@ -5321,7 +5405,7 @@ const Chat = (() => {
         // one-tap chips at the run boundary; a malformed marker parses null and stays plain text.
         if (isActiveWs(ws) && replyText && typeof Fork !== 'undefined' && Fork.parse) {
           const fk = Fork.parse(replyText);
-          if (fk) offerFork(fk);
+          if (fk) { offerFork(fk); if (!voiceQuestion && fk.question) voiceQuestion = fk.question; }
         }
         // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
         // it arrives (onToken → pushSpeech) and flushed in the finally.
@@ -5346,7 +5430,14 @@ const Chat = (() => {
         if (isActiveWs(ws)) resolvePresence(ws, { endReason: taskQuestion ? 'done' : endReason, cutShort: cutShort, steps: runToolsOk, cost: runCost });
         // WORK VISIBILITY: a passive recap of what this run PRODUCED, fetched from the run's recorded
         // artifacts ledger. A report, not an ask — it never claims the post-run beat slot. Fire-and-forget.
-        if (thisRunId) renderRunRecap(ws, thisRunId, Date.now() - wiPlacedTs);
+        // DURATION HONESTY (2026-07-19): the recap's "RUN COMPLETE · M:SS" reads Channels.elapsedOf — the
+        // same confirmed-start, approval-pauses-excluded clock the live COMMS timer shows — never the raw
+        // send-click→teardown span (which silently counted connect latency + time paused waiting on YOU).
+        // Read before the finally's Channels.end tears the channel down; 0/absent → the old span fallback.
+        if (thisRunId) {
+          const honestMs = (typeof Channels !== 'undefined' && Channels.elapsedOf) ? Channels.elapsedOf(ws.id, Date.now()) : 0;
+          renderRunRecap(ws, thisRunId, honestMs > 0 ? honestMs : (Date.now() - wiPlacedTs));
+        }
       }
     } catch (e) {
       const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || e)));
@@ -5425,12 +5516,20 @@ const Chat = (() => {
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
       capHistory(ws);   // E3: bound the stored thread AFTER this turn's assistant reply landed, before it persists
       if (onTurn) onTurn();
-      // FIRST-TURN TITLE: replace the instant first-sentence placeholder with a model-written summary. Quiet
+      // TITLE UPGRADE: replace the instant first-sentence placeholder with a model-written summary. Quiet
       // (internal call, off the floor/telemetry) and fire-and-forget so it never delays this turn's teardown.
-      if (firstTurn && titleOk) maybeRetitle(ws, text, finalReply);
+      // Not first-turn-only: a stream still wearing its machine placeholder (first attempt hiccuped, or the
+      // session was saved by a pre-upgrade build) retries on this completed turn (needsModelTitle gates it).
+      if (titleOk && (firstTurn || (typeof Workstreams !== 'undefined' && Workstreams.needsModelTitle && Workstreams.needsModelTitle(ws.id)))) maybeRetitle(ws, text, finalReply);
       // flush any trailing spoken text and CLOSE the speech stream — the last chunk's end re-arms the
       // hands-free mic (this is the heartbeat for spoken turns; onTurnEnd covers silent/no-speech turns).
-      if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) { pushSpeech(true, finalReply); Voice.endReply(); }
+      if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) {
+        pushSpeech(true, finalReply);
+        // VOICE-AWARE CHOICES: the choice itself is spoken as a natural question — question text only;
+        // the 2-3 options are on-screen chips (reading them out was the "reads every option" glitch).
+        if (voiceQuestion && Voice.speakChunk) Voice.speakChunk('Quick question. ' + voiceQuestion, name);
+        Voice.endReply();
+      }
       // hands-free voice mode: the run is done — let Voice re-open the mic for the next turn.
       if (typeof Voice !== 'undefined' && Voice.onTurnEnd) Voice.onTurnEnd();
       // TYPE-AHEAD: the stream just freed — send its next queued follow-up (after this call fully unwinds).
@@ -5466,7 +5565,11 @@ const Chat = (() => {
     const sys = 'You generate a terse title for a work session. Reply with ONLY a 3 to 6 word title that summarizes'
       + ' what the user wants done. Use Title Case. No surrounding quotes, no trailing punctuation, no preamble —'
       + ' output the title and nothing else.';
-    const prompt = String(userText || '').replace(/\s+/g, ' ').slice(0, 500)
+    // summarize the session's FOUNDING directive (its first user message), not whatever turn happened to
+    // trigger a late upgrade retry — the title says what the session is ABOUT. Falls back to this turn's text.
+    let baseText = userText;
+    try { const f = (cur.history || []).find(m => m && m.role === 'user' && typeof m.content === 'string'); if (f) baseText = f.content; } catch (_) {}
+    const prompt = String(baseText || '').replace(/\s+/g, ' ').slice(0, 500)
       + (replyText ? ('\n\nAssistant reply (context only): ' + String(replyText).replace(/\s+/g, ' ').slice(0, 200)) : '');
     if (!prompt.trim()) return;
     const before = Object.assign({}, Harness.totals());   // COPY (totals is a mutated singleton)
@@ -5489,7 +5592,9 @@ const Chat = (() => {
   function cleanTitle(raw) {
     let t = String(raw == null ? '' : raw).trim();
     if (!t) return '';
+    t = t.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();    // a reasoning model's leaked think block is never the title
     t = (t.split(/\r?\n/).find(l => l.trim()) || '').trim();   // first non-empty line only
+    t = t.replace(/^#+\s*/, '').replace(/^title\s*[:\-—]\s*/i, '');   // drop a markdown heading / "Title:" label wrapper
     t = t.replace(/^["'`*\s]+|["'`*\s]+$/g, '').replace(/[\s.:;,—–-]+$/g, '').replace(/\s+/g, ' ').trim();
     if (!t || t.length > 64) return '';                        // empty or a paragraph came back → keep placeholder
     if (/\b(sorry|cannot|can't|unable|as an ai|here(?:'s| is)|i (?:can|am|will|would))\b/i.test(t)) return '';   // refusal / chatty

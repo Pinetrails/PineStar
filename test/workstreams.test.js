@@ -87,6 +87,24 @@ const dumpedAuto = JSON.parse(JSON.stringify(W.serialize()));
 W.init(dumpedAuto);
 A.eq(W.get(up.id).titleAuto, false, 'titleAuto survives a save/load round-trip (the manual lock persists)');
 
+/* ---------- needsModelTitle: a stream still wearing its machine placeholder retries the upgrade ---------- */
+W.reset();
+const ng = W.generalId();
+const nm = W.create(null);
+A.eq(W.needsModelTitle(nm.id), false, 'an untitled stream with no history is not yet upgrade-eligible');
+nm.history.push({ role: 'user', content: 'help me find a budget mechanical keyboard', ts: 1 });
+W.autoTitle(nm.id, 'help me find a budget mechanical keyboard');
+A.eq(W.needsModelTitle(nm.id), true, 'placeholder title (deriveTitle of the first user msg) => eligible for the model upgrade');
+A.eq(W.needsModelTitle(ng), false, 'General is never upgrade-eligible');
+W.retitle(nm.id, 'Budget Keyboard Hunt');
+A.eq(W.needsModelTitle(nm.id), false, 'a model-written summary is NOT the placeholder — no further retries');
+const nm2 = W.create(null);
+nm2.history.push({ role: 'user', content: 'plan a weekend trip to portland with a food focus', ts: 1 });
+W.autoTitle(nm2.id, 'plan a weekend trip to portland with a food focus');
+W.rename(nm2.id, W.deriveTitle('plan a weekend trip to portland with a food focus'));
+A.eq(W.needsModelTitle(nm2.id), false, 'a MANUAL rename to the exact placeholder text still locks it (titleAuto wins)');
+A.eq(W.needsModelTitle('ws_no_such'), false, 'unknown id is simply not eligible');
+
 /* ---------- hybrid-honest lanes: a real run auto-advances todo->active ---------- */
 W.reset();
 const c = W.create('write a report');

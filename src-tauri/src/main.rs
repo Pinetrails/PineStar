@@ -1754,6 +1754,12 @@ fn open_external_url(url: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Windows/tao: set_fullscreen(true) on a MAXIMIZED window keeps the maximized
+/// work-area geometry (screen minus taskbar) — a dead strip stays along the bottom
+/// and the layout mis-sizes. Remember the maximize across the fullscreen span so
+/// exit restores it.
+static FS_RESTORE_MAXIMIZE: AtomicBool = AtomicBool::new(false);
+
 /// Toggle the main StarNet desktop window between windowed and fullscreen mode.
 #[tauri::command]
 fn starnet_toggle_fullscreen(app: AppHandle) -> Result<bool, String> {
@@ -1761,7 +1767,17 @@ fn starnet_toggle_fullscreen(app: AppHandle) -> Result<bool, String> {
         .get_webview_window("main")
         .ok_or_else(|| "main window unavailable".to_string())?;
     let next = !win.is_fullscreen().map_err(|e| e.to_string())?;
+    if next {
+        let was_max = win.is_maximized().unwrap_or(false);
+        FS_RESTORE_MAXIMIZE.store(was_max, Ordering::Relaxed);
+        if was_max {
+            let _ = win.unmaximize();
+        }
+    }
     win.set_fullscreen(next).map_err(|e| e.to_string())?;
+    if !next && FS_RESTORE_MAXIMIZE.swap(false, Ordering::Relaxed) {
+        let _ = win.maximize();
+    }
     Ok(next)
 }
 

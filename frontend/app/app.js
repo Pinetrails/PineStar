@@ -868,7 +868,8 @@ const App = (() => {
       // desk placement teed up. FINALE (Lane D): the toast is ONE line now — the desk requirement + its door move
       // into the diegetic line + chip below (the standing record no longer duplicates the whole instruction).
       _notify(a.name + ' summoned — type to task it now.', 'good');
-      if (typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())) {
+      if (typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())
+          && (typeof Chat.beatBusy !== 'function' || !Chat.beatBusy())) {   // a pending question/beat owns the COMMS moment — its chips must survive; the desk line stays available via REFIT
         Chat.localLine(a.name + ' is here — but it has nowhere to sit yet. it needs a desk of its own before it can take floor work. want to place one?');
         Chat.choices([{ label: '▤ PLACE ITS DESK', value: 'desk' }, { label: 'later', value: 'later', skip: true }], item => {
           if (item && item.value === 'desk') openDeskPlacement();
@@ -1411,7 +1412,9 @@ const App = (() => {
   // opening downward, or flipping above when the field sits low in the console.
   function positionModelPop() {
     const pop = el('model-pop'), inp = el('in-model'); if (!pop || pop.hidden || !inp) return;
-    const r = inp.getBoundingClientRect(), gap = 4, vh = window.innerHeight;
+    // rect/innerHeight are visual px, style px on the fixed pop are body-zoomed (TEXT SIZE) — divide once.
+    const z = U.uiZoom(), r0 = inp.getBoundingClientRect(), gap = 4, vh = window.innerHeight / z;
+    const r = { left: r0.left / z, top: r0.top / z, bottom: r0.bottom / z, width: r0.width / z };
     const below = vh - r.bottom - gap, above = r.top - gap;
     const openUp = below < 220 && above > below;
     pop.style.left = r.left + 'px';
@@ -2877,12 +2880,13 @@ const App = (() => {
     }
     menu.innerHTML = html;
     document.body.appendChild(menu);
-    // clamp to the viewport so a row near an edge still shows the whole menu
-    const r = menu.getBoundingClientRect();
-    const vw = window.innerWidth || document.documentElement.clientWidth;
-    const vh = window.innerHeight || document.documentElement.clientHeight;
-    menu.style.left = Math.max(6, Math.min(x, vw - r.width - 6)) + 'px';
-    menu.style.top = Math.max(6, Math.min(y, vh - r.height - 6)) + 'px';
+    // clamp to the viewport so a row near an edge still shows the whole menu.
+    // x/y/rect/innerWidth are visual px; style px on the body-child menu are zoomed (TEXT SIZE) — /z once.
+    const z = U.uiZoom(), r = menu.getBoundingClientRect();
+    const vw = (window.innerWidth || document.documentElement.clientWidth) / z;
+    const vh = (window.innerHeight || document.documentElement.clientHeight) / z;
+    menu.style.left = Math.max(6, Math.min(x / z, vw - r.width / z - 6)) + 'px';
+    menu.style.top = Math.max(6, Math.min(y / z, vh - r.height / z - 6)) + 'px';
     wsMenuEl = menu;
     menu.querySelectorAll('.ws-menu-item').forEach(btn => {
       const act = btn.dataset.act;
@@ -3073,35 +3077,48 @@ const App = (() => {
   /* OVERVIEW: one row per blessed root (+ count chip + compact preview sub-rows). Click = ENTER the project. */
   function renderProjectsOverview(ul, rows) {
     if (!rows.length) {
-      ul.innerHTML = '<li class="proj-empty">No trusted projects yet. Use <b>+ ADD</b> to pick a folder, or tell an agent to “work in C:\\path\\to\\project”.</li>';
+      ul.innerHTML = '<li class="proj-empty proj-empty-hero"><span class="pe-glyph" aria-hidden="true">▦</span>' +
+        '<b>NO TRUSTED PROJECTS</b>' +
+        '<span>+ ADD blesses a folder, or tell an agent to “work in C:\\path\\to\\project”.</span></li>';
       return;
     }
     const activeId = Workstreams.activeId();
     ul.innerHTML = rows.map(r => {
-      const tip = r.path + (r.blessed ? (r.isGitRepo ? ' · git repo' : '') : ' · REVOKED (trust withdrawn)') + ' — click to open this project · right-click for actions';
+      const tip = (r.blessed ? '' : 'REVOKED (trust withdrawn) — ') + 'click to open this project · right-click for actions';
       const sess = projSessionsOf(r.root);
+      const extra = Math.max(0, sess.length - 3);
       return '<li class="ws-row proj-row' + (r.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(r.root) + '" title="' + U.esc(tip) + '">' +
         '<span class="' + projDot(r) + '"></span>' +
-        '<span class="ws-title">' + U.esc(r.name) + '</span>' +
-        (r.blessed && r.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
-        (sess.length ? '<span class="proj-sess-n" title="' + sess.length + ' session' + (sess.length === 1 ? '' : 's') + ' in this project">' + sess.length + '</span>' : '') +
-        (r.blessed ? '<span class="ws-meta">' + U.esc(r.rel) + '</span>' : '<span class="proj-tag">REVOKED</span>') +
-        '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
+        '<span class="proj-main">' +
+          '<span class="proj-line">' +
+            '<span class="ws-title">' + U.esc(r.name) + '</span>' +
+            (r.blessed && r.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
+            (r.blessed ? '<span class="ws-meta">' + U.esc(r.rel) + '</span>' : '<span class="proj-tag">REVOKED</span>') +
+            '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
+          '</span>' +
+          '<span class="proj-line">' +
+            '<span class="proj-path">' + U.esc(r.path) + '</span>' +
+            (sess.length ? '<span class="proj-sess-n">' + sess.length + ' session' + (sess.length === 1 ? '' : 's') + '</span>' : '') +
+          '</span>' +
+        '</span>' +
         '</li>' +
         sess.slice(0, 3).map(s =>
           '<li class="proj-sess' + (s.id === activeId ? ' on' : '') + '" data-ws="' + U.esc(s.id) + '" data-root="' + U.esc(r.root) + '" title="open this session">' +
-            '<span class="proj-sess-glyph" aria-hidden="true">└</span>' +
             '<span class="ws-title">' + U.esc(s.title) + '</span>' +
             '<span class="ws-meta">' + U.esc(s.rel) + '</span>' +
-          '</li>').join('');
+          '</li>').join('') +
+        (extra ? '<li class="proj-sess proj-more" data-root="' + U.esc(r.root) + '" title="open this project">▸ ' + extra + ' more session' + (extra === 1 ? '' : 's') + '</li>' : '');
     }).join('');
     // preview sub-row click: open the session AND follow it into its project scope — the rail stays in PROJECTS.
+    // The overflow "▸ N more" row just enters the project (where every session renders as a full row).
     ul.querySelectorAll('.proj-sess').forEach(li => {
       li.onclick = (e) => {
         e.stopPropagation();
         const id = li.dataset.ws;
-        if (id !== Workstreams.activeId()) switchWorkstream(id);
-        SFX.open();
+        if (id) {
+          if (id !== Workstreams.activeId()) switchWorkstream(id);
+          SFX.open();
+        }
         enterProject(li.dataset.root);
       };
     });
@@ -3121,13 +3138,18 @@ const App = (() => {
     const sess = projSessionsOf(row.root);
     const byId = {}; try { for (const w of Workstreams.all()) byId[w.id] = w; } catch (_) {}
     let html =
-      '<li class="proj-crumb"><button class="proj-back" title="back to all projects">◂ PROJECTS</button></li>' +
-      '<li class="ws-row proj-row proj-head' + (row.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(row.root) + '" title="' + U.esc(row.path) + '">' +
+      '<li class="proj-crumb"><button class="proj-back" title="back to all projects">◂ ALL PROJECTS</button></li>' +
+      '<li class="ws-row proj-row proj-head' + (row.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(row.root) + '" title="right-click for project actions">' +
         '<span class="' + projDot(row) + '"></span>' +
-        '<span class="ws-title">' + U.esc(row.name) + '</span>' +
-        (row.blessed && row.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
-        (row.blessed ? '' : '<span class="proj-tag">REVOKED</span>') +
-        '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
+        '<span class="proj-main">' +
+          '<span class="proj-line">' +
+            '<span class="ws-title">' + U.esc(row.name) + '</span>' +
+            (row.blessed && row.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
+            (row.blessed ? '' : '<span class="proj-tag">REVOKED</span>') +
+            '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
+          '</span>' +
+          '<span class="proj-path">' + U.esc(row.path) + '</span>' +
+        '</span>' +
       '</li>';
     if (!sess.length) {
       html += '<li class="proj-empty">No sessions in this project yet — <b>+ NEW</b> starts one working in this folder.</li>';
@@ -3198,11 +3220,12 @@ const App = (() => {
     html += (r.blessed ? '<div class="ws-menu-sep"></div>' : '') + item('remove', r.blessed ? 'Remove (revoke trust)' : 'Forget (already revoked)', '✕', 'danger');
     menu.innerHTML = html;
     document.body.appendChild(menu);
-    const rect = menu.getBoundingClientRect();
-    const vw = window.innerWidth || document.documentElement.clientWidth;
-    const vh = window.innerHeight || document.documentElement.clientHeight;
-    menu.style.left = Math.max(6, Math.min(x, vw - rect.width - 6)) + 'px';
-    menu.style.top = Math.max(6, Math.min(y, vh - rect.height - 6)) + 'px';
+    // same visual→zoomed-space conversion as openWsMenu (TEXT SIZE).
+    const z = U.uiZoom(), rect = menu.getBoundingClientRect();
+    const vw = (window.innerWidth || document.documentElement.clientWidth) / z;
+    const vh = (window.innerHeight || document.documentElement.clientHeight) / z;
+    menu.style.left = Math.max(6, Math.min(x / z, vw - rect.width / z - 6)) + 'px';
+    menu.style.top = Math.max(6, Math.min(y / z, vh - rect.height / z - 6)) + 'px';
     projMenuEl = menu;
     menu.querySelectorAll('.ws-menu-item').forEach(btn => {
       const act = btn.dataset.act;
@@ -3275,11 +3298,14 @@ const App = (() => {
     if (ul.querySelector('.proj-add')) { const inp = ul.querySelector('.proj-add input'); if (inp) inp.focus(); return; }
     const li = document.createElement('li'); li.className = 'proj-add';
     li.innerHTML =
+      '<div class="proj-add-head">' +
+        '<span class="proj-add-lbl">ADD PROJECT FOLDER</span>' +
+        '<button class="proj-add-cancel" title="cancel" aria-label="cancel">✕</button>' +
+      '</div>' +
+      '<input type="text" spellcheck="false" placeholder="C:\\Users\\you\\project" aria-label="project folder path">' +
       '<div class="proj-add-row">' +
-        '<input type="text" spellcheck="false" placeholder="absolute folder path (e.g. C:\\Users\\you\\project)" aria-label="project folder path">' +
-        '<button class="proj-add-pick" title="browse for a folder">📁</button>' +
-        '<button class="proj-add-go">Add</button>' +
-        '<button class="proj-add-cancel">✕</button>' +
+        '<button class="proj-add-pick" title="browse for a folder with the system dialog">BROWSE…</button>' +
+        '<button class="proj-add-go">ADD</button>' +
       '</div>' +
       '<div class="proj-add-hint" hidden></div>';
     ul.insertBefore(li, ul.firstChild);
@@ -3461,6 +3487,45 @@ const App = (() => {
     show('screen-recovery');
   }
 
+  // SAVE-UNKNOWN GATE: no local cache AND the durable mirror could not be READ (sidecar unreachable, or the
+  // per-launch auth token was refused). A first-run ceremony here would assert "no save exists" over a
+  // possibly-intact durable save (the July-19 "my save got deleted" incident — a 403'd pull rendered genesis
+  // over a healthy 200KB save.json). HARD STOP: gate, auto-retry the reconcile until the sidecar answers
+  // definitively, then reload so the whole boot (token injection included) starts clean. Never times out into
+  // creation — the ONLY exits are a definitive answer or the user closing the app.
+  function showSaveUnreachableGate(reason) {
+    gateActive = true;
+    try { if (World && World.stop) World.stop(); } catch (_) {}
+    const sub = el('unreachable-sub');
+    if (sub) sub.textContent = reason === 'forbidden' ? 'station service refused this window (stale session) — a relaunch usually clears it' : 'station service not answering';
+    const status = el('unreachable-status');
+    let attempts = 0, timer = null, checking = false;
+    const setStatus = m => { if (status) status.textContent = '＋ ' + m; };
+    const attempt = async () => {
+      if (checking) return;
+      checking = true;
+      attempts++;
+      setStatus('checking… (attempt ' + attempts + ')');
+      let r = null;
+      try { r = await CloudSave.reconcile(Save.load()); } catch (_) { r = null; }
+      // Definitive answer = anything but the unknown sentinel: a real save, a future-save sentinel, or a
+      // proven-empty null. Reload rather than resume in place — a stale/refused auth token can only be
+      // re-injected by a fresh page load, and reload re-runs every gate in order.
+      if (!CloudSave.isUnknownSentinel(r)) {
+        if (timer) clearInterval(timer);
+        setStatus('reconnected — resuming…');
+        try { location.reload(); } catch (_) {}
+        return;
+      }
+      setStatus('still unreachable — retrying every 5s (attempt ' + attempts + '). Your save is untouched.');
+      checking = false;
+    };
+    const btn = el('btn-unreachable-retry');
+    if (btn) btn.onclick = () => { SFX.click && SFX.click(); attempt(); };
+    timer = setInterval(attempt, 5000);
+    show('screen-unreachable');
+  }
+
   /* ---------- boot ---------- */
   async function init() {
     if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
@@ -3511,6 +3576,11 @@ const App = (() => {
     // nothing persists.
     if (typeof CloudSave !== 'undefined' && CloudSave.isFutureSentinel && CloudSave.isFutureSentinel(saved)) {
       showFutureSaveGate(saved.version); return;
+    }
+    // SAVE-UNKNOWN GATE — no local cache and the durable side could not be read. NEVER fall through to the
+    // first-run ceremony on an unproven "no save"; hold at the reconnecting gate until the sidecar answers.
+    if (typeof CloudSave !== 'undefined' && CloudSave.isUnknownSentinel && CloudSave.isUnknownSentinel(saved)) {
+      showSaveUnreachableGate(saved.reason); return;
     }
     // EL-11 FIX 2/3 — the sidecar's save store quarantined a damaged durable save, or restored one from .bak.
     // The user must LEARN that (reconcile()'s pull captured the persisted marker). Two honesty tiers:

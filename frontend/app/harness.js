@@ -402,6 +402,9 @@ const Harness = (() => {
       const reqBody = { model, provider, reasoningEffort, system, messages, agentId: agentId || 'agent', isTask: !!isTask, recurring: !!recurring };
       if (getBaseUrl(provider)) reqBody.baseUrl = getBaseUrl(provider);
       if (streamId) reqBody.streamId = streamId;   // M-mem.2b: scope this run's memory to the active workstream
+      // reason-only self-talk (retitle / goal-judge / pitch / autopilot): the sidecar keeps the caller's system
+      // prompt VERBATIM (no manual/capability/skill/memory dressing) and never stamps the away clock for it.
+      if (internal) reqBody.internal = true;
       if (/^(answer|cancel|replace)$/.test(String(taskAction || ''))) reqBody.taskAction = String(taskAction);
       if (recipeId) reqBody.recipeId = String(recipeId).slice(0, 60);   // provenance spine: which recipe launched this run (rides to the durable run row)
       // project-anchored session (Hermes-parity working folder): the sidecar injects the folder context line

@@ -46,7 +46,12 @@ A.ok(/\/api\/runs\?agent='?\s*\+[^\n]*runId=/.test(chat.replace(/\n/g, ' ')) || 
 A.ok(/if \(!arts\.length && \(entry\.reason \|\| 'done'\) === 'done'\) return;/.test(chat),
   'a quiet artifact-less clean finish renders NOTHING (existing flow untouched)');
 // the recap is wired into the run's own clean-finish flow, fire-and-forget with the live runId
-A.ok(/if \(thisRunId\) renderRunRecap\(ws, thisRunId,/.test(chat), 'recap fires on the clean-finish path with the run\'s id');
+A.ok(/if \(thisRunId\) \{[\s\S]{0,400}renderRunRecap\(ws, thisRunId,/.test(chat), 'recap fires on the clean-finish path with the run\'s id');
+// DURATION HONESTY (2026-07-19): the recap's displayed duration is the channel's honest elapsed — the
+// confirmed-start, approval-pauses-excluded clock the live COMMS timer already shows — never the raw
+// send→teardown span alone (which counted connect latency + time paused waiting on the Commander).
+A.ok(/Channels\.elapsedOf\(ws\.id, Date\.now\(\)\)[\s\S]{0,200}renderRunRecap\(ws, thisRunId, honestMs > 0 \? honestMs :/.test(chat),
+  'the recap duration reads Channels.elapsedOf (honest run clock), falling back to the raw span only when the channel has no reading');
 
 // report-not-ask: slice out the recap block's CODE (from its first function to the consent block, comments
 // stripped — the design-note comment narrates the rule by name) and prove it never touches the beat machinery.

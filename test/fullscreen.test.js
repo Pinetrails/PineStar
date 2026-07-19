@@ -71,6 +71,34 @@ const Fullscreen = require('../frontend/app/fullscreen.js');
   A.eq(await Fullscreen.toggle(webviewWin, null), true, 'Tauri webviewWindow API is also recognized');
   A.eq(fullscreen, true, 'webviewWindow path sets fullscreen true');
 
+  // Windows/tao: entering fullscreen from a MAXIMIZED window keeps the work-area
+  // size (taskbar strip at the bottom) — the toggle must unmaximize first and
+  // restore the maximize when fullscreen exits.
+  {
+    let fsOn = false, maxOn = true;
+    const ops = [];
+    const maxWin = {
+      __TAURI__: {
+        window: {
+          getCurrentWindow() {
+            return {
+              isFullscreen() { return Promise.resolve(fsOn); },
+              setFullscreen(next) { ops.push('setFullscreen:' + next); fsOn = next; return Promise.resolve(); },
+              isMaximized() { return Promise.resolve(maxOn); },
+              unmaximize() { ops.push('unmaximize'); maxOn = false; return Promise.resolve(); },
+              maximize() { ops.push('maximize'); maxOn = true; return Promise.resolve(); }
+            };
+          }
+        }
+      }
+    };
+    A.eq(await Fullscreen.toggle(maxWin, null), true, 'maximized window still enters fullscreen');
+    A.eq(ops.join(','), 'unmaximize,setFullscreen:true', 'maximize is dropped BEFORE fullscreen (tao work-area bug)');
+    A.eq(await Fullscreen.toggle(maxWin, null), false, 'fullscreen exits back to windowed');
+    A.eq(ops.join(','), 'unmaximize,setFullscreen:true,setFullscreen:false,maximize', 'exit restores the remembered maximize');
+    A.eq(maxOn, true, 'window ends maximized again after the round trip');
+  }
+
   let resolveSlow;
   let slowInvokes = 0;
   const slowWin = {
@@ -146,6 +174,29 @@ const Fullscreen = require('../frontend/app/fullscreen.js');
     A.eq(await Fullscreen.toggle(fsWin, fsDoc), false, 'class-sync toggle exits fullscreen');
     A.ok(!classes.has('sn-fs'), 'exiting fullscreen clears body.sn-fs immediately');
     Fullscreen.syncBodyClass(null, true);   // never throws without a document
+  }
+
+  // sn-fs re-seats the layout AFTER the window's own resize already fired — the
+  // class flip must re-announce so fixed trackers (#logo positionLogo) re-seat too.
+  {
+    let resizes = 0;
+    const classes = new Set();
+    const rzDoc = {
+      body: { classList: {
+        contains(c) { return classes.has(c); },
+        toggle(c, on) { on ? classes.add(c) : classes.delete(c); }
+      } }
+    };
+    rzDoc.defaultView = {
+      Event: function (type) { this.type = type; },
+      dispatchEvent(ev) { if (ev && ev.type === 'resize') resizes++; }
+    };
+    Fullscreen.syncBodyClass(rzDoc, true);
+    A.eq(resizes, 1, 'sn-fs flip dispatches a window resize (logo re-seat)');
+    Fullscreen.syncBodyClass(rzDoc, true);
+    A.eq(resizes, 1, 'no-op sync does NOT re-dispatch resize');
+    Fullscreen.syncBodyClass(rzDoc, false);
+    A.eq(resizes, 2, 'clearing sn-fs re-announces layout too');
   }
 
   let listener = null;

@@ -6,14 +6,20 @@
 
      • FRESH STATION (no session history anywhere, nothing ever launched) → the proven orientation
        set, unchanged: tour chip, first catalog recipe, station brief. First-run users need a map.
-     • RETURNING COMMANDER →
+     • RETURNING COMMANDER → only chips EARNED by real prior activity, in this order, cap 3:
          1. their USUAL recipe — the most recently launched catalog recipe, chip carries the
             LaunchMemory values so the directive comes back prefilled (kill the retype tax);
-         2. a DISCOVERY recipe — cadence-due first (a 'morning' recipe only in the morning),
-            otherwise a deterministic day-rotated pick from recipes they have never launched,
-            so the catalog reveals itself over time instead of pinning slot 2 to list()[0];
-         3. "pitch me an idea" — leans on the existing dossier-grounded pitch surface: the live
+         2. a cadence-DUE recipe — a 'morning' recipe, in the morning. Due-ness is the ONLY
+            discovery left: the old day-rotated random catalog pick pushed recipes the
+            Commander never asked for ("Release Notes" to someone who never shipped notes)
+            and is gone. No signal → no chip.
+         3. NEXT STEP on their most recent titled session — the one thing they were actually
+            doing. The send is phrased like the pitch ask ("what you actually know") so it
+            never presumes recall the agent may not have.
+         4. "pitch me an idea" — leans on the existing dossier-grounded pitch surface: the live
             system prompt carries what the agent genuinely knows, so the answer is grounded.
+       A returning Commander NEVER sees the orientation chips again — tour/brief are minute-one
+       chips; a short row of earned chips beats a padded row of dead ones.
 
    HONESTY RULES: a chip only ever fills the composer (send/recipe-insert) — it never asserts
    station state, so nothing here can claim what the harness can't prove. "Usual" is defined as
@@ -21,8 +27,8 @@
    digest belongs to returnstore.js — this engine deliberately mints no catch-up chip.
 
    PURE + node-testable (a `Starters` global; module.exports under node): no DOM, no clock, no
-   storage — the caller injects recipes, launch history, hour and day. Deterministic by design
-   (day-seeded rotation, never rng). Fail-open everywhere: bad/missing signals → the classic set. */
+   storage — the caller injects recipes, launch history, sessions and hour. Deterministic, never
+   rng. Fail-open: bad/missing signals just mean fewer chips (fresh station → the classic set). */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -45,8 +51,6 @@
   // cadence gate: only 'morning' implies a time of day. Morning = 05:00–11:59 local.
   function isMorning(hour) { return typeof hour === 'number' && hour >= 5 && hour < 12; }
   function cadenceDue(cadence, hour) { return cadence === 'morning' && isMorning(hour); }
-  // a morning recipe outside the morning is an off-hours suggestion — keep it out of discovery.
-  function offHours(recipe, hour) { return recipe && recipe.cadence === 'morning' && !isMorning(hour); }
 
   function recipeChip(recipe, values) {
     const chip = { kind: 'recipe', label: String(recipe.name || recipe.id), recipe: recipe };
@@ -63,16 +67,16 @@
      signals (all optional; anything missing degrades toward the classic set):
        recipes   — Recipes.list() array ({id,name,task,params,cadence,category,...})
        recent    — [{id,at}] catalog launches, newest first (LaunchMemory.recent())
+       sessions  — [{title,at}] OTHER real sessions (titled, with history), newest first
        valuesOf  — fn(recipeId) → {key:value}|null last-used inputs (LaunchMemory.get)
        returning — true when the station has ANY prior life (other sessions with history, or launches)
-       hour      — local hour 0–23;  day — integer day index (drives discovery rotation) */
+       hour      — local hour 0–23 (drives cadence due-ness) */
   function pick(signals) {
     const s = signals || {};
     const recipes = Array.isArray(s.recipes) ? s.recipes.filter(r => r && r.id) : [];
     const recent = Array.isArray(s.recent) ? s.recent.filter(e => e && e.id) : [];
     const valuesOf = typeof s.valuesOf === 'function' ? s.valuesOf : (() => null);
     const hour = (typeof s.hour === 'number' && isFinite(s.hour)) ? s.hour : 12;
-    const day = (typeof s.day === 'number' && isFinite(s.day)) ? Math.floor(Math.abs(s.day)) : 0;
 
     if (!s.returning) {
       // FRESH STATION — the orientation set; a hunting station spends the third slot on a context probe
@@ -94,28 +98,31 @@
       if (r) { chips.push(recipeChip(r, valuesOf(r.id))); used[r.id] = true; break; }
     }
 
-    // 2. DISCOVERY — cadence-due beats rotation; rotation prefers never-launched, skips off-hours.
-    const launched = {};
-    for (const e of recent) launched[e.id] = true;
+    // 2. cadence-DUE only — a recipe whose moment is NOW (morning recipe, in the morning).
+    // The old fallback (day-rotated random catalog pick) recommended work the Commander never
+    // asked for; earned-context law: no signal → no chip.
     const due = recipes.find(r => !used[r.id] && cadenceDue(r.cadence, hour));
     if (due) { chips.push(recipeChip(due, valuesOf(due.id))); used[due.id] = true; }
-    else {
-      const fresh = recipes.filter(r => !used[r.id] && !launched[r.id] && !offHours(r, hour));
-      const pool = fresh.length ? fresh : recipes.filter(r => !used[r.id] && !offHours(r, hour));
-      if (pool.length) { const r = pool[day % pool.length]; chips.push(recipeChip(r, null)); used[r.id] = true; }
+
+    // 3. NEXT STEP on the most recent titled session — the thing they were actually doing.
+    // Phrased like the pitch ask: grounded in "what you actually know", never presuming recall.
+    const sess = Array.isArray(s.sessions) ? s.sessions.find(x => x && typeof x.title === 'string' && x.title.trim()) : null;
+    if (sess) {
+      const t = sess.title.trim();
+      const short = t.length > 28 ? t.slice(0, 27).trimEnd() + '…' : t;
+      chips.push({
+        kind: 'send', label: 'next step: ' + short.toLowerCase(),
+        send: 'Next step on "' + t + '" — based on what you actually know about that work, propose the single next concrete step. If you are missing context, ask me one sharp question instead.'
+      });
     }
 
-    // 3. the generative chip — the dossier-grounded pitch. V3 §6: it EXPLICITLY invites a recommendation, so
-    // it rides the shared readiness gate (signals.ready, from Understanding.readiness). Below the gate the
-    // slot becomes the HUNT probe when one is live (§7) — the station can't advise yet, so it asks instead —
-    // and otherwise pads with the classic openers. (`undefined` keeps legacy behavior for callers without
-    // the readiness read.)
+    // 4. the generative chip — the dossier-grounded pitch. V3 §6: it EXPLICITLY invites a recommendation,
+    // so it rides the shared readiness gate (signals.ready, from Understanding.readiness). Below the gate
+    // the slot becomes the HUNT probe when one is live (§7) — the station can't advise yet, so it asks
+    // instead. Either way a signal-starved returning station still gets one live chip — never the
+    // orientation pads. (`undefined` ready keeps legacy behavior for callers without the readiness read.)
     if (s.ready !== false) chips.push(PITCH);
     else if (s.hunt) chips.push(HUNT);
-
-    // pad a signal-starved station (e.g. empty catalog) back up with the classic openers.
-    if (chips.length < MAX_CHIPS) chips.push(BRIEF);
-    if (chips.length < MAX_CHIPS) chips.unshift(TOUR);
     return chips.slice(0, MAX_CHIPS);
   }
 

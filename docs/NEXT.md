@@ -1,6 +1,6 @@
 # NEXT.md — current priorities & task queue
 
-## 2026-07-19 — ONBOARDING V3 lane (branch `claude/onboarding-questions-update-7e28b3`) — S1+S2 BUILT
+## 2026-07-19 — ONBOARDING V3 lane (branch `claude/onboarding-questions-update-7e28b3`) — S1-S5 BUILT
 
 Andrew's mandate: blitzing onboarding chips yielded a fake dossier → random awful recommendations.
 Full plan (Andrew-approved direction, wording in red-pen): `docs/ONBOARDING_V3_PLAN.md`.
@@ -33,6 +33,73 @@ Full plan (Andrew-approved direction, wording in red-pen): `docs/ONBOARDING_V3_P
   state the dev harness can't produce naturally) and a completed deferred meeting (same runLeadMeeting
   machinery proven live in S3).
 
+## 2026-07-19 — COMMS CLEAN-UP: two-tier transcript (MERGED trunk f734e15a)
+
+Andrew: "comms still feels like a cluttered mess." Diagnosis (live + full code audit): the
+transcript was a WORK-LOG — every turn permanently deposited a "■ RUN COMPLETE" row + tool-chip
+rails between speech, trophy/quest broadcasts each took a full row, and 9 gold .turnin variants
+shouted as loud as a blocking consent. Fix (chat.js + comms.css only, FNV/CRT vocabulary intact):
+(1) RUN FOLD — resolvePresence absorbs the run's tool rails into the resolved line
+("RUN COMPLETE · 8s · N tools ▸"), collapsed, click/Enter toggles, rails moved never deleted;
+(2) broadcast COALESCING — consecutive station lines stack in ONE hairline block (tone per-line);
+(3) beat hierarchy — passive .turnin family whispers (1px gold rail, no glow, 14px), only
+.consent keeps full lit gold. Live-proven on a real haiku+fs.list run (seed :9281); gate 369/369
+green incl. comms-presence lock; W0 re-stamped in-branch 11223bd7.
+- [x] MERGED to trunk f734e15a + W0 70a99f2d (digest in qa/STATUS.md). Also shipped: hover-only timestamps + failed-run fold self-expands. Andrew declined: tb-read fold, receipts coalesce, chip removal. OPEN: exe rebuild.
+
+## 2026-07-19 — SESSION TITLING: real model summaries, not first-words (MERGED trunk 9fe9bbe1)
+
+Andrew's report from other-hardware testing: session titles were "whatever the first few words the
+user typed". Root cause: the quiet retitle call's `internal:true` never left the browser — the
+sidecar buried its "reply with ONLY a 3-6 word title" prompt under the operator manual / capability
+summary / skill catalog / memory fence; models answered chattily, cleanTitle rejected, the instant
+placeholder stayed forever. Fix (lane `claude/starnet-session-titling-343578` → merge `9fe9bbe1` +
+W0 re-stamp `d839ccc9`): `internal` rides the /api/run body; runOnce keeps reason-only self-talk
+prompts VERBATIM (also: no memory fence — was faking memory.used stats — no transcript seed; away
+clock never stamped by self-talk). Applies to ALL internal callers (retitle/goal-judge/pitch/
+suggest/autopilot). Hardening: `Workstreams.needsModelTitle` retries a stranded placeholder on
+later turns (covers failed first attempts AND sessions saved by pre-fix builds), summarizing the
+session's FOUNDING message; cleanTitle strips think-blocks/"Title:"/md headings. Live-proven on
+worktree AND merged-trunk bytes with real haiku runs (internal call 499 tokens vs 10.8k dressed).
+- [x] MERGED to trunk 9fe9bbe1 (digest in qa/STATUS.md). OPEN: exe rebuild.
+
+## 2026-07-19 — DUPLICATE POPUPS: pending question owns the COMMS moment (MERGED trunk 4b07b2e0)
+
+Andrew live-caught: a run ends by asking a clarifying (Task Brief) question, then a second popup
+("is your north star financial freedom") stacks over it — and the second card's choices() wiped
+the question's own answer chips, so the task was lost and had to be re-asked. Root cause: run-end
+made Chat.isBusy() false, and NOTHING tracked the pending question, so every polling confirm beat
+(north-star propose, quest attest, curiosity/suggestion/night nudges) saw a "free" moment.
+
+Fix (lane `claude/agent-duplicate-popups-d2f22f` → trunk `4b07b2e0` + W0 re-stamp `48b8d102`):
+chat.js `taskQuestionLive()` — a pending unanswered question on the displayed stream now blocks
+nudge/curiosityNudge/offerCuriosity/beatBusy/awayDigest/workshopReturn/goalBlocked; quest stores
+gate on Chat.beatBusy() and degrade to the ambient broadcast line. Reverse direction closed:
+offerTaskQuestion/offerFork clearNudge() first (a live nudge leaves whole); app.js summon desk
+chip gates on beatBusy. All remaining direct Chat.choices callers audited safe (digest in
+qa/STATUS.md has the full audit). Live-proven on worktree AND merged-trunk bytes (mock seed).
+- [x] MERGED to trunk 4b07b2e0 (digest in qa/STATUS.md). OPEN: exe rebuild.
+
+## 2026-07-19 — TIMESTAMP HONESTY sweep (MERGED to trunk e087fdd8 fast-forward)
+
+Andrew's law: every user-visible timestamp = the EXACT moment the thing was produced — never
+queue/poll/adopt/boot/render time. Two audits swept every time surface + every stamp write; all
+confirmed lies fixed (gate 369/369 + test:http green; live-proven on seeded :9253 — planted an
+8h-old deliverable pre-boot, fresh sidecar served builtAt intact, session adopted at builtAt,
+clicking the rail row read "8h" not "now"):
+- 4a16ecf3: rail "now" lie — workshop re-offer polls no longer re-stamp lastActiveAt
+  (new Workstreams.markUnread re-flags unread without touching the clock).
+- 6fde3785: builtAt end-to-end — markBuilt stamps it (injected now), rides the emitted manifest
+  (inside the opaque manifest field; owned shared/ untouched), /api/workshop/pending exposes it
+  (runStore run-end fallback for legacy), /api/deliverables pending rows + lifecycleRow use build
+  time not queue time, restorePending keeps the ORIGINAL builtAt across an undo, ensureSession
+  adopts sessions at builtAt, cron boot-backfill/heal pass run.ts/done.ts (appendRun gained
+  optional `at`), run-recap duration reads Channels.elapsedOf (pauses excluded) not send→teardown.
+- W0 re-stamps in-branch: 52d51074 + 823d00fe.
+- NOT in this lane: the onboarding blitz-proof work built here by a cross-session mix-up lives on
+  `claude/onboarding-blitzproof-c268c1` (UNMERGED, unreviewed) — owned by the onboarding session.
+- [x] MERGED to trunk e087fdd8 (digest in qa/STATUS.md). OPEN: exe rebuild.
+
 ## 2026-07-18 — v0.5.3 CUT + PUBLISHED (Windows) — desktop exe rebuild CLOSED
 
 v0.5.3 cut from trunk `e5e2d0dd` (tag `v0.5.3` local), signed, and **PUBLISHED to GitHub
@@ -46,9 +113,20 @@ https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest
 - Gate unblock (recorded): 4 stale `w0-candidate-*` source snapshots (2026-07-13) in
   `.dogfood/` made lint-evidence-secrets take 10min and fail on fixture keys; MOVED to
   `C:\Users\andro\gen-trees\..\gen-quarantine\dogfood\` (nothing referenced them).
-- Still open (operator): mac/linux platforms absent from latest.json (5-platform bar =
-  CI-train launch, unchanged); trunk + `v0.5.3` tag NOT pushed to origin — tag push fires
-  release-train (known blocked at P1.5), so that stays Andrew's call; updater-key backup.
+- **Mac test build SHIPPED (2026-07-19):** trunk pushed to origin (branch only, 1261 commits
+  — tag deliberately NOT pushed; release-train stays untriggered), `desktop-build.yml`
+  dispatched with publish-test. Mac legs first failed on the empty-`APPLE_CERTIFICATE`
+  env trap (Tauri codesign-imports zero bytes) — fixed in-workflow (`adddaedf`, unset empty
+  signing vars). All 4 platforms then built; CI publish job 403'd (RELEASES_TOKEN secret is
+  a stale/underscoped PAT — needs re-mint) so artifacts were published from the operator
+  machine instead. Pre-release `test-v0.5.3-r3` LIVE on starnet-releases with both DMGs
+  (aarch64 + x64) + exe + AppImage + deb; updater "latest" feed verified undisturbed.
+  Gitleaks push-gate: 3 findings = test fixtures, reviewed into `.gitleaksignore`
+  (`3f6f5384`), scan clean.
+- Still open (operator): re-mint RELEASES_TOKEN secret on skynet-harness (CI publish);
+  mac/linux platforms absent from the UPDATER manifest (5-platform bar = CI-train launch,
+  unchanged); `v0.5.3` tag push (fires the blocked release-train) = Andrew's call;
+  updater-key backup; Apple codesign/notarization secrets for public mac distribution.
 
 ## 2026-07-18 — IMPORT AGENT from Hermes/OpenClaw (branch `claude/agent-transfer-hermes-openclaw-9f0efb`)
 

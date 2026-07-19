@@ -221,6 +221,16 @@
   function setProjectRoot(id, root) { const w = find(id); if (!w) return false; w.projectRoot = root ? String(root) : null; return true; }
   function pin(id, val) { const w = find(id); if (!w) return false; w.pinned = val !== false; return true; }
   function touch(id) { const w = find(id); if (w) { w.lastActiveAt = now(); if (id === activeId) w.lastReadAt = w.lastActiveAt; } return !!w; }
+  // re-flag REAL unseen state WITHOUT lying about when the work happened: unlike touch(), this never
+  // moves lastActiveAt (the rail's "last worked" stamp — re-stamping it made every undecided deliverable
+  // session read "now" forever). It only re-opens the unread gap; the open stream is being watched, so
+  // it reads as read instead (same guard touch() has).
+  function markUnread(id) {
+    const w = find(id); if (!w) return false;
+    if (id === activeId) { w.lastReadAt = now(); return true; }
+    if ((w.lastReadAt || 0) >= (w.lastActiveAt || 0)) w.lastReadAt = 0;
+    return true;
+  }
 
   // General can never be archived or deleted (it's the always-present chat home); archiving/deleting
   // the active stream falls back to General so the UI is never left pointing at nothing.
@@ -272,6 +282,18 @@
     if (!tt) return false;
     w.title = tt; w.titleAuto = true; return true;
   }
+  // is this stream still wearing its MACHINE-DERIVED placeholder (deriveTitle of its first user message)?
+  // true => eligible for the model summary upgrade. Covers more than the first turn: a session whose first
+  // upgrade attempt failed (network hiccup / unparseable model reply) or one saved by a pre-upgrade build
+  // retries on its next completed turn instead of wearing the truncated first-words title forever. A manual
+  // rename (titleAuto === false) — even to the exact placeholder text — always wins; General never titles.
+  function needsModelTitle(id) {
+    const w = find(id);
+    if (!w || w.id === generalId || w.titleAuto === false || w.title == null) return false;
+    const first = (w.history || []).find(m => m && m.role === 'user' && typeof m.content === 'string');
+    if (!first) return false;
+    return w.title === deriveTitle(first.content);
+  }
   // UPGRADE an auto-derived placeholder to a concise model-written summary (chat.js fires this once, after a
   // new stream's first run, passing a 3-6 word LLM title). Honors the human: a stream whose title was MANUALLY
   // renamed (titleAuto === false) is never stomped, and General is never titled. Returns false (no change) when
@@ -285,11 +307,14 @@
   }
 
   // ---------- runs · deliverables · cost (filed onto the stream that spawned them) ----------
-  function appendRun(id, runId) {
+  // `at` (optional, epoch ms): the run's REAL event time. A live caller omits it (now IS the event); a
+  // backfill/heal caller that learned about an already-finished run passes the run record's end time, so
+  // the rail's "last worked" stamp never reads as boot/poll time (timestamp-honesty law, 2026-07-19).
+  function appendRun(id, runId, at) {
     const w = find(id); if (!w || !runId) return false;
     if (w.runIds.indexOf(runId) < 0) w.runIds.push(runId);   // tolerate dup / no-op runs (e.g. the no-tool-support early error)
     if (w.lane === 'todo') w.lane = 'active';                // hybrid-honest: a REAL run fired
-    w.lastActiveAt = now();
+    w.lastActiveAt = Number(at) > 0 ? Number(at) : now();
     if (id === activeId) w.lastReadAt = w.lastActiveAt;      // the open stream is being watched, not unread
     return true;
   }
@@ -464,8 +489,8 @@
     exportConversation, parseConversationExport, clearConversation,
     previewArchive, archivePreview, canUndo, undoLast,
     create, startSession, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
-    switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, isDeleted, touch, markRead, unread: isUnread,
-    autoTitle, retitle, deriveTitle,
+    switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, isDeleted, touch, markUnread, markRead, unread: isUnread,
+    autoTitle, retitle, deriveTitle, needsModelTitle,
     appendRun, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,
     LANES

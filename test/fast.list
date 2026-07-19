@@ -63,6 +63,7 @@ test/updatecore.test.js
 test/quitguard.test.js
 test/cloudsavecore.test.js
 test/cloudsave-refusal.test.js
+test/cloudsave-unknown.test.js
 test/fullscreen.test.js
 test/titlebar.test.js
 test/keepawake.test.js
@@ -127,6 +128,7 @@ test/slash.test.js
 test/slash.palette.test.js
 test/slash.config.test.js
 test/voice.button.test.js
+test/voice.draftguard.test.js
 test/save.test.js
 test/saveversion.test.js
 test/backup-secrets.test.js

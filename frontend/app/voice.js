@@ -8,7 +8,9 @@
           station voice (Personas.STATION_VOICE — Ultron); personality changes what the
           agent SAYS, never how it sounds.
 
-   STT is the browser-native SpeechRecognition (push-to-talk + the hands-free loop).
+   STT prefers the recorder → /api/stt (server Whisper) wherever the mic can be recorded — Chrome's
+   browser-native SpeechRecognition is Google-served and CENSORS profanity to asterisks with no opt-out,
+   so it is only the fallback (no MediaRecorder, `?stt=web`, or a sidecar with no STT credential).
    TTS is NEURAL-ONLY via the sidecar /api/tts. The client always asks the sidecar when the
    speaker is on — the sidecar owns the tier ladder (run-provider native voice → OpenRouter/
    Gemini/OpenAI → a free keyless neural floor) and decides what it can serve. There is NO
@@ -29,8 +31,11 @@ const Voice = (() => {
   // there and voice mode was completely broken. `?stt=recorder` forces this path in a normal browser so
   // the desktop flow can be exercised without a Tauri build.
   const canRecordMic = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && typeof MediaRecorder !== 'undefined');
-  let forceRecorder = false;
-  try { forceRecorder = /(?:^|[?&])stt=recorder(?:&|$)/.test(location.search); } catch (_) {}
+  let forceRecorder = false, forceWebSpeech = false;
+  try {
+    forceRecorder = /(?:^|[?&])stt=recorder(?:&|$)/.test(location.search);
+    forceWebSpeech = /(?:^|[?&])stt=web(?:&|$)/.test(location.search);
+  } catch (_) {}
   const LS_SPEAK = 'starnet.voice.speak';
   const LS_CONVO = 'starnet.voice.convo';   // remembers the user WAS hands-free, so a refresh can offer one-tap resume
   const REARM_DELAY = 150;                 // ms after the agent stops talking before the mic re-opens (echo guard).
@@ -48,9 +53,10 @@ const Voice = (() => {
     modeLive: '<svg viewBox="0 0 16 16" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2.8 6.4v3.2"/><path d="M6.27 3.8v8.4"/><path d="M9.73 5.2v5.6"/><path d="M13.2 6.7v2.6"/></g></svg>'
   };
 
-  // STT works if EITHER provider is usable: browser-native SpeechRecognition, or mic recording → /api/stt.
-  // `?stt=recorder` forces the recorder even when SR exists (so the desktop path is testable in a browser).
-  const canListen = () => (!forceRecorder && !!SR) || canRecordMic;
+  // STT works if EITHER provider is usable: mic recording → /api/stt, or browser-native SpeechRecognition.
+  // `?stt=recorder` forces the recorder; `?stt=web` forces browser-native SR (each hides the mic if its
+  // forced provider is unusable, so the forced path is what actually gets exercised).
+  const canListen = () => forceRecorder ? canRecordMic : (forceWebSpeech ? !!SR : (canRecordMic || !!SR));
   // can we produce the agent's (neural) voice at all? Neural playback needs only an <audio> element and
   // fetch — NOT speechSynthesis. The sidecar owns the tier ladder incl. a free keyless floor, so any
   // browser that can play audio can speak. (Used to gate the speaker toggle's visibility.)
@@ -69,6 +75,7 @@ const Voice = (() => {
 
   // ---- UI handles (wired in init) -----------------------------------------
   let micBtn = null, toggleBtn = null, modeBtn = null, inputEl = null, statusEl = null;
+  let dictShown = '';   // DRAFT PROTECTION: exactly what dictation last wrote into the composer — the only text a listen is ever allowed to overwrite or clear
   let activeVoiceId = 'agent';      // identity used to pick the current agent's voice
   let activePersonaId = (typeof Personas !== 'undefined' && Personas.DEFAULT_ID) || 'professional';   // drives the in-character task acknowledgments (overwritten from the live agent in Voice.init)
   let listening = false, speaking = false, savedStatus = '';
@@ -221,6 +228,7 @@ const Voice = (() => {
      this is the enforcement the prompt can't guarantee. Pure + cheap; runs on every spoken line. */
   function speakable(s) {
     s = String(s || '');
+    s = s.replace(/\b(?:FORK|TASK_QUESTION)\s*:[^\n]*/gi, ' ');     // choice markers (chips carry them; spoken they're "pipe pipe" + every option) — chat.js suppresses these upstream, this is the last line of defense
     s = s.replace(/```[\s\S]*?```/g, ' ');                          // code fences
     s = s.replace(/`([^`]+)`/g, '$1');                              // inline code
     s = s.replace(/!?\[([^\]]*)\]\(([^)]+)\)/g, '$1');              // [label](url) / ![alt](url) → label
@@ -715,10 +723,13 @@ const Voice = (() => {
   /* the STT provider seam. start(cbs) opens a listen; callbacks: onInterim(partial), onFinal(text),
      onEnd(), onError(msg). Two implementations share this contract so the whole listen loop (push-to-talk
      + hands-free) is provider-agnostic:
-       • webSpeechProvider — browser-native SpeechRecognition (real interim results). The default in Chrome.
-       • recorderProvider  — MediaRecorder → POST /api/stt. The DESKTOP path (WebView2 has no SpeechRecognition)
-                             and the `?stt=recorder` test path. No interim text (that's fine — the UI shows a
-                             live 'listening…' state instead).
+       • recorderProvider  — MediaRecorder → POST /api/stt (server Whisper). The PREFERRED path everywhere
+                             the mic can be recorded: verbatim transcripts (browser SR censors profanity),
+                             and the only path on desktop (WebView2 has no SpeechRecognition). No interim
+                             text (that's fine — the UI shows a live 'listening…' state instead).
+       • webSpeechProvider — browser-native SpeechRecognition (real interim results, but Google-censored).
+                             The FALLBACK: no MediaRecorder, `?stt=web`, or a keyless sidecar (the 'no key'
+                             latch).
      `activeStt` is chosen once at module load and used everywhere; nothing else in this file references SR
      or MediaRecorder directly. */
   const webSpeechProvider = {
@@ -857,7 +868,7 @@ const Voice = (() => {
       if (aborted || !blob || !blob.size) { cb && cb.onEnd && cb.onEnd(); return; }
       transcribe(blob).then(({ text, reason }) => {
         if (aborted) { cb && cb.onEnd && cb.onEnd(); return; }
-        if (!text && reason) setStatus('voice: ' + String(reason).slice(0, 60));
+        if (!text && reason) { setStatus('voice: ' + String(reason).slice(0, 60)); maybeFallbackToWebSpeech(reason); }
         cb && cb.onFinal && cb.onFinal(String(text || '').trim());
         cb && cb.onEnd && cb.onEnd();
       }).catch(e => {
@@ -926,10 +937,27 @@ const Voice = (() => {
     return { name: 'recorder', start, stop, abort };
   })();
 
-  // provider selection: prefer browser-native SpeechRecognition (real interims), else the recorder (desktop).
-  // `?stt=recorder` forces the recorder even where SR exists, to exercise the desktop path in a normal browser.
-  const sttProvider = (!forceRecorder && SR) ? webSpeechProvider : (canRecordMic ? recorderProvider : webSpeechProvider);
+  /* provider selection: prefer the RECORDER (server Whisper via /api/stt) wherever the mic can be recorded.
+     Browser-native SpeechRecognition (Chrome) is Google-served and CENSORS profanity to asterisks with no
+     opt-out — the station must transcribe what you actually said, so web-speech is only the fallback:
+     no MediaRecorder, `?stt=web`, or a sidecar with no STT credential (see the 'no key' latch below —
+     keyless voice keeps working through the browser engine). `let`, not `const`: the latch swaps it. */
+  let sttProvider =
+    forceRecorder  ? (canRecordMic ? recorderProvider : webSpeechProvider) :
+    forceWebSpeech ? webSpeechProvider :
+    (canRecordMic ? recorderProvider : webSpeechProvider);
   const usingRecorder = () => sttProvider === recorderProvider;
+  /* the 'no key' latch: /api/stt fail-opens with {text:'', reason:'no key'} when the sidecar has NO
+     transcription credential (no Groq/OpenAI/OpenRouter key). A keyless browser session would otherwise
+     get silent empty listens forever — fall back to browser-native SR (censored, but working) for the
+     rest of the session. Any OTHER degrade reason (network, provider 4xx) does NOT latch: the credential
+     exists, so the verbatim path stays preferred and the next listen re-tries it. */
+  function maybeFallbackToWebSpeech(reason) {
+    if (String(reason || '') !== 'no key') return;
+    if (forceRecorder || !SR || sttProvider !== recorderProvider) return;
+    sttProvider = webSpeechProvider;
+    console.warn('[voice] server STT has no credential — falling back to browser speech recognition (it censors profanity; add a Groq/OpenAI/OpenRouter key for verbatim transcripts)');
+  }
 
   function busyNow() { return typeof Chat !== 'undefined' && Chat.isBusy && Chat.isBusy(); }
 
@@ -939,11 +967,19 @@ const Voice = (() => {
     clearTimeout(rearmTimer); rearmTimer = null;
     stopSpeaking();                       // don't let the agent's voice bleed into the mic
     listening = true; sentThisListen = false; discarding = false; setMicState(true);
+    dictShown = '';   // fresh listen: dictation has written nothing yet — a typed draft in the box stays untouchable
     savedStatus = currentStatusText();
     setStatus(convoMode ? 'voice mode — listening…' : 'listening…');
     if (typeof SFX !== 'undefined') SFX.open();
     sttProvider.start({
-      onInterim: t => { if (inputEl) { inputEl.value = t; if (typeof Chat !== 'undefined' && Chat.autoGrowInput) Chat.autoGrowInput(); } },   // grow the composer as dictation streams in
+      onInterim: t => {
+        // DRAFT PROTECTION: an interim may only replace what dictation itself wrote — never a typed draft.
+        // A non-empty composer that isn't our own last interim means the Commander is typing; leave it alone
+        // (the status line still shows 'listening…', so dictation isn't silently lost — it lands via onFinal).
+        if (!inputEl || (inputEl.value && inputEl.value !== dictShown)) return;
+        inputEl.value = t; dictShown = t;
+        if (typeof Chat !== 'undefined' && Chat.autoGrowInput) Chat.autoGrowInput();
+      },
       onFinal: text => { submitTranscript(text); },
       onError: msg => {
         // a DENIED mic is a hard stop, not a recoverable hiccup: don't silently retry/re-arm into a mic
@@ -983,7 +1019,11 @@ const Voice = (() => {
   function submitTranscript(text) {
     if (discarding) return;   // teardown in progress — drop the buffered transcript, never send it
     const t = String(text || '').trim();
-    if (inputEl) { inputEl.value = ''; if (typeof Chat !== 'undefined' && Chat.autoGrowInput) Chat.autoGrowInput(); }
+    // DRAFT PROTECTION (text-deletion bug): a listen used to clear the composer UNCONDITIONALLY here — wiping
+    // whatever the Commander had TYPED whenever the mic finalized (even an empty/noise transcript). Only text
+    // dictation itself wrote (dictShown, the interim preview) is ours to clear; a typed draft is never touched.
+    if (inputEl && inputEl.value && inputEl.value === dictShown) { inputEl.value = ''; if (typeof Chat !== 'undefined' && Chat.autoGrowInput) Chat.autoGrowInput(); }
+    dictShown = '';
     if (!t) return;   // heard nothing — endListening() handles the hands-free retry
     // spoken exit: leave voice mode by voice. Loosened so STT variants land ("stop the voice mode",
     // "turn off voice mode please") while still needing an explicit verb + the word "voice".
