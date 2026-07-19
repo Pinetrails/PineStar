@@ -216,30 +216,32 @@ const SFX = {
   },
 
   /* ---- designed UI / event sounds — the coherent console voice (see header) ---- */
-  // click: a tactile key "thock" — a pinched noise transient falling into a tiny sine drop. A hair of
-  // random stereo drift so runs of clicks feel like a real mechanical panel, never a repeated sample.
+  // click: a dampened key press — a soft dark noise tap over a barely-there low thump. Deliberately
+  // UNPITCHED (2026-07-19 redesign: the old 660→495 sine glide read as an 8-bit blip and grated over
+  // long sessions). A hair of random stereo drift so runs of clicks feel like a real panel, not a sample.
   click() {
     if (!SFX._gate('click', 40)) return;
     const pan = (Math.random() - 0.5) * 0.16;
-    SFX.noise({ dur: 0.028, cut: 2300, cut2: 850, vol: 0.15, q: 1.2, pan });
-    SFX.voice({ freq: 660, glide: 495, dur: 0.055, type: 'sine', vol: 0.11, atk: 0.002, pan });
+    SFX.noise({ dur: 0.024, cut: 1400, cut2: 500, vol: 0.10, q: 0.9, pan });
+    SFX.voice({ freq: 210, glide: 160, dur: 0.045, type: 'sine', vol: 0.05, atk: 0.002, pan });
   },
   // "got it, thinking…" — a soft descending two-note sine, distinct from click (send) and open (listen-start),
   // so a hands-free user gets instant confirmation their words landed before the agent starts speaking.
   think() { SFX.voice({ freq: 659, dur: 0.09, type: 'sine', vol: 0.16, atk: 0.01, verb: 0.18 }); SFX.voice({ freq: 494, dur: 0.14, type: 'sine', vol: 0.12, when: 0.06, atk: 0.01, verb: 0.22 }); },
   // open/close: a panel physically SLIDING — an air whoosh sweeping up (open) or down (close) under a
   // rising/falling pair on A. The whoosh is what makes the window feel like it moved, not appeared.
+  // (2026-07-19 redesign: the rising/falling two-note triangle pairs on open/close were the chiptune
+  // tell. Now the AIR carries the motion — the whoosh IS the sound — with one low, dark tone tucked
+  // underneath for weight. Direction still reads: air sweeps up to open, down to close.)
   open() {
     if (!SFX._gate('open', 80)) return;
-    SFX.noise({ dur: 0.13, cut: 520, cut2: 2900, vol: 0.07, q: 0.6, verb: 0.15 });
-    SFX.voice({ freq: 440, glide: 452, dur: 0.11, type: 'triangle', vol: 0.17, atk: 0.008, verb: 0.2 });
-    SFX.voice({ freq: 659, dur: 0.16, type: 'triangle', vol: 0.13, when: 0.045, atk: 0.008, detune: 4, verb: 0.28 });
+    SFX.noise({ dur: 0.14, cut: 420, cut2: 2400, vol: 0.09, q: 0.6, verb: 0.18 });
+    SFX.voice({ freq: 196, glide: 220, dur: 0.12, type: 'sine', vol: 0.08, atk: 0.015, verb: 0.2 });
   },
   close() {
     if (!SFX._gate('close', 80)) return;
-    SFX.noise({ dur: 0.11, cut: 2400, cut2: 640, vol: 0.06, q: 0.6 });
-    SFX.voice({ freq: 659, dur: 0.09, type: 'triangle', vol: 0.15, atk: 0.006 });
-    SFX.voice({ freq: 440, glide: 430, dur: 0.15, type: 'triangle', vol: 0.13, when: 0.04, atk: 0.006, verb: 0.15 });
+    SFX.noise({ dur: 0.12, cut: 2000, cut2: 480, vol: 0.08, q: 0.6, verb: 0.12 });
+    SFX.voice({ freq: 220, glide: 185, dur: 0.13, type: 'sine', vol: 0.07, atk: 0.012, verb: 0.15 });
   },
   // notify: the station bell — a warm detuned A5/E6 pair with a long room tail. Gated so a burst of
   // pings reads as ONE bell, not a carillon.
