@@ -2727,6 +2727,7 @@ const Chat = (() => {
   // the conversation as the Commander's next message so the task proceeds with it. "you decide" banks
   // nothing and hands the choice back. One fork per reply by construction (parse reads the first marker).
   function offerFork(fk) {
+    clearNudge();   // same law as offerTaskQuestion: the fork claims the moment; a live nudge leaves WITH its chips
     const items = fk.options.map(o => ({ label: o, value: o }));
     items.push({ label: 'you decide', value: '', skip: true });
     const q = row('agent'); q.d.classList.add('nudge');
@@ -2763,6 +2764,8 @@ const Chat = (() => {
     return !!(pendingTaskQuestion && activeWs && pendingTaskQuestion.streamId === activeWs.id);
   }
   function offerTaskQuestion(tq) {
+    clearNudge();   // the question CLAIMS the moment: a live gentle nudge leaves whole (prompt + chips) — its chip
+                    // row would be wiped by choices() below anyway, and a stuck activeNudge would mute beats forever
     pendingTaskQuestion = Object.assign({}, tq, { streamId: activeWs && activeWs.id });
     // The host-validated recommended default (brief_ask path) gets the gold suggested chip + a one-line why.
     // A marker-path question stores no recommendation, so rec resolves empty and this renders plain chips.
