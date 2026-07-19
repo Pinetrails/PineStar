@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "61c7ccbc1b65202ee2a6ade345989f5ecfade65c",
+    "sourceCommit": "cbe6c7e0369ea23f6686e21c85fa729282891e74",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 263783,
-        "sha256": "2edccda7097c3015e0ce84f207e8a7860c9b1dda3127fcb146739e93c25efd34"
+        "bytes": 263973,
+        "sha256": "068ae81d8f4e91d1522f741364dbdce15563399c05f38738b34bba30852ac7ed"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 405230,
-        "sha256": "a7c8e3d1a5eac631953b5db569b9e3480b8e904c77b2b1f20e52b4427f8a168d"
+        "bytes": 406881,
+        "sha256": "02970093c88d94e937fbf4b0c27128f37ff3a1d230b25241e149689b8ca8b793"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -458,13 +458,13 @@
       },
       {
         "path": "frontend/app/questledgerstore.js",
-        "bytes": 11650,
-        "sha256": "3f39d14a8276bb2b47e90f0de1ceea9da64209c0073486c4dfd19c027ebd1b8b"
+        "bytes": 12163,
+        "sha256": "5046b42dd7d019410a8bb599191f0e025515bdce2484d00378d4d4ef2a4967bb"
       },
       {
         "path": "frontend/app/questrefreshstore.js",
-        "bytes": 8964,
-        "sha256": "2456fdd0644b78e92bcdcff8d463c11bb8280c2636641eb755d4834708b14d4b"
+        "bytes": 9503,
+        "sha256": "47d6bb473d94818069d3dd26d9e61da11f4931ed9ee0d6af0859df90a22eb9dc"
       },
       {
         "path": "frontend/app/quests.js",
