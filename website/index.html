@@ -80,7 +80,7 @@
         <a id="cta-download" class="btn btn-primary" href="#download">[ DOWNLOAD ]</a>
         <a class="btn" href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">[ VIEW SOURCE ]</a>
       </div>
-      <div class="hero-meta"><span id="ver-badge">v0.5.2</span> &middot; MIT open source &middot; Windows + macOS installers day one &middot; Linux too &middot; bring your own keys</div>
+      <div class="hero-meta"><span id="ver-badge">v0.5.3</span> &middot; MIT open source &middot; Windows + macOS installers day one &middot; Linux too &middot; bring your own keys</div>
     </div>
   </section>
 
@@ -88,11 +88,11 @@
   <section id="live" class="section">
     <div class="section-head">
       <span class="section-no">00</span>
-      <h2>LIVE FEED // THE REAL APP</h2>
+      <h2>INSIDE THE STATION</h2>
     </div>
     <figure class="bezel feed-bezel">
-      <video src="assets/demo-loop.mp4" poster="assets/demo-poster.jpg" autoplay muted loop playsinline></video>
-      <figcaption>// actual capture &mdash; commanding an agent from COMMS, deliverables landing in real time</figcaption>
+      <canvas id="sample-station" width="640" height="320"></canvas>
+      <figcaption>// sample scene, built from the app's real sprites &mdash; in the app, this only animates when a real run is live</figcaption>
     </figure>
     <div class="shots">
       <figure class="bezel">
@@ -118,14 +118,13 @@
     </div>
     <div class="split">
       <div class="split-copy">
-        <p class="lead">StarNet's product contract is literal. The station is not decoration &mdash; it is the harness, rendered.</p>
+        <p class="lead">The station is not decoration &mdash; it is the harness, rendered.</p>
         <ul class="contract">
-          <li><b>A room is a capability-scoped team.</b> Agents in a room share its tools and its mission.</li>
-          <li><b>A hallway is an authorized handoff lane.</b> Work moves between teams only where you drew a path.</li>
-          <li><b>A placed object is a real capability grant.</b> Put a terminal on a desk and that agent can really use it.</li>
-          <li><b>The layout you draw <i>is</i> the workflow the agents run.</b></li>
+          <li><b>Placed gear is real capability.</b> A signal dish grants web access, a cabinet grants files, a workbench grants a terminal. Place it once &mdash; it's station gear the whole crew shares.</li>
+          <li><b>A bay is another concurrent agent.</b> Every bay you place runs its own genuinely separate agent, at the same time.</li>
+          <li><b>The floor tells the truth.</b> Agents walk to the gear they're actually using, mid-run.</li>
         </ul>
-        <p>Start with one agent. Place bays or summon specialists to run more, concurrently &mdash; each one a genuinely distinct, bounded agent run. Real model calls, real tools, real cost. Never an animation of work; always the work itself.</p>
+        <p>Real model calls, real tools, real cost &mdash; never an animation of work.</p>
       </div>
       <figure class="bezel">
         <img src="assets/station-iso.png" alt="Isometric artwork of a StarNet station: rooms of agents at workstations, connected by hallways">
@@ -183,13 +182,11 @@
       <div class="dive-copy">
         <div class="dive-no">// 3.1</div>
         <h3>YOUR STATION STUDIES ITS COMMANDER</h3>
-        <p>This is the part nobody else ships. From the first interview onward, your crew is
-        building a <b>dossier on you</b> — your goals, your taste, your strengths, the way you
-        like work delivered. Every task adds evidence. Every rating you give teaches it what
-        "good" means to you. Agents notice patterns and <b>propose</b> beliefs about you; you
-        accept or strike them, and everything they think they know sits in a ledger you can
-        read and edit. Six weeks in, your station doesn't feel like a tool. It feels like a
-        crew that has worked for you for six weeks.</p>
+        <p>This is the part nobody else ships. Your crew builds a <b>dossier on you</b> —
+        goals, taste, strengths — with every task and every rating you give. Agents
+        <b>propose</b> what they think they've learned; you accept or strike it, and the whole
+        ledger stays yours to read and edit. Six weeks in, it feels like a crew that has
+        worked for you for six weeks.</p>
         <a class="dive-link" href="docs/agents.html">&gt; read: dossiers &amp; memory</a>
       </div>
       <div class="dive-panel" aria-hidden="true"><pre>
@@ -205,11 +202,9 @@
         <div class="dive-no">// 3.2</div>
         <h3>AUTOMATION THAT SHARPENS ITSELF</h3>
         <p>Everywhere else, an automation is frozen the day you write it. Here the loop closes:
-        you rate the work, the station extracts what you actually valued, and the next pass is
-        <b>built sharper</b> — recipes capture what worked, quests regenerate around your real
-        goals instead of stale ones, and the scout studies your history to pitch the next move
-        you didn't think to ask for. Set a routine running for a month and it doesn't decay.
-        It compounds.</p>
+        you rate the work, the station learns what you valued, and the next pass runs
+        <b>sharper</b> — recipes improve, quests regenerate around your real goals, and the
+        scout pitches moves you didn't think to ask for. It doesn't decay. It compounds.</p>
         <a class="dive-link" href="docs/skills.html">&gt; read: skills, recipes, routines</a>
       </div>
       <div class="dive-panel" aria-hidden="true"><pre>
@@ -224,13 +219,10 @@
       <div class="dive-copy">
         <div class="dive-no">// 3.3</div>
         <h3>A HABITAT, NOT A DASHBOARD</h3>
-        <p>Your agents don't live in a table of rows. They live in a <b>station</b> — a living
-        pixel-art habitat you build room by room, where the floor plan is real: rooms scope
-        teams, placed props grant actual tools, and every bay you add runs another agent
-        concurrently. Level your crew, earn XP for work that lands, reskin the world, decorate
-        your corridors — the game layer is a pride loop, never a permission wall. You get
-        full power from minute one; the station just makes you <b>want</b> to build an empire
-        with it.</p>
+        <p>Your agents don't live in a table of rows. They live in a <b>station</b> you build —
+        placed gear grants real tools the whole crew shares, and every bay adds another agent
+        running concurrently. Level your crew, earn XP for work that lands, reskin the world —
+        the game layer is a pride loop, never a permission wall. Full power from minute one.</p>
         <a class="dive-link" href="docs/station.html">&gt; read: the station</a>
       </div>
       <div class="dive-panel" aria-hidden="true"><pre>
@@ -245,12 +237,10 @@
       <div class="dive-copy">
         <div class="dive-no">// 3.4</div>
         <h3>NIGHT SHIFT: IT WORKS WHILE YOU SLEEP</h3>
-        <p>Walk away and the station doesn't idle — it <b>keeps the lights on</b>. Standing
-        goals advance, queued work finishes, and your crew explores ideas worth pitching, all
-        strictly inside the leash you set. Away-runs are jailed to a workshop sandbox; nothing
-        touches your world without a grant you gave. Come back to an honest morning report:
-        what ran, what it built, what it cost, what the leash refused. Real deliverables,
-        one click open.</p>
+        <p>Walk away and the station <b>keeps the lights on</b> — advancing standing goals and
+        exploring ideas worth pitching, strictly inside the leash you set, jailed to a
+        sandbox. Come back to an honest morning report: what ran, what it built, what it
+        cost, what the leash refused.</p>
         <a class="dive-link" href="docs/autonomy.html">&gt; read: autonomy &amp; night shift</a>
       </div>
       <div class="dive-panel" aria-hidden="true"><pre>
@@ -264,11 +254,9 @@
       <div class="dive-copy">
         <div class="dive-no">// 3.5</div>
         <h3>AND YOU CAN TRUST EVERY PIXEL OF IT</h3>
-        <p>All of the above only matters if you can believe what you're seeing — so the whole
-        product runs on one law: <b>the station never asserts state the harness can't
-        prove.</b> No fake progress bars, no idle animations cosplaying as work, no invented
-        counters. An agent at a desk means a live model run. A cost readout is the provider's
-        real number. The magic is never a trick — that's precisely what makes it magic.</p>
+        <p>One law runs the whole product: <b>the station never shows state the harness can't
+        prove.</b> An agent at a desk means a live run; a cost readout is the provider's real
+        number. The magic is never a trick — that's exactly what makes it magic.</p>
         <a class="dive-link" href="docs/station.html">&gt; read: truthful telemetry</a>
       </div>
       <div class="dive-panel" aria-hidden="true"><pre>
@@ -283,10 +271,9 @@
       <div class="dive-copy">
         <div class="dive-no">// 3.6</div>
         <h3>PLAYS WELL WITH YOUR OTHER HARNESSES</h3>
-        <p>Already live in Claude Code, Hermes, or OpenClaw? StarNet doesn't demand a divorce.
-        An MCP stdio bridge and an OpenAI-style ingress endpoint let other tools drive StarNet
-        capabilities — and let your station sit alongside the harnesses you already run, as
-        shared infrastructure instead of another silo.</p>
+        <p>Already live in Claude Code, Hermes, or OpenClaw? StarNet doesn't demand a divorce —
+        an MCP bridge and an OpenAI-style endpoint let the harnesses you already run drive
+        your station. Shared infrastructure, not another silo.</p>
         <a class="dive-link" href="docs/migrating.html">&gt; read: coming from OpenClaw or Hermes?</a>
       </div>
       <div class="dive-panel" aria-hidden="true"><pre>
@@ -367,7 +354,7 @@ node sidecar/index.js</code></pre>
       <span class="section-no">06</span>
       <h2>DOWNLOAD STARNET</h2>
     </div>
-    <p class="dl-sub"><b>Windows and macOS installers are fully supported from day one</b>, and Linux ships from the same signed release train. All builds publish on the <a id="rel-page" href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">releases page</a> and update through the same verified feed. Current version: <span class="ver">v0.5.2</span>.</p>
+    <p class="dl-sub"><b>Windows and macOS installers are fully supported from day one</b>, and Linux ships from the same signed release train. All builds publish on the <a id="rel-page" href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">releases page</a> and update through the same verified feed. Current version: <span class="ver">v0.5.3</span>.</p>
     <div class="dl-grid">
       <article class="dl-card" data-os="windows">
         <div class="dl-os">WINDOWS</div>
@@ -467,9 +454,10 @@ node sidecar/index.js</code></pre>
     <a href="legal/terms.html">TERMS</a>
     <a href="mailto:androo.agi@gmail.com">CONTACT</a>
   </div>
-  <div class="footer-fine">MIT license &middot; <span id="ver-foot">v0.5.2</span> &middot; &copy; <span id="year">2026</span> StarNet &middot; no telemetry, no tracking &mdash; <a href="legal/privacy.html">we collect nothing</a></div>
+  <div class="footer-fine">MIT license &middot; <span id="ver-foot">v0.5.3</span> &middot; &copy; <span id="year">2026</span> StarNet &middot; no telemetry, no tracking &mdash; <a href="legal/privacy.html">we collect nothing</a></div>
 </footer>
 
 <script src="site.js"></script>
+<script src="sample-station.js"></script>
 </body>
 </html>

@@ -237,7 +237,7 @@ a:hover{ color:var(--amber); }
 .card p{ margin:0; font-size:17px; line-height:1.5; color:var(--ink-d); }
 
 /* live feed */
-.feed-bezel video{ width:100%; height:auto; display:block; }
+.feed-bezel canvas{ width:100%; height:auto; display:block; image-rendering:pixelated; }
 .shots{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:16px; }
 @media (max-width:860px){ .shots{ grid-template-columns:1fr; } }
 .shots .bezel img{ width:100%; height:auto; display:block; }

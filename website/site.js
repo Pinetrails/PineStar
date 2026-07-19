@@ -2,7 +2,7 @@
 (function(){
   'use strict';
 
-  var FALLBACK_VERSION = '0.5.2';
+  var FALLBACK_VERSION = '0.5.3';
 
   // Community links — paste real URLs here and the DISCORD / X links appear
   // everywhere automatically. Empty string keeps them hidden (no dead links).
@@ -124,29 +124,6 @@
       });
     });
   });
-
-  /* ---------- demo video: nudge autoplay, fall back to tap ---------- */
-  var demo = document.querySelector('#live video');
-  if(demo){
-    // Chrome ignores the muted *attribute* for autoplay policy in some cases;
-    // setting the property explicitly is what actually unlocks muted autoplay.
-    var tryPlay = function(){ demo.muted = true; var p = demo.play(); if(p && p.catch) p.catch(function(){}); };
-    tryPlay();
-    document.addEventListener('visibilitychange', tryPlay);
-    demo.addEventListener('click', tryPlay);
-    // strict environments (gesture-required autoplay): retry on first interaction
-    ['pointerdown','keydown','scroll','touchstart'].forEach(function(ev){
-      window.addEventListener(ev, function once(){
-        window.removeEventListener(ev, once);
-        if(demo.paused) tryPlay();
-      }, { passive:true });
-    });
-    if('IntersectionObserver' in window){
-      new IntersectionObserver(function(entries){
-        if(entries[0].isIntersecting && demo.paused) tryPlay();
-      }).observe(demo);
-    }
-  }
 
   /* ---------- year ---------- */
   var y = document.getElementById('year');

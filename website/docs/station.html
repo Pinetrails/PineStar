@@ -41,15 +41,17 @@
 <h1>THE STATION</h1>
 <p class="doc-sub">// the layout you draw is the workflow they run</p>
 
-<h2>The product contract</h2>
-<ul>
-<li><b>A room is a capability-scoped team.</b> Agents assigned to a room share its tools and mission context.</li>
-<li><b>A hallway is an authorized handoff lane.</b> Work moves between teams only along paths you drew.</li>
-<li><b>A placed object is a real capability grant.</b> Props aren't decoration — placing a
-terminal, archive, or uplink in a room grants the matching tool to the agents who work there.</li>
-</ul>
-<p>Together these mean the station <b>is</b> the org chart and the permission system at once.
-Redraw the layout and you've re-architected the workflow — no config files.</p>
+<h2>Placed gear is real capability</h2>
+<p>Props aren't decoration. A <b>signal dish</b> grants web access, a <b>cabinet</b> grants
+files, a <b>workbench</b> grants a terminal — and so on across the catalog. Gear is
+<b>station-shared</b>: place a thing once and your whole crew can draw on it. You don't need to
+duplicate props room by room. Removing a prop revokes the capability on the very next run —
+the floor is the permission surface, no config files.</p>
+
+<h2>Bays are concurrency</h2>
+<p>Each bay you place hosts another agent running its own genuinely separate, bounded runs at
+the same time. A bay needs its own PC to run — and the station tells you honestly when one
+can't ("NO COMPUTE — ADD A PC") instead of pretending.</p>
 
 <h2>Build mode</h2>
 <p>Open build mode to lay floors, raise walls, cut doorways, and place props. The station is
