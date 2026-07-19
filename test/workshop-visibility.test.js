@@ -58,6 +58,14 @@ global.Workstreams = {
   },
   get(id) { return streams.get(id) || null; },
   touch(id) { const w = streams.get(id); if (w) { w.lastActiveAt = Date.now(); if (id === activeStreamId) w.lastReadAt = w.lastActiveAt; } return !!w; },
+  // mirrors the real store (2026-07-18): re-flag unread WITHOUT moving lastActiveAt — the re-offer polls
+  // re-stamping the "last worked" time made every undecided deliverable session read "now" forever.
+  markUnread(id) {
+    const w = streams.get(id); if (!w) return false;
+    if (id === activeStreamId) { w.lastReadAt = Date.now(); return true; }
+    if ((w.lastReadAt || 0) >= (w.lastActiveAt || 0)) w.lastReadAt = 0;
+    return true;
+  },
   unread(w) { w = (w && w.id) ? w : streams.get(w); return !!w && w.id !== activeStreamId && (w.lastActiveAt || 0) > (w.lastReadAt || 0); }
 };
 
@@ -99,12 +107,14 @@ const { WorkshopStore } = require('../frontend/app/workshopstore.js');
   const wsA = streams.get('workshop-run-A');
   wsA.lastReadAt = Date.now() + 1;   // simulate: the Commander read it, then went away
   activeStreamId = 'ws_general';     // …and is back on a plain stream
+  const builtStampA = wsA.lastActiveAt;   // when the work actually landed — the honest rail stamp
   await new Promise(r => setTimeout(r, 5));
   cards = [];
   await WorkshopStore.presentOnReturn();
   A.eq(cards.length, 1, 'a genuine return reveals the newest undecided deliverable\'s card');
   A.eq(cards[0].o.sessionId, 'workshop-run-B', 'that card lives in its own session, never the stream the Commander left open');
   A.ok(Workstreams.unread(wsA), 'an undecided deliverable\'s session goes unread again on a genuine return — undecided = still owed');
+  A.eq(wsA.lastActiveAt, builtStampA, 'the re-offer never re-stamps lastActiveAt — the rail\'s "last worked" time stays the build\'s, not a perpetual "now" (2026-07-18 timestamp-honesty fix)');
 
   /* ---------- B2. an explicit LATER stays quiet for the session; an explicit OPEN still shows the card ---------- */
   await WorkshopStore.decide('agent', 'run-A', 'later');

@@ -265,8 +265,8 @@ const WorkshopStore = (() => {
   const sessionIdOf = (runId) => SESSION_PREFIX + String(runId);
 
   // Adopt (idempotent) the deliverable's OWN session: unread in the rail, never focused. A re-offer of a
-  // still-undecided deliverable bumps the existing session unread again (Workstreams.touch — undecided = still
-  // owed), rather than re-rendering a card anywhere. Marks the runId seen (session-scoped poll-race guard).
+  // still-undecided deliverable bumps the existing session unread again (Workstreams.markUnread — undecided =
+  // still owed), rather than re-rendering a card anywhere. Marks the runId seen (session-scoped poll-race guard).
   function ensureSession(m) {
     if (!m || !m.runId) return null;
     if (typeof Workstreams === 'undefined' || !Workstreams.adopt) return null;
@@ -275,7 +275,10 @@ const WorkshopStore = (() => {
     const id = sessionIdOf(runId);
     const existing = Workstreams.get ? Workstreams.get(id) : null;
     if (existing) {
-      if (Workstreams.touch) Workstreams.touch(id);   // marks read only if it's the open stream — otherwise honest new-activity
+      // re-flag unread (undecided = still owed) WITHOUT re-stamping lastActiveAt — touch() here made the
+      // rail's "last worked" time read "now" on every boot/return poll even though nothing new happened.
+      if (Workstreams.markUnread) Workstreams.markUnread(id);
+      else if (Workstreams.touch) Workstreams.touch(id);   // older store without markUnread: keep the unread bump
     } else {
       // DELETED = GONE: the Commander removed this deliverable's session; adopt() refuses the
       // tombstoned id, so the row must not re-form (the delete path also discards server-side).

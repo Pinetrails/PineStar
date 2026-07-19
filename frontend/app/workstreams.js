@@ -221,6 +221,16 @@
   function setProjectRoot(id, root) { const w = find(id); if (!w) return false; w.projectRoot = root ? String(root) : null; return true; }
   function pin(id, val) { const w = find(id); if (!w) return false; w.pinned = val !== false; return true; }
   function touch(id) { const w = find(id); if (w) { w.lastActiveAt = now(); if (id === activeId) w.lastReadAt = w.lastActiveAt; } return !!w; }
+  // re-flag REAL unseen state WITHOUT lying about when the work happened: unlike touch(), this never
+  // moves lastActiveAt (the rail's "last worked" stamp — re-stamping it made every undecided deliverable
+  // session read "now" forever). It only re-opens the unread gap; the open stream is being watched, so
+  // it reads as read instead (same guard touch() has).
+  function markUnread(id) {
+    const w = find(id); if (!w) return false;
+    if (id === activeId) { w.lastReadAt = now(); return true; }
+    if ((w.lastReadAt || 0) >= (w.lastActiveAt || 0)) w.lastReadAt = 0;
+    return true;
+  }
 
   // General can never be archived or deleted (it's the always-present chat home); archiving/deleting
   // the active stream falls back to General so the UI is never left pointing at nothing.
@@ -464,7 +474,7 @@
     exportConversation, parseConversationExport, clearConversation,
     previewArchive, archivePreview, canUndo, undoLast,
     create, startSession, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
-    switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, isDeleted, touch, markRead, unread: isUnread,
+    switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, isDeleted, touch, markUnread, markRead, unread: isUnread,
     autoTitle, retitle, deriveTitle,
     appendRun, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,
