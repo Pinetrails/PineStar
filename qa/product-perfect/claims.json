@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "36aa5b6d1a56504832653775343219e037776dff",
+    "sourceCommit": "8288f82eeb16170d01a95ca67859ea2e655a19d7",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 265415,
-        "sha256": "e680337f9ed361a7af9fe95a5d91b06f1e3a3307ff79a1694acb70cdb19da12e"
+        "bytes": 268066,
+        "sha256": "6dc67955eca7fdd3aa0ee43087749087580866da58c81349f5b4914d3cdbc85c"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -153,8 +153,8 @@
       },
       {
         "path": "frontend/app/cloudsave.js",
-        "bytes": 17846,
-        "sha256": "008b3d120980249cbe978bd5550f00afe4feda6f140c8f7cf25c199fd3b6946d"
+        "bytes": 20556,
+        "sha256": "92177f57805ac77b4bff84e44cc93a595b74469fb2635d714dc63c4557812802"
       },
       {
         "path": "frontend/app/cloudsavecore.js",
@@ -903,8 +903,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 61976,
-        "sha256": "0f32c9d01018ee2590960291cfede8cbf0b110109b823650a8e70e0027ddff4c"
+        "bytes": 63933,
+        "sha256": "a344db3f90e25c41f67a98ebeb7d0f0783c0f371b151c35a9be3aa0adaa03159"
       },
       {
         "path": "frontend/js/arcade.js",
