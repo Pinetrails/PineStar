@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "1d2007686c93155c326b28e3f86cf45fee781551",
+    "sourceCommit": "41c4deeedda490c853e0878c08d3b475476dd1b4",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -108,8 +108,8 @@
       },
       {
         "path": "frontend/app/autosessions.js",
-        "bytes": 17691,
-        "sha256": "9e6f5ffa6d01527f6376a3271ad90c0b51c04968c7a4f8ff2dcfffdfab073e55"
+        "bytes": 18178,
+        "sha256": "e2ff8269fb81985b98834db2cf9a4302d7d3ebb421fdf2cb931a145ca60bd664"
       },
       {
         "path": "frontend/app/backup.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 405230,
-        "sha256": "a7c8e3d1a5eac631953b5db569b9e3480b8e904c77b2b1f20e52b4427f8a168d"
+        "bytes": 405846,
+        "sha256": "11dd57937b6611f12021a6911f21d3464ff8be12d5fee8366c6e6b8ba47779f1"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -793,8 +793,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 33927,
-        "sha256": "137241a9604edcfb846dfb58773e5b397587cec0d0a0ef7d6532c2b907c467fa"
+        "bytes": 34501,
+        "sha256": "849fa45fc455f97ac0eb4c7dab698efbbe922fffd0e27205a3872c8ecad2808f"
       },
       {
         "path": "frontend/app/worksignal.js",
@@ -808,8 +808,8 @@
       },
       {
         "path": "frontend/app/workstreams.js",
-        "bytes": 27289,
-        "sha256": "cea6ce5213c61c26b380fd21fe06c383acd888a0720ca9a7fd1c2ab6060a67d8"
+        "bytes": 28249,
+        "sha256": "89ebe4fa9a54f9368bc778b7b25b3f508a7a69ac591982906170f113136810fe"
       },
       {
         "path": "frontend/app/world.js",
