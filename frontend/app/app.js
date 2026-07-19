@@ -844,7 +844,7 @@ const App = (() => {
     else console.warn('[summon] World.spawnAgent missing — no floor body for', id);
     if (typeof StationUI !== 'undefined' && StationUI.setRoster) StationUI.setRoster(liveAgents());
     else console.warn('[summon] StationUI.setRoster missing — crew manifest not refreshed');
-    try { console.log('[summon]', JSON.stringify({ id, name: a.name, skin: a.skin, hadHero: !!agent, worldSpawn: _spawned, crew: (typeof World !== 'undefined' && World.crewCount) ? World.crewCount() : '?', roster: agents.size })); } catch (e) {}
+    try { if (window.__STARNET_DEV__) console.log('[summon]', JSON.stringify({ id, name: a.name, skin: a.skin, hadHero: !!agent, worldSpawn: _spawned, crew: (typeof World !== 'undefined' && World.crewCount) ? World.crewCount() : '?', roster: agents.size })); } catch (e) {}
     // a fresh workstream BOUND to the new agent, but inactive by default. Activation is the explicit
     // "talk to this specialist directly" action; summon itself only expands the crew/roster.
     const activate = opts.activate === true;
