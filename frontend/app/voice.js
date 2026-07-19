@@ -69,6 +69,7 @@ const Voice = (() => {
 
   // ---- UI handles (wired in init) -----------------------------------------
   let micBtn = null, toggleBtn = null, modeBtn = null, inputEl = null, statusEl = null;
+  let dictShown = '';   // DRAFT PROTECTION: exactly what dictation last wrote into the composer — the only text a listen is ever allowed to overwrite or clear
   let activeVoiceId = 'agent';      // identity used to pick the current agent's voice
   let activePersonaId = (typeof Personas !== 'undefined' && Personas.DEFAULT_ID) || 'professional';   // drives the in-character task acknowledgments (overwritten from the live agent in Voice.init)
   let listening = false, speaking = false, savedStatus = '';
@@ -939,11 +940,19 @@ const Voice = (() => {
     clearTimeout(rearmTimer); rearmTimer = null;
     stopSpeaking();                       // don't let the agent's voice bleed into the mic
     listening = true; sentThisListen = false; discarding = false; setMicState(true);
+    dictShown = '';   // fresh listen: dictation has written nothing yet — a typed draft in the box stays untouchable
     savedStatus = currentStatusText();
     setStatus(convoMode ? 'voice mode — listening…' : 'listening…');
     if (typeof SFX !== 'undefined') SFX.open();
     sttProvider.start({
-      onInterim: t => { if (inputEl) { inputEl.value = t; if (typeof Chat !== 'undefined' && Chat.autoGrowInput) Chat.autoGrowInput(); } },   // grow the composer as dictation streams in
+      onInterim: t => {
+        // DRAFT PROTECTION: an interim may only replace what dictation itself wrote — never a typed draft.
+        // A non-empty composer that isn't our own last interim means the Commander is typing; leave it alone
+        // (the status line still shows 'listening…', so dictation isn't silently lost — it lands via onFinal).
+        if (!inputEl || (inputEl.value && inputEl.value !== dictShown)) return;
+        inputEl.value = t; dictShown = t;
+        if (typeof Chat !== 'undefined' && Chat.autoGrowInput) Chat.autoGrowInput();
+      },
       onFinal: text => { submitTranscript(text); },
       onError: msg => {
         // a DENIED mic is a hard stop, not a recoverable hiccup: don't silently retry/re-arm into a mic
@@ -983,7 +992,11 @@ const Voice = (() => {
   function submitTranscript(text) {
     if (discarding) return;   // teardown in progress — drop the buffered transcript, never send it
     const t = String(text || '').trim();
-    if (inputEl) { inputEl.value = ''; if (typeof Chat !== 'undefined' && Chat.autoGrowInput) Chat.autoGrowInput(); }
+    // DRAFT PROTECTION (text-deletion bug): a listen used to clear the composer UNCONDITIONALLY here — wiping
+    // whatever the Commander had TYPED whenever the mic finalized (even an empty/noise transcript). Only text
+    // dictation itself wrote (dictShown, the interim preview) is ours to clear; a typed draft is never touched.
+    if (inputEl && inputEl.value && inputEl.value === dictShown) { inputEl.value = ''; if (typeof Chat !== 'undefined' && Chat.autoGrowInput) Chat.autoGrowInput(); }
+    dictShown = '';
     if (!t) return;   // heard nothing — endListening() handles the hands-free retry
     // spoken exit: leave voice mode by voice. Loosened so STT variants land ("stop the voice mode",
     // "turn off voice mode please") while still needing an explicit verb + the word "voice".

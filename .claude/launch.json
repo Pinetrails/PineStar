@@ -1222,6 +1222,20 @@
       }
     },
     {
+      "name": "text-wipe-mock",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/seed-mock-comms.js"
+      ],
+      "port": 9301,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "9301",
+        "SKYNET_MOCK_FIRST_MS": "500",
+        "SKYNET_MOCK_DONE_MS": "3000"
+      }
+    },
+    {
       "name": "builders-split-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": [
