@@ -91,6 +91,13 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           RUST_TARGET: ${{ matrix.rust-target }}
         run: |
+          # Absent secrets arrive as EMPTY strings, and Tauri treats a present-but-empty
+          # APPLE_* var as "cert provided" — it then runs `security import` on zero bytes and
+          # the build dies (SecKeychainItemImport: not valid). Same empty-env-!=-absent family
+          # as the Windows updater-signing stall. Unset every empty one so absence is absence.
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+            if [ -z "${!v}" ]; then unset "$v"; fi
+          done
           if [ "$RUNNER_OS" = "macOS" ] && [ -z "$APPLE_CERTIFICATE" ]; then
             echo "::warning::no Apple signing cert in secrets — DMG will be UNSIGNED (internal testing only)"
           fi
