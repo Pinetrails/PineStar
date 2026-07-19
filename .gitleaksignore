@@ -24,3 +24,9 @@ dd1d2468aa8fb6e78fca8f858890a5d2f0d9b0d6:test/saveversion.test.js:generic-api-ke
 
 # Deleted vendored audit rule that matched example text rather than a credential.
 5e9e25666876a0a4bc17ab0e96597f567f1bab7a:skills/vendor/threejs-game-skills/skills/threejs-game-director/scripts/audit_reference_report.py:generic-api-key:137
+
+# Test fixtures from the 2026-07-18 service-keys + openai-compat lanes (fake rk-live /
+# sk_test / e2e-secret strings; verified not real keys before ignoring — v0.5.3 session).
+f79ee6308764f85221a805bff14b905a12f759dc:test/servicekeys.http.test.js:generic-api-key:50
+2ed9fedf08e1c5aab5c26f9b045c16ab7b3ecee9:test/servicekeys.test.js:generic-api-key:75
+a5d72b7232f29e7c2d3ccf81a91d27217bc69559:test/openai-compat.e2e.test.js:generic-api-key:23
