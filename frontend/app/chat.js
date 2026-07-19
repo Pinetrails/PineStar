@@ -234,6 +234,7 @@ const Chat = (() => {
   }
   function startPresence(ws) {
     presenceCurTool = null;
+    runRails = [];   // a fresh run folds only ITS OWN rails — never an earlier run's history
     if (isActiveWs(ws)) { renderPresence(); ensureElapsedTimer(); }   // the elapsed tick also drives the presence update
   }
   function presenceToolCall(ws, name) { presenceCurTool = name || null; if (isActiveWs(ws)) renderPresence(); }
@@ -258,8 +259,35 @@ const Chat = (() => {
     if (dur) bits.push(dur);
     if (typeof opts.steps === 'number' && opts.steps > 0) bits.push(opts.steps + (opts.steps === 1 ? ' step' : ' steps'));
     if (typeof opts.cost === 'number' && opts.cost > 0) bits.push(U.usd(opts.cost));
-    card.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
-    card.setAttribute('role', 'note');
+    // TWO-TIER TRANSCRIPT: the run's tool rails FOLD under this resolved line so the machinery recedes
+    // and the speech stays contiguous. The rails are MOVED, never deleted — the full work log is one
+    // click away (truthful telemetry intact, just collapsed).
+    const rails = runRails.filter(r => r && r.isConnected && r.childElementCount > 0);
+    runRails = [];
+    const tools = rails.reduce((n, r) => n + r.childElementCount, 0);
+    if (tools > 0) bits.push(tools + (tools === 1 ? ' tool' : ' tools'));
+    card.textContent = '';
+    const sum = document.createElement('span'); sum.className = 'cp-sum';
+    sum.textContent = label + (bits.length ? ' · ' + bits.join(' · ') : '');
+    card.appendChild(sum);
+    if (rails.length) {
+      const chev = document.createElement('span'); chev.className = 'cp-chev'; chev.setAttribute('aria-hidden', 'true'); chev.textContent = '▸';
+      card.appendChild(chev);
+      const fold = document.createElement('div'); fold.className = 'run-fold'; fold.hidden = true;
+      rails.forEach(r => fold.appendChild(r));
+      card.parentNode.insertBefore(fold, card.nextSibling);
+      card.classList.add('has-fold');
+      card.setAttribute('role', 'button'); card.tabIndex = 0; card.setAttribute('aria-expanded', 'false');
+      const toggle = () => {
+        const open = card.classList.toggle('open');
+        fold.hidden = !open;
+        card.setAttribute('aria-expanded', open ? 'true' : 'false');
+      };
+      card.addEventListener('click', toggle);
+      card.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
+    } else {
+      card.setAttribute('role', 'note');
+    }
     autoscroll();
   }
   // POST-RUN DEDUPE: when a recap card is about to render (it owns cost · duration · model + the artifact list),
@@ -268,8 +296,9 @@ const Chat = (() => {
   function foldPresenceIntoRecap() {
     const card = log && log.querySelector('#comms-presence.resolved');
     if (!card) return;
-    const label = String(card.textContent || '').split(' · ')[0];
-    if (label && card.textContent !== label) card.textContent = label;
+    const tgt = card.querySelector('.cp-sum') || card;   // metrics live in the summary span (the fold chevron survives)
+    const label = String(tgt.textContent || '').split(' · ')[0];
+    if (label && tgt.textContent !== label) tgt.textContent = label;
   }
 
   // CRASH HONESTY (Theme 2) — after a run stream died on a network drop, poll /api/health until the sidecar is
@@ -1202,10 +1231,22 @@ const Chat = (() => {
     opts = opts || {};
     lastBroadcastAt = Date.now();
     clearEmptyState();
-    const d = document.createElement('div');
-    d.className = 'cmsg broadcast' + (opts.tone === 'gold' ? ' broadcast-gold' : '');
-    d.setAttribute('role', 'status');   // a live-region system line for AT (it renders no speaker chip)
-    const line = document.createElement('span'); line.className = 'bc-line';
+    // COALESCE INTO ONE BLOCK: consecutive station lines share a single broadcast row (a centered stack
+    // inside the same hairline chrome) instead of each claiming a full transcript row — four trophies
+    // land as one quiet moment, not four rows wedged between the Commander and their agent.
+    let d = null, stack = null;
+    const last = log.lastElementChild;
+    if (last && last.classList && last.classList.contains('broadcast')) { d = last; stack = d.querySelector('.bc-stack'); }
+    if (!d || !stack) {
+      d = document.createElement('div');
+      d.className = 'cmsg broadcast' + (opts.tone === 'gold' ? ' broadcast-gold' : '');
+      d.setAttribute('role', 'status');   // a live-region system line for AT (it renders no speaker chip)
+      stack = document.createElement('span'); stack.className = 'bc-stack';
+      d.appendChild(stack);
+      log.appendChild(d);
+    }
+    const line = document.createElement('span');
+    line.className = 'bc-line' + (opts.tone === 'gold' ? ' bc-gold' : '');   // tone rides the LINE (a shared block can mix tones)
     const raw = String(text == null ? '' : text);
     const hi = opts.highlight ? String(opts.highlight) : '';
     const ix = hi ? raw.indexOf(hi) : -1;
@@ -1221,8 +1262,7 @@ const Chat = (() => {
     } else {
       line.appendChild(document.createTextNode(raw));
     }
-    d.appendChild(line);
-    log.appendChild(d);
+    stack.appendChild(line);
     autoscroll();
     // ASCII-motion (asciifx.js): the station line DECODES out of glyph-static — the eerie register the
     // broadcast asks for (a signal resolving, never a party). scramble walks leaf text nodes only, so the
@@ -1250,6 +1290,7 @@ const Chat = (() => {
      view (full args + result summary, length-capped). Cheap by design: a one-time fade-in per chip, no
      per-chip looping animation, and the expanded text is capped so a long run stays DOM-lean. */
   let toolRail = null;                 // the currently-open .tool-rail container (consecutive chips join it)
+  let runRails = [];                   // every rail this run opened — folded under the resolved summary on run end
   const pendingChips = new Map();      // callId -> chip element awaiting its result (for call→result folding)
   const CHIP_CAP = 600;                // cap on stored expand text length — a long run must not bloat the DOM
   const cap = s => { s = String(s == null ? '' : s); return s.length > CHIP_CAP ? s.slice(0, CHIP_CAP) + '…' : s; };
@@ -1285,6 +1326,7 @@ const Chat = (() => {
     if (toolRail && toolRail.isConnected) return toolRail;
     clearEmptyState();
     toolRail = document.createElement('div'); toolRail.className = 'tool-rail';
+    runRails.push(toolRail);   // remembered so resolvePresence can fold this run's machinery away
     log.appendChild(toolRail); autoscroll();
     return toolRail;
   }
