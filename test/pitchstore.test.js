@@ -269,6 +269,26 @@ A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: true, reaso
     A.eq(PitchStore._state().pitched, false, 'and the un-fired pitch stays ARMED for a later real task');
     delete deps.wasTaskRun;
 
+    /* ---------- V3 B10: the interview-grabbed first move — armed, persisted, offered ONCE at the floor ---------- */
+    {
+      clearFakes(); PitchStore.reset(); PitchStore.init(deps);
+      const nudges = [];
+      global.Chat = { nudge: (text, chips, cb) => { nudges.push({ text, chips, cb }); }, isBusy: () => false, clearNudge() {} };
+      PitchStore.armFirstMove('  draft your sponsor-brief replies each morning  ');
+      A.eq(PitchStore._state().firstMove, 'draft your sponsor-brief replies each morning', 'armFirstMove trims + persists the grabbed move');
+      readyState = { ready: false, reasons: ['no-direction'] };   // the grab outranks the gate — the Commander chose it
+      A.eq(await PitchStore.offerStarter(), true, 'the armed first move is offered even below the readiness gate');
+      A.eq(nudges.length, 1, 'exactly one nudge');
+      A.ok(/the move you picked at my wake/.test(nudges[0].text), 'the nudge names the interview grab, never a generated guess');
+      A.eq(hn.calls.length, 0, 'an armed move needs NO model call');
+      A.eq(PitchStore._state().firstMove, undefined, 'the armed move is consumed on offer (one-shot)');
+      nudges[0].cb({ value: 'run' });
+      A.eq(launchedDirective, 'draft your sponsor-brief replies each morning', '"run it" launches the grabbed move as a real directive');
+      A.eq(await PitchStore.offerStarter(), false, 'the floor never re-offers (starterDone spent)');
+      readyState = { ready: true, reasons: [] };
+      delete global.Chat;
+    }
+
     /* ---------- source-locks: tutorial.js wires the handoff honestly (browser IIFE — lock the source) ---------- */
     const tutSrc = require('fs').readFileSync(require('path').join(__dirname, '../frontend/app/tutorial.js'), 'utf8');
     A.ok(/PitchStore\.offerAtHandoff\b/.test(tutSrc), 'the tutorial handoff offers the First Pitch');

@@ -102,7 +102,7 @@ const Onboarding = (() => {
       // GONE — a blitzed onboarding now yields an EMPTY dossier, not a fake one (the readiness gate reads that
       // honestly and keeps every recommendation surface shut until real context exists).
       { dossierDim: 'pain', optional: true,
-        prompt: 'first: what did you do this week that a machine should have done? name the chore — the one where YOU were the robot.',
+        prompt: 'now the part i exist for. what did you catch yourself complaining about this week — not the big stuff, the dumb recurring thing? the chore where YOU were the robot.',
         options: [
           { label: 'Copy-pasting between apps', steer: 'which apps? paint me the last time it happened — the real one goes in my file, not the category.' },
           { label: 'The same email, again', steer: 'to who, about what? give me the gist of the last one you sent.' },
@@ -118,16 +118,15 @@ const Onboarding = (() => {
       // AMBITION — the matched PULL to pain's push: what the Commander keeps meaning to do but never reaches.
       // Same dossier-direct write (dossierDim + build:()=>null, no .md doc). pain + ambition = the exact gap the
       // agent exists to close, and the setup for a sharp First Pitch. Optional + skippable.
+      // V3 B6 — THE YEAR (the signature question: extraction + product-pitch + magic, one breath). The
+      // no-idea chip is a FIRST-CLASS honest answer (direction open — hunt mode inherits), never a failure.
       { dossierDim: 'ambition', optional: true,
-        prompt: 'now the shelf. what have you been meaning to get to for months — the thing you’d start tonight if the grunt work did itself?',
+        prompt: 'last big one. say i work for you for a year. free. tireless. i don’t sleep and i don’t quit. what exists at the end of that year that doesn’t exist right now?',
         options: [
-          { label: 'A project i keep shelving', steer: 'name it. what is it — and what would exist if it finally shipped?' },
-          { label: 'Something i want to learn', steer: 'which skill? and what’s the first thing you’d make with it?' },
-          { label: 'An audience i keep meaning to build', steer: 'where — a channel, a newsletter, a feed? and about what?' },
-          { label: 'An idea i can’t stop circling', steer: 'say the idea out loud. one sentence, the honest version.' },
+          { label: 'honestly — no idea yet. let’s find out', value: '', open: true },
           { label: 'Skip for now', value: '', skip: true }
         ],
-        custom: true, customLabel: 'name it straight', placeholder: 'the thing you’d finally start with a hand that never clocks out…',
+        custom: true, customLabel: 'name it straight', placeholder: 'the thing that exists at the end of that year…',
         build: () => null,
         ack: t => t
           ? 'now that — that’s where i want to take you. noted.'
@@ -395,6 +394,14 @@ const Onboarding = (() => {
     '…hold that thought — i want to ask the right thing here.',
     'still here. sorting what you said from what you meant.'
   ];
+  const DIG_PATTER = [
+    '…a tuesday says more than a résumé. give me a second with yours.',
+    'still reading it back. the hours always tell on the life.'
+  ];
+  const MIRROR_PATTER = [
+    'hold on — i’m lining up what i could actually take off you.',
+    'almost. i only want to offer what i can genuinely do.'
+  ];
   // reason-only + internal — no tools reachable (placed:[]), no run.start/end on the bus (the awakening
   // thinking about you is not a shipped task; XP/telemetry stay honest), cost still counted.
   function llmCall(directive) {
@@ -527,35 +534,115 @@ const Onboarding = (() => {
     }
   }
 
-  // THE MEETING (Interview 2.0, orchestrator only). PAIN (the validated anchor) → a follow-up the agent
-  // asked ITSELF from their answer → AMBITION → a second self-asked follow-up that makes the shelved
-  // thing concrete → the agent's spoken READ + self-authored mission (confirm / put-it-my-way) → the
-  // autonomy cadence. Still three questions on the marquee, but each answer earns a LISTENED-to dig:
-  // one conversation fills context.md + pain + ambition (×2) + the stack dim + goals (via purpose).
+  // V3 helpers — synthesized beliefs from a mind reply land as weight 'synth' (grounded, counts toward
+  // readiness) through the one store chokepoint; a quiet store is a no-op, never a crash.
+  function upsertSynthBeliefs(beliefs) {
+    if (!Array.isArray(beliefs) || typeof DossierStore === 'undefined' || !DossierStore.upsert) return;
+    for (const b of beliefs) { if (b && b.dim && b.text) DossierStore.upsert(b.dim, { text: b.text, source: 'onboarding', weight: 'synth' }); }
+  }
+  // one generated follow-up ask → the Commander's typed words (steer-chip law: generated chips are
+  // plausible answers, but tapping one still asks for their own words — nothing canned ever lands).
+  async function askGenerated(askText, chips, customLabel, placeholder) {
+    const options = (chips || []).map(c => ({ label: c, steer: 'close — but say it in your words, real names and all.' }));
+    options.push({ label: 'Skip for now', value: '', skip: true });
+    const f = await askStep({ optional: true, prompt: askText, options, custom: true, customLabel, placeholder, build: () => null, ack: () => '' }, { quietAck: true });
+    return f.text;
+  }
+
+  /* THE MEETING, V3 (docs/ONBOARDING_V3_PLAN.md §3 — guided discovery, orchestrator only):
+     B0 stakes → B1 fork (deep / keep-it-loose, both first-class) → B2 the tuesday → B3 the dig (generated)
+     → B4 the complaint (pain) + its dig → B5 lost time → B6 the year + its dig → B7 the mirror (offers —
+     the possibility-space teacher) → B8 the read (confirm/adjust → purpose.md) → B9 cadence → B10 proof.
+     Every generated beat degrades honestly: a quiet mind SKIPS the live-only beats (dig/mirror) — it never
+     fakes listening — and the scripted spine (B4, B5, B6, fallback purpose, cadence) still lands purpose.md. */
   async function runLeadMeeting() {
     const stepOf = k => steps.find(x => x.dossierDim === k) || null;
-    const painStep = stepOf('pain'), ambitionStep = stepOf('ambition');
+    const painStep = stepOf('pain'), yearStep = stepOf('ambition');
     const postureStep = steps.find(x => x.posturePreset) || null;
 
-    // 0. THE STAKES — before any question, the agent says plainly why these answers matter: they become
-    // its permanent operating file, and the quality of what it gives back scales with what it's given.
-    // Give-to-get, stated honestly — extraction earns generosity by declaring the exchange up front.
-    await Dialogue.say([seg('three questions before we start. your answers become my permanent operating file — i act on them every day from here. and the trade is real: the sharper the picture you give me, the sharper my first move gets. vague in, vague out. skip anything — but whatever you give me, i keep.', 42, 380)]);
+    // B0. THE STAKES — the give-to-get trade, declared up front.
+    await Dialogue.say([seg('before anything else — a warning, or a promise. what you tell me in the next few minutes becomes my permanent operating file. i will act on it every day from here. vague in, vague out. give me the real thing and i will feel like i’ve known you for years.', 42, 380)]);
     if (!running) return;
 
-    // 1. PAIN — ask + commit (quiet), then react with the LIVE mind; canned ack when it's quiet.
+    // B1. THE FORK — depth is the Commander's call; the loose path is a first-class choice, not a skip.
+    let loose = false;
+    {
+      const f = await Dialogue.node({
+        lines: [seg('i can do this two ways. we go deep now — a few minutes, and i come out the other side knowing what to build for you. or we keep it loose and i figure you out as we go. your call.', 44, 0)],
+        options: [
+          { label: 'go deep — i’ll give you the real answers', value: 'deep' },
+          { label: 'keep it loose — learn me as we go', value: 'loose' }
+        ]
+      });
+      if (!running) return;
+      loose = !!(f && f.value === 'loose');
+      if (loose) {
+        // the choice itself is recorded — as a mechanical note (weight 'seed': it must never convince the
+        // readiness gate the station knows anyone). Hunt mode inherits the whole gap, honestly.
+        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('identity', { text: 'Chose to be figured out through the work, not an interview.', source: 'onboarding', weight: 'seed' });
+        await Dialogue.say([seg('deal. two small ones anyway — they cost you nothing and buy me a lot.', 44, 360)]);
+        if (!running) return;
+      }
+    }
+    beatTotal = loose ? 5 : 9;
+
+    // B2 + B3 (deep only). THE TUESDAY — the scene that contains the identity — then THE DIG: the mind's
+    // own next question, grounded in their exact words. The dig also pre-authors B4/B6 chips for THIS person.
+    let tuesdayT = '', digT = '';
+    let digReply = null;
+    if (!loose) {
+      tuesdayT = (await askStep({
+        optional: true,
+        prompt: 'paint me your tuesday. not the calendar version — the real one. where do the hours actually go?',
+        options: [
+          { label: 'i run something', steer: 'then paint me the shop’s tuesday — what do YOU end up doing with your own hands?' },
+          { label: 'i work for someone', steer: 'then the job’s tuesday — what fills the hours, and which part is actually yours?' },
+          { label: 'i make things on the side', steer: 'then the side-hours — when do they happen, and what are you making?' },
+          { label: 'i’m studying', steer: 'then the student tuesday — what are you studying, and where do the hours really go?' },
+          { label: 'Skip for now', value: '', skip: true }
+        ],
+        custom: true, customLabel: 'tell it straight', placeholder: 'the honest version…',
+        build: () => null, ack: () => ''
+      }, { quietAck: true })).text;
+      if (!running) return;
+      if (tuesdayT) {
+        bumpTruth();
+        const pending = brainReady() ? llmCall(WakeMind.buildDigReply({ tuesday: tuesdayT, name: NAME })) : null;
+        digReply = await mindWait(pending, WakeMind.parseDigReply, DIG_PATTER, PAIN_REPLY_MS);
+        if (!running) return;
+        if (digReply) {
+          upsertSynthBeliefs(digReply.beliefs);
+          await Dialogue.say([seg(digReply.ack, 44, 360)]);
+          if (!running) return;
+          if (digReply.ask) {
+            digT = await askGenerated(digReply.ask, digReply.chips, 'say it straight', 'the real version — it goes in my file…');
+            if (!running) return;
+            if (digT) { bumpTruth(); await Dialogue.say([seg('good. the picture’s forming.', 44, 320)]); if (!running) return; }
+          }
+        }
+      }
+    }
+
+    // B4. THE COMPLAINT (pain) — quiet ask (chips personalized by the dig when it landed), then the live
+    // mind reacts + digs for the project BEHIND the chore; the dig answer is context.md + a stated identity.
     let painT = '', aboutT = '';
     if (painStep) {
-      painT = (await askStep(painStep, { quietAck: true })).text;
+      let step = painStep;
+      if (digReply && digReply.painChips && digReply.painChips.length >= 2) {
+        step = Object.assign({}, painStep, {
+          options: digReply.painChips.map(c => ({ label: c, steer: 'that one? then give me the real instance — the last time it actually happened.' }))
+            .concat([{ label: 'Skip for now', value: '', skip: true }])
+        });
+      }
+      painT = (await askStep(step, { quietAck: true })).text;
       if (!running) return;
       bumpTruth();   // the truth lands the moment they answer — the mind composes over it, never dead air
-      const pending = (painT && brainReady()) ? llmCall(WakeMind.buildPainReply({ pain: painT, name: NAME })) : null;
+      const pending = (painT && brainReady()) ? llmCall(WakeMind.buildPainReply({ pain: painT, tuesday: tuesdayT, dig: digT, name: NAME })) : null;
       const reply = await mindWait(pending, WakeMind.parsePainReply, PAIN_PATTER, PAIN_REPLY_MS);
       if (!running) return;
+      if (reply) upsertSynthBeliefs(reply.beliefs);
       await Dialogue.say([seg(reply ? reply.ack : (typeof painStep.ack === 'function' ? painStep.ack(painT) : painStep.ack), 44, 360)]);
       if (!running) return;
-      // 2. THE FOLLOW-UP — one grounded question the agent chose itself; the answer IS context.md (the
-      // ground it stands on), and identity seeds from that doc — no broad "tell me about your world" needed.
       if (reply && reply.ask) {
         const f = await Dialogue.node({
           lines: [seg(reply.ask, 46, 0)],
@@ -566,7 +653,7 @@ const Onboarding = (() => {
         if (!running) return;
         aboutT = (!f.skip && f.value != null) ? String(f.value).trim() : '';
         if (aboutT) {
-          // V3: their own words land as a GROUNDED identity belief FIRST (weight 'stated' → counts toward
+          // their own words land as a GROUNDED identity belief FIRST (weight 'stated' → counts toward
           // readiness); the context.md doc-seed that follows dedupes against it (seed weight never counts).
           if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('identity', { text: aboutT, source: 'onboarding', weight: 'stated' });
           if (commit) commit({ context: aboutT });
@@ -577,52 +664,149 @@ const Onboarding = (() => {
       }
     }
 
-    // 3. AMBITION — quiet ask, then the live mind DIGS: a want-it-too ack + ONE follow-up that makes
-    //    the shelved thing concrete (what it IS / who it's for). The canned "noted." used to end this
-    //    beat exactly where the richest material — their projects and ideas — was on the table; now the
-    //    answer becomes a SECOND ambition belief and feeds the read. Canned ack when the mind is quiet.
-    let ambitionT = '', dreamT = '';
-    if (ambitionStep) {
-      ambitionT = (await askStep(ambitionStep, { quietAck: true })).text;
+    // B5. LOST TIME — where the hours go WILLINGLY: effortless to answer, and it mines what they love
+    // (where long-term direction hides). Their words land verbatim as a stated identity belief.
+    let lostT = '';
+    {
+      lostT = (await askStep({
+        dossierDim: 'identity', optional: true,
+        prompt: 'different question. when you lose track of time — actually lose it, look up and it’s dark out — what are you doing?',
+        options: [{ label: 'Skip for now', value: '', skip: true }],
+        custom: true, customLabel: 'say it plain', placeholder: 'the thing that eats the hours without asking…',
+        build: () => null,
+        ack: t => t ? 'that one goes in the file — the hours you’d keep.' : 'fair — i’ll spot it myself eventually.'
+      })).text;
       if (!running) return;
-      bumpTruth();   // the truth lands on the answer — the mind composes over it, never dead air
-      const pending = (ambitionT && brainReady()) ? llmCall(WakeMind.buildAmbitionReply({ ambition: ambitionT, pain: painT, about: aboutT, name: NAME })) : null;
-      const reply = await mindWait(pending, WakeMind.parseAmbitionReply, AMBITION_PATTER, PAIN_REPLY_MS);
+    }
+
+    // B6. THE YEAR — the signature question. The no-idea chip is an honest first-class answer (direction
+    // open, hunt mode inherits — recorded as a seed note so the gate never mistakes it for knowledge).
+    let yearT = '', dreamT = '';
+    if (yearStep) {
+      const yq = await Dialogue.node({
+        lines: [seg(yearStep.prompt, 46, 0)],
+        options: (digReply && digReply.yearChips && digReply.yearChips.length ? digReply.yearChips.map(c => ({ label: c, steer: 'is that it? say it in your words — what does it actually look like at the end?' })) : [])
+          .concat(yearStep.options),
+        allowCustom: true, customLabel: yearStep.customLabel, customPlaceholder: yearStep.placeholder,
+        skipOnEmpty: true
+      });
       if (!running) return;
-      await Dialogue.say([seg(reply ? reply.ack : (typeof ambitionStep.ack === 'function' ? ambitionStep.ack(ambitionT) : ambitionStep.ack), 44, 360)]);
-      if (!running) return;
-      if (reply && reply.ask) {
-        const f = await Dialogue.node({
-          lines: [seg(reply.ask, 46, 0)],
+      const chosen = yq && yq.label ? (yq.label) : '';
+      const openOpt = yearStep.options.find(o => o && o.open) || null;
+      const steerOpt = (!yq.skip && chosen) ? [].concat(digReply && digReply.yearChips ? digReply.yearChips : []).find(c => c === chosen) : null;
+      if (steerOpt) {
+        const f2 = await Dialogue.node({
+          lines: [seg('is that it? say it in your words — what does it actually look like at the end?', 46, 0)],
           options: [{ label: 'Skip for now', value: '', skip: true }],
-          allowCustom: true, customLabel: 'paint it for me', customPlaceholder: 'the real shape of it — straight into my dossier…',
+          allowCustom: true, customLabel: yearStep.customLabel, customPlaceholder: yearStep.placeholder,
           skipOnEmpty: true
         });
         if (!running) return;
-        dreamT = (!f.skip && f.value != null) ? String(f.value).trim() : '';
-        if (dreamT) {
-          if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('ambition', { text: dreamT, source: 'onboarding', weight: 'stated' });
-          bumpTruth();
-          await Dialogue.say([seg('that’s the version i’m keeping — the real one.', 44, 360)]);
+        yearT = (!f2.skip && f2.value != null) ? String(f2.value).trim() : '';
+      } else if (!yq.skip && openOpt && chosen === openOpt.label) {
+        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('ambition', { text: 'Direction open — wants the station to help discover what to build.', source: 'onboarding', weight: 'seed' });
+        await Dialogue.say([seg('fair. then finding it IS the mission — we hunt it down together, through real work.', 44, 380)]);
+        if (!running) return;
+      } else if (!yq.skip && yq.value != null && String(yq.value).trim()) {
+        yearT = String(yq.value).trim();
+      }
+      if (yearT) {
+        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('ambition', { text: yearT, source: 'onboarding', weight: 'stated' });
+        bumpTruth();
+        const pending = brainReady() ? llmCall(WakeMind.buildYearReply({ year: yearT, tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, lost: lostT, name: NAME })) : null;
+        const reply = await mindWait(pending, WakeMind.parseYearReply, AMBITION_PATTER, PAIN_REPLY_MS);
+        if (!running) return;
+        if (reply) upsertSynthBeliefs(reply.beliefs);
+        await Dialogue.say([seg(reply ? reply.ack : (typeof yearStep.ack === 'function' ? yearStep.ack(yearT) : yearStep.ack), 44, 360)]);
+        if (!running) return;
+        if (reply && reply.ask) {
+          const f = await Dialogue.node({
+            lines: [seg(reply.ask, 46, 0)],
+            options: [{ label: 'Skip for now', value: '', skip: true }],
+            allowCustom: true, customLabel: 'paint it for me', customPlaceholder: 'the real shape of it — straight into my dossier…',
+            skipOnEmpty: true
+          });
           if (!running) return;
+          dreamT = (!f.skip && f.value != null) ? String(f.value).trim() : '';
+          if (dreamT) {
+            if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('ambition', { text: dreamT, source: 'onboarding', weight: 'stated' });
+            bumpTruth();
+            await Dialogue.say([seg('that’s the version i’m keeping — the real one.', 44, 360)]);
+            if (!running) return;
+          }
         }
       }
     }
 
-    // 4. THE READ — the agent puts it together, speaks its read, and authors its OWN mission; the
-    //    Commander confirms or corrects it. This replaces the 5-option purpose picker: the mission is
-    //    DERIVED from real context, not chosen from a menu. The call kicks the moment the last answer
-    //    is in (it needs the dug ambition detail, so it can no longer prefetch under the ambition ack);
-    //    the "hold on" beat + patter cover the wait up to the hard ceiling.
+    // B7. THE MIRROR (deep + live mind + something real to mirror) — the agent makes concrete OFFERS from
+    // their own life: the possibility-space teacher. A grab arms the closing proof beat AND the post-tour
+    // first move; a redirect is premium signal (their own words → a stated goals belief). A quiet mind
+    // SKIPS this beat entirely — a canned offer would be fake listening.
+    let grabbedMove = '';
+    if (!loose && brainReady() && (tuesdayT || painT || yearT || lostT)) {
+      const mirrorCtx = { tuesday: tuesdayT, dig: digT, pain: painT, about: aboutT, lost: lostT, year: yearT, dream: dreamT, capabilities: [], name: NAME };
+      let mir = await mindWait(llmCall(WakeMind.buildMirror(mirrorCtx)), WakeMind.parseMirror, MIRROR_PATTER, SYNTHESIS_MS);
+      if (!running) return;
+      let askedElse = false;
+      while (mir && mir.offers && mir.offers.length) {
+        upsertSynthBeliefs(mir.beliefs);
+        await Dialogue.say([seg('okay. before i write anything down — here’s what i could take off you, starting tonight:', 44, 320)]);
+        if (!running) return;
+        const opts = mir.offers.map((o, i) => ({ label: (o.length > 64 ? o.slice(0, 63).replace(/\s+\S*$/, '') + '…' : o), value: 'o' + i }));
+        if (!askedElse) opts.push({ label: 'what else could you do?', value: 'more' });
+        opts.push({ label: 'none of these — i’ll say it', value: 'redirect' });
+        opts.push({ label: 'Skip for now', value: '', skip: true });
+        const pick = await Dialogue.node({ lines: mir.offers.map((o, i) => seg((i ? '  ' : '') + '· ' + o, 46, 220)), options: opts });
+        if (!running) return;
+        if (pick && /^o\d$/.test(String(pick.value))) {
+          grabbedMove = mir.offers[Number(String(pick.value).slice(1))] || '';
+          if (grabbedMove && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('goals', { text: 'Wants the station to: ' + grabbedMove, source: 'onboarding', weight: 'synth' });
+          bumpTruth();
+          await Dialogue.say([seg('then that’s the one i keep my eye on.', 44, 340)]);
+          break;
+        }
+        if (pick && pick.value === 'more' && !askedElse) {
+          askedElse = true;
+          mir = await mindWait(llmCall(WakeMind.buildMirror(Object.assign({}, mirrorCtx, { exclude: mir.offers }))), WakeMind.parseMirror, MIRROR_PATTER, SYNTHESIS_MS);
+          if (!running) return;
+          continue;
+        }
+        if (pick && pick.value === 'redirect') {
+          const f = await Dialogue.node({
+            lines: [seg('better. say it — what would you actually hand me?', 46, 0)],
+            options: [{ label: 'Skip for now', value: '', skip: true }],
+            allowCustom: true, customLabel: 'the real ask', customPlaceholder: 'the thing you’d actually hand me…',
+            skipOnEmpty: true
+          });
+          if (!running) return;
+          const t = (!f.skip && f.value != null) ? String(f.value).trim() : '';
+          if (t) {
+            grabbedMove = t;
+            if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('goals', { text: t, source: 'onboarding', weight: 'stated' });
+            bumpTruth();
+            await Dialogue.say([seg('even better — your words beat my guesses. it’s in the file.', 44, 340)]);
+          }
+        }
+        break;
+      }
+      if (!running) return;
+    }
+
+    // B8. THE READ — the agent puts it together, speaks its read, and authors its OWN mission; the
+    //    Commander confirms or corrects it. V3: the synthesis sees the WHOLE meeting (tuesday, dig, lost
+    //    time, the year, the grabbed offer), and on a thin/loose run the directive makes the read OWN the
+    //    thinness — "i barely know you yet" is the honest read, never faked familiarity.
     let purposeDone = false;
-    const synPending = (brainReady() && (painT || aboutT || ambitionT || dreamT))
-      ? llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, ambition: ambitionT, dream: dreamT, name: NAME })) : null;
+    const gaveAnything = !!(tuesdayT || digT || painT || aboutT || lostT || yearT || dreamT || grabbedMove);
+    const synPending = brainReady()
+      ? llmCall(WakeMind.buildSynthesis({ pain: painT, about: aboutT, ambition: yearT, dream: dreamT, tuesday: tuesdayT, dig: digT, lost: lostT, grabbed: grabbedMove, thin: !gaveAnything, name: NAME })) : null;
     if (synPending) {
       await Dialogue.say([seg('hold on — let me put together what you just handed me…', 44, 240)]);
       if (!running) return;
       const syn = await mindWait(synPending, WakeMind.parseSynthesis, SYNTH_PATTER, SYNTHESIS_MS);
       if (!running) return;
       if (syn) {
+        upsertSynthBeliefs(syn.beliefs);
         await Dialogue.say([seg(syn.read, 42, 420)]);
         if (!running) return;
         const c = await Dialogue.node({ lines: [seg('did i read that right?', 46, 0)], options: WakeMind.confirmChoices() });
@@ -640,7 +824,9 @@ const Onboarding = (() => {
         // V3: the mission is REAL context (synthesized from — or re-stated in — the Commander's words), so it
         // lands as a grounded `goals` belief BEFORE purpose.md commits (the doc-seed then dedupes to nothing).
         // 'stated' when they put it their own way, 'synth' when they confirmed the agent's synthesis.
-        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('goals', { text: purposeT, source: 'onboarding', weight: (purposeT === syn.purpose ? 'synth' : 'stated') });
+        // A THIN run's confirmed synthesis is grounded in NOTHING the Commander said — it lands as 'seed'
+        // (purpose.md still exists; the readiness gate stays honestly shut until real words arrive).
+        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('goals', { text: purposeT, source: 'onboarding', weight: (purposeT !== syn.purpose ? 'stated' : (gaveAnything ? 'synth' : 'seed')) });
         if (commit) commit({ purpose: purposeT });
         // the one durable belief only this conversation could surface: the stack/domain they live in.
         if (syn.stack && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('stack', { text: syn.stack, source: 'onboarding', weight: 'synth' });
@@ -656,9 +842,32 @@ const Onboarding = (() => {
       if (!running) return;
     }
 
-    // 5. THE CADENCE — unchanged scripted beat.
+    // B9. THE CADENCE — unchanged scripted beat.
     if (postureStep) {
       await askStep(postureStep);
+      if (!running) return;
+    }
+
+    // B10. THE PROOF — the interview ends by SHOWING it listened. A grabbed mirror offer becomes the
+    // agent's declared first move, armed for the moment the tour hands the stage back (PitchStore's floor
+    // then presents THIS — the one below-gate starter allowed, because the Commander picked it themselves).
+    // No grab / loose path → the honest close: the hunt is declared, never a fake promise.
+    if (grabbedMove) {
+      const p = await Dialogue.node({
+        lines: [seg('then here’s my first move — ' + grabbedMove, 42, 380), seg('  say the word and i start, the moment the tour’s out of the way.', 44, 0)],
+        options: [
+          { label: 'do it — that’s the one', value: 'run' },
+          { label: 'we’ll see', value: 'no', skip: true }
+        ]
+      });
+      if (!running) return;
+      if (p && p.value === 'run' && typeof PitchStore !== 'undefined' && PitchStore.armFirstMove) {
+        PitchStore.armFirstMove(grabbedMove);
+        await Dialogue.say([seg('deal. it’s loaded.', 44, 340)]);
+        if (!running) return;
+      }
+    } else if (loose || !gaveAnything) {
+      await Dialogue.say([seg('then i watch, i learn, i ask. give me a week of real work and i’ll know you better than a form ever could.', 42, 380)]);
       if (!running) return;
     }
   }

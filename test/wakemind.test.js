@@ -126,4 +126,69 @@ const src = require('fs').readFileSync(require('path').join(__dirname, '../front
   .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 A.ok(!/Date\.now|Math\.random|new Date\(/.test(src), 'wakemind.js is deterministic (no clock/randomness)');
 
+/* ========== V3 interview builders (docs/ONBOARDING_V3_PLAN.md §3-4) ========== */
+
+/* ---------- BELIEF lines: validated, capped, never mis-filed ---------- */
+{
+  const bl = W.parseBeliefLines('chatter\nBELIEF identity: Runs a one-person pixel-art studio.\nBELIEF nonsense: dropped dim\nBELIEF stack: Lives in Premiere and Sheets.\nBELIEF goals: A\nBELIEF pain: over the cap');
+  A.eq(bl.length, 3, 'belief lines cap at MAX_BELIEFS');
+  A.eq(bl[0], { dim: 'identity', text: 'Runs a one-person pixel-art studio.' }, 'a valid belief line parses dim + text');
+  A.ok(!bl.some(b => b.dim === 'nonsense'), 'an unknown dim is dropped, never mis-filed');
+  A.eq(W.parseBeliefLines('BELIEF goals: NONE'), [], 'a NONE belief is honestly empty');
+}
+
+/* ---------- the dig (B3): ack required; chips/painChips/yearChips personalize later beats ---------- */
+{
+  const d = W.buildDigReply({ tuesday: 'i edit sponsor videos all day', name: 'VERA' });
+  A.ok(/i edit sponsor videos all day/.test(d), 'the dig directive quotes their actual tuesday');
+  A.ok(/PAIN1:/.test(d) && /YEAR1:/.test(d) && /CHIP1:/.test(d), 'the dig call pre-authors pain/year/answer chips');
+  A.ok(/BELIEF <dim>:/.test(d), 'the dig call teaches the BELIEF line contract');
+  const p = W.parseDigReply('ACK: sponsor videos. so the hours go to other people’s launches.\nASK: whose launches — clients, or your own channel?\nCHIP1: clients, mostly\nCHIP2: my own channel\nPAIN1: chasing sponsor briefs\nPAIN2: rendering + re-exports\nYEAR1: my own channel running itself\nBELIEF identity: Edits sponsor videos for a living.');
+  A.ok(p && p.ack && p.ask, 'a good dig reply parses ack + ask');
+  A.eq(p.chips.length, 2, 'answer chips parse');
+  A.eq(p.painChips, ['chasing sponsor briefs', 'rendering + re-exports'], 'personalized pain chips parse');
+  A.eq(p.yearChips, ['my own channel running itself'], 'personalized year chips parse');
+  A.eq(p.beliefs.length, 1, 'dig beliefs parse');
+  A.eq(W.parseDigReply('ASK: no ack came back'), null, 'a dig reply without an ACK is null (heard nothing = worthless)');
+}
+
+/* ---------- the year reply (B6): same ack/ask contract, context never re-asked ---------- */
+{
+  const d = W.buildYearReply({ year: 'a channel with 100k subs', tuesday: 'edits all day', pain: 'sponsor briefs', name: 'VERA' });
+  A.ok(/a channel with 100k subs/.test(d) && /edits all day/.test(d), 'the year directive quotes the answer + context');
+  A.ok(/Never re-ask anything shown above/.test(d), 'the year dig is forbidden to re-ask known context');
+  const p = W.parseYearReply('ACK: a hundred thousand people you haven’t met yet. i want that too.\nASK: what’s the first video a stranger would see?\nBELIEF ambition: Wants to grow a channel to 100k subscribers.');
+  A.ok(p && p.ack && p.ask && p.beliefs.length === 1, 'a good year reply parses ack + ask + beliefs');
+  A.eq(W.parseYearReply('nothing tagged'), null, 'an unparseable year reply is null');
+}
+
+/* ---------- the mirror (B7): 2-4 offers or nothing; excludes honor the "what else?" regen ---------- */
+{
+  const d = W.buildMirror({ tuesday: 'edits all day', pain: 'sponsor briefs', capabilities: [], exclude: ['draft the briefs'], name: 'VERA' });
+  A.ok(/offer pure reasoning\/writing\/planning work only/.test(d), 'a toolless mirror is honest about its envelope');
+  A.ok(/They already passed on these/.test(d) && /draft the briefs/.test(d), 'the regen call excludes passed offers');
+  const p = W.parseMirror('OFFER1: i could draft your sponsor-brief replies each morning.\nOFFER2: i could plan the next four videos from what you said.\nOFFER3: NONE\nBELIEF pain: Loses hours to sponsor-brief back-and-forth.');
+  A.eq(p.offers.length, 2, 'NONE offers are dropped; real ones kept');
+  A.eq(p.beliefs.length, 1, 'mirror beliefs parse');
+  A.eq(W.parseMirror('OFFER1: just one offer'), null, 'fewer than 2 offers = null (a one-offer menu teaches nothing)');
+}
+
+/* ---------- synthesis v3: thin runs must OWN the thinness; beliefs ride along ---------- */
+{
+  const thin = W.buildSynthesis({ thin: true, name: 'VERA' });
+  A.ok(/OWN that honestly/.test(thin) && /barely know them yet/.test(thin), 'a thin synthesis is told to own the thinness');
+  const full = W.buildSynthesis({ tuesday: 'edits', lost: 'pixel art', grabbed: 'plan the channel', name: 'VERA' });
+  A.ok(/edits/.test(full) && /pixel art/.test(full) && /plan the channel/.test(full), 'the v3 synthesis sees the whole meeting');
+  const p = W.parseSynthesis('READ: you edit for others and dream in pixels.\nPURPOSE: Help them build their own channel.\nSTACK: NONE\nBELIEF style: Prefers blunt, fast answers.');
+  A.ok(p && p.beliefs.length === 1, 'synthesis beliefs parse');
+}
+
+/* ---------- pain reply v3: context lines + beliefs, ack contract unchanged ---------- */
+{
+  const d = W.buildPainReply({ pain: 'sponsor briefs', tuesday: 'edits all day', name: 'VERA' });
+  A.ok(/edits all day/.test(d), 'the pain directive carries the tuesday context');
+  const p = W.parsePainReply('ACK: the briefs. of course.\nASK: which sponsor eats the most of it?\nBELIEF pain: Loses hours to sponsor briefs.');
+  A.ok(p && p.beliefs && p.beliefs.length === 1, 'pain-reply beliefs parse');
+}
+
 A.report('wakemind.test');

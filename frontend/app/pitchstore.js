@@ -33,7 +33,18 @@ const PitchStore = (() => {
     const s = (typeof Pitch !== 'undefined') ? Pitch.fresh() : { v: 1, pitched: false };
     if (raw && typeof raw === 'object' && raw.pitched) s.pitched = true;
     if (raw && typeof raw === 'object' && raw.starterDone) s.starterDone = true;   // the tour-close floor fired once already
+    if (raw && typeof raw === 'object' && typeof raw.firstMove === 'string' && raw.firstMove) s.firstMove = raw.firstMove;   // V3 B10: the interview-grabbed first move (survives reload)
     return s;
+  }
+
+  // V3 B10 (docs/ONBOARDING_V3_PLAN.md §3): the awakening's mirror beat ended with the Commander GRABBING
+  // one of the agent's offers as its first move. Arm it here so the tour-close floor presents THIS instead
+  // of a generated guess — the one starter allowed below the readiness gate, because the Commander chose
+  // it themselves (their grab IS the grounding).
+  function armFirstMove(move) {
+    const t = String(move == null ? '' : move).trim();
+    if (!ready() || !t) return;
+    state.firstMove = t.slice(0, 200); save();
   }
 
   // opts: { getSystem(), getCaps(), getName(), getRecentTask(), launchRecipe(recipe,values), launchDirective(text) }
@@ -184,10 +195,16 @@ const PitchStore = (() => {
       if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return false;
       state.starterDone = true; save();                              // mark on OFFER — ignored still means never re-nag
       let text = null, move = null;
+      // V3 B10: an interview-grabbed first move outranks everything — the Commander already chose it, so it
+      // needs no readiness and no fresh model call. One-shot: consumed on offer (never a recurring nag).
+      if (state.firstMove) {
+        move = state.firstMove; delete state.firstMove; save();
+        text = '✦ the move you picked at my wake — ' + Pitch.titleSentence(move) + ' still want it? i can start right now.';
+      }
       // V3 §6: a GENERATED first move is a recommendation — it only fires above the shared readiness gate.
       // Below it (blitzed/skipped interview → thin dossier) the floor is the honest quest-pointer + an
       // invitation to NAME a chore: the Commander directs, the station never guesses a task from nothing.
-      if (readinessRead().ready && typeof Harness !== 'undefined' && Harness.chat && Harness.configured && Harness.configured()) {
+      else if (readinessRead().ready && typeof Harness !== 'undefined' && Harness.chat && Harness.configured && Harness.configured()) {
         const directive = Pitch.buildStarterDirective({ capabilities: deps.getCaps ? deps.getCaps() : [] });
         const call = Harness.chat({ system: deps.getSystem ? deps.getSystem() : '', messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true }).catch(() => null);
         const res = await Promise.race([call, new Promise(r => setTimeout(() => r(null), 20000))]);   // a late move is a weird move — cap it
@@ -212,7 +229,7 @@ const PitchStore = (() => {
   function done() { return !!(state && state.pitched); }
 
   // _-prefixed handles are exposed for the deterministic node test (harmless in the browser).
-  return { init, reset, onRunEnd, done, offerAtHandoff, offerStarter, _decide: decide, _fire: fire, _state: () => state };
+  return { init, reset, onRunEnd, done, offerAtHandoff, offerStarter, armFirstMove, _decide: decide, _fire: fire, _state: () => state };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { PitchStore };
