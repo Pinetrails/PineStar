@@ -1,6 +1,6 @@
 # NEXT.md — current priorities & task queue
 
-## 2026-07-19 — TIMESTAMP HONESTY sweep (branch `claude/session-list-timestamp-bug-c268c1`, UNMERGED)
+## 2026-07-19 — TIMESTAMP HONESTY sweep (MERGED to trunk e087fdd8 fast-forward)
 
 Andrew's law: every user-visible timestamp = the EXACT moment the thing was produced — never
 queue/poll/adopt/boot/render time. Two audits swept every time surface + every stamp write; all
@@ -18,7 +18,7 @@ clicking the rail row read "8h" not "now"):
 - W0 re-stamps in-branch: 52d51074 + 823d00fe.
 - NOT in this lane: the onboarding blitz-proof work built here by a cross-session mix-up lives on
   `claude/onboarding-blitzproof-c268c1` (UNMERGED, unreviewed) — owned by the onboarding session.
-- OPEN: merge to trunk + exe rebuild.
+- [x] MERGED to trunk e087fdd8 (digest in qa/STATUS.md). OPEN: exe rebuild.
 
 ## 2026-07-18 — v0.5.3 CUT + PUBLISHED (Windows) — desktop exe rebuild CLOSED
 
