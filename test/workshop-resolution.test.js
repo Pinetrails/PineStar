@@ -107,5 +107,35 @@ const seedSession = (runId, extraHistory) => {
   A.ok(!sysLines('workshop-run-U').some(c => c.indexOf('◈') === 0), 'an unreachable station appends NOTHING — fail-open stays honest');
   pendingUnreachable = false;
 
+  /* ---------- 7. unreachable at open (cold-boot race) → RETRIES while the session is on screen, and the
+     card appears the moment the station answers. THE BUG THIS LOCKS OUT (2026-07-19, 3rd report): on
+     desktop the bundled frontend paints before the sidecar listens; presentFor's one-shot probe failed
+     silently and the Commander saw only the naked stub — no card, no buttons, forever. ---------- */
+  seedSession('run-R');
+  pending = [{ runId: 'run-R', title: 'late but owed', files: [] }];
+  pendingUnreachable = true;
+  activeStreamId = 'workshop-run-R';   // the Commander is looking at this session
+  cards = [];
+  WorkshopStore._pfDelays.fast = 20; WorkshopStore._pfDelays.slow = 20;
+  await WorkshopStore.presentFor('workshop-run-R');
+  A.eq(cards.length, 0, 'no card while the station is down (never a fabricated card)');
+  pendingUnreachable = false;          // the sidecar comes up
+  await new Promise(r => setTimeout(r, 120));   // let the retry chain fire
+  A.eq(cards.length, 1, 'the retry presents the card once the station answers');
+  A.eq(cards[0].o.sessionId, 'workshop-run-R', 'the late card is still pinned to its own session');
+
+  /* ---------- 8. unreachable + the Commander switched away → the chain retires (no card into a
+     session that is no longer on screen; reopening re-fires presentFor anyway) ---------- */
+  seedSession('run-S');
+  pending = [{ runId: 'run-S', title: 'switched away', files: [] }];
+  pendingUnreachable = true;
+  activeStreamId = 'workshop-run-S';
+  cards = [];
+  await WorkshopStore.presentFor('workshop-run-S');
+  activeStreamId = 'ws_general';       // switched away before the station answered
+  pendingUnreachable = false;
+  await new Promise(r => setTimeout(r, 120));
+  A.eq(cards.length, 0, 'a retired chain never paints into a session the Commander left');
+
   A.report('workshop-resolution');
 })().catch(e => { console.error(e); process.exit(1); });

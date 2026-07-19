@@ -357,9 +357,15 @@ const WorkshopStore = (() => {
   // THE CARD-ON-OPEN SEAM: chat.js load() calls this with the freshly displayed workstream id. If it is a
   // deliverable session whose run is STILL UNDECIDED server-side (fresh honest read — never a cached claim),
   // render the return card into it. Deliberately ignores the seen AND later ledgers: the Commander explicitly
-  // opened this session, which is the opposite of nagging. Fail-open: any fetch error → no card, no throw.
-  async function presentFor(wsId) {
+  // opened this session, which is the opposite of nagging. Fail-open: any fetch error → no card, no throw —
+  // but an UNREACHABLE station RETRIES while this session stays on screen (see below), because on desktop the
+  // bundled frontend paints before the sidecar answers, and a one-shot probe left the Commander staring at the
+  // naked stub line with no card and nothing ever retrying (the "no UI under built-while-away" bug).
+  let pfRetryTimer = null;   // one retry chain at a time; each fresh presentFor call supersedes it
+  const pfDelays = { fast: 3000, slow: 30000 };   // test-tunable (exported as _pfDelays)
+  async function presentFor(wsId, _try) {
     const id = String(wsId || '');
+    if (pfRetryTimer) { clearTimeout(pfRetryTimer); pfRetryTimer = null; }
     if (id.indexOf(SESSION_PREFIX) !== 0) return;
     if (typeof Chat === 'undefined' || !Chat.workshopReturn) return;
     const runId = id.slice(SESSION_PREFIX.length);
@@ -376,7 +382,21 @@ const WorkshopStore = (() => {
       // unreachable/odd response → the old fail-open read across the roster; an error here stays silent
       // (never assert a resolution the server didn't prove).
       const m0 = (await fetchRaw()).find(x => x && String(x.runId) === runId) || null;
-      if (m0) presentCard(m0);
+      if (m0) { presentCard(m0); return; }
+      // STATION UNREACHABLE, nothing rendered: cold-boot race (webview up before the sidecar listens).
+      // Keep probing while THIS session is still the one on screen — fast at first, then slow — so the
+      // card appears the moment the station answers instead of never. A session switch retires the chain
+      // (chat.js load() re-fires presentFor on return), and each real presentFor call supersedes it.
+      const t = _try || 0;
+      if (t >= 20) return;   // ~5 min of trying; past that the station is genuinely down, stay silent
+      pfRetryTimer = setTimeout(() => {
+        pfRetryTimer = null;
+        try {
+          const stillHere = (typeof Workstreams !== 'undefined' && Workstreams.activeId) ? Workstreams.activeId() === id : false;
+          if (stillHere) presentFor(id, t + 1).catch(() => {});
+        } catch (_) {}
+      }, t < 5 ? pfDelays.fast : pfDelays.slow);
+      if (pfRetryTimer && pfRetryTimer.unref) pfRetryTimer.unref();   // node (tests): never hold the process open
       return;
     }
     const m = pending.find(x => x && String(x.runId) === runId) || null;
@@ -499,7 +519,7 @@ const WorkshopStore = (() => {
   // S2/new-hero: a fresh Commander inherits no prior "later" list.
   function reset() { state = hydrate(null); fired = false; try { localStorage.removeItem(KEY); } catch (_) {} }
 
-  return { init, queue, decide, discardIfPending, readFile, runUrl, openFile, desktopDefault, fetchPending, presentOnReturn, presentFor, ensureSession, reset, queueConfirmLine, grantOf, openGrant, onBuilt, _hydrate: hydrate };
+  return { init, queue, decide, discardIfPending, readFile, runUrl, openFile, desktopDefault, fetchPending, presentOnReturn, presentFor, ensureSession, reset, queueConfirmLine, grantOf, openGrant, onBuilt, _hydrate: hydrate, _pfDelays: pfDelays };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { WorkshopStore };
