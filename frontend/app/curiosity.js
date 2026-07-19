@@ -24,6 +24,12 @@
   const MIN_WORK = 3;   // WORK-EARNED gate (beat-fat trim, 2026-07-03): the station must complete this many REAL
                         // task-runs in a session before it has earned the right to ask a get-to-know-you question.
                         // An unearned ask is exactly the "fake and unprompted" texture the Commander flagged.
+  // HUNT MODE (ONBOARDING V3 §7): while the station is BELOW the readiness gate it may not recommend — so its
+  // standing job is closing the context gap. The hunt profile makes curiosity hungrier: the work-earned floor
+  // is waived (the gap IS the reason to ask — there may be no work yet to earn with) and the session budget
+  // doubles. Every anti-nag protection that involves the Commander's own signal stays fully in force:
+  // dismissed = never again, asked-and-ignored stops at ASK_LIMIT, and asks still ride natural moments only.
+  const HUNT_CAP = 2;
 
   // the persisted shape: which dimensions the Commander has waved off (dismissed → never again), and how many
   // times each blank dimension has been ASKED-and-ignored (asked → stop after ASK_LIMIT, so silence ends the loop).
@@ -61,10 +67,11 @@
     const dismissed = (opts.dismissed && typeof opts.dismissed === 'object') ? opts.dismissed : {};
     const asked = (opts.asked && typeof opts.asked === 'object') ? opts.asked : {};
     const count = Number.isFinite(opts.count) ? opts.count : 0;
-    const cap = Number.isFinite(opts.cap) ? opts.cap : CAP;
+    const hunting = !!opts.hunting;   // V3 hunt profile: below the readiness gate, curiosity is the product's job
+    const cap = Number.isFinite(opts.cap) ? opts.cap : (hunting ? HUNT_CAP : CAP);
     const askLimit = Number.isFinite(opts.askLimit) ? opts.askLimit : ASK_LIMIT;
     const minWork = Number.isFinite(opts.minWork) ? opts.minWork : MIN_WORK;
-    if (Number.isFinite(opts.work) && opts.work < minWork) return null;   // ask not yet earned by real work
+    if (!hunting && Number.isFinite(opts.work) && opts.work < minWork) return null;   // ask not yet earned by real work (waived while hunting — the gap is the earning)
     if (count >= cap) return null;            // budget spent for this session — stay quiet
     for (const dim of blank) if (!exhausted(dim, dismissed, asked, askLimit)) return dim;   // first still-live dimension
     return null;                              // nothing left worth asking
@@ -84,5 +91,5 @@
     return s;
   }
 
-  return { fresh, pick, hydrate, exhausted, CAP, ASK_LIMIT, MIN_WORK };
+  return { fresh, pick, hydrate, exhausted, CAP, ASK_LIMIT, MIN_WORK, HUNT_CAP };
 });

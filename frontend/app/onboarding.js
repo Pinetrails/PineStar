@@ -560,6 +560,22 @@ const Onboarding = (() => {
     const painStep = stepOf('pain'), yearStep = stepOf('ambition');
     const postureStep = steps.find(x => x.posturePreset) || null;
 
+    // S5 BRAIN-BEFORE-INTERVIEW (plan §8): the guided-discovery meeting is a LIVE-MIND activity — a keyless
+    // wake gets NO fake scripted interview (asking the deep questions with nothing listening would be the
+    // exact fake-listening texture V3 exists to kill). Instead: the honest holding line, the required
+    // scripted mission + cadence beats (purpose.md ALWAYS lands), and a persisted IOU — the real interview
+    // auto-offers on the first session where the wire is live (offerDeferred). KeyCTA carries the fix path.
+    if (!brainReady()) {
+      beatTotal = 2;
+      await Dialogue.say([seg('one thing, straight: the real interview — the one where i actually learn who you are — needs a live mind behind it, and my wire is dark. wire my brain and i’ll ask you the real questions the moment it hums.', 42, 380)]);
+      if (!running) return;
+      setDeferred();
+      await askStep(fallbackPurposeStep());
+      if (!running) return;
+      if (postureStep) await askStep(postureStep);
+      return;
+    }
+
     // B0. THE STAKES — the give-to-get trade, declared up front.
     await Dialogue.say([seg('before anything else — a warning, or a promise. what you tell me in the next few minutes becomes my permanent operating file. i will act on it every day from here. vague in, vague out. give me the real thing and i will feel like i’ve known you for years.', 42, 380)]);
     if (!running) return;
@@ -936,5 +952,50 @@ const Onboarding = (() => {
 
   function isRunning() { return running; }
 
-  return { start, stop, isRunning };
+  /* ==== S5 — THE DEFERRED INTERVIEW (plan §8) ====
+     A keyless wake banked an IOU (setDeferred, above). The first session that boots with a LIVE brain
+     offers to pay it: one gentle COMMS nudge — accept runs the full guided-discovery meeting (the same
+     runLeadMeeting the awakening uses, minus the birth theatre), decline hands the gap to hunt mode.
+     ONE-SHOT: the flag is spent on OFFER (never a nag loop); reEnable lives in re-running onboarding. */
+  const DEFER_KEY = 'starnet.interview.deferred.v1';
+  function setDeferred() { try { localStorage.setItem(DEFER_KEY, '1'); } catch (_) {} }
+  function deferredPending() { try { return localStorage.getItem(DEFER_KEY) === '1'; } catch (_) { return false; } }
+  function clearDeferred() { try { localStorage.removeItem(DEFER_KEY); } catch (_) {} }
+
+  // opts mirror start(): { name, docs, commit, getSystem, persona, notify }. Returns true iff the offer showed.
+  function offerDeferred(opts) {
+    if (running) return false;
+    if (!deferredPending()) return false;
+    if (!brainReady()) return false;                                    // still no wire — the IOU keeps waiting
+    if (typeof Chat === 'undefined' || !Chat.nudge) return false;
+    if (Chat.isBusy && Chat.isBusy()) return false;
+    if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return false;
+    opts = opts || {};
+    clearDeferred();                                                    // spent on OFFER — declining is answering
+    Chat.nudge('✦ my wire’s live now — and i still owe you the real interview, the one that teaches me who you are. a few minutes, real answers?', [
+      { label: 'do it now', value: 'go' },
+      { label: 'not now', value: 'no', skip: true }
+    ], async item => {
+      if (!item || item.value !== 'go') return;                         // declined → hunt mode owns the gap
+      if (running || typeof Dialogue === 'undefined') return;
+      try {
+        docs = opts.docs || docs; commit = opts.commit || commit;
+        notifyFn = opts.notify || notifyFn; getSystem = opts.getSystem || getSystem;
+        NAME = opts.name || NAME; persona = opts.persona || persona;
+        specialty = null; role = 'orchestrator';
+        steps = buildSteps(); i = 0; beatN = 0; beatTotal = 9; running = true;
+        Dialogue.open({ name: NAME });
+        await runLeadMeeting();
+        if (running && Dialogue.isOpen()) Dialogue.close();
+        if (running && notifyFn) notifyFn('the dossier is real now — i know who i work for.', 'good');
+      } catch (_) {
+        try { if (Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close(); } catch (__) {}
+      } finally {
+        running = false;
+      }
+    });
+    return true;
+  }
+
+  return { start, stop, isRunning, offerDeferred, _deferredPending: deferredPending };
 })();

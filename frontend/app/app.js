@@ -2611,6 +2611,18 @@ const App = (() => {
     // keyless-brain CTA here so a station saved without a key still surfaces the honest "add a key" banner on boot.
     // (It's a pure state projection: it stays hidden when a key IS stored.) The awakening path arms it in `done`.
     if (!opts.awaitingPurpose && typeof KeyCTA !== 'undefined' && KeyCTA.arm) KeyCTA.arm();
+    // V3 S5: a keyless wake banked an interview IOU — the first session that boots with a LIVE brain offers
+    // to pay it (one gentle nudge; declining hands the gap to hunt mode). Delayed so COMMS settles first.
+    if (!opts.awaitingPurpose && typeof Onboarding !== 'undefined' && Onboarding.offerDeferred) {
+      setTimeout(() => { try { Onboarding.offerDeferred({
+        name: agent ? agent.name : 'AGENT',
+        docs: agent ? agentDocs(agent) : null,
+        commit: applyAgentConfig,
+        getSystem: () => agent ? agent.systemPrompt : '',
+        persona: (typeof Personas !== 'undefined' && agent) ? Personas.get(agent.personaId) : null,
+        notify: (typeof StationUI !== 'undefined') ? StationUI.notify : null
+      }); } catch (_) {} }, 4000);
+    }
     // P3: arm the first-steps briefing's bus ticks; re-offer the checklist to a returning user mid-progress
     if (typeof Tutorial !== 'undefined' && Tutorial.onEnterGame) Tutorial.onEnterGame();
     // G1c: the deferred BUILD-dock glow — a soft standing hint on the BUILD dock while a station quest is open

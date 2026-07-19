@@ -20,30 +20,34 @@
 
   // one question per dimension (dims mirror dossier.js DIMS — enforced by the test). `chips` are
   // domain-agnostic quick answers (tap) OR the user types their own; a `skip` chip carries an empty value.
+  // V3 §7 (scene register, the awakening-question rule sharpened): never ask for the ABSTRACTION — ask for
+  // the SCENE that contains it. Every question drops the Commander into a concrete moment of their real life
+  // so the answer falls out of them; the agent does the synthesis. Chip taps still land as weight 'seed'
+  // (beliefFromAnswer) — prompt-informing, never gate-opening; only their typed words are 'stated'.
   const QUESTIONS = [
     { dim: 'identity',
       pre: 'let me actually get to know my Commander — not just take orders from a silhouette.',
-      ask: 'who are you, and what are you building?',
+      ask: 'paint me your tuesday — the real one, not the calendar version. where do the hours actually go?',
       chips: [{ label: 'skip', value: '', skip: true }] },
 
     { dim: 'stack',
       pre: 'so i reach for the right tools instead of guessing —',
-      ask: 'what languages, frameworks, or tools do you live in?',
+      ask: 'what’s open on your screen right now? that’s the honest answer.',
       chips: [
-        { label: 'TypeScript / JS', value: 'Works mostly in TypeScript / JavaScript.' },
-        { label: 'Python', value: 'Works mostly in Python.' },
-        { label: 'Rust', value: 'Works mostly in Rust.' },
+        { label: 'An editor & a terminal', value: 'Works in a code editor and terminal most of the day.' },
+        { label: 'Docs & spreadsheets', value: 'Lives in documents and spreadsheets most of the day.' },
+        { label: 'Design / media tools', value: 'Lives in design or media tools most of the day.' },
         { label: 'skip', value: '', skip: true }
       ] },
 
     { dim: 'goals',
       pre: 'and the thing that actually matters right now —',
-      ask: 'what are you trying to get done?',
+      ask: 'if this month ends well — what got finished? name the one thing.',
       chips: [{ label: 'skip', value: '', skip: true }] },
 
     { dim: 'pain',
       pre: 'now the one that tells me the most about where i can help —',
-      ask: 'what did you do this week you wish you never had to do again?',
+      ask: 'what did you catch yourself complaining about this week — not the big stuff, the dumb recurring thing?',
       chips: [
         { label: 'Repetitive busywork', value: 'Loses time to repetitive busywork they wish were automated.' },
         { label: 'Context-switching', value: 'Loses time to constant context-switching between tools.' },
@@ -53,7 +57,7 @@
 
     { dim: 'ambition',
       pre: 'and the other direction —',
-      ask: 'what’s something you keep meaning to do but never find the time for?',
+      ask: 'say i work for you for a year, free and tireless — what exists at the end that doesn’t right now?',
       chips: [
         { label: 'A project on the back burner', value: 'Has a project they keep meaning to start but never find time for.' },
         { label: 'Something to automate', value: 'Keeps meaning to automate a recurring task but never gets to it.' },
@@ -63,7 +67,7 @@
 
     { dim: 'style',
       pre: 'how you want me to carry myself when i work for you —',
-      ask: 'terse or thorough? ask-first, or run-with-it?',
+      ask: 'when work lands on your desk — do you want the one-liner or the walkthrough? and should i ask first, or run and report back?',
       chips: [
         { label: 'Terse & fast', value: 'Prefers terse, fast, high-signal replies.' },
         { label: 'Thorough', value: 'Prefers thorough, detailed work.' },
@@ -74,7 +78,7 @@
 
     { dim: 'people',
       pre: 'work is always FOR someone —',
-      ask: 'who do you work with or build for — a team, clients, an audience?',
+      ask: 'who’s waiting on something from you this week?',
       chips: [
         { label: 'Just me', value: 'Works solo; the deliverables are for themselves.' },
         { label: 'A team', value: 'Works with a team; deliverables are often shared with teammates.' },
@@ -85,7 +89,7 @@
 
     { dim: 'schedule',
       pre: 'so i can time things right — schedules, night work, when to have things ready —',
-      ask: 'what timezone are you in, and when do you actually work?',
+      ask: 'when do you actually work — and when should finished work be waiting for you?',
       chips: [
         { label: 'Early bird', value: 'Works mostly mornings; wants overnight work ready by early morning.' },
         { label: 'Night owl', value: 'Works mostly evenings and nights.' },
@@ -95,7 +99,7 @@
 
     { dim: 'standing_orders',
       pre: 'last one — the lines i hold to no matter what.',
-      ask: 'any standing rules every agent should always follow?',
+      ask: 'what’s the rule you catch yourself repeating to anyone who works with you?',
       chips: [
         { label: 'Cite sources', value: '- Always cite your sources.' },
         { label: 'Ask before risky moves', value: '- Never take an irreversible action without asking first.' },

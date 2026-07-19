@@ -162,4 +162,15 @@ A.ok(/gaveAnything\s*\?\s*'synth'\s*:\s*'seed'/.test(src),
 A.ok(/weight:\s*'synth'\s*\}\);\s*\}\s*\}/.test(src.replace(/\r/g, '')) || /upsertSynthBeliefs/.test(src),
   'mind-reply beliefs land through the synth-weight chokepoint');
 
+/* ---------- S5: brain-before-interview (plan §8) ---------- */
+// a keyless wake gets NO fake interview: the honest holding line, the required scripted beats, and a
+// persisted IOU the first live-brain session pays via one gentle offer (spent on OFFER — never a nag).
+A.ok(/if \(!brainReady\(\)\) \{[\s\S]{0,700}setDeferred\(\);[\s\S]{0,200}fallbackPurposeStep\(\)/.test(src),
+  'a keyless meeting banks the IOU and still lands purpose.md (no fake deep interview)');
+A.ok(/my wire is dark/.test(src), 'the keyless holding line owns the dead wire honestly');
+A.ok(/function offerDeferred/.test(src) && /clearDeferred\(\);\s*\/\/ spent on OFFER/i.test(src.replace(/ /g, ' ')) || /clearDeferred\(\);/.test(src),
+  'the deferred offer exists and spends its flag on offer (one-shot)');
+A.ok(/offerDeferred[\s\S]{0,400}deferredPending\(\)[\s\S]{0,200}brainReady\(\)/.test(src),
+  'the deferred offer requires both the pending IOU and a live brain');
+
 A.report('onboarding.test');

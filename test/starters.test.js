@@ -111,6 +111,16 @@ const CATALOG = [
   A.eq(gated.some(c => c.label === 'pitch me an idea'), false, 'below the readiness gate the pitch chip is gone');
   A.eq(gated.length, 3, 'the gated slot pads back to a full chip row (classic openers)');
   A.ok(Starters.pick(sig).some(c => c.label === 'pitch me an idea'), 'undefined ready keeps legacy behavior (callers without the read)');
+
+  // V3 §7: below the gate WITH a live probe, the pitch slot hunts instead of padding.
+  const hunting = Starters.pick(Object.assign({}, sig, { ready: false, hunt: true }));
+  A.ok(hunting.some(c => c.kind === 'hunt'), 'below the gate the pitch slot becomes the hunt probe');
+  A.eq(hunting.some(c => c.label === 'pitch me an idea'), false, 'the hunt slot never coexists with the pitch chip');
+  A.eq(Starters.pick(Object.assign({}, sig, { ready: true, hunt: true })).some(c => c.kind === 'hunt'), false,
+    'a ready station never hunts from the opener row (the pitch chip owns the slot)');
+  // fresh station: the third orientation chip yields to the probe while hunting.
+  const freshHunt = Starters.pick({ recipes: CATALOG, returning: false, ready: false, hunt: true });
+  A.ok(freshHunt.some(c => c.kind === 'hunt'), 'a fresh hunting station spends its third slot on the probe');
 }
 
 A.report('starters');

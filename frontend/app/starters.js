@@ -37,6 +37,10 @@
   const TOUR = { kind: 'send', label: 'what can you do here', send: 'What can you do here? Give me a short tour of what you can actually do for me.' };
   const BRIEF = { kind: 'send', label: 'brief me on this station', send: 'Brief me on this station — what is around me and what I can do from here.' };
   const PITCH = { kind: 'send', label: 'pitch me an idea', send: 'Pitch me one concrete, buildable task you could take on for me right now, based on what you actually know about me. Keep it small.' };
+  // V3 §7 HUNT MODE: below the readiness gate the pitch slot flips into a context probe — the un-ready
+  // station's job is closing the gap, and the opener row is a natural moment to invite one real answer.
+  // kind:'hunt' — the caller (chat.js) routes it into the one-question intake for the top-VOI blank dim.
+  const HUNT = { kind: 'hunt', label: 'ask me one real question' };
 
   // cadence gate: only 'morning' implies a time of day. Morning = 05:00–11:59 local.
   function isMorning(hour) { return typeof hour === 'number' && hour >= 5 && hour < 12; }
@@ -71,10 +75,11 @@
     const day = (typeof s.day === 'number' && isFinite(s.day)) ? Math.floor(Math.abs(s.day)) : 0;
 
     if (!s.returning) {
-      // FRESH STATION — the orientation set, byte-identical to the pre-engine behavior.
+      // FRESH STATION — the orientation set; a hunting station spends the third slot on a context probe
+      // (a loose/blitzed onboarding is exactly who lands here with the gate shut and dims still blank).
       const chips = [TOUR];
       if (recipes[0]) chips.push(recipeChip(recipes[0], null));
-      chips.push(BRIEF);
+      chips.push((s.ready === false && s.hunt) ? HUNT : BRIEF);
       return chips.slice(0, MAX_CHIPS);
     }
 
@@ -102,9 +107,11 @@
 
     // 3. the generative chip — the dossier-grounded pitch. V3 §6: it EXPLICITLY invites a recommendation, so
     // it rides the shared readiness gate (signals.ready, from Understanding.readiness). Below the gate the
-    // slot pads with the classic openers instead — the station never advertises advice it isn't allowed to
-    // give. (`undefined` keeps legacy behavior for callers without the readiness read.)
+    // slot becomes the HUNT probe when one is live (§7) — the station can't advise yet, so it asks instead —
+    // and otherwise pads with the classic openers. (`undefined` keeps legacy behavior for callers without
+    // the readiness read.)
     if (s.ready !== false) chips.push(PITCH);
+    else if (s.hunt) chips.push(HUNT);
 
     // pad a signal-starved station (e.g. empty catalog) back up with the classic openers.
     if (chips.length < MAX_CHIPS) chips.push(BRIEF);

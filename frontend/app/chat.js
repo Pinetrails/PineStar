@@ -987,7 +987,11 @@ const Chat = (() => {
     // V3 §6: the pitch chip is gated on the shared readiness read (fail-closed: no read → no pitch chip).
     let ready = false;
     try { const r = (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) ? UnderstandingStore.readiness() : null; ready = !!(r && r.ready); } catch (_) {}
-    const sig = { recipes, recent, valuesOf, returning, hour: now.getHours(), day: Math.floor(now.getTime() / 86400000), ready };
+    // V3 §7: below the gate, the pitch slot becomes a HUNT probe — but only when a live question actually
+    // exists (consider() honors dismissed/stop-forever/session budget, so a worn-out bank offers nothing).
+    let hunt = false;
+    try { hunt = !ready && typeof CuriosityStore !== 'undefined' && !!CuriosityStore.consider(); } catch (_) {}
+    const sig = { recipes, recent, valuesOf, returning, hour: now.getHours(), day: Math.floor(now.getTime() / 86400000), ready, hunt };
     if (typeof Starters !== 'undefined' && Starters.pick) {
       try { const out = Starters.pick(sig); if (out && out.length) return out; } catch (_) {}
     }
@@ -1021,6 +1025,7 @@ const Chat = (() => {
       const b = document.createElement('button'); b.type = 'button'; b.className = 'choice cmsg-starter'; b.textContent = st.label;
       b.addEventListener('click', () => {
         if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
+        if (st.kind === 'hunt') { startHuntAsk(); return; }              // V3 §7: the probe chip — the click IS the consent
         if (st.recipe) { insertRecipe(st.recipe, st.values); return; }   // fill the directive to edit, don't auto-fire
         if (input) { input.value = st.send; autoGrowInput(); }
         submitComposer();
@@ -3496,6 +3501,22 @@ const Chat = (() => {
       }
     });
     activeNudge = { row: r.d, choiceRow: choiceRow, dim: dim };   // track both halves so a turn-in can retire the whole nudge
+  }
+
+  // V3 §7 HUNT MODE — the session-opener probe chip. Tapping it IS the consent, so it goes straight into
+  // the one-question intake for the next live dimension (no second "want to tell me?" ask). Shares every
+  // curiosity budget/anti-nag mark: the shown dim is tallied, an answer clears it, leaving marks it dismissed.
+  function startHuntAsk() {
+    if (typeof CuriosityStore === 'undefined' || typeof Intake === 'undefined' || typeof Dossier === 'undefined') return;
+    const dim = CuriosityStore.consider();
+    if (!dim) return;
+    CuriosityStore.markShown(dim);
+    Intake.start({
+      skip: Dossier.DIM_KEYS.filter(k => k !== dim),   // exactly this one question
+      onCommit: b => { if (typeof DossierStore !== 'undefined') DossierStore.upsert(b.dim, { text: b.text, source: 'curiosity', weight: b.weight }); if (typeof CuriosityStore !== 'undefined' && CuriosityStore.markAnswered) CuriosityStore.markAnswered(b.dim); briefingReceipt(b.dim); },
+      onDone: () => { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('commander'); },
+      onLeave: () => { if (typeof CuriosityStore !== 'undefined') CuriosityStore.markDismissed(dim); }
+    });
   }
   // a reusable GENTLE post-run beat (used by the ongoing-suggestion engine, suggeststore.js) — the same quiet
   // register as the curiosity nudge: a .nudge aside, never the lit .reply headline. text = the line; options =
