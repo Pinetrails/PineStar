@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "15b977b4b68157c09c0ab0b703b3874b40b9a58a",
+    "sourceCommit": "36aa5b6d1a56504832653775343219e037776dff",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 410049,
-        "sha256": "bd25c3753f4a327051826b5aaef73e7854dafbe2bcdcd539932b1716af4c7834"
+        "bytes": 410476,
+        "sha256": "fe8b5382239c8b238b465bd9ca7a46af53a2c58a81a1958ebd6058b1a53fc5a8"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -613,8 +613,8 @@
       },
       {
         "path": "frontend/app/starters.js",
-        "bytes": 6673,
-        "sha256": "148dd0b8c8c954520b7a0ce78e91f6a2e12054b7a9f322aecf2d62df0d57d050"
+        "bytes": 7374,
+        "sha256": "c3e2ef1860a4029eb60449502dc0c69ccae6d96973b6d62fe465d3c06f4b5e3e"
       },
       {
         "path": "frontend/app/stationbake.js",
@@ -793,8 +793,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 34501,
-        "sha256": "849fa45fc455f97ac0eb4c7dab698efbbe922fffd0e27205a3872c8ecad2808f"
+        "bytes": 37262,
+        "sha256": "da4c550dfb5f32359a26fcdfd0b2b9d82333ea2fb0b64112d071f819fe578348"
       },
       {
         "path": "frontend/app/worksignal.js",
