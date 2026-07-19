@@ -1312,10 +1312,10 @@
         "dev/seed.js",
         "--keep"
       ],
-      "port": 9311,
+      "port": 9317,
       "autoPort": false,
       "env": {
-        "SKYNET_PORT": "9311",
+        "SKYNET_PORT": "9317",
         "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },

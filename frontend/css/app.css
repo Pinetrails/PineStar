@@ -58,7 +58,7 @@
   text-shadow: none; box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 0 10px var(--ph-glow2);
 }
 
-input[type=text], input[type=password], input:not([type]), textarea.key-input {
+input[type=text], input[type=password], input[type=url], input[type=search], input:not([type]), textarea.key-input {
   width: 100%; font-family: inherit; font-size: 19px; color: var(--ph-bright);
   background: linear-gradient(180deg, #000, color-mix(in srgb, var(--ph) 3%, #000));
   border: 1px solid var(--ph-dim); border-radius: 4px; padding: 8px 11px; outline: none;
