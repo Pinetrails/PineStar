@@ -4935,7 +4935,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const skip = s.blank.length ? s.known : [];   // ask blank dimensions; if the station knows them all, re-ask everything (refine)
       const began = Intake.start({
         skip: skip,
-        onCommit: belief => ds.upsert(belief.dim, { text: belief.text, source: belief.source }),
+        onCommit: belief => ds.upsert(belief.dim, { text: belief.text, source: belief.source, weight: belief.weight }),   // V3: weight rides through (canned chip = 'seed', never opens the readiness gate)
         onDone: () => rerender('commander'),
         onLeave: () => { rerender('commander'); notify('left the interview — what you answered is saved', ''); },   // user-launched: leaving is a clean stop (answers banked), nothing to wave off
         onEmpty: () => notify('the station already knows you — edit any belief below to refine', 'good')

@@ -55,6 +55,8 @@ global.localStorage = { getItem: k => (Object.prototype.hasOwnProperty.call(mem,
 const bus = A.makeBus(); global.U = { bus };
 let dsFam = 0.4; const dsKnown = ['goals', 'identity'];
 global.DossierStore = { summary: () => ({ known: dsKnown, blank: ['stack'], familiarity: dsFam }) };
+// V3 §6: the shared readiness gate (fail-closed) — this suite is about BEAT COORDINATION, so the gate is open.
+global.UnderstandingStore = { readiness: () => ({ ready: true, reasons: [] }) };
 let pitchDoneFlag = true; global.PitchStore = { done: () => pitchDoneFlag };
 global.Recipes = { list: () => [], get: () => null, requiredMissing: () => [] };
 global.Chat = { nudge() {}, isBusy: () => false };

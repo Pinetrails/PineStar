@@ -103,4 +103,14 @@ const CATALOG = [
   A.eq(LaunchMemory.recent(), [], 'recent: corrupt store → [] (never a crash)');
 }
 
+// ---- V3 §6: the pitch chip rides the shared readiness gate ----
+{
+  const sig = { recipes: CATALOG, recent: [{ id: 'morning-brief', at: 5 }], valuesOf: () => null, returning: true, hour: 9, day: 3 };
+  A.ok(Starters.pick(Object.assign({}, sig, { ready: true })).some(c => c.label === 'pitch me an idea'), 'ready station keeps the pitch chip');
+  const gated = Starters.pick(Object.assign({}, sig, { ready: false }));
+  A.eq(gated.some(c => c.label === 'pitch me an idea'), false, 'below the readiness gate the pitch chip is gone');
+  A.eq(gated.length, 3, 'the gated slot pads back to a full chip row (classic openers)');
+  A.ok(Starters.pick(sig).some(c => c.label === 'pitch me an idea'), 'undefined ready keeps legacy behavior (callers without the read)');
+}
+
 A.report('starters');

@@ -984,7 +984,10 @@ const Chat = (() => {
       }
     } catch (_) {}
     const now = new Date();
-    const sig = { recipes, recent, valuesOf, returning, hour: now.getHours(), day: Math.floor(now.getTime() / 86400000) };
+    // V3 §6: the pitch chip is gated on the shared readiness read (fail-closed: no read → no pitch chip).
+    let ready = false;
+    try { const r = (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) ? UnderstandingStore.readiness() : null; ready = !!(r && r.ready); } catch (_) {}
+    const sig = { recipes, recent, valuesOf, returning, hour: now.getHours(), day: Math.floor(now.getTime() / 86400000), ready };
     if (typeof Starters !== 'undefined' && Starters.pick) {
       try { const out = Starters.pick(sig); if (out && out.length) return out; } catch (_) {}
     }
@@ -3482,7 +3485,7 @@ const Chat = (() => {
         const skip = Dossier.DIM_KEYS.filter(k => k !== dim);   // ask ONLY this dimension (plan() returns just its question)
         Intake.start({
           skip: skip,
-          onCommit: b => { if (typeof DossierStore !== 'undefined') DossierStore.upsert(b.dim, { text: b.text, source: 'curiosity' }); if (typeof CuriosityStore !== 'undefined' && CuriosityStore.markAnswered) CuriosityStore.markAnswered(b.dim); briefingReceipt(b.dim); },   // R4: the answer visibly pays off — one provable "now in every agent's briefing" line (this was the ONE commit path with zero acknowledgment)
+          onCommit: b => { if (typeof DossierStore !== 'undefined') DossierStore.upsert(b.dim, { text: b.text, source: 'curiosity', weight: b.weight }); if (typeof CuriosityStore !== 'undefined' && CuriosityStore.markAnswered) CuriosityStore.markAnswered(b.dim); briefingReceipt(b.dim); },   // R4: the answer visibly pays off — one provable "now in every agent's briefing" line (this was the ONE commit path with zero acknowledgment). V3: b.weight rides through (a canned chip stays 'seed' — never opens the readiness gate)
           onDone: () => { if (typeof StationUI !== 'undefined' && StationUI.rerender) StationUI.rerender('commander'); },
           // LEAVING the curiosity-launched interview = the same "not now" wave-off: mark the dimension dismissed so it
           // isn't raised again this session (existing store, no new persistence — mirrors the choice-row "not now").

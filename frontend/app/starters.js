@@ -100,8 +100,11 @@
       if (pool.length) { const r = pool[day % pool.length]; chips.push(recipeChip(r, null)); used[r.id] = true; }
     }
 
-    // 3. the generative chip — the dossier-grounded pitch.
-    chips.push(PITCH);
+    // 3. the generative chip — the dossier-grounded pitch. V3 §6: it EXPLICITLY invites a recommendation, so
+    // it rides the shared readiness gate (signals.ready, from Understanding.readiness). Below the gate the
+    // slot pads with the classic openers instead — the station never advertises advice it isn't allowed to
+    // give. (`undefined` keeps legacy behavior for callers without the readiness read.)
+    if (s.ready !== false) chips.push(PITCH);
 
     // pad a signal-starved station (e.g. empty catalog) back up with the classic openers.
     if (chips.length < MAX_CHIPS) chips.push(BRIEF);

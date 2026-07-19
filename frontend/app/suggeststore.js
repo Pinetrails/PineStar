@@ -110,13 +110,22 @@ const SuggestStore = (() => {
     const sum = summary();
     const known = sum ? sum.known : [];
     const fam = sum && Number.isFinite(sum.familiarity) ? sum.familiarity : 0;
+    // V3 §6: the shared readiness gate (fail-closed — no provable readiness, no idea). Same read pitchstore uses.
+    let rd = { ready: false, why: 'no-readiness-read' };
+    try {
+      if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) {
+        const r = UnderstandingStore.readiness();
+        if (r) rd = { ready: !!r.ready, why: (r.reasons && r.reasons[0]) || '' };
+      }
+    } catch (_) {}
     const gate = Pitch.shouldSuggest({
       firstPitchDone: pitchDone(),
       knownDims: known,
       familiarity: fam,
       lastFamiliarity: (state.lastFamiliarity == null ? fam : state.lastFamiliarity),   // no baseline yet → nothing-new
       tasksSinceLast: state.tasksSinceLast || 0,
-      sessionShown: sessionShown
+      sessionShown: sessionShown,
+      ready: rd.ready, readyWhy: rd.why
     });
     if (gate.go) return true;
     // Tier 2 (§5 ADDITIVE OR): if the ONLY thing holding the idea back is "nothing new" and a goal milestone just

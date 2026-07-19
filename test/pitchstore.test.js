@@ -30,6 +30,11 @@ global.U = { bus };
 let knownDims = ['goals', 'identity'];
 global.DossierStore = { summary: () => ({ known: knownDims, blank: [] }) };
 
+// V3 §6: the shared readiness gate. The store reads UnderstandingStore.readiness() FAIL-CLOSED (no read = no
+// pitch), so the fake mirrors the real API shape; tests flip `readyState` to drive the gate.
+let readyState = { ready: true, reasons: [] };
+global.UnderstandingStore = { readiness: () => readyState };
+
 // recipe fakes shaped like the REAL Recipes API: get() returns null for an unknown id; a recipe can carry
 // required params; requiredMissing() reports which required params lack a value (mirrors recipes.js).
 global.Recipes = {
@@ -88,6 +93,15 @@ A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: true, reaso
 knownDims = ['identity', 'stack'];
 A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: false, reason: 'missing:goals' }, 'cannot pitch without knowing the goal');
 knownDims = ['goals', 'identity'];
+
+/* ---------- V3 §6: the shared readiness gate, wired through decide ---------- */
+readyState = { ready: false, reasons: ['no-direction'] };
+A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: false, reason: 'not-ready:no-direction' }, 'a shut readiness gate structurally blocks the pitch (with the honest reason)');
+const savedUS = global.UnderstandingStore;
+global.UnderstandingStore = undefined;
+A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }).reason, 'not-ready:no-readiness-read', 'no readiness read = FAIL-CLOSED (a station that cannot prove readiness never advises)');
+global.UnderstandingStore = savedUS;
+readyState = { ready: true, reasons: [] };
 
 dlg._open = true;
 A.eq(PitchStore._decide({ reason: 'done', agentId: 'agent' }), { go: false, reason: 'dialogue-open' }, 'never stomps an open Dialogue (awakening/tutorial)');

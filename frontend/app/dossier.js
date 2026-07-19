@@ -50,7 +50,22 @@
   const COMPOSE_ORDER = ['goals', 'pain', 'ambition', 'identity', 'people', 'schedule', 'stack', 'style', 'standing_orders'];
   const TEXT_CHARS = 280;    // a single belief is capped (mirrors the §5.2 memory-record content cap)
 
+  // ONBOARDING V3 (docs/ONBOARDING_V3_PLAN.md §5): every belief carries an evidence WEIGHT — how the station
+  // came to hold it. 'stated' = the Commander's own words; 'synth' = model-synthesized FROM their words;
+  // 'observed' = learned from real work (study); 'seed' = mechanically copied from a config doc. The readiness
+  // gate (understanding.js) counts only non-seed beliefs — a canned/doc-copied line can never convince the
+  // station it "knows" its Commander (the blitz-through-onboarding poison this field exists to kill).
+  const WEIGHTS = ['stated', 'synth', 'observed', 'seed'];
+
   function isKey(k) { return DIM_KEYS.indexOf(k) >= 0; }
+  function isWeight(w) { return WEIGHTS.indexOf(w) >= 0; }
+  // resolve a belief's weight, inferring honestly for legacy records that predate the field: a study-observed
+  // belief is 'observed'; anything else was authored by (or with) the Commander — 'stated'.
+  function weightOf(b) {
+    if (b && isWeight(b.weight)) return b.weight;
+    if (b && (b.observedAt || b.source === 'study')) return 'observed';
+    return 'stated';
+  }
   function clip(s) { s = String(s == null ? '' : s).trim(); return s.length > TEXT_CHARS ? s.slice(0, TEXT_CHARS) : s; }
 
   function fresh() {
@@ -83,6 +98,8 @@
     arr.push({
       id: nextId(dossier), text,
       source: (belief.source && typeof belief.source === 'string') ? belief.source : 'commander',
+      // evidence weight (V3): caller-declared; an invalid/missing weight infers via weightOf (legacy-honest).
+      weight: isWeight(belief.weight) ? belief.weight : weightOf(belief),
       sourceRunId: (typeof belief.sourceRunId === 'string') ? belief.sourceRunId : null,
       // Phase B (study): when the STATION observed a belief from real work (not the Commander authoring it), stamp
       // WHEN — the COMMANDER panel renders a study-sourced belief with an "observed" tag + this timestamp. Only a
@@ -130,7 +147,14 @@
       if (dossier.seededFrom[s.doc]) continue;
       const text = String(docs[s.doc] == null ? '' : docs[s.doc]).trim();
       if (!text) continue;
-      upsert(dossier, s.dim, { text, source: 'onboarding' }, now);
+      // V3 dedupe guard: when the interview already wrote this exact text as a real belief (e.g. the synthesized
+      // purpose lands in `goals` as 'synth' BEFORE purpose.md commits), the mechanical seed would be a duplicate
+      // line in the composed prompt — mark the doc seeded and add nothing. Weight 'seed' otherwise: a doc-copied
+      // belief informs the prompt but never counts toward readiness (the fallback purpose picker's canned line
+      // must not open the recommendation gate).
+      const clipped = clip(text);
+      const dup = (dossier.dims[s.dim] || []).some(b => b && b.text === clipped);
+      if (!dup) upsert(dossier, s.dim, { text, source: 'onboarding', weight: 'seed' }, now);
       dossier.seededFrom[s.doc] = true;
     }
     return dossier;
@@ -202,6 +226,7 @@
             id: (typeof b.id === 'string') ? b.id : null,
             text,
             source: (typeof b.source === 'string') ? b.source : 'commander',
+            weight: weightOf(b),   // V3: preserved when valid; legacy records infer honestly (never 'seed' by guess)
             sourceRunId: (typeof b.sourceRunId === 'string') ? b.sourceRunId : null,
             observedAt: (Number.isFinite(b.observedAt) && b.observedAt > 0) ? b.observedAt : null,   // Phase B study provenance (preserved across reload)
             createdAt: Number.isFinite(b.createdAt) ? b.createdAt : 0,
@@ -219,5 +244,5 @@
     return d;
   }
 
-  return { fresh, hydrate, upsert, forget, setPinned, beliefs, seedFromDocs, composeBlock, summary, DIMS, DIM_KEYS, BLOCK_CHARS, TEXT_CHARS };
+  return { fresh, hydrate, upsert, forget, setPinned, beliefs, seedFromDocs, composeBlock, summary, weightOf, DIMS, DIM_KEYS, WEIGHTS, BLOCK_CHARS, TEXT_CHARS };
 });

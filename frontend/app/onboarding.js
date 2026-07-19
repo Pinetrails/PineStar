@@ -97,12 +97,16 @@ const Onboarding = (() => {
       // PAIN — the highest-signal thing the station can learn (the work the Commander wants GONE). It seeds no
       // .md doc; it writes STRAIGHT to the station-wide dossier (build:()=>null + dossierDim), so every later
       // pitch/idea/seed can aim at a real recurring chore. Optional + skippable — never trap them on it.
+      // V3 §3/S1: chips STEER, never answer. A chip click narrows the question and forces the Commander's own
+      // words (askStep's steer follow-up); the canned third-person strings that used to land in the dossier are
+      // GONE — a blitzed onboarding now yields an EMPTY dossier, not a fake one (the readiness gate reads that
+      // honestly and keeps every recommendation surface shut until real context exists).
       { dossierDim: 'pain', optional: true,
         prompt: 'first: what did you do this week that a machine should have done? name the chore — the one where YOU were the robot.',
         options: [
-          { label: 'Copy-pasting between apps', value: 'Loses time copy-pasting data between apps that refuse to talk to each other.' },
-          { label: 'The same email, again', value: 'Writes the same kinds of emails and messages over and over.' },
-          { label: 'Hunting through files & tabs', value: 'Burns time organizing, renaming, and hunting through files and tabs.' },
+          { label: 'Copy-pasting between apps', steer: 'which apps? paint me the last time it happened — the real one goes in my file, not the category.' },
+          { label: 'The same email, again', steer: 'to who, about what? give me the gist of the last one you sent.' },
+          { label: 'Hunting through files & tabs', steer: 'hunting for what? name the thing you lost last time and where it was hiding.' },
           { label: 'Skip for now', value: '', skip: true }
         ],
         custom: true, customLabel: 'name the real one', placeholder: 'the chore you’d pay to never do again…',
@@ -117,10 +121,10 @@ const Onboarding = (() => {
       { dossierDim: 'ambition', optional: true,
         prompt: 'now the shelf. what have you been meaning to get to for months — the thing you’d start tonight if the grunt work did itself?',
         options: [
-          { label: 'A project i keep shelving', value: 'Has a project they keep shelving for lack of time and hands.' },
-          { label: 'Something i want to learn', value: 'Keeps postponing learning a skill they actually want.' },
-          { label: 'An audience i keep meaning to build', value: 'Keeps meaning to build an audience or channel but never starts.' },
-          { label: 'An idea i can’t stop circling', value: 'Has an idea they keep circling back to but have never started building.' },
+          { label: 'A project i keep shelving', steer: 'name it. what is it — and what would exist if it finally shipped?' },
+          { label: 'Something i want to learn', steer: 'which skill? and what’s the first thing you’d make with it?' },
+          { label: 'An audience i keep meaning to build', steer: 'where — a channel, a newsletter, a feed? and about what?' },
+          { label: 'An idea i can’t stop circling', steer: 'say the idea out loud. one sentence, the honest version.' },
           { label: 'Skip for now', value: '', skip: true }
         ],
         custom: true, customLabel: 'name it straight', placeholder: 'the thing you’d finally start with a hand that never clocks out…',
@@ -463,7 +467,7 @@ const Onboarding = (() => {
   async function askStep(s, o) {
     o = o || {};
     while (true) {
-      const res = await Dialogue.node({
+      let res = await Dialogue.node({
         lines: [seg(s.prompt, 46, 0)],
         options: s.options || [],
         allowCustom: !!s.custom,
@@ -472,6 +476,18 @@ const Onboarding = (() => {
         skipOnEmpty: !!s.optional
       });
       if (!running) return { text: '' };   // DISCONNECT mid-question — bail without committing or advancing
+      // V3 §3/S1: a STEERING chip never answers. Picking one narrows the ask and opens the typed path — only
+      // the Commander's OWN words can land (skipping the steer follow-up counts as a skip, writes nothing).
+      const steerOpt = (!res.skip && res.label) ? (s.options || []).find(x => x && x.steer && x.label === res.label) : null;
+      if (steerOpt) {
+        res = await Dialogue.node({
+          lines: [seg(steerOpt.steer, 46, 0)],
+          options: [{ label: 'Skip for now', value: '', skip: true }],
+          allowCustom: true, customLabel: s.customLabel || 'say it straight', customPlaceholder: s.placeholder,
+          skipOnEmpty: true
+        });
+        if (!running) return { text: '' };
+      }
       const isSkip = !!res.skip || res.value == null || String(res.value).trim() === '';
       if (isSkip && !s.optional) {   // required step: never a dead pause — re-ask gently, never swallow the empty
         await Dialogue.say([seg('i need a direction here — even a rough one.', 46, 320)]);
@@ -482,7 +498,7 @@ const Onboarding = (() => {
       if (!isSkip && commit) { const patch = s.build(text); if (patch) commit(patch); }
       // a beat that targets a dossier dimension (not a config .md) writes its answer STRAIGHT to the station-wide
       // dossier — same authoring path the COMMANDER panel uses (recomposes the live prompt + persists at the edge).
-      if (!isSkip && s.dossierDim && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert(s.dossierDim, { text, source: 'onboarding' });
+      if (!isSkip && s.dossierDim && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert(s.dossierDim, { text, source: 'onboarding', weight: 'stated' });   // V3: always the Commander's own words now (steer chips can't write)
       // the autonomy cadence beat writes the chosen OPENING posture straight to AutonomyStore (the option value is a
       // cadence-preset id). Skipping ('Decide later') leaves the safe floor — fully wait-for-me.
       if (!isSkip && s.posturePreset && typeof AutonomyStore !== 'undefined' && AutonomyStore.applyPreset) AutonomyStore.applyPreset(text);
@@ -550,6 +566,9 @@ const Onboarding = (() => {
         if (!running) return;
         aboutT = (!f.skip && f.value != null) ? String(f.value).trim() : '';
         if (aboutT) {
+          // V3: their own words land as a GROUNDED identity belief FIRST (weight 'stated' → counts toward
+          // readiness); the context.md doc-seed that follows dedupes against it (seed weight never counts).
+          if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('identity', { text: aboutT, source: 'onboarding', weight: 'stated' });
           if (commit) commit({ context: aboutT });
           bumpTruth();
           await Dialogue.say([seg('good — now i can see the ground i’m standing on.', 44, 360)]);
@@ -582,7 +601,7 @@ const Onboarding = (() => {
         if (!running) return;
         dreamT = (!f.skip && f.value != null) ? String(f.value).trim() : '';
         if (dreamT) {
-          if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('ambition', { text: dreamT, source: 'onboarding' });
+          if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('ambition', { text: dreamT, source: 'onboarding', weight: 'stated' });
           bumpTruth();
           await Dialogue.say([seg('that’s the version i’m keeping — the real one.', 44, 360)]);
           if (!running) return;
@@ -618,9 +637,13 @@ const Onboarding = (() => {
           if (!running) return;
           if (own && own.value != null && String(own.value).trim()) purposeT = String(own.value).trim();
         }
+        // V3: the mission is REAL context (synthesized from — or re-stated in — the Commander's words), so it
+        // lands as a grounded `goals` belief BEFORE purpose.md commits (the doc-seed then dedupes to nothing).
+        // 'stated' when they put it their own way, 'synth' when they confirmed the agent's synthesis.
+        if (typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('goals', { text: purposeT, source: 'onboarding', weight: (purposeT === syn.purpose ? 'synth' : 'stated') });
         if (commit) commit({ purpose: purposeT });
         // the one durable belief only this conversation could surface: the stack/domain they live in.
-        if (syn.stack && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('stack', { text: syn.stack, source: 'onboarding' });
+        if (syn.stack && typeof DossierStore !== 'undefined' && DossierStore.upsert) DossierStore.upsert('stack', { text: syn.stack, source: 'onboarding', weight: 'synth' });
         if (typeof ProfileStore !== 'undefined' && typeof Classify !== 'undefined') ProfileStore.seed(Classify.getTag(purposeT));
         bumpTruth();
         await Dialogue.say([seg('there it is — purpose.md, in ink. that’s what this station’s for.', 44, 360)]);

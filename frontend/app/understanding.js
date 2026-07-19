@@ -144,10 +144,64 @@
     };
   }
 
+  /* ---------- READINESS — the one shared recommendation gate (ONBOARDING V3 §6) ----------
+     The station may only RECOMMEND (pitch / suggest / scout-mint / quest-refresh / starter-chip) once it
+     honestly knows enough about its Commander. This predicate is that single source of truth — every
+     proactive surface asks it, none carries a private variant. Below it, surfaces are structurally OFF
+     (hunt mode owns the gap); it never fabricates readiness a blitzed onboarding didn't earn.
+
+     GROUNDED evidence = a belief whose weight is stated/synth/observed (dossier.js weightOf) — the
+     Commander's words, a synthesis of them, or observed real work. 'seed' (doc-copied, incl. the fallback
+     purpose picker's canned line) informs prompts but can never open this gate.
+
+     ready = grounded(goals OR ambition)      — a real direction to aim recommendations at
+           AND grounded(pain OR identity)     — a real person/pressure to aim them FOR
+           AND familiarity ≥ READY_MIN_FAMILIARITY  — minimum breadth (any-belief dims / all dims)
+     Thresholds are principled defaults, kept here (one place) and surfaced honestly in the reasons array —
+     expect live-onboarding tuning (§9). */
+  const READY_MIN_FAMILIARITY = 0.33;
+  const READY_DIRECTION_DIMS = ['goals', 'ambition'];
+  const READY_PERSON_DIMS = ['pain', 'identity'];
+
+  // a belief's weight, honoring dossier.js's inference for legacy records (kept dependency-free: this engine
+  // never requires dossier.js — the two stay independently loadable, so the rule is mirrored, tiny, and tested).
+  function beliefWeightOf(b) {
+    if (b && typeof b.weight === 'string' && ['stated', 'synth', 'observed', 'seed'].indexOf(b.weight) >= 0) return b.weight;
+    if (b && (b.observedAt || b.source === 'study')) return 'observed';
+    return 'stated';
+  }
+  function groundedCount(beliefs) {
+    let n = 0;
+    for (const b of (Array.isArray(beliefs) ? beliefs : [])) {
+      if (!b || typeof b.text !== 'string' || !b.text) continue;
+      if (beliefWeightOf(b) !== 'seed') n++;
+    }
+    return n;
+  }
+
+  // readiness(dossier) → { ready, reasons:[why-not], grounded:{dim:count}, familiarity } — honest telemetry:
+  // an open gate has reasons:[], a shut one names every unmet requirement (the panel renders these verbatim).
+  function readiness(dossier) {
+    const grounded = {};
+    let knownAny = 0;
+    for (const k of DIM_KEYS) {
+      const arr = beliefsOf(dossier, k);
+      grounded[k] = groundedCount(arr);
+      if (arr.some(b => b && typeof b.text === 'string' && b.text)) knownAny++;
+    }
+    const familiarity = DIM_KEYS.length ? knownAny / DIM_KEYS.length : 0;
+    const reasons = [];
+    if (!READY_DIRECTION_DIMS.some(k => grounded[k] > 0)) reasons.push('no-direction');
+    if (!READY_PERSON_DIMS.some(k => grounded[k] > 0)) reasons.push('no-person');
+    if (familiarity < READY_MIN_FAMILIARITY) reasons.push('too-thin');
+    return { ready: reasons.length === 0, reasons, grounded, familiarity };
+  }
+
   return {
-    understanding,
+    understanding, readiness,
     // exposed for tests + downstream tuning (never mutate)
-    freshness, dimEvidence, confFromEvidence,
-    DIMS, DIM_KEYS, WEIGHT, HALF_LIFE_MS, SOURCE_WEIGHT, DEPTH_SAT, CORROB_UNIT, CALIBRATING
+    freshness, dimEvidence, confFromEvidence, groundedCount, beliefWeightOf,
+    DIMS, DIM_KEYS, WEIGHT, HALF_LIFE_MS, SOURCE_WEIGHT, DEPTH_SAT, CORROB_UNIT, CALIBRATING,
+    READY_MIN_FAMILIARITY, READY_DIRECTION_DIMS, READY_PERSON_DIMS
   };
 });

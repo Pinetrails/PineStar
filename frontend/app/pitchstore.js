@@ -63,7 +63,20 @@ const PitchStore = (() => {
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return { go: false, reason: 'dialogue-open' };   // never stomp the awakening/tutorial panel
     const sum = (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null;
     const known = sum ? sum.known : [];
-    return Pitch.shouldPitch({ firstTaskDone: true, alreadyPitched: state.pitched, knownDims: known });
+    const rd = readinessRead();
+    return Pitch.shouldPitch({ firstTaskDone: true, alreadyPitched: state.pitched, knownDims: known, ready: rd.ready, readyWhy: rd.why });
+  }
+
+  // V3 §6: the shared readiness gate, read live. FAIL-CLOSED: a missing/broken readiness read means the
+  // station cannot PROVE it knows its Commander — so it does not advise (never the old guess-and-pitch).
+  function readinessRead() {
+    try {
+      if (typeof UnderstandingStore !== 'undefined' && UnderstandingStore.readiness) {
+        const r = UnderstandingStore.readiness();
+        if (r) return { ready: !!r.ready, why: (r.reasons && r.reasons[0]) || '' };
+      }
+    } catch (_) {}
+    return { ready: false, why: 'no-readiness-read' };
   }
 
   function onRunEnd(p) { if (decide(p).go) fire(p); }
@@ -149,7 +162,8 @@ const PitchStore = (() => {
       if (typeof Harness === 'undefined' || !Harness.chat || typeof Dialogue === 'undefined') return false;
       if (!deps.wasTaskRun || !deps.wasTaskRun(runId)) return false;   // stricter than the auto path: the tour MUST prove the run was a real task
       const sum = (typeof DossierStore !== 'undefined' && DossierStore.summary) ? DossierStore.summary() : null;
-      const v = Pitch.shouldPitch({ firstTaskDone: true, alreadyPitched: state.pitched, knownDims: sum ? sum.known : [] });
+      const rd = readinessRead();
+      const v = Pitch.shouldPitch({ firstTaskDone: true, alreadyPitched: state.pitched, knownDims: sum ? sum.known : [], ready: rd.ready, readyWhy: rd.why });
       if (!v.go) return false;
       await fire({ reason: 'done', agentId: 'agent', runId });
       return !!(state && state.pitched);
@@ -170,7 +184,10 @@ const PitchStore = (() => {
       if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return false;
       state.starterDone = true; save();                              // mark on OFFER — ignored still means never re-nag
       let text = null, move = null;
-      if (typeof Harness !== 'undefined' && Harness.chat && Harness.configured && Harness.configured()) {
+      // V3 §6: a GENERATED first move is a recommendation — it only fires above the shared readiness gate.
+      // Below it (blitzed/skipped interview → thin dossier) the floor is the honest quest-pointer + an
+      // invitation to NAME a chore: the Commander directs, the station never guesses a task from nothing.
+      if (readinessRead().ready && typeof Harness !== 'undefined' && Harness.chat && Harness.configured && Harness.configured()) {
         const directive = Pitch.buildStarterDirective({ capabilities: deps.getCaps ? deps.getCaps() : [] });
         const call = Harness.chat({ system: deps.getSystem ? deps.getSystem() : '', messages: [{ role: 'user', content: directive }], agentId: 'agent', isTask: false, placed: [], internal: true }).catch(() => null);
         const res = await Promise.race([call, new Promise(r => setTimeout(() => r(null), 20000))]);   // a late move is a weird move — cap it

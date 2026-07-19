@@ -122,11 +122,15 @@
 
   // turn an answer into a durable dossier belief, or null for a blank/skip (never store an empty belief).
   // source:'interview' is the provenance the dossier panel shows ("from the intake interview").
+  // V3 §5 (interim until the S4 scene-register bank rewrite): an answer that IS a canned chip string is
+  // mechanically-produced text, not the Commander's words — it lands with weight 'seed' (informs the prompt,
+  // never opens the readiness gate). A typed answer is theirs: weight 'stated'.
   function beliefFromAnswer(question, text) {
     if (!question) return null;
     const t = String(text == null ? '' : text).trim();
     if (!t) return null;
-    return { dim: question.dim, text: t, source: 'interview' };
+    const canned = Array.isArray(question.chips) && question.chips.some(c => c && c.value && String(c.value) === t);
+    return { dim: question.dim, text: t, source: 'interview', weight: canned ? 'seed' : 'stated' };
   }
 
   // the single question for a dimension — used by the just-in-time curiosity nudge (Phase B slice 2) to ask
