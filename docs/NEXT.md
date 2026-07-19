@@ -1,5 +1,22 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-18 — v0.5.3 CUT + PUBLISHED (Windows) — desktop exe rebuild CLOSED
+
+v0.5.3 cut from trunk `e5e2d0dd` (tag `v0.5.3` local), signed, and **PUBLISHED to GitHub
+Releases** at `nonfungiblefunyuns-ship-it/starnet-releases` (repo flipped PUBLIC — binaries
+only; old v0.4.0/v0.2.2 stay drafts=invisible). Proof chain: fast gate 369/369 green at built
+bytes; installed locally (0.5.2 → 0.5.3) with `qa:smoke:installed` **GREEN**;
+`verify-update-host` green on every windows-x86_64 check (manifest + signed exe live at the
+pinned `/download/v0.5.3/` URLs). Every merged lane's "OPEN: exe rebuild" through `e5e2d0dd`
+is now bundled and shipped. Fresh install on new hardware:
+https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest
+- Gate unblock (recorded): 4 stale `w0-candidate-*` source snapshots (2026-07-13) in
+  `.dogfood/` made lint-evidence-secrets take 10min and fail on fixture keys; MOVED to
+  `C:\Users\andro\gen-trees\..\gen-quarantine\dogfood\` (nothing referenced them).
+- Still open (operator): mac/linux platforms absent from latest.json (5-platform bar =
+  CI-train launch, unchanged); trunk + `v0.5.3` tag NOT pushed to origin — tag push fires
+  release-train (known blocked at P1.5), so that stays Andrew's call; updater-key backup.
+
 ## 2026-07-18 — IMPORT AGENT from Hermes/OpenClaw (branch `claude/agent-transfer-hermes-openclaw-9f0efb`)
 
 Andrew's ask: his community (thousands on Hermes agent / OpenClaw) needs a one-click migration
