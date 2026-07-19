@@ -217,6 +217,7 @@ a:hover{ color:var(--amber); }
   box-shadow:0 0 30px rgba(255,140,30,.08), inset 0 0 24px rgba(0,0,0,.5);
 }
 .bezel img{ width:100%; height:auto; display:block; image-rendering:auto; }
+.bezel canvas{ width:100%; height:auto; display:block; }
 .bezel figcaption{ padding:9px 4px 2px; font-size:14px; letter-spacing:1px; color:rgba(236,224,207,.35); }
 
 /* feature cards */
