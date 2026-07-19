@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "5bed5f0117d22d67cf7dfb54faf1a2a814ea1884",
+    "sourceCommit": "15b977b4b68157c09c0ab0b703b3874b40b9a58a",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 408900,
-        "sha256": "5a89ab790377f59a24b72e61c202f8bac05c6a3ca4ad7a9a8f46aec458498bfd"
+        "bytes": 410049,
+        "sha256": "bd25c3753f4a327051826b5aaef73e7854dafbe2bcdcd539932b1716af4c7834"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -613,8 +613,8 @@
       },
       {
         "path": "frontend/app/starters.js",
-        "bytes": 7374,
-        "sha256": "c3e2ef1860a4029eb60449502dc0c69ccae6d96973b6d62fe465d3c06f4b5e3e"
+        "bytes": 6673,
+        "sha256": "148dd0b8c8c954520b7a0ce78e91f6a2e12054b7a9f322aecf2d62df0d57d050"
       },
       {
         "path": "frontend/app/stationbake.js",
@@ -723,8 +723,8 @@
       },
       {
         "path": "frontend/app/voice.js",
-        "bytes": 77837,
-        "sha256": "6a61daf8d1dcff2f50e46c387b6e84e0426f175674d4eebedacfe2a97ff6ebe4"
+        "bytes": 78057,
+        "sha256": "815dbfe436fff8bcc6c697562907df5430bb6200b046b75d885208f4deb9daa6"
       },
       {
         "path": "frontend/app/waitanchor.js",
@@ -793,8 +793,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 37262,
-        "sha256": "da4c550dfb5f32359a26fcdfd0b2b9d82333ea2fb0b64112d071f819fe578348"
+        "bytes": 34501,
+        "sha256": "849fa45fc455f97ac0eb4c7dab698efbbe922fffd0e27205a3872c8ecad2808f"
       },
       {
         "path": "frontend/app/worksignal.js",
