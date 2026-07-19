@@ -18,8 +18,10 @@
   // left edge is fixed by the grid, so the ceiling is everything right of it minus one gap;
   // world.js's resize() floors the canvas at 1px, so a zero-width stage is safe.
   function maxWidth() {
-    const stageLeft = stageWrap ? stageWrap.getBoundingClientRect().left : LEFT_COL + PAD + GAP;
-    return Math.max(MIN, window.innerWidth - PAD - GAP - stageLeft);
+    // --chat-w is consumed in body-zoomed space (TEXT SIZE); rect/innerWidth are visual — /z first.
+    const z = U.uiZoom();
+    const stageLeft = stageWrap ? stageWrap.getBoundingClientRect().left / z : LEFT_COL + PAD + GAP;
+    return Math.max(MIN, window.innerWidth / z - PAD - GAP - stageLeft);
   }
   const clamp = w => Math.max(MIN, Math.min(maxWidth(), w));
   function apply(w) { game.style.setProperty('--chat-w', clamp(w) + 'px'); }
@@ -36,8 +38,10 @@
   }
   function onMove(e) {
     if (!dragging) return;
-    // COMMS right edge is the window edge minus padding; its width is that edge minus the cursor x
-    pendingW = (window.innerWidth - PAD) - e.clientX;
+    // COMMS right edge is the window edge minus padding; its width is that edge minus the cursor x.
+    // clientX/innerWidth are visual px; --chat-w is zoomed-space (TEXT SIZE) — convert both.
+    const z = U.uiZoom();
+    pendingW = (window.innerWidth - e.clientX) / z - PAD;
     if (!moveRaf) moveRaf = requestAnimationFrame(flushMove);
     e.preventDefault();
   }

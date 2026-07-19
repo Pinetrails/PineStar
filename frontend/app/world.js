@@ -781,8 +781,13 @@ const World = (() => {
   function resize() {
     if (!cv) return;
     const dpr = window.devicePixelRatio || 1;
+    // TEXT SIZE zoom (stationui applySettings sets body.style.zoom): zoom shrinks the canvas's
+    // layout px while the painted box stays the same device size, so without this factor the
+    // station upscales soft. Multiplying back keeps the bitmap 1:1 with device pixels; mouse
+    // mapping is rect-ratio-based (canvasPoint) so it needs no change.
+    const uiz = (() => { const z = parseFloat(document.body && document.body.style ? document.body.style.zoom : ''); return z > 0 ? z : 1; })();
     const w = cv.clientWidth || cv.parentElement.clientWidth, h = cv.clientHeight || cv.parentElement.clientHeight;
-    const nw = Math.max(1, Math.round(w * dpr)), nh = Math.max(1, Math.round(h * dpr));
+    const nw = Math.max(1, Math.round(w * dpr * uiz)), nh = Math.max(1, Math.round(h * dpr * uiz));
     if (cv.width === nw && cv.height === nh) return;   // assigning to canvas.width/height WIPES the bitmap even when unchanged — skip the needless clear
     // keep the world point under the canvas centre anchored through the resize (zoom untouched):
     // the view stays put while the stage grows/shrinks around it. Skipped until the first fit

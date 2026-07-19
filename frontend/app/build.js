@@ -814,8 +814,11 @@ const Build = (() => {
   function resize() {
     if (!cv) return;
     dpr = window.devicePixelRatio || 1;
-    cv.width = Math.max(1, Math.round(cv.clientWidth * dpr));
-    cv.height = Math.max(1, Math.round(cv.clientHeight * dpr));
+    // TEXT SIZE zoom parity with world.js resize(): body.style.zoom shrinks layout px, so bake the
+    // factor back in or the REFIT floor upscales soft. Picking stays rect-ratio-based (canvasPoint).
+    const uiz = (() => { const z = parseFloat(document.body && document.body.style ? document.body.style.zoom : ''); return z > 0 ? z : 1; })();
+    cv.width = Math.max(1, Math.round(cv.clientWidth * dpr * uiz));
+    cv.height = Math.max(1, Math.round(cv.clientHeight * dpr * uiz));
     updateSafetyClearance();
   }
   // the chrome-occluded margins of the canvas (device px): the build panel (left sidebar on
