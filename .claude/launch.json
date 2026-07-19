@@ -72,6 +72,18 @@
       }
     },
     {
+      "name": "onboard-fresh-v3",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/onboard-fresh.js"
+      ],
+      "port": 8819,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "8819"
+      }
+    },
+    {
       "name": "ascii-anim-seed",
       "runtimeExecutable": "node",
       "runtimeArgs": [

@@ -1,5 +1,23 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-19 — ONBOARDING V3 lane (branch `claude/onboarding-questions-update-7e28b3`) — S1+S2 BUILT
+
+Andrew's mandate: blitzing onboarding chips yielded a fake dossier → random awful recommendations.
+Full plan (Andrew-approved direction, wording in red-pen): `docs/ONBOARDING_V3_PLAN.md`.
+- **S1 SHIPPED in-branch (`2189df8b`)**: chips STEER, never answer (canned belief strings deleted);
+  beliefs carry evidence WEIGHT (stated/synth/observed/seed); doc seeds + canned intake chips = 'seed'.
+- **S2 SHIPPED in-branch**: ONE shared gate `Understanding.readiness()` (grounded direction + grounded
+  person + breadth ≥ 0.33) enforced fail-closed at: First Pitch/handoff, generated starter, ongoing
+  suggestions, session-opener pitch chip, scout cold-start (server, via synced verdict on the posture
+  beliefs snapshot), quest-refresh minting (explicit goal/north star still counts).
+- LIVE-VERIFIED on onboard-fresh (port 8819, real key): chip click → steering follow-up, blitz-through →
+  dossier = 1 seed belief / grounded 0 / ready:false(3 reasons) synced server-side; typed beliefs flip
+  ready:true. Gate 369/369 green (incl. new weight/readiness/starter-gate locks).
+- Also fixed pre-existing trunk gate red: opensource-readiness baseline 18→21 (3f6f5384 added 3
+  reviewed fixture keys without bumping the lock).
+- OPEN: S3 interview v3 (beat script in the plan §3 — Andrew red-pens wording), S4 hunt mode,
+  S5 brain-gating + proof beat; merge ritual + W0 re-stamp at merge; exe rebuild after merge.
+
 ## 2026-07-18 — v0.5.3 CUT + PUBLISHED (Windows) — desktop exe rebuild CLOSED
 
 v0.5.3 cut from trunk `e5e2d0dd` (tag `v0.5.3` local), signed, and **PUBLISHED to GitHub
