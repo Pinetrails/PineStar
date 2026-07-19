@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "3dff947457b138e3497a9510dabbebb404b5efa0",
+    "sourceCommit": "2af6b381e286d7d20df940326d2f95491fdf54cb",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -723,8 +723,8 @@
       },
       {
         "path": "frontend/app/voice.js",
-        "bytes": 76761,
-        "sha256": "c6f669a1d5c3628521fb1671f7133ba9780a99a41fb9d76222bb54f1bb180d55"
+        "bytes": 77837,
+        "sha256": "6a61daf8d1dcff2f50e46c387b6e84e0426f175674d4eebedacfe2a97ff6ebe4"
       },
       {
         "path": "frontend/app/waitanchor.js",
