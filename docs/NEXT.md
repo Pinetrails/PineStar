@@ -1,5 +1,20 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-19 — RELEASE POLISH PASS + UPDATE STAGING (trunk through d2677fd0+)
+
+Full-station polish sweep before the next update cut (Andrew will green-light + test on other
+hardware). Done this pass: 3-agent audit (frontend/backend/release) — frontend exceptionally
+clean (1 fix), backend error spine mature (no stack leaks); stdout quieted ([channel] payload
+log now opt-in STARNET_DEBUG_CHANNELS=1, [aux-governor] only on DEFERRED, [summon] dev-gated);
+goldens re-blessed 17 frames after eyeball (clears Guardian golden RED); catalog-oauth lane
+MERGED 7dd5e465 (VIA-aggregator jump ported into extracted windows/connectors.js, live-proven
+:9186); W0 re-stamped d2677fd0; release-notes DRAFT at docs/RELEASE_NOTES_v0.6.0_DRAFT.md.
+- NEXT-UPDATE CUT (recommend v0.6.0), on Andrew's green light: qa:ready -> release:bump ->
+  author RELEASE_NOTES.md from the draft -> release:cut -> verify-update-host -> publish ->
+  Andrew tests installed exe on other hardware (closes every merged lane's 'OPEN: exe rebuild').
+- Known waivers: beginner-run artifact 1 commit stale (PASS 2026-07-19); installed-smoke pinned
+  to v0.5.3 bytes (regenerates with the new exe — that IS the update step).
+
 ## 2026-07-19 — ONBOARDING V3 lane (branch `claude/onboarding-questions-update-7e28b3`) — S1-S5 BUILT
 
 Andrew's mandate: blitzing onboarding chips yielded a fake dossier → random awful recommendations.
