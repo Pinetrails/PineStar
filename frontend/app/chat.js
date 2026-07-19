@@ -1966,11 +1966,11 @@ const Chat = (() => {
     const onRated = (opts && opts.onRated) || (() => {});
     // session-open coordination: never collide with a live run, the awakening/interview, a focused
     // panel, an open turn-in deck, or a live gentle beat (incl. the autopilot welcome-back nudge).
-    const blocked = isBusy() || interview || activeTurnin || activeNudge
+    const blocked = isBusy() || interview || activeTurnin || activeNudge || taskQuestionLive()
       || (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning())
       || (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning())
       || (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen());
-    if (blocked) {   // defer — a gate is up (interview / focused panel / live turn-in / welcome-back nudge).
+    if (blocked) {   // defer — a gate is up (interview / focused panel / live turn-in / welcome-back nudge / unanswered task question).
       // "deferred" must NEVER become "lost": the crates are already pending in the OUTBOX (ReturnStore
       // folded them before this beat), but the digest beat itself keeps waiting for a free moment.
       // Fast cadence (7s) while the moment is likely to free soon, then a low-frequency retry (60s) that
@@ -2088,7 +2088,7 @@ const Chat = (() => {
     // stop (no retry) — chat.js load() re-fires WorkshopStore.presentFor when the Commander comes back.
     const inOwnSession = () => !opts.sessionId || !!(activeWs && activeWs.id === opts.sessionId);
     if (!inOwnSession()) return;
-    const blocked = isBusy() || interview || activeTurnin || activeNudge
+    const blocked = isBusy() || interview || activeTurnin || activeNudge || taskQuestionLive()
       || (typeof Onboarding !== 'undefined' && Onboarding.isRunning && Onboarding.isRunning())
       || (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning())
       || (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen());
@@ -2727,6 +2727,7 @@ const Chat = (() => {
   // the conversation as the Commander's next message so the task proceeds with it. "you decide" banks
   // nothing and hands the choice back. One fork per reply by construction (parse reads the first marker).
   function offerFork(fk) {
+    clearNudge();   // same law as offerTaskQuestion: the fork claims the moment; a live nudge leaves WITH its chips
     const items = fk.options.map(o => ({ label: o, value: o }));
     items.push({ label: 'you decide', value: '', skip: true });
     const q = row('agent'); q.d.classList.add('nudge');
@@ -2754,7 +2755,17 @@ const Chat = (() => {
 
   // A task-specific decision resumes the sidecar-owned brief. It is deliberately NOT banked into the global dossier.
   let pendingTaskQuestion = null;
+  // Is an unanswered Task Brief question up on the DISPLAYED stream? The run itself stopped to ask it, so it
+  // OWNS the COMMS moment: no gentle beat (curiosity / suggestion / north-star / quest-attest nudge) may claim
+  // the slot while it waits — nudge()'s choices() would clearChoices() the question's own answer chips, leaving
+  // the question as dead text and forcing the Commander to re-ask the task (live-caught 2026-07-19). Cleared by
+  // the next send() on that stream (answering OR typing anything releases the moment).
+  function taskQuestionLive() {
+    return !!(pendingTaskQuestion && activeWs && pendingTaskQuestion.streamId === activeWs.id);
+  }
   function offerTaskQuestion(tq) {
+    clearNudge();   // the question CLAIMS the moment: a live gentle nudge leaves whole (prompt + chips) — its chip
+                    // row would be wiped by choices() below anyway, and a stuck activeNudge would mute beats forever
     pendingTaskQuestion = Object.assign({}, tq, { streamId: activeWs && activeWs.id });
     // The host-validated recommended default (brief_ask path) gets the gold suggested chip + a one-line why.
     // A marker-path question stores no recommendation, so rec resolves empty and this renders plain chips.
@@ -3471,6 +3482,7 @@ const Chat = (() => {
   }
   function curiosityNudge(dim) {
     if (!log) return;
+    if (taskQuestionLive()) return;   // an unanswered task question owns the moment — never steal its answer chips
     clearNudge();   // one gentle beat at a time: retire any prior unanswered nudge before this one (no cross-run stacking)
     const r = row('agent'); r.d.classList.add('nudge');   // a quiet aside, NOT the lit headline (.reply) — it was reading as a 2nd reply
     r.body.textContent = '✦ one curious thing — i still don’t know your ' + dimLabel(dim).toLowerCase() + '. want to tell me? it sharpens how every agent here works for you.';
@@ -3499,6 +3511,7 @@ const Chat = (() => {
   // [{label,value,skip}]; onPick(item) fires on a choice (the choice row removes itself on pick).
   function nudge(text, options, onPick) {
     if (!log) return null;
+    if (taskQuestionLive()) return null;   // a pending task question owns the moment
     clearNudge();   // one gentle beat at a time: retire any prior unanswered nudge before this one (no cross-run stacking)
     const r = row('agent'); r.d.classList.add('nudge');
     r.body.textContent = String(text == null ? '' : text);
@@ -3549,6 +3562,7 @@ const Chat = (() => {
     // any live/in-flight ask beat owns the moment — the aside must stand down (drop).
     if (isBusy() || interview) return true;
     if (activeNudge) return true;                                   // a gentle suggestion/curiosity beat is up
+    if (taskQuestionLive()) return true;                            // an unanswered task question owns the moment (its chips are live)
     if (activeTurnin || turninQueue.length) return true;            // a memory-review deck is live/queued
     if (typeof studyBusy === 'function' && studyBusy()) return true;// a study card is visible
     if (beatSlot && beatSlot.visibleBeat()) return true;            // the arbiter says a beat holds the slot
@@ -3739,6 +3753,7 @@ const Chat = (() => {
     if (typeof Intake !== 'undefined' && Intake.isRunning && Intake.isRunning()) return false;
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return false;     // a focused panel is up
     if (activeNudge) return false;                                                                  // a gentle beat is already live — one at a time
+    if (taskQuestionLive()) return false;   // a pending task question owns the moment
     if (typeof CuriosityStore === 'undefined') return false;
     const dim = CuriosityStore.consider();                                                          // null once the session cap is spent / nothing live to ask
     if (!dim) return false;
@@ -4229,6 +4244,7 @@ const Chat = (() => {
   function goalBlocked(ws) {
     if (interview) return true;
     if (activeTurnin || activeNudge || studyBusy() || threadBusy()) return true;   // a visible review/beat is up
+    if (taskQuestionLive()) return true;   // an unanswered task question is up — the human decides it before the loop piles on
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) return true;
     if (ws && typeof Channels !== 'undefined' && Channels.pendingOf && Channels.pendingOf(ws.id)) return true;   // a tool approval is pending
     return false;
