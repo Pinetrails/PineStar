@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "ee811e3a2c9e183ecf5529c71ee25b0ad3bc5b5b",
+    "sourceCommit": "5bed5f0117d22d67cf7dfb54faf1a2a814ea1884",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -793,8 +793,8 @@
       },
       {
         "path": "frontend/app/workshopstore.js",
-        "bytes": 34501,
-        "sha256": "849fa45fc455f97ac0eb4c7dab698efbbe922fffd0e27205a3872c8ecad2808f"
+        "bytes": 37262,
+        "sha256": "da4c550dfb5f32359a26fcdfd0b2b9d82333ea2fb0b64112d071f819fe578348"
       },
       {
         "path": "frontend/app/worksignal.js",
@@ -1464,7 +1464,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/chat.js",
-          "needle": "openItBtn.textContent = '\u25b6 Open it \u2014 try it in a tab'"
+          "needle": "openItBtn.textContent = '▶ Open it — try it in a tab'"
         },
         {
           "kind": "contains",
@@ -1568,7 +1568,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/autonomy.js",
-          "needle": "run free toward my goals while i\u2019m away"
+          "needle": "run free toward my goals while i’m away"
         },
         {
           "kind": "contains",
