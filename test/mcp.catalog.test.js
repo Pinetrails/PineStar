@@ -130,4 +130,25 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
   A.ok(C.list().length >= 30, 'catalog now carries a substantial verified set (30+)');
 }
 
+// ---- J. OAuth-audit retiers (2026-07-18): GitHub is a PAT connector; url-less oauth entries carry `via` ----
+{
+  // github.com/login/oauth has NO dynamic client registration (live-probed), so an oauth tier could never
+  // complete a sign-in — the honest tier is apikey (PAT as bearer, GitHub's documented remote-server path).
+  const gh = C.get('github');
+  A.eq(gh.authType, 'apikey', 'github is a paste-a-key (PAT) connector — its AS has no dynamic registration');
+  A.eq(gh.installable, true, 'github is installable today');
+  A.ok(!('token' in (C.installConfig('github') || {})), 'github installConfig carries no token');
+  // `via` honesty: only url-less oauth entries carry it, and it must point at a REAL installable catalog
+  // entry — otherwise the "VIA <name>" jump would land nowhere (a dead click with extra steps).
+  for (const e of C.list()) {
+    if (e.via) {
+      A.eq(e.authType, 'oauth', e.id + ' via is only for oauth entries');
+      A.eq(e.url, '', e.id + ' via is only for url-less entries (a direct endpoint signs in directly)');
+      const target = C.get(e.via);
+      A.ok(target && target.installable, e.id + ' via targets a real, installable catalog entry (' + e.via + ')');
+    }
+  }
+  for (const id of ['google-workspace', 'atlassian']) A.ok(!!(C.get(id) || {}).via, id + ' points at its aggregator route (via)');
+}
+
 console.log('ok - mcp.catalog');
