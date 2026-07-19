@@ -1,5 +1,25 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-19 — TIMESTAMP HONESTY sweep (branch `claude/session-list-timestamp-bug-c268c1`, UNMERGED)
+
+Andrew's law: every user-visible timestamp = the EXACT moment the thing was produced — never
+queue/poll/adopt/boot/render time. Two audits swept every time surface + every stamp write; all
+confirmed lies fixed (gate 369/369 + test:http green; live-proven on seeded :9253 — planted an
+8h-old deliverable pre-boot, fresh sidecar served builtAt intact, session adopted at builtAt,
+clicking the rail row read "8h" not "now"):
+- 4a16ecf3: rail "now" lie — workshop re-offer polls no longer re-stamp lastActiveAt
+  (new Workstreams.markUnread re-flags unread without touching the clock).
+- 6fde3785: builtAt end-to-end — markBuilt stamps it (injected now), rides the emitted manifest
+  (inside the opaque manifest field; owned shared/ untouched), /api/workshop/pending exposes it
+  (runStore run-end fallback for legacy), /api/deliverables pending rows + lifecycleRow use build
+  time not queue time, restorePending keeps the ORIGINAL builtAt across an undo, ensureSession
+  adopts sessions at builtAt, cron boot-backfill/heal pass run.ts/done.ts (appendRun gained
+  optional `at`), run-recap duration reads Channels.elapsedOf (pauses excluded) not send→teardown.
+- W0 re-stamps in-branch: 52d51074 + 823d00fe.
+- NOT in this lane: the onboarding blitz-proof work built here by a cross-session mix-up lives on
+  `claude/onboarding-blitzproof-c268c1` (UNMERGED, unreviewed) — owned by the onboarding session.
+- OPEN: merge to trunk + exe rebuild.
+
 ## 2026-07-18 — v0.5.3 CUT + PUBLISHED (Windows) — desktop exe rebuild CLOSED
 
 v0.5.3 cut from trunk `e5e2d0dd` (tag `v0.5.3` local), signed, and **PUBLISHED to GitHub

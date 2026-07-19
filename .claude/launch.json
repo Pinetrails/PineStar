@@ -1228,10 +1228,10 @@
         "dev/seed.js",
         "--keep"
       ],
-      "port": 9231,
+      "port": 9253,
       "autoPort": false,
       "env": {
-        "SKYNET_PORT": "9231",
+        "SKYNET_PORT": "9253",
         "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
     },
