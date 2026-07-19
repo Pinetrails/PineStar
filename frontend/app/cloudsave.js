@@ -37,6 +37,10 @@ const CloudSave = (() => {
   // EL-11 FIX 2/3: the persisted quarantine/recovery marker the sidecar returned on the last pull (GET /api/save
   // carries `recovery`). The boot path reads it via recoveryNotice() and acks it after showing the honest notice.
   let lastRecovery = null;
+  // SAVE-UNKNOWN HONESTY: what the last pull() actually PROVED. 'empty' means the sidecar answered 200 and
+  // definitively holds no save; 'forbidden' (auth 401/403) and 'unreachable' (network/timeout/5xx) mean we
+  // could not ask — states that must NEVER be presented to the boot path as "no save exists".
+  let lastPullOutcome = 'unreachable';   // until a pull settles, we have proven nothing
 
   function now() { return Date.now(); }
   function num(v) { const n = Number(v); return Number.isFinite(n) ? n : 0; }
@@ -51,6 +55,11 @@ const CloudSave = (() => {
   // (never a real save envelope) so the boot path can raise the honest "update the app" gate. localStorage is
   // left byte-unchanged — we never setItem a future remote.
   function futureSentinel(version) { return { __futureSave: true, version: num(version) }; }
+  // SAVE-UNKNOWN sentinel: no local cache AND the durable side could not be READ (unreachable or auth-refused).
+  // The boot path must gate on this — presenting the first-run creation ceremony here would assert "you have no
+  // save" when the harness proved no such thing (the July-19 incident: a 403'd pull rendered genesis over an
+  // intact 200KB save). Distinct object, never a real save envelope.
+  function unknownSentinel(reason) { return { __saveUnknown: true, reason: String(reason || 'unreachable') }; }
 
   // NOTE: no `keepalive` here — browsers cap a keepalive body at 64KB, and a save with workstreams + station
   // can exceed that. The normal debounced flush is a plain fetch; the unload path uses sendBeacon instead.
@@ -148,10 +157,27 @@ const CloudSave = (() => {
 
   // bounded so a hung/slow sidecar can never block boot — on timeout we abort and fall back to the local cache.
   function pull() {
+    // DEV-ONLY fault injection (stranded-user testing law): with a SKYNET_DEV seed loaded, a localStorage flag
+    // forces the pull outcome so the save-unknown gate's failure states can be WALKED in the live app.
+    // Inert in production: __STARNET_DEV__ is only ever injected by a SKYNET_DEV=1 sidecar.
+    try {
+      if (typeof window !== 'undefined' && window.__STARNET_DEV__) {
+        const f = localStorage.getItem('starnet.dev.pullFault');
+        if (f === 'forbidden' || f === 'unreachable') { lastPullOutcome = f; return Promise.resolve(null); }
+      }
+    } catch (_) {}
     let ctl = null, t = null;
     try { ctl = new AbortController(); t = setTimeout(() => { try { ctl.abort(); } catch (_) {} }, 2500); } catch (_) {}
     return fetch(ENDPOINT + '?agent=' + encodeURIComponent(AGENT_ID), { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
-      .then(r => r.ok ? r.json() : null)
+      .then(r => {
+        if (!r.ok) {
+          // an auth refusal is its own truth — the sidecar is ALIVE but rejected us (lost/stale launch token).
+          lastPullOutcome = (r.status === 401 || r.status === 403) ? 'forbidden' : 'unreachable';
+          return null;
+        }
+        lastPullOutcome = 'empty';   // a 200 with no save below stays 'empty'; a real save upgrades it
+        return r.json();
+      })
       .then(j => {
         if (j && typeof j === 'object') {
           // EL-11 FIX 1 (GB-9): the sidecar tells us at boot-read time the workspace is degraded — latch it
@@ -160,9 +186,11 @@ const CloudSave = (() => {
           // EL-11 FIX 2/3: capture the persisted quarantine/recovery marker for the boot path's disclosure.
           if (j.recovery && typeof j.recovery === 'object') lastRecovery = j.recovery;
         }
-        const s = j && j.save; return isSave(s) ? s : null;
+        const s = j && j.save;
+        if (isSave(s)) { lastPullOutcome = 'save'; return s; }
+        return null;
       })
-      .catch(() => null)              // unreachable/slow sidecar -> no remote, fall back to local
+      .catch(() => { lastPullOutcome = 'unreachable'; return null; })   // network fail/timeout/bad JSON -> we proved NOTHING
       .then(v => { if (t) clearTimeout(t); return v; });
   }
 
@@ -174,8 +202,13 @@ const CloudSave = (() => {
     if (isFutureSave(local)) return futureSentinel(num(local.version));
     let remote = null;
     try { remote = await pull(); } catch (_) { remote = null; }
-    if (!isSave(remote)) {             // nothing durable yet — seed the server from local if we have one
-      if (isSave(local)) push(local);
+    if (!isSave(remote)) {
+      // No durable doc came back. WHY matters: 'empty' is the sidecar's definitive "no save here" (seed it
+      // from local / genuinely first run). 'forbidden'/'unreachable' proved NOTHING — with no local cache
+      // either, hand boot the save-unknown sentinel so it gates instead of onboarding over a possibly-intact
+      // durable save it simply couldn't read.
+      if (lastPullOutcome !== 'empty' && !isSave(local)) return unknownSentinel(lastPullOutcome);
+      if (isSave(local)) push(local);   // 'empty': seed the server; otherwise best-effort (fails soft, retries)
       return local;
     }
     // FORWARD-VERSION GUARD (P0.3): a durable remote from a NEWER build must NOT be adopted into the cache —
@@ -208,6 +241,8 @@ const CloudSave = (() => {
 
   // the boot path uses this to tell reconcile()'s future-save sentinel apart from a normal winning doc.
   function isFutureSentinel(d) { return !!(d && typeof d === 'object' && d.__futureSave === true); }
+  // …and this to tell the save-unknown sentinel (no local + durable side unreadable) apart from a real doc.
+  function isUnknownSentinel(d) { return !!(d && typeof d === 'object' && d.__saveUnknown === true); }
 
   // a close/hide can land before the debounce fires; beacon the pending doc so the last save is never dropped.
   function installUnloadFlush() {
@@ -254,6 +289,6 @@ const CloudSave = (() => {
       .then(r => !!(r && r.ok)).catch(() => false);
   }
 
-  return { push, pull, reconcile, flush, installUnloadFlush, health: healthNow, isFutureSentinel, markDegraded, recoveryNotice, ackRecovery, _isSave: isSave, _isFutureSave: isFutureSave };
+  return { push, pull, reconcile, flush, installUnloadFlush, health: healthNow, isFutureSentinel, isUnknownSentinel, markDegraded, recoveryNotice, ackRecovery, pullOutcome: () => lastPullOutcome, _isSave: isSave, _isFutureSave: isFutureSave };
 })();
 if (typeof module !== 'undefined' && module.exports) module.exports = CloudSave;

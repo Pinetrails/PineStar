@@ -3471,6 +3471,45 @@ const App = (() => {
     show('screen-recovery');
   }
 
+  // SAVE-UNKNOWN GATE: no local cache AND the durable mirror could not be READ (sidecar unreachable, or the
+  // per-launch auth token was refused). A first-run ceremony here would assert "no save exists" over a
+  // possibly-intact durable save (the July-19 "my save got deleted" incident — a 403'd pull rendered genesis
+  // over a healthy 200KB save.json). HARD STOP: gate, auto-retry the reconcile until the sidecar answers
+  // definitively, then reload so the whole boot (token injection included) starts clean. Never times out into
+  // creation — the ONLY exits are a definitive answer or the user closing the app.
+  function showSaveUnreachableGate(reason) {
+    gateActive = true;
+    try { if (World && World.stop) World.stop(); } catch (_) {}
+    const sub = el('unreachable-sub');
+    if (sub) sub.textContent = reason === 'forbidden' ? 'station service refused this window (stale session) — a relaunch usually clears it' : 'station service not answering';
+    const status = el('unreachable-status');
+    let attempts = 0, timer = null, checking = false;
+    const setStatus = m => { if (status) status.textContent = '＋ ' + m; };
+    const attempt = async () => {
+      if (checking) return;
+      checking = true;
+      attempts++;
+      setStatus('checking… (attempt ' + attempts + ')');
+      let r = null;
+      try { r = await CloudSave.reconcile(Save.load()); } catch (_) { r = null; }
+      // Definitive answer = anything but the unknown sentinel: a real save, a future-save sentinel, or a
+      // proven-empty null. Reload rather than resume in place — a stale/refused auth token can only be
+      // re-injected by a fresh page load, and reload re-runs every gate in order.
+      if (!CloudSave.isUnknownSentinel(r)) {
+        if (timer) clearInterval(timer);
+        setStatus('reconnected — resuming…');
+        try { location.reload(); } catch (_) {}
+        return;
+      }
+      setStatus('still unreachable — retrying every 5s (attempt ' + attempts + '). Your save is untouched.');
+      checking = false;
+    };
+    const btn = el('btn-unreachable-retry');
+    if (btn) btn.onclick = () => { SFX.click && SFX.click(); attempt(); };
+    timer = setInterval(attempt, 5000);
+    show('screen-unreachable');
+  }
+
   /* ---------- boot ---------- */
   async function init() {
     if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
@@ -3521,6 +3560,11 @@ const App = (() => {
     // nothing persists.
     if (typeof CloudSave !== 'undefined' && CloudSave.isFutureSentinel && CloudSave.isFutureSentinel(saved)) {
       showFutureSaveGate(saved.version); return;
+    }
+    // SAVE-UNKNOWN GATE — no local cache and the durable side could not be read. NEVER fall through to the
+    // first-run ceremony on an unproven "no save"; hold at the reconnecting gate until the sidecar answers.
+    if (typeof CloudSave !== 'undefined' && CloudSave.isUnknownSentinel && CloudSave.isUnknownSentinel(saved)) {
+      showSaveUnreachableGate(saved.reason); return;
     }
     // EL-11 FIX 2/3 — the sidecar's save store quarantined a damaged durable save, or restored one from .bak.
     // The user must LEARN that (reconcile()'s pull captured the persisted marker). Two honesty tiers:
