@@ -272,6 +272,18 @@
     if (!tt) return false;
     w.title = tt; w.titleAuto = true; return true;
   }
+  // is this stream still wearing its MACHINE-DERIVED placeholder (deriveTitle of its first user message)?
+  // true => eligible for the model summary upgrade. Covers more than the first turn: a session whose first
+  // upgrade attempt failed (network hiccup / unparseable model reply) or one saved by a pre-upgrade build
+  // retries on its next completed turn instead of wearing the truncated first-words title forever. A manual
+  // rename (titleAuto === false) — even to the exact placeholder text — always wins; General never titles.
+  function needsModelTitle(id) {
+    const w = find(id);
+    if (!w || w.id === generalId || w.titleAuto === false || w.title == null) return false;
+    const first = (w.history || []).find(m => m && m.role === 'user' && typeof m.content === 'string');
+    if (!first) return false;
+    return w.title === deriveTitle(first.content);
+  }
   // UPGRADE an auto-derived placeholder to a concise model-written summary (chat.js fires this once, after a
   // new stream's first run, passing a 3-6 word LLM title). Honors the human: a stream whose title was MANUALLY
   // renamed (titleAuto === false) is never stomped, and General is never titled. Returns false (no change) when
@@ -465,7 +477,7 @@
     previewArchive, archivePreview, canUndo, undoLast,
     create, startSession, adopt, get, active, activeId: getActiveId, generalId: getGeneralId,
     switch: switchTo, rename, setAgent, setLane, setProjectRoot, pin, archive, del, removeByAgent, isDeleted, touch, markRead, unread: isUnread,
-    autoTitle, retitle, deriveTitle,
+    autoTitle, retitle, deriveTitle, needsModelTitle,
     appendRun, recordDeliverable, addCost, costOf,
     migrateV1, importTasks,
     LANES
