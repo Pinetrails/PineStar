@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "3afc3ad242620362c327990a024bb247a086ae29",
+    "sourceCommit": "7312be5bcc84e2c03b96840c674dfe82d1ca171c",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 263783,
-        "sha256": "2edccda7097c3015e0ce84f207e8a7860c9b1dda3127fcb146739e93c25efd34"
+        "bytes": 264558,
+        "sha256": "84394e9caa650939f0fb7e250f73db39841ac700b3b85144210cea543815cf60"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 405658,
-        "sha256": "ca975407108e188102be076551dcec3200e03a80b1e8614e77a00247210385f3"
+        "bytes": 407344,
+        "sha256": "c679eaaff5d6b092e9c5dcf2a1c4fb507a9db19de43aa2b3d3272b8de75111bc"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -188,13 +188,13 @@
       },
       {
         "path": "frontend/app/curiosity.js",
-        "bytes": 5910,
-        "sha256": "a53a79ef23833e58e9c4653238e061ab94f261707c9abfbb48ea9d86b6f6203f"
+        "bytes": 6691,
+        "sha256": "d106fc9373cdc558a107f3d9a293636c879ec0b4b20c9fb5f65677d9b8d641f7"
       },
       {
         "path": "frontend/app/curiositystore.js",
-        "bytes": 6135,
-        "sha256": "3372e09e7040896530b27aa0361741225bb85f60ca709cb03fb533a92ee31585"
+        "bytes": 7059,
+        "sha256": "f77a18fd97d95bd35d68f45d5f62ada83cecb8b77dcf2ebc73c8898fc9b81066"
       },
       {
         "path": "frontend/app/data-shim.js",
@@ -288,8 +288,8 @@
       },
       {
         "path": "frontend/app/interview.js",
-        "bytes": 7689,
-        "sha256": "c7d6341d81206b981d6318089320637be7b096be2dcd207e952f4edfb544e411"
+        "bytes": 8512,
+        "sha256": "6af190387b899134bfcbc9448296839b90b9ca6ac0d26febcead7aba20e0d705"
       },
       {
         "path": "frontend/app/keepawake.js",
@@ -378,8 +378,8 @@
       },
       {
         "path": "frontend/app/onboarding.js",
-        "bytes": 61354,
-        "sha256": "b99ef59eac8c945843fe8425e11b422bfd0b60d3123edb4d8fa9328498d50832"
+        "bytes": 65182,
+        "sha256": "0fa1ed7414539fad4c61b799b0c1b8e2183c818931e935b828941075c0f38986"
       },
       {
         "path": "frontend/app/permissions.js",
@@ -613,8 +613,8 @@
       },
       {
         "path": "frontend/app/starters.js",
-        "bytes": 7054,
-        "sha256": "86bdd07789010548339f483b19e4b07ce20685be942811b3edfa9a40ddd7a92e"
+        "bytes": 7692,
+        "sha256": "a6a11a9a547e166f22a91447a4a924ff91f2f2f4ad6338d3478917055ed884a9"
       },
       {
         "path": "frontend/app/stationbake.js",
