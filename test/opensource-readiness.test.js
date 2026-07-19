@@ -28,7 +28,7 @@ for (const required of [
 ]) assert.ok(fs.existsSync(path.join(ROOT, required)), required + ' must exist');
 
 const ignore = read('.gitleaksignore').split(/\r?\n/).filter(line => /^[0-9a-f]{40}:/.test(line));
-assert.equal(ignore.length, 18, 'the reviewed pre-publication baseline is finite and exact');
+assert.equal(ignore.length, 21, 'the reviewed pre-publication baseline is finite and exact');
 assert.equal(new Set(ignore).size, ignore.length, 'baseline fingerprints must be unique');
 
 const workflow = read('.github/workflows/secret-history.yml');
