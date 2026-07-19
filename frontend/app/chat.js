@@ -5424,9 +5424,11 @@ const Chat = (() => {
       if (typeof App !== 'undefined' && App.refreshRail) App.refreshRail();
       capHistory(ws);   // E3: bound the stored thread AFTER this turn's assistant reply landed, before it persists
       if (onTurn) onTurn();
-      // FIRST-TURN TITLE: replace the instant first-sentence placeholder with a model-written summary. Quiet
+      // TITLE UPGRADE: replace the instant first-sentence placeholder with a model-written summary. Quiet
       // (internal call, off the floor/telemetry) and fire-and-forget so it never delays this turn's teardown.
-      if (firstTurn && titleOk) maybeRetitle(ws, text, finalReply);
+      // Not first-turn-only: a stream still wearing its machine placeholder (first attempt hiccuped, or the
+      // session was saved by a pre-upgrade build) retries on this completed turn (needsModelTitle gates it).
+      if (titleOk && (firstTurn || (typeof Workstreams !== 'undefined' && Workstreams.needsModelTitle && Workstreams.needsModelTitle(ws.id)))) maybeRetitle(ws, text, finalReply);
       // flush any trailing spoken text and CLOSE the speech stream — the last chunk's end re-arms the
       // hands-free mic (this is the heartbeat for spoken turns; onTurnEnd covers silent/no-speech turns).
       if (willSpeak && typeof Voice !== 'undefined' && Voice.endReply) { pushSpeech(true, finalReply); Voice.endReply(); }
@@ -5465,7 +5467,11 @@ const Chat = (() => {
     const sys = 'You generate a terse title for a work session. Reply with ONLY a 3 to 6 word title that summarizes'
       + ' what the user wants done. Use Title Case. No surrounding quotes, no trailing punctuation, no preamble —'
       + ' output the title and nothing else.';
-    const prompt = String(userText || '').replace(/\s+/g, ' ').slice(0, 500)
+    // summarize the session's FOUNDING directive (its first user message), not whatever turn happened to
+    // trigger a late upgrade retry — the title says what the session is ABOUT. Falls back to this turn's text.
+    let baseText = userText;
+    try { const f = (cur.history || []).find(m => m && m.role === 'user' && typeof m.content === 'string'); if (f) baseText = f.content; } catch (_) {}
+    const prompt = String(baseText || '').replace(/\s+/g, ' ').slice(0, 500)
       + (replyText ? ('\n\nAssistant reply (context only): ' + String(replyText).replace(/\s+/g, ' ').slice(0, 200)) : '');
     if (!prompt.trim()) return;
     const before = Object.assign({}, Harness.totals());   // COPY (totals is a mutated singleton)
@@ -5488,7 +5494,9 @@ const Chat = (() => {
   function cleanTitle(raw) {
     let t = String(raw == null ? '' : raw).trim();
     if (!t) return '';
+    t = t.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();    // a reasoning model's leaked think block is never the title
     t = (t.split(/\r?\n/).find(l => l.trim()) || '').trim();   // first non-empty line only
+    t = t.replace(/^#+\s*/, '').replace(/^title\s*[:\-—]\s*/i, '');   // drop a markdown heading / "Title:" label wrapper
     t = t.replace(/^["'`*\s]+|["'`*\s]+$/g, '').replace(/[\s.:;,—–-]+$/g, '').replace(/\s+/g, ' ').trim();
     if (!t || t.length > 64) return '';                        // empty or a paragraph came back → keep placeholder
     if (/\b(sorry|cannot|can't|unable|as an ai|here(?:'s| is)|i (?:can|am|will|would))\b/i.test(t)) return '';   // refusal / chatty
