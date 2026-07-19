@@ -1,5 +1,21 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-19 — SESSION TITLING: real model summaries, not first-words (MERGED trunk 9fe9bbe1)
+
+Andrew's report from other-hardware testing: session titles were "whatever the first few words the
+user typed". Root cause: the quiet retitle call's `internal:true` never left the browser — the
+sidecar buried its "reply with ONLY a 3-6 word title" prompt under the operator manual / capability
+summary / skill catalog / memory fence; models answered chattily, cleanTitle rejected, the instant
+placeholder stayed forever. Fix (lane `claude/starnet-session-titling-343578` → merge `9fe9bbe1` +
+W0 re-stamp `d839ccc9`): `internal` rides the /api/run body; runOnce keeps reason-only self-talk
+prompts VERBATIM (also: no memory fence — was faking memory.used stats — no transcript seed; away
+clock never stamped by self-talk). Applies to ALL internal callers (retitle/goal-judge/pitch/
+suggest/autopilot). Hardening: `Workstreams.needsModelTitle` retries a stranded placeholder on
+later turns (covers failed first attempts AND sessions saved by pre-fix builds), summarizing the
+session's FOUNDING message; cleanTitle strips think-blocks/"Title:"/md headings. Live-proven on
+worktree AND merged-trunk bytes with real haiku runs (internal call 499 tokens vs 10.8k dressed).
+- [x] MERGED to trunk 9fe9bbe1 (digest in qa/STATUS.md). OPEN: exe rebuild.
+
 ## 2026-07-19 — DUPLICATE POPUPS: pending question owns the COMMS moment (MERGED trunk 4b07b2e0)
 
 Andrew live-caught: a run ends by asking a clarifying (Task Brief) question, then a second popup
