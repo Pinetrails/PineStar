@@ -21,8 +21,17 @@ Full plan (Andrew-approved direction, wording in red-pen): `docs/ONBOARDING_V3_P
   walkthrough on :8819: 8 stated+synth beliefs, ready:true, 4 life-grounded mirror offers, first move
   armed for the tour close. Trap fixed: first ceremony call needs the 40s ceiling (cold wire).
 - SUPERSEDED: `claude/onboarding-blitzproof-c268c1` (accidental sibling; covered by S1+S3) — tear down.
-- OPEN: S4 hunt mode, S5 brain-gating + first-brainReady interview offer; Andrew red-pen of the live
-  wording; merge ritual; exe rebuild after merge.
+- **S4+S5 SHIPPED in-branch (`7312be5b`, W0 restamped `46460dde`)**: HUNT MODE (curiosity hunt profile —
+  work floor waived + cap 2 below the gate, dismissed/stop-forever intact; opener pitch slot becomes the
+  'ask me one real question' probe → one-question intake at the top-VOI dim; intake bank rewritten into
+  the scene register) + BRAIN-GATING (keyless wake = honest holding line + scripted mission/cadence + a
+  persisted IOU; first live-brain session offers the real interview once — spent on offer). LIVE-PROVEN:
+  loose station → hunting:true, probe chip → year question → typed answer landed 'stated'; deferred flag →
+  boot offer → accept launched the full meeting in-game.
+- OPEN: Andrew red-pen of the live wording + his own live pass; merge ritual; exe rebuild after merge.
+  Not live-walked (honest): the keyless-wake branch itself (source-locked; needs an unconfigured-brain
+  state the dev harness can't produce naturally) and a completed deferred meeting (same runLeadMeeting
+  machinery proven live in S3).
 
 ## 2026-07-18 — v0.5.3 CUT + PUBLISHED (Windows) — desktop exe rebuild CLOSED
 
