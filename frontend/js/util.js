@@ -116,10 +116,12 @@ const SFX = {
   ctx: null, master: null, fx: null, on: true, vol: 0.35, _noise: null, _lastAt: {},
 
   // per-sound gate: repeats inside the window are dropped; the FIRST one always sounds.
+  // _lastAny lets the delegated UI layer (audio.js) yield to explicit cues that just played.
+  _lastAny: 0,
   _gate(name, ms) {
     const now = Date.now();
     if (SFX._lastAt[name] && now - SFX._lastAt[name] < ms) return false;
-    SFX._lastAt[name] = now; return true;
+    SFX._lastAt[name] = now; SFX._lastAny = now; return true;
   },
 
   // destination picker: an optional stereo nudge (pan −1..1) gives UI cues a touch of width;
@@ -257,6 +259,21 @@ const SFX = {
     SFX.voice({ freq: 1920 * drift, dur: 0.025, type: 'sine', vol: 0.08, atk: 0.001, cut: 7000, pan });
     SFX.voice({ freq: 2719 * drift, dur: 0.02, type: 'sine', vol: 0.06, atk: 0.001, cut: 8000, pan });
     SFX.voice({ freq: 281, dur: 0.05, when: 0.012, type: 'sine', vol: 0.06, atk: 0.003, pan });
+  },
+  // toggle: a settings switch flipping — the click sample pitched up a hair so checkboxes and
+  // radios feel related to but distinct from plain buttons. Used by the delegated UI layer.
+  toggle() {
+    if (!SFX._gate('toggle', 60)) return;
+    if (SFX._sample('click', { rate: 1.18, vol: 0.45 })) return;
+    SFX.noise({ dur: 0.01, cut: 3000, type: 'highpass', vol: 0.05 });
+    SFX.voice({ freq: 1060, glide: 780, dur: 0.04, type: 'sine', vol: 0.16, atk: 0.001, cut: 6000 });
+  },
+  // slidertick: the ratchet detent for range inputs — tiny, high, heavily gated so a drag
+  // reads as a rotary dial, not a machine gun.
+  slidertick() {
+    if (!SFX._gate('slidertick', 90)) return;
+    if (SFX._sample('click', { rate: 1.5, vol: 0.22 })) return;
+    SFX.noise({ dur: 0.012, cut: 3400, vol: 0.05, type: 'highpass' });
   },
   // "got it, thinking…" — a soft descending two-note sine, distinct from click (send) and open (listen-start),
   // so a hands-free user gets instant confirmation their words landed before the agent starts speaking.
