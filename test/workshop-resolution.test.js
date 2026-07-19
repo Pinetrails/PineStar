@@ -137,5 +137,16 @@ const seedSession = (runId, extraHistory) => {
   await new Promise(r => setTimeout(r, 120));
   A.eq(cards.length, 0, 'a retired chain never paints into a session the Commander left');
 
+  /* ---------- 9. the ATTACH POLL is one-shot no more: station down at boot → maybePresent retries,
+     and the deliverable's session is adopted (greet path) the moment the station answers ---------- */
+  streams.delete('workshop-run-A'); pending = [{ runId: 'run-A', title: 'boot-race build', files: [] }];
+  pendingUnreachable = true;
+  activeStreamId = 'ws_general';
+  await WorkshopStore._maybePresent();
+  A.ok(!streams.has('workshop-run-A'), 'no session adopted while the station is down (never a fabricated row)');
+  pendingUnreachable = false;          // sidecar comes up
+  await new Promise(r => setTimeout(r, 120));
+  A.ok(streams.has('workshop-run-A'), 'the attach-poll retry adopts the deliverable session once the station answers');
+
   A.report('workshop-resolution');
 })().catch(e => { console.error(e); process.exit(1); });
