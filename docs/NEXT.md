@@ -1,5 +1,22 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-19 — DUPLICATE POPUPS: pending question owns the COMMS moment (MERGED trunk 4b07b2e0)
+
+Andrew live-caught: a run ends by asking a clarifying (Task Brief) question, then a second popup
+("is your north star financial freedom") stacks over it — and the second card's choices() wiped
+the question's own answer chips, so the task was lost and had to be re-asked. Root cause: run-end
+made Chat.isBusy() false, and NOTHING tracked the pending question, so every polling confirm beat
+(north-star propose, quest attest, curiosity/suggestion/night nudges) saw a "free" moment.
+
+Fix (lane `claude/agent-duplicate-popups-d2f22f` → trunk `4b07b2e0` + W0 re-stamp `48b8d102`):
+chat.js `taskQuestionLive()` — a pending unanswered question on the displayed stream now blocks
+nudge/curiosityNudge/offerCuriosity/beatBusy/awayDigest/workshopReturn/goalBlocked; quest stores
+gate on Chat.beatBusy() and degrade to the ambient broadcast line. Reverse direction closed:
+offerTaskQuestion/offerFork clearNudge() first (a live nudge leaves whole); app.js summon desk
+chip gates on beatBusy. All remaining direct Chat.choices callers audited safe (digest in
+qa/STATUS.md has the full audit). Live-proven on worktree AND merged-trunk bytes (mock seed).
+- [x] MERGED to trunk 4b07b2e0 (digest in qa/STATUS.md). OPEN: exe rebuild.
+
 ## 2026-07-19 — TIMESTAMP HONESTY sweep (MERGED to trunk e087fdd8 fast-forward)
 
 Andrew's law: every user-visible timestamp = the EXACT moment the thing was produced — never
