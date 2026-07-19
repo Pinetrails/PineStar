@@ -203,13 +203,17 @@ function makeWorkshopStore(deps) {
     }).then(() => n);
   }
 
-  // mark a claimed item BUILT (a valid manifest landed) — records the runId so the return-card finds the dir.
-  function markBuilt(agentId, backlogId, runId) {
+  // mark a claimed item BUILT (a valid manifest landed) — records the runId so the return-card finds the dir,
+  // and builtAt (injected ms, matching queue()) so every later surface can show WHEN the work actually landed.
+  // Timestamp-honesty law (2026-07-19): before builtAt existed, /pending and /deliverables fell back to the
+  // QUEUE time or a fresh Date.now() at poll/adopt — both lies about when the deliverable was produced.
+  function markBuilt(agentId, backlogId, runId, now) {
     return durable.update(keyOf(agentId), (cur) => {
       const rec = normalize(cur);
       const it = rec.backlog.find(b => b.id === String(backlogId));
       if (!it) return undefined;
       delete it.buildingRunId; it.builtRunId = String(runId || '');
+      it.builtAt = Number(now) || 0;
       return rec;
     });
   }
@@ -291,6 +295,9 @@ function makeWorkshopStore(deps) {
       const nt = normTitle(info.title);
       if (rec.denylist.indexOf(bid) >= 0 || (nt && rec.deniedTitles.indexOf(nt) >= 0)) { out = { restored: false, reason: 'denied', item: null }; return undefined; }
       const item = { id: bid, title: String(info.title || 'Workshop deliverable').slice(0, 200), detail: '', source: String(info.source || 'workshop').slice(0, 40), ts: Number(now) || 0, builtRunId: rid };
+      // timestamp honesty: an undo returns the SAME build to pending — its builtAt is when it was originally
+      // built (caller reads it from the durable lifecycle row / run record), never the undo moment.
+      if (Number(info.builtAt) > 0) item.builtAt = Number(info.builtAt);
       rec.backlog.push(item);
       while (rec.backlog.length > BACKLOG_CAP) rec.backlog.shift();
       out = { restored: true, reason: 'restored', item: item };

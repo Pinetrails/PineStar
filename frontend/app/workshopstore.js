@@ -289,7 +289,10 @@ const WorkshopStore = (() => {
         history: [{ role: 'system', sys: true, content: '⚒ built while you were away — “' + String(m.title || 'a deliverable') + '”.'
           + (String(m.summary || '').trim() ? ' ' + String(m.summary).trim() : '')
           + ' open this session any time to review and decide.' }],
-        lastActiveAt: Date.now(), lastReadAt: 0   // truthful unread: real new activity the Commander hasn't seen
+        // timestamp honesty: the session's "last worked" = when the build actually LANDED (manifest builtAt,
+        // server-stamped at validation; the live workshop.built push carries it too). Only a legacy manifest
+        // with no stamp falls back to now (first-seen). lastReadAt: 0 = truthful unread (real unseen work).
+        lastActiveAt: (Number(m.builtAt) > 0 ? Number(m.builtAt) : Date.now()), lastReadAt: 0
       });
       if (!adopted) return null;
     }

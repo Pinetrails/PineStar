@@ -5322,7 +5322,14 @@ const Chat = (() => {
         if (isActiveWs(ws)) resolvePresence(ws, { endReason: taskQuestion ? 'done' : endReason, cutShort: cutShort, steps: runToolsOk, cost: runCost });
         // WORK VISIBILITY: a passive recap of what this run PRODUCED, fetched from the run's recorded
         // artifacts ledger. A report, not an ask — it never claims the post-run beat slot. Fire-and-forget.
-        if (thisRunId) renderRunRecap(ws, thisRunId, Date.now() - wiPlacedTs);
+        // DURATION HONESTY (2026-07-19): the recap's "RUN COMPLETE · M:SS" reads Channels.elapsedOf — the
+        // same confirmed-start, approval-pauses-excluded clock the live COMMS timer shows — never the raw
+        // send-click→teardown span (which silently counted connect latency + time paused waiting on YOU).
+        // Read before the finally's Channels.end tears the channel down; 0/absent → the old span fallback.
+        if (thisRunId) {
+          const honestMs = (typeof Channels !== 'undefined' && Channels.elapsedOf) ? Channels.elapsedOf(ws.id, Date.now()) : 0;
+          renderRunRecap(ws, thisRunId, honestMs > 0 ? honestMs : (Date.now() - wiPlacedTs));
+        }
       }
     } catch (e) {
       const aborted = e && (e.name === 'AbortError' || /abort/i.test(String(e.message || e)));

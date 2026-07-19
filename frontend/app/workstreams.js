@@ -295,11 +295,14 @@
   }
 
   // ---------- runs · deliverables · cost (filed onto the stream that spawned them) ----------
-  function appendRun(id, runId) {
+  // `at` (optional, epoch ms): the run's REAL event time. A live caller omits it (now IS the event); a
+  // backfill/heal caller that learned about an already-finished run passes the run record's end time, so
+  // the rail's "last worked" stamp never reads as boot/poll time (timestamp-honesty law, 2026-07-19).
+  function appendRun(id, runId, at) {
     const w = find(id); if (!w || !runId) return false;
     if (w.runIds.indexOf(runId) < 0) w.runIds.push(runId);   // tolerate dup / no-op runs (e.g. the no-tool-support early error)
     if (w.lane === 'todo') w.lane = 'active';                // hybrid-honest: a REAL run fired
-    w.lastActiveAt = now();
+    w.lastActiveAt = Number(at) > 0 ? Number(at) : now();
     if (id === activeId) w.lastReadAt = w.lastActiveAt;      // the open stream is being watched, not unread
     return true;
   }

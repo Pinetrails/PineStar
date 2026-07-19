@@ -124,8 +124,12 @@ function freshStore() {
     const s = freshStore();
     await s.queue('hero', { id: 'b1', title: 'x' }, 1);
     await s.claimNext('hero', 'run-1');
-    await s.markBuilt('hero', 'b1', 'run-1');
+    await s.markBuilt('hero', 'b1', 'run-1', 5555);
     A.eq(s.itemForRun('hero', 'run-1').builtRunId, 'run-1', 'markBuilt stamps builtRunId');
+    // TIMESTAMP HONESTY (2026-07-19): markBuilt records WHEN the build landed (injected ms) — the surfaces
+    // that show a deliverable's age read this, never the queue ts and never a fresh now() at poll time.
+    A.eq(s.itemForRun('hero', 'run-1').builtAt, 5555, 'markBuilt stamps builtAt (the real build-landed moment)');
+    A.eq(s.itemForRun('hero', 'run-1').ts, 1, 'the queue ts is untouched (two different events, two stamps)');
     // a built item is not re-claimed
     A.ok((await s.claimNext('hero', 'run-2')) === null, 'a built item is not re-claimed by a later shift');
 
@@ -135,6 +139,21 @@ function freshStore() {
     await s2.releaseClaim('hero', 'run-9');
     const again = await s2.claimNext('hero', 'run-10');
     A.ok(again && again.id === 'c1', 'releaseClaim returns an un-built item to the queue for a later shift');
+  }
+
+  // ---- 4c. TIMESTAMP HONESTY on undo: restorePending keeps the ORIGINAL builtAt (an undo relocates the
+  //          copy — it does not re-produce the work), while its queue ts is honestly the undo moment. ----
+  {
+    const s = freshStore();
+    const r = await s.restorePending('hero', 'run-u', { backlogId: 'bu', title: 'undone build', builtAt: 7777 }, 9999);
+    A.ok(r.restored === true, 'restorePending re-lists the build');
+    const it = s.itemForRun('hero', 'run-u');
+    A.eq(it.builtAt, 7777, 'the restored item keeps the ORIGINAL build time (never the undo moment)');
+    A.eq(it.ts, 9999, 'the restored item\'s queue ts is the undo moment (a separate, honest event)');
+    const s2 = freshStore();
+    const r2 = await s2.restorePending('hero', 'run-v', { title: 'legacy undo' }, 100);
+    A.ok(r2.restored === true && s2.itemForRun('hero', 'run-v').builtAt === undefined,
+      'a caller with no known build time stamps nothing — never a fabricated builtAt');
   }
 
   // ---- 4b. RETRY CAP: a FAILED build counts an attempt; at MAX_BUILD_ATTEMPTS (2) the item PARKS and is never

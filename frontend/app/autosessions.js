@@ -83,7 +83,9 @@ const AutoSessions = (() => {
   }
 
   // Fold a completed run's durable transcript into its session, clear busy, persist, re-render.
-  async function completeSession(runId, outcome, reason) {
+  // `endedAt` (optional, epoch ms): the run record's REAL end time — passed by the heal/backfill paths that
+  // learn about a run after the fact, so the session's "last worked" stamp is the run's, not the poll's.
+  async function completeSession(runId, outcome, reason, endedAt) {
     if (!hasWS()) return;
     const id = streamOf(runId);
     if (!validStream(id)) return;
@@ -99,7 +101,7 @@ const AutoSessions = (() => {
       if (r.ok) { turns = ((await r.json()) || {}).turns || []; fetchOk = true; }
     } catch (_) { turns = []; fetchOk = false; }   // fail-open: no fabricated content — and we know the fetch FAILED
 
-    foldTurns(ws, turns, outcome, reason, fetchOk);
+    foldTurns(ws, turns, outcome, reason, fetchOk, endedAt);
     if (hasCh()) Channels.end(id);   // clear the busy/running channel state
     // if this session is the one on screen, re-render it so the folded output is visible immediately.
     if (hasChat() && Workstreams.activeId && Workstreams.activeId() === id) Chat.load(ws);
@@ -113,7 +115,7 @@ const AutoSessions = (() => {
   // styled line (not agent speech), and historyWindow() EXCLUDES sys markers so a frontend-authored string is never
   // replayed back to the model as a prior assistant turn. `fetchOk` distinguishes a transcript-fetch FAILURE (say
   // so honestly) from a run that genuinely produced no readable output. Idempotent-ish — replaces history.
-  function foldTurns(ws, turns, outcome, reason, fetchOk) {
+  function foldTurns(ws, turns, outcome, reason, fetchOk, endedAt) {
     const sysMarker = (text, error) => { const m = { role: 'system', sys: true, content: String(text) }; if (error) m.error = true; return m; };
     const next = [];
     for (const t of (turns || [])) {
@@ -141,7 +143,9 @@ const AutoSessions = (() => {
         : sysMarker('⚠ couldn\'t load the output — the run\'s transcript wasn\'t reachable', true));
     }
     ws.history = next;
-    if (hasWS() && Workstreams.appendRun) Workstreams.appendRun(ws.id, ws.id);   // hybrid-honest: a real run fired → todo advances to active
+    // hybrid-honest: a real run fired → todo advances to active. `endedAt` (heal/backfill paths) = the run
+    // record's REAL end time, so the rail stamp is the run's, never this poll/boot moment.
+    if (hasWS() && Workstreams.appendRun) Workstreams.appendRun(ws.id, ws.id, endedAt);
   }
 
   // ---- busy reconciliation: heal a session wedged 'RUNNING' after a mid-run SSE drop -----------
@@ -165,7 +169,7 @@ const AutoSessions = (() => {
       } catch (_) { done = null; }   // offline / bridge still down → leave it busy, retry next tick
       if (done) {
         const outcome = (done.reason === 'error' || done.error) ? 'failed' : 'ok';
-        await completeSession(runId, outcome, done.error || done.reason);   // folds transcript + Channels.end
+        await completeSession(runId, outcome, done.error || done.reason, done.ts);   // folds transcript + Channels.end; done.ts = the run's REAL end time
       }
     }
     if (!Channels.busyIds().some(id => String(id).indexOf(STREAM_PREFIX) === 0)) stopReconcilePoll();
@@ -217,7 +221,7 @@ const AutoSessions = (() => {
           if (tr.ok) { turns = ((await tr.json()) || {}).turns || []; fetchOk = true; }
         } catch (_) { turns = []; fetchOk = false; }
         const outcome = (run.reason === 'error' || run.error) ? 'failed' : 'ok';
-        foldTurns(ws, turns, outcome, run.error || run.reason, fetchOk);
+        foldTurns(ws, turns, outcome, run.error || run.reason, fetchOk, run.ts);   // run.ts = real end time, never boot time
         if (hasCh()) Channels.end(sid);   // a backfilled run is DONE → clear any wedged busy/running state
       }
       refreshRail();

@@ -176,6 +176,17 @@ const { WorkshopStore } = require('../frontend/app/workshopstore.js');
   A.ok(dp2.ok === true && dp2.pending === false, 'a run that is not pending is left alone');
   A.eq(decides.length, 0, 'no spurious discard for an already-decided run');
 
+  /* ---------- B6. TIMESTAMP HONESTY (2026-07-19): a manifest carrying builtAt stamps the session's
+     lastActiveAt with the REAL build-landed time — never the adopt/poll moment. (The re-offer non-restamp
+     is locked in B1; this locks the FIRST adopt.) ---------- */
+  cards = []; toasts = [];
+  const BUILT_AT = Date.now() - 8 * 3600 * 1000;   // "built 8 hours ago, while the Commander slept"
+  WorkshopStore.onBuilt({ agentId: 'agent', runId: 'run-T', manifest: { title: 'overnight build', files: [], builtAt: BUILT_AT } });
+  A.eq(streams.get('workshop-run-T').lastActiveAt, BUILT_AT,
+    'the adopted session\'s "last worked" = the manifest\'s builtAt (the real production time, not now)');
+  A.ok(Workstreams.unread(streams.get('workshop-run-T')) || activeStreamId === 'workshop-run-T',
+    'the builtAt-stamped session still lands unread (or revealed) — honesty never mutes delivery');
+
   /* ---------- B4. the ledger never persists (the 2026-07-14 root regression) ---------- */
   A.eq(mem.get('starnet.workshop.v1'), STALE, 'no session state was written back to localStorage — the ledger is in-memory only');
 
