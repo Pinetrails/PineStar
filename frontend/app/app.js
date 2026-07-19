@@ -3281,12 +3281,14 @@ const App = (() => {
     if (ul.querySelector('.proj-add')) { const inp = ul.querySelector('.proj-add input'); if (inp) inp.focus(); return; }
     const li = document.createElement('li'); li.className = 'proj-add';
     li.innerHTML =
-      '<div class="proj-add-lbl">ADD PROJECT FOLDER</div>' +
+      '<div class="proj-add-head">' +
+        '<span class="proj-add-lbl">ADD PROJECT FOLDER</span>' +
+        '<button class="proj-add-cancel" title="cancel" aria-label="cancel">✕</button>' +
+      '</div>' +
+      '<input type="text" spellcheck="false" placeholder="C:\\Users\\you\\project" aria-label="project folder path">' +
       '<div class="proj-add-row">' +
-        '<input type="text" spellcheck="false" placeholder="absolute folder path (e.g. C:\\Users\\you\\project)" aria-label="project folder path">' +
-        '<button class="proj-add-pick" title="browse for a folder">📁</button>' +
-        '<button class="proj-add-go">Add</button>' +
-        '<button class="proj-add-cancel">✕</button>' +
+        '<button class="proj-add-pick" title="browse for a folder with the system dialog">BROWSE…</button>' +
+        '<button class="proj-add-go">ADD</button>' +
       '</div>' +
       '<div class="proj-add-hint" hidden></div>';
     ul.insertBefore(li, ul.firstChild);
