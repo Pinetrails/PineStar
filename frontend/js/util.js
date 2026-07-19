@@ -216,35 +216,35 @@ const SFX = {
   },
 
   /* ---- designed UI / event sounds — the coherent console voice (see header) ---- */
-  // click: Pip-Boy style (2026-07-19, Andrew-directed) — a DRY hollow mechanical clunk: a crust of
-  // static, a boxy ~500Hz resonant knock (the high-Q bandpass is what makes it sound like a plastic
-  // wheel detent, not a beep), and a dampened low thump. No melody, no reverb — retro-terminal, not 8-bit.
+  // click: FNV Pip-Boy tick, fitted to spectral analysis of Andrew's reference video (2026-07-19,
+  // 83 clicks measured): a damped resonance at ~2.65kHz with a ~5.7kHz overtone, 11–27ms decay,
+  // ZERO low end — a dry plastic ratchet tick, not a thunk. ±4% pitch drift = separate foley takes.
   click() {
     if (!SFX._gate('click', 40)) return;
-    const pan = (Math.random() - 0.5) * 0.16;
-    SFX.noise({ dur: 0.012, cut: 4500, type: 'highpass', vol: 0.05, pan });
-    SFX.noise({ dur: 0.045, cut: 520, q: 3.5, type: 'bandpass', vol: 0.16, pan });
-    SFX.voice({ freq: 120, glide: 85, dur: 0.05, type: 'sine', vol: 0.08, atk: 0.001, pan });
+    const pan = (Math.random() - 0.5) * 0.16, drift = 1 + (Math.random() - 0.5) * 0.08;
+    SFX.noise({ dur: 0.006, cut: 4000, type: 'highpass', vol: 0.05, pan });
+    SFX.voice({ freq: 2650 * drift, dur: 0.022, type: 'sine', vol: 0.14, atk: 0.001, cut: 8000, pan });
+    SFX.voice({ freq: 5700 * drift, dur: 0.012, type: 'sine', vol: 0.05, atk: 0.001, cut: 9000, pan });
   },
   // "got it, thinking…" — a soft descending two-note sine, distinct from click (send) and open (listen-start),
   // so a hands-free user gets instant confirmation their words landed before the agent starts speaking.
   think() { SFX.voice({ freq: 659, dur: 0.09, type: 'sine', vol: 0.16, atk: 0.01, verb: 0.18 }); SFX.voice({ freq: 494, dur: 0.14, type: 'sine', vol: 0.12, when: 0.06, atk: 0.01, verb: 0.22 }); },
   // open/close: a panel physically SLIDING — an air whoosh sweeping up (open) or down (close) under a
   // rising/falling pair on A. The whoosh is what makes the window feel like it moved, not appeared.
-  // open/close: Pip-Boy tab change — "kkh-CHUNK": a burst of band-limited static, then the hollow
-  // clunk, over a low hum that swells up (open) or sags down (close). Dry and boxy on purpose;
-  // direction reads from the hum glide and whether the static leads (open) or trails (close).
+  // open/close: the FNV "select" tock, from the same analysis — one narrow resonance ringing
+  // ~70ms with a faint ~650Hz undertone. Measured pitch pair: brighter ~2580Hz reads as enter
+  // (open), the lower ~2150Hz cousin as back (close). Dry: no whoosh, no hum, no reverb.
   open() {
     if (!SFX._gate('open', 80)) return;
-    SFX.noise({ dur: 0.07, cut: 3000, q: 0.6, type: 'bandpass', vol: 0.07 });
-    SFX.noise({ dur: 0.05, cut: 480, q: 3, type: 'bandpass', vol: 0.14, when: 0.03 });
-    SFX.voice({ freq: 95, glide: 110, dur: 0.12, type: 'sine', vol: 0.08, atk: 0.01 });
+    SFX.noise({ dur: 0.008, cut: 3500, type: 'highpass', vol: 0.05 });
+    SFX.voice({ freq: 2580, dur: 0.07, type: 'sine', vol: 0.15, atk: 0.001, cut: 8000 });
+    SFX.voice({ freq: 660, dur: 0.05, type: 'sine', vol: 0.06, atk: 0.002 });
   },
   close() {
     if (!SFX._gate('close', 80)) return;
-    SFX.noise({ dur: 0.05, cut: 440, q: 3, type: 'bandpass', vol: 0.14 });
-    SFX.noise({ dur: 0.07, cut: 2600, q: 0.6, type: 'bandpass', vol: 0.06, when: 0.035 });
-    SFX.voice({ freq: 110, glide: 88, dur: 0.12, type: 'sine', vol: 0.08, atk: 0.008 });
+    SFX.noise({ dur: 0.008, cut: 3200, type: 'highpass', vol: 0.045 });
+    SFX.voice({ freq: 2150, dur: 0.075, type: 'sine', vol: 0.14, atk: 0.001, cut: 8000 });
+    SFX.voice({ freq: 500, dur: 0.05, type: 'sine', vol: 0.055, atk: 0.002 });
   },
   // notify: the station bell — a warm detuned A5/E6 pair with a long room tail. Gated so a burst of
   // pings reads as ONE bell, not a carillon.
