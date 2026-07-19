@@ -978,13 +978,21 @@ const Chat = (() => {
     // returning = any OTHER session ever had a real row, or anything was ever launched from the catalog.
     // (maybeEmptyState only renders when the ACTIVE session is empty, so it can't vouch for itself.)
     let returning = recent.length > 0;
+    // sessions = the OTHER titled sessions with real history, newest first — the engine's earned
+    // context for the "next step: <title>" chip. Same fail-open stance as every other signal.
+    let sessions = [];
     try {
-      if (!returning && typeof Workstreams !== 'undefined' && Workstreams.list) {
-        returning = (Workstreams.list() || []).some(w => w && w !== activeWs && w.history && w.history.length > 0);
+      if (typeof Workstreams !== 'undefined' && Workstreams.list) {
+        const others = (Workstreams.list() || []).filter(w => w && w !== activeWs && w.history && w.history.length > 0);
+        returning = returning || others.length > 0;
+        sessions = others
+          .filter(w => w.title)
+          .sort((a, b) => (b.lastActiveAt || 0) - (a.lastActiveAt || 0))
+          .map(w => ({ title: w.title, at: w.lastActiveAt || 0 }));
       }
     } catch (_) {}
     const now = new Date();
-    const sig = { recipes, recent, valuesOf, returning, hour: now.getHours(), day: Math.floor(now.getTime() / 86400000) };
+    const sig = { recipes, recent, valuesOf, returning, sessions, hour: now.getHours() };
     if (typeof Starters !== 'undefined' && Starters.pick) {
       try { const out = Starters.pick(sig); if (out && out.length) return out; } catch (_) {}
     }
