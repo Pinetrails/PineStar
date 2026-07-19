@@ -61,7 +61,23 @@
   // layout jolt after the window has already gone fullscreen. Probes still reconcile later.
   function syncBodyClass(doc, on) {
     try {
-      if (doc && doc.body && doc.body.classList && typeof on === 'boolean') doc.body.classList.toggle('sn-fs', on);
+      if (!doc || !doc.body || !doc.body.classList || typeof on !== 'boolean') return;
+      const cl = doc.body.classList;
+      const before = typeof cl.contains === 'function' ? cl.contains('sn-fs') : null;
+      cl.toggle('sn-fs', on);
+      // sn-fs moves the topbar by the titlebar strip height AFTER the window's own
+      // resize already fired, so fixed-position trackers (#logo via positionLogo)
+      // hold pre-flip pixel coordinates — re-announce the layout change.
+      if (before !== on) dispatchResize(doc);
+    } catch (_) {}
+  }
+
+  function dispatchResize(doc) {
+    try {
+      const win = doc && doc.defaultView;
+      if (win && typeof win.dispatchEvent === 'function' && typeof win.Event === 'function') {
+        win.dispatchEvent(new win.Event('resize'));
+      }
     } catch (_) {}
   }
 
@@ -71,12 +87,38 @@
     return toggleInner(win, doc).then(on => { syncBodyClass(doc, on); return on; });
   }
 
+  // Windows/tao: setFullscreen(true) on a MAXIMIZED window keeps the maximized
+  // work-area geometry (screen minus taskbar), leaving a dead strip along the
+  // bottom and a mis-sized layout — drop the maximize first, restore it on exit.
+  let restoreMaximize = false;
+
+  function unmaximizeForFullscreen(appWindow) {
+    if (typeof appWindow.isMaximized !== 'function' || typeof appWindow.unmaximize !== 'function') {
+      return Promise.resolve();
+    }
+    return Promise.resolve(appWindow.isMaximized()).then(max => {
+      restoreMaximize = !!max;
+      if (max) return appWindow.unmaximize();
+    }).catch(() => {});
+  }
+
+  function remaximizeAfterFullscreen(appWindow) {
+    if (!restoreMaximize) return Promise.resolve();
+    restoreMaximize = false;
+    return typeof appWindow.maximize === 'function'
+      ? Promise.resolve(appWindow.maximize()).catch(() => {})
+      : Promise.resolve();
+  }
+
   function toggleInner(win, doc) {
     const appWindow = tauriWindow(win);
     if (appWindow && typeof appWindow.isFullscreen === 'function' && typeof appWindow.setFullscreen === 'function') {
       return Promise.resolve(appWindow.isFullscreen()).then(on => {
         const next = !on;
-        return Promise.resolve(appWindow.setFullscreen(next)).then(() => next);
+        const prep = next ? unmaximizeForFullscreen(appWindow) : Promise.resolve();
+        return prep
+          .then(() => appWindow.setFullscreen(next))
+          .then(() => (next ? next : remaximizeAfterFullscreen(appWindow).then(() => next)));
       }).catch(err => {
         if (win && win.console && typeof win.console.warn === 'function') {
           win.console.warn('[fullscreen] Tauri window API toggle failed, trying command fallback', err);
