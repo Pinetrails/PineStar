@@ -838,6 +838,26 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .tq-reason { font-size: 12px; color: var(--ph-dim); letter-spacing: 0.3px; margin-top: 3px; }
 
+/* TASTE EXTRACTION "my read" card (chat.js briefReadCard) — the mid-run announce-and-act read.
+   The assumption chips are CORRECTABLE guesses, so they wear the quiet dashed chip look (never the
+   bright primary .choice — tapping one starts a correction, it doesn't accept anything). */
+.tb-read-head { font-size: 13px; letter-spacing: 0.4px; color: var(--ph-bright); text-shadow: 0 0 5px var(--ph-glow2); }
+.tb-read-meta { font-size: 12px; color: var(--ph-dim); letter-spacing: 0.3px; margin-top: 2px; }
+.tb-read-assumps { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; max-width: 100%; }
+.tb-read-assump {
+  font: inherit; font-size: 12px; letter-spacing: 0.3px; cursor: pointer;
+  color: var(--ph-dim); background: transparent; text-shadow: none;
+  border: 1px dashed var(--ph-faint); border-radius: 4px; padding: 3px 8px;
+  transition: color .1s, border-color .1s, background-color .1s;
+}
+.tb-read-assump:hover, .tb-read-assump:focus-visible {
+  color: var(--ph-bright); border-color: var(--ph-dim); border-style: solid; background: var(--ph-faint); outline: none;
+}
+.tb-read-fix { margin-top: 6px; }
+.tb-read-in { width: 100%; font-size: 13px; padding: 4px 8px; }
+.tb-read-ack { font-size: 12px; color: var(--ph); letter-spacing: 0.3px; }
+.tb-read-ack.err { color: var(--bad, #d66); }
+
 /* ===== THE DIALOGUE MODE (dialogue.js) — Fallout-style focused first-run conversation =====
    Mounts as a child overlay of #chat-panel, covering COMMS while the awakening/tutorial runs. One short
    line, selectable options, and a custom-text box — typed input is captured deterministically. */
