@@ -4013,7 +4013,14 @@ async function runQuestRefreshCycle(why) {
     const completed = rec.quests.filter(q => q.status === 'done')
       .sort((a, b) => (b.completedAt || 0) - (a.completedAt || 0)).slice(0, 5);
     const goalNote = commanderGoals.note();
-    const dossierBlock = commanderDossier.get();
+    // V3 §6: a dossier the shared readiness gate has JUDGED not-ready (a synced verdict with ok:false —
+    // e.g. a blitzed onboarding whose only beliefs are seeds) is INADMISSIBLE as quest evidence: it neither
+    // satisfies hasEvidence nor reaches the directive. A save with NO verdict (server-only boot, legacy
+    // frontend) keeps the old behavior — unknown is not proven-not-ready, and this surface still has its
+    // own evidence floor + grounding veto. Explicit direction (goal note / north star) is untouched.
+    const rdSnap = commanderPosture.beliefs();
+    const dossierNotReady = !!(rdSnap && rdSnap.ready && rdSnap.ready.ok === false);
+    const dossierBlock = dossierNotReady ? '' : commanderDossier.get();
     const evidenceCtx = {
       goalNote: goalNote,
       // ground on the EFFECTIVE star: a pending (unconfirmed) inference still steers the directive so the cycle
@@ -4098,14 +4105,9 @@ async function runQuestRefreshCycle(why) {
 function questRefreshTick() {
   if (process.env.SKYNET_QUEST_REFRESH === '0') return;
   if (questRefreshingNow) return;
-  // V3 §6: quest minting is a recommendation. It needs REAL direction: either the shared readiness gate is
-  // open (grounded dossier) or the Commander EXPLICITLY set direction (a goal note / a confirmed north star —
-  // their own words, which outrank any gate). Below both, the cycle doesn't run — no cadence spent, no model
-  // call, no guessed quests; the tick re-looks next interval and fires the moment context exists.
-  if (!commanderPosture.ready()) {
-    const explicitDirection = !!(String(commanderGoals.note() || '').trim() || QuestRefresh.effectiveNorthStar(questRefreshState));
-    if (!explicitDirection) return;
-  }
+  // V3 §6 note: the readiness gate is applied INSIDE the cycle as dossier ADMISSIBILITY (a synced not-ready
+  // verdict blanks the dossier out of the evidence, so a blitzed onboarding can't mint quests) — never here
+  // at the tick, so the cadence still spends and the honest 'skipped' ledger semantics survive.
   const d = QuestRefresh.decide(questRefreshState, { now: Date.now(), openCount: questRefreshOpenCount() });
   if (!d.fire) return;
   questRefreshState = QuestRefresh.stampCycle(questRefreshState, { now: Date.now() });
