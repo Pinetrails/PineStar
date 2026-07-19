@@ -3061,35 +3061,48 @@ const App = (() => {
   /* OVERVIEW: one row per blessed root (+ count chip + compact preview sub-rows). Click = ENTER the project. */
   function renderProjectsOverview(ul, rows) {
     if (!rows.length) {
-      ul.innerHTML = '<li class="proj-empty">No trusted projects yet. Use <b>+ ADD</b> to pick a folder, or tell an agent to “work in C:\\path\\to\\project”.</li>';
+      ul.innerHTML = '<li class="proj-empty proj-empty-hero"><span class="pe-glyph" aria-hidden="true">▦</span>' +
+        '<b>NO TRUSTED PROJECTS</b>' +
+        '<span>+ ADD blesses a folder, or tell an agent to “work in C:\\path\\to\\project”.</span></li>';
       return;
     }
     const activeId = Workstreams.activeId();
     ul.innerHTML = rows.map(r => {
-      const tip = r.path + (r.blessed ? (r.isGitRepo ? ' · git repo' : '') : ' · REVOKED (trust withdrawn)') + ' — click to open this project · right-click for actions';
+      const tip = (r.blessed ? '' : 'REVOKED (trust withdrawn) — ') + 'click to open this project · right-click for actions';
       const sess = projSessionsOf(r.root);
+      const extra = Math.max(0, sess.length - 3);
       return '<li class="ws-row proj-row' + (r.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(r.root) + '" title="' + U.esc(tip) + '">' +
         '<span class="' + projDot(r) + '"></span>' +
-        '<span class="ws-title">' + U.esc(r.name) + '</span>' +
-        (r.blessed && r.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
-        (sess.length ? '<span class="proj-sess-n" title="' + sess.length + ' session' + (sess.length === 1 ? '' : 's') + ' in this project">' + sess.length + '</span>' : '') +
-        (r.blessed ? '<span class="ws-meta">' + U.esc(r.rel) + '</span>' : '<span class="proj-tag">REVOKED</span>') +
-        '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
+        '<span class="proj-main">' +
+          '<span class="proj-line">' +
+            '<span class="ws-title">' + U.esc(r.name) + '</span>' +
+            (r.blessed && r.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
+            (r.blessed ? '<span class="ws-meta">' + U.esc(r.rel) + '</span>' : '<span class="proj-tag">REVOKED</span>') +
+            '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
+          '</span>' +
+          '<span class="proj-line">' +
+            '<span class="proj-path">' + U.esc(r.path) + '</span>' +
+            (sess.length ? '<span class="proj-sess-n">' + sess.length + ' session' + (sess.length === 1 ? '' : 's') + '</span>' : '') +
+          '</span>' +
+        '</span>' +
         '</li>' +
         sess.slice(0, 3).map(s =>
           '<li class="proj-sess' + (s.id === activeId ? ' on' : '') + '" data-ws="' + U.esc(s.id) + '" data-root="' + U.esc(r.root) + '" title="open this session">' +
-            '<span class="proj-sess-glyph" aria-hidden="true">└</span>' +
             '<span class="ws-title">' + U.esc(s.title) + '</span>' +
             '<span class="ws-meta">' + U.esc(s.rel) + '</span>' +
-          '</li>').join('');
+          '</li>').join('') +
+        (extra ? '<li class="proj-sess proj-more" data-root="' + U.esc(r.root) + '" title="open this project">▸ ' + extra + ' more session' + (extra === 1 ? '' : 's') + '</li>' : '');
     }).join('');
     // preview sub-row click: open the session AND follow it into its project scope — the rail stays in PROJECTS.
+    // The overflow "▸ N more" row just enters the project (where every session renders as a full row).
     ul.querySelectorAll('.proj-sess').forEach(li => {
       li.onclick = (e) => {
         e.stopPropagation();
         const id = li.dataset.ws;
-        if (id !== Workstreams.activeId()) switchWorkstream(id);
-        SFX.open();
+        if (id) {
+          if (id !== Workstreams.activeId()) switchWorkstream(id);
+          SFX.open();
+        }
         enterProject(li.dataset.root);
       };
     });
@@ -3109,13 +3122,18 @@ const App = (() => {
     const sess = projSessionsOf(row.root);
     const byId = {}; try { for (const w of Workstreams.all()) byId[w.id] = w; } catch (_) {}
     let html =
-      '<li class="proj-crumb"><button class="proj-back" title="back to all projects">◂ PROJECTS</button></li>' +
-      '<li class="ws-row proj-row proj-head' + (row.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(row.root) + '" title="' + U.esc(row.path) + '">' +
+      '<li class="proj-crumb"><button class="proj-back" title="back to all projects">◂ ALL PROJECTS</button></li>' +
+      '<li class="ws-row proj-row proj-head' + (row.blessed ? '' : ' proj-revoked') + '" data-root="' + U.esc(row.root) + '" title="right-click for project actions">' +
         '<span class="' + projDot(row) + '"></span>' +
-        '<span class="ws-title">' + U.esc(row.name) + '</span>' +
-        (row.blessed && row.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
-        (row.blessed ? '' : '<span class="proj-tag">REVOKED</span>') +
-        '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
+        '<span class="proj-main">' +
+          '<span class="proj-line">' +
+            '<span class="ws-title">' + U.esc(row.name) + '</span>' +
+            (row.blessed && row.isGitRepo ? '<span class="proj-git-badge" aria-hidden="true">git</span>' : '') +
+            (row.blessed ? '' : '<span class="proj-tag">REVOKED</span>') +
+            '<button class="ws-kebab" tabindex="-1" aria-label="project actions" title="project actions">⋯</button>' +
+          '</span>' +
+          '<span class="proj-path">' + U.esc(row.path) + '</span>' +
+        '</span>' +
       '</li>';
     if (!sess.length) {
       html += '<li class="proj-empty">No sessions in this project yet — <b>+ NEW</b> starts one working in this folder.</li>';
@@ -3263,6 +3281,7 @@ const App = (() => {
     if (ul.querySelector('.proj-add')) { const inp = ul.querySelector('.proj-add input'); if (inp) inp.focus(); return; }
     const li = document.createElement('li'); li.className = 'proj-add';
     li.innerHTML =
+      '<div class="proj-add-lbl">ADD PROJECT FOLDER</div>' +
       '<div class="proj-add-row">' +
         '<input type="text" spellcheck="false" placeholder="absolute folder path (e.g. C:\\Users\\you\\project)" aria-label="project folder path">' +
         '<button class="proj-add-pick" title="browse for a folder">📁</button>' +
