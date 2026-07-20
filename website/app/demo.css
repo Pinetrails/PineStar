@@ -4,3 +4,8 @@
 body::after { opacity: 0.45; }
 body::before { opacity: 0.55; }
 body:not(.no-flicker) #app { animation: none; }
+
+/* the camera-panel chrome tags sit at the panel corners — the landing clip cuts them
+   in half, so the embed hides them (and the CINEMA control, inert with pointer-events
+   off anyway). Embed-only; the app keeps its chrome. */
+.cam-label, .cam-rec, .cam-feed, .cam-cine { display: none !important; }
