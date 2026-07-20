@@ -125,6 +125,17 @@
       b.tabIndex = -1;
       const ic = doc.createElement('span');
       ic.className = 'sn-ic ' + iconClass;
+      // MAX/RESTORE are inline SVG, not pseudo-element bar art: CSS bars land on
+      // fractional device pixels under Windows display scaling / TEXT SIZE zoom and
+      // shred the restore glyph into fragments (2026-07-20 report, twice). Vector
+      // strokes rescale like the native Fluent glyphs do. CSS shows one at a time.
+      if (iconClass === 'sn-ic-max') {
+        ic.innerHTML =
+          '<svg class="sn-g sn-g-max" viewBox="0 0 12 12" aria-hidden="true">' +
+            '<rect x="2" y="2" width="8" height="8"/></svg>' +
+          '<svg class="sn-g sn-g-restore" viewBox="0 0 12 12" aria-hidden="true">' +
+            '<path d="M4.2 2 H10 V7.8"/><rect x="2" y="4.2" width="5.8" height="5.8"/></svg>';
+      }
       b.appendChild(ic);
       controls.appendChild(b);
       return b;
