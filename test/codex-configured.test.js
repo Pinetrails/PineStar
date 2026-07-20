@@ -43,6 +43,20 @@ A.ok(/Harness\.setDesktopConfigured\)\s*Harness\.setDesktopConfigured\('codex',\
 /* ---------- 3. the export exists (app.js depends on it) ---------- */
 A.ok(/setDesktopConfigured,/.test(harnessSrc), 'Harness exports setDesktopConfigured');
 
+/* ---------- 3b. THE WIRE IS PROVEN AT THE DOOR (Andrew's law, 2026-07-19): no wake on an unproven wire ---------- */
+// The full onboarding is MANDATORY and it is authored by live-model beats — so onWakeAttempt must run ONE
+// real round-trip (preflightWire) through the exact path the awakening uses, and bounce honestly on failure.
+A.ok(/async function preflightWire\(\)/.test(appSrc), 'the wire preflight exists');
+A.ok(/preflightWire[\s\S]{0,900}Reply with exactly: OK/.test(appSrc), 'the preflight is a REAL chat round-trip, not a status read');
+A.ok(/Promise\.race\(\[call,\s*new Promise\(r => setTimeout\(\(\) => r\(null\), 30000\)\)\]\)/.test(appSrc),
+  'the preflight is bounded (30s) — a stalled provider can never hang the wake button');
+{
+  const attemptStart = appSrc.indexOf('async function onWakeAttempt');
+  const attemptBody = appSrc.slice(attemptStart, appSrc.indexOf('enterGame({ awaitingPurpose: true, wake: true })'));
+  A.ok(attemptStart > 0 && /const wire = await preflightWire\(\);[\s\S]{0,400}if \(!wire\.ok\) \{[\s\S]{0,400}return false;/.test(attemptBody),
+    'onWakeAttempt proves the wire BEFORE entering the game and bounces honestly on a dead one');
+}
+
 /* ---------- 4. the rust keychain list still excludes codex (the reason the probe exists) ---------- */
 const rustSrc = fs.readFileSync(path.join(__dirname, '../src-tauri/src/main.rs'), 'utf8');
 const m = /const KEYCHAIN_PROVIDERS[^;]+;/s.exec(rustSrc);

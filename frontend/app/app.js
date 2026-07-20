@@ -1978,6 +1978,21 @@ const App = (() => {
       const msg = el('connect-msg'); if (msg) { msg.className = 'msg bad'; msg.textContent = 'could not start — ' + ((e && e.message) || 'try again'); }
     }
   }
+  // THE WIRE PREFLIGHT — one real reason-only round-trip through the exact path the awakening will use
+  // (Harness.chat: provider + model + auth + stream, end to end). Returns { ok } or { ok:false, why } with
+  // an honest, console-renderable reason. Bounded at 30s so a stalled provider can never hang the button.
+  async function preflightWire() {
+    try {
+      if (typeof Harness === 'undefined' || !Harness.chat) return { ok: false, why: 'the harness is not loaded (reload the app)' };
+      const call = Harness.chat({ system: '', messages: [{ role: 'user', content: 'Reply with exactly: OK' }], agentId: 'agent', isTask: false, placed: [], internal: true })
+        .catch(e => ({ error: true, text: String((e && e.message) || e) }));
+      const res = await Promise.race([call, new Promise(r => setTimeout(() => r(null), 30000))]);
+      if (!res) return { ok: false, why: 'no reply within 30 seconds (network or provider stall)' };
+      if (res.error || !String(res.text || '').trim()) return { ok: false, why: (res && res.text ? String(res.text).replace(/\s+/g, ' ').slice(0, 140) : 'the provider returned an error') };
+      return { ok: true };
+    } catch (e) { return { ok: false, why: String((e && e.message) || e).slice(0, 140) }; }
+  }
+
   // Returns TRUE once it commits to entering the station (WAKING latched), FALSE on any validation bounce.
   async function onWakeAttempt() {
     SFX.boot(); SFX.open();
@@ -2043,6 +2058,22 @@ const App = (() => {
       if (key) await Harness.setKey(key, pickedProvider);
       Harness.setModel(model); Harness.setProv(pickedProvider);
     }
+
+    // V3 LAW — THE WIRE IS PROVEN AT THE DOOR (Andrew, 2026-07-19): the awakening AUTHORS this agent's whole
+    // future from live-model beats, and the full onboarding is MANDATORY — so no wake proceeds on an unproven
+    // wire. One real round-trip to the chosen provider+model, RIGHT NOW — not "configured", not "signed in":
+    // ANSWERED. A dead wire keeps the Commander at the console with the honest reason; there is no world where
+    // the ceremony silently degrades because the model never actually spoke.
+    wakeBtnBusy(true);
+    msg.textContent = 'testing the wire — one real call to ' + model + '…';
+    const wire = await preflightWire();
+    if (!wire.ok) {
+      wakeBtnBusy(false);
+      msg.className = 'msg bad';
+      msg.textContent = 'your model didn’t answer — ' + wire.why + '. fix it here, then WAKE again; the awakening won’t start on a dead wire.';
+      return false;
+    }
+    msg.textContent = '';
 
     wakeBtnBusy(true);   // COMMIT POINT: past every validation gate — show WAKING… and hold the latch through enterGame
     if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return true; }
