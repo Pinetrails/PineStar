@@ -39,6 +39,13 @@ A.ok(/_glFailed = true/.test(glBody.slice(postIdx)), 'a divergent reading flips 
 A.ok(glBody.indexOf('switching to the identical CPU warp') > 0, 'the divergence warn names the fallback');
 A.ok(/_glProbeClean >= 3/.test(glBody), 'trust latches only after three clean probes');
 A.ok(/_glProbeTries < 30/.test(glBody), 'probing is bounded (stops trying after 30 attempts)');
+A.ok(glBody.indexOf('bright output minted from a dark input') > 0,
+  'the dark-input wash arm exists (the reported mac scenario: wash over the dark awakening)');
+// tries must be consumed ONLY on judged (lit) frames — a long dark awakening must never
+// exhaust the probe budget before the room first lights
+const litArm = glBody.indexOf('preSum >= 15');
+A.ok(litArm > 0 && glBody.indexOf('_glProbeTries++') > litArm,
+  'the try counter increments inside the lit-frame arm, not on dark frames');
 
 /* ---------- 2. detector math — thresholds extracted from the shipped source ---------- */
 const magM = /postSum >= preSum \* ([\d.]+) - (\d+) && postSum <= preSum \* ([\d.]+) \+ (\d+)/.exec(glBody);
@@ -50,9 +57,15 @@ A.ok(!!driftM, 'channel-ratio drift threshold present');
 const sigM = /preSum >= (\d+)/.exec(glBody);
 A.ok(!!sigM, 'signal floor present');
 
+// the dark-arm threshold, extracted from source so the test can't drift from the shipped predicate
+const darkM = /postSum > preSum \* ([\d.]+) \+ (\d+)\) \{\s*\n\s*\/\/ the reported mac scenario/.exec(glBody);
+A.ok(!!darkM, 'dark-input brightening threshold present');
+
 function judge(pre, post) {
   const preSum = pre[0] + pre[1] + pre[2], postSum = post[0] + post[1] + post[2];
-  if (preSum < Number(sigM[1])) return 'no-signal';
+  if (preSum < Number(sigM[1])) {
+    return postSum > preSum * Number(darkM[1]) + Number(darkM[2]) ? 'DIVERGENT' : 'no-signal';
+  }
   const spr = m => { const s = m[0] + m[1] + m[2]; if (s <= 0) return 0; return (Math.max(...m) - Math.min(...m)) / s; };
   const plausibleMag = postSum >= preSum * Number(magM[1]) - Number(magM[2]) && postSum <= preSum * Number(magM[3]) + Number(magM[4]);
   const mintedTint = spr(post) > spr(pre) + Number(tintM[1]);
@@ -72,5 +85,9 @@ A.eq(judge(healthy, [55, 210, 90]), 'DIVERGENT', 'the mac bright theme-wash is c
 A.eq(judge(healthy, [10, 45, 14]), 'DIVERGENT', 'a dim wash is still caught (minted tint)');
 A.eq(judge([120, 80, 40], [40, 120, 80]), 'DIVERGENT', 'a channel swap on a chromatic frame is caught');
 A.eq(judge([2, 2, 2], [0, 0, 0]), 'no-signal', 'a black boot frame keeps waiting, never judges');
+A.eq(judge([2, 2, 2], [55, 210, 90]), 'DIVERGENT',
+  'the wash over the DARK awakening is caught (the exact reported mac frame: near-black in, bright out)');
+A.eq(judge([2, 2, 2], [3, 4, 3]), 'no-signal',
+  'a dark frame with a plausibly dark output stays no-signal (no try burned, keeps waiting)');
 
 A.report();
