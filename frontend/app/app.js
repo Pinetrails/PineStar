@@ -1609,6 +1609,10 @@ const App = (() => {
     let j = { connected: false };
     try { const r = await fetch('/api/auth/codex/status'); j = await r.json(); } catch (_) {}
     codexConnected = !!j.connected;
+    // keep Harness.configured('codex') truthful the moment sign-in state is known (codex is NOT a keychain
+    // provider, so nothing else ever flips this on desktop — the bug that killed every live awakening beat
+    // for ChatGPT-sign-in installs; see harness.js init's codex probe for the boot-time half).
+    if (typeof Harness !== 'undefined' && Harness.setDesktopConfigured) Harness.setDesktopConfigured('codex', codexConnected);
     if (codexConnected) {
       // Truthful telemetry: if the sidecar signed in but could NOT prove the (rotated) token reached disk, say so —
       // the session works now, but a restart may require re-signing in. Never claim durable state the harness can't prove.

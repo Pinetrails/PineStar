@@ -120,6 +120,15 @@ const Harness = (() => {
       try { _configured = await invoke('harness_has_key'); } catch (_) { _configured = false; }
       _configuredByProvider.openrouter = _configured;
     }
+    // CODEX IS NOT A KEYCHAIN PROVIDER (its OAuth tokens live sidecar-side in workspaces/codex/), so the
+    // keychain status above can NEVER report it — which left configured('codex') false FOREVER on desktop:
+    // every ChatGPT-sign-in install had brainReady() dead, so the live awakening beats + the V3 interview
+    // silently degraded to the scripted spine on every machine (proven on Andrew's 3-install test,
+    // 2026-07-19). Ask the sidecar directly; fail-open (a dead route just leaves it unconfigured).
+    try {
+      const r = await fetch('/api/auth/codex/status');   // same relative idiom app.js's refreshCodexStatus uses (works in browser + desktop webview)
+      if (r && r.ok) { const j = await r.json(); if (j && j.connected) _configuredByProvider.codex = true; }
+    } catch (_) {}
   }
   /* whether a key is set — works in both modes; never exposes the value. In dev mode the host holds the
      key (runtimeKey), so we report configured without one — that's what lets a fresh origin auto-resume. */
@@ -702,7 +711,7 @@ const Harness = (() => {
 
   return {
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
-    getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential,
+    getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential, setDesktopConfigured,
     listModels, probeProvider, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
     studyProposals,

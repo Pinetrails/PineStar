@@ -194,6 +194,7 @@ test/truststore.test.js
 test/goalloop.test.js
 test/interview.test.js
 test/onboarding.test.js
+test/codex-configured.test.js
 test/dialogue.test.js
 test/wakemind.test.js
 test/curiosity.test.js
