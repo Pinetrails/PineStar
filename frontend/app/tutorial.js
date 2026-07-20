@@ -79,16 +79,9 @@ const Tutorial = (() => {
     if (spot) { window.removeEventListener('resize', reposition); spot.remove(); spot = null; spotEl = null; }
   }
 
-  /* ---- the always-available bail-out (no-gating sandbox: skipping is one click, always) ---- */
-  let skipBtn = null;
-  function showSkip() {
-    if (skipBtn) return;
-    skipBtn = document.createElement('button');
-    skipBtn.className = 'tut-skip'; skipBtn.textContent = 'skip intro ✕';
-    skipBtn.onclick = () => finishUp(true);
-    document.body.appendChild(skipBtn);
-  }
-  function hideSkip() { if (skipBtn) { skipBtn.remove(); skipBtn = null; } }
+  /* The floating "skip intro" corner button was REMOVED per Andrew (2026-07-20): it read as
+     dev chrome sitting in the titlebar corner, and v0.6.1's law is onboarding-is-never-skipped.
+     The in-panel dialogue outs (res.skip → finishUp) remain the bail path — no-gating holds. */
 
   /* ================= THE FIRST COMMAND ================= */
   // The demo is fs.write + fs.read — but the fresh station is COMPUTE-ONLY (the moat: web/files/terminal must be
@@ -126,7 +119,7 @@ const Tutorial = (() => {
     agentName = (opts && opts.name) || agentName;
     active = true; finished = false; sawStart = sawPermission = sawEnd = sawDeny = false; cleanRunId = null;   // C1: un-latch finishUp for this fresh run (it's symmetric with the saw-flags; without it a prior agent's completed lesson left finishUp a no-op)
     kitMode = false; kitComplete = false; kitWasOpen = false; kitNeeded = null;
-    wireBus(); showSkip();
+    wireBus();
     // The handoff from the awakening: the DIALOGUE panel is already open (onboarding's closeOut left it up).
     // Offer the tour EXPLICITLY — a clear "SHOW ME AROUND" vs "dive in myself" choice, not a buried chip. This
     // kills the old rhetorical "where do we begin?" self-answer the Commander found confusing.
@@ -575,7 +568,7 @@ const Tutorial = (() => {
 
   function finishUp(skipped) {
     if (finished) return; finished = true;        // idempotent: a late START-COMMANDING click after a skip can't re-run this
-    active = false; kitMode = false; clearStall(); clearSpot(); clearCoach(); hideSkip();
+    active = false; kitMode = false; clearStall(); clearSpot(); clearCoach();
     clearKitTimers();   // drop the kit-out poll + flash + ready timers if they bailed mid-placement
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close();   // reveal COMMS — the tour is over
     // release the roleplay sit (the tour walked the hero to its desk via setActivity('task')); only when no
@@ -913,7 +906,7 @@ const Tutorial = (() => {
   function teardown() {
     active = false; kitMode = false; clearStall();
     clearKitTimers();
-    clearCoach(); clearSpot(); hideSkip(); hideBrief();
+    clearCoach(); clearSpot(); hideBrief();
     if (typeof Dialogue !== 'undefined' && Dialogue.isOpen && Dialogue.isOpen()) Dialogue.close();
   }
 

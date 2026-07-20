@@ -14,25 +14,6 @@
   transition: left .25s ease, top .25s ease, width .25s ease, height .25s ease;
 }
 
-.tut-skip {
-  position: fixed;
-  top: 12px;
-  right: 16px;
-  z-index: 1450;
-  font-family: VT323, monospace;
-  font-size: 15px;
-  letter-spacing: .04em;
-  color: var(--ph, #ffaa33);
-  background: var(--panel);
-  border: 1px solid var(--ph, #ffaa33);
-  border-radius: 6px;
-  padding: 4px 11px;
-  cursor: pointer;
-  opacity: 0.65;
-  transition: opacity .15s ease;
-}
-.tut-skip:hover { opacity: 1; }
-
 /* ---- P2 just-in-time coachmarks: a non-blocking agent-voiced hint glued to a surface + a soft ring.
    High z so it floats above the REFIT overlay and topbar; only the small panel itself is interactive,
    so you keep building behind it. ---- */
