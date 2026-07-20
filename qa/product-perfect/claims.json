@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "6d90b72e46fba9438e2a5aad1c784c8671289b92",
+    "sourceCommit": "8fbd77fa0b4cdafcf646cadf9d7475ea7ae3b665",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 269310,
-        "sha256": "9ac1a99e5652106bcda06bed79184b470029f2ca33b0202b66792a3e8070ece6"
+        "bytes": 271524,
+        "sha256": "b9433939de5c4668827de3e8b1a05f3be209232253ae23547ef69b617dbfa7e3"
       },
       {
         "path": "frontend/app/armconfirm.js",
