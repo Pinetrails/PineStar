@@ -59,21 +59,17 @@ body.sn-chrome .sn-ic-min::before {
   content: ''; position: absolute; left: 1px; right: 1px; bottom: 4px; height: 2px;
   background: currentColor;
 }
-body.sn-chrome .sn-ic-max::before {
-  content: ''; position: absolute; inset: 1px; border: 2px solid currentColor;
+/* MAX/RESTORE: inline SVG (titlebar.js), not pseudo-element bars — CSS bar art lands on
+   fractional device pixels under Windows display scaling / TEXT SIZE zoom and shredded the
+   restore glyph twice (2026-07-20 reports). Vector strokes rescale cleanly at any factor.
+   RESTORE is the classic pair: front frame lower-left, back frame's top-right L peeking. */
+body.sn-chrome .sn-ic-max svg {
+  position: absolute; inset: 0; width: 12px; height: 12px;
+  fill: none; stroke: currentColor; stroke-width: 1.7;
 }
-/* maximized → restore glyph: front frame drops to the lower-left, back frame peeks top-right.
-   The back frame's L is TWO SOLID 2px BARS (background gradients), NOT a clip-path: the old
-   polygon clipped a 9px box at 78%/22%, which lands mid-device-pixel under Windows display
-   scaling / TEXT SIZE zoom and aliased the corner join into loose fragments (the 2026-07-20
-   "maximize button loses its shape" report). Integer-px bars survive any scale factor. */
-body.sn-chrome .sn-tb-btn.is-max .sn-ic-max::before { inset: 4px 1px 0 4px; border-width: 2px; }
-body.sn-chrome .sn-tb-btn.is-max .sn-ic-max::after {
-  content: ''; position: absolute; top: 0; right: 0; width: 9px; height: 9px; border: 0;
-  background:
-    linear-gradient(currentColor, currentColor) top / 100% 2px no-repeat,
-    linear-gradient(currentColor, currentColor) right / 2px 100% no-repeat;
-}
+body.sn-chrome .sn-g-restore { display: none; }
+body.sn-chrome .sn-tb-btn.is-max .sn-g-max { display: none; }
+body.sn-chrome .sn-tb-btn.is-max .sn-g-restore { display: block; }
 body.sn-chrome .sn-ic-close::before,
 body.sn-chrome .sn-ic-close::after {
   content: ''; position: absolute; left: -1px; right: -1px; top: 5px; height: 2px;
