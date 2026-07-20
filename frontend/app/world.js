@@ -3572,10 +3572,16 @@ const World = (() => {
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0, 0, W, H); ctx.drawImage(_glc, 0, 0);   // blit the warped result back onto the visible feed
       if (pre) {
-        _glProbeTries++;
         const post = probeMeans(cv);   // cv now holds the blitted GL output
         const preSum = pre[0] + pre[1] + pre[2], postSum = post[0] + post[1] + post[2];
-        if (preSum >= 15) {   // any lit frame can be judged; a black boot frame can't
+        const fail = why => {
+          console.warn('[crt] WebGL warp output diverges from its source (in ' + pre.map(v => v.toFixed(0))
+            + ' → out ' + post.map(v => v.toFixed(0)) + ', ' + why
+            + ') — platform GL bug; switching to the identical CPU warp');
+          _glFailed = true;   // this frame already blitted; every following frame takes drawCurveCPU
+        };
+        if (preSum >= 15) {   // a lit frame carries full judgment; each consumes one bounded try
+          _glProbeTries++;
           const spr = m => { const s = m[0] + m[1] + m[2]; if (s <= 0) return 0; return (Math.max(m[0], m[1], m[2]) - Math.min(m[0], m[1], m[2])) / s; };
           // a healthy warp DARKENS a little (vignette) and never invents chroma; the failure class
           // seen in the wild is a wildly brighter/saturated wash, so judge magnitude + minted tint,
@@ -3587,14 +3593,14 @@ const World = (() => {
             const ri = pre.map(v => v / preSum), ro = post.map(v => v / postSum);
             ratioDrift = (Math.abs(ri[0] - ro[0]) + Math.abs(ri[1] - ro[1]) + Math.abs(ri[2] - ro[2])) > 0.08;
           }
-          if (!plausibleMag || mintedTint || ratioDrift) {
-            console.warn('[crt] WebGL warp output diverges from its source (in ' + pre.map(v => v.toFixed(0))
-              + ' → out ' + post.map(v => v.toFixed(0)) + ', ' + (!plausibleMag ? 'implausible magnitude' : mintedTint ? 'minted tint' : 'channel-ratio drift')
-              + ') — platform GL bug; switching to the identical CPU warp');
-            _glFailed = true;   // this frame already blitted; every following frame takes drawCurveCPU
-          } else if (++_glProbeClean >= 3) {
-            _glProbeOk = true;   // three clean readings — trust this GL stack for the session
-          }
+          if (!plausibleMag || mintedTint || ratioDrift) fail(!plausibleMag ? 'implausible magnitude' : mintedTint ? 'minted tint' : 'channel-ratio drift');
+          else if (++_glProbeClean >= 3) _glProbeOk = true;   // three clean readings — trust this GL stack for the session
+        } else if (postSum > preSum * 1.15 + 45) {
+          // the reported mac scenario EXACTLY: the wash appeared over the DARK awakening — a
+          // near-black input cannot brighten through a darkening warp, so this alone is damning.
+          // No try consumed on dark frames either way: a long dark scene must never exhaust the
+          // probe budget before the room first lights.
+          fail('bright output minted from a dark input');
         }
       }
       return true;
