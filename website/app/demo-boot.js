@@ -24,6 +24,10 @@
           World.crt.scan = 0.20; World.crt.aberr = 0.12; World.crt.grain = 0.10;
           World.crt.dust = 0.30; World.crt.curve = 0.06; World.crt.fade = 0.16;
         } catch (e) {}
+        /* hold the room-fit framing: with no visitor input the idle cinecam would
+           follow-lock the agent (in-app behavior); the landing preview stays wide.
+           setCinecamIdle is the app's own DEV knob — a huge threshold = never idle. */
+        try { World.setCinecamIdle(1e15); } catch (e) {}
       }
     } catch (e) {}
   }, 500);
