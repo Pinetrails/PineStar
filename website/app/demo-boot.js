@@ -18,6 +18,12 @@
     try {
       if (typeof World !== 'undefined' && World.pauseBridge && document.getElementById('screen-game') && document.getElementById('screen-game').classList.contains('active')) {
         World.pauseBridge(); clearInterval(t);
+        /* soften the tube for the small embed: the iframe renders below native size, so
+           full-strength scan/aberration/grain smear into haze. Same knobs the app owns. */
+        try {
+          World.crt.scan = 0.20; World.crt.aberr = 0.12; World.crt.grain = 0.10;
+          World.crt.dust = 0.30; World.crt.curve = 0.06; World.crt.fade = 0.16;
+        } catch (e) {}
       }
     } catch (e) {}
   }, 500);
