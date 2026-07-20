@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "5b2cb50b66526973a9e5ece41fb4cd297c9729b1",
+    "sourceCommit": "53d2085d318ae3b2c25d3a93b8fb7f153e59e1f3",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -213,8 +213,8 @@
       },
       {
         "path": "frontend/app/dialogue.js",
-        "bytes": 15115,
-        "sha256": "faf41b097aa0dadd70cb651598aab0c0d6bb6ee738535877506160cd2928617a"
+        "bytes": 15222,
+        "sha256": "ae248aa33fc62aef8e0c3afe7413d5cbd5b613e322a8cddc7ba249ae995e7f89"
       },
       {
         "path": "frontend/app/dockglow.js",
