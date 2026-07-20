@@ -87,6 +87,7 @@ const Dialogue = (() => {
   }
   function closePanel() {
     cancelType(); clearKeys(); clearOpts();
+    pendingPick = null;   // a torn-down panel must never leave a stale question armed for Dialogue.answer
     open = false;
     document.body.classList.remove('fnv-mode');
     if (host) host.classList.remove('fnv-host');
@@ -141,13 +142,29 @@ const Dialogue = (() => {
     return new Promise(resolve => {
       ensure(); clearKeys(); clearOpts();
       let settled = false;
-      const finishPick = res => { if (settled) return; settled = true; clearKeys(); sfx('click'); resolve(res); };
+      const finishPick = res => { if (settled) return; settled = true; pendingPick = null; clearKeys(); sfx('click'); resolve(res); };
       typeInto(norm(cfg.lines), () => renderOptions(cfg, finishPick));
     });
   }
 
+  // the COMMS composer path into the pending question (the awakening's "answer to wake your agent…" input).
+  // While a free-text question (allowCustom) is on screen, text typed in the main composer resolves it exactly
+  // like the inline ✎ input would — the Commander's words must NEVER be silently swallowed just because they
+  // answered in the obvious box. Option-only nodes (the fork, the mirror picks) return false: a typed sentence
+  // can't safely map onto a fixed choice, so the caller keeps its options up. No pending node → false (no-op).
+  let pendingPick = null;
+  function answer(text) {
+    if (!pendingPick || !pendingPick.cfg || !pendingPick.cfg.allowCustom) return false;
+    const v = String(text == null ? '' : text).trim();
+    const p = pendingPick;
+    if (!v) { if (p.cfg.skipOnEmpty) p.finishPick({ value: '', skip: true, custom: true }); return true; }
+    p.finishPick({ value: v, label: v, custom: true });
+    return true;
+  }
+
   function renderOptions(cfg, finishPick) {
     if (!optsEl) { finishPick({ value: '', skip: true }); return; }
+    pendingPick = { cfg, finishPick };   // arm the composer path (Dialogue.answer) for THIS question
     optsEl.innerHTML = '';
     const opts = (cfg.options || []).slice();
     const rows = [];
@@ -186,6 +203,11 @@ const Dialogue = (() => {
     }
     // keyboard: number keys pick an option; the trailing custom row is selectable too.
     keyHandler = e => {
+      // typing that belongs to a real text field (the COMMS composer, a panel input) must NEVER drive the
+      // picker — before this guard, digits typed in the composer silently clicked options and Enter hijacked
+      // the flow into the ✎ box mid-sentence (the awakening answer-swallow bug, 2026-07-20).
+      const t = e.target;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
       if (e.key === 'Escape' && cfg.dismissable) { e.preventDefault(); finishPick({ value: '', skip: true, dismissed: true }); return; }
       if (e.key === 'Enter' && cfg.allowCustom) { e.preventDefault(); openCustom(cfg, finishPick); return; }
       const n = parseInt(e.key, 10);
@@ -225,7 +247,7 @@ const Dialogue = (() => {
   // codename() is also exported so the WAKE funnel (app.js) can persist a real minted name instead of the bland
   // 'AGENT' when the Commander leaves the name blank — keeping the world nameplate / dossier consistent with the
   // speaker label. isUnnamed() lets a caller cheaply detect the blank/placeholder case.
-  return { open: openPanel, close: closePanel, say, node, setName, isOpen: () => open, codename, isUnnamed };
+  return { open: openPanel, close: closePanel, say, node, answer, setName, isOpen: () => open, codename, isUnnamed };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { Dialogue };

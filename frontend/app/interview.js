@@ -20,14 +20,16 @@
 
   // one question per dimension (dims mirror dossier.js DIMS — enforced by the test). `chips` are
   // domain-agnostic quick answers (tap) OR the user types their own; a `skip` chip carries an empty value.
-  // V3 §7 (scene register, the awakening-question rule sharpened): never ask for the ABSTRACTION — ask for
-  // the SCENE that contains it. Every question drops the Commander into a concrete moment of their real life
-  // so the answer falls out of them; the agent does the synthesis. Chip taps still land as weight 'seed'
-  // (beliefFromAnswer) — prompt-informing, never gate-opening; only their typed words are 'stated'.
+  // PLAIN-QUESTION LAW (Andrew, 2026-07-20, supersedes the V3 "scene register"): every question is an
+  // extraction instrument — literal, single-reading, zero metaphors, zero decode-work. A misunderstood
+  // question yields a sideways answer that gets SAVED as context and corrupts every downstream surface.
+  // Concrete beats abstract, but concrete means PLAIN ("what do you spend most of your time doing?"),
+  // never poetic. Chip taps still land as weight 'seed' (beliefFromAnswer) —
+  // prompt-informing, never gate-opening; only their typed words are 'stated'.
   const QUESTIONS = [
     { dim: 'identity',
       pre: 'let me actually get to know my Commander — not just take orders from a silhouette.',
-      ask: 'paint me your tuesday — the real one, not the calendar version. where do the hours actually go?',
+      ask: 'what does a typical day look like for you? what do you spend most of your time doing?',
       chips: [{ label: 'skip', value: '', skip: true }] },
 
     { dim: 'stack',

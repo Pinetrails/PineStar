@@ -26,11 +26,15 @@ the gap. Onboarding is the first and densest context-pursuit episode; the pursui
 
 ## 1. The five locked pillars
 
-1. **Scene-based question craft.** Never ask for the abstraction — ask for the scene that contains
-   it. The user answers with a story; the AGENT does the synthesis. No broad asks ("what are your
-   goals"), no hyper-niche asks. Every question passes the test: answerable concretely in one
-   sentence without the user thinking hard, and the answer survives the next task change
-   (the [awakening-question rule], now with the scene requirement on top).
+1. **Extraction-first question craft (PLAIN-QUESTION LAW, Andrew 2026-07-20 — supersedes the old
+   "scene register").** Every question is an extraction instrument: design it BACKWARDS from the
+   dossier field it fills — target data → what a great answer looks like → wording that makes that
+   answer the natural response on a single read. Literal words only: zero metaphors, zero poetic
+   phrasing, zero decode-work. A misunderstood question produces a sideways answer that gets SAVED
+   as grounded context and corrupts every downstream surface (synthesis, mirror, pitch, gate).
+   Personality lives in ACK/reaction lines, NEVER in questions. Every question still passes the old
+   hard rule: answerable concretely in one sentence without the user thinking hard. Regression-locked
+   by test/onboarding.test.js (banned-shapes scan + PLAIN WORDS clause in every wakemind ASK spec).
 2. **Chips steer, never answer.** Every chip is either live-model-generated from prior answers or a
    shape-example; clicking one NEVER writes a belief — it triggers a specifics-forcing follow-up.
    The dossier only ever receives beliefs synthesized from the user's actual words.

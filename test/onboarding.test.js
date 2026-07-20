@@ -141,8 +141,11 @@ A.ok(/buildSynthesis\(\{[^}]*dream:\s*dreamT/.test(src),
 A.ok(/keep it loose — learn me as we go/.test(src), 'the fork offers the loose path as a first-class choice');
 A.ok(/Chose to be figured out through the work[\s\S]{0,120}weight:\s*'seed'/.test(src),
   'the loose choice is recorded as a seed note, never grounded evidence');
-// B2 the tuesday: the identity question is a SCENE, not an abstraction.
-A.ok(/paint me your tuesday\. not the calendar version/.test(src), 'the tuesday question is scene-based');
+// B2 the day question: PLAIN-QUESTION LAW (2026-07-20) — literal, single-reading, extraction-first.
+A.ok(/what does a typical day look like for you\? what do you spend most of your time doing\?/.test(src),
+  'the identity question asks plainly what they do and where their time goes');
+A.ok(/I run my own business/.test(src) && /which parts of it do you personally spend the most time on\?/.test(src),
+  'the business chip steers directly to the two facts the field needs (what it is + where their time goes)');
 // B3 the dig: generated off their exact words; a quiet mind SKIPS it (no canned fake-listening dig).
 A.ok(/llmCall\(WakeMind\.buildDigReply\(\{\s*tuesday:\s*tuesdayT/.test(src),
   'the dig is generated from the actual tuesday answer');
@@ -174,5 +177,34 @@ A.ok(/function offerDeferred/.test(src) && /clearDeferred\(\);\s*\/\/ spent on O
   'the deferred offer exists and spends its flag on offer (one-shot)');
 A.ok(/offerDeferred[\s\S]{0,400}deferredPending\(\)[\s\S]{0,200}brainReady\(\)/.test(src),
   'the deferred offer requires both the pending IOU and a live brain');
+
+/* ---------- the composer is an ANSWER BOX (answer-swallow fix, 2026-07-20) ---------- */
+// The awakening's COMMS input says "answer to wake your agent…" — so its handler must route typed text into
+// the pending Dialogue question (Dialogue.answer), never a no-op. The old `Chat.beginInterview(() => {})`
+// silently dropped every composer-typed answer: empty dossier, no generated digs, thin synthesis.
+A.ok(/Chat\.beginInterview\(text => \{[^}]*Dialogue\.answer\(text\)/.test(src),
+  'the awakening composer handler feeds typed answers to the pending question (Dialogue.answer)');
+A.ok(!/Chat\.beginInterview\(\(\) => \{\}\)/.test(src),
+  'the no-op interview handler (the answer-swallow bug) is gone');
+
+/* ---------- PLAIN-QUESTION LAW (Andrew, 2026-07-20) — regression lock ---------- */
+// Every question shown to the Commander is an extraction instrument: literal, single-reading, zero
+// metaphors. A misunderstood question produces a sideways answer that gets SAVED as grounded context.
+// These shapes shipped once ("paint me the shop's tuesday — what do YOU end up doing with your own
+// hands?") and must never return, in the awakening OR the curiosity drip.
+{
+  const drip = fs.readFileSync(path.join(__dirname, '../frontend/app/interview.js'), 'utf8');
+  const banned = /paint me|your own hands|shop.s tuesday|the hours leak/i;
+  A.ok(!banned.test(src), 'awakening copy contains no banned metaphor shapes (plain-question law)');
+  A.ok(!banned.test(drip), 'curiosity-drip copy contains no banned metaphor shapes (plain-question law)');
+  // and the generated questions are held to the same law: every ASK builder must carry the clause.
+  const W = require('../frontend/app/wakemind.js');
+  for (const [name, d] of [
+    ['pain', W.buildPainReply({ pain: 'x' })],
+    ['ambition', W.buildAmbitionReply({ ambition: 'x' })],
+    ['dig', W.buildDigReply({ tuesday: 'x' })],
+    ['year', W.buildYearReply({ year: 'x' })]
+  ]) A.ok(/PLAIN WORDS ONLY/.test(d), 'the ' + name + ' ASK spec carries the plain-words law');
+}
 
 A.report('onboarding.test');

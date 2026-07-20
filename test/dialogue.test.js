@@ -37,4 +37,17 @@ A.notThrows(() => Dialogue.setName(''), 'setName("") never throws or traps — t
 A.notThrows(() => Dialogue.setName(null), 'setName(null) is safe');
 A.notThrows(() => Dialogue.setName('NOVA'), 'setName with a real name is safe');
 
+/* ---- answer(): the composer path into the pending question (awakening answer-swallow fix, 2026-07-20) ----
+   Pure-logic reachable in node: with no node pending, answer() must be a safe no-op that reports false —
+   the caller (onboarding's beginInterview handler) relies on that to swallow stray mid-monologue typing. */
+A.ok(typeof Dialogue.answer === 'function', 'answer() is exported (the COMMS composer can resolve a pending question)');
+A.eq(Dialogue.answer('stray typing between questions'), false, 'answer() with no pending node is a safe no-op (false)');
+A.notThrows(() => Dialogue.answer(null), 'answer(null) never throws');
+
+// the window key handler must never let typing in a real text field drive the option picker (digits used to
+// click options and Enter hijacked the flow mid-sentence). Source-level: the guard sits at the top of keyHandler.
+const dlgSrc = require('fs').readFileSync(require('path').join(__dirname, '../frontend/app/dialogue.js'), 'utf8');
+A.ok(/keyHandler = e => \{[\s\S]{0,600}(INPUT|TEXTAREA)[\s\S]{0,200}isContentEditable[\s\S]{0,60}return;/.test(dlgSrc),
+  'keyHandler ignores keys originating from INPUT/TEXTAREA/contentEditable targets');
+
 A.report('dialogue.test');

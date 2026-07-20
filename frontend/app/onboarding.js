@@ -102,14 +102,14 @@ const Onboarding = (() => {
       // GONE — a blitzed onboarding now yields an EMPTY dossier, not a fake one (the readiness gate reads that
       // honestly and keeps every recommendation surface shut until real context exists).
       { dossierDim: 'pain', optional: true,
-        prompt: 'now the part i exist for. what did you catch yourself complaining about this week — not the big stuff, the dumb recurring thing? the chore where YOU were the robot.',
+        prompt: 'now the part i exist for. what’s a task you have to do over and over that you wish you never had to do again?',
         options: [
-          { label: 'Copy-pasting between apps', steer: 'which apps? paint me the last time it happened — the real one goes in my file, not the category.' },
+          { label: 'Copy-pasting between apps', steer: 'which apps? describe the last time it happened — the specific time, what you were moving and where.' },
           { label: 'The same email, again', steer: 'to who, about what? give me the gist of the last one you sent.' },
           { label: 'Hunting through files & tabs', steer: 'hunting for what? name the thing you lost last time and where it was hiding.' },
           { label: 'Skip for now', value: '', skip: true }
         ],
-        custom: true, customLabel: 'name the real one', placeholder: 'the chore you’d pay to never do again…',
+        custom: true, customLabel: 'type your answer', placeholder: 'the task you’d pay to never do again…',
         build: () => null,
         ack: t => t
           ? 'noted — that’s exactly the kind of thing i’m for. it’s on my list now.'
@@ -126,7 +126,7 @@ const Onboarding = (() => {
           { label: 'honestly — no idea yet. let’s find out', value: '', open: true },
           { label: 'Skip for now', value: '', skip: true }
         ],
-        custom: true, customLabel: 'name it straight', placeholder: 'the thing that exists at the end of that year…',
+        custom: true, customLabel: 'type your answer', placeholder: 'the thing that exists at the end of that year…',
         build: () => null,
         ack: t => t
           ? 'now that — that’s where i want to take you. noted.'
@@ -201,9 +201,13 @@ const Onboarding = (() => {
         else birthFailed = true;   // the wire was supposed to be live and answered dead — own it at the close
       });
     }
-    // swallow stray typing during the cinematic birth — the real questions are captured by the DIALOGUE panel
-    // (dialogue.js), not the COMMS input, so nothing typed here leaks to the model or gets lost.
-    Chat.beginInterview(() => {});
+    // THE COMPOSER IS AN ANSWER BOX (2026-07-20 answer-swallow fix): the input literally says "answer to wake
+    // your agent…", so text typed there MUST land on the question on screen. Dialogue.answer() resolves the
+    // pending free-text node with the Commander's words (same path as the inline ✎ input) — before this, the
+    // handler was a no-op and every composer-typed answer was silently dropped (empty dossier, no digs, thin
+    // synthesis). Between questions (monologue/patter, option-only picks) it returns false and the stray text
+    // is swallowed exactly as before — nothing leaks to the model.
+    Chat.beginInterview(text => { if (typeof Dialogue !== 'undefined' && Dialogue.answer) Dialogue.answer(text); });
     if (opts.wake && World.armKindle) {
       // THE KINDLING — the user HOLDS to bring the dormant mind to life; ignition fires when the spark catches.
       setTimeout(() => World.armKindle(() => ignite(true)), 700);   // a brief held dark, then the "hold to wake it" prompt
@@ -490,7 +494,7 @@ const Onboarding = (() => {
         res = await Dialogue.node({
           lines: [seg(steerOpt.steer, 46, 0)],
           options: [{ label: 'Skip for now', value: '', skip: true }],
-          allowCustom: true, customLabel: s.customLabel || 'say it straight', customPlaceholder: s.placeholder,
+          allowCustom: true, customLabel: s.customLabel || 'type your answer', customPlaceholder: s.placeholder,
           skipOnEmpty: true
         });
         if (!running) return { text: '' };
@@ -543,7 +547,7 @@ const Onboarding = (() => {
   // one generated follow-up ask → the Commander's typed words (steer-chip law: generated chips are
   // plausible answers, but tapping one still asks for their own words — nothing canned ever lands).
   async function askGenerated(askText, chips, customLabel, placeholder) {
-    const options = (chips || []).map(c => ({ label: c, steer: 'close — but say it in your words, real names and all.' }));
+    const options = (chips || []).map(c => ({ label: c, steer: 'close — type your version, with the real names and details.' }));
     options.push({ label: 'Skip for now', value: '', skip: true });
     const f = await askStep({ optional: true, prompt: askText, options, custom: true, customLabel, placeholder, build: () => null, ack: () => '' }, { quietAck: true });
     return f.text;
@@ -613,15 +617,18 @@ const Onboarding = (() => {
     if (!loose) {
       tuesdayT = (await askStep({
         optional: true,
-        prompt: 'paint me your tuesday. not the calendar version — the real one. where do the hours actually go?',
+        // PLAIN-QUESTION LAW (Andrew, 2026-07-20): every question here is an extraction instrument — it must
+        // be literal and single-reading, because a misunderstood question produces a sideways answer that gets
+        // SAVED as grounded context. Chips segment; each steer asks directly for the facts its field needs.
+        prompt: 'what does a typical day look like for you? what do you spend most of your time doing?',
         options: [
-          { label: 'i run something', steer: 'then paint me the shop’s tuesday — what do YOU end up doing with your own hands?' },
-          { label: 'i work for someone', steer: 'then the job’s tuesday — what fills the hours, and which part is actually yours?' },
-          { label: 'i make things on the side', steer: 'then the side-hours — when do they happen, and what are you making?' },
-          { label: 'i’m studying', steer: 'then the student tuesday — what are you studying, and where do the hours really go?' },
+          { label: 'I run my own business', steer: 'what’s the business, and which parts of it do you personally spend the most time on?' },
+          { label: 'I work a job', steer: 'what’s the job, and which tasks take up most of your day?' },
+          { label: 'I create / build my own projects', steer: 'what are you making, and which part of it takes the most time?' },
+          { label: 'I’m a student', steer: 'what are you studying, and what schoolwork takes up most of your time?' },
           { label: 'Skip for now', value: '', skip: true }
         ],
-        custom: true, customLabel: 'tell it straight', placeholder: 'the honest version…',
+        custom: true, customLabel: 'type your answer', placeholder: 'what you do, and what takes the time…',
         build: () => null, ack: () => ''
       }, { quietAck: true })).text;
       if (!running) return;
@@ -638,7 +645,7 @@ const Onboarding = (() => {
           await Dialogue.say([seg(digReply.ack, 44, 360)]);
           if (!running) return;
           if (digReply.ask) {
-            digT = await askGenerated(digReply.ask, digReply.chips, 'say it straight', 'the real version — it goes in my file…');
+            digT = await askGenerated(digReply.ask, digReply.chips, 'type your answer', 'your answer — it goes in my file…');
             if (!running) return;
             if (digT) { bumpTruth(); await Dialogue.say([seg('good. the picture’s forming.', 44, 320)]); if (!running) return; }
           }
@@ -670,7 +677,7 @@ const Onboarding = (() => {
         const f = await Dialogue.node({
           lines: [seg(reply.ask, 46, 0)],
           options: [{ label: 'Skip for now', value: '', skip: true }],
-          allowCustom: true, customLabel: 'tell it straight', customPlaceholder: 'plainly — it goes straight in my dossier…',
+          allowCustom: true, customLabel: 'type your answer', customPlaceholder: 'your answer — it goes straight in my dossier…',
           skipOnEmpty: true
         });
         if (!running) return;
@@ -693,9 +700,9 @@ const Onboarding = (() => {
     {
       lostT = (await askStep({
         dossierDim: 'identity', optional: true,
-        prompt: 'different question. when you lose track of time — actually lose it, look up and it’s dark out — what are you doing?',
+        prompt: 'flip side — what part of your work do you actually enjoy? the thing you’d happily spend the whole day on if nothing else got in the way?',
         options: [{ label: 'Skip for now', value: '', skip: true }],
-        custom: true, customLabel: 'say it plain', placeholder: 'the thing that eats the hours without asking…',
+        custom: true, customLabel: 'type your answer', placeholder: 'the work you’d choose to do…',
         build: () => null,
         ack: t => t ? 'that one goes in the file — the hours you’d keep.' : 'fair — i’ll spot it myself eventually.'
       })).text;
@@ -746,7 +753,7 @@ const Onboarding = (() => {
           const f = await Dialogue.node({
             lines: [seg(reply.ask, 46, 0)],
             options: [{ label: 'Skip for now', value: '', skip: true }],
-            allowCustom: true, customLabel: 'paint it for me', customPlaceholder: 'the real shape of it — straight into my dossier…',
+            allowCustom: true, customLabel: 'describe it', customPlaceholder: 'what it looks like — straight into my dossier…',
             skipOnEmpty: true
           });
           if (!running) return;
@@ -798,7 +805,7 @@ const Onboarding = (() => {
           const f = await Dialogue.node({
             lines: [seg('better. say it — what would you actually hand me?', 46, 0)],
             options: [{ label: 'Skip for now', value: '', skip: true }],
-            allowCustom: true, customLabel: 'the real ask', customPlaceholder: 'the thing you’d actually hand me…',
+            allowCustom: true, customLabel: 'type your answer', customPlaceholder: 'the task you’d actually hand me…',
             skipOnEmpty: true
           });
           if (!running) return;
