@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "2917ad0a12e00fc4c152d331ab0daf03500a7781",
+    "sourceCommit": "8a232b71593a31abc335270738b2e9ed43a3e56e",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 271524,
-        "sha256": "b9433939de5c4668827de3e8b1a05f3be209232253ae23547ef69b617dbfa7e3"
+        "bytes": 272659,
+        "sha256": "3593f5c0517f2ad543fd6604d4c2453c438aa0ab2f24eaba6bac855d41c95448"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -633,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 403978,
-        "sha256": "ffa1da4e3a0bf86ba0b15fff80d0abc41d935ea87dc0840aa8d1510132abd7ec"
+        "bytes": 404318,
+        "sha256": "974a6e9c56bd13b6e0759ad8e2339c75ed1956bf622b98df0cfd219a57e0f840"
       },
       {
         "path": "frontend/app/study.js",
@@ -698,8 +698,8 @@
       },
       {
         "path": "frontend/app/tutorial.js",
-        "bytes": 66122,
-        "sha256": "7d45389dec700a28b9cdc0da4f62333dbaae7e4130b258e7f939fff850942107"
+        "bytes": 65918,
+        "sha256": "f8d967d35029ab1332325390d08b48883169691eeaad60492f869eaa5677bba0"
       },
       {
         "path": "frontend/app/understanding.js",
@@ -813,8 +813,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 454495,
-        "sha256": "612e4b8f2ea8871399bbefc3a31be6d83830ba447764adea46494ef0ab103f49"
+        "bytes": 458068,
+        "sha256": "f69ee78d5aedbec4e0b963658cbc5f9c7b8ebbfad0ec6095106a8a9a043b832f"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -878,8 +878,8 @@
       },
       {
         "path": "frontend/css/titlebar.css",
-        "bytes": 4193,
-        "sha256": "2ebc1f6ac752166be772dd007d6a498c070ff375057d9bd7575481f1034fbac4"
+        "bytes": 4629,
+        "sha256": "00b90bac548e3f3c21896ae8e2aebf325d7681fd036678a669c0b78c472501c8"
       },
       {
         "path": "frontend/css/topbar.css",
@@ -888,8 +888,8 @@
       },
       {
         "path": "frontend/css/tutorial.css",
-        "bytes": 8655,
-        "sha256": "41594d6d1dc9df0afc0b02b900734562a139b673dcb4668f86f16a84a327ea21"
+        "bytes": 8258,
+        "sha256": "97ff3ce72478422f4ce558ebab4cf989c82a498c778ff585bee6b97eb4684f18"
       },
       {
         "path": "frontend/css/warroom.css",
