@@ -397,7 +397,12 @@
         for (const raw of refs) {
           const rel = unquoteToken(raw);
           if (!CODE_FILE_RE.test(rel) || !P || !baseDir || P.isAbsolute(rel) || /(^|[\\/])\.\.([\\/]|$)/.test(rel)) continue;
-          const src = readSmall(fs, P.resolve(baseDir, rel), 2 << 20);
+          let src = readSmall(fs, P.resolve(baseDir, rel), 2 << 20);
+          // command text may spell the path Windows-style (scripts\smoke.mjs — normal inside .cmd files).
+          // On a posix host that backslash is a filename CHARACTER, the literal path never exists, and the
+          // nested scan silently goes blind to the referenced script (CI-linux gate escape, 2026-07-20).
+          // Retry with separators normalized so the isolation floor sees the same files on every host.
+          if (!src && rel.indexOf('\\') >= 0) src = readSmall(fs, P.resolve(baseDir, rel.replace(/\\/g, '/')), 2 << 20);
           if (src) enqueue(src, baseDir);
         }
       }
