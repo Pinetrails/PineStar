@@ -202,6 +202,8 @@ a:hover{ color:var(--amber); }
 
 /* station split */
 .split{ display:grid; grid-template-columns:1.1fr 1fr; gap:clamp(24px,4vw,48px); align-items:center; }
+/* the live-preview split gives the station the bigger column so the room reads at near-app size */
+.split.station{ grid-template-columns:1fr 1.5fr; }
 @media (max-width:860px){ .split{ grid-template-columns:1fr; } }
 .split-copy .lead{ font-size:clamp(19px,2.3vw,23px); line-height:1.45; color:var(--ink); margin:0 0 18px; }
 .split-copy p{ font-size:18px; line-height:1.55; color:var(--ink-d); }
