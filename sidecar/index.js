@@ -2397,8 +2397,11 @@ async function ensureOAuthAccessToken(pid) {
 // forwarded to open browser EventSources (the station HUD). The bot token / OR key are NEVER placed on a
 // payload — nothing to leak here — and redact() runs before validate() as a second backstop.
 const sse = makeSseHub();
+// Full-payload channel logging is opt-in (STARNET_DEBUG_CHANNELS=1): every COMMS/workitem/queue event
+// otherwise printed a whole JSON line to stdout on normal operation. Default = event name only.
+const DEBUG_CHANNEL_LOGS = String(process.env.STARNET_DEBUG_CHANNELS || '') === '1';
 const chanBus = { emit: (name, payload) => {
-  try { console.log('[channel]', name, JSON.stringify(payload)); } catch (_) {}
+  try { if (DEBUG_CHANNEL_LOGS) console.log('[channel]', name, JSON.stringify(payload)); } catch (_) {}
   try { sse.broadcast(name, payload); } catch (_) {}
 } };
 const chanEmitValidated = makeEmitter(chanBus, e => console.warn('[channel-event]', e.kind, e.event, (e.errors || []).join(';')));
@@ -8776,8 +8779,9 @@ async function runOnce(o) {
 
   // TRUTHFUL TELEMETRY: when the governor holds the ceiling, record WHICH passes yielded. A deferral is NOT an
   // error, so it stays out of the diag error ring — a single stdout line is the lightest inspectable sink (this is
-  // exactly what the aux-budget live-smoke reads). Emitted only when there were candidates, so quiet runs stay quiet.
-  if (_auxCandidates.length) {
+  // exactly what the aux-budget live-smoke reads). Emitted only when the governor actually DEFERRED a pass
+  // (or STARNET_DEBUG_CHANNELS=1 for the full spend line) — all-clear runs stay quiet on stdout.
+  if (_auxCandidates.length && (_auxPlan.deferred.length || DEBUG_CHANNEL_LOGS)) {
     console.log('[aux-governor] run=' + runId + ' agent=' + agentId + ' budget=' + (_auxPlan.unlimited ? 'off' : _auxBudget)
       + ' spent=' + _auxPlan.spend.length + '[' + _auxPlan.spend.join(',') + ']'
       + (_auxPlan.deferred.length ? ' DEFERRED[' + _auxPlan.deferred.join(',') + ']' : ''));

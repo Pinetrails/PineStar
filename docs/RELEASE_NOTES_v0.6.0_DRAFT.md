@@ -1,4 +1,7 @@
-# StarNet v0.6.0
+# StarNet v0.6.0 — DRAFT release notes (paste into RELEASE_NOTES.md after `release:bump`)
+
+Everything merged to trunk since the v0.5.3 cut (`e5e2d0dd`), verified through the standard
+gates. Author-edit before publishing; keep only user-meaningful bullets.
 
 ## Highlights
 

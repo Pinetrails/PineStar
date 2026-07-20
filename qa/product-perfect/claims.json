@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "c02db58713bef415e3406a77c5b7769fde18d029",
+    "sourceCommit": "4dc81204fc478a3f0c1bd7984fc7646d682be8c0",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -38,8 +38,8 @@
       },
       {
         "path": "RELEASE_NOTES.md",
-        "bytes": 1804,
-        "sha256": "c9152e13e3ae2c3e96809392e0773f43f00919136459b9c4046d3cbe0c744585"
+        "bytes": 3101,
+        "sha256": "26d6e71f414cc17b8814d439540228b57b9db2d21bc4094d5e151862747f6103"
       },
       {
         "path": "TERMS.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 269282,
-        "sha256": "bae727a0b03487e586d2e4cc54e52d9f6c54b7b8090503d4ef88590005075569"
+        "bytes": 268869,
+        "sha256": "9c4b69426dacb76016062e91faa67379f897e91266d8b57016587158a124625e"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -273,8 +273,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 45010,
-        "sha256": "701090520a375070b9de6c51ee5f2663d3f35c15d66e05b1200fc182170d0283"
+        "bytes": 44177,
+        "sha256": "e3b53109495f2feec66701f1fb21cdb20052050e355a34cf29b0c0c165710e7e"
       },
       {
         "path": "frontend/app/hint.js",
@@ -748,8 +748,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 51351,
-        "sha256": "22bfe18484581d1bc95c29ae44794ea76c39f41cd5b9c1e6431a9b9b3a507c8e"
+        "bytes": 52736,
+        "sha256": "ecb01a7def0126327d018cf28f325e6a890f78896725f508c40f74ddf04ad0c0"
       },
       {
         "path": "frontend/app/windows/logbook.js",
@@ -838,8 +838,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 207152,
-        "sha256": "8fe0c6fd3e7ca426c4136825e8f81a42267aefcd1fa1b87df45b5f41a57c858b"
+        "bytes": 207397,
+        "sha256": "3af6c32bc6ee3339a3613053c19f4bb638e7076b6cd3946f47d7ec6890a78d1c"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -918,13 +918,13 @@
       },
       {
         "path": "frontend/js/audio.js",
-        "bytes": 2315,
-        "sha256": "fd53075d74c410d16125babc1d7f3e8b3d8560ef44ca456fe03efd9c0a79f39c"
+        "bytes": 3747,
+        "sha256": "7b91d2482fc98adb5e009765a121d5d7c4e84a36a71c27203e307b31e99dafb6"
       },
       {
         "path": "frontend/js/util.js",
-        "bytes": 23254,
-        "sha256": "026507f8cd89440e43b0a69af97a0ca621a1acffcfc50d43816958dc31f5f0e1"
+        "bytes": 27536,
+        "sha256": "dc9168cedfa7a19d39992a6aae3faebac529ecca2f32a1079d8e05024a14c15f"
       }
     ]
   },

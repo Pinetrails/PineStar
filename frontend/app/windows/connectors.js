@@ -390,7 +390,10 @@
       if (e.installed) action = '<button class="bb xs" data-cc-act="added" disabled>✓ ADDED</button>';
       else if (e.authType === 'oauth') action = e.url
         ? '<button class="bb xs" data-cc-act="signin" data-id="' + esc(e.id) + '" title="opens a secure browser sign-in (OAuth)">▸ SIGN IN</button>'
-        : '<button class="bb xs" data-cc-act="soon" disabled title="not directly wired yet — see the note">SOON</button>';   // an oauth entry with no endpoint (e.g. via an aggregator) is honestly not sign-in-able
+        : (e.via
+          // url-less oauth entry reachable through an aggregator: a LIVE jump to that card, never a mute dead button.
+          ? '<button class="bb xs" data-cc-act="via" data-id="' + esc(e.id) + '" data-via="' + esc(e.via) + '" title="no direct endpoint — jump to the connector that reaches it">▸ VIA ' + esc(e.via.toUpperCase()) + '</button>'
+          : '<button class="bb xs" data-cc-act="soon" disabled title="not directly wired yet — see the note">SOON</button>');   // an oauth entry with no endpoint and no aggregator is honestly not sign-in-able
       else if (e.authType === 'apikey') action = '<button class="bb xs" data-cc-act="key" data-id="' + esc(e.id) + '">+ ADD</button>';
       else action = '<button class="bb sm" data-cc-act="add" data-id="' + esc(e.id) + '">+ ADD</button>';
       const keyField = e.authType === 'apikey'
@@ -506,6 +509,20 @@
       }
       else if (act === 'signin') { btn.disabled = true; await ccSignIn(id); btn.disabled = false; }
       else if (act === 'signin-cancel') { ccCancelSignIn(id); }
+      else if (act === 'via') {
+        // Jump to the aggregator card that actually reaches this platform (e.g. Google Workspace -> Zapier).
+        const viaId = btn.dataset.via;
+        const target = ccListEl.querySelector('.cc-card[data-id="' + (window.CSS && CSS.escape ? CSS.escape(viaId) : viaId) + '"]');
+        const e = ccCache.find(x => x.id === id), v = ccCache.find(x => x.id === viaId);
+        ccMsgEl.classList.remove('ok');
+        if (!target || !v) { ccMsgEl.textContent = '✕ the "' + viaId + '" connector is not in the catalog'; sfx('bad'); return; }
+        ccMsgEl.textContent = ((e && e.name) || id) + ' connects through ' + v.name + ' — add ' + v.name + ' with one API key.';
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        target.classList.remove('cc-jump'); void target.offsetWidth;   // restart the flash on a re-click
+        target.classList.add('cc-jump');
+        setTimeout(() => target.classList.remove('cc-jump'), 2500);
+        sfx('tick');
+      }
     });
     ccRefresh();
 

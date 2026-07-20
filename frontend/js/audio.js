@@ -44,6 +44,32 @@
     on('permission.prompt', () => SFX.chime());
   }
 
+  /* ---- delegated UI interaction sounds (2026-07-19): every interactive control inside any
+     window sounds without per-handler wiring. Bubble phase + the _lastAny check means explicit
+     cues (a dock button playing open(), a handler's own click()) always win — the delegate only
+     fills silence. Selectors are conservative: real controls only, never canvas/window chrome. ---- */
+  const CLICKY = 'button, [role="button"], a[href], select, summary, [data-act], .chip, .tab';
+  function wireUI() {
+    document.addEventListener('click', ev => {
+      if (ev.button) return;
+      const t = ev.target && ev.target.closest ? ev.target.closest(CLICKY) : null;
+      if (!t || t.disabled) return;
+      if (Date.now() - SFX._lastAny < 80) return;       // an explicit cue just sounded — yield
+      SFX.click();
+    }, { passive: true });                              // bubble phase: after app handlers
+    document.addEventListener('change', ev => {
+      const t = ev.target;
+      if (!t || !t.matches) return;
+      if (Date.now() - SFX._lastAny < 80) return;
+      if (t.matches('input[type="checkbox"], input[type="radio"]')) SFX.toggle();
+      else if (t.matches('select')) SFX.click();
+    }, { passive: true });
+    document.addEventListener('input', ev => {
+      const t = ev.target;
+      if (t && t.matches && t.matches('input[type="range"]')) SFX.slidertick();
+    }, { passive: true });
+  }
+
   /* ---- autoplay: browsers block audio until a gesture, so arm on first input ---- */
   function arm() {
     ['pointerdown', 'keydown', 'touchstart'].forEach(e => { try { window.removeEventListener(e, arm); } catch (_) { } });
@@ -52,6 +78,7 @@
 
   if (typeof window !== 'undefined') {
     wire();
+    wireUI();
     ['pointerdown', 'keydown', 'touchstart'].forEach(e => window.addEventListener(e, arm, { passive: true }));
   }
 })();
