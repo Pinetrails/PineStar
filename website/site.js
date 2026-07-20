@@ -81,8 +81,8 @@
   if(os){
     var card = document.querySelector('.dl-card[data-os="' + os + '"]');
     if(card) card.classList.add('detected');
-    var cta = document.getElementById('cta-download');
-    if(cta) cta.textContent = '[ DOWNLOAD FOR ' + osLabels[os] + ' ]';
+    /* hero CTA stays a plain [ DOWNLOAD ] (Andrew 2026-07-20) — the detected-OS
+       highlight below still personalizes the download cards. */
   }
 
   /* ---------- live release links ---------- */
