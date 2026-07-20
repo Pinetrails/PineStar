@@ -87,6 +87,7 @@ const Dialogue = (() => {
   }
   function closePanel() {
     cancelType(); clearKeys(); clearOpts();
+    pendingPick = null;   // a torn-down panel must never leave a stale question armed for Dialogue.answer
     open = false;
     document.body.classList.remove('fnv-mode');
     if (host) host.classList.remove('fnv-host');
