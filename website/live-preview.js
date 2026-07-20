@@ -14,13 +14,13 @@
   var map = null;
   fetch('assets/live/blank-sheet.json').then(function(r){ return r.json(); }).then(function(j){ map = j; });
 
-  var A = 50;                                 // agent draw size (matches the capture scale)
-  var SEAT = { x: 299, y: 276 };              // the chair below the desk (feet position)
+  var A = 88;                                 // agent draw size (matches the capture scale)
+  var SEAT = { x: 373, y: 194 };              // the chair below the desk (feet position)
   var WAYPOINTS = [                            // in-room wander spots (kept off the walls)
-    { x: 210, y: 410 }, { x: 450, y: 370 }, { x: 340, y: 550 },
-    { x: 160, y: 550 }, { x: 530, y: 510 }, { x: 330, y: 350 }
+    { x: 180, y: 300 }, { x: 600, y: 320 }, { x: 390, y: 430 },
+    { x: 180, y: 450 }, { x: 560, y: 460 }, { x: 390, y: 250 }
   ];
-  var SPEED = 55;                             // px/s, unhurried like the app's idle walk
+  var SPEED = 95;                             // px/s, unhurried like the app's idle walk (capture scale)
 
   function frameRect(name){
     var i = map.names.indexOf(name);
@@ -80,7 +80,7 @@
     var fy = sitting ? SEAT.y : st.y;
     var fx = sitting ? SEAT.x : st.x;
     ctx.fillStyle = 'rgba(0,0,0,.42)';
-    ctx.beginPath(); ctx.ellipse(fx, fy + 2, A*0.26, 5, 0, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(fx, fy + 2, A*0.26, A*0.09, 0, 0, Math.PI*2); ctx.fill();
     // agent — smooth-downscaled like the app draws its skins
     if (map && sheet.complete){
       var r = frameRect(spriteName(now));
@@ -99,7 +99,7 @@
           clearInterval(t);
           var r = frameRect('sit_north');
           ctx.fillStyle = 'rgba(0,0,0,.42)';
-          ctx.beginPath(); ctx.ellipse(SEAT.x, SEAT.y + 2, A*0.26, 5, 0, 0, Math.PI*2); ctx.fill();
+          ctx.beginPath(); ctx.ellipse(SEAT.x, SEAT.y + 2, A*0.26, A*0.09, 0, 0, Math.PI*2); ctx.fill();
           ctx.imageSmoothingEnabled = true;
           ctx.drawImage(sheet, r.sx, r.sy, 92, 92, SEAT.x - A/2, SEAT.y - A + 8, A, A);
         }

@@ -219,6 +219,9 @@ a:hover{ color:var(--amber); }
 .bezel img{ width:100%; height:auto; display:block; image-rendering:auto; }
 .bezel canvas{ width:100%; height:auto; display:block; }
 .bezel figcaption{ padding:9px 4px 2px; font-size:14px; letter-spacing:1px; color:rgba(236,224,207,.35); }
+/* the live room preview floats free — the capture already sits in open space, no box */
+.bezel.live{ border:0; background:transparent; padding:0; box-shadow:none; }
+.bezel.live canvas{ image-rendering:auto; }
 
 /* feature cards */
 .cards{ display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }
