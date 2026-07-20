@@ -204,6 +204,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     if ((document.body.style.zoom || '') !== priorZoom) {
       requestAnimationFrame(() => {
         try { Object.keys(open).forEach(k => { if (!minimized[k]) fitTermInViewport(open[k], k, false); }); } catch (_) {}
+        // re-announce the layout change (fullscreen.js sn-fs idiom): a zoom flip moves every
+        // rect without firing a window resize, so fixed-position trackers (#logo via
+        // positionLogo) and the canvas re-derive path hold stale pre-zoom coordinates.
+        try { window.dispatchEvent(new Event('resize')); } catch (_) {}
       });
     }
     document.body.classList.toggle('no-flicker', !s.flicker);

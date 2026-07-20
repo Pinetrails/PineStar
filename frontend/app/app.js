@@ -118,9 +118,14 @@ const App = (() => {
     const game = el('screen-game');
     if (!game || !game.classList.contains('active')) return;   // hidden screens have no geometry
     anchor.style.width = logo.offsetWidth + 'px';
+    // TEXT SIZE coordinate law (stationui.js uiZoom): rects are VISUAL px, but #logo lives inside
+    // the zoomed body so its style.left/top are ZOOMED-space px — divide, or on any station where
+    // AUTO resolves ≠100% the logo lands off by the zoom factor (worst in windowed mode, where the
+    // titlebar strip makes b.top large; the 2026-07-20 misaligned-logo report on other hardware).
+    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
     const a = anchor.getBoundingClientRect(), b = bar.getBoundingClientRect();
-    logo.style.left = a.left + 'px';
-    logo.style.top = (b.top + (b.height - logo.offsetHeight) / 2) + 'px';
+    logo.style.left = (a.left / z) + 'px';
+    logo.style.top = (b.top / z + (b.height / z - logo.offsetHeight) / 2) + 'px';
   }
   if (typeof window !== 'undefined') window.addEventListener('resize', positionLogo);
 
