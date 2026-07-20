@@ -62,12 +62,17 @@ body.sn-chrome .sn-ic-min::before {
 body.sn-chrome .sn-ic-max::before {
   content: ''; position: absolute; inset: 1px; border: 2px solid currentColor;
 }
-/* maximized → restore glyph: front frame drops to the lower-left, back frame peeks top-right */
+/* maximized → restore glyph: front frame drops to the lower-left, back frame peeks top-right.
+   The back frame's L is TWO SOLID 2px BARS (background gradients), NOT a clip-path: the old
+   polygon clipped a 9px box at 78%/22%, which lands mid-device-pixel under Windows display
+   scaling / TEXT SIZE zoom and aliased the corner join into loose fragments (the 2026-07-20
+   "maximize button loses its shape" report). Integer-px bars survive any scale factor. */
 body.sn-chrome .sn-tb-btn.is-max .sn-ic-max::before { inset: 4px 1px 0 4px; border-width: 2px; }
 body.sn-chrome .sn-tb-btn.is-max .sn-ic-max::after {
-  content: ''; position: absolute; top: 0; right: 0; width: 9px; height: 9px;
-  border: 2px solid currentColor;
-  clip-path: polygon(0 0, 100% 0, 100% 100%, 78% 100%, 78% 22%, 0 22%);
+  content: ''; position: absolute; top: 0; right: 0; width: 9px; height: 9px; border: 0;
+  background:
+    linear-gradient(currentColor, currentColor) top / 100% 2px no-repeat,
+    linear-gradient(currentColor, currentColor) right / 2px 100% no-repeat;
 }
 body.sn-chrome .sn-ic-close::before,
 body.sn-chrome .sn-ic-close::after {
