@@ -1,3 +1,22 @@
+# StarNet v0.6.1
+
+## The fix this release exists for
+
+- **The awakening now PROVES your model is connected before it begins.** Pressing WAKE runs one
+  real round-trip to your chosen provider and model; if it doesn't answer, you stay at the
+  console with the honest reason — the ceremony never starts on a dead wire, and the full
+  guided-discovery onboarding can no longer be silently skipped.
+- **ChatGPT sign-in now actually reaches the awakening (desktop).** Signing in with ChatGPT never
+  marked the brain as configured on installed builds, so every live awakening beat — the born
+  monologue, the interview digs, the mirror offers — silently fell back to the scripted spine.
+  v0.6.0's new onboarding was in the app but unreachable on that path. Fixed at boot and at
+  sign-in, with a live-wire belt behind it.
+
+## Also
+
+- If a wake ever does land without a live brain, the station banks an IOU and offers the full
+  real interview the first time the wire answers — onboarding is mandatory, never skipped.
+
 # StarNet v0.6.0
 
 ## Highlights
