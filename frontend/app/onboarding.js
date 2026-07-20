@@ -201,9 +201,13 @@ const Onboarding = (() => {
         else birthFailed = true;   // the wire was supposed to be live and answered dead — own it at the close
       });
     }
-    // swallow stray typing during the cinematic birth — the real questions are captured by the DIALOGUE panel
-    // (dialogue.js), not the COMMS input, so nothing typed here leaks to the model or gets lost.
-    Chat.beginInterview(() => {});
+    // THE COMPOSER IS AN ANSWER BOX (2026-07-20 answer-swallow fix): the input literally says "answer to wake
+    // your agent…", so text typed there MUST land on the question on screen. Dialogue.answer() resolves the
+    // pending free-text node with the Commander's words (same path as the inline ✎ input) — before this, the
+    // handler was a no-op and every composer-typed answer was silently dropped (empty dossier, no digs, thin
+    // synthesis). Between questions (monologue/patter, option-only picks) it returns false and the stray text
+    // is swallowed exactly as before — nothing leaks to the model.
+    Chat.beginInterview(text => { if (typeof Dialogue !== 'undefined' && Dialogue.answer) Dialogue.answer(text); });
     if (opts.wake && World.armKindle) {
       // THE KINDLING — the user HOLDS to bring the dormant mind to life; ignition fires when the spark catches.
       setTimeout(() => World.armKindle(() => ignite(true)), 700);   // a brief held dark, then the "hold to wake it" prompt

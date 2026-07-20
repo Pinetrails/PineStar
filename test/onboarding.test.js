@@ -178,6 +178,15 @@ A.ok(/function offerDeferred/.test(src) && /clearDeferred\(\);\s*\/\/ spent on O
 A.ok(/offerDeferred[\s\S]{0,400}deferredPending\(\)[\s\S]{0,200}brainReady\(\)/.test(src),
   'the deferred offer requires both the pending IOU and a live brain');
 
+/* ---------- the composer is an ANSWER BOX (answer-swallow fix, 2026-07-20) ---------- */
+// The awakening's COMMS input says "answer to wake your agent…" — so its handler must route typed text into
+// the pending Dialogue question (Dialogue.answer), never a no-op. The old `Chat.beginInterview(() => {})`
+// silently dropped every composer-typed answer: empty dossier, no generated digs, thin synthesis.
+A.ok(/Chat\.beginInterview\(text => \{[^}]*Dialogue\.answer\(text\)/.test(src),
+  'the awakening composer handler feeds typed answers to the pending question (Dialogue.answer)');
+A.ok(!/Chat\.beginInterview\(\(\) => \{\}\)/.test(src),
+  'the no-op interview handler (the answer-swallow bug) is gone');
+
 /* ---------- PLAIN-QUESTION LAW (Andrew, 2026-07-20) — regression lock ---------- */
 // Every question shown to the Commander is an extraction instrument: literal, single-reading, zero
 // metaphors. A misunderstood question produces a sideways answer that gets SAVED as grounded context.
