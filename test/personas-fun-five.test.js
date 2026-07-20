@@ -16,14 +16,16 @@ const app = read('frontend/app/app.js');
 const chat = read('frontend/app/chat.js');
 const css = read('frontend/css/app.css');
 
-/* ---- the ten voices exist: grounded five + fun five, all frozen presets ---- */
-const IDS = ['professional', 'friendly', 'direct', 'witty', 'calm', 'unhinged', 'hype', 'overlord', 'gremlin', 'noir'];
+/* ---- the seven voices: grounded five + the kept fun pair, all frozen presets.
+   OVERLORD / GREMLIN / NOIR were cut per Andrew 2026-07-20 — presets must be GONE
+   and their saved ids must alias to a surviving voice (no silent default snap). ---- */
+const IDS = ['professional', 'friendly', 'direct', 'witty', 'calm', 'unhinged', 'hype'];
 for (const id of IDS) {
   A.ok(new RegExp("'" + id + "':\\s*Object\\.freeze\\(\\{").test(personas), "preset '" + id + "' ships as a frozen preset");
 }
 
 /* ---- THE BIT NEVER EATS THE WORK: every fun preset pivots back to real execution ---- */
-const FUN = ['unhinged', 'hype', 'overlord', 'gremlin', 'noir'];
+const FUN = ['unhinged', 'hype'];
 const blockOf = id => {
   const header = "'" + id + "': Object.freeze({";
   const start = personas.indexOf(header);
@@ -39,13 +41,13 @@ for (const id of FUN) {
 // truth-fidelity language, per preset (each phrases the law in its own voice — pin each anchor)
 A.ok(/NEVER bend the truth for a joke/.test(blockOf('unhinged')), 'unhinged: truth line pinned');
 A.ok(/never oversell a result/.test(blockOf('hype')), 'hype: honest-hype line pinned');
-A.ok(/never let the persona touch the facts/.test(blockOf('overlord')), 'overlord: facts line pinned');
-A.ok(/never fudge a result for the bit/.test(blockOf('gremlin')), 'gremlin: result line pinned');
-A.ok(/facts inside the story are always exact/.test(blockOf('noir')), 'noir: exact-facts line pinned');
 
-/* ---- aliases: old saves land on their true homes; no unreachable gremlin alias ---- */
+/* ---- aliases: old saves land on real voices; the cut presets are gone but aliased ---- */
 A.ok(/'hype-buddy':\s*'hype'/.test(personas), "legacy 'hype-buddy' saves resolve to the real HYPE preset");
-A.ok(!/'gremlin':\s*'direct'/.test(personas), "the old gremlin->direct alias is gone (the real preset must win)");
+for (const cut of ['overlord', 'gremlin', 'noir']) {
+  A.ok(!new RegExp("'" + cut + "':\\s*Object\\.freeze\\(\\{").test(personas), cut + ': preset removed (2026-07-20 cut)');
+  A.ok(new RegExp("'" + cut + "':\\s*'(professional|friendly|direct|witty|calm|unhinged|hype)'").test(personas), cut + ': saved id aliases to a surviving voice');
+}
 
 /* ---- UNHINGED consent: two-press arm on the create screen, honesty note in chat ---- */
 A.ok(/unhingedConfirmed = false/.test(app) && /unhingedConfirmed = true/.test(app), 'create screen: UNHINGED chip carries the house two-press confirm latch');

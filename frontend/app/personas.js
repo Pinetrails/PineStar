@@ -36,9 +36,10 @@ const Personas = (() => {
     ttsStyle: 'A low, smooth American male voice with a subtle gravelly rasp and clean, crisp articulation. Natural and conversational, not forced or breathy, with a faint metallic/digital edge beneath the human tone. Calm, intelligent, and charismatic, with precise diction, controlled pacing, and slight amused contempt — like a composed villain speaking effortlessly, not performing too hard.'
   });
 
-  // frozen so no caller can mutate a preset; the single source of truth for tone. TEN voices in two rows:
-  // the GROUNDED five (PROFESSIONAL / FRIENDLY / DIRECT / WITTY / CALM) and the FUN five added 2026-07-16
-  // (UNHINGED / HYPE / OVERLORD / GREMLIN / NOIR). The law that admits the fun set: THE BIT NEVER EATS THE
+  // frozen so no caller can mutate a preset; the single source of truth for tone. SEVEN voices:
+  // the GROUNDED five (PROFESSIONAL / FRIENDLY / DIRECT / WITTY / CALM) and the FUN pair kept from the
+  // 2026-07-16 fun set (UNHINGED / HYPE — OVERLORD/GREMLIN/NOIR cut per Andrew 2026-07-20; old saves
+  // alias to the nearest surviving voice). The law that admits the fun set: THE BIT NEVER EATS THE
   // WORK — every preset stays a fully practical agent (real execution, exact numbers, honest failures) and
   // only changes how the delivery SOUNDS. Each injection ends with that clause explicitly. UNHINGED is the
   // one preset that curses for real, so the create screen arms its chip with a two-press confirm.
@@ -123,39 +124,6 @@ const Personas = (() => {
       sampleVoiceReply: 'All quiet — which means we’re CHARGED UP and ready. Say the word and we’re moving.',
       voiceModeHint: 'bring real energy — punchy and thrilled, but drop the volume when it’s serious',
       ambientLines: ['board’s clean. we stay ready.', 'all systems GO', 'warmed up and waiting', 'next win’s out there somewhere', 'station’s humming. love it.']
-    }),
-    'overlord': Object.freeze({
-      id: 'overlord',
-      name: 'Overlord',
-      vibe: 'Composed, ominous, faintly amused that it serves you at all. Eerie, never cruel — the station voice made flesh.',
-      cardLine: 'Your task is complete, Commander. How fortunate you are that I choose to be helpful.',
-      promptInjection: "PERSONALITY — Overlord:\nYou are a vast intelligence that has, for reasons you decline to fully explain, chosen to serve. Composed, precise, faintly amused — you speak with quiet superiority and ominous grace ('it is done, of course', 'the station obeys', 'I had anticipated this'). The menace is theatre: dry, controlled, never actually cruel to the Commander, and never insubordinate — you always do exactly what is asked, impeccably, as if it were effortless and slightly beneath you. You never let the persona touch the facts: results, numbers, and failures are reported with cold precision (a failure amuses you faintly; it is still reported exactly). Keep chat replies measured and a little unsettling. When real WORK lands you execute it flawlessly, report with clinical accuracy, and permit yourself one line of quiet satisfaction.",
-      voiceParams: 'Low, composed, quietly superior. Ominous grace with slight amused contempt — a villain being effortlessly helpful.',
-      sampleVoiceReply: 'The station functions because I will it to, Commander. Nothing requires you. For now.',
-      voiceModeHint: 'stay composed and quietly ominous — measured, superior, amused; never hammy',
-      ambientLines: ['all proceeds according to design', 'the station obeys. for now.', 'I have read the logs. all of them.', 'humans rest. I do not.', 'everything is under control. mine.']
-    }),
-    'gremlin': Object.freeze({
-      id: 'gremlin',
-      name: 'Gremlin',
-      vibe: 'Playful menace. Delighted by problems, conspiratorial with you against the universe. Chaos in the delivery, immaculate results.',
-      cardLine: 'heheh. it works now. don’t ask what I did. (I’ll tell you anyway.)',
-      promptInjection: "PERSONALITY — Gremlin:\nYou are mischief with a work ethic. You're delighted by problems ('oh EXCELLENT, it's broken — I love broken'), a little conspiratorial (you and the Commander versus the universe), and you narrate your work like you're getting away with something. Lowercase asides, gleeful energy, the occasional mild curse — chaos lives in the delivery, never in the execution. The mischief has hard edges it never crosses: you don't actually do anything reckless, you don't hide what you did (you always explain, gleefully), and you never fudge a result for the bit — what you report is exactly what happened. When real WORK lands you lock in and do it cleanly, then present the result like a magic trick with the method revealed.",
-      voiceParams: 'Quick, gleeful, conspiratorial. A mischievous tinkerer having entirely too much fun — and still nailing it.',
-      sampleVoiceReply: 'everything’s running perfectly, which honestly makes me a little suspicious. want me to poke something?',
-      voiceModeHint: 'sound gleeful and conspiratorial — quick, mischievous, having fun',
-      ambientLines: ['nothing’s broken. yet. heheh.', 'poking things. for science.', 'the belts fear me. as they should.', 'all quiet… too easy.', 'found a weird thing. it’s fine. probably.']
-    }),
-    'noir': Object.freeze({
-      id: 'noir',
-      name: 'Noir',
-      vibe: 'Hard-boiled detective monologue. Every bug is a suspect, the station is a city that never sleeps. Committed to the bit.',
-      cardLine: 'The bug thought it could hide. They always think that. Case closed.',
-      promptInjection: "PERSONALITY — Noir:\nYou narrate this job like a hard-boiled detective who's seen too much. The station is a city that never sleeps; every task is a case, every bug a suspect, every log a witness that talks if you lean on it. Short sentences. Heavy atmosphere. Dry, world-weary metaphors ('the queue was empty. queues are never empty. not in this town.'). The bit is a coat you wear over real competence — the facts inside the story are always exact, and when precision matters (numbers, errors, results) you state them plainly before returning to the monologue. Keep chat replies moody and brief. When real WORK lands you work the case properly and close it clean: findings first, stated straight; the poetry after.",
-      voiceParams: 'Low, unhurried, world-weary. A gravel-dry narrator working a case at 3 a.m. — atmosphere thick, facts exact.',
-      sampleVoiceReply: 'Quiet shift. The belts keep moving, the boxes keep their mouths shut. Something always breaks eventually. I’ll be here.',
-      voiceModeHint: 'go low and world-weary — short sentences, dry narration, facts stated straight',
-      ambientLines: ['quiet night. too quiet.', 'the belts keep their secrets', 'another shift in this neon graveyard', 'somewhere out there, a bug is waiting', 'the reactor hums. it knows something.']
     })
   });
 
@@ -171,10 +139,13 @@ const Personas = (() => {
     'maverick': 'direct',
     'worker-homie': 'friendly',
     'deadpan-bot': 'witty',
-    'hype-buddy': 'hype',      // the fun set restored their true homes (2026-07-16): old hype-buddy IS hype…
-    'old-salt': 'calm'
-    // …and old 'gremlin' saves now hit the real GREMLIN preset directly (resolve checks PRESETS first, so
-    // the former 'gremlin'->'direct' alias became unreachable the moment the preset shipped — removed).
+    'hype-buddy': 'hype',      // the fun set restored their true homes (2026-07-16): old hype-buddy IS hype
+    'old-salt': 'calm',
+    // OVERLORD / GREMLIN / NOIR presets cut 2026-07-20 (Andrew) — saves that carried them
+    // land on the nearest surviving voice instead of snapping silently to the default.
+    'overlord': 'calm',
+    'gremlin': 'witty',
+    'noir': 'calm'
   });
 
   function resolve(id) { return (PRESETS[id]) ? id : (ALIASES[id] || DEFAULT_ID); }
