@@ -41,6 +41,18 @@ const World = (() => {
   let _warpCv = null, _warpCtx = null;   // the barrel-warp snapshot buffer — see drawCurve()
   let _lut = null, _lutKey = '', _outImg = null;   // CPU per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurveCPU()
   let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glAberrLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
+  let _glProbeOk = false, _glProbeTries = 0, _glProbeSkip = 0, _glProbeClean = 0, _glProbeCv = null;   // one-time GL output sanity probe — see drawCurveGL()
+  // whole-frame per-channel means via a 16×16 GPU downscale (~1KB readback) — the probe's sampler
+  function probeMeans(src) {
+    if (!_glProbeCv) { _glProbeCv = document.createElement('canvas'); _glProbeCv.width = 16; _glProbeCv.height = 16; }
+    const pctx = _glProbeCv.getContext('2d', { willReadFrequently: true });
+    pctx.clearRect(0, 0, 16, 16); pctx.drawImage(src, 0, 0, src.width, src.height, 0, 0, 16, 16);
+    const d = pctx.getImageData(0, 0, 16, 16).data;
+    let r = 0, g = 0, b = 0;
+    for (let i = 0; i < d.length; i += 4) { r += d[i]; g += d[i + 1]; b += d[i + 2]; }
+    const n = d.length / 4;
+    return [r / n, g / n, b / n];
+  }
   let _scanCv = null, _scanKey = '';    // cached SOFT-scanline tile canvas (rebuilt only when scan/pitch/dpr change) — see scanCanvas()
   let _grainCv = null, _grainPat = null;   // cached film-grain noise tile + pattern — see grainPattern()/drawCRT()
   let scale = 2, panX = 0, panY = 0, fitNeeded = true;
@@ -3541,6 +3553,16 @@ const World = (() => {
       if (!initGL(W, H)) return false;
       const gl = _gl;
       if (_glc.width !== W || _glc.height !== H) { _glc.width = W; _glc.height = H; }
+      // OUTPUT SANITY PROBE (2026-07-20, the mac theme-wash report): the warp only MOVES pixels and
+      // applies a channel-NEUTRAL vignette, so the frame's global per-channel ratios must survive it.
+      // WKWebView's GL sits on a different backend (ANGLE-on-Metal) than Windows — a channel-order/
+      // tint divergence there recolors the ENTIRE feed while every 2D pass stays correct. Compare the
+      // whole frame's channel ratios (16×16 GPU downscale, ~1KB read) before/after on a few chromatic
+      // frames; on divergence, warn with both readings and hand the session to drawCurveCPU
+      // (pixel-identical by construction). Zero cost after validation.
+      const probing = !_glProbeOk && _glProbeTries < 30 && (_glProbeSkip++ % 45) === 0;
+      let pre = null;
+      if (probing) { try { pre = probeMeans(cv); } catch (_) { _glProbeTries = 30; pre = null; } }
       gl.viewport(0, 0, W, H);
       gl.bindTexture(gl.TEXTURE_2D, _glTex);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);   // upload the composited frame
@@ -3549,6 +3571,32 @@ const World = (() => {
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0, 0, W, H); ctx.drawImage(_glc, 0, 0);   // blit the warped result back onto the visible feed
+      if (pre) {
+        _glProbeTries++;
+        const post = probeMeans(cv);   // cv now holds the blitted GL output
+        const preSum = pre[0] + pre[1] + pre[2], postSum = post[0] + post[1] + post[2];
+        if (preSum >= 15) {   // any lit frame can be judged; a black boot frame can't
+          const spr = m => { const s = m[0] + m[1] + m[2]; if (s <= 0) return 0; return (Math.max(m[0], m[1], m[2]) - Math.min(m[0], m[1], m[2])) / s; };
+          // a healthy warp DARKENS a little (vignette) and never invents chroma; the failure class
+          // seen in the wild is a wildly brighter/saturated wash, so judge magnitude + minted tint,
+          // plus channel-ratio drift when the source frame carries real chroma to compare.
+          const plausibleMag = postSum >= preSum * 0.35 - 8 && postSum <= preSum * 1.15 + 12;
+          const mintedTint = spr(post) > spr(pre) + 0.15;
+          let ratioDrift = false;
+          if (spr(pre) >= 0.04 && postSum > 0) {
+            const ri = pre.map(v => v / preSum), ro = post.map(v => v / postSum);
+            ratioDrift = (Math.abs(ri[0] - ro[0]) + Math.abs(ri[1] - ro[1]) + Math.abs(ri[2] - ro[2])) > 0.08;
+          }
+          if (!plausibleMag || mintedTint || ratioDrift) {
+            console.warn('[crt] WebGL warp output diverges from its source (in ' + pre.map(v => v.toFixed(0))
+              + ' → out ' + post.map(v => v.toFixed(0)) + ', ' + (!plausibleMag ? 'implausible magnitude' : mintedTint ? 'minted tint' : 'channel-ratio drift')
+              + ') — platform GL bug; switching to the identical CPU warp');
+            _glFailed = true;   // this frame already blitted; every following frame takes drawCurveCPU
+          } else if (++_glProbeClean >= 3) {
+            _glProbeOk = true;   // three clean readings — trust this GL stack for the session
+          }
+        }
+      }
       return true;
     } catch (e) { console.warn('[crt] WebGL curve draw failed, using CPU fallback:', e && e.message); _glFailed = true; return false; }
   }
