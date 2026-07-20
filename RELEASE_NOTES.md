@@ -23,6 +23,3 @@
   deterministic wire instead of stalling — the mandatory live-model check for real users is
   unchanged.
 
-# StarNet v0.6.2
-
-- TODO: summarize what changed in this release.
