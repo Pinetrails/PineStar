@@ -565,7 +565,11 @@ const Onboarding = (() => {
     // exact fake-listening texture V3 exists to kill). Instead: the honest holding line, the required
     // scripted mission + cadence beats (purpose.md ALWAYS lands), and a persisted IOU — the real interview
     // auto-offers on the first session where the wire is live (offerDeferred). KeyCTA carries the fix path.
-    if (!brainReady()) {
+    // PROVEN, NOT ASSUMED (Andrew, 2026-07-19): configuration is a claim; the birth-script call — fired at
+    // ignition, resolved long before the first question — is the LIVE-WIRE PROOF. A configured brain whose
+    // birth call came back dead (birthFailed: bad token, dead network, provider down) gets the same honest
+    // holding path: the deep questions are never asked at a wire that already failed to answer.
+    if (!brainReady() || birthFailed) {
       beatTotal = 2;
       await Dialogue.say([seg('one thing, straight: the real interview — the one where i actually learn who you are — needs a live mind behind it, and my wire is dark. wire my brain and i’ll ask you the real questions the moment it hums.', 42, 380)]);
       if (!running) return;

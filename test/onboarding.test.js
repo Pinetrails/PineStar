@@ -165,8 +165,10 @@ A.ok(/weight:\s*'synth'\s*\}\);\s*\}\s*\}/.test(src.replace(/\r/g, '')) || /upse
 /* ---------- S5: brain-before-interview (plan §8) ---------- */
 // a keyless wake gets NO fake interview: the honest holding line, the required scripted beats, and a
 // persisted IOU the first live-brain session pays via one gentle offer (spent on OFFER — never a nag).
-A.ok(/if \(!brainReady\(\)\) \{[\s\S]{0,700}setDeferred\(\);[\s\S]{0,200}fallbackPurposeStep\(\)/.test(src),
-  'a keyless meeting banks the IOU and still lands purpose.md (no fake deep interview)');
+A.ok(/if \(!brainReady\(\) \|\| birthFailed\) \{[\s\S]{0,900}setDeferred\(\);[\s\S]{0,300}fallbackPurposeStep\(\)/.test(src),
+  'a keyless OR dead-wire meeting banks the IOU and still lands purpose.md (no fake deep interview)');
+A.ok(/PROVEN, NOT ASSUMED/.test(src),
+  'the live-wire proof doctrine is stated at the gate (the birth call is the preflight)');
 A.ok(/my wire is dark/.test(src), 'the keyless holding line owns the dead wire honestly');
 A.ok(/function offerDeferred/.test(src) && /clearDeferred\(\);\s*\/\/ spent on OFFER/i.test(src.replace(/ /g, ' ')) || /clearDeferred\(\);/.test(src),
   'the deferred offer exists and spends its flag on offer (one-shot)');
