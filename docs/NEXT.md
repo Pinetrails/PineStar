@@ -1,5 +1,29 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-20 — v0.6.2 BUG SWEEP (branch `claude/starnet-context-update-32ae68`) — 4 Andrew reports
+
+All four in-branch, gate 373/373 green (incl. new crt-glprobe lock), W0 re-stamped `ed73ba12`:
+- **Logo misaligned in windowed mode** (other hardware): positionLogo violated the TEXT SIZE
+  coordinate law — visual-px rects into zoomed-space style.top (worst windowed, where the titlebar
+  strip makes b.top large; fullscreen hides it, which is why F11 "fixed" it). Now divides by
+  uiZoom(); zoom flips re-announce layout (fullscreen.js idiom); fonts.ready + logo-image load
+  re-seat the boot half. LIVE: seed :9243 at AUTO 115% — boot-at-rest delta −10px → −0.02px.
+- **"skip intro" corner button REMOVED** per Andrew (read as dev chrome; v0.6.1 law = onboarding
+  never skipped). In-panel dialogue outs remain, so no-gating holds.
+- **mac habitat = solid theme-color wash**: every 2D color in the pipeline is hardcoded RGB — the
+  only per-frame platform-divergent stage is drawCurveGL's 2D→WebGL→2D round-trip (ANGLE-on-Metal
+  under WKWebView). Shipped a runtime output sanity probe: 3 clean whole-frame channel readings
+  latch trust; a divergent one warns + hands the session to the pixel-identical drawCurveCPU.
+  Detector math live-proven on the real seed frame (wash/swap caught, identity/vignette pass,
+  black frame waits). **HONEST: root cause unconfirmed on real mac hardware** — Andrew's next mac
+  launch decides: `[crt]` console warn + healed habitat = confirmed; silent + still green = refuted
+  (then the wash is NOT the GL stage — reopen with mac console/screenshot evidence).
+- **Maximize button loses shape**: restore glyph's clip-path polygon (78%/22% of 9px) aliased
+  under display scaling/zoom → rebuilt as two integer-px background-gradient bars.
+- OPEN: merge ritual; Andrew's mac check (above); v0.6.2 cut needs candidate-bound installed proof
+  (`agent/release-060-reliability` merge recommended into the same train — beginner preflight fix
+  + the missing v0.6.1 NEXT entry).
+
 ## 2026-07-19 — RELEASE POLISH PASS + UPDATE STAGING (trunk through d2677fd0+)
 
 Full-station polish sweep before the next update cut (Andrew will green-light + test on other
