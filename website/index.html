@@ -100,8 +100,10 @@
         <p>You direct from COMMS. They think, browse, build files, and deliver &mdash; with your models, your keys, on your machine.</p>
       </div>
       <figure class="bezel live">
-        <canvas id="live-preview" width="752" height="594" aria-label="Live preview of the StarNet starter room: the agent works at its desk, gets up, wanders the room, and returns"></canvas>
-        <figcaption>// live preview &mdash; the actual starter room and skin, rendered in your browser. In the app, the desk pose means a real run.</figcaption>
+        <div class="app-clip" aria-label="Live preview: the actual StarNet app running in your browser, clipped to the station camera">
+          <iframe id="live-app" src="app/index.html" scrolling="no" loading="lazy" tabindex="-1" title="StarNet live preview"></iframe>
+        </div>
+        <figcaption>// live preview &mdash; this IS the app, running in your browser: the real starter room, camera, and idle crew AI.</figcaption>
       </figure>
     </div>
   </section>

@@ -221,9 +221,17 @@ a:hover{ color:var(--amber); }
 .bezel img{ width:100%; height:auto; display:block; image-rendering:auto; }
 .bezel canvas{ width:100%; height:auto; display:block; }
 .bezel figcaption{ padding:9px 4px 2px; font-size:14px; letter-spacing:1px; color:rgba(236,224,207,.35); }
-/* the live room preview floats free — the capture already sits in open space, no box */
+/* the live preview IS the app (website/app, a verbatim frontend copy booted from a seeded
+   save) — an iframe at the app's fixed 1380x900 layout, clipped to the station-camera panel
+   and scaled to the column. live-preview.js keeps --appk = clipWidth/666 on resize. */
 .bezel.live{ border:0; background:transparent; padding:0; box-shadow:none; }
-.bezel.live canvas{ image-rendering:auto; }
+.app-clip{ position:relative; overflow:hidden; width:100%; aspect-ratio:666/744; }
+.app-clip iframe{
+  position:absolute; left:0; top:0; width:1380px; height:900px; border:0;
+  pointer-events:none;                       /* a preview, not a control surface */
+  transform-origin:0 0;
+  transform:scale(var(--appk,1)) translate(-283px,-88px);
+}
 
 /* feature cards */
 .cards{ display:grid; grid-template-columns:repeat(3,1fr); gap:18px; }

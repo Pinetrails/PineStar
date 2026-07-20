@@ -1,0 +1,35 @@
+/* STARNET — safety.css : the prefers-reduced-motion floor + the topbar E-STOP control.
+   Loaded LAST so the reduced-motion overrides win. The old always-visible CORNER E-STOP button + budget chip
+   stay removed (they overlapped the bottom-right status cluster) — EL-11 restored the affordance conservatively
+   as a compact instrument INSIDE the topbar status cluster (safety.js buildEstop), so error copy that says
+   "press E-STOP" points at a control that actually exists. */
+
+/* the E-STOP instrument: reads as part of the cockpit cluster (same scale as the status pills), armed-red so
+   the danger control is findable at a glance without shouting over the chrome. */
+#estop-btn {
+  font: inherit; font-size: 10px; letter-spacing: .08em;
+  padding: 2px 7px; margin-right: 8px;
+  color: var(--bad, #ff5c4d);
+  background: transparent;
+  border: 1px solid var(--bad, #ff5c4d);
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: .85;
+  text-shadow: 0 0 6px rgba(255, 92, 77, .45);
+}
+#estop-btn:hover, #estop-btn:focus-visible { opacity: 1; background: rgba(255, 92, 77, .12); box-shadow: 0 0 8px rgba(255, 92, 77, .35); }
+#estop-btn:active { background: rgba(255, 92, 77, .28); }
+
+/* ---------- accessibility: honor the OS "reduce motion" setting (the repo had NONE) ----------
+   Neutralizes the CRT screen-flicker, button/dot pulses, and any keyframe/transition motion while keeping
+   the static phosphor look intact. The interface stays fully usable — no cue here is motion-only. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+  /* the full-screen CRT brightness oscillation is the worst offender — kill it outright */
+  body #screen-game.active { animation: none !important; }
+}
