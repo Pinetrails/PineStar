@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "4dc81204fc478a3f0c1bd7984fc7646d682be8c0",
+    "sourceCommit": "d428b76990a238d1509a826a8ede24fac5ee0662",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 268869,
-        "sha256": "9c4b69426dacb76016062e91faa67379f897e91266d8b57016587158a124625e"
+        "bytes": 269310,
+        "sha256": "9ac1a99e5652106bcda06bed79184b470029f2ca33b0202b66792a3e8070ece6"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -273,8 +273,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 44177,
-        "sha256": "e3b53109495f2feec66701f1fb21cdb20052050e355a34cf29b0c0c165710e7e"
+        "bytes": 45010,
+        "sha256": "701090520a375070b9de6c51ee5f2663d3f35c15d66e05b1200fc182170d0283"
       },
       {
         "path": "frontend/app/hint.js",
