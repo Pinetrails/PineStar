@@ -1,5 +1,23 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-20 — RELEASE RELIABILITY AUDIT (`agent/release-060-reliability`)
+
+Andrew's requested 0.6.0 reliability target is already superseded by published v0.6.1. Current
+trunk Guardian is GREEN and journeys are 129/129 with 0 open P0/P1, but `qa:ready` remains NOT READY:
+the installed-exe proof is not candidate-bound to current trunk. `qa:product-perfect` is also blocked
+at W0 with terminal product-claim proofs still pending. The public v0.6.1 manifest carries only
+`windows-x86_64`; both macOS DMGs are manual downloads, not updater legs.
+
+READY TO MERGE — the exact-head Beginner Run initially stalled at WAKE because ui-only still used a
+dummy OpenRouter key while v0.6.1 correctly added a mandatory real wire preflight. The product gate
+was not weakened: ui-only now boots a deterministic local streamed OpenRouter for that preflight;
+`--live` remains on the real provider. Original reproduction now PASS (fresh boot → WAKE → floor →
+first directive, 90093ms), focused contract 78 assertions, `test:fast` 372/372 green.
+
+NEXT: freeze an immutable RC newer than v0.6.1, build/install those exact bytes on Windows and both
+Mac architectures, run installed smoke plus the ≥48h real-provider dogfood soak, and require a fresh
+`qa:ready` READY before any broader distribution. Do not revive v0.6.0.
+
 ## 2026-07-19 — RELEASE POLISH PASS + UPDATE STAGING (trunk through d2677fd0+)
 
 Full-station polish sweep before the next update cut (Andrew will green-light + test on other

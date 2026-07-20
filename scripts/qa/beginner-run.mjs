@@ -25,8 +25,9 @@
  *     backend is configured, but the browser still drives every control by hand. Asserts every
  *     screen/control on the path is REACHABLE up to the LLM boundary. The awakening ceremony is
  *     100% client-scripted (dialogue chips author local .md docs — no model call), so it is fully
- *     reachable UI-only; the FIRST real /api/run is the tutorial's first-command (Chat.send(TASK)).
- *     That is the explicit UI-only boundary: reaching it is a PASS (we do not fake an LLM reply).
+ *     reachable UI-only. WAKE's mandatory wire preflight is aimed at a deterministic local OpenRouter;
+ *     the FIRST task /api/run is still the tutorial's first-command (Chat.send(TASK)). That is the
+ *     explicit UI-only boundary: reaching it is a PASS (we do not fake a task reply).
  *   --live: a real key from env ONLY (SKYNET_OPENROUTER_KEY / STARNET_OPENROUTER_KEY, or
  *     --key-env <NAME>). Never committed, never echoed, never written into any evidence file.
  *     Drives the full path to a first visible deliverable. Run `npm run lint:evidence-secrets`
@@ -50,6 +51,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
+import { createServer } from 'node:http';
 import { spawn, spawnSync } from 'node:child_process';
 import { sleep, launchChrome, connectCDP, evalJS, capture, collectDiagnostics } from '../lib/cdp.mjs';
 import { makeLedger } from './ledger.mjs';
@@ -103,6 +105,55 @@ export function stepsForMode(mode) {
     if (s.boundary && !live) break;   // UI-only: the boundary step is the last one we run
   }
   return out;
+}
+
+// UI-only still has one intentional model boundary before the awakening: WAKE proves the configured
+// wire with a real streamed request. Give that proof a deterministic local OpenRouter rather than the
+// placeholder credential ever escaping to the public API. Live mode must keep using the real provider.
+export function uiOnlyProviderBaseEnv(mode, base) {
+  if (mode !== 'ui-only' || !String(base || '').trim()) return {};
+  return {
+    SKYNET_OPENROUTER_BASE: String(base),
+    STARNET_OPENROUTER_BASE: String(base),
+  };
+}
+
+export function startUiOnlyOpenRouter(model) {
+  return new Promise((resolve, reject) => {
+    const server = createServer((req, res) => {
+      if (req.url && req.url.includes('/models')) {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ data: [{
+          id: model,
+          name: 'Beginner Run Local Wire',
+          context_length: 8000,
+          pricing: { prompt: '0', completion: '0' },
+          supported_parameters: ['tools'],
+        }] }));
+        return;
+      }
+      if (req.url && req.url.includes('/chat/completions')) {
+        req.resume();
+        req.on('end', () => {
+          res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+          res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'OK' } }] }) + '\n\n');
+          res.write('data: ' + JSON.stringify({
+            choices: [{ delta: {}, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 8, completion_tokens: 1, total_tokens: 9 },
+          }) + '\n\n');
+          res.end('data: [DONE]\n\n');
+        });
+        return;
+      }
+      res.writeHead(404);
+      res.end();
+    });
+    server.once('error', reject);
+    server.listen(0, '127.0.0.1', () => {
+      server.removeListener('error', reject);
+      resolve({ server, base: 'http://127.0.0.1:' + server.address().port + '/api/v1' });
+    });
+  });
 }
 
 // A genuine first boot now opens the explicit "PRESS ANY KEY" splash before creation. Returning
@@ -310,7 +361,7 @@ if (INVOKED_DIRECTLY) (async () => {
   const isUp = async () => { try { const r = await fetch(APP_URL); return r.ok; } catch { return false; } };
 
   function bootFreshSidecar() {
-    const env = Object.assign({}, process.env, {
+    const env = Object.assign({}, process.env, uiOnlyProviderBaseEnv(MODE, uiOnlyProvider && uiOnlyProvider.base), {
       SKYNET_WORKSPACES: TEMP_WS,          // → persistence into the throwaway dir, never %LOCALAPPDATA%
       SKYNET_PORT: String(PORT),
       SKYNET_DEFAULT_MODEL: PLACEHOLDER_MODEL,
@@ -326,7 +377,7 @@ if (INVOKED_DIRECTLY) (async () => {
     return spawn(process.execPath, [SIDECAR], { cwd: REPO, env, stdio: 'ignore' });
   }
 
-  let sidecar = null, chromeProc = null, cdp = null;
+  let sidecar = null, chromeProc = null, cdp = null, uiOnlyProvider = null;
   const acct = makeRunAccountant({ clock, mode: MODE });
   const shots = [];            // { step, path } for the strip
   const timingsPath = path.join(RUN_DIR, 'timings.json');
@@ -335,6 +386,7 @@ if (INVOKED_DIRECTLY) (async () => {
     try { cdp?.ws.close(); } catch {}
     try { chromeProc?.kill('SIGKILL'); } catch {}
     try { sidecar?.kill('SIGKILL'); } catch {}
+    try { uiOnlyProvider?.server.close(); } catch {}
     if (!KEEP) {
       try { fs.rmSync(TEMP_WS, { recursive: true, force: true }); } catch {}
       try { fs.rmSync(PROFILE, { recursive: true, force: true }); } catch {}
@@ -524,6 +576,10 @@ if (INVOKED_DIRECTLY) (async () => {
   try {
     log('mode=' + MODE + ' port=' + PORT + ' run=' + path.relative(REPO, RUN_DIR));
     log('temp workspace: ' + TEMP_WS + ' (empty → fresh connect screen; cleaned up after run)');
+
+    // WAKE now performs a mandatory live-wire preflight before entering the station. UI-only owns a
+    // local deterministic upstream for that request; --live deliberately leaves the real wire intact.
+    if (MODE === 'ui-only') uiOnlyProvider = await startUiOnlyOpenRouter(PLACEHOLDER_MODEL);
 
     // STEP boot ---------------------------------------------------------------
     acct.startStep('boot');
