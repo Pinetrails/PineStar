@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "66964a821a33c5ab21b95a3b01c3285d020654eb",
+    "sourceCommit": "8e487640c85efbeeb9903a8a1d50427b408f26a4",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -213,8 +213,8 @@
       },
       {
         "path": "frontend/app/dialogue.js",
-        "bytes": 13575,
-        "sha256": "67639ec4ffaf17fdcc20ac1dc7127b9826c77da0ac2cfbaa315c0063256fd630"
+        "bytes": 15222,
+        "sha256": "ae248aa33fc62aef8e0c3afe7413d5cbd5b613e322a8cddc7ba249ae995e7f89"
       },
       {
         "path": "frontend/app/dockglow.js",
@@ -288,8 +288,8 @@
       },
       {
         "path": "frontend/app/interview.js",
-        "bytes": 8512,
-        "sha256": "6af190387b899134bfcbc9448296839b90b9ca6ac0d26febcead7aba20e0d705"
+        "bytes": 8647,
+        "sha256": "8649e3f0de14a3937a0851a201a8c5b39430d76064f0644ba36dc1a88309bf50"
       },
       {
         "path": "frontend/app/keepawake.js",
@@ -378,8 +378,8 @@
       },
       {
         "path": "frontend/app/onboarding.js",
-        "bytes": 65622,
-        "sha256": "9dfe785d1868b2829f8bd344540c38548ddbffc414ab27e510f603c5b754c670"
+        "bytes": 66380,
+        "sha256": "b161db0237abed5bdedaf1b857adca868878e2b2dd22c41343e0606cbf73b2f8"
       },
       {
         "path": "frontend/app/permissions.js",
@@ -733,8 +733,8 @@
       },
       {
         "path": "frontend/app/wakemind.js",
-        "bytes": 26643,
-        "sha256": "32231284719b0edf9c51a1640ff2dc8baec92757e268f842a1d8cbddb6043b65"
+        "bytes": 27619,
+        "sha256": "5584b72fbd982d61f0426a55bb1f0632beb630647a1ef1a1c648e9a359feaccf"
       },
       {
         "path": "frontend/app/warroom.js",
