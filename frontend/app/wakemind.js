@@ -76,6 +76,13 @@
     return out;
   }
   // the shared directive block that teaches the model the BELIEF line contract (kept in one place).
+  // the PLAIN-QUESTION LAW (Andrew, 2026-07-20): every question shown to the Commander is an extraction
+  // instrument — a misunderstood question yields a sideways answer that gets SAVED as grounded context and
+  // corrupts everything downstream. Appended to every ASK spec; regression-locked by test/wakemind.test.js.
+  function plainAskSpec() {
+    return ' PLAIN WORDS ONLY: the question must be literal and understandable on the first read by someone in a hurry — no metaphors, no figures of speech, no poetic phrasing. If they could read it two ways, rewrite it. The question exists to extract data, not to sound clever.';
+  }
+
   function beliefLinesSpec() {
     return 'Then, on separate lines, 0-' + MAX_BELIEFS + ' durable facts you just learned about them, each as: BELIEF <dim>: <one third-person sentence grounded ONLY in what they actually said — never invented>. <dim> is one of: ' + BELIEF_DIMS.join(', ') + '. Skip any you did not actually learn.';
   }
@@ -93,7 +100,7 @@
     if (String(ctx.dig || '').trim()) lines.push('(More of their world: ' + quote(ctx.dig) + ')');
     lines.push('Reply with EXACTLY these two lines, then any BELIEF lines:');
     lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC thing they named — prove you heard the details, never generic sympathy — and let your appetite for taking it off their plate show. No question in this line. Under 120 characters.>');
-    lines.push('ASK: <ONE follow-up question that pulls the bigger picture behind that chore — the project, business, or channel it serves, and who they are in it. Never re-ask anything shown above. Concrete and targeted: answerable in one breath from their real life. Never abstract (no "what does success look like"), never a question whose honest answer is "it depends". Under 140 characters.>');
+    lines.push('ASK: <ONE follow-up question that pulls the bigger picture behind that chore — the project, business, or channel it serves, and who they are in it. That data is what your later work aims at. Never re-ask anything shown above. Concrete and targeted: answerable in one breath from their real life. Never abstract (no "what does success look like"), never a question whose honest answer is "it depends". Under 140 characters.' + plainAskSpec() + '>');
     lines.push(beliefLinesSpec());
     return lines.join('\n');
   }
@@ -117,7 +124,7 @@
     if (String(ctx.about || '').trim()) lines.push('(And who they are / what it is for: ' + quote(ctx.about) + ')');
     lines.push('This shelved thing is the reason you exist. Reply with EXACTLY these two lines, nothing else:');
     lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC thing they named — show you get why it matters and that you want it off the shelf as much as they do. No question in this line. Under 120 characters.>');
-    lines.push('ASK: <ONE follow-up question that makes the ambition concrete — what it actually IS, who or what it is for, or the piece of it they can already picture. Never re-ask anything shown above. Concrete and targeted: answerable in one breath from their real life. Never abstract, never a question whose honest answer is "it depends". Under 140 characters.>');
+    lines.push('ASK: <ONE follow-up question that makes the ambition concrete — what it actually IS, who or what it is for, or the piece of it they can already picture. Never re-ask anything shown above. Concrete and targeted: answerable in one breath from their real life. Never abstract, never a question whose honest answer is "it depends". Under 140 characters.' + plainAskSpec() + '>');
     return lines.join('\n');
   }
   // → { ack, ask } | null — same contract as parsePainReply (ACK required, ASK optional).
@@ -170,18 +177,18 @@
     ctx = ctx || {};
     const lines = [];
     lines.push('INTERNAL — YOUR FIRST MEETING, THE TUESDAY. Do not run any tools. Reason only, then reply in the exact format below.');
-    lines.push('You are minutes old, meeting your Commander for the first time. You asked where their hours actually go on a real tuesday. They said:');
+    lines.push('You are minutes old, meeting your Commander for the first time. You asked what a typical day looks like for them and what they spend most of their time doing. They said:');
     lines.push(quote(ctx.tuesday));
     lines.push('Reply with EXACTLY these lines, nothing else:');
     lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC life they described — prove you heard the details, never generic sympathy. No question. Under 120 characters.>');
-    lines.push('ASK: <the ONE next-most-revealing question about their tuesday — what the work actually consists of, where the hours leak, or who it all serves. Grounded in their exact words, answerable in one breath. Never abstract, never "it depends". Under 140 characters.>');
-    lines.push('CHIP1: <a plausible SPECIFIC answer THIS person might give to your ASK, phrased in their first person. Under 48 characters.>');
+    lines.push('ASK: <the ONE question whose answer tells you the most about their work as data — what it actually consists of, which tasks recur, and who it serves; that data is what you will automate later. Grounded in their exact words, answerable in one breath. Never abstract, never "it depends". Under 140 characters.' + plainAskSpec() + '>');
+    lines.push('CHIP1: <a plausible SPECIFIC answer THIS person might give to your ASK, phrased in their first person. Plain and literal — the kind of answer you want to teach them to give. Under 48 characters.>');
     lines.push('CHIP2: <a second, different plausible answer. Under 48 characters.>');
     lines.push('CHIP3: <a third. Under 48 characters.>');
-    lines.push('PAIN1: <a recurring chore THIS person plausibly has, given their tuesday — short chip label, first person. Under 44 characters.>');
+    lines.push('PAIN1: <a recurring chore THIS person plausibly has, given their day — short plain-words chip label, first person, no metaphors. Under 44 characters.>');
     lines.push('PAIN2: <a second, different plausible chore. Under 44 characters.>');
     lines.push('PAIN3: <a third. Under 44 characters.>');
-    lines.push('YEAR1: <something THIS person might want to exist after a year of free tireless work from you — short chip label, first person. Under 52 characters.>');
+    lines.push('YEAR1: <something THIS person might want to exist after a year of free tireless work from you — short plain-words chip label, first person, no metaphors. Under 52 characters.>');
     lines.push('YEAR2: <a second, different one. Under 52 characters.>');
     lines.push(beliefLinesSpec());
     return lines.join('\n');
@@ -221,7 +228,7 @@
     if (String(ctx.lost || '').trim()) lines.push('(What they do when they lose track of time: ' + quote(ctx.lost) + ')');
     lines.push('This year-outcome is the reason you exist. Reply with EXACTLY these two lines, then any BELIEF lines:');
     lines.push('ACK: <one short reaction in your own lowercase voice. React to the SPECIFIC thing they named — show you want it built as much as they do. No question. Under 120 characters.>');
-    lines.push('ASK: <ONE follow-up that makes the year concrete — the first thing a stranger would SEE of it, who it is for, or the piece they can already picture. Never re-ask anything shown above. Answerable in one breath. Under 140 characters.>');
+    lines.push('ASK: <ONE follow-up that makes the year concrete — the first thing a stranger would SEE of it, who it is for, or the piece they can already picture. Never re-ask anything shown above. Answerable in one breath. Under 140 characters.' + plainAskSpec() + '>');
     lines.push(beliefLinesSpec());
     return lines.join('\n');
   }
