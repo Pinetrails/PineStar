@@ -128,6 +128,14 @@ const App = (() => {
     logo.style.top = (b.top / z + (b.height / z - logo.offsetHeight) / 2) + 'px';
   }
   if (typeof window !== 'undefined') window.addEventListener('resize', positionLogo);
+  // boot-settle re-seats: positionLogo's first run happens before VT323 lands and before the logo
+  // image has dimensions — both move the topbar/logo geometry with NO resize event, which left the
+  // mark visibly off-seat until the first manual resize (part of the 2026-07-20 misalignment report).
+  if (typeof document !== 'undefined') {
+    try { if (document.fonts && document.fonts.ready && document.fonts.ready.then) document.fonts.ready.then(() => positionLogo()); } catch (_) {}
+    const li = document.querySelector('#logo .logo-img');
+    if (li && !li.complete) li.addEventListener('load', () => positionLogo(), { once: true });
+  }
 
   function refreshUsage() {
     // Broad lifetime token totals are intentionally not surfaced in the chrome.
