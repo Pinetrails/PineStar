@@ -982,7 +982,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/app.js",
-          "needle": "sign in with ChatGPT first, or switch to OpenRouter"
+          "needle": "sign in with ' + OAUTH_GENESIS[pickedProvider].name + ' first, or switch to OpenRouter"
         }
       ],
       "verdict": "SHIPPED",
