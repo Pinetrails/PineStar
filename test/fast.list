@@ -262,6 +262,8 @@ test/dossier-persona-ui.test.js
 test/settings-codex-row.test.js
 test/settings-oauth-rows.test.js
 test/genesis-oauth-providers.test.js
+test/provider-oauth-parity.test.js
+test/personality-no-sample.test.js
 test/modelpicker.test.js
 test/agent-model-select.test.js
 test/provider-connections-ui.test.js
