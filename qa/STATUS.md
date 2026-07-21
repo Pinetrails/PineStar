@@ -249,8 +249,8 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-21 04:05Z @ d4551fdd | GREEN | 0 |
-| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-20T19:49:07.972Z · ui-only · 93056ms | PASS | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-21 17:05Z @ f7a07938 | RED | 0 |
+| Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-21T16:51:35.488Z · ui-only · 97090ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
 | Overseer | What broke today, what needs Andrew? | 2026-07-01 (digest rendered) | 0 P0 · 106 P2 | — |
@@ -629,3 +629,4 @@ ow. Gates: test:fast 369/369 (branch + trunk integration tree) + test:http FULL 
 - 2026-07-20: v0.6.1 CUT + PUBLISHED (trunk 2917ad0a, tag local-only). THE RELEASE FOR ANDREW'S LAW: wake gated on a PROVEN wire (preflightWire real round-trip, live-proven both ways) + codex desktop configured fix (KEYCHAIN_PROVIDERS never included codex -> brainReady dead on every ChatGPT install -> v0.6.0's V3 onboarding unreachable on that path) + birth-call belt + deferred IOU. Published via REST: exe+sig+latest.json (verify-update-host windows green; 4 known mac/linux manifest legs) + BOTH mac DMGs CI-built at e95dfc4f run 29716901290 and attached. Installed on Andrew's desktop (registry 0.6.1, preflight in bytes); his real station data RESTORED from the PRE-V3TEST parking. Other machines: PC auto-updates; mac = manual DMG re-download.
 - 2026-07-20 merge: claude/starnet-repo-release-prep-c41845 → 9ee027a5 (repo renamed androoAGI/starnet, README reshape, owner sweep, public hygiene, W0 re-stamp) — gate 374 green
 - 2026-07-20 merge: claude/starnet-repo-release-prep-c41845 → adaa2b90 (untrack ALL Claude tooling: .claude/, CLAUDE.md, AGENTS.md — local-only now) — gate 374 green
+- 2026-07-21 merge: claude/onboarding-restart-behavior-98736a -> trunk 66937b7b (+W0 re-stamp 78d54155). RE-WAKE REPLAY: wake:false routes to reignite() — re-greet lines + straight to startQuestions; flood/first-contact/mandate never replay (locked in test/onboarding.test.js). Gate 376 green post-stamp.
