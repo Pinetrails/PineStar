@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "2453c3a893f14c105c0911364dc217b4c4a0eb38",
+    "sourceCommit": "81c297d8d5a40a41d891aaf076a6f48e282c9bd4",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 272659,
-        "sha256": "3593f5c0517f2ad543fd6604d4c2453c438aa0ab2f24eaba6bac855d41c95448"
+        "bytes": 282900,
+        "sha256": "e9263d5b24436bea3f2c20fa7732a96782d3bdb5e7ffa682022f5f5bd62e5290"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -273,8 +273,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 45010,
-        "sha256": "701090520a375070b9de6c51ee5f2663d3f35c15d66e05b1200fc182170d0283"
+        "bytes": 46768,
+        "sha256": "54568e3a99ccf972c94c74c3ea9a1b4fddeb0122fa0c5023fad9ed312ddeb470"
       },
       {
         "path": "frontend/app/hint.js",
@@ -838,8 +838,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 207397,
-        "sha256": "3af6c32bc6ee3339a3613053c19f4bb638e7076b6cd3946f47d7ec6890a78d1c"
+        "bytes": 208801,
+        "sha256": "c2673ea55b38ad3a3124d57af6cf8956a7dda869582f582f5d20a8474a6fc5ef"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -903,8 +903,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 63933,
-        "sha256": "a344db3f90e25c41f67a98ebeb7d0f0783c0f371b151c35a9be3aa0adaa03159"
+        "bytes": 65094,
+        "sha256": "3f5074a297873143ea72b34be3ebc98b311602c9dc8afc7de60434e4a88c57ac"
       },
       {
         "path": "frontend/js/arcade.js",
@@ -982,7 +982,7 @@
         {
           "kind": "contains",
           "path": "frontend/app/app.js",
-          "needle": "sign in with ChatGPT first, or switch to OpenRouter"
+          "needle": "sign in with ' + OAUTH_GENESIS[pickedProvider].name + ' first, or switch to OpenRouter"
         }
       ],
       "verdict": "SHIPPED",

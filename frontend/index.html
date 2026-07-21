@@ -157,6 +157,24 @@
                   </span>
                 </span>
               </button>
+              <!-- the OTHER keyless subscription sign-ins (device-code OAuth, same engine as ChatGPT above):
+                   full .prov[data-prov] buttons so app.js's provider wiring picks them up untouched. -->
+              <div class="prov-oauth-grid">
+                <button class="prov prov-oauth" data-prov="grok" aria-pressed="false">
+                  <span class="prov-oauth-ic" aria-hidden="true">⏼</span>
+                  <span class="prov-oauth-body">
+                    <span class="prov-oauth-title">SIGN IN WITH GROK</span>
+                    <span class="prov-oauth-sub">SuperGrok / X Premium+ — no key</span>
+                  </span>
+                </button>
+                <button class="prov prov-oauth" data-prov="kimi" aria-pressed="false">
+                  <span class="prov-oauth-ic" aria-hidden="true">⏼</span>
+                  <span class="prov-oauth-body">
+                    <span class="prov-oauth-title">SIGN IN WITH KIMI</span>
+                    <span class="prov-oauth-sub">Moonshot Kimi subscription — no key</span>
+                  </span>
+                </button>
+              </div>
               <div class="prov-byok-lab" aria-hidden="true">— or bring your own key —</div>
               <div class="prov-grid">
                 <button class="prov" data-prov="openrouter" aria-pressed="false">OPENROUTER</button>
@@ -197,7 +215,7 @@
                   <button type="button" id="btn-codex-open" class="btn hidden">↗ OPEN PAGE</button>
                   <button type="button" id="btn-codex-logout" class="btn hidden">✕ DISCONNECT</button>
                 </div>
-                <div class="dim hint">Uses the ChatGPT Plus/Pro account you already have — no API key, no billing setup. Prefer a key? Switch to OPENROUTER (or any provider) above.</div>
+                <div class="dim hint" id="codex-hint">Uses the ChatGPT Plus/Pro account you already have — no API key, no billing setup. Prefer a key? Switch to OPENROUTER (or any provider) above.</div>
               </div>
             </div>
 

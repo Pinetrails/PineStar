@@ -1428,6 +1428,18 @@
         "SKYNET_PORT": "9147",
         "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
       }
+    },
+    {
+      "name": "oauth-genesis-fresh",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/onboard-fresh.js"
+      ],
+      "port": 9377,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "9377"
+      }
     }
   ]
 }
