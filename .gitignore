@@ -107,3 +107,6 @@ qa/installed/smoke-*/
 # G4 lane visual-proof screenshots (approval walk-and-wait + autojob pin + Meeseeks; same pattern)
 .qa_g4/
 .canary/
+
+# machine-local Claude Code dev-server config (regenerated per machine)
+.claude/launch.json

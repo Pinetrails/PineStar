@@ -74,8 +74,8 @@ not the authority boundary.
 ## How to work here (non-negotiable)
 
 1. **Read `CLAUDE.md`** (repo root) — the multi-agent worktree protocol. You are one of many
-   concurrent agents; work in your own worktree under `C:\Users\andro\gen-trees\`, never
-   feature-edit the integration tree (`C:\Users\andro\Desktop\gen`).
+   concurrent agents; work in your own worktree under `%USERPROFILE%\gen-trees\`, never
+   feature-edit the integration tree (`%USERPROFILE%\Desktop\gen`).
 2. **Invoke the skills** in `.claude/skills/` — `starnet-task-doctrine` first, always;
    then the law skill for your area (frontend/backend), `starnet-verify` before claiming
    done, `starnet-merge-ritual` to integrate. They encode the locked judgment; they win

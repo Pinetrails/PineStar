@@ -16,9 +16,9 @@ data loss — that is the single failure mode this protocol exists to prevent.
 
 ## Where work happens
 
-- **Integration tree** — `C:\Users\andro\Desktop\gen` on branch `feat/harness-backend`.
+- **Integration tree** — `%USERPROFILE%\Desktop\gen` on branch `feat/harness-backend`.
   This is the **trunk**: the place branches MERGE INTO. Do **not** do feature editing here.
-- **Your workspace** — a git *worktree* at `C:\Users\andro\gen-trees\<name>` on branch
+- **Your workspace** — a git *worktree* at `%USERPROFILE%\gen-trees\<name>` on branch
   `agent/<name>`. ALL your editing and committing happens there, in isolation.
 - **The live registry** — run `git worktree list` to see every active workspace and which
   branch each is on. That is the source of truth for "who is working where."
@@ -27,7 +27,7 @@ data loss — that is the single failure mode this protocol exists to prevent.
 
 1. Run `git worktree list`. If a worktree was assigned to you, `cd` into it and work on its
    `agent/<name>` branch.
-2. If you have no worktree, create one — from `C:\Users\andro\gen-trees`:
+2. If you have no worktree, create one — from `%USERPROFILE%\gen-trees`:
    `.\new-agent-tree.ps1 <short-task-name>` — then work in the new directory.
 3. **Never** open, edit, or commit inside a directory another agent's session is using.
    One agent per worktree, always.
@@ -78,4 +78,4 @@ optional reading; they encode the project's locked decisions and recurring failu
 Many agents sharing a single checkout overwrite each other with no warning (last-write-wins;
 git never even sees a conflict because it's all one uncommitted tree). Separate worktrees turn
 that invisible overlap into **visible, resolvable merge conflicts**. The full control-plane
-doc (with the migration steps and gotchas) lives at `C:\Users\andro\gen-trees\README.md`.
+doc (with the migration steps and gotchas) lives at `%USERPROFILE%\gen-trees\README.md`.
