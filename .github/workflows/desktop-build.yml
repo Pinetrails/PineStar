@@ -9,8 +9,13 @@
 #   TAURI_SIGNING_PRIVATE_KEY(+_PASSWORD)  -> updater artifacts (.sig); absent = skip them
 #   APPLE_CERTIFICATE(+_PASSWORD) + APPLE_SIGNING_IDENTITY -> codesign the .app
 #   APPLE_ID + APPLE_PASSWORD + APPLE_TEAM_ID -> notarize (kills the Gatekeeper wall)
+#   AZURE_TENANT_ID + AZURE_CLIENT_ID + AZURE_CLIENT_SECRET -> Authenticode-sign the
+#     Windows exe + bundled node sidecar + NSIS installer via Azure Trusted Signing
+#     (account starnet-signing / eastus; kills the SmartScreen "unrecognized app" wall
+#     and most Defender false positives). Absent = unsigned exe, still installable.
 # With no Apple secrets the DMG is unsigned: fine for internal testing (System
 # Settings -> Privacy & Security -> Open Anyway), not for public distribution.
+# Operator setup for both signing tiers: docs/CODE_SIGNING.md.
 #
 # publish-test=true additionally publishes everything as a public PRE-release on
 # starnet-releases (needs RELEASES_TOKEN, same secret release.yml uses) — a shareable
@@ -89,23 +94,41 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           RUST_TARGET: ${{ matrix.rust-target }}
         run: |
           # Absent secrets arrive as EMPTY strings, and Tauri treats a present-but-empty
           # APPLE_* var as "cert provided" — it then runs `security import` on zero bytes and
           # the build dies (SecKeychainItemImport: not valid). Same empty-env-!=-absent family
           # as the Windows updater-signing stall. Unset every empty one so absence is absence.
-          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD; do
+          for v in APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD AZURE_TENANT_ID AZURE_CLIENT_ID AZURE_CLIENT_SECRET; do
             if [ -z "${!v}" ]; then unset "$v"; fi
           done
           if [ "$RUNNER_OS" = "macOS" ] && [ -z "$APPLE_CERTIFICATE" ]; then
             echo "::warning::no Apple signing cert in secrets — DMG will be UNSIGNED (internal testing only)"
           fi
+          # Windows Authenticode tier: with the AZURE_* service-principal secrets present,
+          # inject a signCommand pointing at Azure Trusted Signing. Tauri then signs the app
+          # exe, the bundled node sidecar (externalBin), and the NSIS installer/uninstaller.
+          # Config injected via --config (not committed to tauri.conf.json) so local/keyless
+          # builds never try to reach Azure.
+          SIGN_CFG=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            if [ -n "${AZURE_CLIENT_SECRET:-}" ] && [ -n "${AZURE_CLIENT_ID:-}" ] && [ -n "${AZURE_TENANT_ID:-}" ]; then
+              cargo install trusted-signing-cli --locked
+              SIGN_CFG='{"bundle":{"windows":{"signCommand":"trusted-signing-cli -e https://eus.codesigning.azure.net -a starnet-signing -c starnet-public %1"}}}'
+              echo "::notice::Windows Authenticode signing ENABLED (Azure Trusted Signing: starnet-signing/starnet-public)"
+            else
+              echo "::warning::no Azure Trusted Signing secrets — Windows exe/installer will be UNSIGNED (SmartScreen warning for users)"
+            fi
+          fi
           if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
             echo "::notice::no updater signing key in secrets — building installers without updater artifacts"
-            npm run tauri -- build --bundles ${{ matrix.bundles }} ${RUST_TARGET:+--target $RUST_TARGET} --config '{"bundle":{"createUpdaterArtifacts":false}}'
+            npm run tauri -- build --bundles ${{ matrix.bundles }} ${RUST_TARGET:+--target $RUST_TARGET} --config '{"bundle":{"createUpdaterArtifacts":false}}' ${SIGN_CFG:+--config "$SIGN_CFG"}
           else
-            npm run tauri -- build --bundles ${{ matrix.bundles }} ${RUST_TARGET:+--target $RUST_TARGET}
+            npm run tauri -- build --bundles ${{ matrix.bundles }} ${RUST_TARGET:+--target $RUST_TARGET} ${SIGN_CFG:+--config "$SIGN_CFG"}
           fi
 
       - uses: actions/upload-artifact@v4
