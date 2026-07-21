@@ -249,7 +249,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-21 17:05Z @ f7a07938 | RED | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-21 18:06Z @ 15731fa2 | GREEN | 0 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-21T16:51:35.488Z · ui-only · 97090ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
@@ -631,3 +631,4 @@ ow. Gates: test:fast 369/369 (branch + trunk integration tree) + test:http FULL 
 - 2026-07-20 merge: claude/starnet-repo-release-prep-c41845 → adaa2b90 (untrack ALL Claude tooling: .claude/, CLAUDE.md, AGENTS.md — local-only now) — gate 374 green
 - 2026-07-21 merge: claude/onboarding-restart-behavior-98736a -> trunk 66937b7b (+W0 re-stamp 78d54155). RE-WAKE REPLAY: wake:false routes to reignite() — re-greet lines + straight to startQuestions; flood/first-contact/mandate never replay (locked in test/onboarding.test.js). Gate 376 green post-stamp.
 - 2026-07-21 flip-safety pass: all-refs Gitleaks CLEAN (3131 commits), 49 merged remote branches pruned, single-author commit attribution in force
+- 2026-07-21: v0.6.4 PUBLISHED (releases repo pruned to ONLY 0.6.4 per Andrew; win feed live-verified). Release-train red ROOT-CAUSED: RELEASE_NOTES.md is locked surface, bump+notes always land after the W0 stamp -> claims gate can never pass on the tag. LAW: stamp AFTER notes, BEFORE tag. Re-stamp 62e8b949, fresh-clone claims PASS, gate 376 green; remote tag move = operator step.
