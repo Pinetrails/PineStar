@@ -630,3 +630,4 @@ ow. Gates: test:fast 369/369 (branch + trunk integration tree) + test:http FULL 
 - 2026-07-20 merge: claude/starnet-repo-release-prep-c41845 → 9ee027a5 (repo renamed androoAGI/starnet, README reshape, owner sweep, public hygiene, W0 re-stamp) — gate 374 green
 - 2026-07-20 merge: claude/starnet-repo-release-prep-c41845 → adaa2b90 (untrack ALL Claude tooling: .claude/, CLAUDE.md, AGENTS.md — local-only now) — gate 374 green
 - 2026-07-21 merge: claude/onboarding-restart-behavior-98736a -> trunk 66937b7b (+W0 re-stamp 78d54155). RE-WAKE REPLAY: wake:false routes to reignite() — re-greet lines + straight to startQuestions; flood/first-contact/mandate never replay (locked in test/onboarding.test.js). Gate 376 green post-stamp.
+- 2026-07-21 flip-safety pass: all-refs Gitleaks CLEAN (3131 commits), 49 merged remote branches pruned, single-author commit attribution in force
