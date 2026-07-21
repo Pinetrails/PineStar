@@ -20,7 +20,12 @@ Work through these **in order**, then flip.
 Merge whatever small changes are still in flight. The flip should happen from a trunk you
 consider release-shaped.
 
-## 2. Prune merged remote branches (recommended)
+## 2. Prune merged remote branches — ✅ DONE 2026-07-21
+
+49 fully-merged remote branches deleted (content lives in trunk; local branches untouched).
+Remote now holds trunk + the ~20 unmerged branches listed below.
+
+<details><summary>Original guidance (kept for reference)</summary>
 
 The remote currently has ~70 branches; **50 are fully merged into trunk** — their content is
 entirely contained in `feat/harness-backend`, so deleting the remote refs loses nothing and
@@ -44,7 +49,17 @@ done
 public view, fetch them into local branches first (`git fetch origin <name>:archive/<name>`),
 verify the local ref, then delete the remote ref.
 
-## 3. Secret-scan ALL refs, not just trunk
+</details>
+
+## 3. Secret-scan ALL refs — ✅ DONE 2026-07-21 (CLEAN)
+
+Gitleaks 8.30.1 (official binary, sha256-verified against the release manifest) run with
+`--log-opts="--all"` over every ref including the 20 unmerged remote branches:
+**3131 commits scanned, 52.14 MB, no leaks found** (21-fingerprint reviewed baseline in
+`.gitleaksignore`). This closes the "clean full-history Gitleaks result" the
+open-source-readiness lane left open.
+
+<details><summary>Original guidance (kept for reference)</summary>
 
 `npm run security:secrets` (and CI `secret-history.yml`) run `gitleaks git .`, which scans the
 history of the **checked-out branch only**. The unmerged remote branches above have never been
@@ -59,6 +74,8 @@ gitleaks git . --no-banner --redact --log-opts="--all"
 Review anything new (the reviewed baseline lives in `.gitleaksignore`, currently 21 pinned
 fingerprints). A clean captured run of this is the "clean full-history Gitleaks result" the
 open-source-readiness lane left open.
+
+</details>
 
 ## 4. Social preview image (manual — no API for this)
 
@@ -85,7 +102,17 @@ walkthrough, updater note; `assets/starnet-logo-glow.png` alongside.
 Still open from the launch runbook: the CI publish token (Actions secret on the `starnet`
 source repo) must be re-minted so the release train can upload to `starnet-releases`.
 
-## 8. Flip
+## 8. Commit attribution (decided 2026-07-21)
+
+New commits carry Andrew as the **only** author — no `Co-Authored-By` agent trailers (law in
+the local protocol files). 2471 of ~3411 historical commits still carry the trailer; erasing
+those requires a full history rewrite (every SHA changes → breaks the W0 claims sourceCommit
+pins, release provenance stamps, the 20 unmerged branches, and all 9 tags). Deliberately NOT
+done pre-flip; if wanted later, it's its own carefully-sequenced lane after the unmerged
+branches land or are archived. Historical trailers are only visible when opening individual
+old commits.
+
+## 9. Flip
 
 Repo **Settings → General → Danger Zone → Change visibility → Public.** Immediately after:
 
