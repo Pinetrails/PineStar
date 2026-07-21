@@ -110,6 +110,12 @@ Repo **Settings → General → Danger Zone → Change visibility → Public.** 
 - `publish.sh` (obsolete private-repo bootstrap) removed.
 - Local `origin` remote repointed at the new URL.
 - Marketing assets committed under `.github/media/` (wordmark, station render, OG card).
+- Public hygiene: `.claude/launch.json` (machine-local dev config, personal paths) untracked +
+  gitignored; CLAUDE.md / AGENTS.md / docs/BRAIN.md home-dir paths → `%USERPROFILE%`.
+  Kept deliberately public: `.claude/skills/` (the operating doctrine every worktree needs),
+  `loops/` + `dev/` (referenced by QA scripts/tests), `qa/`, and the labeled design-history
+  docs. Optional later: scrub personal paths from ~60 dated plan/audit docs, drop unreferenced
+  `design/` mockups.
 
 Deliberately unchanged (locked decisions): internal `skynet.*` storage keys, `SKYNET_*` env
 fallbacks, `ai.skynet.harness` bundle/keychain id, and the `skynet-desktop` binary name — all
