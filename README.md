@@ -22,16 +22,14 @@
 StarNet is a local-first desktop harness where you create AI agents, organize them into a
 pixel-art space station, and watch them perform real work with real models and tools. The
 station is not decoration — it is a projection of live runtime state, and the product contract
-is literal:
+is literal: **A room is a capability-scoped team**, **a hallway is** an authorized handoff
+lane, and **a placed object is a real capability grant**.
+The layout you draw *is* the workflow the agents run.
 
-- **A room is a capability-scoped team.**
-- **A hallway is an authorized handoff lane.**
-- **A placed object is a real capability grant.**
-
-The layout you draw *is* the workflow the agents run. Start with one agent, then place bays or
-summon specialists to run more, concurrently — each a genuinely distinct, bounded agent run
-with its own workspace and permissions. The harness performs **real model calls, real tools,
-real cost** rather than animating a simulation.
+Start with one agent, then place bays or summon specialists to run **more, concurrently** —
+each a **genuinely distinct, bounded agent run** with its own workspace and permissions.
+The harness performs **real model calls, real tools, real cost** rather than animating a
+simulation.
 
 ## Features
 
@@ -94,8 +92,8 @@ cd starnet
 node sidecar/index.js
 ```
 
-Open <http://localhost:8787>, then connect a provider — bring your own OpenRouter API key or
-use a supported OAuth sign-in. Provider requests leave your machine when you run an agent;
+Open <http://localhost:8787>, then connect a provider —
+**bring your own OpenRouter API key (BYOK)** or use a supported OAuth sign-in. Provider requests leave your machine when you run an agent;
 station state, transcripts, memory, and ledgers stay in the local StarNet workspace unless you
 explicitly use a network tool or connector. See [PRIVACY.md](PRIVACY.md) for the full data map.
 
@@ -125,7 +123,8 @@ never transfer — you re-enter those in the KEYS tab.
 | `qa/` | Live QA receipts, journeys, findings ledger, and release-readiness authority. |
 
 The frontend consumes real sidecar events over localhost HTTP/NDJSON and SSE. Secrets belong
-to the local authority: the sidecar and OS keychain, never the frontend.
+to the local authority:
+**Secrets are held by the sidecar / OS keychain, never in the frontend**.
 
 Start with [docs/INDEX.md](docs/INDEX.md) for the living documentation. Older planning
 documents remain in the repository as design history and are labeled accordingly.
