@@ -17,32 +17,18 @@ below exist, and degrade to unsigned builds when they don't.
 | Resource group | `starnet-signing-rg` (eastus) |
 | Signing account | `starnet-signing`, SKU Basic ($9.99/mo, 5k signatures/mo), endpoint `https://eus.codesigning.azure.net/` |
 | Role granted | `Artifact Signing Identity Verifier` → Andrew's user (needed to run identity validation) |
-| Identity validation | **Individual / Public**, legal name "Andrew Sims" — SUBMITTED 2026-07-21, pending Microsoft approval (hours–days). Watch for the Au10tix verification email. |
+| Identity validation | **Individual / Public**, "Andrew Sims" — COMPLETED 2026-07-21, id `b19a2faa-4463-4564-8de0-344ecbe00ebe`. (First attempt failed: submitted as *Organization* — no registered business to verify. Individual resubmit passed same day. An inert failed Organization row remains; safe to delete.) |
+| Certificate profile | `starnet-public` (PublicTrust) — provisioned Succeeded 2026-07-21. Name is load-bearing: CI's signCommand references it. |
+| Service principal | `starnet-ci-signer` (appId `2a51e476-1196-49e4-8ee9-8f31a57045f2`) with role `Artifact Signing Certificate Profile Signer` scoped to the account. Credentials at `%USERPROFILE%\.starnet-signing\azure-ci-signer.json` (delete after first signed build verifies). |
 
 ### Remaining operator steps (in order)
 
-1. **Wait for identity validation = Approved** (portal → Artifact Signing Accounts →
-   starnet-signing → Identity validations). Nothing below works until then.
-2. **Create the certificate profile** (name is load-bearing: CI references
-   `starnet-public`). Grab the identity-validation id from the portal, then:
-   ```
-   az resource create -g starnet-signing-rg \
-     --resource-type "Microsoft.CodeSigning/codeSigningAccounts/certificateProfiles" \
-     -n starnet-signing/starnet-public --location eastus \
-     --api-version 2024-09-30-preview \
-     --properties '{"profileType":"PublicTrust","identityValidationId":"<VALIDATION_ID>"}'
-   ```
-3. **Create the CI service principal** and give it signing rights:
-   ```
-   az ad sp create-for-rbac -n starnet-ci-signer \
-     --role "Artifact Signing Certificate Profile Signer" \
-     --scopes /subscriptions/685b8c19-f09a-4264-ba08-a8127cd31e4d/resourceGroups/starnet-signing-rg/providers/Microsoft.CodeSigning/codeSigningAccounts/starnet-signing
-   ```
-   Output maps to the GitHub secrets: `appId` → AZURE_CLIENT_ID, `password` →
-   AZURE_CLIENT_SECRET, `tenant` → AZURE_TENANT_ID.
-4. **Add the three `AZURE_*` secrets** to the repo running the workflows
-   (androoAGI/starnet → Settings → Secrets → Actions). Next tagged train ships signed.
-5. **Verify on the first signed build:** `Get-AuthenticodeSignature` on the setup exe,
+1. **Add the three `AZURE_*` secrets** to the repo running the workflows
+   (androoAGI/starnet → Settings → Secrets → Actions): AZURE_TENANT_ID
+   `bb673ff6-ccab-4628-9b90-c8a874c20d65`, AZURE_CLIENT_ID
+   `2a51e476-1196-49e4-8ee9-8f31a57045f2`, AZURE_CLIENT_SECRET = `password` from the
+   credentials file above. Next tagged train ships signed.
+2. **Verify on the first signed build:** `Get-AuthenticodeSignature` on the setup exe,
    the installed `StarNet.exe`, AND the bundled `node-x86_64-pc-windows-msvc.exe` must
    all say Valid — an unsigned nested exe still trips Defender.
 
