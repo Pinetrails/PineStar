@@ -1,7 +1,15 @@
 # Public-flip checklist — source repo `androoAGI/starnet`
 
 Status as of 2026-07-20 (this lane). The repo was renamed `skynet-harness` → **`starnet`**
-while private; GitHub redirects the old URL and old clones keep working. Description, homepage,
+while private, and the account was renamed `nonfungiblefunyuns-ship-it` → **`androoAGI`**;
+GitHub redirects both old URL forms (repo + owner) and old clones keep working.
+
+> **Username-rename caveats:** repo redirects survive only until someone registers the freed
+> `nonfungiblefunyuns-ship-it` username — installed v0.6.3 apps update through the OLD owner
+> URL until they've taken one update (the next release bakes the `androoAGI` endpoint), so
+> don't dawdle on the next release, and consider re-registering the old username as a parking
+> account if GitHub allows. GitHub does NOT redirect Pages sites — relevant when the website
+> lane deploys. Description, homepage,
 and topics are set. `starnet-releases` (already public) has description/topics set and a staged
 landing-page README (see step 6).
 
