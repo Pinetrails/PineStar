@@ -217,18 +217,41 @@ jobs:
         run: |
           set -euo pipefail
           # (1a) the working tree must be clean — a dirty tree ⇒ an unreproducible "-dirty" binary.
-          # Content-exact comparison (-c core.autocrlf=false): the Windows runner's global
-          # autocrlf=true marks a byte-identical LF file "modified" after the tauri CLI rewrites
-          # Cargo.toml in place during the build (empty `git diff`, i/lf w/lf — proven on the
-          # v0.6.4 train, run 29861857183). Disabling eol conversion for THIS check compares the
-          # actual bytes against the index — stricter than the autocrlf view, not weaker.
-          if [ -n "$(git -c core.autocrlf=false status --porcelain)" ]; then
-            echo "::error::[$TARGET] working tree is DIRTY at build time — a released binary must come from a clean, tagged checkout. Dirty files:"
-            git -c core.autocrlf=false status --porcelain
-            echo "--- diff of dirty tracked files (first 120 lines) ---"
-            git -c core.autocrlf=false diff | head -120
-            exit 1
-          fi
+          # BYTE-EXACT check, independent of every eol/filter config: the Windows runner flags
+          # src-tauri/Cargo.toml "modified" with an EMPTY diff after the tauri CLI rewrites it
+          # in place (proven twice: v0.6.4 runs 29861857183 + 29863754025 — status M, zero diff,
+          # under both autocrlf views). git-status bookkeeping cannot be trusted here, so compare
+          # the raw worktree bytes (`git hash-object --no-filters`) against the committed blob:
+          #   identical bytes            -> clean (status artifact), continue
+          #   differs ONLY by \r (eol)   -> toolchain eol rewrite, warn + continue
+          #   any real content change    -> fail the leg
+          real_dirt=0
+          while IFS= read -r line; do
+            [ -z "$line" ] && continue
+            st="${line%% *}"; f="${line#* }"; f="${f# }"
+            if [ "$st" != "M" ] && [ "$st" != " M" ]; then
+              echo "::error::[$TARGET] unexpected working-tree state '$line' at build time."
+              real_dirt=1; continue
+            fi
+            wt=$(git hash-object --no-filters -- "$f")
+            idx=$(git rev-parse ":$f")
+            if [ "$wt" = "$idx" ]; then
+              echo "::notice::[$TARGET] '$f' flagged modified but bytes are IDENTICAL to the commit (git status eol artifact) — clean."
+              git checkout -- "$f"   # reset the stat/eol bookkeeping so `git describe --dirty` below stays clean
+              continue
+            fi
+            wt_lf=$(tr -d '\r' < "$f" | git hash-object --stdin)
+            idx_lf=$(git cat-file blob ":$f" | tr -d '\r' | git hash-object --stdin)
+            if [ "$wt_lf" = "$idx_lf" ]; then
+              echo "::warning::[$TARGET] '$f' was rewritten with different LINE ENDINGS only (content identical) — toolchain eol rewrite, restoring committed copy."
+              git checkout -- "$f"   # build is already done; restore so describe --dirty stays clean
+              continue
+            fi
+            echo "::error::[$TARGET] '$f' has REAL content changes at build time — a released binary must come from a clean, tagged checkout."
+            git -c core.autocrlf=false diff -- "$f" | head -80
+            real_dirt=1
+          done < <(git -c core.autocrlf=false status --porcelain)
+          if [ "$real_dirt" -ne 0 ]; then exit 1; fi
           # (1b) git describe must resolve to the tag we're building (guards a detached build off the wrong commit).
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             TAG_INPUT='${{ github.event.inputs.tag }}'
