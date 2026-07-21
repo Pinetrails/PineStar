@@ -129,6 +129,14 @@ const Harness = (() => {
       const r = await fetch('/api/auth/codex/status');   // same relative idiom app.js's refreshCodexStatus uses (works in browser + desktop webview)
       if (r && r.ok) { const j = await r.json(); if (j && j.connected) _configuredByProvider.codex = true; }
     } catch (_) {}
+    // The OTHER device-code OAuth providers (grok/kimi) hold their tokens sidecar-side too — same probe,
+    // same fail-open contract (a dead route just leaves them unconfigured).
+    await Promise.all(['grok', 'kimi'].map(async pid => {
+      try {
+        const r = await fetch('/api/auth/' + pid + '/status');
+        if (r && r.ok) { const j = await r.json(); if (j && j.connected) _configuredByProvider[pid] = true; }
+      } catch (_) {}
+    }));
   }
   /* whether a key is set — works in both modes; never exposes the value. In dev mode the host holds the
      key (runtimeKey), so we report configured without one — that's what lets a fresh origin auto-resume. */
@@ -138,7 +146,13 @@ const Harness = (() => {
     if (p === 'openai' || p === 'openai-api') return 'openai';
     if (p === 'anthropic' || p === 'claude') return 'anthropic';
     if (p === 'gemini' || p === 'google' || p === 'google-ai' || p === 'google-gemini') return 'gemini';
-    if (p === 'xai' || p === 'x-ai' || p === 'grok') return 'xai';
+    // grok/kimi are their OWN keyless OAuth (subscription) providers — NOT aliases for the API-key
+    // providers. Folding 'grok' into 'xai' here silently rewrote every GROK OAUTH selection into the
+    // API-key xAI provider (and 'kimi' fell through to 'openrouter'), so the OAuth brains could never
+    // actually be the active provider anywhere Harness owns the truth.
+    if (p === 'grok' || p === 'grok-oauth' || p === 'supergrok' || p === 'xai-oauth') return 'grok';
+    if (p === 'kimi' || p === 'moonshot' || p === 'kimi-code' || p === 'kimi-for-coding' || p === 'kimi-oauth') return 'kimi';
+    if (p === 'xai' || p === 'x-ai') return 'xai';
     if (p === 'groq') return 'groq';
     if (p === 'mistral' || p === 'mistralai') return 'mistral';
     if (p === 'deepseek') return 'deepseek';
@@ -172,7 +186,8 @@ const Harness = (() => {
   }
   function providerNeedsKey(provider) {
     const p = normalizeProviderId(provider);
-    return p !== 'codex' && p !== 'ollama' && p !== 'custom';
+    // codex/grok/kimi authenticate by device-code OAuth tokens held sidecar-side; ollama/custom are keyless endpoints.
+    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom';
   }
   function configured(provider) {
     const p = normalizeProviderId(provider);
@@ -193,6 +208,9 @@ const Harness = (() => {
   function hasStoredCredential(provider) {
     const p = normalizeProviderId(provider);
     if (p === 'codex') return DESKTOP ? !!_configuredByProvider.codex : (getProv() === 'codex');
+    // grok/kimi mirror codex: OAuth tokens live sidecar-side, so the desktop configured map (fed by the boot
+    // probe + app.js's status refresh) is the only local truth; in the browser the active-provider pick stands in.
+    if (p === 'grok' || p === 'kimi') return DESKTOP ? !!_configuredByProvider[p] : (getProv() === p);
     if (p === 'ollama') return false;                      // an endpoint is configuration, never a credential
     if (p === 'custom' && !getKey(p)) return false;        // a keyless custom endpoint must not manufacture a key row
     if (DESKTOP) return !!(_configuredByProvider[p] || (p === 'openrouter' && _configured));
@@ -247,6 +265,7 @@ const Harness = (() => {
   function defaultReasoningEffortForProvider(provider) {
     const p = normalizeProviderId(provider);
     if (p === 'codex') return 'low';
+    if (p === 'kimi') return 'none';   // mirrors the sidecar registry profile (kimi-for-coding has no reasoning dial)
     if (p === 'ollama') return 'none';
     return 'medium';
   }
@@ -429,7 +448,7 @@ const Harness = (() => {
       // available when the STATION has the required shared gear (a specialist owns only a desk yet still gets its
       // class skills). Sent separately so the tool projection is untouched; the sidecar uses it for skills only.
       if (Array.isArray(stationPlaced) && stationPlaced.length) reqBody.stationPlaced = stationPlaced;
-      if (!DESKTOP && !DEVMODE && provider !== 'codex') reqBody.key = key;   // dev/desktop/Codex keep secrets server-side
+      if (!DESKTOP && !DEVMODE && provider !== 'codex' && provider !== 'grok' && provider !== 'kimi') reqBody.key = key;   // dev/desktop + the OAuth providers keep secrets server-side (custom/ollama may still ride an optional key)
       res = await fetch('/api/run', {
         method: 'POST', signal,
         headers: { 'Content-Type': 'application/json' },
