@@ -82,7 +82,10 @@ export function validateInvocation(input) {
   if (!SHA40.test(lower(input.candidateCommit))) errors.push('candidate-invalid');
   if (!SHA40.test(lower(input.candidateTree))) errors.push('tree-invalid');
   const artifact = input.artifact || {};
-  if (!path.isAbsolute(str(artifact.path)) || !SHA256.test(lower(artifact.sha256)) ||
+  // win32 semantics on purpose: the artifact descriptor names a path on the INSTALLED Windows
+  // machine (C:\Program Files\…), and this validator must reach the same verdict on any host
+  // (host path.isAbsolute rejected drive paths on the linux CI gate, v0.6.3 train run 3).
+  if (!path.win32.isAbsolute(str(artifact.path)) || !SHA256.test(lower(artifact.sha256)) ||
       !Number.isSafeInteger(Number(artifact.size)) || Number(artifact.size) <= 0) errors.push('artifact-invalid');
   const probe = input.probe || {};
   if (str(probe.path).replace(/\\/g, '/') !== PROBE_RELATIVE_PATH ||
