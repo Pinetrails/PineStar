@@ -1,5 +1,19 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-20 — PUBLIC-REPO RELEASE PREP (branch `claude/starnet-repo-release-prep-c41845`)
+
+Getting the source repo release-shaped for the public flip (Andrew: "essentially ready for
+early release"). DONE this lane: GitHub repo **renamed `skynet-harness` → `starnet`** (still
+PRIVATE; old URLs redirect) + description/homepage/topics set on BOTH repos; README rebuilt to
+Hermes/OpenClaw-class presentation (wordmark hero + station render from the website branch, now
+committed under `.github/media/`, badges, feature table, importer section); all breaking slug
+references fixed (package.json, CONTRIBUTING, issue-template advisory link,
+opensource-readiness test) + living docs swept; obsolete `publish.sh` removed; gate 373 green.
+OPEN (operator, in order): **docs/PUBLIC_FLIP_CHECKLIST.md** — prune 50 merged remote branches,
+`--log-opts=--all` gitleaks run (19 unmerged remote-only branches were NEVER scanned — sole
+copies, do not delete), social-preview upload (og-card), push staged starnet-releases landing
+page, re-mint RELEASES_TOKEN, then flip. Binary stays `skynet-desktop` (locked; update-path risk).
+
 ## 2026-07-20 — v0.6.2 BUG SWEEP (branch `claude/starnet-context-update-32ae68`) — 4 Andrew reports
 
 All four in-branch, gate 373/373 green (incl. new crt-glprobe lock), W0 re-stamped `ed73ba12`:
@@ -180,7 +194,7 @@ https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest
   (aarch64 + x64) + exe + AppImage + deb; updater "latest" feed verified undisturbed.
   Gitleaks push-gate: 3 findings = test fixtures, reviewed into `.gitleaksignore`
   (`3f6f5384`), scan clean.
-- Still open (operator): re-mint RELEASES_TOKEN secret on skynet-harness (CI publish);
+- Still open (operator): re-mint RELEASES_TOKEN secret on the starnet source repo (CI publish);
   mac/linux platforms absent from the UPDATER manifest (5-platform bar = CI-train launch,
   unchanged); `v0.5.3` tag push (fires the blocked release-train) = Andrew's call;
   updater-key backup; Apple codesign/notarization secrets for public mac distribution.

@@ -7,11 +7,11 @@
   "author": "Andrew Sims",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/nonfungiblefunyuns-ship-it/skynet-harness.git"
+    "url": "git+https://github.com/nonfungiblefunyuns-ship-it/starnet.git"
   },
-  "homepage": "https://github.com/nonfungiblefunyuns-ship-it/skynet-harness#readme",
+  "homepage": "https://github.com/nonfungiblefunyuns-ship-it/starnet#readme",
   "bugs": {
-    "url": "https://github.com/nonfungiblefunyuns-ship-it/skynet-harness/issues"
+    "url": "https://github.com/nonfungiblefunyuns-ship-it/starnet/issues"
   },
   "keywords": [
     "ai-agents",

@@ -17,8 +17,8 @@ carefully scoped features are welcome.
 Node.js 22 is recommended because it matches CI and the release train.
 
 ```bash
-git clone https://github.com/nonfungiblefunyuns-ship-it/skynet-harness.git
-cd skynet-harness
+git clone https://github.com/nonfungiblefunyuns-ship-it/starnet.git
+cd starnet
 npm ci
 npm run test:fast
 ```

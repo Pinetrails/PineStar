@@ -15,7 +15,7 @@ GitHub. The release train only ever stages a **DRAFT**. Until you publish, zero 
 see or download anything.
 
 **Fixed facts (from the code, do not retype from memory):**
-- Public source repo: `nonfungiblefunyuns-ship-it/skynet-harness` — where you run
+- Public source repo: `nonfungiblefunyuns-ship-it/starnet` — where you run
   `release:bump` and where the train workflow lives.
 - Public releases repo: `nonfungiblefunyuns-ship-it/starnet-releases` — installers live here,
   and this is what the updater points at.

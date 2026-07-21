@@ -16,7 +16,7 @@ re-proven with a command on this machine; nothing is copied from memory or plan 
 - `gh` CLI is **not installed** on this machine (bash + PowerShell both "command not found"),
   so draft state on `starnet-releases` could not be inspected. Judged from the source repo
   instead:
-  - `git ls-remote --tags origin` (origin = `nonfungiblefunyuns-ship-it/skynet-harness`):
+  - `git ls-remote --tags origin` (origin = `nonfungiblefunyuns-ship-it/starnet`):
     remote tags stop at **v0.4.0**. Tags `v0.5.0`, `v0.5.1`, `v0.5.2` exist **locally only**.
   - `origin/feat/harness-backend` = `3e1802da` (the v0.4.0 commit); local trunk = `144c97b0`,
     hundreds of commits ahead. **The release train has never seen 0.5.x.**
@@ -118,7 +118,7 @@ If NOT READY, burn down the named reasons first (`node scripts/qa/ledger.mjs --d
    `memory/.openrouter-key` / wherever the live app key lives, revoke old). Open since 7/02.
 3. Rescope `RELEASES_TOKEN` (fine-grained PAT, Contents:write on
    `nonfungiblefunyuns-ship-it/starnet-releases` only) and confirm it's set as an Actions
-   secret on `skynet-harness`.
+   secret on the `starnet` source repo.
 
 ### B3. Push, train, publish — the actual release (~30 min attended + CI wait)
 1. Make `starnet-releases` exist and be **public** (it 404s today; a private repo breaks
