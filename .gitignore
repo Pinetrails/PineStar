@@ -110,3 +110,8 @@ qa/installed/smoke-*/
 
 # machine-local Claude Code dev-server config (regenerated per machine)
 .claude/launch.json
+
+# internal multi-agent factory tooling — local-only, never in the public tree
+.claude/
+/CLAUDE.md
+/AGENTS.md

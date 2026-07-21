@@ -110,12 +110,13 @@ Repo **Settings → General → Danger Zone → Change visibility → Public.** 
 - `publish.sh` (obsolete private-repo bootstrap) removed.
 - Local `origin` remote repointed at the new URL.
 - Marketing assets committed under `.github/media/` (wordmark, station render, OG card).
-- Public hygiene: `.claude/launch.json` (machine-local dev config, personal paths) untracked +
-  gitignored; CLAUDE.md / AGENTS.md / docs/BRAIN.md home-dir paths → `%USERPROFILE%`.
-  Kept deliberately public: `.claude/skills/` (the operating doctrine every worktree needs),
-  `loops/` + `dev/` (referenced by QA scripts/tests), `qa/`, and the labeled design-history
-  docs. Optional later: scrub personal paths from ~60 dated plan/audit docs, drop unreferenced
-  `design/` mockups.
+- Public hygiene: ALL Claude/agent-factory tooling is untracked + gitignored — `.claude/`
+  (skills + launch.json), `CLAUDE.md`, `AGENTS.md`. They stay on disk as local-only files
+  (the factory still runs on them); `gen-trees\new-agent-tree.ps1` copies them into new
+  worktrees, and existing worktrees restore them from the integration tree after syncing
+  trunk (git deletes tracked copies on that sync). `design/` mockups dropped (unreferenced).
+  Kept public: `loops/` + `dev/` (referenced by QA scripts/tests), `qa/`, labeled
+  design-history docs. Optional later: scrub personal paths from ~60 dated plan/audit docs.
 
 Deliberately unchanged (locked decisions): internal `skynet.*` storage keys, `SKYNET_*` env
 fallbacks, `ai.skynet.harness` bundle/keychain id, and the `skynet-desktop` binary name — all

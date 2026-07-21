@@ -60,6 +60,6 @@ artifacts. Run `npm run security:secrets` before submitting if you have Gitleaks
 | `test/` | Test gates. |
 | `qa/` | Live verification and release receipts. |
 
-Maintainers and automated coding agents working in the shared local integration environment must
-also follow [AGENTS.md](AGENTS.md). Its worktree protocol is an internal collision-safety rule;
-external contributors can use a normal fork-and-pull-request workflow.
+Maintainers and automated coding agents working in the shared local integration environment
+follow an internal worktree protocol (local tooling, not part of this repository); external
+contributors can use a normal fork-and-pull-request workflow.

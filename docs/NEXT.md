@@ -9,6 +9,11 @@ Hermes/OpenClaw-class presentation (wordmark hero + station render from the webs
 committed under `.github/media/`, badges, feature table, importer section); all breaking slug
 references fixed (package.json, CONTRIBUTING, issue-template advisory link,
 opensource-readiness test) + living docs swept; obsolete `publish.sh` removed; gate 373 green.
+**AGENT NOTICE (all worktrees):** `CLAUDE.md`, `AGENTS.md`, and `.claude/` are now UNTRACKED
+(public-hygiene; Andrew wants zero Claude files in the public tree). When you sync trunk, git
+deletes your tracked copies — restore them as untracked files from the integration tree
+(`%USERPROFILE%\Desktop\gen\{CLAUDE.md,AGENTS.md,.claude\}`); new-agent-tree.ps1 now copies
+them automatically. The protocol itself is UNCHANGED — the files just live outside git.
 OPEN (operator, in order): **docs/PUBLIC_FLIP_CHECKLIST.md** — prune 50 merged remote branches,
 `--log-opts=--all` gitleaks run (19 unmerged remote-only branches were NEVER scanned — sole
 copies, do not delete), social-preview upload (og-card), push staged starnet-releases landing
