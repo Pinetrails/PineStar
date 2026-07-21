@@ -53,30 +53,22 @@ body.sn-chrome .sn-tb-x:hover {
   box-shadow: inset 0 -2px 0 #ff4136;
 }
 
-/* pixel-drawn glyphs (no font-coverage risk; VT323 lacks the window-control set) */
-body.sn-chrome .sn-ic { display: block; position: relative; width: 12px; height: 12px; }
-body.sn-chrome .sn-ic-min::before {
-  content: ''; position: absolute; left: 1px; right: 1px; bottom: 4px; height: 2px;
-  background: currentColor;
-}
-/* MAX/RESTORE: inline SVG (titlebar.js), not pseudo-element bars — CSS bar art lands on
-   fractional device pixels under Windows display scaling / TEXT SIZE zoom and shredded the
-   restore glyph twice (2026-07-20 reports). Vector strokes rescale cleanly at any factor.
+/* glyphs: ALL inline SVG (titlebar.js) on one shared spec — 2px strokes on integer
+   geometry so axis-aligned edges land on whole device pixels at 100% scale and rescale
+   cleanly under Windows display scaling / TEXT SIZE zoom. History: pseudo-element bar
+   art shredded on fractional device pixels (2026-07-20, twice); a lone 1.7px-stroke
+   restore SVG then read thinner/dimmer than its 2px CSS siblings whenever the window
+   maximized (third report, same day). One weight for MIN/MAX/RESTORE/CLOSE — the
+   maximized chrome must look exactly as solid as the windowed chrome.
    RESTORE is the classic pair: front frame lower-left, back frame's top-right L peeking. */
-body.sn-chrome .sn-ic-max svg {
+body.sn-chrome .sn-ic { display: block; position: relative; width: 12px; height: 12px; }
+body.sn-chrome .sn-ic svg {
   position: absolute; inset: 0; width: 12px; height: 12px;
-  fill: none; stroke: currentColor; stroke-width: 1.7;
+  fill: none; stroke: currentColor; stroke-width: 2;
 }
 body.sn-chrome .sn-g-restore { display: none; }
 body.sn-chrome .sn-tb-btn.is-max .sn-g-max { display: none; }
 body.sn-chrome .sn-tb-btn.is-max .sn-g-restore { display: block; }
-body.sn-chrome .sn-ic-close::before,
-body.sn-chrome .sn-ic-close::after {
-  content: ''; position: absolute; left: -1px; right: -1px; top: 5px; height: 2px;
-  background: currentColor;
-}
-body.sn-chrome .sn-ic-close::before { transform: rotate(45deg); }
-body.sn-chrome .sn-ic-close::after { transform: rotate(-45deg); }
 
 /* ---- layout shift: every screen (fixed, inset:0) drops below the bar.
    #screen-game.active IS the game grid, so this one rule re-sizes the whole app. ---- */
