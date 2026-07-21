@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "22ff75ca50b29af69ccc7bf14ddcc49af6fcbd32",
+    "sourceCommit": "8facaa4b1c57d6827734bc2af4416b5bda617905",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -668,8 +668,8 @@
       },
       {
         "path": "frontend/app/titlebar.js",
-        "bytes": 8731,
-        "sha256": "8d863ff90bbcfb2933c13fbc4629992db738ba900cecd51c846c1cf5a53f32f8"
+        "bytes": 9467,
+        "sha256": "42843a6079fee47c034f13a6046753d562fd4558096a17e010b9a02b9e0a4857"
       },
       {
         "path": "frontend/app/toolprops.js",
@@ -878,8 +878,8 @@
       },
       {
         "path": "frontend/css/titlebar.css",
-        "bytes": 4333,
-        "sha256": "8cd968286a41c9d454be655574e61d315234c39fc5e5ba68c3f9474931f266eb"
+        "bytes": 4086,
+        "sha256": "d7cdb6b1915e2576da8d049b958775d11f2ba347e6a0b2fd63244d5a7df04caf"
       },
       {
         "path": "frontend/css/topbar.css",
