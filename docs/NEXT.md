@@ -174,13 +174,13 @@ clicking the rail row read "8h" not "now"):
 ## 2026-07-18 — v0.5.3 CUT + PUBLISHED (Windows) — desktop exe rebuild CLOSED
 
 v0.5.3 cut from trunk `e5e2d0dd` (tag `v0.5.3` local), signed, and **PUBLISHED to GitHub
-Releases** at `nonfungiblefunyuns-ship-it/starnet-releases` (repo flipped PUBLIC — binaries
+Releases** at `androoAGI/starnet-releases` (repo flipped PUBLIC — binaries
 only; old v0.4.0/v0.2.2 stay drafts=invisible). Proof chain: fast gate 369/369 green at built
 bytes; installed locally (0.5.2 → 0.5.3) with `qa:smoke:installed` **GREEN**;
 `verify-update-host` green on every windows-x86_64 check (manifest + signed exe live at the
 pinned `/download/v0.5.3/` URLs). Every merged lane's "OPEN: exe rebuild" through `e5e2d0dd`
 is now bundled and shipped. Fresh install on new hardware:
-https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest
+https://github.com/androoAGI/starnet-releases/releases/latest
 - Gate unblock (recorded): 4 stale `w0-candidate-*` source snapshots (2026-07-13) in
   `.dogfood/` made lint-evidence-secrets take 10min and fail on fixture keys; MOVED to
   `C:\Users\andro\gen-trees\..\gen-quarantine\dogfood\` (nothing referenced them).
@@ -432,7 +432,7 @@ Signed release cut at trunk head (rc/0.5.1 content + docs + real RELEASE_NOTES.m
 re-stamped, claims authority PASS). minisign verify OK against the baked pubkey; artifacts staged
 in `release/` (StarNet_0.5.1_x64-setup.exe + .sig + latest.json, sha256 75bf43e4…). Installed on
 Andrew's machine (registry 0.5.1, exe ProductVersion 0.5.1, app relaunched, sidecar up + token-gated).
-- [ ] **Andrew: PUBLISH** — GitHub Release `v0.5.1` on `nonfungiblefunyuns-ship-it/starnet-releases`
+- [ ] **Andrew: PUBLISH** — GitHub Release `v0.5.1` on `androoAGI/starnet-releases`
       with the three `release/` assets (checklist in the release-cut output); then
       `node scripts/verify-update-host.mjs` + the public update canary.
 

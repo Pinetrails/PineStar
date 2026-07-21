@@ -15,7 +15,7 @@ is faked: the station only ever shows you what the machine underneath is actuall
 > **Windows, macOS, and Linux.** All three are built by the same release pipeline and update
 > through the same signed feed.
 
-**[Download the latest release →](https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest)**
+**[Download the latest release →](https://github.com/androoAGI/starnet-releases/releases/latest)**
 
 Pick the asset for your platform:
 

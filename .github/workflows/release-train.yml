@@ -1,7 +1,7 @@
 # Release train — the ONE path from a version tag to a staged draft release.
 #
 # This workflow replaces release.yml's publish role. It NEVER publishes: it produces a
-# DRAFT release on nonfungiblefunyuns-ship-it/starnet-releases with every platform's signed
+# DRAFT release on androoAGI/starnet-releases with every platform's signed
 # installer + updater artifact + a multi-platform latest.json attached. The only publish is a
 # human clicking "Publish" on GitHub after reviewing the verify summary. Until that click,
 # zero users can receive anything.
@@ -16,7 +16,7 @@
 #                                        fallback here — an unsigned release train is not a thing.
 #   TAURI_SIGNING_PRIVATE_KEY_PASSWORD — empty string (key encrypted with an empty password).
 #   RELEASES_TOKEN                     — fine-grained PAT with Contents:write on
-#                                        nonfungiblefunyuns-ship-it/starnet-releases.
+#                                        androoAGI/starnet-releases.
 #   APPLE_* (optional)                 — codesign/notarize the mac DMG when present; absent = unsigned.
 name: release-train
 
@@ -362,7 +362,7 @@ jobs:
           node scripts/release-assemble-manifest.mjs \
             --dist dist \
             --version "${{ steps.ver.outputs.version }}" \
-            --repo nonfungiblefunyuns-ship-it/starnet-releases \
+            --repo androoAGI/starnet-releases \
             --tag "${{ steps.ver.outputs.tag }}" \
             --notes-file RELEASE_NOTES.md
 
@@ -383,7 +383,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
-      REPO: nonfungiblefunyuns-ship-it/starnet-releases
+      REPO: androoAGI/starnet-releases
     steps:
       - uses: actions/checkout@v4
 

@@ -32,7 +32,7 @@
  *
  * Env overrides:
  *   STARNET_UPDATER_KEY_FILE   default: %USERPROFILE%/.tauri/starnet-updater.key
- *   STARNET_RELEASES_REPO      default: nonfungiblefunyuns-ship-it/starnet-releases
+ *   STARNET_RELEASES_REPO      default: androoAGI/starnet-releases
  */
 
 import {
@@ -60,7 +60,7 @@ const DRY_RUN = argSet.has('--dry-run');
 const SKIP_BUILD = argSet.has('--skip-build');
 const PRE_BUILD_CTOR = !argSet.has('--no-pre-build-ctor');
 const NOTES_FILE = argVal('--notes-file', join(ROOT, 'RELEASE_NOTES.md'));
-const RELEASES_REPO = process.env.STARNET_RELEASES_REPO || 'nonfungiblefunyuns-ship-it/starnet-releases';
+const RELEASES_REPO = process.env.STARNET_RELEASES_REPO || 'androoAGI/starnet-releases';
 const KEY_FILE = process.env.STARNET_UPDATER_KEY_FILE || join(homedir(), '.tauri', 'starnet-updater.key');
 const PLATFORM = 'windows-x86_64';
 

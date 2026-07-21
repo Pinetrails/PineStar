@@ -13,7 +13,7 @@ key required on the tester's Mac — they only install `.dmg`s and click Update.
 ## Why this is safe to run without a public launch
 
 The updater endpoint baked into every build is
-`https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/download/latest.json`.
+`https://github.com/androoAGI/starnet-releases/releases/latest/download/latest.json`.
 `releases/latest` is just "the newest non-prerelease on that repo." Publishing there makes a build
 reachable **only to someone who already has StarNet installed and pointed at that repo** — there is
 no store listing, no announcement, no index. Two real releases on the (still-unadvertised) repo are

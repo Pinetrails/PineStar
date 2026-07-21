@@ -113,7 +113,7 @@ function resolveReleasesRepo() {
   const endpoints = conf?.plugins?.updater?.endpoints;
   const url = Array.isArray(endpoints) ? endpoints.find(e => typeof e === 'string') : null;
   if (!url) return null;
-  // e.g. https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/...
+  // e.g. https://github.com/androoAGI/starnet-releases/releases/latest/...
   const m = /github\.com\/([^/]+)\/([^/]+)/.exec(url);
   if (!m) return null;
   return m[1] + '/' + m[2];

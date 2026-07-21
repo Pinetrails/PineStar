@@ -15,13 +15,13 @@ GitHub. The release train only ever stages a **DRAFT**. Until you publish, zero 
 see or download anything.
 
 **Fixed facts (from the code, do not retype from memory):**
-- Public source repo: `nonfungiblefunyuns-ship-it/starnet` — where you run
+- Public source repo: `androoAGI/starnet` — where you run
   `release:bump` and where the train workflow lives.
-- Public releases repo: `nonfungiblefunyuns-ship-it/starnet-releases` — installers live here,
+- Public releases repo: `androoAGI/starnet-releases` — installers live here,
   and this is what the updater points at.
 - Updater endpoint baked into every shipped binary
   (`src-tauri/tauri.conf.json` → `plugins.updater.endpoints[0]`):
-  `https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/download/latest.json`
+  `https://github.com/androoAGI/starnet-releases/releases/latest/download/latest.json`
 - Updater signing key: `~/.tauri/starnet-updater.key` (see section 4 — this is the single
   most dangerous thing to lose in the whole project).
 - Last version *built* at time of writing: `0.4.1` (`tauri.conf.json`). **Nothing has ever been
@@ -137,7 +137,7 @@ If any job is red, go to **section 2**.
 
 ### 1.7 Review the DRAFT release
 
-Open: `https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases` → the draft
+Open: `https://github.com/androoAGI/starnet-releases/releases` → the draft
 tagged **v0.2.0** (it has a grey "Draft" badge; it is NOT yet the public "latest").
 
 Checklist — eyeball all of these before you publish:

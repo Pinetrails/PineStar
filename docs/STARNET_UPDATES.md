@@ -21,7 +21,7 @@ Loop:
 The desktop build checks the **public GitHub Releases** channel:
 
 ```text
-https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/download/latest.json
+https://github.com/androoAGI/starnet-releases/releases/latest/download/latest.json
 ```
 
 `starnet-releases` is a dedicated public binary-distribution repo, separate from the public
@@ -43,7 +43,7 @@ The endpoint serves the static Tauri updater JSON:
   "platforms": {
     "windows-x86_64": {
       "signature": "contents of the .sig file",
-      "url": "https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/download/v0.1.8/StarNet_0.1.8_x64-setup.exe"
+      "url": "https://github.com/androoAGI/starnet-releases/releases/download/v0.1.8/StarNet_0.1.8_x64-setup.exe"
     }
   }
 }

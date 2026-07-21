@@ -15,7 +15,7 @@ build — below is exactly what you'll see on each platform and what to do.
 ## Download
 
 Go to the releases page:
-<https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest>
+<https://github.com/androoAGI/starnet-releases/releases/latest>
 
 Pick the asset for your platform:
 

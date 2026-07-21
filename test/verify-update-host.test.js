@@ -14,7 +14,7 @@ const path = require('node:path');
 const ROOT = path.resolve(__dirname, '..');
 const script = path.join(ROOT, 'scripts', 'verify-update-host.mjs');
 
-const REPO = 'nonfungiblefunyuns-ship-it/starnet-releases';
+const REPO = 'androoAGI/starnet-releases';
 // Far-future fixture version: --manifest mode compares manifest.version >= the SHIPPED
 // tauri.conf.json version, so a fixture pinned near the current release becomes a gate
 // time-bomb on the next bump (broke the v0.2.1 train gate on 2026-07-06).

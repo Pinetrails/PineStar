@@ -10,13 +10,13 @@ re-proven with a command on this machine; nothing is copied from memory or plan 
 
 ### A1. Release pipeline machinery is built — but NOTHING is published
 - `node scripts/verify-update-host.mjs` (live): endpoint
-  `https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/download/latest.json`
+  `https://github.com/androoAGI/starnet-releases/releases/latest/download/latest.json`
   → **HTTP 404 — FAIL**. The updater path is NOT live. The releases repo itself 404s
   unauthenticated (private or nonexistent).
 - `gh` CLI is **not installed** on this machine (bash + PowerShell both "command not found"),
   so draft state on `starnet-releases` could not be inspected. Judged from the source repo
   instead:
-  - `git ls-remote --tags origin` (origin = `nonfungiblefunyuns-ship-it/starnet`):
+  - `git ls-remote --tags origin` (origin = `androoAGI/starnet`):
     remote tags stop at **v0.4.0**. Tags `v0.5.0`, `v0.5.1`, `v0.5.2` exist **locally only**.
   - `origin/feat/harness-backend` = `3e1802da` (the v0.4.0 commit); local trunk = `144c97b0`,
     hundreds of commits ahead. **The release train has never seen 0.5.x.**
@@ -30,7 +30,7 @@ re-proven with a command on this machine; nothing is copied from memory or plan 
 ### A2. Mac tooling parity is present in the pipeline (unproven end-to-end)
 - `.github/workflows/release-train.yml` matrix builds `darwin-arm64`
   (aarch64-apple-darwin) and `darwin-x64` (x86_64-apple-darwin) on `macos-latest`, packages
-  `*.app.tar.gz` + `.sig`, and stage-drafts to `nonfungiblefunyuns-ship-it/starnet-releases`
+  `*.app.tar.gz` + `.sig`, and stage-drafts to `androoAGI/starnet-releases`
   via secret `RELEASES_TOKEN` (fine-grained PAT, Contents:write).
 - `scripts/release-assemble-manifest.mjs` maps `*.app.tar.gz` → `darwin-aarch64` /
   `darwin-x86_64` (lines 40–41, 61, 99–100). Manifest tooling covers darwin fully.
@@ -117,7 +117,7 @@ If NOT READY, burn down the named reasons first (`node scripts/qa/ledger.mjs --d
 2. Rotate the dev OpenRouter key at openrouter.ai (create new, update
    `memory/.openrouter-key` / wherever the live app key lives, revoke old). Open since 7/02.
 3. Rescope `RELEASES_TOKEN` (fine-grained PAT, Contents:write on
-   `nonfungiblefunyuns-ship-it/starnet-releases` only) and confirm it's set as an Actions
+   `androoAGI/starnet-releases` only) and confirm it's set as an Actions
    secret on the `starnet` source repo.
 
 ### B3. Push, train, publish — the actual release (~30 min attended + CI wait)

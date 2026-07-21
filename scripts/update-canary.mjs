@@ -136,7 +136,7 @@ function assembleFeed(version) {
     join(ROOT, 'scripts', 'release-assemble-manifest.mjs'),
     '--dist', FEED,
     '--version', version,
-    '--repo', 'nonfungiblefunyuns-ship-it/starnet-releases',
+    '--repo', 'androoAGI/starnet-releases',
     '--tag', 'v' + version,
     '--asset-base', 'http://127.0.0.1:' + PORT + '/',
     '--allow-missing', 'darwin-aarch64,darwin-x86_64,linux-x86_64,linux-x86_64-deb',

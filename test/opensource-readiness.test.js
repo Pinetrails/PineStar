@@ -18,7 +18,7 @@ assert.equal(lock.version, pkg.version, 'package-lock top-level version must agr
 assert.equal(lock.packages[''].version, pkg.version, 'package-lock root package version must agree');
 assert.equal(pkg.license, 'MIT');
 assert.equal(pkg.private, true, 'prevent accidental npm publication; GitHub visibility is independent');
-assert.match(pkg.repository.url, /github\.com\/nonfungiblefunyuns-ship-it\/starnet(?:\.git)?$/,
+assert.match(pkg.repository.url, /github\.com\/androoAGI\/starnet(?:\.git)?$/,
   'repository URL must point at the renamed public source repo (starnet)');
 
 for (const required of [

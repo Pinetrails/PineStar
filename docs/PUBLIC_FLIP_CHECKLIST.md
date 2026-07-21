@@ -1,4 +1,4 @@
-# Public-flip checklist — source repo `nonfungiblefunyuns-ship-it/starnet`
+# Public-flip checklist — source repo `androoAGI/starnet`
 
 Status as of 2026-07-20 (this lane). The repo was renamed `skynet-harness` → **`starnet`**
 while private; GitHub redirects the old URL and old clones keep working. Description, homepage,
@@ -81,7 +81,7 @@ source repo) must be re-minted so the release train can upload to `starnet-relea
 
 Repo **Settings → General → Danger Zone → Change visibility → Public.** Immediately after:
 
-- Confirm `https://github.com/nonfungiblefunyuns-ship-it/starnet` renders the README with both
+- Confirm `https://github.com/androoAGI/starnet` renders the README with both
   images (they live in-repo under `.github/media/`, so they render as soon as the repo is
   visible).
 - Confirm the badges resolve (the download badge already works — it reads `starnet-releases`).

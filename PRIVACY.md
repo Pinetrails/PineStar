@@ -95,7 +95,7 @@ The desktop app checks for updates by fetching a single public manifest file fro
 Releases:
 
 ```
-https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/download/latest.json
+https://github.com/androoAGI/starnet-releases/releases/latest/download/latest.json
 ```
 
 This is a plain `GET` for a static file. **No user data, no identifier, and no telemetry are

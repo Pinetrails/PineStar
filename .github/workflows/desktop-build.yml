@@ -160,9 +160,9 @@ jobs:
           find dist -type f
           ASSETS=$(find dist -type f \( -name '*.dmg' -o -name '*.AppImage' -o -name '*.deb' -o -name '*-setup.exe' \))
           gh release create "$TAG" \
-            --repo nonfungiblefunyuns-ship-it/starnet-releases \
+            --repo androoAGI/starnet-releases \
             --title "StarNet ${VERSION} test build (r${{ github.run_number }})" \
             --notes-file notes.md \
             --prerelease \
             $ASSETS
-          echo "::notice::shareable download page: https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/tag/$TAG"
+          echo "::notice::shareable download page: https://github.com/androoAGI/starnet-releases/releases/tag/$TAG"

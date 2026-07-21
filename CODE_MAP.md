@@ -62,7 +62,7 @@ catalog). Never rename/remove an event or field.
 ## src-tauri/ — desktop shell
 
 Tauri 2; version in `tauri.conf.json` + `Cargo.toml` (0.2.2). NSIS + dmg; embedded node
-binary; platform keyring; updater → GitHub Releases `nonfungiblefunyuns-ship-it/starnet-releases`
+binary; platform keyring; updater → GitHub Releases `androoAGI/starnet-releases`
 `latest.json`. Workspace data root: `%APPDATA%\Roaming\ai.skynet.harness\workspaces`.
 
 ## test/ (~409 files) + gates

@@ -13,9 +13,9 @@ _Last updated: 2026-07-06._
 
 ## Release channel
 
-Public releases repo: **`nonfungiblefunyuns-ship-it/starnet-releases`**
+Public releases repo: **`androoAGI/starnet-releases`**
 Updater endpoint (baked into the app, `src-tauri/tauri.conf.json`):
-`https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest/download/latest.json`
+`https://github.com/androoAGI/starnet-releases/releases/latest/download/latest.json`
 
 ## Artifacts
 

@@ -51,7 +51,7 @@ const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'release-assemble-'));
 try {
   const pubFile = path.join(tmp, 'test.pub');
   fs.writeFileSync(pubFile, signer.pubkeyDoc);
-  const COMMON = ['--version', '0.2.0', '--repo', 'nonfungiblefunyuns-ship-it/starnet-releases',
+  const COMMON = ['--version', '0.2.0', '--repo', 'androoAGI/starnet-releases',
     '--tag', 'v0.2.0', '--pubkey', pubFile];
 
   // 1. Happy 5-platform path (signatures cryptographically verified).
@@ -71,7 +71,7 @@ try {
     eq(m.platforms['windows-x86_64'].signature,
       fs.readFileSync(path.join(dist, 'StarNet_0.2.0_x64-setup.exe.sig'), 'utf8').trim(), 'win sig is the .sig content');
     eq(m.platforms['windows-x86_64'].url,
-      'https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/download/v0.2.0/StarNet_0.2.0_x64-setup.exe',
+      'https://github.com/androoAGI/starnet-releases/releases/download/v0.2.0/StarNet_0.2.0_x64-setup.exe',
       'win url points at versioned tag asset');
     ok(m.platforms['darwin-aarch64'].url.endsWith('/v0.2.0/StarNet_darwin-arm64.app.tar.gz'), 'mac-arm url basename');
     ok(m.platforms['darwin-x86_64'].url.endsWith('/v0.2.0/StarNet_darwin-x64.app.tar.gz'), 'mac-x64 url basename');

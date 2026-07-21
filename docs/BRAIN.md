@@ -45,7 +45,7 @@ shared/    FROZEN contract — events.js (~60 event types) + schema.js validator
            OWNED files: additive changes only, by request to the owner lane.
 
 src-tauri/ desktop shell (Tauri 2, NSIS/dmg, embedded node, keyring; updater feeds from
-           GitHub Releases: nonfungiblefunyuns-ship-it/starnet-releases)
+           GitHub Releases: androoAGI/starnet-releases)
 ```
 
 Most bugs are **seam bugs**: emitter → store → renderer. Trace the full path before editing.
