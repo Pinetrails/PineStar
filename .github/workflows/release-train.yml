@@ -18,6 +18,11 @@
 #   RELEASES_TOKEN                     — fine-grained PAT with Contents:write on
 #                                        androoAGI/starnet-releases.
 #   APPLE_* (optional)                 — codesign/notarize the mac DMG when present; absent = unsigned.
+#   AZURE_TENANT_ID + AZURE_CLIENT_ID + AZURE_CLIENT_SECRET (optional) — Authenticode-sign the
+#                                        Windows exe + bundled node sidecar + NSIS installer via
+#                                        Azure Trusted Signing (account starnet-signing / eastus).
+#                                        Absent = unsigned Windows build (SmartScreen warning).
+#                                        Operator setup for both signing tiers: docs/CODE_SIGNING.md.
 name: release-train
 
 on:
@@ -167,6 +172,9 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           RUST_TARGET: ${{ matrix.rust-target }}
         run: |
           if [ "$RUNNER_OS" = "macOS" ] && [ -z "$APPLE_CERTIFICATE" ]; then
@@ -177,7 +185,23 @@ jobs:
             # (still updater-signed via the minisign key). Restore signing by adding the secrets.
             unset APPLE_CERTIFICATE APPLE_CERTIFICATE_PASSWORD APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
           fi
-          npm run tauri -- build --bundles ${{ matrix.bundles }} ${RUST_TARGET:+--target $RUST_TARGET}
+          # Windows Authenticode tier (same shape as the Apple tier above): with the AZURE_*
+          # service-principal secrets present, inject a signCommand pointing at Azure Trusted
+          # Signing. Tauri then signs the app exe, the bundled node sidecar (externalBin), and
+          # the NSIS installer/uninstaller — every shipped Windows executable, which is what
+          # clears SmartScreen "unrecognized app" and most Defender false positives. Injected
+          # via --config so keyless/local builds never try to reach Azure. docs/CODE_SIGNING.md.
+          SIGN_CFG=""
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            if [ -n "${AZURE_CLIENT_SECRET:-}" ] && [ -n "${AZURE_CLIENT_ID:-}" ] && [ -n "${AZURE_TENANT_ID:-}" ]; then
+              cargo install trusted-signing-cli --locked
+              SIGN_CFG='{"bundle":{"windows":{"signCommand":"trusted-signing-cli -e https://eus.codesigning.azure.net -a starnet-signing -c starnet-public %1"}}}'
+              echo "::notice::Windows Authenticode signing ENABLED (Azure Trusted Signing: starnet-signing/starnet-public)"
+            else
+              echo "::warning::no Azure Trusted Signing secrets — Windows exe/installer will be UNSIGNED (SmartScreen warning for users)"
+            fi
+          fi
+          npm run tauri -- build --bundles ${{ matrix.bundles }} ${RUST_TARGET:+--target $RUST_TARGET} ${SIGN_CFG:+--config "$SIGN_CFG"}
 
       # P1.5 build provenance assertion — prove the binary this leg produced was built from a CLEAN checkout at the
       # tagged commit, and that build.rs actually embedded that commit into the exe. Two independent checks:
