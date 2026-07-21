@@ -47,7 +47,7 @@
 11. **Duplicate class summon → indistinguishable agents.** 2nd Engineer correctly gets unique id `engineer-2`, but display name is identical `ENGINEER`; the COMMS selector and manifest show two `ENGINEER` with nothing to tell them apart.
 12. Summoned agent shares NOVA's `HAB-01` slot in the manifest display, and its manifest line is missing the `· Lv 1` that NOVA's shows.
 13. Escape closes the Recruitment Bay but not the Settings window (Settings closes only via ✕ / it's a draggable window, not a backdrop-modal) — inconsistent dismissal.
-14. `GET /api/execution` returns the absolute user path (`C:\Users\andro\Desktop\gen\dev\.scratch-workspace`). Token-gated, low risk, but `/api/diagnostics` deliberately avoids paths while this route exposes the home dir.
+14. `GET /api/execution` returns the absolute user path (`C:\Users\<you>\Desktop\gen\dev\.scratch-workspace`). Token-gated, low risk, but `/api/diagnostics` deliberately avoids paths while this route exposes the home dir.
 15. Several routes coerce wrong-type fields instead of rejecting: `/api/memory/reset {agentId:99999}` → `"99999"`; `/api/goals {goal:42}`, `/api/dossier` accept/coerce. All return honest results, none 500.
 16. `GET /api/models/<bogus>` and `/api/models/` silently fall back to the OpenRouter catalog rather than 404-ing an unknown provider.
 17. `POST /api/auth/codex/start` fires a **real** OpenAI device-auth request on empty/`{}`/`null` body — a token-holder could spam OpenAI's endpoint through it.

@@ -1,6 +1,6 @@
 # Workforce Zones + Per-Agent Sentience — build plan & goal/loop contract
 
-> Lane: `agent/workforce-zones` (worktree `C:\Users\andro\gen-trees\workforce-zones`), forked from
+> Lane: `agent/workforce-zones` (worktree `C:\Users\<you>\gen-trees\workforce-zones`), forked from
 > trunk `feat/harness-backend`. This executes **WORLD-GAME's chartered "eerie/idle" task** (see
 > `SESSIONS.md` — SUMMON-FIXES is merged/dead, the world.js pause is lifted, eerie/idle is the queued
 > next task). Claiming it as a named worktree IS the anti-overlap signal in the live registry.

@@ -188,7 +188,7 @@ is now bundled and shipped. Fresh install on new hardware:
 https://github.com/androoAGI/starnet-releases/releases/latest
 - Gate unblock (recorded): 4 stale `w0-candidate-*` source snapshots (2026-07-13) in
   `.dogfood/` made lint-evidence-secrets take 10min and fail on fixture keys; MOVED to
-  `C:\Users\andro\gen-trees\..\gen-quarantine\dogfood\` (nothing referenced them).
+  `C:\Users\<you>\gen-trees\..\gen-quarantine\dogfood\` (nothing referenced them).
 - **Mac test build SHIPPED (2026-07-19):** trunk pushed to origin (branch only, 1261 commits
   — tag deliberately NOT pushed; release-train stays untriggered), `desktop-build.yml`
   dispatched with publish-test. Mac legs first failed on the empty-`APPLE_CERTIFICATE`

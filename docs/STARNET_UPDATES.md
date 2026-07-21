@@ -58,7 +58,7 @@ StarNet's UI and notification loop.
 The public updater key is embedded in `src-tauri/tauri.conf.json`. The matching private key was generated outside the repository at:
 
 ```text
-C:\Users\andro\.tauri\starnet-updater.key
+C:\Users\<you>\.tauri\starnet-updater.key
 ```
 
 It is an **rsign encrypted secret key with an empty password**. Do not commit it. Back it up

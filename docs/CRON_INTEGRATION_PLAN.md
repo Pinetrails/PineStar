@@ -2,7 +2,7 @@
 
 > **StarNet** — a layered plan for making an agent **TRULY AUTONOMOUS**: it wakes on a schedule and does real, unattended work — a routine that fires `runAgentLoop` at a cron time with no browser, no Commander, no one watching. This is the companion to `HERMES_INTEGRATION_PLAN.md` and `MESSAGING_INTEGRATION_PLAN.md` and obeys the same discipline: one-line goals, Deliverables/Port-create/Tests/DoD per step, the Definition-of-Done, one-commit-sized steps, critical-path-first. Every seam below was confirmed against the real files; every premature/redundant/hallucinated claim flagged by the adversarial verdicts has been dropped or corrected.
 
-> _Source: `NousResearch/hermes-agent` (MIT), cloned to `C:\Users\andro\hermes-ref`, cron subsystem (`cron/scheduler.py` + `cron/jobs.py` + `cron/blueprint_catalog.py` + `cron/suggestion_catalog.py` + `cron/suggestions.py` + `hermes_time.py` + the `hermes_cli/cron.py` CLI surface). **Pattern mine, not a port.** Produced by a parallel design + adversarial-verify pass against the real sidecar (2026-06-14). Prefer the dossier's `corrected` statements over any reader claim they contradict._
+> _Source: `NousResearch/hermes-agent` (MIT), cloned to `C:\Users\<you>\hermes-ref`, cron subsystem (`cron/scheduler.py` + `cron/jobs.py` + `cron/blueprint_catalog.py` + `cron/suggestion_catalog.py` + `cron/suggestions.py` + `hermes_time.py` + the `hermes_cli/cron.py` CLI surface). **Pattern mine, not a port.** Produced by a parallel design + adversarial-verify pass against the real sidecar (2026-06-14). Prefer the dossier's `corrected` statements over any reader claim they contradict._
 
 ---
 

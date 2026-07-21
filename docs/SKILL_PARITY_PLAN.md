@@ -49,7 +49,7 @@ Three real problems:
 - **A4** Wire the AGENT SKILLS search box (filter by name/summary/category, client-side).
 
 ### Lane B — library breadth (worktree: skill-library)
-- **B1** Port 15–25 more Hermes skills from `C:\Users\andro\hermes-ref\skills\` into
+- **B1** Port 15–25 more Hermes skills from `C:\Users\<you>\hermes-ref\skills\` into
   `sidecar/skills/library/*.md` using the existing frontmatter format (catalog.js grammar:
   name/slug/description/category/requires/author/license/default). Map each skill's needs
   to `requires:` capability objects honestly (web skills → dish, terminal → workbench,

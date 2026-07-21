@@ -1,6 +1,6 @@
 # Hermes voice system vs StarNet — code-level analysis (2026-07-14)
 
-Sources: full read of `C:\Users\andro\hermes-ref` (hermes-agent main @ 8e734810d, 2026-07-08)
+Sources: full read of `C:\Users\<you>\hermes-ref` (hermes-agent main @ 8e734810d, 2026-07-08)
 voice subsystem (`tools/tts_tool.py`, `tools/transcription_tools.py`, `tools/voice_mode.py`,
 `cli.py` voice UX, `gateway/run.py`, `plugins/platforms/discord/*`), and a same-day audit of
 StarNet's voice stack on this branch (`frontend/app/voice.js`, `frontend/app/chat.js`,

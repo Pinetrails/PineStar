@@ -1,6 +1,6 @@
 # Tier C v1 — Cross-Agent Awareness (gaze-only foundation) — goal/loop contract
 
-> Lane: `agent/crew-awareness` (worktree `C:\Users\andro\gen-trees\crew-awareness`), forked from
+> Lane: `agent/crew-awareness` (worktree `C:\Users\<you>\gen-trees\crew-awareness`), forked from
 > trunk `feat/harness-backend` @ b452465 (which has the COMPLETE Tier B). Continues WORLD-GAME's
 > "eerie/idle" charter. Builds on Tier A (zone containment) + Tier B (per-agent sentience via the
 > `self` actor-pointer). **Deliberately a SMALL foundation** — Andrew's directive: build a basic

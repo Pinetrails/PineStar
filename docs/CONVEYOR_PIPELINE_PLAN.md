@@ -140,7 +140,7 @@ invariant).
 ## 4. Staged implementation
 
 > All feature work in **one** worktree: `gen-trees\new-agent-tree.ps1 workpipe` →
-> `C:\Users\andro\gen-trees\workpipe` on `agent/workpipe`. Commit only your own files with explicit pathspecs.
+> `C:\Users\<you>\gen-trees\workpipe` on `agent/workpipe`. Commit only your own files with explicit pathspecs.
 > Rebase onto trunk (`sync-agent-tree.ps1 workpipe`) before merging; `npm run test:fast` must be green.
 
 ### Stage 0 — Land the prerequisite + open the contract request

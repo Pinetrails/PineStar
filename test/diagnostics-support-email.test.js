@@ -1,9 +1,9 @@
-/* node test/diagnostics-support-email.test.js — the support-email seam (frontend/app/diagnostics.js).
+﻿/* node test/diagnostics-support-email.test.js â€” the support-email seam (frontend/app/diagnostics.js).
 
    Trust/honesty guard: an UNSET or still-PLACEHOLDER support address must NEVER render literally to a user. The
    render sites (Settings copy + copy-success toast) gate every email clause through Diag.supportEmail(): a real
    address passes through; a placeholder/empty/malformed value normalizes to '' so the clause is omitted (no fake
-   address). This locks that normalizer + the hasSupport() bool the sites branch on. Pure — no DOM/fetch touched. */
+   address). This locks that normalizer + the hasSupport() bool the sites branch on. Pure â€” no DOM/fetch touched. */
 'use strict';
 const A = require('./_assert.js');
 const Diag = require('../frontend/app/diagnostics.js');
@@ -11,7 +11,7 @@ const { normSupport, SUPPORT_PLACEHOLDER } = Diag._internals;
 
 // ---- the build placeholder is NEVER a real address (the exact ship-blocker the audit named) ----
 {
-  A.eq(normSupport(SUPPORT_PLACEHOLDER), '', 'the ANDREW_SUPPORT_EMAIL placeholder normalizes to "" — never shown literally');
+  A.eq(normSupport(SUPPORT_PLACEHOLDER), '', 'the ANDREW_SUPPORT_EMAIL placeholder normalizes to "" â€” never shown literally');
   A.eq(normSupport('ANDREW_SUPPORT_EMAIL'), '', 'the raw placeholder string also normalizes to ""');
 }
 
@@ -35,7 +35,7 @@ const { normSupport, SUPPORT_PLACEHOLDER } = Diag._internals;
 {
   A.eq(normSupport('help@starnet.app'), 'help@starnet.app', 'a plausible address passes through unchanged');
   A.eq(normSupport('  help@starnet.app  '), 'help@starnet.app', 'surrounding whitespace is trimmed');
-  A.eq(normSupport('nonfungiblefunyuns@gmail.com'), 'nonfungiblefunyuns@gmail.com', 'the current shipped address is valid');
+  A.eq(normSupport('androo.agi@gmail.com'), 'androo.agi@gmail.com', 'the current shipped address is valid');
 }
 
 // ---- the live seam: whatever THIS build ships, supportEmail()/hasSupport() agree with each other ----
@@ -43,7 +43,7 @@ const { normSupport, SUPPORT_PLACEHOLDER } = Diag._internals;
   const dest = Diag.supportEmail();
   A.eq(typeof dest, 'string', 'supportEmail() always returns a string (never undefined/null)');
   A.eq(Diag.hasSupport(), dest !== '', 'hasSupport() is exactly (supportEmail() !== "")');
-  // if THIS build has an address, it must be a real one (not the placeholder) — the ship-blocker assertion.
+  // if THIS build has an address, it must be a real one (not the placeholder) â€” the ship-blocker assertion.
   if (dest) A.ok(dest !== SUPPORT_PLACEHOLDER && /^[^@\s]+@[^@\s]+$/.test(dest), 'a configured support address is a real email, never the placeholder');
 }
 

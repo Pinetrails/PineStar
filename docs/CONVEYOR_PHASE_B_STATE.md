@@ -5,9 +5,9 @@ quality. Read this + the `starnet-conveyor-pipeline` memory + `docs/CONVEYOR_PIP
 
 ## Where we are (2026-06-15)
 
-- **Branch:** `agent/workpipe-b` (worktree `C:\Users\andro\gen-trees\workpipe-b`), forked off trunk
+- **Branch:** `agent/workpipe-b` (worktree `C:\Users\<you>\gen-trees\workpipe-b`), forked off trunk
   `feat/harness-backend`. NOT merged yet.
-- **Verify anything:** `cd C:\Users\andro\gen-trees\workpipe-b && npm run test:fast` (all headless, must be green).
+- **Verify anything:** `cd C:\Users\<you>\gen-trees\workpipe-b && npm run test:fast` (all headless, must be green).
 - **Phase A** (visualization: INTAKE→belt→desk→OUTBOX, backpressure, supersede-drop, splitter-visual) is
   **shipped to trunk + master**. Phase B makes it **functional + multi-agent**.
 
@@ -77,7 +77,7 @@ the single authority `require()`d by both the frontend sim and the sidecar route
 
 ### Verifying world.js (browser) — the worktree-served preview
 The running `starnet-frontend` preview serves the *integration tree*, NOT this worktree. Added a
-`workpipe-b-frontend` launch config (`http-server C:/Users/andro/gen-trees/workpipe-b/frontend -p 8099`).
+`workpipe-b-frontend` launch config (`http-server C:/Users/<you>/gen-trees/workpipe-b/frontend -p 8099`).
 world.js is not headless; verify via that preview: `preview_eval` to compile a synthetic floor + check
 `Pipeline`/`resolveTarget`, instrument `ctx.fillRect` to confirm bodies drew (screenshots time out on the
 continuously-animating canvas). Drive real work via the awakening (which calls `connectChannelBridge`).

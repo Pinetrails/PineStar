@@ -1,6 +1,6 @@
 # Tier B — Per-Agent Sentience (crew get the hero's inner life) — goal/loop contract
 
-> Lane: `agent/crew-sentience` (worktree `C:\Users\andro\gen-trees\crew-sentience`), forked from
+> Lane: `agent/crew-sentience` (worktree `C:\Users\<you>\gen-trees\crew-sentience`), forked from
 > trunk `feat/harness-backend` @ 43feb43. Continues **WORLD-GAME's "eerie/idle" charter**. Builds
 > directly on **Tier A (zone containment), already merged to trunk** (`aec480f`) — the cage exists; this
 > tier makes the caged bodies actually *alive*. See `docs/WORKFORCE_ZONES_PLAN.md` (Tier A).

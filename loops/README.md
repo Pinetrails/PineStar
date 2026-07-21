@@ -3,7 +3,7 @@
 Each loop is a self-contained prompt file. Launch one per Claude Code session with `/loop`:
 
 ```
-/loop <interval> Read C:\Users\andro\Desktop\gen\loops\<file>.md and execute it fully.
+/loop <interval> Read C:\Users\<you>\Desktop\gen\loops\<file>.md and execute it fully.
 ```
 
 App-dependent loops boot the app themselves if it isn't running (`npm start` → :8787).

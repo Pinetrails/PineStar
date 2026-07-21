@@ -180,7 +180,7 @@ log; if the lint trips, the run fails.
   boot) — it never falls back to a placeholder.
 - Set it in the session's environment only, e.g. (PowerShell, current shell only):
   ```powershell
-  $env:SKYNET_OPENROUTER_KEY = (Get-Content "$HOME\.claude\projects\C--Users-andro-Desktop-gen\memory\.openrouter-key" -Raw).Trim()
+  $env:SKYNET_OPENROUTER_KEY = (Get-Content "$HOME\.claude\projects\C--Users-<you>-Desktop-gen\memory\.openrouter-key" -Raw).Trim()
   npm run qa:beginner:live
   Remove-Item Env:\SKYNET_OPENROUTER_KEY   # scrub it back out when done
   ```
@@ -272,7 +272,7 @@ Every finding in the digest carries its evidence path + fingerprint (Evidence la
 without an artifact). `--write` lands it at `qa/digests/<date>.md`.
 
 ### The Overseer `/loop` session prompt
-Open a Claude Code session in the repo (`C:\Users\andro\Desktop\gen`) and run:
+Open a Claude Code session in the repo (`C:\Users\<you>\Desktop\gen`) and run:
 
 ```
 /loop 24h  Run one Overseer cycle: render today's QA digest with
@@ -554,7 +554,7 @@ task, not part of cold-start.
 Janitor) — one command. Point `-RepoRoot` at the integration tree so the tasks run there:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File scripts\qa\register-watch.ps1 -RepoRoot C:\Users\andro\Desktop\gen -Apply
+powershell -ExecutionPolicy Bypass -File scripts\qa\register-watch.ps1 -RepoRoot C:\Users\<you>\Desktop\gen -Apply
 ```
 
 (Works under Windows PowerShell 5.1 — no `pwsh` required. Run WITHOUT `-Apply` first to

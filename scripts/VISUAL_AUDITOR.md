@@ -12,7 +12,7 @@ is the unlock: it drives headless Chrome over CDP and captures on a **fixed wall
 
 ## ▶ LAUNCH THIS LOOP (one command, dedicated local session)
 
-Open a new Claude Code session **in this repo** (`C:\Users\andro\Desktop\gen`) and run:
+Open a new Claude Code session **in this repo** (`C:\Users\<you>\Desktop\gen`) and run:
 
 ```
 /loop  Run one Visual-Auditor cycle per scripts/VISUAL_AUDITOR.md: shoot every UI state

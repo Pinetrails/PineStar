@@ -103,7 +103,7 @@ re-proven with a command on this machine; nothing is copied from memory or plan 
 
 ### B1. Pre-flight on this machine (~15 min)
 ```powershell
-cd C:\Users\andro\Desktop\gen
+cd C:\Users\<you>\Desktop\gen
 git checkout feat/harness-backend
 npm run qa:ready          # must print READY next to v0.5.2's commit — no READY, no push
 npm run release:cut:dry   # sanity: cut machinery clean
@@ -111,7 +111,7 @@ npm run release:cut:dry   # sanity: cut machinery clean
 If NOT READY, burn down the named reasons first (`node scripts/qa/ledger.mjs --digest`).
 
 ### B2. Back up + rotate keys BEFORE anything becomes public (~20 min)
-1. Copy `C:\Users\andro\.tauri\starnet-updater.key` (+ `.pub`) to **two offline locations**
+1. Copy `C:\Users\<you>\.tauri\starnet-updater.key` (+ `.pub`) to **two offline locations**
    (USB + second medium). Read the copy back and byte-compare before trusting it
    (secret-durability law: never rely on a copy you haven't read back).
 2. Rotate the dev OpenRouter key at openrouter.ai (create new, update
@@ -150,7 +150,7 @@ Cheapest honest path (NEXT.md line 100): second local Windows account.
 4. Still as `starnetw1`, in a PowerShell in the repo (repo stays owned by andro — that
    ownership difference IS the isolation proof):
    ```powershell
-   cd C:\Users\andro\Desktop\gen
+   cd C:\Users\<you>\Desktop\gen
    $env:STARNET_PRODUCT_PERFECT_CANDIDATE_SHA = '<exact v0.5.2 commit sha>'
    $env:STARNET_FIRST_RUN_ARTIFACT = '<path to the installed StarNet.exe>'
    $env:STARNET_FIRST_RUN_CDP_PORT = '9333'

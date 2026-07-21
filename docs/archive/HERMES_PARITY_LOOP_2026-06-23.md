@@ -9,7 +9,7 @@
 ## Operating protocol (obeyed every iteration — same discipline as the P0–P3 loop)
 
 1. **Work in the worktree, never the integration tree.** All editing/committing in
-   `C:\Users\andro\gen-trees\hermes-parity` on branch `agent/hermes-parity`. Integration tree
+   `C:\Users\<you>\gen-trees\hermes-parity` on branch `agent/hermes-parity`. Integration tree
    (trunk `feat/harness-backend`) is touched ONLY to merge.
 2. **Green before merge.** `npm run test:fast` must pass in the worktree; for shell/channel items also `test:http`.
 3. **Watched before DONE.** UI/loop-affecting items get a live `npm start` check on a free port.

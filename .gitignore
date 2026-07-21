@@ -115,3 +115,8 @@ qa/installed/smoke-*/
 .claude/
 /CLAUDE.md
 /AGENTS.md
+
+# machine-local session litter (never track)
+CODEX_HANDOFF.md
+http-gate.err
+qa/digests/

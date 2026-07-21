@@ -95,7 +95,7 @@ WONTFIX-with-rationale.
 
 This repo is built by many agents in parallel. These are non-negotiable:
 
-- **All work happens in `C:\Users\andro\gen-trees\state-integrity` on `agent/state-integrity`.**
+- **All work happens in `C:\Users\<you>\gen-trees\state-integrity` on `agent/state-integrity`.**
   Never edit another worktree or `agent/*` branch.
 - **Commit only my files, by pathspec.** Never `git add -A` / `git add .`.
 - **Additive only.** Fixes add resets/teardowns at existing seams; they don't rename or

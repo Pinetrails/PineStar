@@ -7,10 +7,10 @@
 ## Operating model (read first)
 
 - **One session = one worktree = one branch.** Never run two sessions in the same folder.
-  - Create:  `C:\Users\andro\gen-trees\new-agent-tree.ps1 <name>`  → makes `C:\Users\andro\gen-trees\<name>` on branch `agent/<name>`.
-  - Sync:    `C:\Users\andro\gen-trees\sync-agent-tree.ps1 <name>`  (rebase onto trunk before merge).
-  - Remove:  `C:\Users\andro\gen-trees\remove-agent-tree.ps1 <name> -DeleteBranch`.
-  - Integration tree (trunk `feat/harness-backend`) = `C:\Users\andro\Desktop\gen`. Do NOT feature-edit it directly.
+  - Create:  `C:\Users\<you>\gen-trees\new-agent-tree.ps1 <name>`  → makes `C:\Users\<you>\gen-trees\<name>` on branch `agent/<name>`.
+  - Sync:    `C:\Users\<you>\gen-trees\sync-agent-tree.ps1 <name>`  (rebase onto trunk before merge).
+  - Remove:  `C:\Users\<you>\gen-trees\remove-agent-tree.ps1 <name> -DeleteBranch`.
+  - Integration tree (trunk `feat/harness-backend`) = `C:\Users\<you>\Desktop\gen`. Do NOT feature-edit it directly.
 - **Trunk is the serialization point.** Land **one branch into trunk at a time.** After each land,
   every other active lane runs `sync-agent-tree` (rebase) to absorb it. This turns the god-file
   overlap into small, resolvable rebases instead of a giant pile-up.

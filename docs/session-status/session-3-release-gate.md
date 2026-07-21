@@ -141,7 +141,7 @@ release smoke require a successful desktop package build.
 - BLOCKED-RUST-TOOLCHAIN: `npm.cmd run desktop:build` cannot pass until Cargo/Rust are
   installed and visible on PATH. Exact failing subcommand: `cargo metadata --no-deps
   --format-version 1`.
-- `AGENTS.md` was not present in this worktree or under `C:\Users\andro\gen-trees`
+- `AGENTS.md` was not present in this worktree or under `C:\Users\<you>\gen-trees`
   during the 2026-06-26T04:50-04:00 preflight search.
 
 ## Readiness claim

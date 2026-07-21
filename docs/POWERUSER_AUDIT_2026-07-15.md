@@ -202,8 +202,8 @@ No fixes were implemented in this audit.
 
 ## Raw evidence locations
 
-- Core flows: `C:\Users\andro\gen-trees\qa-core-poweruser-715\.qa-core-temp`
-- World/windows: `C:\Users\andro\gen-trees\qa-world-windows-0716\.bugloops\qa-world-windows`
+- Core flows: `C:\Users\<you>\gen-trees\qa-core-poweruser-715\.qa-core-temp`
+- World/windows: `C:\Users\<you>\gen-trees\qa-world-windows-0716\.bugloops\qa-world-windows`
 - Control-plane evidence was live-captured with harmless sentinels; its isolated processes/data
   were intentionally cleaned after verification. Exact responses and seams are preserved above.
 

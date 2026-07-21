@@ -145,7 +145,7 @@ green+verified+ready — merge is a separate explicit decision from the integrat
 ## D0 — SCOPE-LOCK (verified against the live worktree files, 2026-07-02)
 
 Fork point: trunk `feat/harness-backend` @ `95325fc`. All anchors below are REAL line numbers grepped
-in `C:\Users\andro\gen-trees\living-crew` at the time of D0 (they will drift as D1+ edits land — treat
+in `C:\Users\<you>\gen-trees\living-crew` at the time of D0 (they will drift as D1+ edits land — treat
 as "was here at D0"). world.js is 3914 lines pre-edit; chat.js 1762; zones.js 203.
 
 ### Verified anchors (plan claim → live reality)

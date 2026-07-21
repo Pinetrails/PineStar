@@ -30,7 +30,7 @@ Legend: **[BLOCK]** = do before public launch · **[SHOULD]** = strongly recomme
    + sig + latest.json, untracked but one `git add .` away from being committed forever.
    Add `release/` to `.gitignore`.
 5. **[SHOULD] Sweep the untracked dev-process docs off the shippable tree.** These leak
-   internal process, machine paths (`C:\Users\andro\...`), and the Skynet codename:
+   internal process, machine paths (`C:\Users\<you>\...`), and the Skynet codename:
    - Root: `AGENTS.md`, `AUTONOMOUS_BUILD_PLAN.md`, `CODE_MAP.md`, `HERMES_PARITY_PLAN.md`,
      `ORCHESTRATION_PLAN.md`
    - `docs/*_PLAN.md` / audit files (12+), `loops/`, `design/mockups/*.html`,

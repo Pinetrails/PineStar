@@ -3,9 +3,9 @@
 ## Current State
 
 - Status: `HELD-S1-SIDECAR-AUTHORITY`
-- Branch/worktree: `agent/org-graph-gap2` in `C:\Users\andro\gen-trees\org-graph-gap2`
+- Branch/worktree: `agent/org-graph-gap2` in `C:\Users\<you>\gen-trees\org-graph-gap2`
 - Current slice: pure org graph validator plus additive `PipelineEdge` persistence/readiness; extended with duplicate/self/malformed raw `PipelineEdge` rejection, explicit grant-bound agent validation, footprint-level placed-object validation, and malformed `PipelineEdge.lane` rejection. Current run rechecked the dependency gate and found S1 still unmerged, so no sidecar acceptance/routing wiring was attempted.
-- Runbook note: `AGENTS.md` was requested but is absent under `C:\Users\andro\gen-trees`; followed `docs/STARNET_SESSION_LOOPS_1_6.md`.
+- Runbook note: `AGENTS.md` was requested but is absent under `C:\Users\<you>\gen-trees`; followed `docs/STARNET_SESSION_LOOPS_1_6.md`.
 
 ## Changed Files
 

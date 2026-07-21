@@ -186,7 +186,7 @@ or real user-visible bug. **P2** = polish/hygiene. Each item: what, where, why i
   channel `/model` validation forever. Reuse the throttled re-warm the provider layer already grew.
 - **Non-atomic plaintext-token migration write** (`main.rs:523-524`): `std::fs::write` of `secrets.json`,
   no temp+rename; crash mid-write corrupts channel config. Use atomic write.
-- **qa/findings hygiene**: README says "ships empty" but 15 JSONs are tracked with absolute `C:\Users\andro\…`
+- **qa/findings hygiene**: README says "ships empty" but 15 JSONs are tracked with absolute `C:\Users\<you>\…`
   paths baked in. Reconcile.
 
 ### Frontend polish (from the UI lane)

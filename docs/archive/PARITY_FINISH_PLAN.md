@@ -12,7 +12,7 @@
 ## Operating protocol (obeyed every iteration)
 
 1. **Work in the worktree, never the integration tree.** ALL editing/committing happens in
-   `C:\Users\andro\gen-trees\parity-finish` on branch `agent/parity-finish` (already created via
+   `C:\Users\<you>\gen-trees\parity-finish` on branch `agent/parity-finish` (already created via
    `gen-trees\new-agent-tree.ps1 parity-finish`). The integration tree (trunk
    `feat/harness-backend`) is touched ONLY to merge. Never edit
    another agent's worktree or `agent/*` branch.
@@ -28,7 +28,7 @@
    explicit pathspecs — NEVER `git add -A` / `git add .`.
 5. **Polish gate before advancing** — self-review the diff, fix real findings, re-gate.
 6. **Shared contract additive-only.** `shared/events.js` and `shared/schema.js` are
-   MEMORY-CORTEX-owned (live worktree `C:\Users\andro\gen-trees\memory-cortex`, branch
+   MEMORY-CORTEX-owned (live worktree `C:\Users\<you>\gen-trees\memory-cortex`, branch
    `agent/memory-cortex`). New events/enum-widenings/fields are ADDITIVE only and must be
    **REQUESTED** from that owner with the exact name + payload shape, merged to trunk FIRST,
    then synced and consumed — NEVER self-edited, renamed, or removed. `git log

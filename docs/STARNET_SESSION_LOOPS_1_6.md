@@ -8,7 +8,7 @@
 ## Non-negotiable protocol
 
 1. Work only in the named worktree on the named branch. Never feature-edit
-   `C:\Users\andro\Desktop\gen`.
+   `C:\Users\<you>\Desktop\gen`.
 2. Before every iteration, run `git worktree list` and `git status --short --branch`.
 3. Before touching any hot file, run `node scripts/board.mjs --files <paths>` when
    available. If the file is hot, record `HELD-FOR-COORDINATION` and continue with
@@ -51,7 +51,7 @@ its sync/board check.
 grants are derived server-side from a validated Station document, not trusted from
 renderer-posted `placed` objects or bay object lists.
 
-**Worktree / branch.** `C:\Users\andro\gen-trees\station-authority-gap1` on
+**Worktree / branch.** `C:\Users\<you>\gen-trees\station-authority-gap1` on
 `agent/station-authority-gap1`.
 
 **Owned files.**
@@ -97,7 +97,7 @@ renderer-posted `placed` objects or bay object lists.
 one legal anchor, every grant resolves to a placed object, and handoff edges are
 runnable only when the door/path graph permits them.
 
-**Worktree / branch.** `C:\Users\andro\gen-trees\org-graph-gap2` on
+**Worktree / branch.** `C:\Users\<you>\gen-trees\org-graph-gap2` on
 `agent/org-graph-gap2`.
 
 **Owned files.**
@@ -138,7 +138,7 @@ runnable only when the door/path graph permits them.
 **Goal.** Produce a verified desktop release path: build, boot, updater manifest,
 installer/security checks, and release smoke.
 
-**Worktree / branch.** `C:\Users\andro\gen-trees\starnet-release-gate` on
+**Worktree / branch.** `C:\Users\<you>\gen-trees\starnet-release-gate` on
 `agent/starnet-release-gate`.
 
 **Owned files.**
@@ -185,7 +185,7 @@ blocks `npm.ps1`.
 **Goal.** Add a managed-credit spending path alongside BYOK without regressing the
 existing truthful ledger, budget caps, or key ownership model.
 
-**Worktree / branch.** `C:\Users\andro\gen-trees\managed-credits` on
+**Worktree / branch.** `C:\Users\<you>\gen-trees\managed-credits` on
 `agent/managed-credits`.
 
 **Owned files.**
@@ -226,7 +226,7 @@ existing truthful ledger, budget caps, or key ownership model.
 **Goal.** Finish Hermes H6.3: worker/subagent runs get bounded iteration budgets, no-op
 turns are refunded, and delegated loops cannot quietly burn the lead's full budget.
 
-**Worktree / branch.** `C:\Users\andro\gen-trees\iteration-budget` on
+**Worktree / branch.** `C:\Users\<you>\gen-trees\iteration-budget` on
 `agent/iteration-budget`.
 
 **Owned files.**
@@ -267,7 +267,7 @@ turns are refunded, and delegated loops cannot quietly burn the lead's full budg
 **Goal.** Make the mutable builder scale beyond small stations: chunked/incremental bake,
 bounded canvas memory, and repeatable visual release baselines.
 
-**Worktree / branch.** `C:\Users\andro\gen-trees\gap6-builder-bake` on
+**Worktree / branch.** `C:\Users\<you>\gen-trees\gap6-builder-bake` on
 `agent/gap6-builder-bake`.
 
 **Owned files.**
@@ -311,12 +311,12 @@ Run these from PowerShell. Use the `-ExecutionPolicy Bypass` wrapper because thi
 machine blocks local `.ps1` execution by default.
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File C:\Users\andro\gen-trees\new-agent-tree.ps1 station-authority-gap1
-powershell -ExecutionPolicy Bypass -File C:\Users\andro\gen-trees\new-agent-tree.ps1 org-graph-gap2
-powershell -ExecutionPolicy Bypass -File C:\Users\andro\gen-trees\new-agent-tree.ps1 starnet-release-gate
-powershell -ExecutionPolicy Bypass -File C:\Users\andro\gen-trees\new-agent-tree.ps1 managed-credits
-powershell -ExecutionPolicy Bypass -File C:\Users\andro\gen-trees\new-agent-tree.ps1 iteration-budget
-powershell -ExecutionPolicy Bypass -File C:\Users\andro\gen-trees\new-agent-tree.ps1 gap6-builder-bake
+powershell -ExecutionPolicy Bypass -File C:\Users\<you>\gen-trees\new-agent-tree.ps1 station-authority-gap1
+powershell -ExecutionPolicy Bypass -File C:\Users\<you>\gen-trees\new-agent-tree.ps1 org-graph-gap2
+powershell -ExecutionPolicy Bypass -File C:\Users\<you>\gen-trees\new-agent-tree.ps1 starnet-release-gate
+powershell -ExecutionPolicy Bypass -File C:\Users\<you>\gen-trees\new-agent-tree.ps1 managed-credits
+powershell -ExecutionPolicy Bypass -File C:\Users\<you>\gen-trees\new-agent-tree.ps1 iteration-budget
+powershell -ExecutionPolicy Bypass -File C:\Users\<you>\gen-trees\new-agent-tree.ps1 gap6-builder-bake
 ```
 
 ## Per-session status ledgers

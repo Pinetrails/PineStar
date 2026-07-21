@@ -16,7 +16,7 @@
 
 1. Invoke Skill `starnet-task-doctrine` before the first edit. It routes to the other laws.
 2. One agent per worktree (`gen-trees\new-agent-tree.ps1 <name>`); never feature-edit the
-   integration tree `C:\Users\andro\Desktop\gen`.
+   integration tree `C:\Users\<you>\Desktop\gen`.
 3. Implementation agents run on **Opus** (Andrew's directive, memory `delegate-coding-to-opus`).
 4. Green (`npm run test:fast`) + live-verified (starnet-verify) before merge; merge via
    `starnet-merge-ritual`. Update this doc's STATUS lines as items land.

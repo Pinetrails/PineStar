@@ -1,6 +1,6 @@
 # gen Harness — Replicate-Then-Surpass Hermes: Memory, Cron, Harness
 
-*Synthesis of an 11-agent comparative study (2026-06-16) of the local NousResearch Hermes clone (`C:\Users\andro\hermes-ref`, MIT) vs our `gen` harness, across memory, cron, context-engineering, and capability surface. Every claim is anchored to source verified against `sidecar/`, `shared/`, and the plan docs. This is the decision document.*
+*Synthesis of an 11-agent comparative study (2026-06-16) of the local NousResearch Hermes clone (`C:\Users\<you>\hermes-ref`, MIT) vs our `gen` harness, across memory, cron, context-engineering, and capability surface. Every claim is anchored to source verified against `sidecar/`, `shared/`, and the plan docs. This is the decision document.*
 
 ---
 

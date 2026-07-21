@@ -6,9 +6,9 @@ This file preserves the latest Phase 1-3 evidence before Phase 4 planning. It is
 
 ## Status Snapshot
 
-- Phase 2: `blocked` pass=7 fail=0 blocked=3 skipped=0 evidence=`C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-latest\phase2-status.json`
-- Dogfood: `blocked` pass=6 fail=0 blocked=4 skipped=0 evidence=`C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-latest\dogfood-status.json`
-- Phase 3: `blocked` pass=6 fail=0 blocked=3 skipped=0 evidence=`C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase3-latest\phase3-status.json`
+- Phase 2: `blocked` pass=7 fail=0 blocked=3 skipped=0 evidence=`C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\phase2-latest\phase2-status.json`
+- Dogfood: `blocked` pass=6 fail=0 blocked=4 skipped=0 evidence=`C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\dogfood-latest\dogfood-status.json`
+- Phase 3: `blocked` pass=6 fail=0 blocked=3 skipped=0 evidence=`C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\phase3-latest\phase3-status.json`
 
 ## Phase 4 Starting Line
 
@@ -40,13 +40,13 @@ This file preserves the latest Phase 1-3 evidence before Phase 4 planning. It is
 
 ## Logs
 
-- `test-fast`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\test-fast.log`
-- `test-http`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\test-http.log`
-- `audit-mock`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\audit-mock.log`
-- `golden`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\golden.log`
-- `validate-map`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\validate-map.log`
-- `test-world`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\test-world.log`
-- `desktop-prepare`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\desktop-prepare.log`
+- `test-fast`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\test-fast.log`
+- `test-http`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\test-http.log`
+- `audit-mock`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\audit-mock.log`
+- `golden`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\golden.log`
+- `validate-map`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\validate-map.log`
+- `test-world`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\test-world.log`
+- `desktop-prepare`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\phase2-20260626-213913\desktop-prepare.log`
 
 ## Next Action
 
@@ -75,12 +75,12 @@ Blocked steps need external state: usually a real OpenRouter key or desktop Rust
 
 ## Logs
 
-- `research-file-replay`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-214040\research-file-replay.log`
-- `shell-exec-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-214040\shell-exec-proof.log`
-- `verify-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-214040\verify-proof.log`
-- `cancel-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-214040\cancel-proof.log`
-- `budget-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-214040\budget-proof.log`
-- `restart-resume-proof`: `C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-214040\restart-resume-proof.log`
+- `research-file-replay`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-214040\research-file-replay.log`
+- `shell-exec-proof`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-214040\shell-exec-proof.log`
+- `verify-proof`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-214040\verify-proof.log`
+- `cancel-proof`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-214040\cancel-proof.log`
+- `budget-proof`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-214040\budget-proof.log`
+- `restart-resume-proof`: `C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\dogfood-20260626-214040\restart-resume-proof.log`
 
 ## Verdict Rule
 
@@ -97,8 +97,8 @@ This pack is green only when paid live provider proof and the attended UI dogfoo
 
 | Status | Phase | Step | Required | Notes |
 |---|---|---|---:|---|
-| PASS | `3.1` | `3.1-phase2-foundation` Phase 2 foundation gates remain trustworthy | yes | evidence C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\phase2-latest\phase2-status.json |
-| BLOCKED | `3.1` | `3.1-dogfood-pack` Daily-driver dogfood evidence pack | yes | Dogfood verdict blocked; see C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-latest\dogfood-status.json |
+| PASS | `3.1` | `3.1-phase2-foundation` Phase 2 foundation gates remain trustworthy | yes | evidence C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\phase2-latest\phase2-status.json |
+| BLOCKED | `3.1` | `3.1-dogfood-pack` Daily-driver dogfood evidence pack | yes | Dogfood verdict blocked; see C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\dogfood-latest\dogfood-status.json |
 | BLOCKED | `3.2` | `3.2-soak-repeat` Reliability soak: two green dogfood passes | yes | Requires two complete green dogfood passes, one fresh and one after sidecar restart. |
 | PASS | `3.3` | `3.3-fs-patch` Hermes-style fs.patch parser/fuzzy atomic patching | yes | exit 0 |
 | PASS | `3.4` | `3.4-mcp-stdio` Secure MCP stdio transport and cleanup | yes | exit 0 |
@@ -113,4 +113,4 @@ Run `npm.cmd run phase3:loop` after each fix. The loop stops when the verdict is
 
 ## Next Action
 
-Work the first non-pass item: `3.1-dogfood-pack` - Dogfood verdict blocked; see C:\Users\andro\gen-trees\starnet-replacement-eval\.dogfood\dogfood-latest\dogfood-status.json
+Work the first non-pass item: `3.1-dogfood-pack` - Dogfood verdict blocked; see C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\dogfood-latest\dogfood-status.json

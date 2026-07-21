@@ -4,7 +4,7 @@
 
 The loop is complete when each of the five Hermes-parity areas has:
 
-1. A Hermes reference invariant identified from `C:\Users\andro\hermes-ref`.
+1. A Hermes reference invariant identified from `C:\Users\<you>\hermes-ref`.
 2. A StarNet gap assessment against the current JS/Tauri harness.
 3. A concrete code or test change for the highest-risk gap.
 4. Passing targeted verification and `npm run test:fast`.

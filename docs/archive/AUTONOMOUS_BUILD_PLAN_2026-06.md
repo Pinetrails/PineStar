@@ -11,8 +11,8 @@
 ## Operating protocol (non-negotiable — the loop obeys these every iteration)
 
 1. **Work in the worktree, never the integration tree.** All editing/committing happens in
-   `C:\Users\andro\gen-trees\autobuild` on branch `agent/autobuild`. The integration tree
-   `C:\Users\andro\Desktop\gen` (trunk `feat/harness-backend`) is ONLY touched to merge.
+   `C:\Users\<you>\gen-trees\autobuild` on branch `agent/autobuild`. The integration tree
+   `C:\Users\<you>\Desktop\gen` (trunk `feat/harness-backend`) is ONLY touched to merge.
 2. **Green before merge.** `npm run test:fast` MUST pass in the worktree before anything merges to
    trunk. For ship-gate items also run `npm run test:http`. No merge on red.
 3. **Watched before DONE.** For any item that affects the UI or the run loop, `npm start` on a free

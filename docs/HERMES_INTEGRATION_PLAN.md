@@ -2,13 +2,13 @@
 
 > **StarNet** — a layered plan for borrowing Hermes-derived capabilities on top of the proven M1 sidecar harness. This document is the companion to `INCREMENTAL_ROADMAP.md` and obeys the same discipline: one-line goals, Deliverables/Port-create/Tests/DoD per step, the 12-point Definition-of-Done, one-commit-sized steps, critical-path-first. Every seam below was confirmed against the real files; every premature/redundant/hallucinated claim flagged by the adversarial verdicts has been dropped or corrected.
 
-> _Source: `NousResearch/hermes-agent` (MIT), cloned to `C:\Users\andro\hermes-ref`. Pattern mine, not a port. Produced by a 9-layer parallel design + adversarial-verify pass against the real sidecar (2026-06-14)._
+> _Source: `NousResearch/hermes-agent` (MIT), cloned to `C:\Users\<you>\hermes-ref`. Pattern mine, not a port. Produced by a 9-layer parallel design + adversarial-verify pass against the real sidecar (2026-06-14)._
 
 ---
 
 ## 1. Preamble — what we are borrowing and the prime directive
 
-Hermes (`C:\Users\andro\hermes-ref`) is a mature, multi-provider, Python agent runtime. We are **mining it for patterns, not porting it.** The prime directive, in four clauses:
+Hermes (`C:\Users\<you>\hermes-ref`) is a mature, multi-provider, Python agent runtime. We are **mining it for patterns, not porting it.** The prime directive, in four clauses:
 
 1. **It is a pattern mine, not a port.** We take the *shape* of an idea (a 3-state credential machine, a staged JSON-repair ladder, a four-tier consent gate) and re-derive the *smallest honest version* against our seams. We leave behind every Hermes-ecosystem artifact: the 30-field ProviderProfile dataclass, the 60+ shell DANGEROUS_PATTERNS table, the OAuth/Copilot/Bedrock auth variants, the plugin-directory discovery, the contextvars/threading machinery, the 270-line classification reconcilers, the prefix-museum summarizer prompts.
 

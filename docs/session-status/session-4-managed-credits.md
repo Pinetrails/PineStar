@@ -20,7 +20,7 @@
 - `sidecar/billing.js` now prefers `ledger.recordStrict()` for managed-credit final settlement when available.
 - A strict durable append failure refuses managed finalization before any refund is emitted, records no in-memory false success, and leaves the run unsettled for retry/recovery.
 - Existing managed reservation, failed-run refund, BYOK isolation, debit throw, explicit adapter refusal, missing refund adapter, cap kill, legacy ledger failure, and run identity conflict behavior still passes.
-- `AGENTS.md` is absent under `C:\Users\andro\gen-trees`; `CLAUDE.md` and `docs/STARNET_SESSION_LOOPS_1_6.md` were followed.
+- `AGENTS.md` is absent under `C:\Users\<you>\gen-trees`; `CLAUDE.md` and `docs/STARNET_SESSION_LOOPS_1_6.md` were followed.
 - `node scripts\board.mjs --files sidecar\billing.js sidecar\ledger.js test\billing.test.js test\ledger.test.js docs\session-status\session-4-managed-credits.md` reported no uncommitted tracked edits matching `sidecar\billing.js`; contended files remain limited to unrelated/shared route/UI surfaces including `sidecar/index.js`.
 
 ## Tests Run

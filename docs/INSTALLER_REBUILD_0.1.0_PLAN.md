@@ -13,7 +13,7 @@ DECISION 2 = version bump) — resolve them before the build step.
 StarNet is a downloadable Tauri desktop app: a Rust shell that loads a static web frontend and
 spawns a bundled Node sidecar. The user runs the **installed** build, not a dev server.
 
-- The user's running app is the **installed copy** at `C:\Users\andro\AppData\Local\StarNet\`,
+- The user's running app is the **installed copy** at `C:\Users\<you>\AppData\Local\StarNet\`,
   reporting itself as **version 0.1.0**.
 - That install's `.exe` was built **2026-06-27 03:23:54 -0400**. Everything committed to the
   source trunk *after* that timestamp (an entire day of feature work — see §3) **never made it
@@ -25,7 +25,7 @@ spawns a bundled Node sidecar. The user runs the **installed** build, not a dev 
 **Already done (a hotfix, NOT this task):** the source `frontend/` was mirrored directly into
 the live install's resource dir via `robocopy`, so after an app restart the *running* install is
 already current. A pre-sync backup sits at
-`C:\Users\andro\AppData\Local\StarNet\frontend.bak-20260628-pre-sync`.
+`C:\Users\<you>\AppData\Local\StarNet\frontend.bak-20260628-pre-sync`.
 
 **This task:** produce a *properly rebuilt 0.1.0 installer* so the distributable artifact itself
 carries all the work — for clean reinstalls and (if pursued) updater delivery. The hot-sync was a
@@ -35,13 +35,13 @@ band-aid on one machine; this bakes it into the bundle.
 
 ## 2. Where to build from
 
-- **Integration tree / trunk:** `C:\Users\andro\Desktop\gen`, branch **`feat/harness-backend`**.
+- **Integration tree / trunk:** `C:\Users\<you>\Desktop\gen`, branch **`feat/harness-backend`**.
   This branch already has every relevant merge (latest commit at authoring time: `21e2711`).
 - All the missing work is **already committed on this branch** — there is nothing to merge or
   cherry-pick. The build just needs to run against current trunk.
 - Confirm before building:
   ```
-  cd C:\Users\andro\Desktop\gen
+  cd C:\Users\<you>\Desktop\gen
   git status            # expect clean (or only untracked docs/screenshots)
   git rev-parse --abbrev-ref HEAD   # expect: feat/harness-backend
   git log -1 --oneline  # expect 21e2711 (merge agent/replacement-sweep) or later
@@ -128,7 +128,7 @@ To regenerate the exact list:
 ## 5. Build steps
 
 ```bash
-cd C:\Users\andro\Desktop\gen
+cd C:\Users\<you>\Desktop\gen
 
 # 1. Confirm branch/commit (see §2).
 # 2. Install deps (gets the tauri CLI).
@@ -191,7 +191,7 @@ grep -n "good looks like" src-tauri/target/release/frontend/app/onboarding.js
 1. **Close the running app first** — the installed `skynet-desktop.exe` (was PID 33048) locks its
    own binary; the installer can't replace a running exe. Fully quit StarNet.
 2. Run the new installer: `src-tauri/target/release/bundle/nsis/StarNet_<version>_x64-setup.exe`
-   (NSIS, `installMode: passive`). It installs to `C:\Users\andro\AppData\Local\StarNet\`.
+   (NSIS, `installMode: passive`). It installs to `C:\Users\<you>\AppData\Local\StarNet\`.
 3. If pursuing updater delivery (DECISION 1 = A, DECISION 2 = bump): publish the new
    `latest.json` + signed `.nsis.zip`/`.sig` to `https://updates.starnet.app/desktop/latest.json`.
    (Out of scope for a local rebuild; note it as a follow-up.)
@@ -201,7 +201,7 @@ grep -n "good looks like" src-tauri/target/release/frontend/app/onboarding.js
 ## 9. Post-install verification
 
 ```bash
-INST="C:/Users/andro/AppData/Local/StarNet"
+INST="C:/Users/<you>/AppData/Local/StarNet"
 ls "$INST/frontend/app/pitch.js" "$INST/frontend/app/quests.js"   # new modules present
 grep -n "good looks like" "$INST/frontend/app/onboarding.js"      # expect no output
 ```
@@ -218,7 +218,7 @@ corrected context beat, and the pitch / quests / seeds / autonomy features are p
 - **Don't ship `sidecar/workspaces*`** — those are runtime data dirs, not code.
 - **Hot-sync already applied to the live machine** — the user's running install is already current
   after a restart; this rebuild is for a clean distributable, not to un-break the live machine.
-- **Backup exists** at `C:\Users\andro\AppData\Local\StarNet\frontend.bak-20260628-pre-sync` if a
+- **Backup exists** at `C:\Users\<you>\AppData\Local\StarNet\frontend.bak-20260628-pre-sync` if a
   rollback of the hot-sync is ever needed.
 - **package.json version (0.0.0) is cosmetic** for the installer; `tauri.conf.json` is the source
   of truth for the bundled version.

@@ -4,7 +4,7 @@
 and is missing integration UI + small details. What exactly is missing, and what should we build?"
 
 **Method:** code-level diff of the full user-facing configuration surface in both repos —
-Hermes reference clone (`C:\Users\andro\hermes-ref`, ~150+ config keys / 15 settings panels)
+Hermes reference clone (`C:\Users\<you>\hermes-ref`, ~150+ config keys / 15 settings panels)
 vs StarNet (`Desktop\gen`, ~140 controls across 14 terminal windows). Plan docs were NOT
 trusted; every "backend exists" claim below was re-verified by grep on 2026-07-01.
 This is a different layer than the prior Hermes audits (engine parity H1–H6) — those compared
@@ -73,7 +73,7 @@ essentially every settings row; StarNet has them sporadically:
 ## How we keep finding these (recurring process)
 
 1. **This doc is the parity checklist** — re-run the two-sided enumeration after any major
-   `git -C C:\Users\andro\hermes-ref pull` (their release notes → grep our surface).
+   `git -C C:\Users\<you>\hermes-ref pull` (their release notes → grep our surface).
 2. The P2 layer is best caught by the **Beginner Run loop** (fresh-eyes walkthrough) + the
    UI visual harness — pattern-match "did I get feedback? could I test it? was there help text?"
    on every settings interaction.
