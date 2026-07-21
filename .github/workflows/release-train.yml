@@ -220,6 +220,10 @@ jobs:
           if [ -n "$(git status --porcelain)" ]; then
             echo "::error::[$TARGET] working tree is DIRTY at build time — a released binary must come from a clean, tagged checkout. Dirty files:"
             git status --porcelain
+            echo "--- diff of dirty tracked files (first 120 lines) ---"
+            git diff | head -120
+            echo "--- git eol/attr state of dirty files ---"
+            git status --porcelain | awk '{print $2}' | while read -r f; do git ls-files --eol -- "$f"; done
             exit 1
           fi
           # (1b) git describe must resolve to the tag we're building (guards a detached build off the wrong commit).
