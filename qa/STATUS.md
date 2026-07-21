@@ -249,7 +249,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-21 18:06Z @ 15731fa2 | GREEN | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-21 20:05Z @ cb698f34 | GREEN | 0 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-21T16:51:35.488Z · ui-only · 97090ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
@@ -632,3 +632,4 @@ ow. Gates: test:fast 369/369 (branch + trunk integration tree) + test:http FULL 
 - 2026-07-21 merge: claude/onboarding-restart-behavior-98736a -> trunk 66937b7b (+W0 re-stamp 78d54155). RE-WAKE REPLAY: wake:false routes to reignite() — re-greet lines + straight to startQuestions; flood/first-contact/mandate never replay (locked in test/onboarding.test.js). Gate 376 green post-stamp.
 - 2026-07-21 flip-safety pass: all-refs Gitleaks CLEAN (3131 commits), 49 merged remote branches pruned, single-author commit attribution in force
 - 2026-07-21: v0.6.4 PUBLISHED (releases repo pruned to ONLY 0.6.4 per Andrew; win feed live-verified). Release-train red ROOT-CAUSED: RELEASE_NOTES.md is locked surface, bump+notes always land after the W0 stamp -> claims gate can never pass on the tag. LAW: stamp AFTER notes, BEFORE tag. Re-stamp 62e8b949, fresh-clone claims PASS, gate 376 green; remote tag move = operator step.
+- 2026-07-21: RELEASE-TRAIN PROVEN GREEN through assemble (run 29867022534): gate + ALL FOUR build legs + multi-platform manifest. Three train fixes landed: (1) W0 stamp law — RELEASE_NOTES.md is locked surface, stamp AFTER notes BEFORE tag (62e8b949); (2) byte-exact clean-tree check — Windows runner git-status eol bookkeeping unreliable after tauri CLI touches Cargo.toml, hash-object vs blob is the honest check (13291337+47152b54); (3) porcelain XY parse. stage-draft red = EXPECTED (v0.6.4 published = immutable). v0.6.5 = first fully automatic cut: tag push -> draft w/ every installer -> click Publish. RELEASES_TOKEN re-mint still owed before that train.
