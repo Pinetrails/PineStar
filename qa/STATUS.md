@@ -1,3 +1,4 @@
+- 2026-07-21 · claude/maximize-border-pc-58234b -> trunk 2e784db3 — titlebar unified 2px-SVG glyphs (maximized chrome weight-match, 3rd Andrew report), W0 surface re-stamped in-branch; gate 374 green.
 # QA STATION — dashboard
 
 **2026-07-20 merge digest (personality example-message removal):** `claude/starnet-overseer-oauth-providers-55ea27` → `feat/harness-backend` merge `22ff75ca` (snapshot `7a76c29e`), W0 re-stamps `af535f75` (in-branch) + `b75082c6` (at merge head). Andrew's spec: selecting a personality must NOT show an example message. Removed the sample-reply quote from BOTH selection surfaces: genesis create screen (app.js renderVoicePreview now renders only the legacy 'tuned:' readout for resumed agents carrying voiceTraits; empty on fresh create) and the dossier PERSONALITY card (stationui.js personaCard quote block dropped; chip name + vibe tooltip carry the choice). personas.js sampleVoiceReply KEPT — voice.js still pre-warms the TTS cache with it (not a UI surface). Live-proven on fresh seed :9377 (chip select → preview empty, zero .vp-quote in DOM) and seeded station :9379 (dossier card: 7 chips, no preview; apply-rerender also clean). Conflicts: claims.json take-trunk + fresh stamp AFTER the merge (HEAD-not-worktree trap respected); .claude/launch.json modify/delete → stays UNTRACKED per public-hygiene `52cadd3c` (worktree copies are machine-local now — lanes stop unioning it). Gates: lane test:fast 374/374 at `af535f75`; trunk **test:fast 374/374 green at `b75082c6`** + claims planning PASS. No sidecar/shared/hotfiles → no test:http owed; no credential moves. STILL OPEN: next exe rebuild picks this up.
@@ -246,7 +247,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-20 21:06Z @ 5e323a5d | GREEN | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-21 04:05Z @ d4551fdd | GREEN | 0 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-20T19:49:07.972Z · ui-only · 93056ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
