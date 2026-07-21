@@ -378,8 +378,8 @@
       },
       {
         "path": "frontend/app/onboarding.js",
-        "bytes": 66380,
-        "sha256": "b161db0237abed5bdedaf1b857adca868878e2b2dd22c41343e0606cbf73b2f8"
+        "bytes": 68227,
+        "sha256": "c57078b777239807b847812190280261c5aaf6e9cdbac6bcf047c3fe2fa4d46e"
       },
       {
         "path": "frontend/app/permissions.js",
