@@ -1650,7 +1650,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="cf-head"><span class="cf-file">◉ personality</span><span class="cf-badge">PER-AGENT</span></div>' +
       '<div class="cf-desc">How this agent talks — in chat, delivered work, and its ambient lines on the floor. Changes the delivery only, never the work (or the station voice). Pick one to apply it immediately.</div>' +
       '<div class="ov-vchips" id="ag-persona-chips">' + chips + '</div>' +
-      (p ? '<div class="ov-vpreview"><div class="vp-quote">“' + esc(p.sampleVoiceReply || p.cardLine || '') + '”</div><div class="vp-meta">' + esc(p.name) + '</div></div>' : '') +
+      // sample-reply preview REMOVED (Andrew, 2026-07-20) — the sel chip + vibe tooltip carry the choice.
       '<div id="ag-persona-msg" class="msg"></div>' +
     '</div>';
   }
