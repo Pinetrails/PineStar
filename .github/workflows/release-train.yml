@@ -228,11 +228,14 @@ jobs:
           real_dirt=0
           while IFS= read -r line; do
             [ -z "$line" ] && continue
-            st="${line%% *}"; f="${line#* }"; f="${f# }"
-            if [ "$st" != "M" ] && [ "$st" != " M" ]; then
-              echo "::error::[$TARGET] unexpected working-tree state '$line' at build time."
-              real_dirt=1; continue
-            fi
+            # porcelain v1: fixed two-char XY status, space, path — e.g. " M src-tauri/Cargo.toml"
+            st="${line:0:2}"; f="${line:3}"
+            case "$st" in
+              ' M'|'M '|'MM') ;;
+              *)
+                echo "::error::[$TARGET] unexpected working-tree state '$line' at build time."
+                real_dirt=1; continue ;;
+            esac
             wt=$(git hash-object --no-filters -- "$f")
             idx=$(git rev-parse ":$f")
             if [ "$wt" = "$idx" ]; then
