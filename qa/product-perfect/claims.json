@@ -18,23 +18,23 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "81c297d8d5a40a41d891aaf076a6f48e282c9bd4",
+    "sourceCommit": "9b89d2246428abb14ec0e699f18866a20f4faa6d",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
         "path": "INSTALL.md",
-        "bytes": 7210,
-        "sha256": "353043b62321057a3f013835c0dc75fd169a87c263359d84589103b8ca90c39d"
+        "bytes": 7193,
+        "sha256": "1ca8b6eee3a6927a1f094534abf13a09313c6b72d82c67431981382f50e2a4e6"
       },
       {
         "path": "PRIVACY.md",
-        "bytes": 9610,
-        "sha256": "c57b1051b7a065a0e03703166213520b4431692ec6e3d61f4cd6e82443e8d4d2"
+        "bytes": 9593,
+        "sha256": "036ff5fe314ba7c41782d40b447ee2790ceba232584bf345e24ad0ced99bcac4"
       },
       {
         "path": "README.md",
-        "bytes": 4769,
-        "sha256": "2231630e6ceb8953cf695939d296dad8f965a2cdfa70b93ac099fe2e374f720a"
+        "bytes": 7583,
+        "sha256": "a557184f142bf221e21c1bfa63bb96f97f41c51ffec2e4afe923284385167cb9"
       },
       {
         "path": "RELEASE_NOTES.md",
@@ -48,8 +48,8 @@
       },
       {
         "path": "docs/DOWNLOAD_PAGE.md",
-        "bytes": 5893,
-        "sha256": "48c5cee288fcc4b0738c442d7e06ee9fcf7ce18a37688f9942a5f88f207726bc"
+        "bytes": 5876,
+        "sha256": "de77f665f29d73f046f873f7560f688df710712cbf242974e46fbcdf4d62b0da"
       },
       {
         "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
@@ -718,8 +718,8 @@
       },
       {
         "path": "frontend/app/updates.js",
-        "bytes": 19797,
-        "sha256": "4d6cf4d6edede8715ac8930683e24e443974826c4d94f02afc7120ea38a8280b"
+        "bytes": 19780,
+        "sha256": "6b79676684c0efe0bd26bdfaf83ba060647d08d686bf0e9e2d846eb13d809018"
       },
       {
         "path": "frontend/app/voice.js",
