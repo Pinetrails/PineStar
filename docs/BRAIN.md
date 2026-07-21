@@ -73,13 +73,16 @@ not the authority boundary.
 
 ## How to work here (non-negotiable)
 
-1. **Read `CLAUDE.md`** (repo root) — the multi-agent worktree protocol. You are one of many
-   concurrent agents; work in your own worktree under `%USERPROFILE%\gen-trees\`, never
-   feature-edit the integration tree (`%USERPROFILE%\Desktop\gen`).
-2. **Invoke the skills** in `.claude/skills/` — `starnet-task-doctrine` first, always;
-   then the law skill for your area (frontend/backend), `starnet-verify` before claiming
-   done, `starnet-merge-ritual` to integrate. They encode the locked judgment; they win
-   over anything conflicting in older docs.
+1. **Read the local operating protocol** (`CLAUDE.md` at the repo root of the internal
+   integration environment — untracked, maintainer tooling). You are one of many concurrent
+   agents; work in your own worktree, never feature-edit the integration tree. External
+   contributors: a normal fork-and-pull-request workflow is all you need (see
+   [CONTRIBUTING.md](../CONTRIBUTING.md)).
+2. **Invoke the operating-doctrine skills** (local `.claude/skills/`, untracked maintainer
+   tooling) — `starnet-task-doctrine` first, always; then the law skill for your area
+   (frontend/backend), `starnet-verify` before claiming done, `starnet-merge-ritual` to
+   integrate. They encode the locked judgment; they win over anything conflicting in older
+   docs.
 3. **Gate:** `npm run test:fast` (~254 steps) green before merge. Live-app verification via
    `node dev/seed.js --keep` (pre-onboarded workspace, no ceremony) + preview/CDP DOM
    round-trips (canvas screenshots time out — see MISTAKES.md).
@@ -105,8 +108,9 @@ lanes per day; grep trunk before acting on any doc claim, including this file's.
 ## Doc map (what to read, what to ignore)
 
 **Living (keep current, safe to trust after grep-check):**
-`CLAUDE.md`, `AGENTS.md`, this file + `DECISIONS.md` / `MISTAKES.md` / `NEXT.md`,
-`.claude/skills/*`, `qa/{STATUS,KNOWN_ISSUES,QA_STATION}.md`, `docs/RELEASE_RUNBOOK.md`,
+this file + `DECISIONS.md` / `MISTAKES.md` / `NEXT.md` (plus the untracked local
+`CLAUDE.md` / `AGENTS.md` / `.claude/skills/*` maintainer tooling),
+`qa/{STATUS,KNOWN_ISSUES,QA_STATION}.md`, `docs/RELEASE_RUNBOOK.md`,
 `INSTALL.md`, `PRIVACY.md`, `TERMS.md`, `NOTICE.md`, `loops/*.md` (QA crew directives),
 `scripts/VISUAL_AUDITOR.md`, `CODE_MAP.md` (rebuilt 2026-07-06).
 
