@@ -1440,6 +1440,20 @@
       "env": {
         "SKYNET_PORT": "9377"
       }
+    },
+    {
+      "name": "oauth-genesis-seed",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "dev/seed.js",
+        "--keep"
+      ],
+      "port": 9379,
+      "autoPort": false,
+      "env": {
+        "SKYNET_PORT": "9379",
+        "SKYNET_DEFAULT_MODEL": "anthropic/claude-haiku-4.5"
+      }
     }
   ]
 }

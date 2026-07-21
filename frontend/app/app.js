@@ -1932,9 +1932,10 @@ const App = (() => {
   // pickedCustomVoice remain as state so RESUMED agents keep the voiceTraits/customVoice they already
   // carry — Personas.compose still honors them; a fresh create simply never sets them.
 
-  // a live preview: how the picked voice sounds. (The fine-tune UI is gone from this screen — the
-  // "tuned:" readout survives ONLY for resumed agents that still carry voiceTraits; a fresh create
-  // just names the archetype, no tuning-era "untuned" copy.)
+  // The sample-reply quote is GONE from personality selection (Andrew, 2026-07-20): the chip's name +
+  // vibe tooltip are the whole pitch. This block now renders ONLY the legacy "tuned:" readout for
+  // resumed agents that still carry voiceTraits (fine-tune UI removed 2026-07-09); a fresh create
+  // renders nothing here.
   function renderVoicePreview() {
     const pv = el('voice-preview'); if (!pv || typeof Personas === 'undefined') return;
     const p = Personas.get(pickedPersona);
@@ -1945,10 +1946,10 @@ const App = (() => {
     });
     if (Personas.TOGGLES) Personas.TOGGLES.forEach(g => { if (pickedTraits[g.key]) tweaks.push(g.label.toLowerCase()); });
     pv.innerHTML = '';
-    const q = document.createElement('div'); q.className = 'vp-quote'; q.textContent = '“' + p.sampleVoiceReply + '”';
+    if (!tweaks.length) return;
     const m = document.createElement('div'); m.className = 'vp-meta';
-    m.textContent = p.name + (tweaks.length ? ' · tuned: ' + tweaks.join(', ') : '');
-    pv.appendChild(q); pv.appendChild(m);
+    m.textContent = p.name + ' · tuned: ' + tweaks.join(', ');
+    pv.appendChild(m);
   }
 
   // initConnect(prefillName, isRecovery, savedAgent)
