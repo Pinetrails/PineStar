@@ -217,13 +217,16 @@ jobs:
         run: |
           set -euo pipefail
           # (1a) the working tree must be clean — a dirty tree ⇒ an unreproducible "-dirty" binary.
-          if [ -n "$(git status --porcelain)" ]; then
+          # Content-exact comparison (-c core.autocrlf=false): the Windows runner's global
+          # autocrlf=true marks a byte-identical LF file "modified" after the tauri CLI rewrites
+          # Cargo.toml in place during the build (empty `git diff`, i/lf w/lf — proven on the
+          # v0.6.4 train, run 29861857183). Disabling eol conversion for THIS check compares the
+          # actual bytes against the index — stricter than the autocrlf view, not weaker.
+          if [ -n "$(git -c core.autocrlf=false status --porcelain)" ]; then
             echo "::error::[$TARGET] working tree is DIRTY at build time — a released binary must come from a clean, tagged checkout. Dirty files:"
-            git status --porcelain
+            git -c core.autocrlf=false status --porcelain
             echo "--- diff of dirty tracked files (first 120 lines) ---"
-            git diff | head -120
-            echo "--- git eol/attr state of dirty files ---"
-            git status --porcelain | awk '{print $2}' | while read -r f; do git ls-files --eol -- "$f"; done
+            git -c core.autocrlf=false diff | head -120
             exit 1
           fi
           # (1b) git describe must resolve to the tag we're building (guards a detached build off the wrong commit).
