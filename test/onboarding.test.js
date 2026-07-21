@@ -207,4 +207,21 @@ A.ok(!/Chat\.beginInterview\(\(\) => \{\}\)/.test(src),
   ]) A.ok(/PLAIN WORDS ONLY/.test(d), 'the ' + name + ' ASK spec carries the plain-words law');
 }
 
+/* ---------- THE RE-WAKE (2026-07-20) — a replayed awakening never re-runs the birth monologue ---------- */
+// wake:false is the resume-mid-awakening replay (app.js resumeInto: onboarded never flipped, so the ceremony
+// re-enters). The agent has already been born in front of this Commander once — the replay must route to the
+// short re-greeting (reignite), then straight back to the questions. Re-running the full birth speech reads
+// as amnesia (Andrew, 2026-07-20).
+A.ok(/else if \(!opts\.wake\)[\s\S]{0,700}reignite\(\)/.test(src),
+  'a wake:false (replay) entry routes to the re-wake, never the full birth ignition');
+{
+  const rStart = src.indexOf('function reignite()');
+  A.ok(rStart >= 0, 'the re-wake beat exists (reignite)');
+  const rEnd = src.indexOf('function floodWords');
+  const rSeg = src.slice(rStart, rEnd > rStart ? rEnd : src.length).replace(/\/\/[^\n]*/g, '');
+  A.ok(/startQuestions/.test(rSeg), 'the re-wake hands straight back to the questions');
+  A.ok(!/theFlood|firstContact|theMandate|waitBirth/.test(rSeg),
+    'the re-wake never replays the flood/contact/mandate birth monologue');
+}
+
 A.report('onboarding.test');
