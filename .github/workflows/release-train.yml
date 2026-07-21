@@ -36,7 +36,14 @@ jobs:
   gate:
     runs-on: ubuntu-latest
     steps:
+      # fetch-depth: 0 — the claims-authority test resolves the release-surface manifest's
+      # sourceCommit against the object store; a shallow checkout lacks that commit and the
+      # planning authority reads BLOCKED ("source commit unreadable"), failing the gate on a
+      # green trunk (proven on the v0.6.3 train, runs 29787452203/29788984615). Same reason
+      # the build job already fetches full history for its provenance gate.
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
