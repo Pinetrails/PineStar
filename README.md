@@ -6,7 +6,7 @@
 
 [![Download](https://img.shields.io/github/v/release/androoAGI/starnet-releases?label=download&color=f5a623)](https://github.com/androoAGI/starnet-releases/releases/latest)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-4a90d9)](INSTALL.md)
-[![License: MIT](https://img.shields.io/badge/license-MIT-2ea44f)](LICENSE)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial%201.0.0-blue)](LICENSE)
 [![Local-first](https://img.shields.io/badge/local--first-your%20machine%2C%20your%20data-8250df)](PRIVACY.md)
 
 [Download](https://github.com/androoAGI/starnet-releases/releases/latest) ·
@@ -155,4 +155,7 @@ reporting instructions.
 
 ## License
 
-StarNet is available under the [MIT License](LICENSE).
+StarNet is source-available under the [PolyForm Noncommercial License 1.0.0](LICENSE).
+You are free to use, study, modify, and share it for any noncommercial purpose. Selling
+StarNet, redistributing it commercially, or otherwise profiting from it is not permitted.
+Third-party components remain under their original licenses — see [NOTICE.md](NOTICE.md).

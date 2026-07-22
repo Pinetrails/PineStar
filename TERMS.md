@@ -56,8 +56,11 @@ your machine except for the specific provider/channel/update requests described 
 
 ## 7. License
 
-The StarNet source code is licensed under the MIT License; see the `LICENSE` file at the
-repository root. These terms cover use of the app; the MIT License governs the code itself.
+The StarNet source code is licensed under the PolyForm Noncommercial License 1.0.0; see the
+`LICENSE` file at the repository root. You may use, modify, and share the code for
+noncommercial purposes only — commercial redistribution or sale is not permitted. These terms
+cover use of the app; the license governs the code itself. Third-party components remain under
+their original licenses (see `NOTICE.md`).
 
 ## 8. Contact
 
