@@ -164,6 +164,18 @@
     const rosterFn = typeof o.roster === 'function' ? o.roster : null;
     const setModelFn = typeof o.setModel === 'function' ? o.setModel : null;
     const modelCatalogFn = typeof o.modelCatalog === 'function' ? o.modelCatalog : null;
+    // MEDIA INGEST (photos/videos/voice/files the user sends IN the messenger). All three are injected by the
+    // composition root; any absent -> media degrades to an honest per-item note instead of a silent drop:
+    //   fetchMedia(item)                   -> { ok, buffer?, error? }   (adapter.getFile — platform download)
+    //   saveAttachment(agentId, name, url) -> { ok, id, name, path, mediaType, kind } (the SAME workspace
+    //                                         .attachments/ store the browser COMMS composer uses)
+    //   expandAttachments(messages, agentId) -> messages with refs expanded into provider content blocks (the
+    //                                         SAME expandUserAttachments the interactive run host calls)
+    const fetchMedia = typeof o.fetchMedia === 'function' ? o.fetchMedia : null;
+    const saveAttachmentFn = typeof o.saveAttachment === 'function' ? o.saveAttachment : null;
+    const expandAttachments = typeof o.expandAttachments === 'function' ? o.expandAttachments : null;
+    const MAX_MEDIA_PER_MESSAGE = 10;                // a full Telegram album is 10 items; a merged album must fit
+    const MAX_MEDIA_BYTES = 8 * 1024 * 1024;         // mirrors attachments.js MAX_BYTES (saveAttachment re-enforces)
     if (typeof runOnce !== 'function') throw new Error('makeChannelHub: runOnce is required');
     if (!store || typeof store.loadHistory !== 'function') throw new Error('makeChannelHub: a channel store is required');
     if (typeof send !== 'function') throw new Error('makeChannelHub: a send(chatId,text) is required');
@@ -338,8 +350,75 @@
       }
     }
 
+    // Turn one inbound media list into { attachments:[ref…], notes:[line…] } — download each item, park the bytes
+    // in the agent's workspace .attachments/ (same jail as browser uploads), and describe what happened HONESTLY.
+    // Per-item degrade: a failed download/save becomes a note the model reads, never a silent drop and never a
+    // crashed inbound. Videos/audio/documents get a note naming their saved workspace path so the agent can reach
+    // the file with its tools; a photo needs no note (the model literally sees it as an image block).
+    async function ingestMedia(agentId, media) {
+      const refs = [], notes = [];
+      const items = media.slice(0, MAX_MEDIA_PER_MESSAGE);
+      if (media.length > items.length) notes.push('[' + (media.length - items.length) + ' additional file(s) in this message were not ingested — resend them separately]');
+      for (const it of items) {
+        const kind = String((it && it.kind) || 'file'), name = String((it && it.name) || 'file');
+        if (!fetchMedia || !saveAttachmentFn) { notes.push('[the user sent a ' + kind + ' ("' + name + '") but media ingest is not wired on this channel]'); continue; }
+        if (Number(it.size) > MAX_MEDIA_BYTES) { notes.push('[' + kind + ' "' + name + '" is too large to ingest (' + Math.round(Number(it.size) / (1024 * 1024)) + 'MB > 8MB) — ask the user for a smaller version]'); continue; }
+        let got; try { got = await fetchMedia(Object.assign({}, it, { maxBytes: MAX_MEDIA_BYTES })); } catch (e) { got = { ok: false, error: (e && e.message) || 'download threw' }; }
+        if (!got || got.ok === false || !got.buffer || !got.buffer.length) { notes.push('[could not download the ' + kind + ' "' + name + '" from ' + channel + ': ' + ((got && got.error) || 'unknown error') + ']'); continue; }
+        const dataUrl = 'data:' + (String(it.mime || '') || 'application/octet-stream') + ';base64,' + Buffer.from(got.buffer).toString('base64');
+        let saved; try { saved = await saveAttachmentFn(agentId, name, dataUrl); } catch (e) { saved = { ok: false, error: (e && e.message) || 'save threw' }; }
+        if (!saved || saved.ok === false) { notes.push('[could not store the ' + kind + ' "' + name + '": ' + ((saved && saved.error) || 'unknown error') + ']'); continue; }
+        refs.push({ id: saved.id, name: saved.name, path: saved.path, mediaType: saved.mediaType, kind: saved.kind, srcKind: kind });
+        if (saved.kind !== 'image') notes.push('[' + kind + ' "' + name + '" received and saved to ' + saved.path + ' in your workspace]');
+      }
+      // truthful cross-reference: only claim a visible video still when BOTH the clip and its frame actually saved
+      if (refs.some(r => r.srcKind === 'video') && refs.some(r => r.kind === 'image' && /preview-frame/.test(String(r.name)))) {
+        notes.push('[the attached image named *-preview-frame.jpg is a still frame from the video above]');
+      }
+      // counter the analyze-tool reflex: models that CAN see the attached image sometimes still reach for a
+      // separate vision tool (and then ask the user for an API key when it isn't configured). Say plainly that
+      // the pixels are already in this message. (Live-observed 2026-07-22: gemini called image_analyze on an
+      // image it could see directly.)
+      if (refs.some(r => r.kind === 'image')) {
+        notes.push('[the image(s) are attached inside this message — look at them directly; no vision tool or extra API key is needed]');
+      }
+      for (const r of refs) delete r.srcKind;   // keep the stored/history reference shape identical to browser uploads
+      return { attachments: refs, notes: notes };
+    }
+
+    // ---- ALBUM (media-group) BATCHING --------------------------------------------------------------------
+    // A Telegram album arrives as N SEPARATE messages sharing one media_group_id (caption usually on only one).
+    // Without batching, our one-run-per-conversation rule makes each part ABORT the previous part's run — a
+    // 5-photo album became 4 supersedes + a final run that saw one photo. Debounce parts per (chatId, groupId):
+    // each arrival re-arms a short wait; when the album goes quiet, ONE merged message (all media + the caption)
+    // takes the normal path. Deterministic: the wait rides the injected `sleep`; no clocks read.
+    const ALBUM_WAIT_MS = Number.isFinite(o.albumWaitMs) ? Math.max(0, o.albumWaitMs) : 800;
+    const albums = new Map();   // chatId+'|'+groupId -> { msg (merged), seq, done, resolve }
+
     async function onInbound(msg) {
-      if (!msg || !msg.text) return;   // non-text already filtered by the adapter; belt-and-suspenders
+      const gid = (msg && msg.mediaGroupId != null && String(msg.mediaGroupId))
+        ? (String(msg.chatId) + '|' + String(msg.mediaGroupId)) : '';
+      if (!gid) return processInbound(msg);
+      let rec = albums.get(gid);
+      if (!rec) {
+        rec = { msg: Object.assign({}, msg, { media: Array.isArray(msg.media) ? msg.media.slice() : [] }), seq: 0, resolve: null, done: null };
+        rec.done = new Promise(r => { rec.resolve = r; });
+        albums.set(gid, rec);
+      } else {
+        if (Array.isArray(msg.media) && msg.media.length) rec.msg.media = rec.msg.media.concat(msg.media);
+        if (!rec.msg.text && msg.text) rec.msg.text = msg.text;   // the caption rides on whichever part carried it
+      }
+      const mySeq = ++rec.seq;
+      await sleep(ALBUM_WAIT_MS);
+      if (albums.get(gid) !== rec || rec.seq !== mySeq) return rec.done;   // a newer part re-armed the debounce
+      albums.delete(gid);
+      try { await processInbound(rec.msg); }
+      finally { rec.resolve(); }
+    }
+
+    async function processInbound(msg) {
+      const hasMedia = !!(msg && Array.isArray(msg.media) && msg.media.length);
+      if (!msg || (!msg.text && !hasMedia)) return;   // empty update; media-only messages ARE admitted
       const chatId = String(msg.chatId);
 
       // Runtime config (live each message): { key?, model, provider?, agentId?, system? }. When the app supplies the
@@ -404,11 +483,34 @@
         return;
       }
 
-      // durable transcript: load prior turns, persist the new user turn, build the replay messages.
+      // MEDIA: download + store what the user actually sent (photos/videos/voice/files) BEFORE the turn is built,
+      // so the model's view of this message carries the real pixels/files instead of a blind spot it has to
+      // apologize for. ingestMedia never throws by contract; the belt-and-suspenders catch degrades to a note.
+      let mediaIngest = { attachments: [], notes: [] };
+      if (hasMedia) {
+        try { mediaIngest = await ingestMedia(agentId, msg.media); }
+        catch (e) { mediaIngest = { attachments: [], notes: ['[media ingest failed: ' + ((e && e.message) || e) + ']'] }; }
+      }
+      const turnText = String(msg.text || '') + (mediaIngest.notes.length ? ((msg.text ? '\n' : '') + mediaIngest.notes.join('\n')) : '');
+
+      // durable transcript: load prior turns, persist the new user turn, build the replay messages. The persisted
+      // turn carries the media notes (with saved .attachments/ paths), so an agent in a LATER turn can still reach
+      // the files through its workspace tools even though history replays as plain text.
       let history = [];
       try { history = store.loadHistory(agentId); } catch (_) {}
-      try { store.appendTurn(agentId, 'user', msg.text); } catch (_) {}
-      const messages = history.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: msg.text }]);
+      try { store.appendTurn(agentId, 'user', turnText || '[the user sent a media message]'); } catch (_) {}
+      const userTurn = { role: 'user', content: turnText };
+      if (mediaIngest.attachments.length) userTurn.attachments = mediaIngest.attachments;
+      let messages = history.map(m => ({ role: m.role, content: m.content })).concat([userTurn]);
+      // Expand the attachment refs into provider content blocks (base64 image blocks / inlined text) through the
+      // SAME expandUserAttachments seam the interactive run host uses. Absent/failed expansion falls back to the
+      // note-only turn (the refs are stripped so no provider ever sees a shape it doesn't know).
+      if (userTurn.attachments) {
+        let expanded = null;
+        if (expandAttachments) { try { expanded = await expandAttachments(messages, agentId); } catch (_) { expanded = null; } }
+        if (Array.isArray(expanded)) messages = expanded;
+        else delete userTurn.attachments;
+      }
 
       const rec = store.getChatRecord ? store.getChatRecord(chatId) : null;
       const persona = sec.system || personaFor(agentId, rec);   // the agent's REAL composed prompt when configured

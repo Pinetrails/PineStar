@@ -129,7 +129,12 @@ module.exports = function makeAttachments(deps) {
           if (t.length > TEXT_INLINE_MAX) { t = t.slice(0, TEXT_INLINE_MAX); note = '\n…[truncated]'; }
           blocks.push({ type: 'text', text: '\n\n[Attached file: ' + name + ']\n```\n' + t + note + '\n```' });
         } else {
-          blocks.push({ type: 'text', text: '\n[Attached file: ' + name + ' (' + (mime || 'binary') + ') — the model can\'t read this file type]' });
+          // honest AND actionable: the bytes are real and jailed in the agent's workspace — name the path so the
+          // agent can operate on the file with its tools instead of dead-ending on "can't read this".
+          const what = /^video\//.test(mime) ? 'a video — you cannot watch it directly, but the file is real'
+            : /^audio\//.test(mime) ? 'an audio file — you cannot listen to it directly, but the file is real'
+            : 'a file type you cannot view directly';
+          blocks.push({ type: 'text', text: '\n[Attached file: ' + name + ' (' + (mime || 'binary') + ') — ' + what + '; it is saved in your workspace at ' + rel + ' and your file/shell tools can operate on it]' });
         }
       }
       const clone = Object.assign({}, m, { content: blocks.length ? blocks : '' });

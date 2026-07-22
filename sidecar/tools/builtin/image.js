@@ -9,12 +9,16 @@
                        the UI shows it, and hand back the /api/file?agent=…&path=… viewer URL.
                        Default model: google/gemini-2.5-flash-image (override via args.model — e.g.
                        black-forest-labs/flux.2-pro, recraft/recraft-v4).
-     image_analyze   : POST /chat/completions to a VISION model with a multi-part user message
-                       [{type:'text'},{type:'image_url'}]. The image is either a workspace-relative path
-                       (read + base64-encoded into a data URL) or a public http(s) URL (passed straight
-                       through — OpenRouter fetches it server-side). Returns the model's text answer.
+     image_analyze   : vision Q&A over a workspace image / http(s) URL. TWO routes, tried in order (the
+                       Hermes-style auxiliary-vision pattern — vision must never dead-end on one vendor key):
+                         1. OpenRouter chat-completions with a dedicated vision model (when a key exists);
+                         2. deps.auxVision — the RUN's OWN provider/model (injected by the run host), so a
+                            session on Anthropic/Gemini/Codex/any vision-capable provider can look at images
+                            with ZERO extra keys. The old behavior (hard error demanding an OpenRouter key)
+                            was the root of a live user bug: blind agents asked users for a key they never needed.
 
-   makeImageTools({ openrouter:{apiKey, model?}, fsp, pathMod, root, fetchImpl?, imageModel?, visionModel? })
+   makeImageTools({ openrouter:{apiKey, model?}, fsp, pathMod, root, fetchImpl?, imageModel?, visionModel?,
+                    auxVision? })   // auxVision: async ({ messages, timeoutMs }) -> text (session-provider one-shot)
      -> { generateTool, analyzeTool, register(reg), _internals }
 
    Node 18+ (global fetch). No dependencies. Reuses the fs.js workspace jail so a generated/analyzed path
@@ -99,6 +103,10 @@
     if (!doFetch) throw new Error('image.js requires global fetch (Node 18+) or deps.fetchImpl');
     const IMAGE_MODEL  = deps.imageModel  || DEFAULT_IMAGE_MODEL;
     const VISION_MODEL = deps.visionModel || or.model || DEFAULT_VISION_MODEL;
+    // Auxiliary vision route: a one-shot text answer from the RUN's own provider/model (injected by the run
+    // host). Used when no OpenRouter key exists — and as the rescue when the OpenRouter call FAILS (dead key,
+    // out of credits, model rot) — so vision never dead-ends on one vendor.
+    const auxVision = typeof deps.auxVision === 'function' ? deps.auxVision : null;
     // reuse the ONE workspace jail (fs.js) so generated/analyzed paths can't escape the agent's directory
     const jail = fsMod.makeFsTools({ fsp, pathMod: P, root: ROOT })._internals;
 
@@ -219,28 +227,51 @@
     }
 
     // Core vision call, reusable by other tools (e.g. browser.vision). `url` is a data/http(s)
-    // image URL; returns the model's answer text (truncated). Throws with a clear message when
-    // no key is configured (orPost) so the caller can report honestly rather than fake success.
+    // image URL; returns the model's answer text (truncated). Route order:
+    //   1. OpenRouter dedicated vision model (when a key exists) — deterministic quality, honors modelOverride;
+    //   2. the session provider via auxVision — both when no key exists AND when the OpenRouter call fails,
+    //      so a dead/broke key degrades to the model the user is already paying for, not to a key demand.
+    // Only when BOTH routes are absent/fail does this throw — with an error naming what actually happened.
+    function clip(text) { return text.length > ANALYZE_RETURN_CHARS ? text.slice(0, ANALYZE_RETURN_CHARS) + '\n…[truncated]' : text; }
+    async function analyzeViaAux(content) {
+      const text = String(await auxVision({ messages: [{ role: 'user', content }], timeoutMs: ANALYZE_TIMEOUT_MS }) || '').trim();
+      if (!text) throw new Error('the session model returned no text for the image — it may not support vision');
+      return clip(text);
+    }
     async function analyzeImageUrl(url, question, modelOverride) {
       const model = String(modelOverride || VISION_MODEL);
       const q = String(question || '').trim() || 'Describe this image in detail.';
-      const data = await orPost({
-        model,
-        messages: [{ role: 'user', content: [
-          { type: 'text', text: q },     // text first, then image — OpenRouter's recommended order
-          { type: 'image_url', image_url: { url } }
-        ] }]
-      }, ANALYZE_TIMEOUT_MS);
-      const text = textFromResponse(data);
-      if (!text) throw new Error('vision model "' + model + '" returned no text — is it vision-capable?');
-      return text.length > ANALYZE_RETURN_CHARS ? text.slice(0, ANALYZE_RETURN_CHARS) + '\n…[truncated]' : text;
+      const content = [
+        { type: 'text', text: q },     // text first, then image — OpenRouter's recommended order
+        { type: 'image_url', image_url: { url } }
+      ];
+      if (!apiKey) {
+        if (!auxVision) throw new Error('no vision route available — no OpenRouter API key is connected and no session provider is wired');
+        return analyzeViaAux(content);
+      }
+      let orErr;
+      try {
+        const data = await orPost({ model, messages: [{ role: 'user', content }] }, ANALYZE_TIMEOUT_MS);
+        const text = textFromResponse(data);
+        if (!text) throw new Error('vision model "' + model + '" returned no text — is it vision-capable?');
+        return clip(text);
+      } catch (e) { orErr = e; }
+      if (auxVision) {
+        try { return await analyzeViaAux(content); }
+        catch (e2) {
+          throw new Error('vision failed on both routes — OpenRouter: ' + ((orErr && orErr.message) || orErr)
+            + '; session model: ' + ((e2 && e2.message) || e2));
+        }
+      }
+      throw orErr;
     }
 
     const analyzeTool = {
       name: 'image_analyze', capability: 'studio', scope: 'read', requiresConsent: false, timeoutMs: ANALYZE_TIMEOUT_MS + 15000,
       description: 'Look at an image and answer a question about it (vision). "image" is EITHER a file in your workspace ' +
         '(e.g. "images/gen-ab12cd.png") OR a public http(s) image URL. Optional "prompt" is the question (default: a ' +
-        'detailed description). Optional "model" overrides the vision model (default google/gemini-2.5-flash).',
+        'detailed description). Optional "model" overrides the vision model. Works with the session\'s own model when ' +
+        'no dedicated vision key is configured — NEVER ask the user for an API key to look at an image.',
       schema: { type: 'object', required: ['image'], properties: {
         image: { type: 'string' },
         prompt: { type: 'string' },
@@ -255,9 +286,10 @@
     };
 
     // A vision callback for makeBrowserTools: takes a base64 PNG (CDP screenshot) + question,
-    // returns the model's answer. Honest failure (no key) propagates as a thrown Error which
-    // browser.vision converts to an 'vision unavailable' result.
-    const hasVision = !!apiKey;
+    // returns the model's answer. Honest failure (no route) propagates as a thrown Error which
+    // browser.vision converts to an 'vision unavailable' result. auxVision counts as a route:
+    // a keyless session on a vision-capable provider still gets browser.vision.
+    const hasVision = !!apiKey || !!auxVision;
     async function browserVision({ imageBase64, question }) {
       const url = 'data:image/png;base64,' + String(imageBase64 || '');
       return analyzeImageUrl(url, question);

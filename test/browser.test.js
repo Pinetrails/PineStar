@@ -166,7 +166,11 @@ function fakeDriver() {
     const noVision = makeBrowserTools({ driver: fakeDriver() });   // no vision dep
     const un = await noVision.tools.find(t => t.name === 'browser.vision').run({ question: 'what page?' }, {});
     A.eq(un.summary, 'vision unavailable', 'missing vision provider yields an honest unavailable summary, not a success stub');
-    A.ok(/unavailable/i.test(un.content) && /OpenRouter key|vision model/i.test(un.content), 'unavailable content says what would enable it');
+    // 2026-07-22: the unavailable message must NEVER solicit an API key from the user (that wording primed
+    // agents to demand OpenRouter keys — the Telegram media bug); it names the missing route and forbids asking.
+    A.ok(/unavailable/i.test(un.content) && /vision route/i.test(un.content), 'unavailable content names the missing vision route');
+    A.ok(/do not ask the user for an api key/i.test(un.content), 'unavailable content forbids soliciting a key');
+    A.ok(!/connect an? (OpenRouter|API) key/i.test(un.content), 'unavailable content never tells the agent to request a key');
     A.ok(!/I see:/.test(un.content), 'unavailable content never fabricates a description');
   }
 
