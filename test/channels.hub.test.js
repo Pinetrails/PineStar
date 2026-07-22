@@ -504,6 +504,49 @@ async function run() {
     A.ok(/too large to ingest/.test(String(last.content)), 'oversized item noted honestly');
   }
 
+  // ---- M5. ALBUM batching: N media_group parts -> ONE merged run (no supersede storm) ----
+  {
+    const store = fakeStore(); const runs = []; const saved = [];
+    const runOnce = async (o) => { runs.push(o); o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'saw them' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      albumWaitMs: 1, sleep: (ms) => new Promise(r => setTimeout(r, ms)),
+      fetchMedia: (it) => Promise.resolve({ ok: true, buffer: Buffer.from('B' + it.fileId) }),
+      saveAttachment: (agentId, name, dataUrl) => { saved.push(name); return Promise.resolve({ ok: true, id: 'i' + name, name, path: '.attachments/' + name, mediaType: 'image/jpeg', kind: 'image' }); },
+      expandAttachments: (m) => Promise.resolve(m)
+    });
+    const part = (n, text) => { const m = dm(text || '', '90'); m.mediaGroupId = 'alb1'; m.media = [{ kind: 'photo', fileId: 'p' + n, name: 'photo' + n + '.jpg', mime: 'image/jpeg', size: 10 }]; return m; };
+    // three parts arrive in a burst (caption on the SECOND part, as Telegram does)
+    const p1 = hub.onInbound(part(1));
+    const p2 = hub.onInbound(part(2, 'my three photos'));
+    const p3 = hub.onInbound(part(3));
+    await Promise.all([p1, p2, p3]);
+    A.eq(runs.length, 1, 'one album = ONE run (no supersede storm)');
+    A.eq(saved.sort(), ['photo1.jpg', 'photo2.jpg', 'photo3.jpg'], 'all three photos ingested into the one turn');
+    const last = runs[0].messages[runs[0].messages.length - 1];
+    A.ok(/my three photos/.test(JSON.stringify(last.content)), 'the album caption rides the merged turn');
+    A.ok(last.attachments === undefined || last.attachments.length === 3, 'merged turn carries all refs');
+    // a NON-album message still flows exactly as before (no debounce added)
+    await hub.onInbound(dm('plain', '91'));
+    A.eq(runs.length, 2, 'plain message unaffected by album machinery');
+  }
+
+  // ---- M6. two different albums (or chats) never merge into each other ----
+  {
+    const store = fakeStore(); const runs = [];
+    const runOnce = async (o) => { runs.push(o.agentId); o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'x' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      albumWaitMs: 1,
+      fetchMedia: () => Promise.resolve({ ok: true, buffer: Buffer.from('b') }),
+      saveAttachment: (a, n) => Promise.resolve({ ok: true, id: n, name: n, path: '.attachments/' + n, mediaType: 'image/jpeg', kind: 'image' }),
+      expandAttachments: (m) => Promise.resolve(m)
+    });
+    const mk = (chat, gid) => { const m = dm('', chat); m.mediaGroupId = gid; m.media = [{ kind: 'photo', fileId: 'f', name: 'p.jpg', mime: 'image/jpeg', size: 1 }]; return m; };
+    await Promise.all([hub.onInbound(mk('95', 'g1')), hub.onInbound(mk('96', 'g1')), hub.onInbound(mk('95', 'g2'))]);
+    A.eq(runs.length, 3, 'same groupId in different chats + different groups in one chat = separate runs');
+  }
+
   A.report('channels.hub.test');
 }
 

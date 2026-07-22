@@ -142,6 +142,47 @@ function jsonResp(obj, status) { return { status: status || 200, json: async () 
     A.eq(kFetch.calls[1].body.model, 'google/gemini-3-pro-image', 'an explicit per-call model still wins over the knob');
   }
 
+  // ---- I. AUX VISION: session-provider fallback (the Hermes-style route; kills the "give me a key" bug) ----
+  {
+    // I1. NO key + auxVision -> analyze works through the session provider; no OpenRouter fetch fired
+    const auxCalls = [];
+    const noOrFetch = stubFetch(() => { throw new Error('must not hit OpenRouter'); });
+    const TA = makeImageTools({ openrouter: { apiKey: '' }, fsp, pathMod: path, root: ROOT, fetchImpl: noOrFetch,
+      auxVision: async (req) => { auxCalls.push(req); return 'a green triangle (session model)'; } });
+    const r1 = await TA.analyzeTool.run({ image: 'https://example.com/x.jpg', prompt: 'what shape?' }, ctx);
+    A.ok(/green triangle/.test(r1.content), 'keyless analyze answers via the session provider');
+    A.eq(noOrFetch.calls.length, 0, 'no OpenRouter call was attempted without a key');
+    A.eq(auxCalls[0].messages[0].content[0].text, 'what shape?', 'aux route forwards the question');
+    A.eq(auxCalls[0].messages[0].content[1].type, 'image_url', 'aux route carries the image block');
+    A.eq(TA.hasVision, true, 'hasVision is TRUE with auxVision even without a key (browser.vision stays wired)');
+    const bva = await TA.browserVision({ imageBase64: 'AAAA', question: 'q' });
+    A.ok(/green triangle/.test(bva), 'browserVision rides the aux route keyless');
+
+    // I2. key present but OpenRouter FAILS (dead key / out of credits) -> aux route rescues
+    const brokeFetch = stubFetch(() => jsonResp({ error: { message: 'This request requires more credits' } }, 402));
+    const TB = makeImageTools({ openrouter: { apiKey: 'k' }, fsp, pathMod: path, root: ROOT, fetchImpl: brokeFetch,
+      auxVision: async () => 'rescued by session model' });
+    const r2 = await TB.analyzeTool.run({ image: 'https://example.com/x.jpg' }, ctx);
+    A.ok(/rescued by session model/.test(r2.content), 'OpenRouter failure degrades to the session provider, not an error');
+    A.eq(brokeFetch.calls.length, 1, 'OpenRouter was tried first when a key exists');
+
+    // I3. both routes fail -> ONE error naming both causes
+    const TC = makeImageTools({ openrouter: { apiKey: 'k' }, fsp, pathMod: path, root: ROOT, fetchImpl: brokeFetch,
+      auxVision: async () => { throw new Error('model has no eyes'); } });
+    let both = null; try { await TC.analyzeTool.run({ image: 'https://example.com/x.jpg' }, ctx); } catch (e) { both = e.message; }
+    A.ok(/more credits/.test(both) && /no eyes/.test(both), 'double failure reports BOTH routes honestly');
+
+    // I4. aux returning empty text -> honest may-not-support-vision error (never fake success)
+    const TD = makeImageTools({ openrouter: { apiKey: '' }, fsp, pathMod: path, root: ROOT, fetchImpl: noOrFetch,
+      auxVision: async () => '   ' });
+    let empty = null; try { await TD.analyzeTool.run({ image: 'https://example.com/x.jpg' }, ctx); } catch (e) { empty = e.message; }
+    A.ok(/may not support vision/.test(empty), 'empty session answer surfaces as a not-vision-capable error');
+
+    // I5. image_generate is UNCHANGED: still requires the OpenRouter key even when auxVision exists
+    let genKey = false; try { await TA.generateTool.run({ prompt: 'x' }, ctx); } catch (e) { genKey = /API key/i.test(e.message); }
+    A.ok(genKey, 'image_generate still needs the OpenRouter key (image OUTPUT genuinely requires it)');
+  }
+
   try { await fsp.rm(ROOT, { recursive: true, force: true }); } catch (_) {}
   A.report('image.test');
 })().catch(e => { console.log('FATAL', e && e.stack || e); process.exit(1); });

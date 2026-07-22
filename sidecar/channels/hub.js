@@ -174,7 +174,7 @@
     const fetchMedia = typeof o.fetchMedia === 'function' ? o.fetchMedia : null;
     const saveAttachmentFn = typeof o.saveAttachment === 'function' ? o.saveAttachment : null;
     const expandAttachments = typeof o.expandAttachments === 'function' ? o.expandAttachments : null;
-    const MAX_MEDIA_PER_MESSAGE = 6;                 // one Telegram message carries at most a handful of payloads
+    const MAX_MEDIA_PER_MESSAGE = 10;                // a full Telegram album is 10 items; a merged album must fit
     const MAX_MEDIA_BYTES = 8 * 1024 * 1024;         // mirrors attachments.js MAX_BYTES (saveAttachment re-enforces)
     if (typeof runOnce !== 'function') throw new Error('makeChannelHub: runOnce is required');
     if (!store || typeof store.loadHistory !== 'function') throw new Error('makeChannelHub: a channel store is required');
@@ -386,7 +386,37 @@
       return { attachments: refs, notes: notes };
     }
 
+    // ---- ALBUM (media-group) BATCHING --------------------------------------------------------------------
+    // A Telegram album arrives as N SEPARATE messages sharing one media_group_id (caption usually on only one).
+    // Without batching, our one-run-per-conversation rule makes each part ABORT the previous part's run — a
+    // 5-photo album became 4 supersedes + a final run that saw one photo. Debounce parts per (chatId, groupId):
+    // each arrival re-arms a short wait; when the album goes quiet, ONE merged message (all media + the caption)
+    // takes the normal path. Deterministic: the wait rides the injected `sleep`; no clocks read.
+    const ALBUM_WAIT_MS = Number.isFinite(o.albumWaitMs) ? Math.max(0, o.albumWaitMs) : 800;
+    const albums = new Map();   // chatId+'|'+groupId -> { msg (merged), seq, done, resolve }
+
     async function onInbound(msg) {
+      const gid = (msg && msg.mediaGroupId != null && String(msg.mediaGroupId))
+        ? (String(msg.chatId) + '|' + String(msg.mediaGroupId)) : '';
+      if (!gid) return processInbound(msg);
+      let rec = albums.get(gid);
+      if (!rec) {
+        rec = { msg: Object.assign({}, msg, { media: Array.isArray(msg.media) ? msg.media.slice() : [] }), seq: 0, resolve: null, done: null };
+        rec.done = new Promise(r => { rec.resolve = r; });
+        albums.set(gid, rec);
+      } else {
+        if (Array.isArray(msg.media) && msg.media.length) rec.msg.media = rec.msg.media.concat(msg.media);
+        if (!rec.msg.text && msg.text) rec.msg.text = msg.text;   // the caption rides on whichever part carried it
+      }
+      const mySeq = ++rec.seq;
+      await sleep(ALBUM_WAIT_MS);
+      if (albums.get(gid) !== rec || rec.seq !== mySeq) return rec.done;   // a newer part re-armed the debounce
+      albums.delete(gid);
+      try { await processInbound(rec.msg); }
+      finally { rec.resolve(); }
+    }
+
+    async function processInbound(msg) {
       const hasMedia = !!(msg && Array.isArray(msg.media) && msg.media.length);
       if (!msg || (!msg.text && !hasMedia)) return;   // empty update; media-only messages ARE admitted
       const chatId = String(msg.chatId);

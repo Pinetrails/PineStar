@@ -150,6 +150,11 @@ async function run() {
     A.eq(normalize({ update_id: 16, message: { message_id: 26, chat, from, sticker: { file_id: 's2', is_animated: true } } }), { offset: 16, message: null }, 'animated sticker stays dropped');
     // text-only messages keep the EXACT old shape (no media field) — additive contract
     A.eq('media' in normalize({ update_id: 17, message: { message_id: 27, chat, from, text: 'plain' } }).message, false, 'text-only message has no media field');
+    // album parts carry media_group_id -> mediaGroupId (the hub's merge key)
+    const alb = normalize({ update_id: 18, message: { message_id: 28, chat, from, media_group_id: 777,
+      photo: [{ file_id: 'a1', file_size: 5 }] } });
+    A.eq(alb.message.mediaGroupId, '777', 'media_group_id rides as mediaGroupId (stringified)');
+    A.eq('mediaGroupId' in normalize({ update_id: 19, message: { message_id: 29, chat, from, photo: [{ file_id: 'a2' }] } }).message, false, 'single photo has no mediaGroupId');
   }
 
   // ---- F3. transport.getFile: two-step Bot API download -> { ok, buffer }; errors/size caps degrade, never throw ----

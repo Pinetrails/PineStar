@@ -124,7 +124,9 @@
         };
         // media rides through untouched (additive): [{ kind, fileId, name, mime, size }] from the platform's
         // normalize. The hub downloads the bytes via this adapter's getFile and turns them into attachments.
+        // mediaGroupId marks one album part; the hub debounce-merges parts sharing it into a single turn.
         if (Array.isArray(m.media) && m.media.length) im.media = m.media;
+        if (m.mediaGroupId != null && m.mediaGroupId !== '') im.mediaGroupId = String(m.mediaGroupId);
         onInbound(im);
       } else if (n.callback && onCallback) {
         if (!owner || String(n.callback.userId) === owner) onCallback(n.callback);   // only the owner's taps act

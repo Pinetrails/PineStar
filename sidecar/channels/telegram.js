@@ -86,6 +86,8 @@
         messageId: m.message_id
       };
       if (media.length) msg.media = media;   // additive — text-only messages keep the exact old shape
+      // album marker: N messages of one album share media_group_id; the hub debounce-merges them into ONE turn
+      if (media.length && m.media_group_id != null) msg.mediaGroupId = String(m.media_group_id);
       return { offset: offset, message: msg };
     }
     if (u.callback_query) {
