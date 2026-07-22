@@ -22,15 +22,16 @@ Pick the asset for your platform:
 | Platform | Download this asset |
 | --- | --- |
 | **Windows** (10/11, 64-bit) | `StarNet_<version>_x64-setup.exe` |
-| **macOS** — all Macs, including Apple Silicon (M1/M2/M3/M4) | `StarNet_<version>_x64.dmg` |
+| **macOS — Apple Silicon** (M1/M2/M3/M4) | `StarNet_<version>_aarch64.dmg` |
+| **macOS — Intel** | `StarNet_<version>_x64.dmg` |
 
-> **Apple Silicon Macs: download the `x64` DMG too.** Until StarNet is Apple-notarized, opening
-> the native `aarch64` build on Apple Silicon fails with a false *"StarNet is damaged and
-> can't be opened"* error that offers no override — nothing is actually wrong with the file,
-> but macOS gives you no way past that dialog. The `x64` build is the one that runs on every
-> Mac (Apple Silicon runs it through Rosetta 2, with only the one-time "Open Anyway" approval
-> described below). The `aarch64.dmg` on the releases page will become the recommended Apple
-> Silicon download once notarization ships.
+> **Apple Silicon Macs: use the native `aarch64` DMG.** Because StarNet isn't Apple-notarized
+> yet, macOS shows a false *"StarNet is damaged and can't be opened"* dialog on first launch of
+> the native build — nothing is actually wrong with the file, and one Terminal command (in the
+> macOS section below) clears it permanently. Don't fall back to the `x64` DMG on Apple
+> Silicon: it runs under Rosetta 2 translation, and macOS now warns that Intel-only apps
+> *"will stop working with a future version of macOS"* — the native build has no such
+> deprecation hanging over it.
 
 ---
 
@@ -80,16 +81,37 @@ Uninstall StarNet from **Settings → Apps → Installed apps** like any other W
 ## macOS
 
 The macOS app is **unsigned and un-notarized** (we don't have an Apple Developer certificate
-yet). Because of that, macOS Gatekeeper will refuse to open it on the first try — you'll see
-a dialog like *"StarNet cannot be opened because Apple cannot check it for malicious
-software"* or *"…is damaged."* Nothing is actually wrong with the file; macOS just won't run
-un-notarized apps without an explicit override.
+yet). Because of that, macOS Gatekeeper will refuse to open it on the first try. Nothing is
+actually wrong with the file; macOS just won't run un-notarized apps without an explicit
+override. What you see — and the override — differs by chip, so follow the matching section.
 
-To install:
+### Apple Silicon (M1/M2/M3/M4) — `aarch64` DMG
 
-1. Open the `x64` `.dmg` you downloaded (yes, on Apple Silicon too — see the note in the
-   Download section) and drag **StarNet** into **Applications**, as the DMG window shows.
-2. Try to open StarNet from Applications. macOS will block it the first time.
+On Apple Silicon, the un-notarized native build triggers a false *"StarNet is damaged and
+can't be opened. You should move it to the Trash."* dialog — and unlike the Intel warning,
+this one offers **no Open Anyway button**. The app is not damaged; the dialog is just how
+Gatekeeper phrases "un-notarized arm64 app downloaded from the internet". The fix is to
+remove the download quarantine flag once:
+
+1. Open the `aarch64` `.dmg` and drag **StarNet** into **Applications**, as the DMG window
+   shows.
+2. Open **Terminal** (Cmd-Space, type "Terminal", Enter) and run:
+
+   ```
+   xattr -dr com.apple.quarantine /Applications/StarNet.app
+   ```
+
+3. Open StarNet from Applications normally.
+
+You only have to do this once per install. (If you update by downloading a new DMG later,
+you'll need to run it again for the new copy — this goes away entirely once StarNet is
+Apple-notarized.)
+
+### Intel Macs — `x64` DMG
+
+1. Open the `x64` `.dmg` and drag **StarNet** into **Applications**.
+2. Try to open StarNet from Applications. macOS will block it the first time with *"StarNet
+   cannot be opened because Apple cannot check it for malicious software."*
 3. Approve it, using whichever your macOS version supports:
    - **Current macOS (Ventura / Sonoma and newer):** open **System Settings → Privacy &
      Security**, scroll to the **Security** section. After you've tried to open StarNet once,
@@ -100,6 +122,11 @@ To install:
      gives you the override that a normal double-click does not.
 
 You only have to do this once. After the first approved launch, StarNet opens normally.
+
+> If you're on Apple Silicon and previously installed the `x64` build (macOS nags that it
+> *"will stop working with a future version of macOS"*): quit StarNet, delete it from
+> Applications, and install the `aarch64` DMG using the Apple Silicon steps above. Your data
+> is stored outside the app bundle, so nothing is lost by swapping the app.
 
 ### Uninstalling (macOS)
 

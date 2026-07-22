@@ -65,14 +65,14 @@ Desktop builds are published on the
 | Platform | Asset |
 | --- | --- |
 | **Windows** (10/11, 64-bit) | `StarNet_<version>_x64-setup.exe` |
-| **macOS** — all Macs, including Apple Silicon | `StarNet_<version>_x64.dmg` |
+| **macOS — Apple Silicon** (M1–M4) | `StarNet_<version>_aarch64.dmg` |
+| **macOS — Intel** | `StarNet_<version>_x64.dmg` |
 
-> **Apple Silicon note:** yes, the `x64` DMG. Until StarNet is Apple-notarized, opening the
-> native `aarch64` build on Apple Silicon fails with a false *"StarNet is damaged and can't be
-> opened"* error — nothing is wrong with the file, but macOS offers no way past that dialog.
-> The `x64` build runs on every Mac (Apple Silicon runs it through Rosetta 2) with only the
-> normal one-time security warning. The `aarch64.dmg` becomes the recommended Apple Silicon
-> download once notarization ships.
+> **Apple Silicon note:** use the native `aarch64` DMG. Until StarNet is Apple-notarized,
+> its first launch shows a false *"StarNet is damaged"* dialog — nothing is wrong with the
+> file, and one Terminal command clears it ([INSTALL.md](INSTALL.md) walks through it).
+> Avoid the `x64` DMG on Apple Silicon: it runs under Rosetta 2, which macOS now warns
+> *"will stop working with a future version of macOS."*
 
 Builds are not yet OS code-signed, so Windows SmartScreen and macOS Gatekeeper will warn on
 first run — [INSTALL.md](INSTALL.md) walks through exactly what you'll see on each platform.
