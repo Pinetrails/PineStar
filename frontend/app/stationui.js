@@ -2843,10 +2843,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // NO-KEY cards that accept a key get an inline, collapsible paste-and-save row so the user never has to hunt
       // for where keys live. It reuses the SAME save path (Harness.setKey) as the key list below — no duplicate logic.
       const wantsInline = p.live && !credentialSaved && providerAcceptsKey(p.id);
-      // A never-signed-in device-code provider (grok/kimi) gets its FIRST sign-in right on the card — these have
-      // no connect-screen block (codex does), so without this button the ⏼ RE-SIGN-IN row below is unreachable:
-      // that row only exists once a live or known-dead sign-in exists. Same shared engine, card-local inline box.
-      const wantsOAuthSignin = p.live && OAUTH_EXTRA.indexOf(p.id) !== -1 && !credentialSaved && !codexDead;
+      // A never-signed-in device-code provider (codex/grok/kimi) gets its FIRST sign-in right on the card.
+      // Codex is NOT exempt: its connect-screen block only exists on the overseer/brain screen, so after a
+      // ✕ DISCONNECT (or on a machine that never signed in there) this button is the ONLY reachable sign-in —
+      // without it the row reads NOT SIGNED IN with zero recovery (the 2026-07-21 user-reported escape).
+      // The ⏼ RE-SIGN-IN row below can't cover it: that row only exists once a live/known-dead sign-in exists.
+      const wantsOAuthSignin = p.live && isOAuthProvider(p.id) && !credentialSaved && !codexDead;
       return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
         '<span class="conn-dot"></span>' +
         '<div class="prov-main">' +
@@ -3244,11 +3246,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           },
           onConnected: () => {
             // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
-            oauthStatus[pid] = { connected: true, expired: false, reason: '' };
+            // codex keeps its own literal status state (source-lock pinned); grok/kimi live in the shared cache.
+            if (pid === 'codex') { codexStatusKnown = { connected: true, expired: false, reason: '' }; refreshCodexConnectionStatus(); }
+            else { oauthStatus[pid] = { connected: true, expired: false, reason: '' }; refreshOAuthStatus(pid); }
             notify('✓ signed in to ' + provName(pid) + ' — your agents can run on your subscription', 'good');
             if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
             if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
-            refreshOAuthStatus(pid);   // re-read the durable status (persistError etc.) behind the repaint
             rerender('settings');
           }
         });
