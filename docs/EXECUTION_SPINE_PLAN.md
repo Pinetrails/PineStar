@@ -2,8 +2,8 @@
 
 > **StarNet** — the plan to take the harness from "can edit files in a jailed sandbox" to "can actually
 > run code, complete a real engineering goal, and prove it worked — safely." This is the #1 goal-completion
-> gap vs Hermes (which has six shell backends + LSP lint-delta; we have neither). It obeys the same
-> discipline as `CRON_INTEGRATION_PLAN.md` / `HERMES_PARITY_PLAN.md`: pure-core / ambient-edge determinism
+> gap vs the reference harness (which has six shell backends + LSP lint-delta; we have neither). It obeys the same
+> discipline as `CRON_INTEGRATION_PLAN.md` / `REF_HARNESS_PARITY_PLAN.md`: pure-core / ambient-edge determinism
 > split, a new `shared/events.js` rung **before** any producer, one revertable commit per step, the fast
 > suite green before the next, and the gamification firewall (engine emits events; the world only observes).
 >
@@ -74,7 +74,7 @@ checkpoints isolate *an agent from its own past turns*.
 - **DoD:** snapshot before a mutating turn → edit a file → restore → file is byte-identical to pre-turn;
   read-only turn creates no snapshot; the shadow store is unreachable from `fs.*`/`shell` (jail test).
 
-**Open decision (carry from HERMES_PARITY_PLAN §7.8):** snapshot the *whole* `WORKSPACES/<aid>` per mutating
+**Open decision (carry from REF_HARNESS_PARITY_PLAN §7.8):** snapshot the *whole* `WORKSPACES/<aid>` per mutating
 turn, or only touched files? *Recommendation: whole-workspace via shadow-git* (content-addressed, so
 unchanged files cost nothing) — confirm given disk across 7–10 simultaneous worktrees.
 
@@ -113,9 +113,9 @@ unchanged files cost nothing) — confirm given disk across 7–10 simultaneous 
   `signal.abort()` kills a `sleep 999` within the lease.
 
 > **Sandbox model (open decision).** v1 runs a **local subprocess inside the per-agent jail + checkpoint +
-> floor + consent** — no container. This is *stronger than Hermes's `local` backend* (which has no
+> floor + consent** — no container. This is *stronger than the reference harness's `local` backend* (which has no
 > checkpoint/rollback at all) and ships with zero new deps. *Recommendation: ship local-in-jail first;*
-> defer the container/Modal/SSH backends Hermes carries (they are deployment isolation, not a goal-
+> defer the container/Modal/SSH backends the reference harness carries (they are deployment isolation, not a goal-
 > completion blocker) behind the same tool seam.
 
 ---
@@ -130,7 +130,7 @@ unchanged files cost nothing) — confirm given disk across 7–10 simultaneous 
   change pass the suite."
 - **Then LSP lint-delta (`sidecar/verify.js`, pure diff core):** after `fs.write`/`fs.edit`/a shell edit,
   run diagnostics (tsserver/eslint via the now-present shell) and surface **only newly-introduced** ones
-  (pure before/after delta — the noise filter Hermes's `_check_lint_delta` does). Git-workspace gated.
+  (pure before/after delta — the noise filter the reference harness's `_check_lint_delta` does). Git-workspace gated.
 - **DoD:** an edit that breaks the build surfaces a `verify.result{passed:false}` with the new error; a
   clean edit surfaces `passed:true` with no false positives from pre-existing diagnostics.
 

@@ -177,23 +177,23 @@ evidence.operator = evidence.operator || process.env.USERNAME || process.env.USE
 evidence.surface = evidence.surface || {};
 const priorBrowser = evidence.surface.browser || {};
 const priorComputer = evidence.surface.computer || {};
-const browserHermes = priorBrowser.status === 'hermes-proven';
-const computerHermes = priorComputer.status === 'hermes-proven';
+const browserRef = priorBrowser.status === 'ref-proven';
+const computerRef = priorComputer.status === 'ref-proven';
 evidence.surface.browser = {
-  status: browserHermes ? 'hermes-proven' : (browser && browser.status === 'pass' ? 'contract-green' : 'blocked'),
-  proofLevel: browserHermes ? (priorBrowser.proofLevel || 'live-ui-browser-tools') : (browser && browser.status === 'pass' ? 'automated-contract' : ''),
+  status: browserRef ? 'ref-proven' : (browser && browser.status === 'pass' ? 'contract-green' : 'blocked'),
+  proofLevel: browserRef ? (priorBrowser.proofLevel || 'live-ui-browser-tools') : (browser && browser.status === 'pass' ? 'automated-contract' : ''),
   logs: unique((priorBrowser.logs || []).concat(browser && browser.logFile)),
-  notes: browserHermes
+  notes: browserRef
     ? cleanNotes([priorBrowser.notes, browser && browser.status === 'pass' ? 'Browser automation contract also remains green.' : 'Browser automation contract failed or timed out; live proof is preserved but the regression must be fixed.'])
     : (browser && browser.status === 'pass'
-      ? 'Browser automation contract is green. This is not yet Hermes-proven live browser workload evidence.'
+      ? 'Browser automation contract is green. This is not yet ref-proven live browser workload evidence.'
       : 'Browser automation contract failed or timed out.')
 };
 evidence.surface.computer = {
-  status: computerHermes ? 'hermes-proven' : (computer && computer.status === 'pass' ? 'contract-green' : 'blocked'),
-  proofLevel: computerHermes ? (priorComputer.proofLevel || 'live-ui-attended-driver') : (computer && computer.status === 'pass' ? 'automated-contract' : ''),
+  status: computerRef ? 'ref-proven' : (computer && computer.status === 'pass' ? 'contract-green' : 'blocked'),
+  proofLevel: computerRef ? (priorComputer.proofLevel || 'live-ui-attended-driver') : (computer && computer.status === 'pass' ? 'automated-contract' : ''),
   logs: unique((priorComputer.logs || []).concat(computer && computer.logFile)),
-  notes: computerHermes
+  notes: computerRef
     ? cleanNotes([priorComputer.notes, computer && computer.status === 'pass' ? 'Desktop computer-use contract also remains green.' : 'Desktop computer-use contract failed or timed out; live attended-driver proof is preserved but the regression must be fixed.'])
     : (computer && computer.status === 'pass'
       ? 'Desktop computer-use contract is green. Real attended desktop-driver evidence is still required for ready-to-replace.'

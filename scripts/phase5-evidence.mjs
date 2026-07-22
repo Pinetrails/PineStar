@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// phase5-evidence.mjs - initialize and validate P5 Hermes-replacement evidence.
+// phase5-evidence.mjs - initialize and validate P5 ref-replacement evidence.
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -25,7 +25,7 @@ const shouldInitDecision = argSet.has('--decision') || command === 'init-decisio
 const force = argSet.has('--force');
 const operatorName = argValue('--operator', process.env.USERNAME || process.env.USER || 'andro');
 
-const SURFACE_ALLOWED = new Set(['hermes-proven', 'contract-green', 'accepted-deferral', 'blocked']);
+const SURFACE_ALLOWED = new Set(['ref-proven', 'contract-green', 'accepted-deferral', 'blocked']);
 const DESKTOP_ALLOWED = new Set(['green', 'toolchain-blocked', 'accepted-deferral', 'blocked']);
 const DECISIONS = new Set(['ready-to-replace', 'limited-pilot', 'blocked', 'not-ready']);
 
@@ -102,8 +102,8 @@ function strictReadyEvidence(doc) {
   const desktop = doc && doc.desktop;
   return !!(doc
     && doc.workloads && doc.workloads.passed
-    && browser && browser.status === 'hermes-proven'
-    && computer && computer.status === 'hermes-proven'
+    && browser && browser.status === 'ref-proven'
+    && computer && computer.status === 'ref-proven'
     && desktop && desktop.status === 'green'
     && doc.soak && doc.soak.phase4LiveGreen && doc.soak.phase5WorkloadGreen && doc.soak.restartPreserved
     && doc.recovery && doc.recovery.phase4RecoveryGreen && doc.recovery.phase5RecoveryGreen);

@@ -122,8 +122,8 @@ this file + `DECISIONS.md` / `MISTAKES.md` / `NEXT.md` (plus the untracked local
 **Historical — do NOT plan from these** (they describe finished or superseded work; kept
 for archaeology): `docs/archive/SKYNET_BUILD_PLAN.md`, `docs/archive/INCREMENTAL_ROADMAP.md`,
 `docs/archive/WIRING_AUDIT.md`, `docs/archive/BUILDER_AND_WORLD_FOUNDATION.md` (architecture
-ideas partially adopted; the code is the authority), `docs/STARNET_HERMES_REPLACEMENT_*` and `docs/STARNET_PHASE*` evidence
-templates, `docs/HERMES_*` parity docs, most `docs/*_PLAN.md` files (nearly every plan
+ideas partially adopted; the code is the authority), `docs/STARNET_REF_REPLACEMENT_*` and `docs/STARNET_PHASE*` evidence
+templates, `docs/REF_HARNESS_*` parity docs, most `docs/*_PLAN.md` files (nearly every plan
 doc marked "SHIPPED/EXECUTED" in its header or superseded by the 2026-07-06 audits), and
 everything in `docs/archive/`.
 

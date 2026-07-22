@@ -83,7 +83,7 @@ A.ok(/shell_exec background:true/.test(sidecar) && /shell_bg_status/.test(sideca
 A.ok(/browser_navigate plus browser_console\/browser_snapshot\/browser_vision[\s\S]*browser_test_navigate\(serverId\)[\s\S]*browser_test_snapshot\/browser_test_state\/browser_test_input/.test(sidecar), 'work discipline separates public browsing from owned local synthetic UI verification');
 A.ok(/Final reports must name changed files, verification commands\/results/.test(sidecar), 'work discipline requires concrete final evidence');
 
-// Task doctrine (2026-07-08 Hermes-parity): the general operating loop — proven outcomes, the quietest-path
+// Task doctrine (2026-07-08 ref-parity): the general operating loop — proven outcomes, the quietest-path
 // tool ladder (dedicated tool > headless shell/browser > visible screen), read-back verification, honest
 // escalation. This is the block that stops "open the app on the user's screen and type into it".
 A.ok(/const\s+taskDoctrineNote\s*=/.test(sidecar), 'sidecar builds a dedicated task-doctrine prompt block');

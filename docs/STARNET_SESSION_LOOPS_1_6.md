@@ -223,7 +223,7 @@ existing truthful ledger, budget caps, or key ownership model.
 
 ## Session 5 - Subagent iteration and cost containment
 
-**Goal.** Finish Hermes H6.3: worker/subagent runs get bounded iteration budgets, no-op
+**Goal.** Finish the reference harness H6.3: worker/subagent runs get bounded iteration budgets, no-op
 turns are refunded, and delegated loops cannot quietly burn the lead's full budget.
 
 **Worktree / branch.** `C:\Users\<you>\gen-trees\iteration-budget` on
@@ -252,7 +252,7 @@ turns are refunded, and delegated loops cannot quietly burn the lead's full budg
    turn's starting count.
 5. Run targeted tests plus `npm run test:fast`.
 6. Verify `loop.replay` remains byte-identical for non-worker runs.
-7. Repeat until H6.3 acceptance is met and update `HERMES_PARITY_PLAN.md`.
+7. Repeat until H6.3 acceptance is met and update `REF_HARNESS_PARITY_PLAN.md`.
 
 **Done condition.**
 - Worker dispatched with `maxIters=10` has loop limit 10 while lead remains at the
@@ -367,7 +367,7 @@ session's done condition.
 | 2 Org Validator / PipelineEdge | `agent/org-graph-gap2` | TODO | waits on S1 for sidecar integration | Can build pure validator first |
 | 3 Desktop Release | `agent/starnet-release-gate` | WATCH | waits on active Tauri hardening lanes | Rust toolchain may block final build |
 | 4 Managed Billing | `agent/managed-credits` | TODO | none | Keep BYOK isolated; managed fails closed |
-| 5 Subagent Budget | `agent/iteration-budget` | TODO | none | Hermes H6.3 |
+| 5 Subagent Budget | `agent/iteration-budget` | TODO | none | the reference harness H6.3 |
 | 6 Builder Scale | `agent/gap6-builder-bake` | TODO | waits on S1/S2 for authority semantics | Can build bake/chunk tests first |
 
 ## Perfect-standard checklist

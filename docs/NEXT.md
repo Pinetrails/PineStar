@@ -5,7 +5,7 @@
 Getting the source repo release-shaped for the public flip (Andrew: "essentially ready for
 early release"). DONE this lane: GitHub repo **renamed `skynet-harness` → `starnet`** (still
 PRIVATE; old URLs redirect) + description/homepage/topics set on BOTH repos; README rebuilt to
-Hermes/OpenClaw-class presentation (wordmark hero + station render from the website branch, now
+the reference harness/OpenClaw-class presentation (wordmark hero + station render from the website branch, now
 committed under `.github/media/`, badges, feature table, importer section); all breaking slug
 references fixed (package.json, CONTRIBUTING, issue-template advisory link,
 opensource-readiness test) + living docs swept; obsolete `publish.sh` removed; gate 373 green.
@@ -204,12 +204,12 @@ https://github.com/androoAGI/starnet-releases/releases/latest
   unchanged); `v0.5.3` tag push (fires the blocked release-train) = Andrew's call;
   updater-key backup; Apple codesign/notarization secrets for public mac distribution.
 
-## 2026-07-18 — IMPORT AGENT from Hermes/OpenClaw (branch `claude/agent-transfer-hermes-openclaw-9f0efb`)
+## 2026-07-18 — IMPORT AGENT from the reference harness/OpenClaw (branch `claude/agent-transfer-hermes-openclaw-9f0efb`)
 
-Andrew's ask: his community (thousands on Hermes agent / OpenClaw) needs a one-click migration
+Andrew's ask: his community (thousands on the reference harness agent / OpenClaw) needs a one-click migration
 into StarNet — this is launch-conversion work. Shipped in this lane:
 - `sidecar/harness-import.js` (pure, UMD, injected-data): detectCandidates (env-built roots incl.
-  HERMES_HOME/OPENCLAW_STATE_DIR overrides), filesWanted whitelist, scanProfile → normalized
+  REF-HARNESS_HOME/OPENCLAW_STATE_DIR overrides), filesWanted whitelist, scanProfile → normalized
   preview { name, persona, instructions, userContext, memory{curated,dailyCount}, model, warnings }.
   JSON5-tolerant openclaw.json parse (comments/trailing commas/bare keys/single quotes), line-based
   config.yaml model extraction. SECRETS LAW: key-shaped values dropped, never emitted; warning
@@ -229,7 +229,7 @@ into StarNet — this is launch-conversion work. Shipped in this lane:
 
 ## 2026-07-18 — CONCURRENT SESSIONS ON ONE AGENT (branch `claude/multiple-concurrent-sessions-736e68`)
 
-Andrew's ask: multiple COMMS sessions may drive the SAME agent at once (Hermes parity), with the
+Andrew's ask: multiple COMMS sessions may drive the SAME agent at once (the reference harness parity), with the
 agent staying at its workstation until the LAST run ends. Shipped:
 - **Admission mutex retired** (sidecar/index.js): same-agent runs are ADMITTED concurrently; the
   distinct-agent fan-out cap is unchanged. The workspace/shadow-git collision moved to a
@@ -521,7 +521,7 @@ the launch-integrity guarantees. Live-proven on a real booted sidecar, zero spen
 
 ## MERGED 2026-07-15 — VOICE DECOUPLED FROM THE LLM (lane `claude/hermes-voice-system-analysis-910f29`, trunk `dc2c8809` + W0 `e5e60914`)
 
-Voice is now a STATION subsystem (analysis + acceptance bar: docs/HERMES_VOICE_ANALYSIS_2026-07-14.md).
+Voice is now a STATION subsystem (analysis + acceptance bar: docs/REF_HARNESS_VOICE_ANALYSIS_2026-07-14.md).
 Shipped: sidecar/edgetts.js zero-dep FREE KEYLESS Edge neural floor in /api/tts (keyed chain →
 edge → 200 {fallback}); /api/stt dedicated ASR (Groq whisper-large-v3-turbo → whisper-1 →
 chat-model); frontend neural-only (robotic speechSynthesis path DELETED — degrade = silence +
@@ -1703,7 +1703,7 @@ it." Structurally impossible today because:
 
 **Lane queue (claim in-file before building; shared/events.js additive-only via owner):**
 
-- **NS-5 · Project Lens core — ✅ MERGED 2026-07-08 (agent/ns5-path-trust → b6ef5092, gates fast 279 + http full green; live e2e vs real sidecar: one prompt → always → read → grant listed → restart survives → revoke re-prompts). Direction was LOCKED: no prop/picker, Hermes-fluid. OPEN: autonomous hard-deny proven at unit layer only (no live autonomous HTTP drive); consent card render not screenshotted; night-shift CONSUMPTION of blessed roots = part of the NS-5b lane (focus resolver picks the root, beats scan it).** The user just *tells* the agent a path in chat
+- **NS-5 · Project Lens core — ✅ MERGED 2026-07-08 (agent/ns5-path-trust → b6ef5092, gates fast 279 + http full green; live e2e vs real sidecar: one prompt → always → read → grant listed → restart survives → revoke re-prompts). Direction was LOCKED: no prop/picker, ref-fluid. OPEN: autonomous hard-deny proven at unit layer only (no live autonomous HTTP drive); consent card render not screenshotted; night-shift CONSUMPTION of blessed roots = part of the NS-5b lane (focus resolver picks the root, beats scan it).** The user just *tells* the agent a path in chat
   ("go to C:\...\myproject and fix X") and it works there. Mechanics (verified 2026-07-08:
   fs.js:73 rejects ALL absolute paths; permgrants GRANTABLE = ['cabinet:write'] only — this
   is a new capability, not a UX swap):

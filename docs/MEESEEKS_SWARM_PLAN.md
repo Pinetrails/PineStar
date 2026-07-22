@@ -38,7 +38,7 @@ Codex "Task tool" concept). It is explicitly NOT a persistent roster agent:
 - **Meeseeks** = an ephemeral self-clone spawned by `team.spawn`. No roster entry, no home,
   no persistence. The population of blue sprites literally IS the live sub-agent fan-out.
 
-**Clone fidelity — Hermes-style configured worker, not a literal clone.** (Reference: Hermes
+**Clone fidelity — ref-style configured worker, not a literal clone.** (Reference: the reference harness
 `delegate_task` replaces the system prompt with a focused task, narrows the toolset, gives a
 fresh budget + no shared memory.) Our `team.spawn` clone inherits the lead's OWN base system
 prompt + model (so it *is* a copy of the overseer — honoring "clone of itself" visually), but

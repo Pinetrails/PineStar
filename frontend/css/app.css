@@ -2024,7 +2024,7 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
   color: var(--ph); border: 1px solid var(--ph-faint); border-radius: 2px; padding: 0 4px;
   background: rgba(0,0,0,.25);
 }
-/* Hermes-parity drill-in: breadcrumb back-row + entered-project header + full session rows */
+/* ref-parity drill-in: breadcrumb back-row + entered-project header + full session rows */
 .proj-crumb { padding: 0 0 3px; }
 .proj-back {
   font-family: inherit; font-size: 11px; letter-spacing: 1px; color: var(--ph-dim);

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// phase4.mjs - StarNet Hermes cutover qualification loop.
+// phase4.mjs - StarNet the reference harness cutover qualification loop.
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -82,15 +82,15 @@ async function commandStep(step, loop) {
   });
 }
 
-function checkHermesBaseline(loop) {
-  const file = join(ROOT, 'docs', 'STARNET_PHASE4_HERMES_BASELINE.md');
+function checkRefBaseline(loop) {
+  const file = join(ROOT, 'docs', 'STARNET_PHASE4_REF_BASELINE.md');
   const text = readText(file);
   const required = ['real paid model call', 'task loop', 'file deliverables', 'shell', 'restart', 'spend', 'cancellation'];
   const missing = required.filter(term => text.toLowerCase().indexOf(term) < 0);
   return {
-    id: '4.1-hermes-baseline',
+    id: '4.1-ref-baseline',
     phase: '4.1',
-    title: 'Hermes replacement baseline is explicit',
+    title: 'the reference harness replacement baseline is explicit',
     loop,
     status: existsSync(file) && !missing.length ? 'pass' : 'fail',
     required: true,
@@ -202,7 +202,7 @@ function checkDecision(loop, priorResults) {
     return {
       id: '4.6-pilot-decision',
       phase: '4.6',
-      title: 'Final Hermes replacement go/no-go decision',
+      title: 'Final the reference harness replacement go/no-go decision',
       loop,
       status: 'blocked',
       required: true,
@@ -215,7 +215,7 @@ function checkDecision(loop, priorResults) {
   return {
     id: '4.6-pilot-decision',
     phase: '4.6',
-    title: 'Final Hermes replacement go/no-go decision',
+    title: 'Final the reference harness replacement go/no-go decision',
     loop,
     status: ok ? 'pass' : 'blocked',
     required: true,
@@ -282,7 +282,7 @@ async function runOnce(loop) {
   results.push(seal);
   if (seal.status === 'fail') return results;
 
-  results.push(checkHermesBaseline(loop));
+  results.push(checkRefBaseline(loop));
   if (results.some(r => r.status === 'fail')) return results;
 
   const dogfood = await commandStep({

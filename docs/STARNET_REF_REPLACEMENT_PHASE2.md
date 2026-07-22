@@ -1,15 +1,15 @@
-# StarNet Hermes-Replacement Phase 2
+# StarNet ref-Replacement Phase 2
 
 Phase 1 made the signals trustworthy: deterministic audit, reviewed golden baselines,
 fixed `build-skills`, and honest spend/model history. Phase 2 is the daily-driver proof.
-The goal is not to match every Hermes surface yet. The goal is to prove that StarNet can
+The goal is not to match every the reference harness surface yet. The goal is to prove that StarNet can
 do real work repeatedly through the gamified UI without lying, losing state, or making a
 red gate feel optional.
 
 ## Phase 2 Goal
 
 StarNet reaches "pilot as main harness" standing when a real-key, real-work dogfood pack
-passes and the remaining Hermes gaps are consciously accepted or assigned.
+passes and the remaining the reference harness gaps are consciously accepted or assigned.
 
 Phase 2 is complete only when:
 
@@ -19,7 +19,7 @@ Phase 2 is complete only when:
 - A restart/resume pass proves run history, transcripts, ledger, and station state survive.
 - A safety pass proves consent, checkpoint/restore, and file-jail behavior around mutating tools.
 - `npm run test:fast`, `npm run test:http`, `npm run audit`, and `npm run golden` are green.
-- Deferred Hermes-surface gaps have explicit owners and are not confused with pilot blockers.
+- Deferred ref-surface gaps have explicit owners and are not confused with pilot blockers.
 
 ## Steering Commands
 
@@ -71,7 +71,7 @@ Evidence:
 
 ### Blocker B: No Real Daily-Driver Dogfood Pack
 
-Hermes earns trust by handling ordinary work smoothly. StarNet needs a repeatable pack of
+the reference harness earns trust by handling ordinary work smoothly. StarNet needs a repeatable pack of
 real tasks that exercise the harness through the UI and sidecar, not only unit tests.
 
 The pack should include:
@@ -106,7 +106,7 @@ Gate:
 
 ### Blocker D: Restart/Resume Must Feel Boring
 
-Hermes is reliable because finished work remains findable. StarNet has transcript, runstore,
+the reference harness is reliable because finished work remains findable. StarNet has transcript, runstore,
 ledger, and save-store surfaces, but Phase 2 must prove the full path after a sidecar restart.
 
 Gate:
@@ -128,7 +128,7 @@ Gate:
 - `desktop:build` has a clear prerequisite check for Rust/Cargo.
 - The failure mode says what to install instead of looking like a product failure.
 
-### Blocker F: Hermes Surface Gaps Are Real But Not All Blocking
+### Blocker F: the reference harness Surface Gaps Are Real But Not All Blocking
 
 These do not block Phase 2 pilot unless the daily-driver task pack needs them:
 
@@ -276,7 +276,7 @@ No-go when:
 
 ## Phase 3 Preview
 
-Phase 3 is defined in `docs/STARNET_HERMES_REPLACEMENT_PHASE3.md`. It starts only
+Phase 3 is defined in `docs/STARNET_REF_REPLACEMENT_PHASE3.md`. It starts only
 after Phase 2 proves the core loop, or when a Phase 2 blocker explicitly becomes
 Phase 3 work. Its themes:
 

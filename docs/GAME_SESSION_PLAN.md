@@ -13,8 +13,8 @@ These five goals are the test for every feature. If a proposal doesn't serve one
 cut it.
 
 1. **A beginner reaches real value faster than any harness.**
-   The game IS the onboarding. Hermes makes you figure out what an agent is for;
-   StarNet's station teaches by building. (Locked: easier-than-Hermes moat.)
+   The game IS the onboarding. the reference harness makes you figure out what an agent is for;
+   StarNet's station teaches by building. (Locked: easier-than-the reference harness moat.)
 
 2. **The value flow is reversed.**
    The agent figures out the Commander — dossier → First Pitch → ongoing ideas →

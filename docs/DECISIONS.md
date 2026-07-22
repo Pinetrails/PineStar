@@ -62,8 +62,8 @@ many of these — they win on any wording conflict.
   `shared/events.js` + `shared/schema.js` are owned; changes additive-only, by request.
 - **Rebrand:** Skynet → StarNet (2026-06-22) on all SHIPPED surfaces; internal `skynet.*`
   keys/schemas/env vars intentionally kept — do not "finish" the rename.
-- **Hermes branding stripped from shipped surface** (2026-07-04); attribution lives in
-  NOTICE.md (MIT — keep it). The `hermes-proven` QA enum is kept on purpose.
+- **the reference harness branding stripped from shipped surface** (2026-07-04); attribution lives in
+  NOTICE.md (MIT — keep it). The `ref-proven` QA enum is kept on purpose.
 - **Reflection mints FACT/PREFERENCE only, never SKILL.** Asks are WORK-EARNED (3 task-runs
   floor), study 1/session. Never regress the earn gate.
 - **Awakening/interview questions must be concrete + targeted** — never "what does good look

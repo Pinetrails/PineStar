@@ -1,5 +1,5 @@
 /* node test/text-toolcall-markup.test.js — the TEXT TOOL-CALL MARKUP scrub + nudges (sidecar/loop.js,
-   model-consistency lane, Hermes-aligned 2026-07-17). Some models (Kimi/Qwen/GLM/Gemma families) emit
+   model-consistency lane, ref-aligned 2026-07-17). Some models (Kimi/Qwen/GLM/Gemma families) emit
    tool-call markup as plain text; weak models also ECHO markup they saw in file contents (the reference
    harness's #47967 class), so the markup must NEVER be executed — file data must not drive tools. Proves:
    markup is stripped from the kept turn and NEVER dispatched; one bounded <tool_markup> nudge steers the

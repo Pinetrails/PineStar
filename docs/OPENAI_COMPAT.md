@@ -3,7 +3,7 @@
 StarNet exposes an OpenAI-compatible HTTP surface so external local clients (an OpenAI SDK,
 another agent harness, a CLI) can start **real StarNet agent runs** over HTTP. Implementation:
 `sidecar/openai-compat.js` (all logic, testable) + thin route wiring in `sidecar/index.js`.
-Ported from Hermes' `gateway/platforms/api_server.py`.
+Ported from the reference harness's `gateway/platforms/api_server.py`.
 
 ## Enabling it
 

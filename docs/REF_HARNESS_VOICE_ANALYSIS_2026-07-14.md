@@ -1,6 +1,6 @@
-# Hermes voice system vs StarNet — code-level analysis (2026-07-14)
+# the reference harness voice system vs StarNet — code-level analysis (2026-07-14)
 
-Sources: full read of `C:\Users\<you>\hermes-ref` (hermes-agent main @ 8e734810d, 2026-07-08)
+Sources: full read of `C:\Users\<you>\harness-ref` (the reference harness main @ 8e734810d, 2026-07-08)
 voice subsystem (`tools/tts_tool.py`, `tools/transcription_tools.py`, `tools/voice_mode.py`,
 `cli.py` voice UX, `gateway/run.py`, `plugins/platforms/discord/*`), and a same-day audit of
 StarNet's voice stack on this branch (`frontend/app/voice.js`, `frontend/app/chat.js`,
@@ -8,7 +8,7 @@ StarNet's voice stack on this branch (`frontend/app/voice.js`, `frontend/app/cha
 
 ## Headline: do NOT copy their pipeline — ours is architecturally ahead
 
-Hermes is a **classic turn-based STT → LLM → TTS pipeline everywhere**. The full LLM reply
+the reference harness is a **classic turn-based STT → LLM → TTS pipeline everywhere**. The full LLM reply
 completes, markdown is stripped, ONE audio file is synthesized, then played. The single
 exception is CLI + ElevenLabs, which streams sentence-by-sentence into a persistent
 sounddevice OutputStream (`tts_tool.py:2595 stream_tts_to_speaker`, boundary regex
@@ -17,18 +17,18 @@ sounddevice OutputStream (`tts_tool.py:2595 stream_tts_to_speaker`, boundary reg
 StarNet already streams TTS **while the LLM is still generating** (`chat.js onToken →
 pushSpeech`), peels a tiny first clause (~3-4 words) for fast first audio, synthesizes two
 chunks ahead, plays in order, prewarms ambient lines into a disk cache, and has a real
-barge-in teardown (`speakSeq` invalidation + fetch aborts). Hermes has none of that outside
+barge-in teardown (`speakSeq` invalidation + fetch aborts). the reference harness has none of that outside
 the one CLI path. They also have: no wake word, no webrtcvad (hand-rolled RMS energy VAD,
 same class as ours), no realtime/duplex mode in production (Meet v2 duplex is an explicit
 stub; `api_server.py` hardcodes `"realtime_voice": false`).
 
-**So "Hermes sounds decent, ours is terrible" is not the pipeline. It's four feel factors
+**So "the reference harness sounds decent, ours is terrible" is not the pipeline. It's four feel factors
 plus two self-inflicted degrade traps on our side.**
 
 ## The defining principle: voice is a STATION subsystem, never a model property
 
-Andrew's observation (2026-07-14): Hermes works fluidly with any model. Correct — and the
-reason is structural: Hermes' voice stack is **fully decoupled from the LLM**. TTS provider
+Andrew's observation (2026-07-14): the reference harness works fluidly with any model. Correct — and the
+reason is structural: the reference harness's voice stack is **fully decoupled from the LLM**. TTS provider
 is config (default = free keyless Edge), STT provider is config (default = local Whisper);
 the agent brain can be anything. StarNet v3 did the opposite on purpose: the `/api/tts`
 chain prefers the RUN provider's native voice API (`preferProvider`), and `/api/stt` rides
@@ -59,10 +59,10 @@ which brain you picked. That coupling is the root defect, not any single provide
 `nodejs-whisper` (whisper.cpp). Local model ≈75–150MB — download on first voice-mode use
 with a progress line, never bundled in the installer.
 
-## What Hermes actually does better (the copy list, ranked)
+## What the reference harness actually does better (the copy list, ranked)
 
 ### 1. Real ASR endpoints for STT — our single biggest latency+accuracy gap
-Hermes transcribes with dedicated speech models: local **faster-whisper** `base` (default,
+the reference harness transcribes with dedicated speech models: local **faster-whisper** `base` (default,
 free, private, CUDA→CPU int8 fallback), **Groq whisper-large-v3-turbo**, OpenAI `whisper-1`,
 Mistral Voxtral, ElevenLabs scribe_v2, xAI `/v1/stt` (`transcription_tools.py`, auto-detect
 order local > groq > openai > …).
@@ -76,11 +76,11 @@ part of our hands-free loop, and chat-model transcription is also less accurate 
 **Replicate:** teach `handleStt` dedicated ASR branches keyed off available creds —
 Groq `whisper-large-v3-turbo` (very fast/cheap) and OpenAI `whisper-1` first, current
 chat-model path demoted to fallback. Same shape as the TTS provider chain we already have.
-(Local whisper is Python-ecosystem in Hermes; a Node port (whisper.cpp binding) is a separate
+(Local whisper is Python-ecosystem in the reference harness; a Node port (whisper.cpp binding) is a separate
 decision — provider ASR gets 90% of the win with zero deps.)
 
 ### 2. A free NEURAL fallback tier before the robotic voice
-Hermes' **default** TTS is **Edge TTS** (`en-US-AriaNeural`) — Microsoft's free endpoint, no
+the reference harness's **default** TTS is **Edge TTS** (`en-US-AriaNeural`) — Microsoft's free endpoint, no
 key, genuinely decent neural voice. Their degrade ladder therefore never sounds robotic:
 edge → local neural (NeuTTS/Kitten/Piper ONNX) → error.
 
@@ -96,7 +96,7 @@ DSP applies client-side regardless of source, so even the fallback keeps the Ult
 Keep the 200-always contract; cache under its own namespace.
 
 ### 3. Dead-air fill: thinking bed + spoken acknowledgements + ducking
-Hermes Discord voice (`plugins/platforms/discord/voice_mixer.py`, `adapter.py:2707
+the reference harness Discord voice (`plugins/platforms/discord/voice_mixer.py`, `adapter.py:2707
 voice_fx`): a continuous synthesized ambient bed (detuned sines + tremolo + filtered noise)
 plays while the agent works, **ducks** 0.18→0.06 under speech with a 400ms release, and the
 agent speaks a short verbal ack ("Let me look into that.", "One moment.") on its **first
@@ -136,7 +136,7 @@ melodic. This needs Andrew's taste call on the bed itself; the acks don't.
   (`type: command`, `{input_path}/{output_path}` placeholders). Cheap flexibility for power
   users; low priority for our beginner moat.
 
-## Our self-inflicted wounds (fix regardless of Hermes)
+## Our self-inflicted wounds (fix regardless of the reference harness)
 
 - **`ttsDisabled` latches for the whole session on ONE "no key" response**
   (`voice.js:584`) — a single spurious 401/no-key at startup means robotic until reload.
@@ -145,7 +145,7 @@ melodic. This needs Andrew's taste call on the bed itself; the acks don't.
   law, but pair it with fix #2 above so degrade becomes inaudible instead of merely explained.
 - **Double chunking heuristics** (chat.js `pushSpeech` + voice.js `firstClauseSplit`) can
   emit 3-4-word fragments with odd prosody; worth consolidating to one splitter with
-  Hermes-style min-sentence-length (20 chars) + forward-merge of short fragments.
+  ref-style min-sentence-length (20 chars) + forward-merge of short fragments.
 
 ## Explicitly NOT copying
 28 TTS/STT providers, 20 channel adapters, Discord RTP/DAVE decrypt stack, Google Meet bot,

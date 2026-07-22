@@ -1,11 +1,11 @@
-# StarNet → Hermes-parity FINISH Loop (G1 computer/browser · G2 MCP stdio · G4 cron · G5 fs patch · G6 spend)
+# StarNet → ref-parity FINISH Loop (G1 computer/browser · G2 MCP stdio · G4 cron · G5 fs patch · G6 spend)
 
 > The durable brain for the self-paced parity-finish + reliability loop. Source: the 2026-06-23
-> StarNet-vs-Hermes audit (verified file:line recon + adversarial critique). Scope = the five
-> ON-MOAT gaps where Hermes excels and StarNet lacks or lies: **G1** computer/browser use,
+> StarNet-vs-the reference harness audit (verified file:line recon + adversarial critique). Scope = the five
+> ON-MOAT gaps where the reference harness excels and StarNet lacks or lies: **G1** computer/browser use,
 > **G2** MCP stdio transport, **G4** cron 100%-reliability, **G5** fs multi-hunk patch, **G6**
 > spend/model honesty. **Discord / gap #3 is INTENTIONALLY EXCLUDED — held off by the user; do
-> not touch channels.** Defining theme: most of this is PORT-WITH-PROOF — copy Hermes' exact
+> not touch channels.** Defining theme: most of this is PORT-WITH-PROOF — copy the reference harness's exact
 > grounding/atomicity/lock invariants, but make every "it works" claim a TEST or a LIVE CHECK,
 > never a single anecdotal pass. A single success is an existence proof, not reliability.
 
@@ -89,12 +89,12 @@
 ---
 
 ## GOAL G1 — Computer use + browser automation (two surfaces)  ·  STATUS: TODO
-> PARITY TARGET: Hermes ships TWO surfaces (desktop `computer_use` + `browser`); StarNet has
+> PARITY TARGET: the reference harness ships TWO surfaces (desktop `computer_use` + `browser`); StarNet has
 > NEITHER (no such builtin under `sidecar/tools/builtin/` — only fs/image/notebook/orchestration/
 > recall/shell/skills/spotify/todo/verify/web). **RECONCILED DESIGN (the two recon reports
 > contradicted each other — this is the single source of truth):** file names = `browser.js` +
 > `computer.js` (NOT `computer_use.js`); adopt report-1's tool/grounding port (the detailed
-> Hermes parity) with report-2's capability framing — a NEW capability key **`remote`** gated
+> the reference harness parity) with report-2's capability framing — a NEW capability key **`remote`** gated
 > `execute + consent`, mirroring `shell.js` so it inherits the autonomous EXEC LOCKOUT at
 > `permissions.js:92` for free. **Build `browser.js` FIRST** (native Node / Playwright, low
 > risk), then `computer.js`. The frontend capability-OBJECT surfacing (`world.js`/`worldmodel.js`
@@ -104,7 +104,7 @@
 ### G1.1 — `browser.js` builtin (Playwright, ariaSnapshot + @ref grounding)  ·  STATUS: TODO
 One-line task: add a `browser` builtin wrapping Playwright-for-Node (bundled Chromium), action
 family `{navigate, snapshot, click, type, scroll, back, press, console, dialog, get_text,
-vision}` matching Hermes `browser_tool.py:2418-3200`; grounding via a per-session text aria
+vision}` matching the reference harness `browser_tool.py:2418-3200`; grounding via a per-session text aria
 snapshot with stable `@e1..` refs rebuilt on every snapshot.
 - **Acceptance (PERFECT STANDARD):**
   - SURFACE (headless, `test/browser.test.js`, Playwright page stub): each action exists and
@@ -112,7 +112,7 @@ snapshot with stable `@e1..` refs rebuilt on every snapshot.
     `click(ref)`; `type(ref,text)` does clear-then-fill (`locator.fill('')` then `fill(text)`);
     `scroll`; `back`; `press`; `console`; `dialog`; `get_text`. Asserted action-by-action.
   - GROUNDING + STALE (headless): a `@ref` used AFTER a newer snapshot returns an EXPLICIT stale
-    error and never silently re-resolves to a different element (Hermes `element_token`
+    error and never silently re-resolves to a different element (the reference harness `element_token`
     invariant, `backend.py:27-33`). Per-session ref→Locator map keyed by `agent+task` id (no
     global map → no cross-agent ref bleed across StarNet's 7–10 agents).
   - SETTLE (headless, fake timers): `navigate` waits for DOM + network settle (networkidle OR a
@@ -126,7 +126,7 @@ snapshot with stable `@e1..` refs rebuilt on every snapshot.
     `page.on('dialog')`, parity `browser_supervisor.py` + `browser_dialog`).
   - LAZY-INSTALL DEGRADATION (headless): with Chromium NOT installed, the app still BOOTS and
     `npm run test:fast` passes — the tool registers but reports a graceful "browser engine not
-    installed" tool-absent state (mirror Hermes' one-time `install` step; keep the ~150MB
+    installed" tool-absent state (mirror the reference harness's one-time `install` step; keep the ~150MB
     Chromium out of the base download).
   - RELIABILITY (LIVE, captured transcript — NOT a single pass): a FIXED multi-step task
     (navigate → snapshot → click ref → type → submit via press → read result from next snapshot)
@@ -147,14 +147,14 @@ snapshot with stable `@e1..` refs rebuilt on every snapshot.
   knows them fails). Do NOT emit any event until it's in trunk.
 
 ### G1.2 — `computer.js` builtin (desktop OS control, Windows-first)  ·  STATUS: TODO
-One-line task: add a single action-discriminated `computer` builtin matching Hermes' exact enum
+One-line task: add a single action-discriminated `computer` builtin matching the reference harness's exact enum
 `{capture, click, double_click, right_click, middle_click, drag, scroll, type, key, set_value,
 wait, list_apps, focus_app}` with modes `som|vision|ax`, element-index-first grounding,
 `capture_after` verification, `max_elements` cap. Transport: cua-driver-over-MCP first (inherit
-Hermes' SOM/AX/element_token grounding on the stable Win32 path) with a nut.js coordinate-only
+the reference harness's SOM/AX/element_token grounding on the stable Win32 path) with a nut.js coordinate-only
 fallback so the tool degrades instead of failing to load.
 - **Acceptance (PERFECT STANDARD):**
-  - SCHEMA PARITY (headless, `test/computer.test.js`): the action enum is EXACTLY Hermes'
+  - SCHEMA PARITY (headless, `test/computer.test.js`): the action enum is EXACTLY the reference harness'
     (`schema.py:34-48`) with modes `som|vision|ax` and an element-index-first grounding param —
     asserted field-by-field.
   - SAFETY (headless): hard-blocks destructive key combos (win+L, cmd+shift+backspace, force-quit/
@@ -262,7 +262,7 @@ the same `{send, onMessage, close}` duplex shape, spawn injected for testability
 ---
 
 ## GOAL G4 — Cron 100% reliability (the critical one)  ·  STATUS: DONE (all 6 items)
-> PARITY TARGET: Hermes cron guarantees tz/DST-correct next-fire, at-most-once across crash
+> PARITY TARGET: the reference harness cron guarantees tz/DST-correct next-fire, at-most-once across crash
 > (advance-before-run), no-backlog catch-up, cross-process exactly-once (two file locks),
 > atomic+durable persistence, recurring-never-silently-disabled. StarNet's determinism split
 > (pure cron-math + injected clock) is already AHEAD on testability and matches most of this.
@@ -675,13 +675,13 @@ ORs with `SKYNET_CRON_ENABLED`, NOT runtime `process.env` mutation), then re-ren
 ---
 
 ## GOAL G5 — fs multi-hunk patch (V4A, validate-then-apply, atomic)  ·  STATUS: TODO
-> PARITY TARGET: Hermes' V4A patch tool — multi-hunk, two-phase (validate ALL before any write),
+> PARITY TARGET: the reference harness's V4A patch tool — multi-hunk, two-phase (validate ALL before any write),
 > all-or-nothing, with a fuzzy matcher (`fuzzy_match.py`). StarNet's `fs.edit`
 > (`fs.js:137-158`) is a single global `split().join()` find/replace — no hunks, no context, no
 > fuzz, no atomicity. **DECISION: ADD a NEW `fs.patch` tool; do NOT overload `fs.edit`** (its
 > `{path,find,replace}` schema + "replace every occurrence" semantics are load-bearing for
 > existing callers/tests; overloading risks regressing the simple path and confusing tool-choice).
-> Mirrors Hermes keeping `patch_replace` separate from V4A.
+> Mirrors the reference harness keeping `patch_replace` separate from V4A.
 
 ### G5.1 — `patchparse.js` + `fuzzymatch.js` (V4A parser + strategy ladder)  ·  STATUS: TODO
 One-line task: port `parse_v4a_patch` (the exact V4A format: `*** Begin/End Patch`,
@@ -698,7 +698,7 @@ reindent-on-non-exact into `fuzzymatch.js`. Both UMD-shaped like `fs.js`.
 - **Files:** `sidecar/tools/builtin/patchparse.js` (NEW, low); `sidecar/tools/builtin/fuzzymatch.js`
   (NEW, low); `test/fs.patch.test.js` (NEW, low).
 - **Notes:** Defer unicode/escape-drift strategies (noted parity gap — they salvage LLM
-  serialization artifacts; fail-closed is safer than silent corruption). Keep Hermes' conservative
+  serialization artifacts; fail-closed is safer than silent corruption). Keep the reference harness's conservative
   thresholds (0.50 unique / 0.70 multi).
 
 ### G5.2 — `fs.patch` tool (jailed, two-phase, buffer-then-flush atomic)  ·  STATUS: TODO
@@ -722,7 +722,7 @@ fails).
   expose `{parsePatch, fuzzyFind}` on `_internals` `:321`; additive, `fs.edit` untouched;
   board-check — `agent/hermes-parity` fs.search v2 territory, 27h); `test/fs.patch.test.js`
   (extend); `package.json` (edit, med — append test).
-- **Notes:** No git in the jail (Hermes leans on git for phase-2 recovery); buffer-then-flush is
+- **Notes:** No git in the jail (the reference harness leans on git for phase-2 recovery); buffer-then-flush is
   the honest atomicity primitive. Multi-file mid-flush is a theoretical partial-write window
   (no cross-file fsync transaction) — acceptable for a workspace jail, single-file patches fully
   atomic; note it. NO new events.

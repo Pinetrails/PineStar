@@ -13,7 +13,7 @@ gates. Author-edit before publishing; keep only user-meaningful bullets.
 - **COMMS decluttered.** Run machinery folds into a single collapsible "RUN COMPLETE" line,
   station broadcasts stack into one block, and passive beats whisper instead of shouting.
   Timestamps appear on hover.
-- **Import your agent from Hermes or OpenClaw.** One click in the Recruitment Bay migrates a
+- **Import your agent from the reference harness or OpenClaw.** One click in the Recruitment Bay migrates a
   persona, instructions, memory, and model pin — API keys never transfer (re-enter in KEYS).
 - **Your save is protected at boot.** If the app can't *prove* what's on disk, it shows a
   blocking "your save has NOT been deleted" screen with auto-retry — first-run setup can no

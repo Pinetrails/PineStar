@@ -83,7 +83,7 @@
     return { blessPath };
   }
 
-  // The PROJECT-SCOPED SESSION context line (Hermes-parity working folder). A session anchored to a project
+  // The PROJECT-SCOPED SESSION context line (ref-parity working folder). A session anchored to a project
   // sends its root with each /api/run; this composes the ONE line that rides the system prompt — and ONLY when
   // the caller proved the root is still a standing blessed grant (truthful telemetry: injecting a folder claim
   // for an un-blessed root would assert access the harness can't prove, so `blessed:false` returns '').

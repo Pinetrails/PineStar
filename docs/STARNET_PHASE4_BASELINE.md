@@ -13,7 +13,7 @@ This file preserves the latest Phase 1-3 evidence before Phase 4 planning. It is
 ## Phase 4 Starting Line
 
 - Treat live provider proof, attended UI dogfood, two-pass restart soak, and Cargo/Tauri build as Phase 4 work.
-- Treat Phase 3.5 browser automation and Phase 3.6 computer-use as automated contract green, not Hermes-proven live parity.
+- Treat Phase 3.5 browser automation and Phase 3.6 computer-use as automated contract green, not ref-proven live parity.
 - Keep `npm.cmd run phase3:seal` green before changing Phase 4 scope.
 
 ## Preserved Phase 2 Summary
@@ -100,7 +100,7 @@ This pack is green only when paid live provider proof and the attended UI dogfoo
 | PASS | `3.1` | `3.1-phase2-foundation` Phase 2 foundation gates remain trustworthy | yes | evidence C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\phase2-latest\phase2-status.json |
 | BLOCKED | `3.1` | `3.1-dogfood-pack` Daily-driver dogfood evidence pack | yes | Dogfood verdict blocked; see C:\Users\<you>\gen-trees\starnet-replacement-eval\.dogfood\dogfood-latest\dogfood-status.json |
 | BLOCKED | `3.2` | `3.2-soak-repeat` Reliability soak: two green dogfood passes | yes | Requires two complete green dogfood passes, one fresh and one after sidecar restart. |
-| PASS | `3.3` | `3.3-fs-patch` Hermes-style fs.patch parser/fuzzy atomic patching | yes | exit 0 |
+| PASS | `3.3` | `3.3-fs-patch` ref-style fs.patch parser/fuzzy atomic patching | yes | exit 0 |
 | PASS | `3.4` | `3.4-mcp-stdio` Secure MCP stdio transport and cleanup | yes | exit 0 |
 | PASS | `3.5` | `3.5-browser-automation` Browser automation automated contract with stable refs and SSRF guards | yes | automated contract green; Phase 4 still needs attended/live reliability proof |
 | PASS | `3.6` | `3.6-computer-use` Desktop computer-use automated contract with consent and capture-after proof | yes | automated contract green; Phase 4 still needs attended/live reliability proof |

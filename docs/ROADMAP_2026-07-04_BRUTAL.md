@@ -25,14 +25,14 @@ else is explicitly on the STOP list.
    essay — one rail that can charge a card.
 5. **The unsigned installer is the biggest funnel killer you control.** SmartScreen scares
    beginners; SAC hard-blocks them with an identical-looking dialog. Your target user — less
-   technical than a Hermes user — dies at the download. A code-signing identity
+   technical than a reference-harness user — dies at the download. A code-signing identity
    (Azure Trusted Signing, ~$10/mo) removes this and nothing else on this list matters until
    it's gone or documented around.
 6. **Distribution is already sitting in the building.** Andrew is an AI-content creator; the
    GTM thesis says spectacle/watchability IS the growth engine. The clip exporter shipped.
    Zero clips have been posted. The cheapest user acquisition available is being left unused.
 7. **The feature surface is now a liability.** 84 props, 28 skills, recipes, routines,
-   autonomy tiers, away workshop, XP, voice, themes — built to Hermes-parity depth with zero
+   autonomy tiers, away workshop, XP, voice, themes — built to ref-parity depth with zero
    external validation of ANY loop. The next 90 days should delete/park more than they add.
 
 ---
@@ -87,7 +87,7 @@ drop-offs are fixed.**
 
 ### Kill list (park these unless a real user asks)
 - Meeseeks frontend sprite layer, G5 spectacle expansion, new props/classes/skills,
-  Hermes-parity leftovers, the three parked mega-branches. Freeze the surface; the next
+  ref-parity leftovers, the three parked mega-branches. Freeze the surface; the next
   30 days are funnel and loop, not width.
 
 ---

@@ -154,10 +154,10 @@ function parseToolResult(result) {
     A.ok(typeof init.instructions === 'string' && init.instructions.length > 20, 'server ships an instructions string');
     rpc.notify('notifications/initialized');
 
-    // ── tools/list: exactly the Hermes-compatible 11 ─────────────────────────────────────────────
+    // ── tools/list: exactly the ref-compatible 11 ─────────────────────────────────────────────
     const listed = await rpc.request('tools/list', {});
     const names = (listed.tools || []).map(t => t.name).sort();
-    A.eq(names.length, 10, 'exactly 10 tools are listed (the Hermes bridge surface)');
+    A.eq(names.length, 10, 'exactly 10 tools are listed (the reference-harness bridge surface)');
     for (const want of EXPECTED_TOOLS) A.ok(names.indexOf(want) >= 0, 'tool present: ' + want);
     A.ok((listed.tools || []).every(t => t.inputSchema && t.inputSchema.type === 'object'), 'every tool carries an object inputSchema');
 

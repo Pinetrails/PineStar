@@ -1,27 +1,27 @@
-# gen Harness — Replicate-Then-Surpass Hermes: Memory, Cron, Harness
+# gen Harness — Replicate-Then-Surpass the reference harness: Memory, Cron, Harness
 
-*Synthesis of an 11-agent comparative study (2026-06-16) of the local NousResearch Hermes clone (`C:\Users\<you>\hermes-ref`, MIT) vs our `gen` harness, across memory, cron, context-engineering, and capability surface. Every claim is anchored to source verified against `sidecar/`, `shared/`, and the plan docs. This is the decision document.*
+*Synthesis of an 11-agent comparative study (2026-06-16) of the local NousResearch the reference harness clone (`C:\Users\<you>\harness-ref`, MIT) vs our `gen` harness, across memory, cron, context-engineering, and capability surface. Every claim is anchored to source verified against `sidecar/`, `shared/`, and the plan docs. This is the decision document.*
 
 ---
 
 ## 1. Executive summary
 
-- **We out-*design* Hermes; we under-*build* it.** Across all three domains the architecture is sound and in places clearly superior (event-sourced provenance, a single proven run engine, deterministic pure-function scheduling math). But of the differentiating bets, most sit at 0–20% built. The design lead is real; the build lead is not yet.
-- **One run engine already exists — that is the structural win.** `runOnce` (`index.js:395-513`) is the single host for browser, Telegram, and (soon) cron, and already exposes cron's exact `surface`/`trigger`/`runId`/`prompt` signature (`index.js:404-406`). Hermes's prized "no second engine" invariant is ours for free. The plan's "hard blocker" to extract it is **stale**.
-- **Memory — the single most important move:** make trust *computable*. The provenance/trust moat (our biggest advantage over Hermes) currently rests on numbers nothing produces. Freeze `memory.used` + `memory.feedback` rungs and thread `runId` onto `capCtx` *first*, or the moat is hand-waving.
-- **Cron — the single most important move:** build the tick driver + persisted store. The catch-up *math* already equals or beats Hermes (`planTick`, tested), but nothing ever calls it. Store (`cron-store.js`) + 5 events + a `setInterval(60s)` driver with a self-healing lease is the entire critical path to "it fires."
+- **We out-*design* the reference harness; we under-*build* it.** Across all three domains the architecture is sound and in places clearly superior (event-sourced provenance, a single proven run engine, deterministic pure-function scheduling math). But of the differentiating bets, most sit at 0–20% built. The design lead is real; the build lead is not yet.
+- **One run engine already exists — that is the structural win.** `runOnce` (`index.js:395-513`) is the single host for browser, Telegram, and (soon) cron, and already exposes cron's exact `surface`/`trigger`/`runId`/`prompt` signature (`index.js:404-406`). the reference harness's prized "no second engine" invariant is ours for free. The plan's "hard blocker" to extract it is **stale**.
+- **Memory — the single most important move:** make trust *computable*. The provenance/trust moat (our biggest advantage over the reference harness) currently rests on numbers nothing produces. Freeze `memory.used` + `memory.feedback` rungs and thread `runId` onto `capCtx` *first*, or the moat is hand-waving.
+- **Cron — the single most important move:** build the tick driver + persisted store. The catch-up *math* already equals or beats the reference harness (`planTick`, tested), but nothing ever calls it. Store (`cron-store.js`) + 5 events + a `setInterval(60s)` driver with a self-healing lease is the entire critical path to "it fires."
 - **Harness — the single most important move:** wire prompt caching. For a BYOK harness where the user pays per token, the absent cache-stable prefix is the biggest cost defect. `context.js` assembly is built but **dark**; route through it, freeze the prefix, add `applyCacheControl`. ~75% multi-turn input savings.
 - **A surprising amount is "built but unwired."** Compaction (`context.js`), the error taxonomy (`errorClass.js`), prompt assembly (`context.js`), catch-up math (`cron.js`) are all written and tested but not consumed. Several of the highest-impact wins are *wiring*, not greenfield.
 - **The contract discipline is the safety rail.** `shared/events.js` (SCHEMA_VERSION 1, validated + redacted) is owned by cortex-memory and additive-only. Every new capability hangs off an additive event — which is also exactly what keeps the gamified layer a pure projection (see §5).
-- **Three holes Hermes itself left open, which we should close on day one:** (1) no cumulative cron spend ledger → runaway-job cost; (2) no global budget pool across subagents; (3) no provenance on its built-in memory store. We inherit the fixes, not the flaws.
+- **Three holes the reference harness itself left open, which we should close on day one:** (1) no cumulative cron spend ledger → runaway-job cost; (2) no global budget pool across subagents; (3) no provenance on its built-in memory store. We inherit the fixes, not the flaws.
 
 ---
 
 ## 2. Memory: replicate-then-surpass
 
-### 2.1 The replication target (reach Hermes parity)
+### 2.1 The replication target (reach the reference harness parity)
 
-Hermes's memory is four things we lack: a **user-profile surface**, an **auto-formation pass**, **bounded consolidation**, and **relevance-filtered + threat-scanned recall**. Today our recall is *strictly dumber than Hermes substring* — it dumps the whole reversed notebook with zero query relevance (`index.js:500`) and re-scans nothing on the prompt path. That is a regression to fix, not just a feature to add.
+the reference harness's memory is four things we lack: a **user-profile surface**, an **auto-formation pass**, **bounded consolidation**, and **relevance-filtered + threat-scanned recall**. Today our recall is *strictly dumber than the reference harness substring* — it dumps the whole reversed notebook with zero query relevance (`index.js:500`) and re-scans nothing on the prompt path. That is a regression to fix, not just a feature to add.
 
 **Storage layout — the MEMORY.md / USER.md analog.** Don't copy two files; we're JSON and event-sourced. Use **two scopes on one record type**:
 
@@ -31,26 +31,26 @@ Hermes's memory is four things we lack: a **user-profile surface**, an **auto-fo
   - `profile` + `scope:user` = **USER.md analog** ("what I know about the user" — the surface we have *none* of today)
   - `learned` + `scope:agent` = **MEMORY.md analog**
   - `note` = scratch (existing notes migrate here)
-- Keep the sibling-file jail (`WORKSPACES/<aid>.notebook.json`) — already better isolation than Hermes's shared `~/.hermes/memories`.
-- Add what the store lacks: **per-scope cap + dedup** on near-identical `title+body` (Hermes dedups on load; we have nothing) and a **lossless migration with a one-shot `.bak`** (Hermes-style) plus a fixture test.
+- Keep the sibling-file jail (`WORKSPACES/<aid>.notebook.json`) — already better isolation than the reference harness's shared `~/.ref-harness/memories`.
+- Add what the store lacks: **per-scope cap + dedup** on near-identical `title+body` (the reference harness dedups on load; we have nothing) and a **lossless migration with a one-shot `.bak`** (ref-style) plus a fixture test.
 
-**Cache-safe recall injection — keep our advantage, do NOT copy Hermes here.** Hermes's fatal flaw is the frozen snapshot: a fact saved mid-session is invisible until *next* session. We inject recall as a post-prefix `system` note *before the newest user message* (`context.js:90`) — byte-stable cached prefix **and** fresh tail. Lock it in by splitting recall:
+**Cache-safe recall injection — keep our advantage, do NOT copy the reference harness here.** the reference harness's fatal flaw is the frozen snapshot: a fact saved mid-session is invisible until *next* session. We inject recall as a post-prefix `system` note *before the newest user message* (`context.js:90`) — byte-stable cached prefix **and** fresh tail. Lock it in by splitting recall:
 
 - **Core** — always-on (`kind∈{profile,learned}` or `pinned`), rendered once into the cached system-prefix region.
 - **Working** — `rank()` top-K, query/stream-scoped, into the post-prefix `<recalled-memory>` fence (`context.js:90`).
-- The "living delta" rides here: append facts written *this run* to the fence so a 30-second-old fact is usable now. This is the staleness window Hermes structurally cannot close.
+- The "living delta" rides here: append facts written *this run* to the fence so a 30-second-old fact is usable now. This is the staleness window the reference harness structurally cannot close.
 
-**Curation pass — consented, not unsupervised.** Hermes auto-writes the user profile with no approval (its weakness #5). Ours:
+**Curation pass — consented, not unsupervised.** the reference harness auto-writes the user profile with no approval (its weakness #5). Ours:
 
 - Post-run **reflection fn** (injected/replayable) reads the frozen `agent.*` run log → emits `memory.proposed` → **Keep/Edit/Discard** beat → approved facts become `memory.write`.
-- Add the **consolidation/GC** the design lacks entirely: dedup, merge near-duplicates, decay unused low-trust records (`pinned` → never decayed), enforce per-scope cap. This is our bounded-growth guarantee (Hermes gets it from char caps; we get it from explicit GC).
+- Add the **consolidation/GC** the design lacks entirely: dedup, merge near-duplicates, decay unused low-trust records (`pinned` → never decayed), enforce per-scope cap. This is our bounded-growth guarantee (the reference harness gets it from char caps; we get it from explicit GC).
 - Add the **conflict-resolution** story the design threw out without replacing: when a proposal contradicts an existing fact, surface both in the Edit step rather than silently double-writing.
 
-### 2.2 The four ways we surpass Hermes
+### 2.2 The four ways we surpass the reference harness
 
-1. **Provenance / trust / visibility (the moat).** `{sourceRunId, createdAt, lastUsedAt, useCount, trust, pinned}` as canonical fields + a Memory Core panel where any fact drills to the run that created it. Hermes built provenance metadata then **discards it** on its built-in store (bare `§` strings). **Critical:** make trust *computable* — freeze `memory.used {agentId,runId,id}` (emitted when a record is actually surfaced into a prompt — `renderRecall` knows exactly which ids it included) and `memory.feedback {agentId,id,delta,reason}` (from Keep/Edit/Discard + pin/forget). Trust = a fold over `memory.write` (init) + `memory.used` (small +) + `memory.feedback` (signed) + decay-by-age. Asymmetric (`+0.05`/`−0.10`) is a fine default. *Without these two rungs the moat rests on numbers nothing produces — close this first.*
-2. **Living core memory.** Frozen core prefix (cached) + append-only this-run delta on the post-cache fence. Beats Hermes's staleness window outright.
-3. **Auto-consolidation as a consented game beat.** Reflection → `memory.proposed` → Keep/Edit/Discard puts a human in the loop without consent fatigue, framed as RPG progression. Hermes mutates unsupervised.
+1. **Provenance / trust / visibility (the moat).** `{sourceRunId, createdAt, lastUsedAt, useCount, trust, pinned}` as canonical fields + a Memory Core panel where any fact drills to the run that created it. the reference harness built provenance metadata then **discards it** on its built-in store (bare `§` strings). **Critical:** make trust *computable* — freeze `memory.used {agentId,runId,id}` (emitted when a record is actually surfaced into a prompt — `renderRecall` knows exactly which ids it included) and `memory.feedback {agentId,id,delta,reason}` (from Keep/Edit/Discard + pin/forget). Trust = a fold over `memory.write` (init) + `memory.used` (small +) + `memory.feedback` (signed) + decay-by-age. Asymmetric (`+0.05`/`−0.10`) is a fine default. *Without these two rungs the moat rests on numbers nothing produces — close this first.*
+2. **Living core memory.** Frozen core prefix (cached) + append-only this-run delta on the post-cache fence. Beats the reference harness's staleness window outright.
+3. **Auto-consolidation as a consented game beat.** Reflection → `memory.proposed` → Keep/Edit/Discard puts a human in the loop without consent fatigue, framed as RPG progression. the reference harness mutates unsupervised.
 4. **Local zero-dep retrieval that beats provider-vector at our scale.** A pure `rank(records, query, {now})`: tokenize → idf → **BM25** + recency boost + trust boost + pin-to-top. Deterministic, unit-testable. Wire into the recall path to replace the whole-notebook dump. Add the **recall-boundary injection/exfil scan** inside `renderRecall` (design H5, absent today) so a poisoned tool/web-sourced note can't reach the `system` role.
 
 ### 2.3 Mapped to the M-mem.* sequence
@@ -70,7 +70,7 @@ Hermes's memory is four things we lack: a **user-profile surface**, an **auto-fo
 
 ### 3.1 Where we stand
 
-`cron.js` is a pure, tested **schedule-math** module — and the *hard* parts are done or trivially reachable: single engine (`runOnce`), `trigger:'schedule'` already a frozen enum (`events.js:24-26`), determinism passing `lint-determinism.js`, and catch-up math that **equals or beats Hermes** (period-scaled grace, O(1) fast-forward, advance-before-run, at-most-once-across-crash proven in tests). What's missing is **wiring and surface**: nothing ever calls `planTick`. A restart resumes nothing because there is no store and no tick.
+`cron.js` is a pure, tested **schedule-math** module — and the *hard* parts are done or trivially reachable: single engine (`runOnce`), `trigger:'schedule'` already a frozen enum (`events.js:24-26`), determinism passing `lint-determinism.js`, and catch-up math that **equals or beats the reference harness** (period-scaled grace, O(1) fast-forward, advance-before-run, at-most-once-across-crash proven in tests). What's missing is **wiring and surface**: nothing ever calls `planTick`. A restart resumes nothing because there is no store and no tick.
 
 ### 3.2 The concrete plan
 
@@ -78,22 +78,22 @@ Hermes's memory is four things we lack: a **user-profile surface**, an **auto-fo
 
 - **A1. `sidecar/cron-store.js` + `WORKSPACES/cron.jobs.json`** — reducer over the `CronJob` shape, envelope `{version:1, jobs:[...]}`, atomic temp+rename+fsync (copy `index.js:76-88`), single in-process write guard. *Done when: create → reload → `planTick` stable across restart.*
 - **A2. Five additive `cron.*` rungs** (`cron.tick/fire/skipped/next/result`) — **request from the cortex-memory owner; never self-edit `events.js`.** `emitter.js` drops unregistered names, so no producer can exist until these land. *Done when: contract fixtures pass `test:fast`.*
-- **A3. The tick driver** — `setInterval(60s)` → `planTick(jobs, Date.now())` → **persist `next[]` BEFORE launching `fire[]`** (the at-most-once invariant the test already proves). Add a **boot-resume reconcile tick** (the unbuilt half of catch-up). Add a **self-healing lease** `Map<jobId,startedAtMs>` that evicts + `abort()`s past `CRON_MAX_RUN_MS` (strictly better than Hermes's bare in-flight `Set`). Env-gate (`SKYNET_CRON_ENABLED`). Fire = call `runOnce({surface:'autonomous', trigger:'schedule', ...})`. *Done when: an `every 1m` job fires once/min, survives restart without double-fire, killed-mid-run job is reclaimed.*
+- **A3. The tick driver** — `setInterval(60s)` → `planTick(jobs, Date.now())` → **persist `next[]` BEFORE launching `fire[]`** (the at-most-once invariant the test already proves). Add a **boot-resume reconcile tick** (the unbuilt half of catch-up). Add a **self-healing lease** `Map<jobId,startedAtMs>` that evicts + `abort()`s past `CRON_MAX_RUN_MS` (strictly better than the reference harness's bare in-flight `Set`). Env-gate (`SKYNET_CRON_ENABLED`). Fire = call `runOnce({surface:'autonomous', trigger:'schedule', ...})`. *Done when: an `every 1m` job fires once/min, survives restart without double-fire, killed-mid-run job is reclaimed.*
 
 **Phase B — Surface results.**
 
-- **B1. `sidecar/cron-deliver.js`** — strict `=== '[SILENT]'` suppression (copy Hermes exactly), **always deliver failures**. Three sinks, all reusing frozen rungs: local deliverable file (`deliverable` + `GET /api/file`), in-app `notify` (server-side, reconciled on panel open), channel push (`adapter.send` + `channel.delivery`). Plus a **per-run `.md` output archive** under `WORKSPACES/cron/output/{jobId}/{ts}.md` with path-traversal guard — the audit trail Hermes has and we lack. Emit `cron.result`.
+- **B1. `sidecar/cron-deliver.js`** — strict `=== '[SILENT]'` suppression (copy the reference harness exactly), **always deliver failures**. Three sinks, all reusing frozen rungs: local deliverable file (`deliverable` + `GET /api/file`), in-app `notify` (server-side, reconciled on panel open), channel push (`adapter.send` + `channel.delivery`). Plus a **per-run `.md` output archive** under `WORKSPACES/cron/output/{jobId}/{ts}.md` with path-traversal guard — the audit trail the reference harness has and we lack. Emit `cron.result`.
 - **B2. `/api/cron*` + `buildRoutines` in `stationui.js`** — CRUD + preview (`planTick` dry-run) + run-now (set `nextRunAt=now`). Panel reconciles unseen results into browser `notifs`.
 
-**Phase C — Surpass (the two holes Hermes flags itself).**
+**Phase C — Surpass (the two holes the reference harness flags itself).**
 
-- **C1. Cumulative spend ledger — `WORKSPACES/cron.spend.json`.** Per-run caps don't bound a high-frequency job (`* * * * *` at $1/run ≈ $1,440/day). Day-keyed accumulator; on each `cron.result` add `spentUsd`; cross the ceiling → emit the **already-frozen** `budget.threshold{scope:'day'}` (`events.js:72`) and **auto-pause** cron fires until reset. Hermes does not have this.
-- **C2. Wake-gate parity — `{wake:false}` short-circuit.** Optional per-job cheap predicate; negative skips the expensive LLM fire → `cron.skipped{reason:'wake-gate'}`. Mirrors Hermes's `{"wakeAgent":false}`.
+- **C1. Cumulative spend ledger — `WORKSPACES/cron.spend.json`.** Per-run caps don't bound a high-frequency job (`* * * * *` at $1/run ≈ $1,440/day). Day-keyed accumulator; on each `cron.result` add `spentUsd`; cross the ceiling → emit the **already-frozen** `budget.threshold{scope:'day'}` (`events.js:72`) and **auto-pause** cron fires until reset. the reference harness does not have this.
+- **C2. Wake-gate parity — `{wake:false}` short-circuit.** Optional per-job cheap predicate; negative skips the expensive LLM fire → `cron.skipped{reason:'wake-gate'}`. Mirrors the reference harness's `{"wakeAgent":false}`.
 - **C3. (Deferred) 5-field cron + IANA tz.** Only when time-of-day is genuinely demanded. Today no wall-clock schedule exists at all (`cron.js:98-101` flags 5-field `supported:false`), but v1 is DST-immune *by construction* (duration-anchored). Hand-roll the subset behind the kept next-fire-vs-`now` seam; add per-job `tz` + a spring-forward/fall-back test before flipping `supported:true`.
 
 **Phase D — Memory + world integration (pure event consumers).**
 
-- **D1.** Scheduled `runOnce` runs in its own session. Mirror Hermes's `skip_memory=True` *default* but make it per-job opt-in (`writeMemory:true`) so a "daily journal" routine *can* persist. A **memory consumer** (not the scheduler) decides on `cron.result` whether to write a cortex entry tagged `source:'schedule'`+`jobId`.
+- **D1.** Scheduled `runOnce` runs in its own session. Mirror the reference harness's `skip_memory=True` *default* but make it per-job opt-in (`writeMemory:true`) so a "daily journal" routine *can* persist. A **memory consumer** (not the scheduler) decides on `cron.result` whether to write a cortex entry tagged `source:'schedule'`+`jobId`.
 - **D2.** The world renderer already listens to `agent.run.start{trigger}`. Because a fire passes `trigger:'schedule'`, a **world consumer** can render a scheduled wake with *zero* scheduler change. **Hard rule: `cron.js` and the tick driver must never import `world.js` or memory code** — if you reach for that import, emit a richer `cron.*` rung and consume it in the world layer instead.
 
 **Build order:** A1 → A2 → A3 → B1 → B2 → C1 → (D1 ∥ D2) → C2 → C3(deferred).
@@ -108,7 +108,7 @@ The loop itself (`loop.js:99-196`) is the strong part — deterministic, cap-gat
 
 1. **Prompt caching (M, highest cost value).** Build-once-per-session system prompt, byte-stable replay, date-only timestamp, inject volatile context into the user turn (we're one step away — recall fence already correct), `applyCacheControl` (`system_and_3` breakpoints) + sorted-key tool-arg serialization. Route assembly through the built-but-dark `context.js` (`index.js:493-494`). *→ Warm Cache heat gauge (uses existing `cachedTokens`).*
 2. **Durable ledger `sidecar/ledger.js` (M).** Append-only `{runId,agentId,turns,usd,tokens,ts}`. Gates *both* budget and skills. *→ Logbook prop in the war-room.*
-3. **Budget governance `makeBudget({perRun,perDay,global})` (S over ledger).** Emit `budget.threshold` at 80/100%; grace call; add the **global pool Hermes lacks**. *→ Quartermaster fuel gauges; grace blink at 100%.*
+3. **Budget governance `makeBudget({perRun,perDay,global})` (S over ledger).** Emit `budget.threshold` at 80/100%; grace call; add the **global pool the reference harness lacks**. *→ Quartermaster fuel gauges; grace blink at 100%.*
 4. **Compaction wiring (M).** `context.js` `shouldCompact`/`compact`/`fit` are built + tested, fully unwired. Trigger on **real prompt tokens** (we reconcile usage in `cost.js`), not estimates; fix the cold-catalog no-op. Cheap-prune pass *before* LLM summarization (hash-dedupe tool outputs, 1-line summaries, strip media); two tail anchors (last user + last assistant) + tool-pair-safe boundary; anti-thrash. *→ Memory Defrag beat; cache reheats after.*
 
 **Near-free wins (do immediately):**
@@ -181,7 +181,7 @@ One sequence across all three domains, grouped into waves. Sizes: **S** = days, 
 
 13. **(M) Cron A1+A2+A3** — store + rungs + tick driver/lease/boot-resume. *It fires.*
 14. **(M) Cron B1+B2** — delivery (`[SILENT]`, archive, 3 sinks) + `/api/cron*` + ROUTINES panel.
-15. **(S) Cron C1** — cumulative spend ledger + auto-pause (the hole Hermes left open).
+15. **(S) Cron C1** — cumulative spend ledger + auto-pause (the hole the reference harness left open).
 16. **(S∥) Cron D1+D2** — memory + world consumers (pure event consumers, no scheduler change).
 17. **(S) Cron C2** — wake-gate `{wake:false}` short-circuit.
 
@@ -208,7 +208,7 @@ One sequence across all three domains, grouped into waves. Sizes: **S** = days, 
 These need a human call before building the affected wave:
 
 1. **Retrieval tier (Wave 2, M-mem.3).** Confirm **BM25 + recency + trust, zero-dep, in-process** is the target — not an embedded vector index. *Recommendation: yes, BM25.* It shapes the `rank()` module's contract.
-2. **Where the USER.md analog lives.** Confirm **two scopes on one JSON record type** (not two literal files). Open sub-question: is `scope:user` profile **shared across all agents** or **per-agent**? (Hermes is profile-scoped/shared.)
+2. **Where the USER.md analog lives.** Confirm **two scopes on one JSON record type** (not two literal files). Open sub-question: is `scope:user` profile **shared across all agents** or **per-agent**? (the reference harness is profile-scoped/shared.)
 3. **Trust reducer constants.** Approve the asymmetric default (`+0.05` used / `−0.10` negative feedback) and the decay half-life.
 4. **Are scheduled runs full in-world agent wakeups?** *Recommendation: yes* — a fire passes `trigger:'schedule'`, the agent visibly walks to its bay and wakes (reusing FIRST LIGHT). Independent of the engine — the firewall means either choice is a pure consumer decision.
 5. **Default memory-write policy for cron runs.** Confirm **`skip_memory` by default, `writeMemory:true` opt-in per job**.

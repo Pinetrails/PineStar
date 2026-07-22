@@ -81,7 +81,7 @@
       agentId: str, runId: str, turn: int, reason: { enum: ['empty', 'duplicate'] }, refundsUsed: int
     }),
     'run.cancel': obj(['runId'], { runId: str }),
-    // context was compacted mid-run (Hermes-style cache-aware compaction): tokens before/after + items removed.
+    // context was compacted mid-run (ref-style cache-aware compaction): tokens before/after + items removed.
     'agent.compact': obj(['agentId', 'runId'], {
       agentId: str, runId: str, beforeTokens: int, afterTokens: int, removed: int, reason: str
     }),

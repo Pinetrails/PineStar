@@ -7,7 +7,7 @@
 ## The evidence (what actually goes wrong, ranked by recurrence)
 
 1. **Stale audits** — "THE BIG LESSON (hit 5+ times): audit/triage claims go stale in HOURS."
-   ~14 of 25 "merge-candidate" branches were fully superseded; the Hermes readiness sweep had
+   ~14 of 25 "merge-candidate" branches were fully superseded; the reference harness readiness sweep had
    4 false-positive gaps that almost got "fixed" (one fix was mid-flight before being caught).
 2. **Lifecycle debt** — 121 `agent/*` branches exist; **108 are already merged into trunk**
    but their worktrees + branches were never torn down. The worktree registry (the protocol's

@@ -1,14 +1,14 @@
-# StarNet Hermes-Replacement Readiness Loops
+# StarNet ref-Replacement Readiness Loops
 
-This is the operating system for getting StarNet close enough to pilot in place of Hermes
+This is the operating system for getting StarNet close enough to pilot in place of the reference harness
 without burning cycles on the wrong surface area. The thesis is simple: first make the
 signals trustworthy, then make the harness honest, then run one paid smoke, then decide.
 
 Phase-specific execution docs:
 
 - Phase 1: this document, "Tonight's Order".
-- Phase 2: `docs/STARNET_HERMES_REPLACEMENT_PHASE2.md`, the daily-driver proof.
-- Phase 3: `docs/STARNET_HERMES_REPLACEMENT_PHASE3.md`, the beta replacement proof.
+- Phase 2: `docs/STARNET_REF_REPLACEMENT_PHASE2.md`, the daily-driver proof.
+- Phase 3: `docs/STARNET_REF_REPLACEMENT_PHASE3.md`, the beta replacement proof.
 
 ## North Star
 
@@ -18,7 +18,7 @@ StarNet is pilot-ready only when the core loop is boringly reliable:
 - Golden diffs are reviewed, narrow, and intentionally blessed.
 - Spend, tokens, and model identity are truthful. Unknown or unmetered is labeled, never disguised as free.
 - A paid live run proves the real provider path with a real key and model.
-- Known Hermes-surface gaps are named and queued, not allowed to blur the pilot decision.
+- Known ref-surface gaps are named and queued, not allowed to blur the pilot decision.
 
 ## Session Protocol
 
@@ -99,7 +99,7 @@ These are real, but they are not tonight's replacement blocker:
 
 - Browser automation and desktop computer-use parity.
 - Clean-machine Tauri verification when `cargo` is missing.
-- Full Hermes surface matching beyond the core loop.
+- Full the reference harness surface matching beyond the core loop.
 
 Queue them for this-week work after the pilot gate is trusted.
 

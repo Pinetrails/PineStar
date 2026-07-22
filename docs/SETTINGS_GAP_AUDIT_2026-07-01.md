@@ -1,18 +1,18 @@
 # Settings & Customization Surface Gap Audit — 2026-07-01
 
-**Question answered:** "StarNet feels shallow on customization/tuning/permissions vs Hermes,
+**Question answered:** "StarNet feels shallow on customization/tuning/permissions vs the reference harness,
 and is missing integration UI + small details. What exactly is missing, and what should we build?"
 
 **Method:** code-level diff of the full user-facing configuration surface in both repos —
-Hermes reference clone (`C:\Users\<you>\hermes-ref`, ~150+ config keys / 15 settings panels)
+the reference harness reference clone (`C:\Users\<you>\harness-ref`, ~150+ config keys / 15 settings panels)
 vs StarNet (`Desktop\gen`, ~140 controls across 14 terminal windows). Plan docs were NOT
 trusted; every "backend exists" claim below was re-verified by grep on 2026-07-01.
-This is a different layer than the prior Hermes audits (engine parity H1–H6) — those compared
+This is a different layer than the prior the reference harness audits (engine parity H1–H6) — those compared
 runtimes; this compares **knobs and UI affordances**.
 
 **Headline finding:** the recurring StarNet theme holds again — **wiring, not architecture**.
 The five biggest "missing" features already have complete backends with zero or partial UI.
-StarNet's *count* of controls is close to Hermes (~140 vs ~150); what's missing is
+StarNet's *count* of controls is close to the reference harness (~140 vs ~150); what's missing is
 (a) surfacing engines we already built, (b) per-agent depth, and (c) the small-affordance
 layer (test buttons, help text, import/export) that makes a settings surface feel deep.
 
@@ -32,25 +32,25 @@ layer (test buttons, help text, import/export) that makes a settings surface fee
 
 | # | Feature | Why it matters |
 |---|---------|----------------|
-| 6 | **Per-agent model/provider/effort override** | Model is station-global today ("no per-run model override" is by design, but per-AGENT is not). Multi-agent crew is the core fantasy — cheap model for the scout, expensive for the lead — and it plays directly into leveling/XP. Hermes has per-task auxiliary routing + delegation model overrides. Natural home: DOSSIER › CONFIG tab. |
-| 7 | **Config export/import/reset-to-defaults** | None today. Cheap to build, huge "polished harness" signal, and it *feeds the marketplace GTM* — an exported station setup is a shareable recipe. Hermes: top-level Export/Import/Reset buttons. |
-| 8 | **Notification preferences** | NOTIFICATIONS panel is history-only. Add per-kind toggles, completion-sound picker, and a TEST button. Hermes has all three; small-details feel. |
+| 6 | **Per-agent model/provider/effort override** | Model is station-global today ("no per-run model override" is by design, but per-AGENT is not). Multi-agent crew is the core fantasy — cheap model for the scout, expensive for the lead — and it plays directly into leveling/XP. the reference harness has per-task auxiliary routing + delegation model overrides. Natural home: DOSSIER › CONFIG tab. |
+| 7 | **Config export/import/reset-to-defaults** | None today. Cheap to build, huge "polished harness" signal, and it *feeds the marketplace GTM* — an exported station setup is a shareable recipe. the reference harness: top-level Export/Import/Reset buttons. |
+| 8 | **Notification preferences** | NOTIFICATIONS panel is history-only. Add per-kind toggles, completion-sound picker, and a TEST button. the reference harness has all three; small-details feel. |
 | 9 | **ADVANCED runtime knobs section** | Consent timeout, max iters, agent concurrency, cron tick/timezone are env-only (`STARNET_CONSENT_TIMEOUT_MS`, `STARNET_MAX_ITERS`, `STARNET_MAX_CONCURRENT_AGENTS`, `STARNET_CRON_TZ`). Beginners can't edit env vars — surface them in a collapsed ADVANCED block, persisted server-side, defaults untouched. |
 | 10 | **Memory controls** | No user knob on memory at all (adaptive by design, but zero visibility = "app lies" risk). On/off + budget + a "what it knows / what it's been told not to ask" view. Dovetails with the LOCKED memory-question-overhaul plan — the denylist/asked-state being built there needs a UI home anyway. |
 
 ## P2 — The small-details polish sweep (do as ONE lane, checklist style)
 
-The "we lack the small details" feeling is mostly this layer. Hermes has each of these on
+The "we lack the small details" feeling is mostly this layer. the reference harness has each of these on
 essentially every settings row; StarNet has them sporadically:
 
 - [ ] **Test-connection button** on every provider key card (today: paste-and-pray for 13 BYOK providers; only Codex/Telegram give live status)
 - [ ] Show/hide toggle on masked keys + copy-to-clipboard
 - [ ] Per-field reset-to-default
-- [ ] One-line inline help under every setting (Hermes has field descriptions everywhere)
+- [ ] One-line inline help under every setting (the reference harness has field descriptions everywhere)
 - [ ] Consistent saved/error toast on every settings change (some flash 💾, some silent)
 - [ ] Consistent destructive-action confirm (cron delete has arm-confirm; key REMOVE and others don't)
 - [ ] Timezone picker on the ROUTINES create form (env-only today, silently defaults)
-- [ ] Deep-link/scroll-to-setting support (Hermes: URL-param + flash highlight)
+- [ ] Deep-link/scroll-to-setting support (the reference harness: URL-param + flash highlight)
 
 ## Deliberately NOT copying (protect the beginner moat)
 
@@ -64,16 +64,16 @@ essentially every settings row; StarNet has them sporadically:
 
 ## Product forks — Andrew decides (not silently built)
 
-1. **Voice settings surface** — Hermes ships 10+ TTS / 6 STT providers with full config UI.
+1. **Voice settings surface** — the reference harness ships 10+ TTS / 6 STT providers with full config UI.
    StarNet voice is design-DNA level with no config surface. Whole-subsystem scope decision.
-2. **Real project-folder access** — Hermes has cwd picker + env passthrough; StarNet jails
+2. **Real project-folder access** — the reference harness has cwd picker + env passthrough; StarNet jails
    workspaces by design. The beginner zero-to-value audit says real-work value eventually
    needs the user's real files. This is a sandbox-philosophy fork, not a settings gap.
 
 ## How we keep finding these (recurring process)
 
 1. **This doc is the parity checklist** — re-run the two-sided enumeration after any major
-   `git -C C:\Users\<you>\hermes-ref pull` (their release notes → grep our surface).
+   `git -C C:\Users\<you>\harness-ref pull` (their release notes → grep our surface).
 2. The P2 layer is best caught by the **Beginner Run loop** (fresh-eyes walkthrough) + the
    UI visual harness — pattern-match "did I get feedback? could I test it? was there help text?"
    on every settings interaction.
