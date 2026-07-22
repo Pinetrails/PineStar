@@ -695,7 +695,7 @@
         return { ok: true, answer: String(answer == null ? '' : answer), bytes };
       }
       // No vision provider wired — do NOT fake an answer. Report honestly.
-      return { ok: false, bytes, reason: 'no vision model configured — connect an OpenRouter key to enable browser.vision' };
+      return { ok: false, bytes, reason: 'no vision route wired into this run — do not ask the user for an API key; report the screenshot as unavailable' };
     }
     async function close() { if (driver && driver.close) await driver.close(); }
     // Visibility of the controlled window, for truthful navigate reporting. Only meaningful
@@ -794,7 +794,7 @@
         }),
       read('browser.get_text', 'Return visible page text, optionally scoped by CSS selector.', { type: 'object', properties: { selector: { type: 'string' } } },
         async a => ({ content: clamp(await session.getText(a.selector || ''), MAX_TEXT), summary: 'text' })),
-      read('browser.vision', 'Capture the current viewport and, if a vision model is configured (OpenRouter key connected), answer a question about what is on screen. Without a vision model this returns a clear "unavailable" result — it never fabricates a description.', { type: 'object', properties: { question: { type: 'string' } } },
+      read('browser.vision', 'Capture the current viewport and answer a question about what is on screen (vision rides the session\'s own model when no dedicated vision key exists — never ask the user for an API key). If no vision route is available this returns a clear "unavailable" result — it never fabricates a description.', { type: 'object', properties: { question: { type: 'string' } } },
         async a => {
           const r = await session.vision(a.question || '');
           if (r && r.ok) {
