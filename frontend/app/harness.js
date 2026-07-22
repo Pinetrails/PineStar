@@ -224,12 +224,19 @@ const Harness = (() => {
   const setKey = (k, provider) => {
     const p = normalizeProviderId(provider || getProv());
     if (DESKTOP) {
-      setDesktopConfigured(p, !!(k && String(k).trim()));
+      const on = !!(k && String(k).trim());
+      // configured flips ONLY after the keychain write PROVES itself. The old optimistic pre-invoke flip meant a
+      // rejected write (locked/denied keychain) left the map claiming "configured" while no key existed anywhere —
+      // Settings toasted "✓ stored in your OS keychain", the no-key nudges stayed cleared, and the next run died
+      // with no re-entry hint (desktop-only strand; the browser branch is synchronous localStorage). Callers see
+      // the rejection and must render the honest failure.
       return invoke('harness_store_provider_key', { provider: p, key: k || '', baseUrl: getBaseUrl(p) || '' })
         .catch(e => {
           if (p === 'openrouter') return invoke('harness_store_key', { key: k || '' });
           throw e;
-        });
+        })
+        .then(r => { setDesktopConfigured(p, on); return r; })
+        .catch(e => { setDesktopConfigured(p, false); throw e; });
     }
     writeScoped(LS.key, p, k || '');
   };

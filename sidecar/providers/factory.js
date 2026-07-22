@@ -58,6 +58,10 @@
       return openaiCompatible.makeOpenAICompatibleProvider({
         fetch: opts.fetch,
         clock: opts.clock,
+        // device-OAuth errors must carry the provider's NAME (e.g. "Grok (xAI) http 401 - …") so a mid-run
+        // token death classifies to the ⏼ RECONNECT door, mirroring the pre-run oauthLabel() wrap. Keyed
+        // openai-compatible providers keep the generic label (their recovery door is the key field either way).
+        label: isDeviceOAuth ? (profile.name || profile.id) : undefined,
         key: isDeviceOAuth ? (opts.token || opts.key) : opts.key,
         baseUrl: opts.baseUrl || profile.baseUrl,
         chatPath: profile.chatPath,

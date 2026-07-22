@@ -197,6 +197,19 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(F(new Error('sidecar HTTP 404')).kind, 'model_not_found', '404 -> model_not_found');
   A.eq(F(new Error('sidecar HTTP 404')).action, 'settings', 'model_not_found points at Settings');
 
+  // mid-run token death (2026-07-22): the openai-compatible adapter labels HTTP failures with the provider
+  // name for device-OAuth providers, so a 401 mid-stream lands on the ⏼ RECONNECT door, never "＋ Add a key"
+  // (a key field is a dead end for a keyless subscription sign-in). grok+403 stays the xAI-key door: that's
+  // the allowlist yank, where RECONNECT is doomed by design.
+  v = F(new Error('Grok (xAI) http 401 - invalid access token'));
+  A.eq(v.kind, 'oauth', 'labeled grok mid-run 401 -> oauth reconnect class');
+  A.eq(v.provider, 'grok', 'labeled grok 401 resolves the grok provider (door reads RECONNECT GROK)');
+  v = F(new Error('Kimi for Coding http 401 - token expired'));
+  A.eq(v.kind, 'oauth', 'labeled kimi mid-run 401 -> oauth reconnect class');
+  A.eq(v.provider, 'kimi', 'labeled kimi 401 resolves the kimi provider');
+  A.eq(F(new Error('Grok (xAI) http 403 - oauth not enabled for this account')).kind, 'grok_oauth_unavailable',
+    'grok 403 keeps routing to the xAI API-key door (allowlist yank — reconnect is doomed)');
+
   // unknown / default -> friendly generic + retryable, with the raw text kept for debugging
   v = F(new Error('something weird happened'));
   A.eq(v.kind, 'unknown', 'unrecognized -> unknown');

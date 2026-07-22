@@ -3096,6 +3096,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             onConnected: () => {
               // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
               codexStatusKnown = { connected: true, expired: false, reason: '' };
+              if (typeof Harness !== 'undefined' && Harness.setDesktopConfigured) Harness.setDesktopConfigured('codex', true);   // desktop map learns mid-session (genesis feeds it; Settings must too)
               notify('✓ reconnected ChatGPT — your agents can run on your subscription again', 'good');
               if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
               if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
@@ -3110,6 +3111,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const drop = (typeof CodexSignIn !== 'undefined') ? CodexSignIn.logout() : Harness.api.post('/api/auth/codex/logout').catch(() => {});
           Promise.resolve(drop).then(() => {
             codexStatusKnown = { connected: false, expired: false, reason: '' };   // the sidecar just confirmed the drop
+            if (typeof Harness !== 'undefined' && Harness.setDesktopConfigured) Harness.setDesktopConfigured('codex', false);
             notify('disconnected ChatGPT — sign in again anytime from PROVIDERS', 'warn');
             sfx('bad');
             if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
@@ -3144,6 +3146,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               onConnected: () => {
                 // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
                 oauthStatus[pid] = { connected: true, expired: false, reason: '' };
+                if (typeof Harness !== 'undefined' && Harness.setDesktopConfigured) Harness.setDesktopConfigured(pid, true);   // desktop map learns mid-session (genesis feeds it; Settings must too)
                 notify('✓ reconnected ' + provName(pid) + ' — your agents can run on your subscription again', 'good');
                 if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
                 if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
@@ -3158,6 +3161,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const drop = engine ? engine.logout() : Harness.api.post('/api/auth/' + pid + '/logout').catch(() => {});
           Promise.resolve(drop).then(() => {
             oauthStatus[pid] = { connected: false, expired: false, reason: '' };   // the sidecar just confirmed the drop
+            if (typeof Harness !== 'undefined' && Harness.setDesktopConfigured) Harness.setDesktopConfigured(pid, false);
             notify('disconnected ' + provName(pid) + ' — sign in again anytime from PROVIDERS', 'warn');
             sfx('bad');
             if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
@@ -3172,12 +3176,20 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
           const provider = b.dataset.provider || activeProv();
-          if (h.setKey) h.setKey(v, provider);
-          invalidateProviderHealth(provider);
-          notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
-          if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // clear the dock's no-key warning the instant a key lands
-          if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();             // …and the world's keyless-brain banner
-          rerender('settings');
+          // success UI waits for the PROVEN store: on desktop setKey resolves only after the keychain write lands
+          // (browser localStorage resolves immediately). The old fire-and-forget toasted "✓ stored in your OS
+          // keychain" over a rejected write — a keyless station that claimed connected with no re-entry hint.
+          Promise.resolve(h.setKey ? h.setKey(v, provider) : null).then(() => {
+            invalidateProviderHealth(provider);
+            notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
+            if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // clear the dock's no-key warning the instant a key lands
+            if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();             // …and the world's keyless-brain banner
+            rerender('settings');
+          }).catch(() => {
+            notify('✕ could not store the ' + provName(provider) + ' key in your OS keychain — unlock it and try again', 'bad');
+            sfx('bad');
+            rerender('settings');
+          });
           return;
         }
         const i = +b.dataset.i, row = connectedKeys()[i];
@@ -3217,12 +3229,18 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const inp = body.querySelector('#key-in-' + i);
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
-          if (h.setKey) h.setKey(v, row.provider);
-          invalidateProviderHealth(row.provider);
-          notify('✓ updated ' + provName(row.provider) + ' API key — ' + keyStoreClause(), 'good');
-          if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // keep the dock's no-key warning honest after an edit
-          if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
-          rerender('settings');
+          // same proven-store contract as the add path: no success toast over a rejected keychain write.
+          Promise.resolve(h.setKey ? h.setKey(v, row.provider) : null).then(() => {
+            invalidateProviderHealth(row.provider);
+            notify('✓ updated ' + provName(row.provider) + ' API key — ' + keyStoreClause(), 'good');
+            if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // keep the dock's no-key warning honest after an edit
+            if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+            rerender('settings');
+          }).catch(() => {
+            notify('✕ could not store the ' + provName(row.provider) + ' key in your OS keychain — unlock it and try again', 'bad');
+            sfx('bad');
+            rerender('settings');
+          });
         } else if (act === 'rm') {
           // a KEYLESS custom row has no key to clear — its REMOVE disconnects the endpoint itself (setBaseUrl('')),
           // otherwise the armed confirm would "remove" nothing and the row would immortally re-render.
@@ -3262,13 +3280,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const v = inp ? inp.value.trim() : '';
       if (!v) { sfx('bad'); if (inp) inp.focus(); return; }
       if (!h || !h.setKey) { sfx('bad'); return; }
-      h.setKey(v, provider);
-      invalidateProviderHealth(provider);
-      notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
-      if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
-      if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
-      sfx('click');
-      rerender('settings');
+      // same proven-store contract as the key-list paths: success UI only after setKey resolves.
+      Promise.resolve(h.setKey(v, provider)).then(() => {
+        invalidateProviderHealth(provider);
+        notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
+        if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+        if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+        sfx('click');
+        rerender('settings');
+      }).catch(() => {
+        notify('✕ could not store the ' + provName(provider) + ' key in your OS keychain — unlock it and try again', 'bad');
+        sfx('bad');
+        rerender('settings');
+      });
     };
     body.querySelectorAll('.prov-card[data-provider]').forEach(card => {
       const activate = () => {
@@ -3276,6 +3300,26 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const p = card.dataset.provider;
         if (!h || !p || !h.setProv) return;
         h.setProv(p);
+        // MODEL RECONCILE (subscription providers): the model slug is GLOBAL, so switching to codex/grok/kimi
+        // with the previous provider's model (e.g. anthropic/claude-…) streams a foreign id to the new endpoint
+        // and bounces the first run while the card reads SIGNED IN. Genesis default-fills from the provider's
+        // catalog (loadOAuthModels); this is that same reconcile for the in-station switch. Keyed providers are
+        // untouched tonight (their catalogs come from provider probes, not /api/auth/<pid>/models).
+        if (isOAuthProvider(p) && typeof fetch === 'function') {
+          fetch('/api/auth/' + p + '/models', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(j => {
+            const list = (j && Array.isArray(j.models)) ? j.models : [];
+            const ids = list.map(m => String((m && m.id) || m || '')).filter(Boolean);
+            const cur = (h.getModel && h.getModel()) || '';
+            if (!ids.length || ids.indexOf(cur) !== -1) return;     // no catalog truth, or already valid — leave it
+            if ((h.getProv && h.getProv()) !== p) return;           // pick moved on — don't clobber
+            const def = (j && j.default) || ids[0];
+            if (!def || !h.setModel) return;
+            h.setModel(def);
+            notify('model → ' + def + ' (from the ' + provName(p) + ' catalog — your old model belongs to another provider)', 'good');
+            if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+            rerender('settings');
+          }).catch(() => {});
+        }
         notify('selected ' + provName(p) + ' provider', 'good');
         sfx('click');
         rerender('settings');
@@ -3309,7 +3353,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             // codex keeps its own literal status state (source-lock pinned); grok/kimi live in the shared cache.
             if (pid === 'codex') { codexStatusKnown = { connected: true, expired: false, reason: '' }; refreshCodexConnectionStatus(); }
             else { oauthStatus[pid] = { connected: true, expired: false, reason: '' }; refreshOAuthStatus(pid); }
-            notify('✓ signed in to ' + provName(pid) + ' — your agents can run on your subscription', 'good');
+            if (typeof Harness !== 'undefined' && Harness.setDesktopConfigured) Harness.setDesktopConfigured(pid, true);   // desktop map learns mid-session (genesis feeds it; Settings must too)
+            // honest claim: runs ride the ACTIVE provider. A sign-in on a non-active card must say the extra
+            // step, not promise "your agents can run on your subscription" while runs continue elsewhere.
+            notify(activeProv() === pid
+              ? '✓ signed in to ' + provName(pid) + ' — your agents can run on your subscription'
+              : '✓ signed in to ' + provName(pid) + ' — click its card to make it your active brain', 'good');
             if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
             if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
             rerender('settings');

@@ -226,7 +226,12 @@
     // dead refresh token. The action BUTTON tailors the door per provider (RECONNECT GROK / RECONNECT KIMI).
     if (/\b(grok|kimi)[_ -]?(not[_ -]?connected|auth[_ -]?error|auth\b|token[_ -]?refresh|refresh[_ -]?token|relogin|reconnect)/.test(raw.toLowerCase())
         || /(grok|kimi).*(sign[- ]?in|not signed in|not connected|expired|sign in again)/.test(raw.toLowerCase())
-        || /sign[- ]?in.*(grok|kimi)/.test(raw.toLowerCase())) {
+        || /sign[- ]?in.*(grok|kimi)/.test(raw.toLowerCase())
+        // mid-run token death: the provider adapter now labels HTTP failures with the provider name
+        // ("Grok (xAI) http 401 - …", "Kimi For Coding http 401 - …"). An auth-status failure on a keyless
+        // subscription sign-in is a RECONNECT case, never a key-field case. (grok+403 never reaches here —
+        // grok_oauth_unavailable above catches it first, by design.)
+        || /(grok|kimi).*http 40[13]/.test(raw.toLowerCase())) {
       kind = 'oauth';
     } else
     // Harness pre-flight misconfig ("no API key set" / "no model selected") is UI-level — catch before delegating
