@@ -5650,7 +5650,7 @@ const World = (() => {
     }
     connPollFn = pollConnectors; pollConnectors(); connPollTimer = setInterval(pollConnectors, 5000);
     // JUKEBOX dead-vs-live: poll Spotify's OAuth connected state so a placed jukebox reads DEAD (unplugged)
-    // until the user connects Spotify in Settings, then comes alive. Same keep-last-known-on-failure contract.
+    // until the user connects Spotify in TOOLSETS, then comes alive. Same keep-last-known-on-failure contract.
     function pollSpotify() {
       if (typeof fetch === 'undefined' || typeof PropSprites === 'undefined' || !PropSprites.setSpotifyConnected) return;
       fetch(apiUrl('/api/spotify/status')).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })

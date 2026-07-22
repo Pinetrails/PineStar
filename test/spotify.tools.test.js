@@ -105,7 +105,7 @@ function stubApi(routes) {
   A.ok(noDev, '404 on a player route surfaces a no-active-device hint');
 
   // ---- G. not connected -> the tool surfaces the store's clean error ----
-  const S7 = makeSpotifyTools({ store: fakeStore(new Error('Spotify is not connected — connect it in Settings first.')), fetchImpl: stubApi([]) });
+  const S7 = makeSpotifyTools({ store: fakeStore(new Error('Spotify is not connected — connect it in TOOLSETS first.')), fetchImpl: stubApi([]) });
   let nc = false; try { await tool(S7, 'spotify_search').run({ query: 'x' }); } catch (e) { nc = /not connected/i.test(e.message); }
   A.ok(nc, 'a not-connected store makes tools fail with a clear message');
 

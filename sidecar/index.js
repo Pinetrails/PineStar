@@ -7537,7 +7537,7 @@ async function handleRun(req, res) {
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
   // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify
-  // (a placed JUKEBOX grants the Spotify tools, but they stay inert until the user connects Spotify in Settings).
+  // (a placed JUKEBOX grants the Spotify tools, but they stay inert until the user connects Spotify in TOOLSETS).
   // A placed WORKBENCH still walks the full consent ladder + auto-checkpoints before every command. Legacy clients
   // send just `workbench:true`; that path is preserved so an older build still grants the terminal.
   let extraObjects = [];
@@ -7928,7 +7928,7 @@ async function runOnce(o) {
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
   imageTools.register(registry);
   // JUKEBOX (Spotify): registered every run, EXPOSED via a 'jukebox' object; no-op (clear error) until the user
-  // connects Spotify in Settings. The OAuth session + auto-refresh live in the station-wide spotifyStore above.
+  // connects Spotify in TOOLSETS. The OAuth session + auto-refresh live in the station-wide spotifyStore above.
   makeSpotifyTools({ store: spotifyStore }).register(registry);
   // shell.exec (the workbench capability): registered every run, but only EXPOSED + dispatchable when a 'workbench'
   // object is in the agent's room (resolveTools gates it) — no object, no shell. redact() scrubs stdout of secrets.

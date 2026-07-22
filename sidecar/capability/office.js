@@ -25,7 +25,7 @@
       { instanceId: 'cab1', objectType: 'cabinet' },
       { instanceId: 'nb1', objectType: 'notebook' },
       { instanceId: 'studio1', objectType: 'studio' },      // STUDIO: image generation + vision analysis (OpenRouter)
-      { instanceId: 'jukebox1', objectType: 'jukebox' }     // JUKEBOX: Spotify (inert until connected in Settings)
+      { instanceId: 'jukebox1', objectType: 'jukebox' }     // JUKEBOX: Spotify (inert until connected in TOOLSETS)
     ];
   }
 
