@@ -2,12 +2,12 @@
 
 > The "fill in the walls, add the roof" plan: every layer verified against CODE (not stale
 > plan docs) by a 4-agent audit on trunk @95325fc. Goal: pristine full-release condition —
-> beyond Hermes parity, gamification complete, everything wired, nothing stranded.
-> Supersedes HERMES_PARITY_PLAN.md and the polish portions of AUTONOMOUS_BUILD_PLAN.md.
+> beyond the reference harness parity, gamification complete, everything wired, nothing stranded.
+> Supersedes REF_HARNESS_PARITY_PLAN.md and the polish portions of AUTONOMOUS_BUILD_PLAN.md.
 
 ## Audit verdict (ground truth, 2026-07-02)
 
-- **Hermes parity: 10/11 core items SHIPPED in code** (resume/recall, shell hardening,
+- **the reference harness parity: 10/11 core items SHIPPED in code** (resume/recall, shell hardening,
   observability, skills, compaction, retry-after, Discord full-duplex adapter, credential
   rotation, memory hygiene). One PARTIAL: no-op turn refund in iteration budget.
 - **Gamification: 6/10 shipped and honest** (rate-the-work + size-weighted XP IS live —
@@ -66,7 +66,7 @@ Tear down each worktree after merge (`remove-agent-tree.ps1 <name> -DeleteBranch
 | A: Meeseeks render | subagentsprites.js ledger folds `task` events but world.js has NO draw code — sub-agents run invisibly. Draw helpers near lead's desk (prune/list/alpha already exist) | world.js:85-91 | 2-3h |
 | B: Seed shelf save flow | Seeds.fromCandidate() engine complete but "save this as a seed" affordance never reaches COMMS; wire to chat beat + Recipes.saveCustom() — closes the First Pitch arc | seeds.js, pitch.js:64-90 | 4-6h |
 | C: Memory/question overhaul | Locked 2026-06-29 design entirely unbuilt: asked/proposed/rejected ledgers in DossierStore, ignore→stop-forever, discard→denylist, salience-driven ask budget (reuse mint.js detector) | dossierstore.js | 8-10h |
-| D: No-op turn refund | Last Hermes-parity item: refund iterations that produced zero tool calls + no assistant text; `iteration.refunded` event + test/iteration-budget.test.js | loop.js | 4h |
+| D: No-op turn refund | Last ref-parity item: refund iterations that produced zero tool calls + no assistant text; `iteration.refunded` event + test/iteration-budget.test.js | loop.js | 4h |
 | E: Discord inbound | Gateway WS client for `connectGateway` (transport + normalize + UI card all exist; ingress inert). Remove the "send-only" disclosure once live | discord.transport.js:36-56 | M |
 | F: Settings P1 sweep | P1-7 export/import/reset (top gap), P1-6 per-agent model override, P1-8 notification prefs, P1-9 advanced knobs UI, P1-10 memory controls UI | stationui.js | M-L |
 

@@ -3214,9 +3214,9 @@ const App = (() => {
   }
   function toggleArchived() { railShowArchived = !railShowArchived; SFX.click(); renderRail(); }
 
-  /* ---------- PROJECTS rail view (NS-5c → Hermes-parity drill-in): SESSIONS ↔ PROJECTS toggle ----------
+  /* ---------- PROJECTS rail view (NS-5c → ref-parity drill-in): SESSIONS ↔ PROJECTS toggle ----------
      The same rail, a second face — and its OWN organizational space, never a launcher that bounces you back to
-     SESSIONS. Two levels, mirroring Hermes' project scope:
+     SESSIONS. Two levels, mirroring the reference harness's project scope:
        · OVERVIEW (projScope null): every blessed project root (GET /api/projects joined against the live grant),
          each with a session-count chip + compact preview sub-rows. Clicking a project ENTERS it — no session
          opens, no tab flips.
@@ -3226,7 +3226,7 @@ const App = (() => {
          the rail right here. A blessed:false row still renders as REVOKED, never hidden (truthful telemetry).
      ADD (overview) blesses a typed/picked folder through the SAME machinery as conversational trust. */
   let railView = 'sessions';   // 'sessions' | 'projects'
-  // the entered-project scope (null = overview). Persisted like Hermes' projectScope, so a reload lands back
+  // the entered-project scope (null = overview). Persisted like the reference harness's projectScope, so a reload lands back
   // inside the project you were organizing — pure view state, deliberately outside the world save.
   let projScope = null;
   try { projScope = localStorage.getItem('starnet.projscope') || null; } catch (_) {}
@@ -3236,7 +3236,7 @@ const App = (() => {
     updateProjHeadAction();
   }
   // the projects-view head action is contextual: overview blesses a folder (+ ADD), an entered project starts
-  // a session in it (+ NEW) — one slot, two labelled truths, same as Hermes' scoped "+".
+  // a session in it (+ NEW) — one slot, two labelled truths, same as the reference harness's scoped "+".
   function updateProjHeadAction() {
     const b = el('ws-addproject'); if (!b) return;
     if (projScope) { b.textContent = '+ NEW'; b.title = 'start a new session in this project'; }

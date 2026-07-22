@@ -1,8 +1,8 @@
 # Messaging-Platform Integration Plan
 
-> **StarNet** — a layered plan for letting a user **DM their agent from a messaging app** (Telegram first, Discord later) and get a streamed reply, exactly like messaging Hermes/OpenClaw. This is the companion to `HERMES_INTEGRATION_PLAN.md` and `INCREMENTAL_ROADMAP.md` and obeys the same discipline: one-line goals, Deliverables/Port-create/Tests/DoD per step, the Definition-of-Done, one-commit-sized steps, critical-path-first. Every seam below was confirmed against the real files; every premature/redundant/hallucinated claim flagged by the adversarial verdicts has been dropped or corrected.
+> **StarNet** — a layered plan for letting a user **DM their agent from a messaging app** (Telegram first, Discord later) and get a streamed reply, exactly like messaging the reference harness/OpenClaw. This is the companion to `REF_HARNESS_INTEGRATION_PLAN.md` and `INCREMENTAL_ROADMAP.md` and obeys the same discipline: one-line goals, Deliverables/Port-create/Tests/DoD per step, the Definition-of-Done, one-commit-sized steps, critical-path-first. Every seam below was confirmed against the real files; every premature/redundant/hallucinated claim flagged by the adversarial verdicts has been dropped or corrected.
 
-> _Source: `NousResearch/hermes-agent` (MIT), cloned to `C:\Users\<you>\hermes-ref`, platform subsystem (`gateway/platforms/base.py` + `platform_registry.py` + `platforms/telegram.py` + the `run.py` ingest→run→reply bridge). **Pattern mine, not a port.** Produced by a parallel architecture-map + adversarial-verify pass against the real sidecar (2026-06-14). Prefer the dossier's `corrected` statements over any reader claim they contradict._
+> _Source: `the upstream reference harness` (MIT), cloned to `C:\Users\<you>\harness-ref`, platform subsystem (`gateway/platforms/base.py` + `platform_registry.py` + `platforms/telegram.py` + the `run.py` ingest→run→reply bridge). **Pattern mine, not a port.** Produced by a parallel architecture-map + adversarial-verify pass against the real sidecar (2026-06-14). Prefer the dossier's `corrected` statements over any reader claim they contradict._
 
 ---
 
@@ -24,11 +24,11 @@ The Telegram-first MVP is **implemented and green** (26 test files + 2 lints). L
 
 ## 1. Preamble — what we are borrowing and the prime directive
 
-Hermes attaches an agent to *any* messaging platform through **one abstract class** (`BasePlatformAdapter(ABC)`, `gateway/platforms/base.py:1796`) that owns a transport connection and translates the wire format into two normalized dataclasses — inbound `MessageEvent` (`base.py:1416`) and outbound `SendResult` (`base.py:1545`). The gateway is transport-agnostic: it injects callbacks (`set_message_handler`, `base.py:2234`) and never imports a Telegram/Discord SDK. The agent run is reached through `handle_message → _process_message_background → _message_handler(event)` (`base.py:3919 → 4138 → 4184`), bound to `GatewayRunner._handle_message` (`run.py:6398`) via `run.py:4894`. The reply streams back through `GatewayStreamConsumer` editing one live message (`stream_consumer.py:79`), chunked at the Telegram 4096-UTF16 limit (`telegram.py:349, 2656`).
+the reference harness attaches an agent to *any* messaging platform through **one abstract class** (`BasePlatformAdapter(ABC)`, `gateway/platforms/base.py:1796`) that owns a transport connection and translates the wire format into two normalized dataclasses — inbound `MessageEvent` (`base.py:1416`) and outbound `SendResult` (`base.py:1545`). The gateway is transport-agnostic: it injects callbacks (`set_message_handler`, `base.py:2234`) and never imports a Telegram/Discord SDK. The agent run is reached through `handle_message → _process_message_background → _message_handler(event)` (`base.py:3919 → 4138 → 4184`), bound to `GatewayRunner._handle_message` (`run.py:6398`) via `run.py:4894`. The reply streams back through `GatewayStreamConsumer` editing one live message (`stream_consumer.py:79`), chunked at the Telegram 4096-UTF16 limit (`telegram.py:349, 2656`).
 
 We are **mining this for patterns, not porting it.** The prime directive, in four clauses:
 
-1. **It is a pattern mine, not a port.** We take the *shape* of an idea (a transport-agnostic adapter contract; two normalized message structs; one injected bridge callback; a default-deny admission gate; one live message edited in place) and re-derive the *smallest honest version* against our seams. We leave behind every Hermes-ecosystem artifact: the 20-platform `PlatformRegistry` + `PlatformEntry` dataclass, `Platform._missing_` dynamic-enum minting, plugin-dir discovery + `register(ctx)`, the 16-step `ADDING_A_PLATFORM` checklist, PTB's Application/Updater lifecycle, the `TelegramFallbackTransport`/DoH IP discovery, MarkdownV2 escaping, forum-topic plumbing, the media-delivery path-validation security matrix, webhook crypto, `contextvars`/`ThreadPoolExecutor`, and the per-token process-lock + 409-conflict reconnect ladder.
+1. **It is a pattern mine, not a port.** We take the *shape* of an idea (a transport-agnostic adapter contract; two normalized message structs; one injected bridge callback; a default-deny admission gate; one live message edited in place) and re-derive the *smallest honest version* against our seams. We leave behind every ref-ecosystem artifact: the 20-platform `PlatformRegistry` + `PlatformEntry` dataclass, `Platform._missing_` dynamic-enum minting, plugin-dir discovery + `register(ctx)`, the 16-step `ADDING_A_PLATFORM` checklist, PTB's Application/Updater lifecycle, the `TelegramFallbackTransport`/DoH IP discovery, MarkdownV2 escaping, forum-topic plumbing, the media-delivery path-validation security matrix, webhook crypto, `contextvars`/`ThreadPoolExecutor`, and the per-token process-lock + 409-conflict reconnect ladder.
 
 2. **Node, not Python.** Our loop is single-threaded async with real I/O concurrency. There is no `ABC`/`@abstractmethod`, no `@dataclass.to_dict`, no `asyncio.create_task` stream-loop juggling, no `httpx` pool tuning. A long-poll `async` loop + a `Map` is the whole transport mechanism; a TS-style duck-typed interface + plain objects replace the ABC + dataclasses; `fetch`/`undici` replaces `python-telegram-bot`. **No new dependency** — Telegram's Bot API is plain HTTPS JSON (`getUpdates`/`sendMessage`/`editMessageText`/`answerCallbackQuery`), reachable with the same `globalThis.fetch` the sidecar already uses.
 
@@ -85,11 +85,11 @@ Telegram getUpdates ──► ChannelAdapter (sidecar/channels/telegram.js)
                             • persist user+assistant turns to durable history
 ```
 
-The adapter never imports the loop, the provider, or the broker. The **hub** is the analogue of Hermes's `_message_handler` bridge: the one seam where a normalized inbound message drives the existing run host.
+The adapter never imports the loop, the provider, or the broker. The **hub** is the analogue of the reference harness's `_message_handler` bridge: the one seam where a normalized inbound message drives the existing run host.
 
-### 3.1 The generic CHANNEL-ADAPTER abstraction (re-derived from Hermes `base.py`)
+### 3.1 The generic CHANNEL-ADAPTER abstraction (re-derived from the reference harness `base.py`)
 
-Hermes's irreducible contract (dossier `contract` + the *confirmed* "exactly four abstract methods" verdict) is `connect/disconnect/send/get_chat_info`, with the entire inbound pipeline concrete in the base, and inbound reduced to `build_source → MessageEvent → handle_message`. We collapse the base-pipeline into **our** hub (Hermes's base owns auth/session/debounce; we keep a *simple* version in the hub) and keep the adapter to the irreducible transport surface.
+the reference harness's irreducible contract (dossier `contract` + the *confirmed* "exactly four abstract methods" verdict) is `connect/disconnect/send/get_chat_info`, with the entire inbound pipeline concrete in the base, and inbound reduced to `build_source → MessageEvent → handle_message`. We collapse the base-pipeline into **our** hub (the reference harness's base owns auth/session/debounce; we keep a *simple* version in the hub) and keep the adapter to the irreducible transport surface.
 
 **Node module:** `sidecar/channels/adapter.js` — not an ABC, a **duck-typed factory contract** (a plain object). A concrete adapter is `make<X>Adapter({ transport, token, allowedChats, onInbound, clock }) → adapter` where:
 
@@ -97,7 +97,7 @@ Hermes's irreducible contract (dossier `contract` + the *confirmed* "exactly fou
 adapter.connect()                 -> Promise<void>   // start the inbound loop; resolves once listening
 adapter.disconnect()              -> Promise<void>   // stop the loop, abort in-flight transport calls
 adapter.send(chatId, text, opts?) -> Promise<{ ok, messageId?, error?, retryable? }>   // ONE message; chunking is the hub's job, see 3.3
-adapter.chatInfo(chatId)          -> { type: 'dm'|'group', id }    // minimal identity (Hermes get_chat_info → {name,type})
+adapter.chatInfo(chatId)          -> { type: 'dm'|'group', id }    // minimal identity (the reference harness get_chat_info → {name,type})
 adapter.name                      -> 'telegram'                    // capability/identity tag
 adapter.MAX_MESSAGE_LENGTH        -> 4096                          // declared limit; the hub chunks to it
 ```
@@ -109,20 +109,20 @@ InboundMessage = { chatId: string, chatType: 'dm'|'group', userId: string, userN
                    text: string, messageId: string, ts: number }   // ts from injected clock, never Date.now() inside the module
 ```
 
-`onInbound` is the single bridge — the adapter has **zero knowledge** of the loop/provider/agent (the *confirmed* runtime-agnostic half of Hermes's "one callback" claim). Per the dossier's **corrected** verdict, Hermes actually injects *five* callbacks (`set_message_handler` + fatal-error/session-store/busy/topic-recovery); we deliberately keep **one** (`onInbound`) for the MVP and fold fatal-error/health into the adapter's own return values and a single `onStatus` optional hook — there is no second gateway instance to coordinate, no session store on the adapter side, no busy-mode UX.
+`onInbound` is the single bridge — the adapter has **zero knowledge** of the loop/provider/agent (the *confirmed* runtime-agnostic half of the reference harness's "one callback" claim). Per the dossier's **corrected** verdict, the reference harness actually injects *five* callbacks (`set_message_handler` + fatal-error/session-store/busy/topic-recovery); we deliberately keep **one** (`onInbound`) for the MVP and fold fatal-error/health into the adapter's own return values and a single `onStatus` optional hook — there is no second gateway instance to coordinate, no session store on the adapter side, no busy-mode UX.
 
-**The outbound result** is our `SendResult`: `{ ok, messageId?, error?, retryable? }` — `retryable:true` lets the hub do one bounded resend (Hermes's `_send_with_retry`), not the elaborate base auto-retry.
+**The outbound result** is our `SendResult`: `{ ok, messageId?, error?, retryable? }` — `retryable:true` lets the hub do one bounded resend (the reference harness's `_send_with_retry`), not the elaborate base auto-retry.
 
 **Transport injection (testability + determinism).** The adapter takes a `transport` object: `{ getUpdates({offset,timeout,signal}), sendMessage({chatId,text}), editMessageText(...), answerCallbackQuery(...) }`. The **real** transport (`sidecar/channels/telegram.transport.js`) is a thin `fetch` wrapper over `https://api.telegram.org/bot<token>/<method>` and is the **only** part that touches the network — `index.js` constructs it (ambient-I/O stays at the edge); tests inject a **fake transport** that yields scripted updates and records sends. This mirrors how `loop.js` injects `provider`/`emit` and the replay tests inject a fake provider.
 
-**A second adapter (Discord) later** drops in with the *same* contract: `sidecar/channels/discord.js` exports `makeDiscordAdapter({transport,...})`, `MAX_MESSAGE_LENGTH=2000`, a gateway-websocket or REST-poll transport, and the same `onInbound`/`send` shape. The hub, the history store, and the bridge are **platform-agnostic** — they consume `InboundMessage` and call `adapter.send`, exactly as Hermes's gateway consumes `MessageEvent`/`SendResult` for ntfy/IRC/Discord identically. **No registry, no `PlatformEntry`, no `Platform` enum, no `register(ctx)`** — with one or two bundled adapters we instantiate directly (dossier `drop`: "with exactly one adapter, skip the registry"). The selection is a one-line `const adapter = makeTelegramAdapter(...)` (later a `{ telegram: makeTelegramAdapter, discord: makeDiscordAdapter }[name]` lookup) in `index.js`.
+**A second adapter (Discord) later** drops in with the *same* contract: `sidecar/channels/discord.js` exports `makeDiscordAdapter({transport,...})`, `MAX_MESSAGE_LENGTH=2000`, a gateway-websocket or REST-poll transport, and the same `onInbound`/`send` shape. The hub, the history store, and the bridge are **platform-agnostic** — they consume `InboundMessage` and call `adapter.send`, exactly as the reference harness's gateway consumes `MessageEvent`/`SendResult` for ntfy/IRC/Discord identically. **No registry, no `PlatformEntry`, no `Platform` enum, no `register(ctx)`** — with one or two bundled adapters we instantiate directly (dossier `drop`: "with exactly one adapter, skip the registry"). The selection is a one-line `const adapter = makeTelegramAdapter(...)` (later a `{ telegram: makeTelegramAdapter, discord: makeDiscordAdapter }[name]` lookup) in `index.js`.
 
 ### 3.2 The INGRESS → RUN bridge (decision + justification)
 
 **Decision: call the in-process run host directly — NOT a `/api/run` HTTP loopback.**
 
 Justification:
-- `handleRun` is reachable in-process; the loop is fully injected/pure (`loop.js:99`) and `index.js` already constructs every dependency (registry, tools, station, broker, provider, cost). A loopback POST would (a) re-serialize the body, (b) lose the in-process `emit` sink (forcing NDJSON re-parsing the adapter would only re-concatenate), (c) need a second port/auth story, and (d) duplicate the abort wiring. Hermes itself calls the runner **in-process** (`adapter.handle_message → _message_handler` is a direct `await`, `base.py:4184`), not over HTTP — the loopback would be a Node-ism with no Hermes analogue and net negative.
+- `handleRun` is reachable in-process; the loop is fully injected/pure (`loop.js:99`) and `index.js` already constructs every dependency (registry, tools, station, broker, provider, cost). A loopback POST would (a) re-serialize the body, (b) lose the in-process `emit` sink (forcing NDJSON re-parsing the adapter would only re-concatenate), (c) need a second port/auth story, and (d) duplicate the abort wiring. the reference harness itself calls the runner **in-process** (`adapter.handle_message → _message_handler` is a direct `await`, `base.py:4184`), not over HTTP — the loopback would be a Node-ism with no the reference harness analogue and net negative.
 - The **smallest honest** refactor: extract the *core* of `handleRun` (everything from "tools registered fresh" through `runAgentLoop`, `index.js:185-281`) into a reusable `runOnce({ key, model, system, messages, agentId, isTask, emit, signal })` that both the HTTP route **and** the hub call. The HTTP route keeps its NDJSON `emit` sink (`index.js:156`); the hub passes an **in-process `emit`** that feeds the reply-assembler (3.3) and is still validated by `makeEmitter` (so messaging runs get the same frozen-event guarantees). This is the one structural change; it is byte-identical for the existing browser path (the route's behavior is unchanged — it now calls the shared `runOnce`).
 
 **What the bridge must supply to `runOnce` / the existing `handleRun` body** (the exact fields `index.js:138` destructures):
@@ -146,9 +146,9 @@ The bridge reuses `runOnce`'s existing station/tools/broker/provider/cost assemb
 
 This is the **exact** reassembly `harness.js:75-114` performs, moved server-side into the hub — no NDJSON parsing needed because the emit is in-process.
 
-**Chunking (Telegram 4096-char limit).** The hub splits the final reply into `≤ adapter.MAX_MESSAGE_LENGTH` chunks and calls `adapter.send` per chunk in order. Split on the last newline/space before the limit (never mid-codepoint; JS strings are UTF-16 so the count matches Telegram's UTF-16 limit — dossier `drop`: "JS strings are already UTF-16," so no `utf16_len` port). On `send` failure with `retryable:true`, one bounded resend; on hard failure, stop and log (the user already has earlier chunks). **Drop** Hermes's `_edit_overflow_split` threaded-continuation + all-or-not-complete partial-overflow contract — that is streaming-edit machinery we are not building for the MVP.
+**Chunking (Telegram 4096-char limit).** The hub splits the final reply into `≤ adapter.MAX_MESSAGE_LENGTH` chunks and calls `adapter.send` per chunk in order. Split on the last newline/space before the limit (never mid-codepoint; JS strings are UTF-16 so the count matches Telegram's UTF-16 limit — dossier `drop`: "JS strings are already UTF-16," so no `utf16_len` port). On `send` failure with `retryable:true`, one bounded resend; on hard failure, stop and log (the user already has earlier chunks). **Drop** the reference harness's `_edit_overflow_split` threaded-continuation + all-or-not-complete partial-overflow contract — that is streaming-edit machinery we are not building for the MVP.
 
-**Stream-edit vs send-on-complete:** **send-on-complete for the MVP.** Justification: editing one live message (Hermes's throttled `GatewayStreamConsumer → edit_message`) requires per-delta rate-limited `editMessageText` calls, an `edit_interval` throttle, and overflow-split handling — a large surface for marginal UX on a single-user harness. Send-on-complete is one `sendMessage` (chunked), trivially correct, and matches the fact that our reply is already fully buffered at `agent.run.end`. **Optional progress** (deferred): surface `agent.tool_call`/`agent.tool_result` as a lightweight "🔧 web_search…" status edit on a single placeholder message, so a long task isn't silent — this is the natural stream-edit upgrade and is recorded as an extension point, not built now.
+**Stream-edit vs send-on-complete:** **send-on-complete for the MVP.** Justification: editing one live message (the reference harness's throttled `GatewayStreamConsumer → edit_message`) requires per-delta rate-limited `editMessageText` calls, an `edit_interval` throttle, and overflow-split handling — a large surface for marginal UX on a single-user harness. Send-on-complete is one `sendMessage` (chunked), trivially correct, and matches the fact that our reply is already fully buffered at `agent.run.end`. **Optional progress** (deferred): surface `agent.tool_call`/`agent.tool_result` as a lightweight "🔧 web_search…" status edit on a single placeholder message, so a long task isn't silent — this is the natural stream-edit upgrade and is recorded as an extension point, not built now.
 
 ### 3.4 Per-chat IDENTITY + DURABLE HISTORY
 
@@ -178,14 +178,14 @@ If neither the token nor a default model is configured at boot, the channel subs
 
 ### 3.6 The CONSENT-SURFACE problem (load-bearing)
 
-A headless messaging chat has **no browser** to answer `permission.prompt`. The reachable `requiresConsent` tools are `fs.write/append/edit` + `notebook.write` (dossier; `HERMES_INTEGRATION_PLAN.md:82`). The broker (`permissions.js`) gives three honest options, and the *confirmed* + *corrected* verdicts pin down exactly how each behaves:
+A headless messaging chat has **no browser** to answer `permission.prompt`. The reachable `requiresConsent` tools are `fs.write/append/edit` + `notebook.write` (dossier; `REF_HARNESS_INTEGRATION_PLAN.md:82`). The broker (`permissions.js`) gives three honest options, and the *confirmed* + *corrected* verdicts pin down exactly how each behaves:
 
 - **(a) Autonomous default-deny on mutation** — build the run with `surface:'autonomous'` (no `prompt`). An ungranted mutation returns `{allow:false, reason:SILENCE}` synchronously (`permissions.js:92`) — the write fails cleanly, the run continues, no 120s stall. Reads/non-network auto-allow. Pre-seed `grantsPermanent` (the existing `permissions.allow.json`) with `fs.write`/`notebook.write` danger keys for chats the user trusts, so blessed writes pass with no human. **This is the safe floor and the MVP default.**
 - **(b) Telegram inline-keyboard consent round-trip** — build with `surface:'interactive'` + a messaging-specific `prompt(call,tool)` that: emits `permission.prompt` (telemetry), sends a Telegram message with an inline keyboard (Approve / Always / Full / Deny), and returns a Promise. The user's button tap arrives as a `callback_query` on `getUpdates`; the adapter routes it to the **existing** `POST /api/consent {runId,promptId,decision}` answer path (or, in-process, directly calls the stored `pending` finisher in `pendingByRun`, `index.js:99,296-305`). The 120s `CONSENT_TIMEOUT_MS` window (`index.js:32,178`) still bounds it → silence auto-denies, fail-closed. This mirrors `promptConsent` **exactly** (`index.js:159-181`) — the adapter owns the *display* and the *button → decision* hop, the sidecar owns the *pause/resolve*.
 
 **Decision: ship (a) as the MVP, design for (b) as a bounded follow-on.** Justification: (a) is zero new pause/resolve machinery, never stalls, and the broker's `surface:'autonomous'` branch is already the correct, *confirmed* fail-closed posture (`index.js:210` comment: "Scheduled/autonomous runs … would pass `surface:'autonomous'` to fail closed"). (b) is strictly additive — the broker, the `permission.prompt` rung, the `pendingByRun` map, and `handleConsent` already exist; (b) only adds the Telegram-side keyboard render + `callback_query` parse. Critically, the *corrected* verdict warns: under a **literally** autonomous surface the broker returns at `permissions.js:92` *before* the prompt branch — so (b) requires `surface:'interactive'`, not `'autonomous'` + a channel. The hub passes `surface` per-chat (autonomous by default; interactive only if the chat opted into button-consent), and **always** keeps the hardline floor below both (`hardlineFloor`, `index.js:102-107`).
 
-This is the messaging analogue of `HERMES_INTEGRATION_PLAN.md`'s L1 consent care: same broker, same "silence is not consent," same frozen-bypass floor — re-derived for a surface with no browser.
+This is the messaging analogue of `REF_HARNESS_INTEGRATION_PLAN.md`'s L1 consent care: same broker, same "silence is not consent," same frozen-bypass floor — re-derived for a surface with no browser.
 
 ### 3.7 NEW EVENT RUNGS in `shared/events.js` (BEFORE any producer)
 
@@ -202,9 +202,9 @@ A messaging inbound and its delivery are genuinely new cross-boundary signals; `
 
 - `channel.inbound` — emitted by the hub when a message is admitted and mapped to an agent (the trigger-source telemetry that `agent.run.start.trigger` only *labels*). Drives the station HUD "incoming DM" cue.
 - `channel.delivery` — emitted after the reply is sent (chunk count, ok/why) so the HUD/log shows outbound delivery and failures.
-- `channel.connect` — adapter health (poll up / network down / fatal token error), the in-memory health-state analogue of Hermes's runtime status file (dossier `drop`: "replace with in-memory health state").
+- `channel.connect` — adapter health (poll up / network down / fatal token error), the in-memory health-state analogue of the reference harness's runtime status file (dossier `drop`: "replace with in-memory health state").
 
-Each rung lands with **valid + invalid `contract.test.js` fixtures** in the same commit, *before* its first producer — the discipline `HERMES_INTEGRATION_PLAN.md:284` mandates. The reply itself needs **no** new rung (`agent.token` already carries it). `redact()` runs on every payload; `chatId`/`userId` are not secrets but are run through it for free.
+Each rung lands with **valid + invalid `contract.test.js` fixtures** in the same commit, *before* its first producer — the discipline `REF_HARNESS_INTEGRATION_PLAN.md:284` mandates. The reply itself needs **no** new rung (`agent.token` already carries it). `redact()` runs on every payload; `chatId`/`userId` are not secrets but are run through it for free.
 
 ### 3.8 CONCURRENCY / SAFETY
 
@@ -217,7 +217,7 @@ Each rung lands with **valid + invalid `contract.test.js` fixtures** in the same
 
 ---
 
-## 4. Drop section — Hermes/Python accretion left in the mine
+## 4. Drop section — the reference harness/Python accretion left in the mine
 
 Mined for shape, **not** ported:
 
@@ -241,12 +241,12 @@ Mined for shape, **not** ported:
 
 ## 5. The first six commits (dependency-ordered, smallest-first, each independently shippable + test-gated)
 
-Each is one revertable commit, ≤3 files, gating test written first, fast suite green (`<~10s`) before the next. The pattern matches `HERMES_INTEGRATION_PLAN.md §4`: start with a **pure, no-wiring** adapter-contract + fake-transport test, then the real transport, then the bridge, then identity/history, then consent.
+Each is one revertable commit, ≤3 files, gating test written first, fast suite green (`<~10s`) before the next. The pattern matches `REF_HARNESS_INTEGRATION_PLAN.md §4`: start with a **pure, no-wiring** adapter-contract + fake-transport test, then the real transport, then the bridge, then identity/history, then consent.
 
 **Commit 1 — `channels/adapter.js` pure contract + a generic adapter built on an injected transport (no network, no wiring).**
 - *Goal:* the platform-agnostic adapter shape — `connect`/`disconnect`/`send`/`chatInfo`/`name`/`MAX_MESSAGE_LENGTH` + the `onInbound(InboundMessage)` push bridge — driven entirely by an injected `transport`, so a **fake transport** proves the inbound→normalize→`onInbound` and `send` paths with zero I/O.
 - *Port/create:* `sidecar/channels/adapter.js` (a `makeChannelAdapter` factory that owns the poll loop + offset tracking + normalize + admission gate, parameterized by transport-method names so Telegram/Discord reuse it), `test/channels.adapter.test.js`, `package.json`.
-- *Tests:* fake transport yields scripted `getUpdates` batches → adapter calls `onInbound` once per text update with a correctly normalized `InboundMessage` (chatId/chatType/userId/text/messageId/ts-from-injected-clock); a group update **not** in `allowedChats` is dropped while a DM passes (mirrors Hermes `_should_process_message` — DMs always allowed); `send('c',longText)` is **not** chunked here (chunking is the hub) but returns the transport's `{ok,messageId}`; `disconnect()` stops the loop and no further `onInbound` fires; offset advances so a redelivered update is processed once.
+- *Tests:* fake transport yields scripted `getUpdates` batches → adapter calls `onInbound` once per text update with a correctly normalized `InboundMessage` (chatId/chatType/userId/text/messageId/ts-from-injected-clock); a group update **not** in `allowedChats` is dropped while a DM passes (mirrors the reference harness `_should_process_message` — DMs always allowed); `send('c',longText)` is **not** chunked here (chunking is the hub) but returns the transport's `{ok,messageId}`; `disconnect()` stops the loop and no further `onInbound` fires; offset advances so a redelivered update is processed once.
 - *DoD:* pure (injected transport + clock, no `fetch`/`fs`/clock-reads), `lint-determinism` green, headless, deterministic; nothing wired; one commit, ≤3 files; revertable.
 
 **Commit 2 — Telegram concrete adapter + real `fetch` transport (still no run wiring).**
@@ -289,18 +289,18 @@ Each is one revertable commit, ≤3 files, gating test written first, fast suite
 
 2. **Identity → agentId granularity.** One agent **per chat** (`tg_<chatId>`, MVP — isolated notebook/workspace/persona per conversation) vs one per **user** (shared memory across that user's chats) vs a single shared `telegram` agent (all chats share memory/workspace — simplest, collision-prone). Per-chat is the proposed default.
 
-3. **Bot token + key + model residence.** Confirm: bot token in `SKYNET_TELEGRAM_TOKEN` (env, boot-frozen); **one** global OpenRouter key (`SKYNET_OPENROUTER_KEY`) for all chats vs **per-user BYOK** via a `/setkey` command (adds a per-chat secret store, more surface). Per-chat model: default `SKYNET_DEFAULT_MODEL`, overridable via a `/model` command? (Hermes has a model-picker; we'd add a tiny one.)
+3. **Bot token + key + model residence.** Confirm: bot token in `SKYNET_TELEGRAM_TOKEN` (env, boot-frozen); **one** global OpenRouter key (`SKYNET_OPENROUTER_KEY`) for all chats vs **per-user BYOK** via a `/setkey` command (adds a per-chat secret store, more surface). Per-chat model: default `SKYNET_DEFAULT_MODEL`, overridable via a `/model` command? (the reference harness has a model-picker; we'd add a tiny one.)
 
 4. **Abort-on-new-message vs queue.** A new inbound while a run is streaming: **abort + restart with the latest** (MVP, natural chat feel) vs **queue** (answer each message in order) vs **reject** ("still working…"). Abort-on-new is proposed.
 
 5. **Task-vs-talk classification.** Port `chat.js`'s `Classify.isTaskDirective` as a pure helper so the hub sets `isTask` (tools only run when true), or start with a simple heuristic (everything is a chat unless the message starts with a verb/`/task`)? Affects whether DMs can trigger web/file tools at all.
 
-6. **Transport mode.** Long-poll `getUpdates` (MVP, no public URL, *confirmed* Hermes default) — confirm we never need webhook (cloud auto-wake, requires a public HTTPS endpoint + secret-token, and conflicts with "the sidecar binds `127.0.0.1`," `index.js:124`). Webhook is dropped unless there's a hosting requirement.
+6. **Transport mode.** Long-poll `getUpdates` (MVP, no public URL, *confirmed* the reference harness default) — confirm we never need webhook (cloud auto-wake, requires a public HTTPS endpoint + secret-token, and conflicts with "the sidecar binds `127.0.0.1`," `index.js:124`). Webhook is dropped unless there's a hosting requirement.
 
 7. **Reply delivery UX.** Send-on-complete (MVP) vs a single live-edited progress message (stream-edit, §3.3) vs tool-step status messages. Send-on-complete is proposed; live-edit is the recorded extension point.
 
-8. **Group admission policy.** DMs always allowed (Hermes parity); groups gated by an `allowedChats` allowlist (env `SKYNET_TELEGRAM_ALLOWED_CHATS`). Confirm groups are even in scope for the MVP, or DM-only first? DM-only is the smaller, safer first cut.
+8. **Group admission policy.** DMs always allowed (the reference harness parity); groups gated by an `allowedChats` allowlist (env `SKYNET_TELEGRAM_ALLOWED_CHATS`). Confirm groups are even in scope for the MVP, or DM-only first? DM-only is the smaller, safer first cut.
 
 9. **History trim policy.** Bounded tail by turn count vs char budget; and whether to ever wire the unused `context.js` `compact()` into the messaging path (it's built-but-unwired, `context.js`) instead of a naive head-drop. Naive head-drop is proposed for the MVP.
 
-10. **Pairing/trust.** Is the boot-frozen token + an `allowedChats` allowlist sufficient (anyone who can DM the bot and is whitelisted), or do we want code-pairing for unknown DMs (Hermes `pairing.py` shape, descoped from the mine)? Allowlist-only is proposed.
+10. **Pairing/trust.** Is the boot-frozen token + an `allowedChats` allowlist sufficient (anyone who can DM the bot and is whitelisted), or do we want code-pairing for unknown DMs (the reference harness `pairing.py` shape, descoped from the mine)? Allowlist-only is proposed.

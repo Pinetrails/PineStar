@@ -164,7 +164,7 @@ or real user-visible bug. **P2** = polish/hygiene. Each item: what, where, why i
   build-stamp or read the Tauri version via IPC.
 - **Orphaned tests** `test/cron.run-now.test.js`, `test/station-authority.test.js` pass but are in no gate.
   Add both to `test/fast.list` (one line each).
-- **Two different `HERMES_PARITY_PLAN.md`** (root untracked vs `docs/` tracked) — an agent told to read it
+- **Two different `REF_HARNESS_PARITY_PLAN.md`** (root untracked vs `docs/` tracked) — an agent told to read it
   lands on either. Rename/consolidate. Also `git add` the important untracked root docs (AGENTS.md,
   CODE_MAP.md, plans) or move them into `docs/` so a `git clean` can't nuke them.
 - **`package.json:5` mojibake** description (double-encoded em-dash) + triplicate `start`/`app`/`sidecar` and

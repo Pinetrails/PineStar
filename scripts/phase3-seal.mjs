@@ -71,7 +71,7 @@ function proofLanguageStep(loop) {
     timedOut: false,
     durationMs: 0,
     logFile: null,
-    reason: bad.length ? 'Missing honest proof labels: ' + bad.join(', ') + '; see ' + file : 'Browser/computer-use are labeled automated-contract, not Hermes-proven.'
+    reason: bad.length ? 'Missing honest proof labels: ' + bad.join(', ') + '; see ' + file : 'Browser/computer-use are labeled automated-contract, not ref-proven.'
   };
 }
 

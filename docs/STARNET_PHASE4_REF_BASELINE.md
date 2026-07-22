@@ -1,11 +1,11 @@
-# StarNet Phase 4 Hermes Baseline
+# StarNet Phase 4 the reference harness Baseline
 
 This is the replacement contract StarNet must satisfy before it can become the
-main harness in place of HermesAgent.
+main harness in place of the reference harness.
 
-## Hermes Baseline Capabilities
+## the reference harness Baseline Capabilities
 
-HermesAgent is considered reliable enough today because it can repeatedly:
+the reference harness is considered reliable enough today because it can repeatedly:
 
 - Run a real paid model call with known provider, model, spend, and end reason.
 - Carry a normal task loop from request to useful output without losing context.
@@ -20,7 +20,7 @@ HermesAgent is considered reliable enough today because it can repeatedly:
 
 ## StarNet Cutover Bar
 
-StarNet does not need to clone HermesAgent's interface. It must prove the same
+StarNet does not need to clone the reference harness's interface. It must prove the same
 daily-driver reliability through the gamified UI and StarNet safety model.
 
 The Phase 4 cutover loop is green only when:

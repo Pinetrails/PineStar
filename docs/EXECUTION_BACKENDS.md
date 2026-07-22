@@ -1,7 +1,7 @@
 # Execution Backends
 
 StarNet's workbench tools now run through a single execution environment boundary. The shape is intentionally
-Hermes-inspired: tools ask the active environment to execute, while the environment decides whether that means
+ref-inspired: tools ask the active environment to execute, while the environment decides whether that means
 the host shell or an isolated sandbox.
 
 ## Current Backends
@@ -78,7 +78,7 @@ Legacy `SKYNET_EXEC_BACKEND`, `SKYNET_DOCKER_BIN`, and `SKYNET_DOCKER_IMAGE` are
 
 ## Parity Direction
 
-Hermes' production shape includes a richer environment manager with Docker, SSH, Modal, Singularity, Daytona,
+the reference harness's production shape includes a richer environment manager with Docker, SSH, Modal, Singularity, Daytona,
 background process tracking, cleanup/reuse, and file synchronization for non-bind-mounted backends. StarNet now
 has the same architectural seam, and the next parity steps are:
 

@@ -442,7 +442,7 @@ const Harness = (() => {
       if (internal) reqBody.internal = true;
       if (/^(answer|cancel|replace)$/.test(String(taskAction || ''))) reqBody.taskAction = String(taskAction);
       if (recipeId) reqBody.recipeId = String(recipeId).slice(0, 60);   // provenance spine: which recipe launched this run (rides to the durable run row)
-      // project-anchored session (Hermes-parity working folder): the sidecar injects the folder context line
+      // project-anchored session (ref-parity working folder): the sidecar injects the folder context line
       // ONLY when this root is still a standing blessed path grant — an un-blessed root injects nothing.
       if (projectRoot) reqBody.projectRoot = String(projectRoot);
       // THE MOAT (FLOOR-REAL): send the agent's REAL placed capability objects so the sidecar grants exactly what's

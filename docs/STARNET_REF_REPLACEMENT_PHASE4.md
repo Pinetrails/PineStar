@@ -1,7 +1,7 @@
-# StarNet Hermes-Replacement Phase 4
+# StarNet ref-Replacement Phase 4
 
 Phase 4 is the cutover qualification phase. It is not a feature sprint. It
-answers one question: can StarNet replace HermesAgent as the user's main harness?
+answers one question: can StarNet replace the reference harnessAgent as the user's main harness?
 
 ## Steering Commands
 
@@ -48,7 +48,7 @@ Evidence lands in:
 
 StarNet reaches replacement-ready standing when:
 
-- P4.1 Hermes baseline is documented and stable.
+- P4.1 the reference harness baseline is documented and stable.
 - P4.2 StarNet same-work trial passes through attended gamified UI evidence.
 - P4.3 Paid live provider proof passes with real model/spend telemetry.
 - P4.4 Two-pass soak passes once fresh and once after restart.
@@ -73,14 +73,14 @@ Every P4 session follows this loop:
 The loop must not spin on missing provider keys, missing attended evidence,
 missing Cargo/Rust, or missing final user decision.
 
-## P4.1 Hermes Baseline
+## P4.1 the reference harness Baseline
 
 Goal: make the replacement bar explicit.
 
 Gate:
 
-- `docs/STARNET_PHASE4_HERMES_BASELINE.md` exists.
-- It names the core Hermes behaviors StarNet must match.
+- `docs/STARNET_PHASE4_REF_BASELINE.md` exists.
+- It names the core the reference harness behaviors StarNet must match.
 
 ## P4.2 StarNet Same-Work Trial
 

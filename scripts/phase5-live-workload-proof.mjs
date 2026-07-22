@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// phase5-live-workload-proof.mjs - live gamified UI Hermes-style workload evidence.
+// phase5-live-workload-proof.mjs - live gamified UI ref-style workload evidence.
 
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -195,23 +195,23 @@ async function main() {
     screenshots.push((await capture(cdp, OUT, '02-capabilities-placed')).path);
 
     const prompt = [
-      'Phase 5 Hermes replacement workload proof.',
+      'Phase 5 the reference harness replacement workload proof.',
       'The room already contains FILES, MEMORY, TERMINAL, WEB, and COMPUTER stations.',
       'Use the live tools, do not merely describe them.',
       'Required tool work:',
       '1. Call browser.navigate to https://example.com.',
       '2. Call browser.get_text and use the visible page text as evidence.',
       '3. Call shell_exec or verify_run with a harmless command that prints phase5-shell-ok.',
-      '4. Call fs_write to create phase5-hermes-workload.md.',
-      '5. Call notebook_write to remember phase5-hermes-workload-memory.',
+      '4. Call fs_write to create phase5-ref-workload.md.',
+      '5. Call notebook_write to remember phase5-ref-workload-memory.',
       'Do not use web_search or web_fetch as a substitute for browser.navigate and browser.get_text.',
       'The Markdown file must include these exact lines:',
-      '# Phase 5 Hermes Workload',
+      '# Phase 5 the reference harness Workload',
       'verdict: live StarNet workload proof',
       'browser: example.com text captured',
       'input: synthetic-only (physical driver disabled)',
       'shell: live command attempted',
-      'memory: phase5-hermes-workload-memory',
+      'memory: phase5-ref-workload-memory',
       'Finish with one short sentence naming the saved file.'
     ].join('\n');
     const sent = await sendChat(cdp, prompt);
@@ -221,7 +221,7 @@ async function main() {
     report.sameWork = sameWork;
 
     const artifactTitles = unique((sameWork.deliverables || []).map(d => d.title).concat((sameWork.active && sameWork.active.deliverables || []).map(d => d.title)));
-    const artifactDiskPaths = unique(artifactTitles.map(t => join(SCRATCH, 'agent', t)).concat([join(SCRATCH, 'agent', 'phase5-hermes-workload.md')]));
+    const artifactDiskPaths = unique(artifactTitles.map(t => join(SCRATCH, 'agent', t)).concat([join(SCRATCH, 'agent', 'phase5-ref-workload.md')]));
     const transcriptIds = extractTranscriptIds(sameWork);
     const ledgerRows = (sameWork.runs.json && sameWork.runs.json.runs || []).slice(0, 5);
     const toolNames = unique((sameWork.toolCalls || []).map(t => t.name));
@@ -244,10 +244,10 @@ async function main() {
       && okTerminal
       && okBrowser
       && !toolNames.includes('computer_use');
-    report.checks.browserHermesProven = okBrowser;
+    report.checks.browserRefProven = okBrowser;
     // Absence of a call is not an installed input-isolation proof. Keep this false until the
     // rebuilt desktop bundle completes the full Win32 observer receipt.
-    report.checks.computerHermesProven = false;
+    report.checks.computerRefProven = false;
 
     try { sidecar.kill('SIGKILL'); } catch {}
     await sleep(1000);
@@ -286,7 +286,7 @@ async function main() {
     };
     existing.surface = existing.surface || {};
     existing.surface.browser = {
-      status: okBrowser ? 'hermes-proven' : ((existing.surface.browser && existing.surface.browser.status) || 'blocked'),
+      status: okBrowser ? 'ref-proven' : ((existing.surface.browser && existing.surface.browser.status) || 'blocked'),
       proofLevel: okBrowser ? 'live-ui-browser-tools' : ((existing.surface.browser && existing.surface.browser.proofLevel) || ''),
       logs: unique((existing.surface.browser && existing.surface.browser.logs || []).concat(join(OUT, 'phase5-workload-report.json'))),
       notes: okBrowser

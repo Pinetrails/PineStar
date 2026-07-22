@@ -34,8 +34,8 @@ function completeEvidence(overrides) {
       notes: 'ok'
     },
     surface: {
-      browser: { status: 'contract-green', proofLevel: 'automated-contract', logs: ['browser.log'], notes: 'contract green, not Hermes-proven' },
-      computer: { status: 'contract-green', proofLevel: 'automated-contract', logs: ['computer.log'], notes: 'contract green, not Hermes-proven' }
+      browser: { status: 'contract-green', proofLevel: 'automated-contract', logs: ['browser.log'], notes: 'contract green, not ref-proven' },
+      computer: { status: 'contract-green', proofLevel: 'automated-contract', logs: ['computer.log'], notes: 'contract green, not ref-proven' }
     },
     soak: {
       phase4LiveGreen: true,
@@ -90,7 +90,7 @@ try {
       acceptedBy: 'tester',
       acceptedAt: new Date().toISOString(),
       notes: 'contract-green surfaces are accepted for pilot only',
-      acceptedReplacementGaps: ['browser/computer are not Hermes-proven']
+      acceptedReplacementGaps: ['browser/computer are not ref-proven']
     }, null, 2));
     const res = run(['check'], tmp);
     A.eq(res.status, 0, 'limited-pilot evidence can be complete');
@@ -113,8 +113,8 @@ try {
   {
     const strict = completeEvidence({
       surface: {
-        browser: { status: 'hermes-proven', proofLevel: 'live-ui', logs: ['browser-live.log'], notes: 'live browser proof' },
-        computer: { status: 'hermes-proven', proofLevel: 'live-desktop', logs: ['computer-live.log'], notes: 'live computer-use proof' }
+        browser: { status: 'ref-proven', proofLevel: 'live-ui', logs: ['browser-live.log'], notes: 'live browser proof' },
+        computer: { status: 'ref-proven', proofLevel: 'live-desktop', logs: ['computer-live.log'], notes: 'live computer-use proof' }
       },
       desktop: { status: 'green', logs: ['desktop.log'], notes: 'desktop build verified' }
     });

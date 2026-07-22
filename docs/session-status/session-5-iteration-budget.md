@@ -10,7 +10,7 @@ H6.3 subagent budget containment: worker `maxIters` propagation and no-op turn r
 - `sidecar/tools/builtin/orchestration.js`
 - `test/loop.replay.test.js`
 - `test/orchestration.test.js`
-- `docs/HERMES_PARITY_PLAN.md`
+- `docs/REF_HARNESS_PARITY_PLAN.md`
 - `docs/session-status/session-5-iteration-budget.md`
 
 ## Evidence

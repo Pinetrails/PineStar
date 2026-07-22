@@ -1,8 +1,8 @@
 # Cortex — Memory & Context Plan
 
-> **StarNet** — the agent memory + context system. Companion to `HERMES_INTEGRATION_PLAN.md` and `INCREMENTAL_ROADMAP.md`; obeys the same discipline: one-line goals, Deliverables/Port-create/Tests/DoD per step, the 12-point Definition-of-Done, frozen event rung *before* any producer, one-commit-sized steps (≤3 source files, gating test first, `test:fast` green `<~10s` before the next), critical-path-first.
+> **StarNet** — the agent memory + context system. Companion to `REF_HARNESS_INTEGRATION_PLAN.md` and `INCREMENTAL_ROADMAP.md`; obeys the same discipline: one-line goals, Deliverables/Port-create/Tests/DoD per step, the 12-point Definition-of-Done, frozen event rung *before* any producer, one-commit-sized steps (≤3 source files, gating test first, `test:fast` green `<~10s` before the next), critical-path-first.
 >
-> _Source studied: `NousResearch/hermes-agent` (MIT) at `C:\Users\<you>\hermes-ref`, mapped 2026-06-14. **Pattern mine, not a port** — we take the shape of an idea and re-derive the smallest honest version against our real seams._
+> _Source studied: `the upstream reference harness` (MIT) at `C:\Users\<you>\harness-ref`, mapped 2026-06-14. **Pattern mine, not a port** — we take the shape of an idea and re-derive the smallest honest version against our real seams._
 
 ---
 
@@ -19,11 +19,11 @@ The harness's whole differentiator is **truthful, drill-to-the-run telemetry**. 
 
 ---
 
-## 2. What Hermes actually does (the patterns worth mining)
+## 2. What the reference harness actually does (the patterns worth mining)
 
 Mapped from the real source. Stripped of accretion (6 providers, 4 of them stubs; HRR vector algebra; 270-line reconcilers; the prefix-museum summarizer prompts), the load-bearing ideas are four:
 
-| # | Hermes pattern | File | Take it? |
+| # | the reference harness pattern | File | Take it? |
 |---|---|---|---|
 | H1 | **Tiny curated "always-on" memory** (`MEMORY.md` ~2200 char + `USER.md` ~1375 char) in the system prompt; everything else searchable via tool. | `tools/memory_tool.py` | **Yes** — core-memory block, char-capped. |
 | H2 | **Frozen snapshot** of memory at session start for a byte-stable cacheable prefix. | `tools/memory_tool.py` | **Yes, improved** — freeze per *run*, add a living-delta tail (see Bet 1). |
@@ -31,7 +31,7 @@ Mapped from the real source. Stripped of accretion (6 providers, 4 of them stubs
 | H4 | **Cache-aware compaction** — protect system + first-N + last-6; summarize the middle via a cheap aux model; prune old tool output first. | `agent/context_compressor.py` | **Yes** — this is our L4 step, wired into `loop.js`. |
 | H5 | **Threat-scan memory at load** — entries scanned for injection/exfil patterns; poisoned ones blocked in the snapshot. | `tools/memory_tool.py` | **Yes** — recall-boundary scan (web/tool output → memory → prompt is a live injection vector). |
 
-**Hermes's weaknesses — our openings:**
+**the reference harness's weaknesses — our openings:**
 - **Frozen snapshot is rigid** — the agent can't use what it learned *this* session until next session. (Bet 1 fixes this.)
 - **Formation is 100% manual** — relies on the model remembering to call `memory(add)` / `skill_manage`; there is **no** auto-skill hook at all. Agents chronically under-save. (Bet 3 fixes this.)
 - **Built-in retrieval is dumb substring** — good retrieval (FTS5, semantic) is locked behind heavy/cloud providers (Honcho/Holographic). (Bet 5 fixes this, zero-dep.)
@@ -43,7 +43,7 @@ Mapped from the real source. Stripped of accretion (6 providers, 4 of them stubs
 
 ## 3. Locked decisions (2026-06-14)
 
-Decided with andro after mapping the real Hermes source:
+Decided with andro after mapping the real the reference harness source:
 
 - **D-mem.1 — Formation = auto-propose + approve.** A post-run reflection pass *proposes* facts/skills/profile-updates; the user one-clicks **Keep / Edit / Discard** (reuses the P1.5c consent UI + the RPG Boss-Approval beat). No silent writes. Manual `notebook.write` stays.
 - **D-mem.2 — Scope = layered.** Agent-global **core** memory (user model + durable facts) is always-on; **working** memory is workstream-scoped but searchable across all streams. Maps onto the dormant `roomId`/workstream fields already in the Workstreams design.
@@ -52,17 +52,17 @@ Decided with andro after mapping the real Hermes source:
 
 ---
 
-## 4. The five bets (how Cortex beats Hermes)
+## 4. The five bets (how Cortex beats the reference harness)
 
-**Bet 1 — "Living" core memory (fixes Hermes's frozen-snapshot rigidity).** A small curated core block (`PROFILE` + `LEARNED`) lives in the *cached* system prefix, frozen **per run** so the cache stays warm across the loop's turns — **but** a tiny append-only "written-this-run" delta rides the `<recalled-memory>` fence after the cache boundary, so the agent can immediately use a fact it wrote 30 seconds ago. Cache stays warm on ~95% of the prompt. Hermes structurally cannot do this.
+**Bet 1 — "Living" core memory (fixes the reference harness's frozen-snapshot rigidity).** A small curated core block (`PROFILE` + `LEARNED`) lives in the *cached* system prefix, frozen **per run** so the cache stays warm across the loop's turns — **but** a tiny append-only "written-this-run" delta rides the `<recalled-memory>` fence after the cache boundary, so the agent can immediately use a fact it wrote 30 seconds ago. Cache stays warm on ~95% of the prompt. the reference harness structurally cannot do this.
 
 **Bet 2 — Truthful, provenance-tracked, *visible* memory (the moat).** Every record carries `{sourceRunId, createdAt, lastUsedAt, useCount, trust, pinned}`. A "Memory Core" panel (reusing the `stationui.js` window system) shows every belief, its provenance + trust, and lets the user pin / edit / forget. Drill any fact → the run that earned it. No other harness surfaces this.
 
-**Bet 3 — Auto-consolidation as a game beat (fixes under-saving).** A cheap *injected* post-run reflection fn reads the run's frozen event log and emits `memory.proposed` candidates → a **turn-in beat** (Keep/Edit/Discard). Solves under-saving, keeps the human in the loop, makes memory formation a *verb*. Hermes has no auto-formation.
+**Bet 3 — Auto-consolidation as a game beat (fixes under-saving).** A cheap *injected* post-run reflection fn reads the run's frozen event log and emits `memory.proposed` candidates → a **turn-in beat** (Keep/Edit/Discard). Solves under-saving, keeps the human in the loop, makes memory formation a *verb*. the reference harness has no auto-formation.
 
 **Bet 4 — Memory depth = placeable capability.** Extend object=capability to cognition: **notebook** = raw scratch notes (today) → **archive/filing-cabinet** = searchable long-term store + retrieval → **cortex** = the auto-consolidation + reflection capability. Better memory becomes *visible, earned gear*.
 
-**Bet 5 — Good local retrieval, zero-dep.** Replace substring with pure lexical ranking (BM25: tokenize, idf-weight, + recency/trust/pin boosts) — deterministic, headless-testable on the replay provider, no cloud, no embedding dep. Beats Hermes's built-in substring *and* its cloud providers for the common case.
+**Bet 5 — Good local retrieval, zero-dep.** Replace substring with pure lexical ranking (BM25: tokenize, idf-weight, + recency/trust/pin boosts) — deterministic, headless-testable on the replay provider, no cloud, no embedding dep. Beats the reference harness's built-in substring *and* its cloud providers for the common case.
 
 ---
 
@@ -162,7 +162,7 @@ Grow the notebook store into the §5.2 record shape (`scope`/`streamId`/`trust`/
 ### M-mem.3 — BM25 recall + core-memory block
 Pure `rank()` module; split recall into **core** (always-on prefix block, char-capped, PROFILE/LEARNED) vs **working** (top-K, stream-scoped) + the living-delta tail (Bet 1).
 
-### M-mem.4 — Compaction (the planned Hermes L4)
+### M-mem.4 — Compaction (the planned the reference harness L4)
 Wire `shouldCompact`/`compact` into `loop.js` after the tool-execution branch, with the tool-pair guards (never cut inside a tool_call/result group) + anti-thrash + the injected summarizer; freeze `agent.compact`. A long run auto-compacts on real `prompt_tokens` instead of dying on a provider 400.
 
 ### M-mem.5 — Reflection → propose → turn-in
@@ -175,7 +175,7 @@ The visible drill-to-the-run UI (Bet 2) over the real store: every belief, its p
 
 ## 7. Reconciliation with the existing seams
 
-- **`context.js` is built but dead** — `index.js:25` imports only `redact`; messages are assembled inline at `index.js:271`. M-mem.1 activates `assemble`/`fit`/`systemPrompt` + the new recall fns. This is the already-planned Hermes **L4.S0** "wire `context.js`" step, pulled forward.
+- **`context.js` is built but dead** — `index.js:25` imports only `redact`; messages are assembled inline at `index.js:271`. M-mem.1 activates `assemble`/`fit`/`systemPrompt` + the new recall fns. This is the already-planned the reference harness **L4.S0** "wire `context.js`" step, pulled forward.
 - **Notebook store** (`index.js:57`) is a per-agent JSON sibling of the fs jail (the agent can't corrupt its own memory via `fs.*`). M-mem.2 keeps that property and widens the value shape.
 - **Frozen events** — only additive rungs (§5.7); nothing existing is re-shaped. `deliverable` still fires from `notebook.write` (do not regress).
 - **Workstreams** — `streamId` on every record fills the dormant per-stream field; recall scoping is the first real consumer of the Workstreams model beyond the kanban.

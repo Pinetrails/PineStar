@@ -1,7 +1,7 @@
 # StarNet UX Confusion Audit — 2026-07-04
 
 Walkthrough of every major user path, focused on where a **beginner** (the product's target
-user — less technical than a Hermes user) gets confused, stuck, or loses trust. Produced by
+user — less technical than a reference-harness user) gets confused, stuck, or loses trust. Produced by
 six parallel code-grounded audits (onboarding, recruitment, core work loop, settings/keys,
 skills/recipes/autonomy, away/return/desktop). High-impact claims were re-verified against
 trunk `feat/harness-backend` on 2026-07-04. Live servers were up (:8830 trunk seed) but the

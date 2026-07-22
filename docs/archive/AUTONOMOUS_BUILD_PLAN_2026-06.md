@@ -5,8 +5,8 @@
 > STATUS + Progress Log here, and moves on. When a phase is fully DONE it runs a phase
 > polish pass, then advances. When all phases are DONE it STOPS the loop.
 >
-> Source of the backlog: the 2026-06-22 Hermes-readiness sweep (see memory
-> `starnet-hermes-readiness`). Goal: make StarNet a confident daily-driver replacement for Hermes.
+> Source of the backlog: the 2026-06-22 ref-readiness sweep (see memory
+> `starnet-hermes-readiness`). Goal: make StarNet a confident daily-driver replacement for the reference harness.
 
 ## Operating protocol (non-negotiable — the loop obeys these every iteration)
 

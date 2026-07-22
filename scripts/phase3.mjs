@@ -199,7 +199,7 @@ function buildSteps() {
     },
     {
       id: '3.3-fs-patch',
-      title: 'Hermes-style fs.patch parser/fuzzy atomic patching',
+      title: 'ref-style fs.patch parser/fuzzy atomic patching',
       phase: '3.3',
       cmd: nodeCmd,
       args: ['test/fs.patch.test.js'],

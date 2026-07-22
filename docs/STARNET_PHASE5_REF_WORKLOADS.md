@@ -1,8 +1,8 @@
-# StarNet Phase 5 Hermes Replacement Workloads
+# StarNet Phase 5 the reference harness Replacement Workloads
 
-Phase 5 moves StarNet from P4 `limited-pilot` to a replacement decision that can honestly retire HermesAgent as the main harness.
+Phase 5 moves StarNet from P4 `limited-pilot` to a replacement decision that can honestly retire the reference harness as the main harness.
 
-The core rule is simple: contract-green is not Hermes-proven. P5 evidence must say which surface was proven through a live StarNet workload, which surface is only contract-green, and which gap is accepted or blocked.
+The core rule is simple: contract-green is not ref-proven. P5 evidence must say which surface was proven through a live StarNet workload, which surface is only contract-green, and which gap is accepted or blocked.
 
 ## Completion Contract
 
@@ -19,7 +19,7 @@ P5 can only be called `ready-to-replace` when all of these are true:
 
 ## Canonical Workload Pack
 
-The P5 live workload should exercise these Hermes-style behaviors through the gamified StarNet UI:
+The P5 live workload should exercise these ref-style behaviors through the gamified StarNet UI:
 
 | Workload | Required Evidence |
 |---|---|
@@ -29,8 +29,8 @@ The P5 live workload should exercise these Hermes-style behaviors through the ga
 | Shell or verify | `shell_exec` or `verify_run` tool call with a successful result |
 | Web reach | `web_search`, `web_fetch`, or browser tool call from a placed DISH |
 | Restart soak | same run/transcript/artifact/ledger/memory still visible after sidecar restart |
-| Browser surface | `hermes-proven`, `contract-green`, `accepted-deferral`, or `blocked` |
-| Computer-use surface | `hermes-proven`, `contract-green`, `accepted-deferral`, or `blocked` |
+| Browser surface | `ref-proven`, `contract-green`, `accepted-deferral`, or `blocked` |
+| Computer-use surface | `ref-proven`, `contract-green`, `accepted-deferral`, or `blocked` |
 | Desktop readiness | `green`, `toolchain-blocked`, `accepted-deferral`, or `blocked` |
 
 ## Loop Commands

@@ -8,7 +8,7 @@ bounded before Phase 4 planning starts.
 Phase 1-3 is sealed when:
 
 - Phase 3 browser automation and computer-use rows are labeled as automated
-  contract proof, not Hermes-proven live parity.
+  contract proof, not ref-proven live parity.
 - Test and steering commands have hard timeouts so a hung runner cannot burn CPU
   forever.
 - The latest Phase 1-3 evidence summaries are preserved in
@@ -27,7 +27,7 @@ npm.cmd run phase3:seal:loop
 
 ## What The Seal Does Not Claim
 
-The seal does not claim StarNet is ready to replace HermesAgent. It only says the
+The seal does not claim StarNet is ready to replace the reference harnessAgent. It only says the
 Phase 1-3 work is honest enough to become the baseline for Phase 4.
 
 Phase 4 still owns:

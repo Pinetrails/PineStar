@@ -128,7 +128,7 @@ Repo **Settings → General → Danger Zone → Change visibility → Public.** 
 
 - GitHub: repo renamed to `starnet`, description + homepage + topics set (both repos).
 - README.md rebuilt (wordmark hero, station render, badges, feature table, download table,
-  OpenClaw/Hermes importer section).
+  OpenClaw/the reference harness importer section).
 - All breaking `skynet-harness` references updated: `package.json` (repository/homepage/bugs),
   `CONTRIBUTING.md` clone lines, `.github/ISSUE_TEMPLATE/config.yml` advisory link,
   `test/opensource-readiness.test.js` URL assertion, living docs

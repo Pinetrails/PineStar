@@ -1,13 +1,13 @@
-# Skill-building parity plan — Hermes capability, StarNet visibility
+# Skill-building parity plan — the reference harness capability, StarNet visibility
 
-Date: 2026-07-02. Grounded in a dual code audit (StarNet trunk + hermes-ref), not plan docs.
+Date: 2026-07-02. Grounded in a dual code audit (StarNet trunk + harness-ref), not plan docs.
 
 ## Diagnosis (why it FEELS like agents don't build skills)
 
-The backend already replicates Hermes' skill machinery almost 1:1 — the gap is **visibility
+The backend already replicates the reference harness's skill machinery almost 1:1 — the gap is **visibility
 and breadth**, not machinery:
 
-| Hermes mechanism | StarNet equivalent | Status |
+| the reference harness mechanism | StarNet equivalent | Status |
 |---|---|---|
 | `skill_view` / `skills_list` (lazy bodies) | `skill.view` / `skill.list` (sidecar/tools/builtin/skills.js) | EXISTS |
 | `skill_manage` create/edit/patch/delete + support files | `skill.manage` + package store (skillstore.js, skills/package.js) | EXISTS |
@@ -28,7 +28,7 @@ Three real problems:
    no skill index in the prompt, no skill tools, agent cannot consult or save skills in-run.
    (The gate is the object=capability law — KEEP it; the fix is making the consequence
    legible, not removing the gate.)
-3. **Library is thin.** 9 bundled recipes vs Hermes' full `skills/<category>/` tree.
+3. **Library is thin.** 9 bundled recipes vs the reference harness's full `skills/<category>/` tree.
    Plus the AGENT SKILLS search box in stationui.js (~1345) has no handler.
 
 ## Build lanes
@@ -49,12 +49,12 @@ Three real problems:
 - **A4** Wire the AGENT SKILLS search box (filter by name/summary/category, client-side).
 
 ### Lane B — library breadth (worktree: skill-library)
-- **B1** Port 15–25 more Hermes skills from `C:\Users\<you>\hermes-ref\skills\` into
+- **B1** Port 15–25 more the reference harness skills from `C:\Users\<you>\harness-ref\skills\` into
   `sidecar/skills/library/*.md` using the existing frontmatter format (catalog.js grammar:
   name/slug/description/category/requires/author/license/default). Map each skill's needs
   to `requires:` capability objects honestly (web skills → dish, terminal → workbench,
-  files → cabinet, etc.). Keep attribution lines like the existing 9. Skip Hermes skills
-  that assume Hermes-only infra (kanban, its plugin system).
+  files → cabinet, etc.). Keep attribution lines like the existing 9. Skip the reference harness skills
+  that assume ref-only infra (kanban, its plugin system).
 - **B2** Respect the 12k compose budget — most ports should be `default: false` so they're
   toggleable in the SKILL LIBRARY panel without blowing the prompt budget; keep on-by-default
   only the universally useful ones.

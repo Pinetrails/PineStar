@@ -1,6 +1,6 @@
 # L4 · Beginner Run — protect the moat (every 4h, live app, own worktree)
 
-The moat is "easier than Hermes for beginners." Every tick, BE a first-time user and report
+The moat is "easier than the reference harness for beginners." Every tick, BE a first-time user and report
 where a newbie gets stuck. Sandbox law: no gating, full power from minute one — any grind/
 unlock/permission-wall you meet is itself a P0 finding.
 

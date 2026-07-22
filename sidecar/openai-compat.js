@@ -1,14 +1,14 @@
 /* sidecar/openai-compat.js — an OpenAI-compatible HTTP surface (/v1/*) so EXTERNAL local clients and other
    harnesses can start REAL StarNet agent runs over HTTP. This is the seam where "another harness talks to
-   StarNet" actually runs agent work. Ported from Hermes' gateway/platforms/api_server.py, adapted to StarNet's
-   one-process / runOnce / U.bus architecture.
+   StarNet" actually runs agent work. An independent implementation, wire-compatible with the reference
+   harness's API server surface, built on StarNet's one-process / runOnce / U.bus architecture.
 
    ── WHY THIS IS A SEPARATE AUTH SEAM (read before changing) ────────────────────────────────────────────────
    The rest of the sidecar's /api/* routes are fenced by the per-LAUNCH token that index.js injects into the
    served page (see apiauth.js). That token is for the STATION'S OWN browser UI. /v1/* is different: it is for
    external local clients (an OpenAI SDK, another harness, a CLI) that NEVER see the page and cannot read that
    token. So /v1 carries its OWN bearer key (env STARNET_API_KEY / STARNET_V1_KEY, or a persisted server config)
-   compared timing-safe, exactly like Hermes' API_SERVER_KEY.
+   compared timing-safe, exactly like the reference harness's API_SERVER_KEY.
 
    HARD REFUSAL TO RUN WITHOUT A STRONG KEY: /v1 dispatches terminal-capable agent work — a guessable key is
    remote code execution. So with NO key configured (or one shorter than 16 chars) EVERY /v1/* request answers
@@ -34,7 +34,7 @@
 'use strict';
 const nodeCrypto = require('node:crypto');
 
-const DEFAULT_MAX_CONCURRENT = 10;   // matches Hermes' default; env STARNET_V1_MAX_CONCURRENT overrides
+const DEFAULT_MAX_CONCURRENT = 10;   // matches the reference harness's default; env STARNET_V1_MAX_CONCURRENT overrides
 const MIN_KEY_LEN = 16;              // below this, refuse to enable (guessable key on a terminal-capable surface = RCE)
 const AID_RE = /^[A-Za-z0-9_-]{1,40}$/;
 const DEFAULT_MODEL_ID = 'starnet-agent';   // the stable advertised model id
@@ -44,7 +44,7 @@ const MAX_BODY = 10 * 1024 * 1024;   // 10MB — long agent conversations with t
 // ---- pure helpers (no ambient clock/rng; all injected) ---------------------------------------------------
 
 // OpenAI-style error envelope. Every field is always present (even null) so an OpenAI SDK never trips on a
-// missing key — mirrors Hermes _openai_error.
+// missing key — mirrors the reference harness _openai_error.
 function openAiError(message, opts) {
   const o = opts || {};
   return { error: { message: String(message == null ? '' : message), type: o.type || 'invalid_request_error', param: o.param == null ? null : o.param, code: o.code == null ? null : o.code } };
@@ -74,7 +74,7 @@ function pathOf(url) { const u = String(url || ''); const i = u.indexOf('?'); re
 // sanitize any string to the notebook/fs-jail agentId grammar.
 function sanitizeAid(s) { return String(s == null ? '' : s).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40); }
 
-// Flatten OpenAI chat message content (string, or array of typed parts) into a plain string. Mirrors Hermes
+// Flatten OpenAI chat message content (string, or array of typed parts) into a plain string. Mirrors the reference harness
 // _normalize_chat_content: pulls text/input_text/output_text parts, skips images/other. Bounded for safety.
 function normalizeContent(content, depth) {
   depth = depth || 0;
@@ -97,7 +97,7 @@ function normalizeContent(content, depth) {
 
 // Split an OpenAI `messages` array into { system, history, lastUser }. System messages are \n-joined into an
 // ephemeral system prompt; the LAST user message is the input; every user/assistant message before it is history.
-// Returns { ok:false } when there is no user message to act on (caller answers 400). Mirrors Hermes' parsing.
+// Returns { ok:false } when there is no user message to act on (caller answers 400). Mirrors the reference harness's parsing.
 function splitMessages(messages) {
   if (!Array.isArray(messages) || !messages.length) return { ok: false, reason: 'messages' };
   const systems = [];
@@ -161,7 +161,7 @@ function chatChunk(o) {
 }
 
 // derive a stable session id from the conversation seed (used when no explicit session header is supplied, so a
-// multi-turn OpenAI client that resends full history threads onto one agent/transcript). Mirrors Hermes.
+// multi-turn OpenAI client that resends full history threads onto one agent/transcript). Mirrors the reference harness.
 function deriveSessionId(system, firstUser) {
   const seed = String(system || '') + '\n' + String(firstUser || '');
   return 'api-' + nodeCrypto.createHash('sha256').update(seed, 'utf8').digest('hex').slice(0, 16);
@@ -412,7 +412,7 @@ function makeOpenAiCompat(deps) {
     finally { inFlight--; }
     persistTurns(agentId, parsed.lastUser, acc.buf);
     if (!acc.buf && acc.errMsg) {
-      // no text produced AND an error — hard fail with an OpenAI-style server_error (like Hermes agent_incomplete).
+      // no text produced AND an error — hard fail with an OpenAI-style server_error (like the reference harness agent_incomplete).
       return json(res, 502, openAiError(redact(acc.errMsg), { type: 'server_error', code: 'agent_incomplete' }));
     }
     const finishReason = finishReasonFor(acc.reason, !!acc.buf);

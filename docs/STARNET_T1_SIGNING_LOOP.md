@@ -1,7 +1,7 @@
 # StarNet T1 Signing Lead-Time Loop
 
 T1 is the signing lead-time lane for beta distribution. It does not decide whether the
-harness can replace Hermes; P5 already does that. T1 decides whether the current desktop
+harness can replace the reference harness; P5 already does that. T1 decides whether the current desktop
 build can be trusted as an installer/update artifact for the intended audience.
 
 ## Goal

@@ -1,22 +1,22 @@
-# Hermes Integration Plan
+# the reference harness Integration Plan
 
-> **StarNet** — a layered plan for borrowing Hermes-derived capabilities on top of the proven M1 sidecar harness. This document is the companion to `INCREMENTAL_ROADMAP.md` and obeys the same discipline: one-line goals, Deliverables/Port-create/Tests/DoD per step, the 12-point Definition-of-Done, one-commit-sized steps, critical-path-first. Every seam below was confirmed against the real files; every premature/redundant/hallucinated claim flagged by the adversarial verdicts has been dropped or corrected.
+> **StarNet** — a layered plan for borrowing ref-derived capabilities on top of the proven M1 sidecar harness. This document is the companion to `INCREMENTAL_ROADMAP.md` and obeys the same discipline: one-line goals, Deliverables/Port-create/Tests/DoD per step, the 12-point Definition-of-Done, one-commit-sized steps, critical-path-first. Every seam below was confirmed against the real files; every premature/redundant/hallucinated claim flagged by the adversarial verdicts has been dropped or corrected.
 
-> _Source: `NousResearch/hermes-agent` (MIT), cloned to `C:\Users\<you>\hermes-ref`. Pattern mine, not a port. Produced by a 9-layer parallel design + adversarial-verify pass against the real sidecar (2026-06-14)._
+> _Source: `the upstream reference harness` (MIT), cloned to `C:\Users\<you>\harness-ref`. Pattern mine, not a port. Produced by a 9-layer parallel design + adversarial-verify pass against the real sidecar (2026-06-14)._
 
 ---
 
 ## 1. Preamble — what we are borrowing and the prime directive
 
-Hermes (`C:\Users\<you>\hermes-ref`) is a mature, multi-provider, Python agent runtime. We are **mining it for patterns, not porting it.** The prime directive, in four clauses:
+the reference harness (`C:\Users\<you>\harness-ref`) is a mature, multi-provider, Python agent runtime. We are **mining it for patterns, not porting it.** The prime directive, in four clauses:
 
-1. **It is a pattern mine, not a port.** We take the *shape* of an idea (a 3-state credential machine, a staged JSON-repair ladder, a four-tier consent gate) and re-derive the *smallest honest version* against our seams. We leave behind every Hermes-ecosystem artifact: the 30-field ProviderProfile dataclass, the 60+ shell DANGEROUS_PATTERNS table, the OAuth/Copilot/Bedrock auth variants, the plugin-directory discovery, the contextvars/threading machinery, the 270-line classification reconcilers, the prefix-museum summarizer prompts.
+1. **It is a pattern mine, not a port.** We take the *shape* of an idea (a 3-state credential machine, a staged JSON-repair ladder, a four-tier consent gate) and re-derive the *smallest honest version* against our seams. We leave behind every ref-ecosystem artifact: the 30-field ProviderProfile dataclass, the 60+ shell DANGEROUS_PATTERNS table, the OAuth/Copilot/Bedrock auth variants, the plugin-directory discovery, the contextvars/threading machinery, the 270-line classification reconcilers, the prefix-museum summarizer prompts.
 
 2. **Node, not Python.** Our loop is single-threaded async with real I/O concurrency. There is no GIL, no `threading.Lock`, no `ThreadPoolExecutor`, no `__cause__` chain-walking, no `dataclasses.replace`. A pending Promise + a `Map` is the whole concurrency mechanism. Module-level `Symbol`, not `object()` sentinels.
 
 3. **Nothing violates the existing discipline.** Every new module is UMD, zero-dependency, headless-testable with injected deps, deterministic (no bare `Math.random`/`Date.now` — `lint-determinism.js` scans `shared/` + `sidecar/`, excluding only `sidecar/index.js`). Every cross-boundary signal goes through `shared/events.js` + `shared/emitter.js` first (a new schema rung *before* any producer). Every persisted shape is save-safe. One step = one revertable commit, ≤3 files, gating test first, fast suite green (`< ~10s`) before the next.
 
-4. **Nothing jumps the critical path.** The roadmap's make-or-break sequence is `0.1 → 0.5 → 1.1 → 1.2 → 1.3 → 1.4` (proven green through M1.4) and the remaining Phase-1 spine is **1.0 keychain → 1.5 consent → 1.6 PROPTERM → 1.7 triggers → 1.8 recovery/kill-switch**. Of all the Hermes layers, exactly **one** sits *on* that named path: the consent broker (P1.5). Everything else is either spine-hardening that strengthens already-shipped M1 work, or it defers to the phase where its missing consumer (second provider, second agent, run-log, builder) actually exists.
+4. **Nothing jumps the critical path.** The roadmap's make-or-break sequence is `0.1 → 0.5 → 1.1 → 1.2 → 1.3 → 1.4` (proven green through M1.4) and the remaining Phase-1 spine is **1.0 keychain → 1.5 consent → 1.6 PROPTERM → 1.7 triggers → 1.8 recovery/kill-switch**. Of all the reference harness layers, exactly **one** sits *on* that named path: the consent broker (P1.5). Everything else is either spine-hardening that strengthens already-shipped M1 work, or it defers to the phase where its missing consumer (second provider, second agent, run-log, builder) actually exists.
 
 ---
 
@@ -24,7 +24,7 @@ Hermes (`C:\Users\<you>\hermes-ref`) is a mature, multi-provider, Python agent r
 
 ### Already handled — do NOT re-propose
 
-The following are **built and integration-tested today**; no Hermes layer may re-introduce them:
+The following are **built and integration-tested today**; no the reference harness layer may re-introduce them:
 
 | Capability | Where | Note |
 |---|---|---|
@@ -41,7 +41,7 @@ The following are **built and integration-tested today**; no Hermes layer may re
 
 ### The layers
 
-| # | Hermes layer | Verdict | Decision | One-line why |
+| # | the reference harness layer | Verdict | Decision | One-line why |
 |---|---|---|---|---|
 | L1 | **Consent broker** (four-tier: hardline floor + frozen bypass + session/permanent grants + default-deny) | adopt-now | **Adopt now (spine)** | This **is** roadmap P1.5; `index.js:134` is a permanent allow-all stub that bypasses default-deny on every `requiresConsent` tool shipped in M1.3b/M1.4. The one named-spine layer. |
 | L2 | **Tool-call argument repair** (staged JSON-repair ladder before declaring a call failed) | defer | **Adopt now (spine-hardening), AFTER L1** | `loop.js:29` JSON.parse-once → `registry.js:61` discards a real intended action; local OpenRouter models (GLM/Kimi/Qwen) emit broken arg JSON today. Pure, cheap, no unmet deps — but must not displace P1.5. |
@@ -75,7 +75,7 @@ These three land in priority order. **L1 (consent) first — it is a live safety
 
 **Conflict-resolutions.**
 - *Determinism:* `capCtx` carries **neither runId nor callId** (confirmed `capGate.js:27-34`). Derive `promptId = sessionKey(=runId, injected into the broker closure) + ':' + call.id`. Never read the wall clock inside the broker.
-- *Frozen bypass:* read `bypassPermissions` **once at sidecar boot** into a `const` (mirror Hermes `_YOLO_MODE_FROZEN`); the broker must never re-read `process.env`/settings inside `consent()`.
+- *Frozen bypass:* read `bypassPermissions` **once at sidecar boot** into a `const` (mirror the reference harness `_YOLO_MODE_FROZEN`); the broker must never re-read `process.env`/settings inside `consent()`.
 - *Default-deny on mutation:* `always`/smart-approve may only ever cover read-only/idempotent scopes; write/execute/network always re-evaluate. Smart auto-approve is **omitted** this phase.
 - *Tool-id pairing:* a denied/timed-out consent still yields exactly one isError result via the existing `registry.js:79` path — untouched.
 - *Save-safe:* the permanent allowlist is a new persisted shape — ship `{version:1, allow:[...]}`, tolerate missing/corrupt (load → empty, fail-closed), store **only** danger-class keys (`capId+scope`), never args/paths/keys. Lives beside the notebook store (sibling of the fs jail).
@@ -121,7 +121,7 @@ These three land in priority order. **L1 (consent) first — it is a live safety
 **Steps.**
 
 - **L2.S1 — Pure repair module (no wiring).**
-  - *Deliverables:* NEW `sidecar/providers/sanitize.js` exporting `repairToolCallArguments(raw, name) -> string` with the staged passes: (0) trim; empty/`'None'` → `'{}'`; (1) tolerant control-char-escape then parse+reserialize to canonicalize; (2) strip trailing commas `/,\s*([}\]])/g`; (3) COUNT-based delimiter balance (append-missing, then bounded-50 strip-excess); (4) in-string control-char (`<0x20`) → `\uXXXX` scanner respecting backslash escapes; (5) last-resort `'{}'`. Use a small `make(reason, overrides)` helper, **not** Hermes's `result_fn` plumbing. No `__cause__` walk, no SDK-class sniffing.
+  - *Deliverables:* NEW `sidecar/providers/sanitize.js` exporting `repairToolCallArguments(raw, name) -> string` with the staged passes: (0) trim; empty/`'None'` → `'{}'`; (1) tolerant control-char-escape then parse+reserialize to canonicalize; (2) strip trailing commas `/,\s*([}\]])/g`; (3) COUNT-based delimiter balance (append-missing, then bounded-50 strip-excess); (4) in-string control-char (`<0x20`) → `\uXXXX` scanner respecting backslash escapes; (5) last-resort `'{}'`. Use a small `make(reason, overrides)` helper, **not** the reference harness's `result_fn` plumbing. No `__cause__` walk, no SDK-class sniffing.
   - *Port/create:* `sanitize.js`, `sanitize.test.js`, `package.json`.
   - *Tests:* `sanitize.test.js` — trailing-comma, unclosed-brace, unclosed-bracket, literal `None`, empty→`{}`, tab/newline-in-string, excess-closers, and a pathological deep-unbalanced payload that terminates under the 50-iter cap. Each pass returns valid parseable JSON.
   - *DoD:* pure; `lint-determinism` green; one commit, 2 files + package.json; nothing wired, revertable.
@@ -188,7 +188,7 @@ These attach where a future phase's prerequisite seam lands. They are written so
 - **L4.S2 — Harden `compact()`** (still pure): replace the fixed `keepTail` slice with the token-budgeted tail walk + the three guards + the orphan stub + an `_ineffectiveCount` anti-thrash counter (stop after 2 passes saving `<10%`).
 - **L4.S3 — Wire into the loop after `:163`** with the injected summarizer + resilience catch; emit `agent.compact`. Both `o.ctx` and `o.summarize` default undefined → block inert → existing tests byte-identical.
 
-> **Drop (Hermes accretion):** the prefix-museum jailbreak-hardening, `should_defer_preflight_to_real_usage`, the ~180-line static-fallback builder, the pluggable-ContextEngine ABC. Single-provider OpenRouter needs none of it.
+> **Drop (the reference harness accretion):** the prefix-museum jailbreak-hardening, `should_defer_preflight_to_real_usage`, the ~180-line static-fallback builder, the pluggable-ContextEngine ABC. Single-provider OpenRouter needs none of it.
 >
 > **Drop the `IterationBudget` refactor** — it is a near-zero-value rewrite of the existing `turns`/`maxIters` counter (`loop.js:104,111`), its `refund()` is speculative dead code (no P4 delegation consumer), and it churns the `agent.run.end` payload that `contract.test.js` asserts.
 
@@ -220,7 +220,7 @@ These attach where a future phase's prerequisite seam lands. They are written so
 
 **Goal.** A `delegate` builtin that spawns context-isolated child runs (fresh messages, own runId, attenuated toolset, blocklist-stripped) via a recursive `runAgentLoop`, returning only each child's summary, depth-capped at 1 — under the Phase-4 org-graph authority, not beside it.
 
-**Seam.** `runAgentLoop` is fully injectable (`loop.js:75`). `attenuate(resolved, allowedSubset)` (`capGate.js:21`) **is** the Hermes intersect-with-parent rule (monotonic ∩). The real gap: the loop passes `capCtx` as the dispatch `ctx`, but `provider`/`cost`/`signal`/`model`/the **host-wrapped** dispatch live as loop locals, so a tool physically cannot re-enter the loop today.
+**Seam.** `runAgentLoop` is fully injectable (`loop.js:75`). `attenuate(resolved, allowedSubset)` (`capGate.js:21`) **is** the reference harness intersect-with-parent rule (monotonic ∩). The real gap: the loop passes `capCtx` as the dispatch `ctx`, but `provider`/`cost`/`signal`/`model`/the **host-wrapped** dispatch live as loop locals, so a tool physically cannot re-enter the loop today.
 
 **Risk.** med. **Defer rationale:** with N=1 in one hardcoded `office` room (`index.js:127-132`) there is no agent to delegate *to*; the door-gated authority (P4.2) and real consent (P1.5) don't exist; a child loop calling `registry.dispatch` directly would lose `maxRepeat`/`maxToolBytes`/wire-name translation (which live in the **`index.js:158-174` wrapper**, not `registry.dispatch`).
 
@@ -238,7 +238,7 @@ These attach where a future phase's prerequisite seam lands. They are written so
 |---|---|---|
 | **L6 — Credential pool + fallback chain** | a multi-key phase the roadmap **does not yet contain** (P1.0 keychain stores **one** key; P5.0 is a different credential *path*, not multiple keys per provider). Cross-provider chain → P4.1/P5.0 (the first ordered `{provider,model}` config). | An intake that lets a user supply **>1 key per provider**. The now-safe sub-piece (no raw key at rest/in logs) is **already met** by `redact()` (`context.js:31-37`); the on-disk pool file (if ever built) is **not** crossed by the bus, so it must store fingerprints-only **by construction**, plus a versioned migration + a cooldown-timer determinism test (reload under an injected frozen clock → byte-identical). |
 | **L7 — File-safety + SSRF floor** | **mostly skip.** | The flagship symlink-TOCTOU is **not reachable** (no fs tool creates symlinks; EPERM on the Windows dev host, so the gating test no-ops on the only CI host). 5 of 6 metadata targets are **already blocked** by `web.js`. The **only** genuinely-new delta worth doing now: add bare `metadata.goog` (and `metadata.google.internal` belt-and-suspenders) to the blockedName list in `web.js assertSafeUrl`, plus one test — a one-line change, **not** a `urlSafety.js`/`fileSafety.js` extraction. Do **not** add `realpath` to the hot `resolveInside` path (false-rejects on Windows drive-letter/8.3/`\\?\` casing unless `base` is also canonicalized; changes just-shipped behavior). |
-| **L8 — Self-improving skill layer** | **RPG-2** (classes = real `context.systemPrompt` change), gated on **RPG-0** (run-log/`sidecar/ledger.js`). | (1) `context.systemPrompt` wired into `index.js`'s run path (the L4.S0 step) — until then a written skill is a cosmetic badge, the exact antipattern the RPG doc forbids; (2) a loop **completion hook** (`loop.js` `end()`); (3) a durable run-log; (4) a **cumulative spend cap** before any auto-spawned paid review fork (today `maxCostUsd` is per-run only). The periodic curator is an explicit user **Forge** verb, not Hermes's hidden 7-day cron. Do **not** pull the pure store/lifecycle modules forward — as unused code they ship dead against the build-order rule; land them **with** their first consumer. Note: the "Forge" in `rpg-layer-design.md:98` writes a *capability grant row*, a different mechanic from skill curation — re-target this away from RPG-3. |
+| **L8 — Self-improving skill layer** | **RPG-2** (classes = real `context.systemPrompt` change), gated on **RPG-0** (run-log/`sidecar/ledger.js`). | (1) `context.systemPrompt` wired into `index.js`'s run path (the L4.S0 step) — until then a written skill is a cosmetic badge, the exact antipattern the RPG doc forbids; (2) a loop **completion hook** (`loop.js` `end()`); (3) a durable run-log; (4) a **cumulative spend cap** before any auto-spawned paid review fork (today `maxCostUsd` is per-run only). The periodic curator is an explicit user **Forge** verb, not the reference harness's hidden 7-day cron. Do **not** pull the pure store/lifecycle modules forward — as unused code they ship dead against the build-order rule; land them **with** their first consumer. Note: the "Forge" in `rpg-layer-design.md:98` writes a *capability grant row*, a different mechanic from skill curation — re-target this away from RPG-3. |
 
 ---
 
@@ -268,7 +268,7 @@ Each is one revertable commit, ≤3 files, gating test written first, fast suite
 - **No provider registry, no credential pool, no delegate tool, no skill layer built now** — each lacks its consumer (provider #2, a second key, a second agent, a wired system prompt + run-log). They are recorded as ready-to-pull, seam-confirmed, and gated on the substrate that justifies them.
 - **No `IterationBudget` refactor** — speculative generality with dead `refund()` and `agent.run.end` payload churn.
 
-**Hermes-isms left in the mine:**
+**ref-isms left in the mine:**
 - Plugin-directory discovery, the 30-field `ProviderProfile` dataclass, `auth_type`/OAuth/Copilot/Bedrock variants, per-model string-sniffing.
 - The 60+ shell `DANGEROUS_PATTERNS` table (we gate **structured tool calls by capability+scope**, not regex over command strings).
 - `contextvars` + `threading.Lock` + `Event`-queue concurrency, `__cause__`/`__context__` chain-walking, `isinstance`/SDK-class frozensets, `ThreadPoolExecutor`, fcntl/msvcrt locking — Node is single-threaded async; a Promise + `Map` is the whole mechanism.

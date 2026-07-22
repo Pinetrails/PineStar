@@ -1,5 +1,5 @@
 /* sidecar/attachments.js — USER ATTACHMENTS for COMMS (photos/files the Commander attaches to a message,
-   like Claude Code / Codex / Hermes).
+   like Claude Code / Codex).
 
    The bytes live in the agent's WORKSPACE under .attachments/ (jailed by the same resolveInside proof the
    read-only /api/file route uses). The browser's message history stores only a lightweight REFERENCE

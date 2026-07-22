@@ -1,8 +1,8 @@
-# StarNet → Hermes-parity Loop (H1 → H6)
+# StarNet → ref-parity Loop (H1 → H6)
 
-> The durable brain for the self-paced Hermes-parity loop. Source: the 2026-06-23 adversarially-verified
-> StarNet-vs-HermesAgent comparison (21-agent workflow `wf_f9c4308c-fd3`). 8 confirmed ON-MOAT gaps where
-> Hermes excels and StarNet lacks; 2 off-moat non-goals (OpenAI-compat server/REPL, mixture-of-agents) excluded.
+> The durable brain for the self-paced ref-parity loop. Source: the 2026-06-23 adversarially-verified
+> StarNet-vs-the reference harnessAgent comparison (21-agent workflow `wf_f9c4308c-fd3`). 8 confirmed ON-MOAT gaps where
+> the reference harness excels and StarNet lacks; 2 off-moat non-goals (OpenAI-compat server/REPL, mixture-of-agents) excluded.
 > **Defining theme: most fixes are WIRING — StarNet already writes durable transcripts/telemetry/recall it never
 > reads back. Consume what exists before building anything new. Smallest-leverage-first.**
 
@@ -125,7 +125,7 @@ Fold runstore + spend ledger into per-model spend, tool-usage ranking, runs-over
 ## PHASE H4 — Agent-authored skills library (rank 4, genuinely new)  ·  STATUS: ✅ DONE (2/2, trunk `1ea91d5`)
 > StarNet's thesis names "an owned compounding exportable library" as core, yet the only "skill" is a memory KIND
 > (a one-line notebook fact); `notebook.js` even says "reusable procedures belong in a skill, not memory" with no
-> such artifact. Mirror the notebook plumbing. Keep it a plain titled document (defer Hermes YAML/hub install).
+> such artifact. Mirror the notebook plumbing. Keep it a plain titled document (defer the reference harness YAML/hub install).
 
 ### H4.1 — `skillstore.js`  ·  STATUS: ✅ built (commit `bf035cd`, held for H4.2 merge)
 Sibling of transcript/runstore (injected-io + fsync, jail-sibling) holding per-agent `{id, name, summary, body, updatedAt}`.
@@ -192,7 +192,7 @@ tool call AND no assistant text (or a pure failover/compaction retry) with a har
 
 ## Progress Log
 - _(the loop appends one dated line per iteration here)_
-- **2026-06-23 · iter 1 · H1.1 → BUILDING.** Loop established (self-paced) from the 21-agent Hermes-parity audit.
+- **2026-06-23 · iter 1 · H1.1 → BUILDING.** Loop established (self-paced) from the 21-agent ref-parity audit.
   Worktree `agent/hermes-parity` cut off trunk `a617cb8`; **baseline `test:fast` GREEN**. Reconned the transcript
   append (index.js:1751-1763, title+final only) + run-message assembly; designed the every-turn append
   (transcriptstore additive `toolCalls`/`toolCallId` + `result.messages.slice(inputLen-1)` loop). No code yet
@@ -272,7 +272,7 @@ tool call AND no assistant text (or a pure failover/compaction retry) with a har
   (`summarize(older, prevSummary)` → merge-update prompt), and rebuilds with EXACTLY ONE note (no more stacking).
   Savings anti-thrash: after 2 folds in a row freeing <10%, compaction switches off for the run. New compaction.test
   (8) drives both through the real loop; **loop.replay byte-identical (87 assertions)**; gate green. **Compaction
-  quality now matches Hermes.** NEXT: H6.1 — honor Retry-After/reset_at in errorClass + status-specific credpool cooldown.
+  quality now matches the reference harness.** NEXT: H6.1 — honor Retry-After/reset_at in errorClass + status-specific credpool cooldown.
 - **2026-06-23 · iter 15 · H6.1 ✅ DONE → trunk `43feb43`.** End-to-end Retry-After honoring: errorClass now
   extracts `retryAfterMs` (header secs / "try again in Ns·Nm") + `resetAtMs` (HTTP-date / X-RateLimit-Reset epoch /
   "resets at <epoch>"), PURE/clockless; loop.js threads both through onFallback (no event change); index.js → TTL

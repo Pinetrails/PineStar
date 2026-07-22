@@ -7549,7 +7549,7 @@ async function handleRun(req, res) {
   const preloadSkills = Array.isArray(body && body.preloadSkills) ? body.preloadSkills.map(s => String(s || '').trim()).filter(Boolean).slice(0, 8) : [];
   const streamId = (body && body.streamId && /^[A-Za-z0-9_-]{1,64}$/.test(String(body.streamId))) ? String(body.streamId) : null;   // M-mem.2b: the active workstream (bounded; bad → global)
   const recipeId = (body && body.recipeId && /^[A-Za-z0-9_-]{1,60}$/.test(String(body.recipeId))) ? String(body.recipeId) : null;   // provenance spine (lane A): the launching recipe (bounded; bad → none, never a crash)
-  // PROJECT-SCOPED SESSION (Hermes-parity): an anchored session sends its projectRoot; the folder context line
+  // PROJECT-SCOPED SESSION (ref-parity): an anchored session sends its projectRoot; the folder context line
   // is injected ONLY when that root is STILL a standing blessed path grant (isBlessedRoot — the same live check
   // the scanner uses). An un-blessed/revoked/garbage root injects NOTHING: the run must never assert folder
   // access the grant layer can't prove. The line rides `system` so it reaches every provider identically.
@@ -8354,7 +8354,7 @@ async function runOnce(o) {
   const hasNotebookWrite = wireNames.indexOf('notebook_write') >= 0;
   const hasScreenTools = wireNames.indexOf('desktop_open') >= 0 || wireNames.indexOf('computer_use') >= 0;
   const hasJukebox = wireNames.indexOf('spotify_play') >= 0;
-  // TASK DOCTRINE (2026-07-08, Hermes-parity): the general operating loop every goliath harness prompt ships and
+  // TASK DOCTRINE (2026-07-08, ref-parity): the general operating loop every goliath harness prompt ships and
   // ours didn't — deliverable = proven outcome, quietest-path tool ladder, act→verify→iterate, honest escalation.
   // This block is what stops "open the app on the user's screen and type into it" when a quiet path exists.
   const taskDoctrineNote = ''

@@ -1,7 +1,7 @@
 # Recipe Marketplace — use cases with real freedom
 
 **Locked direction (Andrew, 2026-07-02):** Recipes exist to solve the #1 adoption problem of
-agent platforms (OpenClaw, Hermes, everyone): *users don't know what to use agents for*.
+agent platforms (OpenClaw, the reference harness, everyone): *users don't know what to use agents for*.
 Recipes are the marketplace of preconfigured use cases. A recipe should spark the idea, then
 give the user total freedom with it: tweak it, run it once, or put it on a schedule.
 

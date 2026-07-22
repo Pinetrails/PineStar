@@ -1,8 +1,8 @@
 /* sidecar/mcp/bridge-core.js — the PURE core of the StarNet MCP messaging-bridge server.
 
-   This is a thin OBSERVE/MESSAGE shim over a RUNNING StarNet sidecar, ported from Hermes'
-   `mcp_serve.py` (NousResearch/hermes-agent). It exposes the same 11-tool compat surface so any
-   MCP client (Claude Code, Hermes, Cursor, …) can watch and message a StarNet station. It does
+   This is a thin OBSERVE/MESSAGE shim over a RUNNING StarNet sidecar — an independent implementation
+   that is wire-compatible with the reference harness's MCP bridge surface. It exposes the same 11-tool
+   compat surface so any MCP client (Claude Code, Cursor, …) can watch and message a StarNet station. It does
    NOT run agent turns — that is a separate OpenAI-compat surface.
 
    HARD INVARIANT (one sidecar owner per workspace): this core NEVER reads or writes store files.
@@ -26,7 +26,7 @@
 const LATEST_PROTOCOL = '2025-06-18';                 // our newest known MCP revision (client's echoed version wins)
 const SERVER_INFO = { name: 'starnet-harness', version: '0.5.2' };
 const JSONRPC = '2.0';
-const QUEUE_CAP = 1000;                               // Hermes parity: the in-memory event ring is bounded
+const QUEUE_CAP = 1000;                               // the reference harness parity: the in-memory event ring is bounded
 const PROTO_RE = /^\d{4}-\d{2}-\d{2}$/;               // a well-formed MCP protocol revision string
 
 const INSTRUCTIONS =
@@ -56,7 +56,7 @@ function str(v) { return v == null ? '' : String(v); }
 const AGENT_RE = /^[A-Za-z0-9_-]{1,40}$/;             // the sidecar's transcript/runs agent-id gate
 
 // ---------------------------------------------------------------------------
-// the tool surface (Hermes-byte-compatible names + signatures)
+// the tool surface (ref-byte-compatible names + signatures)
 // ---------------------------------------------------------------------------
 
 const TOOLS = [
@@ -138,9 +138,9 @@ const TOOLS = [
     inputSchema: { type: 'object', required: ['id', 'decision'], properties: { id: { type: 'string', description: 'The id from permissions_list_open.' }, decision: { type: 'string', enum: ['allow-once', 'allow-always', 'deny'] } } }
   }
 ];
-// NB: this is the exact 10-tool Hermes bridge surface — 4 read (conversations_list, conversation_get,
+// NB: this is the exact 10-tool the reference harness bridge surface — 4 read (conversations_list, conversation_get,
 // messages_read, attachments_fetch) + 2 event (events_poll, events_wait) + 1 send (messages_send) +
-// channels_list + 2 permission (permissions_list_open, permissions_respond). (Hermes' own docstring counts
+// channels_list + 2 permission (permissions_list_open, permissions_respond). (the reference harness's own docstring counts
 // it as OpenClaw's 9 + channels_list = 10.) Count + names asserted by test/mcp-serve.test.js.
 
 // ---------------------------------------------------------------------------

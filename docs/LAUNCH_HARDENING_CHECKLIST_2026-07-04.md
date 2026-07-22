@@ -31,7 +31,7 @@ Legend: **[BLOCK]** = do before public launch · **[SHOULD]** = strongly recomme
    Add `release/` to `.gitignore`.
 5. **[SHOULD] Sweep the untracked dev-process docs off the shippable tree.** These leak
    internal process, machine paths (`C:\Users\<you>\...`), and the Skynet codename:
-   - Root: `AGENTS.md`, `AUTONOMOUS_BUILD_PLAN.md`, `CODE_MAP.md`, `HERMES_PARITY_PLAN.md`,
+   - Root: `AGENTS.md`, `AUTONOMOUS_BUILD_PLAN.md`, `CODE_MAP.md`, `REF_HARNESS_PARITY_PLAN.md`,
      `ORCHESTRATION_PLAN.md`
    - `docs/*_PLAN.md` / audit files (12+), `loops/`, `design/mockups/*.html`,
      `design/minion_backup_preset/`, `dev/.scratch-mock-cron/`

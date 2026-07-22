@@ -27,7 +27,7 @@
 
 The product thesis (memory `starnet-product-thesis`, `starnet-gtm-and-marketplace`) says the
 moat is: beginners reach real value fast, the station is watchable/spectacular, and the
-pride loop runs on REAL work. The harness core is solid and beats Hermes on the moat axes.
+pride loop runs on REAL work. The harness core is solid and beats the reference harness on the moat axes.
 What's between StarNet and users right now, in order: (0) trunk must be green, (1) shipped
 builds can't update — distribution is broken, (2) the growth engine (spectacle/shareability)
 has zero surface, (3) retention fast-follows, (4) breadth polish. That ordering is the

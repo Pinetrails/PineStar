@@ -1,8 +1,8 @@
-# StarNet Hermes-Replacement Phase 3
+# StarNet ref-Replacement Phase 3
 
 Phase 3 is the beta replacement proof. Phase 2 made the core signals trustworthy;
-Phase 3 turns the remaining Hermes gap list into a loop that can run until StarNet
-is good enough to replace HermesAgent as the user's main harness.
+Phase 3 turns the remaining the reference harness gap list into a loop that can run until StarNet
+is good enough to replace the reference harnessAgent as the user's main harness.
 
 The rule is simple: every claim must come from evidence under `.dogfood/`. If a
 provider key, Cargo, a live browser, or a desktop driver is missing, the runner
@@ -103,7 +103,7 @@ This does not begin until Phase 3.1 is green.
 
 ## Phase 3.3: `fs.patch`
 
-Goal: close the Hermes patching gap with a safe, atomic workspace patch tool.
+Goal: close the reference harness patching gap with a safe, atomic workspace patch tool.
 
 Required shape:
 
@@ -122,7 +122,7 @@ Done:
 
 ## Phase 3.4: MCP Stdio
 
-Goal: match Hermes' practical MCP reach without weakening StarNet's local safety.
+Goal: match the reference harness's practical MCP reach without weakening StarNet's local safety.
 
 Required shape:
 
@@ -156,7 +156,7 @@ Automated-contract done:
 - SSRF/private URL and redirect guards hold.
 - Chromium-missing state degrades gracefully.
 
-Hermes-parity proof remains Phase 4 work:
+ref-parity proof remains Phase 4 work:
 
 - A fixed live task succeeds at least 9 out of 10 times without coordinate fallback.
 
@@ -171,13 +171,13 @@ Required shape:
 
 Automated-contract done:
 
-- Action enum matches the intended Hermes-compatible surface.
+- Action enum matches the intended ref-compatible surface.
 - Mutating actions require explicit consent.
 - Autonomous runs cannot drive desktop actions from cached grants.
 - Destructive key combos and command-like type patterns are hard-blocked.
 - `capture_after` verifies successful actions.
 
-Hermes-parity proof remains Phase 4 work:
+ref-parity proof remains Phase 4 work:
 
 - Attended Windows proof shows real UI action and cursor/focus invariants.
 

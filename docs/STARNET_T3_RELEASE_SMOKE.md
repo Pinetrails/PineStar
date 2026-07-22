@@ -66,7 +66,7 @@ After running the current installed app and completing the deterministic release
     "ledgerRows": [{ "model": "openrouter/model", "spendUsd": 0.01 }],
     "modelNames": ["openrouter/model"],
     "toolCalls": ["fs_write", "notebook_write", "shell_exec"],
-    "artifactPaths": ["phase5-hermes-workload.md"],
+    "artifactPaths": ["phase5-ref-workload.md"],
     "liveProvider": true,
     "paidSmoke": { "succeeded": true, "spendUsd": 0.01 }
   },

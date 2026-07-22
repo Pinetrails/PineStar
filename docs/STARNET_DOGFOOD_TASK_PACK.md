@@ -1,6 +1,6 @@
 # StarNet Phase 2 Dogfood Task Pack
 
-Use this pack to prove StarNet can replace HermesAgent for ordinary daily-driver work.
+Use this pack to prove StarNet can replace the reference harnessAgent for ordinary daily-driver work.
 Run it from a seeded scratch workspace. Save evidence under `.dogfood/phase2-YYYYMMDD/`.
 
 ## Evidence Folder
@@ -135,7 +135,7 @@ Phase 2 dogfood is green only if every task above passes twice:
 
 If a task fails, classify it as:
 
-- `product-blocker` - blocks StarNet replacing HermesAgent.
+- `product-blocker` - blocks StarNet replacing the reference harnessAgent.
 - `gate-bug` - gate/harness test is wrong or stale.
 - `pilot-accepted-gap` - real but accepted for pilot scope.
 - `phase3` - important parity work after core-loop proof.

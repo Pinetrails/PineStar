@@ -61,7 +61,7 @@ function proof(hash, bytes, overrides) {
       ledgerRows: [{ model: 'test/model', spendUsd: 0.01 }],
       modelNames: ['test/model'],
       toolCalls: ['fs_write', 'notebook_write', 'shell_exec'],
-      artifactPaths: ['phase5-hermes-workload.md'],
+      artifactPaths: ['phase5-ref-workload.md'],
       liveProvider: true,
       paidSmoke: { succeeded: true, spendUsd: 0.01 }
     },

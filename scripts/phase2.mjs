@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// phase2.mjs - StarNet Hermes-replacement Phase 2 steering runner.
+// phase2.mjs - StarNet ref-replacement Phase 2 steering runner.
 //
 // This is not a new product test suite. It is the control loop that turns the Phase 2
 // replacement plan into evidence: run the gates that can run on this machine, mark
