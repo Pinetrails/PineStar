@@ -235,13 +235,15 @@
     <div class="ov-foot">
       <div class="ov-foot-data">
         <span class="ov-foot-cap">＋ everything here is re-editable later in the Commander Dossier</span>
-        <!-- DATA PORTABILITY — IMPORT must stay reachable for first-run users now that the title screen is gone.
-             EXPORT is surfaced here whenever there's a saved agent to back up (it is the only in-app export
+        <!-- DATA PORTABILITY — RESTORE must stay reachable for first-run users now that the title screen is gone.
+             Labeled RESTORE BACKUP (not IMPORT AGENT) so it can't be mistaken for the Recruitment Bay's
+             Hermes/OpenClaw agent importer — this button only reads StarNet's own export file. EXPORT is
+             surfaced here whenever there's a saved agent to back up (it is the only in-app export
              entry point); app.js (applyRecoveryMode) toggles its visibility. -->
-        <button id="btn-import" class="btn-sm">⭱ IMPORT AGENT</button>
+        <button id="btn-import" class="btn-sm">⭱ RESTORE BACKUP</button>
         <button id="btn-export" class="btn-sm hidden">⭳ EXPORT AGENT</button>
         <input id="file-import" type="file" accept="application/json,.json" hidden>
-        <span class="dim">secrets excluded — re-enter keys after importing</span>
+        <span class="dim">restores a StarNet export file — secrets excluded, re-enter keys after</span>
         <span id="data-status" class="title-status"></span>
       </div>
       <div class="connect-actions ov-actions">
