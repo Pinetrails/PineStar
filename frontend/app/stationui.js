@@ -624,7 +624,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const clearRestore = () => { w.classList.remove('term-restoring'); w.style.animation = 'none'; fitTermInViewport(w, key, true); };
     w.addEventListener('animationend', clearRestore, { once: true });
     setTimeout(clearRestore, 460);
-    // focus back onto the restored dialog itself (not its first control — the minimize button)
+    // focus back onto the restored dialog itself (not its first control)
     try { w.focus(); } catch (_) {}
     syncScrim();
     syncBB();
@@ -736,12 +736,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const head = mkEl('div', 'term-head',
       '<span class="term-led" aria-hidden="true"></span>' +
       '<span class="term-title" id="' + titleId + '">' + title + '</span>');
-    // minimize control — sits left of ✕. Collapses the window to a strip chip (keeps it logically open).
-    const mn = mkEl('button', 'term-min', '–');
-    mn.setAttribute('aria-label', 'Minimize ' + title);
-    mn.setAttribute('type', 'button');
-    mn.addEventListener('click', ev => { ev.stopPropagation(); minimizeTerm(key); });
-    head.appendChild(mn);
+    // no dedicated minimize button — it read as a duplicate ✕. Minimize-to-strip stays reachable
+    // via header double-click and the dock button (restoreTerm handles the chip lifecycle).
     const x = mkEl('button', 'term-x', '✕');
     x.setAttribute('aria-label', 'Close ' + title);
     x.addEventListener('click', () => requestCloseTerm(key));   // unsaved-draft guard sits on this path
@@ -793,7 +789,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // textarea element, which a save/cancel rerender destroys — so it can never go stale.
     w.addEventListener('input', ev => { const t = ev.target; if (t && t.tagName === 'TEXTAREA') t.dataset.dirty = '1'; });
     head.addEventListener('mousedown', ev => {
-      if (ev.target === x || ev.target === mn) return;   // header controls handle their own clicks
+      if (ev.target === x) return;   // header controls handle their own clicks
       // Bake the window's CURRENT VISUAL position into explicit left/top before dragging. A freshly
       // opened single window is centered purely in CSS (left/top:50% + translate(-50%,-50%)), so its
       // offsetLeft/offsetTop report the PRE-transform corner (viewport centre) — anchoring the drag off
@@ -816,7 +812,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // double-click the header (not its buttons) minimizes — cheap muscle-memory. Skip if the last grab was
     // an actual drag (a drag-release-quick-click can otherwise register as a dblclick).
     head.addEventListener('dblclick', ev => {
-      if (ev.target === x || ev.target === mn) return;
+      if (ev.target === x) return;
       if (w._lastDragMoved) return;
       ev.preventDefault();
       minimizeTerm(key);
@@ -853,8 +849,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       requestAnimationFrame(() => fitTermInViewport(w, key, true));
     };
     w._render();
-    // a11y: land focus on the dialog itself (role=dialog, tabIndex -1) — NOT the first control, which was the
-    // minimize (–) button and read as a jarring first stop. Esc/Tab work from here; Tab advances into the body.
+    // a11y: land focus on the dialog itself (role=dialog, tabIndex -1) — NOT the first control, which
+    // read as a jarring first stop. Esc/Tab work from here; Tab advances into the body.
     // A builder that opened an inline editor (rename / CONFIG file) focuses its own field after this and wins.
     try { w.focus(); } catch (_) {}
     syncBB(); syncScrim();
