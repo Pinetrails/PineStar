@@ -18,13 +18,13 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "9d453022ac0c53a702a2608b7439638de1bbcd87",
+    "sourceCommit": "2fc82a48e60980dba5e2c0ad2bccb5c37af83b34",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
         "path": "INSTALL.md",
-        "bytes": 6445,
-        "sha256": "0e07946cf263bb6b70e12f9daabebe07f535f7ad3ed35c77853111c5db452e1d"
+        "bytes": 7698,
+        "sha256": "18107704965083de1ed44ead12f9c8a42dba0cecdc6e09f60b5950fb56e0c547"
       },
       {
         "path": "PRIVACY.md",
@@ -33,8 +33,8 @@
       },
       {
         "path": "README.md",
-        "bytes": 7923,
-        "sha256": "57a0e7be797ece17b9b54b620bec4b7db27a5c226001bd42653ff9142e37dfd9"
+        "bytes": 7883,
+        "sha256": "3edfa70dbd798dcb0f7e3f8b5449dc14eb31c1460262d06fce9a4293e3dd6613"
       },
       {
         "path": "RELEASE_NOTES.md",
@@ -48,8 +48,8 @@
       },
       {
         "path": "docs/DOWNLOAD_PAGE.md",
-        "bytes": 5910,
-        "sha256": "594c8e8dd427cc26d71ae255e3a0cb4b665f4ded2d285895641f95a62cc05d02"
+        "bytes": 6041,
+        "sha256": "d871e4a911eeb4b714f406696ce021389400fd217389606961afa4f7e58c2ce4"
       },
       {
         "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 415558,
-        "sha256": "574b9673ff0a26116468603fac80242c68e535c12e9d3ed73552882703bdaa73"
+        "bytes": 419477,
+        "sha256": "d080632d6d30578c970a87616052dcd3d59b7c3c2ffbf737349ef5f6f47df3fa"
       },
       {
         "path": "frontend/app/chatresize.js",
