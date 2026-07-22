@@ -4708,7 +4708,7 @@ const Chat = (() => {
     if (have.jukebox) {
       let connected = false;
       try { const j = await (await fetch('/api/spotify/status', { cache: 'no-store' })).json(); connected = !!(j && j.connected); } catch (_) {}
-      if (!connected) jukeNote = ' Spotify not connected — connect it in Settings to use the JUKEBOX.';
+      if (!connected) jukeNote = ' Spotify not connected — connect it in TOOLSETS (the JUKEBOX row) to use it.';
     }
     localLine('Tools: ' + active.map(r => r.label + ' (' + r.tools + ')').join('; ')
       + (missing.length ? '. Locked until placed: ' + missing.join(', ') + '.' : '.')

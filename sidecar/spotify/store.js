@@ -87,7 +87,7 @@
       if (refreshing) return refreshing;
       refreshing = (async () => {
         await load();
-        if (!state.refreshToken) throw new Error('Spotify is not connected — connect it in Settings first.');
+        if (!state.refreshToken) throw new Error('Spotify is not connected — connect it in TOOLSETS first.');
         if (!doFetch) throw new Error('spotify store requires fetch');
         const fetchedAt = now();
         const res = await doFetch(pkce.TOKEN_URL, {
@@ -105,7 +105,7 @@
           // (invalid_request / temporarily_unavailable / rate-limit), or an unparseable body proves NOTHING about
           // the token's validity, so we throw a RETRYABLE error and LEAVE the live refresh token on disk. A bare
           // 400 status is NOT sufficient (that was the bug: a malformed 400 wiped a working session).
-          if (code === 'invalid_grant') { await clear(); throw new Error('Spotify session expired — please reconnect in Settings.'); }
+          if (code === 'invalid_grant') { await clear(); throw new Error('Spotify session expired — please reconnect in TOOLSETS.'); }
           throw new Error('Spotify token refresh failed (' + res.status + (code ? ': ' + code : '') + ') — retry later');
         }
         await setTokens(pkce.tokensFromResponse(json, fetchedAt, state.refreshToken));
@@ -117,7 +117,7 @@
     // The one method the tools call: always returns a currently-valid access token (refreshing if needed).
     async function getAccessToken() {
       await load();
-      if (!state.refreshToken && !state.accessToken) throw new Error('Spotify is not connected — connect it in Settings first.');
+      if (!state.refreshToken && !state.accessToken) throw new Error('Spotify is not connected — connect it in TOOLSETS first.');
       if (state.accessToken && !pkce.needsRefresh(state.expiresAt, now())) return state.accessToken;
       return refresh();
     }

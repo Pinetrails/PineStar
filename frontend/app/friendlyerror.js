@@ -91,12 +91,13 @@
     timeout:       { retryable: true,  action: null,       msg: 'That took too long and timed out — try again.' },
     user_abort:    { retryable: false, action: null,       msg: 'Stopped.' },
     context_overflow: { retryable: false, action: null,    msg: 'This conversation got too long for the model — start a fresh chat or shorten it.' },
-    model_not_found:  { retryable: false, action: 'settings', msg: "That model isn't available — pick a different one in Settings." },
+    model_not_found:  { retryable: false, action: 'settings', msg: "That model isn't available — pick a different one from the model dock in COMMS." },
     content_policy_blocked: { retryable: false, action: null, msg: 'The model declined that request on safety grounds — try rephrasing it.' },
     // JUKEBOX is placed (the Spotify tools ARE granted) but Spotify's OAuth session isn't connected yet — the
-    // real second half of the unlock chain. The door is SETTINGS (connect Spotify), NOT REFIT (the gear is
-    // already on station), so this is distinct from `capdenied` which fires when no JUKEBOX is placed at all.
-    spotify_not_connected: { retryable: false, action: 'settings', msg: 'The JUKEBOX is on station, but Spotify isn’t connected yet — connect it in Settings, then try again.' },
+    // real second half of the unlock chain. The door is TOOLSETS (its JUKEBOX row carries ▶ CONNECT SPOTIFY —
+    // Settings has NO spotify surface; the old 'settings' door landed on PROVIDERS with no connect control),
+    // NOT REFIT (the gear is already on station) — distinct from `capdenied` which fires when no JUKEBOX exists.
+    spotify_not_connected: { retryable: false, action: 'toolsets', msg: 'The JUKEBOX is on station, but Spotify isn’t connected yet — connect it in TOOLSETS, then try again.' },
     // the one-run-at-a-time mutex: the SIDECAR message names the holder (age/source) + the doors (ROUTINES,
     // E-STOP) — friendlyError passes it through verbatim instead of flattening to `unknown` (2026-07-07 escape:
     // the user got "Something went wrong" in a loop while the real answer was one sentence away).
@@ -236,8 +237,9 @@
       kind = 'oauth';
     } else if (/no api key set|no model selected/.test(raw.toLowerCase())) {
       kind = 'auth';
-    } else if (/spotify is not connected|spotify.*not connected|connect (it in settings|spotify)/.test(raw.toLowerCase())) {
-      // the JUKEBOX is placed but Spotify's OAuth isn't linked — a settings step, not a REFIT one.
+    } else if (/spotify is not connected|spotify.*not connected|connect (it in settings|it in toolsets|spotify)|spotify session expired|spotify auth failed/.test(raw.toLowerCase())) {
+      // the JUKEBOX is placed but Spotify's OAuth isn't linked (or its session died) — every flavor gets the
+      // TOOLSETS door: the JUKEBOX row there is the only surface with a connect/reconnect control.
       kind = 'spotify_not_connected';
     } else if (/\bcapdenied\b/.test(raw.toLowerCase()) || /^no\s+\w+\s+—/.test(raw.toLowerCase()) || /needs a capability/.test(raw.toLowerCase())) {
       // a capability denial is UI-level (the sidecar classifier doesn't model it) — catch it before delegating.
@@ -320,6 +322,10 @@
     switch (verdict.action) {
       case 'refit':
         return { label: '⚒ Open REFIT', run: () => { try { if (typeof Build !== 'undefined' && Build.open) Build.open(); else if (typeof Build !== 'undefined' && Build.toggle && !(Build.isOpen && Build.isOpen())) Build.toggle(); } catch (_) {} } };
+      case 'toolsets':
+        // spotify_not_connected: the connect flow lives on the TOOLSETS window's JUKEBOX row (setupSpotify) —
+        // the only surface with a ▶ CONNECT SPOTIFY control. Same registerWindow key as the ⇄ TOOLSETS dock button.
+        return { label: '⇄ OPEN TOOLSETS', run: () => { try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('connectors'); } catch (_) {} } };
       case 'settings':
         // Grok's OAuth sign-in is 403-allowlisted off for this account — the honest door is the xAI (API KEY)
         // provider, not a doomed reconnect. Lands on the PROVIDERS section where the xAI key row lives.

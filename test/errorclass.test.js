@@ -221,7 +221,7 @@ const F = (err, status) => friendlyError(err, status);
   for (const k of Object.keys(KINDS)) {
     const def = KINDS[k];
     A.ok(typeof def.retryable === 'boolean' && typeof def.msg === 'string' && def.msg.length > 0, 'kind "' + k + '" has a boolean retryable + a non-empty message');
-    A.ok(def.action === null || def.action === 'settings' || def.action === 'skills' || def.action === 'store' || def.action === 'refit' || def.action === 'reload', 'kind "' + k + '" action is null|settings|skills|store|refit|reload');
+    A.ok(def.action === null || def.action === 'settings' || def.action === 'skills' || def.action === 'store' || def.action === 'refit' || def.action === 'reload' || def.action === 'toolsets', 'kind "' + k + '" action is null|settings|skills|store|refit|reload|toolsets');
   }
 }
 
