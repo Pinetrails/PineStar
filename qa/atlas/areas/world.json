@@ -447,8 +447,8 @@
       "id": "ui/world/btn-import",
       "kind": "ui",
       "area": "world",
-      "name": "⭱ IMPORT AGENT",
-      "purpose": "Imports a previously-exported agent backup file to restore an agent on any browser/machine.",
+      "name": "⭱ RESTORE BACKUP",
+      "purpose": "Restores a previously-exported StarNet backup file to bring an agent back on any browser/machine (renamed from IMPORT AGENT to avoid collision with the Recruitment Bay harness importer).",
       "promise": "Clicking opens the hidden file picker (accept=.json); choosing a valid export restores the agent + memories and resumes into it.",
       "wiring": {
         "files": [
@@ -475,7 +475,7 @@
       "missing": false,
       "selector": "#btn-import",
       "state": "ingame",
-      "notes": "Live @ HEAD: #btn-import ('⭱ IMPORT AGENT') present+visible. Import behavior covered by configexport.test.js."
+      "notes": "Live @ HEAD: #btn-import ('⭱ RESTORE BACKUP', renamed 2026-07-22 from '⭱ IMPORT AGENT') present+visible. Import behavior covered by configexport.test.js."
     },
     {
       "id": "ui/world/btn-recovery-continue",
