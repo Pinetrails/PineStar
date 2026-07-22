@@ -40,11 +40,19 @@ A.ok(/return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && 
     'a connected grok/kimi marks the desktop configured map at boot');
 }
 
-/* ---------- 3. the genesis screen OFFERS grok/kimi (the user-visible half) ---------- */
-A.ok(/class="prov prov-oauth" data-prov="grok"/.test(htmlSrc), 'genesis picker has a GROK sign-in chip');
-A.ok(/class="prov prov-oauth" data-prov="kimi"/.test(htmlSrc), 'genesis picker has a KIMI sign-in chip');
-A.ok(/SIGN IN WITH GROK/.test(htmlSrc) && /SIGN IN WITH KIMI/.test(htmlSrc),
-  'the chips read as keyless sign-ins, not BYOK providers');
+/* ---------- 3. the genesis screen OFFERS grok/kimi (the user-visible half) ----------
+   Andrew's layout order (2026-07-22): the ChatGPT hero is the ONLY card up top; grok/kimi are
+   STANDARD chips in the one provider grid — their OAuth surface (the shared sign-in block)
+   appears when picked, never as extra hero-ish cards stacked under the ChatGPT button. */
+A.ok(/class="prov" data-prov="grok"/.test(htmlSrc), 'genesis picker has a GROK chip (standard, not a mini-hero card)');
+A.ok(/class="prov" data-prov="kimi"/.test(htmlSrc), 'genesis picker has a KIMI chip (standard, not a mini-hero card)');
+A.ok(!/prov-oauth-grid/.test(htmlSrc) && !/class="prov prov-oauth"/.test(htmlSrc),
+  'the grok/kimi mini-hero OAuth cards are gone — ChatGPT is the only hero up top');
+{
+  const grid = htmlSrc.slice(htmlSrc.indexOf('class="prov-grid"'));
+  A.ok(grid.indexOf('data-prov="grok"') >= 0 && grid.indexOf('data-prov="kimi"') >= 0,
+    'grok/kimi chips live INSIDE the standard provider grid');
+}
 A.ok(/id="codex-hint"/.test(htmlSrc), 'the shared sign-in block hint is addressable (per-provider copy)');
 
 /* ---------- 4. app.js wires them through the SHARED device-code engine ---------- */

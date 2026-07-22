@@ -142,8 +142,10 @@
                no key at all, so it's the recommended default and sits first; BYOK (OpenRouter etc.) stays a
                fully visible one-click alternative for anyone who already has a key. -->
           <div class="ov-brain">
-            <!-- TWO-TIER PROVIDER PICK: the no-API-key ChatGPT path is the hero card (recommended, sits alone
-                 up top); every BYOK provider is a compact secondary chip below it, OPENROUTER first. Every
+            <!-- TWO-TIER PROVIDER PICK: the no-API-key ChatGPT path is the ONLY hero card (recommended, sits
+                 alone up top); everything else — including the other keyless OAuth sign-ins (grok/kimi) — is a
+                 plain chip in ONE grid below it. Picking grok/kimi expands the shared sign-in block underneath
+                 (same engine as ChatGPT), so the OAuth surface appears on selection, not up front. Every
                  .prov[data-prov] button + #prov-more stay in the DOM so app.js wiring (selectProviderUI,
                  setProviderRowExpanded) is untouched — the queries match .prov descendants regardless of nesting. -->
             <div class="provider-row ov-prov">
@@ -157,26 +159,12 @@
                   </span>
                 </span>
               </button>
-              <!-- the OTHER keyless subscription sign-ins (device-code OAuth, same engine as ChatGPT above):
-                   full .prov[data-prov] buttons so app.js's provider wiring picks them up untouched. -->
-              <div class="prov-oauth-grid">
-                <button class="prov prov-oauth" data-prov="grok" aria-pressed="false">
-                  <span class="prov-oauth-ic" aria-hidden="true">⏼</span>
-                  <span class="prov-oauth-body">
-                    <span class="prov-oauth-title">SIGN IN WITH GROK</span>
-                    <span class="prov-oauth-sub">SuperGrok / X Premium+ — no key</span>
-                  </span>
-                </button>
-                <button class="prov prov-oauth" data-prov="kimi" aria-pressed="false">
-                  <span class="prov-oauth-ic" aria-hidden="true">⏼</span>
-                  <span class="prov-oauth-body">
-                    <span class="prov-oauth-title">SIGN IN WITH KIMI</span>
-                    <span class="prov-oauth-sub">Moonshot Kimi subscription — no key</span>
-                  </span>
-                </button>
-              </div>
-              <div class="prov-byok-lab" aria-hidden="true">— or bring your own key —</div>
+              <div class="prov-byok-lab" aria-hidden="true">— or pick another provider —</div>
               <div class="prov-grid">
+                <!-- grok/kimi are keyless subscription sign-ins (device-code OAuth, same engine as ChatGPT
+                     above) but present as standard chips; selecting one swaps in the shared sign-in block. -->
+                <button class="prov" data-prov="grok" aria-pressed="false">GROK</button>
+                <button class="prov" data-prov="kimi" aria-pressed="false">KIMI</button>
                 <button class="prov" data-prov="openrouter" aria-pressed="false">OPENROUTER</button>
                 <button class="prov" data-prov="openai" aria-pressed="false">OPENAI</button>
                 <button class="prov" data-prov="anthropic" aria-pressed="false">ANTHROPIC</button>
