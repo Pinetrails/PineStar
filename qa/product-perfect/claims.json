@@ -18,13 +18,13 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "12e197684eab0a46665510577536613856a17b96",
+    "sourceCommit": "f3831156bf4bca34bd7a42185ccff1e071fbf56f",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
         "path": "INSTALL.md",
-        "bytes": 6290,
-        "sha256": "12464515dbc9ddb51d3a3d46b114427adf0e5596d5b15d96088757947b8b32a4"
+        "bytes": 6445,
+        "sha256": "0e07946cf263bb6b70e12f9daabebe07f535f7ad3ed35c77853111c5db452e1d"
       },
       {
         "path": "PRIVACY.md",
@@ -33,8 +33,8 @@
       },
       {
         "path": "README.md",
-        "bytes": 7760,
-        "sha256": "c854cec040ec43ffffffd2f98b926d31262d4c055fca6342f370242219242bab"
+        "bytes": 7923,
+        "sha256": "57a0e7be797ece17b9b54b620bec4b7db27a5c226001bd42653ff9142e37dfd9"
       },
       {
         "path": "RELEASE_NOTES.md",
@@ -48,8 +48,8 @@
       },
       {
         "path": "docs/DOWNLOAD_PAGE.md",
-        "bytes": 5802,
-        "sha256": "f9c61abb40773283e4c85f4d07eb07ef36220fb2e6c6553ebbc7ea11ce8ab30f"
+        "bytes": 5910,
+        "sha256": "594c8e8dd427cc26d71ae255e3a0cb4b665f4ded2d285895641f95a62cc05d02"
       },
       {
         "path": "docs/RELEASE_NOTES_v1.0.0_DRAFT.md",
