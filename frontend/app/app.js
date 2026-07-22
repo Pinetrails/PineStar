@@ -410,6 +410,19 @@ const App = (() => {
       .catch(() => { a.workshop = !on; pushRoster(); persist(); return false; });
   }
 
+  // Per-agent APPROVAL posture from the dossier — the genesis ASK/FULL picker's live-app twin (until this,
+  // the only post-create path was the /yolo slash command; a creation-time control with no live equivalent is
+  // the same escape class as the genesis-only codex sign-in). No dedicated endpoint exists or is needed:
+  // approvalMode rides pushRoster (the sidecar roster persists it and runOnce reads it per run) + persist.
+  function setAgentApproval(agentId, mode) {
+    const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
+    if (!a) return false;
+    a.approvalMode = mode === 'full' ? 'full' : 'ask';
+    pushRoster();
+    persist();
+    return true;
+  }
+
   // Rename an agent from its dossier. The name is DISPLAY identity only — the agentId (the `agents` Map key, the
   // sidecar roster key, the workstream binding) never changes, so a rename cannot break any lookup. We recompose
   // the system prompt (the default identity embeds the name), retarget the live COMMS labels when this is the
@@ -2388,7 +2401,7 @@ const App = (() => {
         totals: () => Harness.totals(),
         context: () => Harness.contextState(agent ? agent.id : 'agent'),
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
-        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setPersona: setAgentPersona, setName: setAgentName, setWorkshop: setAgentWorkshop, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setPersona swaps the personality voice from the dossier; setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
+        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setPersona: setAgentPersona, setName: setAgentName, setWorkshop: setAgentWorkshop, setApproval: setAgentApproval, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setPersona swaps the personality voice from the dossier; setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
         comms: { openWorkstream: openWorkstream }   // the while-you're-away card's "review" jumps straight to a deliverable's session (2026-07-15)
       });
       // Presence is already proven by the live roster, link indicator, and COMMS state. Do not

@@ -341,7 +341,17 @@
           return { label: '⏼ RECONNECT CHATGPT', run: () => openSettings('providers') };
         if (verdict.kind === 'auth')
           return { label: '＋ Add a key', run: () => openSettings('providers') };
-        return { label: '⚙ Open Settings', run: () => openSettings(verdict.kind === 'model_not_found' ? 'models' : 'providers') };
+        // model_not_found: the fix is repointing the PRIMARY model, which lives in the COMMS model dock —
+        // NOT Settings→MODELS (that section is the fallback chain + class tiers and cannot change the primary;
+        // sending users there was a door onto a room without the lever). Fall back to Settings only when the
+        // dock isn't mounted (headless/tests).
+        if (verdict.kind === 'model_not_found') {
+          return { label: '▸ PICK A MODEL', run: () => {
+            try { if (typeof ModelDock !== 'undefined' && ModelDock.open) { ModelDock.open(); return; } } catch (_) {}
+            openSettings('models');
+          } };
+        }
+        return { label: '⚙ Open Settings', run: () => openSettings('providers') };
       case 'reload':
         // stale_session: the page holds a dead boot token — a reload is the ONE honest reconnect (the token is
         // injected at serve time; there is no in-page re-fetch handshake). Degrades quietly outside a browser.
