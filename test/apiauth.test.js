@@ -46,6 +46,17 @@ A.eq(auth.queryTokenOk(req('GET', '/api/channels/events?token=' + 'b'.repeat(64)
 A.eq(auth.queryTokenOk(req('GET', '/api/channels/events'), TOK), false, 'missing query token rejected');
 A.eq(auth.queryTokenOk(req('GET', '/api/channels/events?foo=1&token=' + TOK), TOK), true, 'query token found among other params');
 
+// ---- queryTokenRoute: the DELIBERATELY TINY method×path matrix allowed to auth via ?token= ----
+// (surfaces that provably cannot set the custom header: native media loads + the unload save beacon)
+A.eq(auth.queryTokenRoute(req('GET', '/api/file?agent=a&path=p&token=x')), true, 'GET /api/file may use the query token');
+A.eq(auth.queryTokenRoute(req('HEAD', '/api/file?agent=a&path=p')), true, 'HEAD /api/file may use the query token');
+A.eq(auth.queryTokenRoute(req('POST', '/api/save?token=x')), true, 'POST /api/save (unload beacon) may use the query token');
+A.eq(auth.queryTokenRoute(req('GET', '/api/save?agent=agent&token=x')), false, 'GET /api/save stays header-only (reads leak more than a dup write)');
+A.eq(auth.queryTokenRoute(req('POST', '/api/file')), false, 'POST /api/file stays header-only');
+A.eq(auth.queryTokenRoute(req('POST', '/api/run?token=x')), false, 'POST /api/run never accepts a query token');
+A.eq(auth.queryTokenRoute(req('POST', '/api/save/recovery-ack?token=x')), false, 'the save sibling routes are NOT in the matrix (exact path match)');
+A.eq(auth.queryTokenRoute(null), false, 'no request -> false, no throw');
+
 // ---- isAllowedApiOrigin: foreign sites rejected; absent allowed (token gates those) ----
 A.eq(auth.isAllowedApiOrigin('', PORT), true, 'absent origin allowed (token is the fence for header-less callers)');
 A.eq(auth.isAllowedApiOrigin('http://127.0.0.1:' + PORT, PORT), true, 'loopback origin allowed');

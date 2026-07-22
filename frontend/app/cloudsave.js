@@ -245,19 +245,36 @@ const CloudSave = (() => {
   function isUnknownSentinel(d) { return !!(d && typeof d === 'object' && d.__saveUnknown === true); }
 
   // a close/hide can land before the debounce fires; beacon the pending doc so the last save is never dropped.
+  //
+  // DESKTOP REALITY (July-22 data-loss incident): the page runs on the tauri.localhost origin and the shell
+  // rewrites ONLY window.fetch to the sidecar's real loopback URL — a relative sendBeacon posts into the
+  // bundled-asset protocol and VANISHES (and sendBeacon cannot set the X-StarNet-Token header anyway). The old
+  // code then treated sendBeacon's `true` ("queued for dispatch") as a confirmed 200: it nulled `pending` and
+  // stamped health OK, so the newest save silently evaporated on EVERY desktop close/minimize while the
+  // save-dot claimed "backed up". Three rules now:
+  //   1. The beacon aims at the ABSOLUTE sidecar endpoint and authenticates via ?token= (the sidecar accepts
+  //      the query token for POST /api/save exactly like GET /api/file — apiauth.queryTokenRoute).
+  //   2. The blob is text/plain so the cross-origin beacon stays a CORS-simple request (an application/json
+  //      blob demands a preflight sendBeacon never performs); the sidecar parses body BYTES, not content type.
+  //   3. Dispatch is NEVER success: `pending` stays queued and health stays untouched. The beacon is purely a
+  //      bonus copy for the dying-page case; the confirmable fetch flush below is the only path allowed to
+  //      claim the write landed (a duplicate landing twice is harmless — the store accepts an equal updatedAt).
+  function beaconUrl() {
+    let base = '', token = '';
+    try { if (typeof window !== 'undefined' && window.__STARNET_API__) base = String(window.__STARNET_API__); } catch (_) {}
+    try { if (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) token = String(window.__STARNET_API_TOKEN__); } catch (_) {}
+    return base + ENDPOINT + (token ? '?token=' + encodeURIComponent(token) : '');
+  }
   function installUnloadFlush() {
     const beacon = () => {
       if (!isSave(pending)) return;
       try {
-        const blob = new Blob([JSON.stringify(pending)], { type: 'application/json' });
-        // sendBeacon returns true only when the browser accepts the payload for background send. That's a
-        // best-effort dispatch (not a confirmed 200), but it's the strongest signal we get on unload, so
-        // stamp health OK on it — leaving the record frozen here would falsely read stale on the NEXT boot.
-        // (…unless the workspace is known-degraded: the sidecar is REFUSING writes, so an accepted beacon
-        // proves dispatch, not persistence — don't launder a refused write into a healthy stamp.)
-        if (navigator.sendBeacon && navigator.sendBeacon(ENDPOINT, blob)) { pending = null; if (!degraded) markOk(); return; }
+        const blob = new Blob([JSON.stringify(pending)], { type: 'text/plain;charset=UTF-8' });
+        if (navigator.sendBeacon) navigator.sendBeacon(beaconUrl(), blob);
       } catch (_) {}
-      flush();                         // fallback if sendBeacon is unavailable/rejected
+      // confirmable path: if the page survives (minimize / hide-to-tray), this fetch lands, clears `pending`,
+      // and honestly stamps health. force:true — a hide is a potential death, not a moment to honor backoff.
+      flush({ force: true });
     };
     try {
       window.addEventListener('pagehide', beacon);

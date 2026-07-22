@@ -223,9 +223,11 @@ function rejectApi(req, res) {
 function rejectBadApiToken(req, res) {
   if (!requiresApiToken(req)) return false;
   if (apiauth.apiTokenOk(req, API_TOKEN)) return false;
-  // Native browser surfaces (<img>, <video>, <audio>, and clicked links) cannot attach custom headers.
-  // Keep /api/file token-gated by accepting the same per-launch token in the query string for GET/HEAD only.
-  if ((req.method === 'GET' || req.method === 'HEAD') && apiauth.pathOf(req.url) === '/api/file' && apiauth.queryTokenOk(req, API_TOKEN)) return false;
+  // Some browser surfaces provably cannot attach custom headers: native media/link loads (GET/HEAD /api/file)
+  // and the unload save beacon (POST /api/save — navigator.sendBeacon, the last debounced save on close).
+  // Those exact routes accept the SAME per-launch token in the query string; the matrix lives in apiauth so
+  // it stays a tested, deliberately tiny escape hatch.
+  if (apiauth.queryTokenRoute(req) && apiauth.queryTokenOk(req, API_TOKEN)) return false;
   res.writeHead(403); res.end('forbidden token'); return true;
 }
 // Desktop build: live BYOK keys are seeded from the OS keychain via env at spawn, and updated
@@ -4950,7 +4952,7 @@ const ROUTES = [
   { m: 'GET', prefix: '/api/notebook', h: serveNotebook },
   { m: 'POST', exact: '/api/save/recovery-ack', h: handleSaveRecoveryAck },
   { m: 'GET', prefix: '/api/save', h: serveSaveLoad },
-  { m: 'POST', exact: '/api/save', h: handleSaveWrite },
+  { m: 'POST', qsplit: '/api/save', h: handleSaveWrite },   // qsplit, not exact: the unload beacon carries ?token= (apiauth.queryTokenRoute)
   { m: 'GET', prefix: '/api/insights', h: serveInsights },
   { m: 'GET', prefix: '/api/runs', h: serveRuns },
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions

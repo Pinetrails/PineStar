@@ -52,7 +52,10 @@ function pathOf(url) { const u = String(url || ''); const i = u.indexOf('?'); re
      /api/channels/events  : SSE — EventSource cannot set headers, so it carries a ?token= query instead,
                              validated by queryTokenOk in the handler
      /api/file query token : not exempt; index.js accepts ?token only for GET/HEAD /api/file because native
-                             media/link loads cannot attach a custom header */
+                             media/link loads cannot attach a custom header
+     /api/save query token : not exempt; index.js accepts ?token only for POST /api/save because the unload
+                             beacon (navigator.sendBeacon) cannot attach a custom header either — the last
+                             debounced save must survive a window close (see queryTokenRoute) */
 const TOKEN_EXEMPT = new Set(['/api/key', '/api/channels/token', '/api/health', '/api/spotify/callback', '/api/connectors/oauth/callback', '/api/channels/events']);
 function requiresApiToken(req) {
   if (!req || req.method === 'OPTIONS') return false;
@@ -79,7 +82,21 @@ function constTimeEq(a, b) {
 function apiTokenOk(req, token) { return constTimeEq(headerToken(req), token); }     // header path (fetch)
 function queryTokenOk(req, token) { return constTimeEq(queryToken(req), token); }    // query path (EventSource/SSE)
 
+/* The narrow method×path matrix allowed to authenticate via ?token= instead of the custom header — ONLY the
+   browser surfaces that PROVABLY cannot set a header:
+     GET/HEAD /api/file : native media/link loads (<img>, <video>, clicked links)
+     POST     /api/save : the unload beacon (navigator.sendBeacon) — the last debounced save on window close
+   Everything else keeps the header-only rule (a query token in a URL is loggable/copyable, so the escape
+   hatch stays as small as possible). Pure predicate on (method, path) so it is unit-testable. */
+function queryTokenRoute(req) {
+  const m = req && req.method;
+  const p = pathOf(req && req.url);
+  if ((m === 'GET' || m === 'HEAD') && p === '/api/file') return true;
+  if (m === 'POST' && p === '/api/save') return true;
+  return false;
+}
+
 module.exports = {
-  isAllowedApiOrigin, isAllowedHost, requiresApiToken, apiTokenOk, queryTokenOk,
+  isAllowedApiOrigin, isAllowedHost, requiresApiToken, apiTokenOk, queryTokenOk, queryTokenRoute,
   headerToken, queryToken, constTimeEq, pathOf, loopbackOrigins, TAURI_ORIGINS, TOKEN_EXEMPT
 };
