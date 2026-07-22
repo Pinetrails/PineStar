@@ -37,7 +37,7 @@ Updater endpoint (baked into the app, `src-tauri/tauri.conf.json`):
 | Item | What to do | Status |
 | --- | --- | --- |
 | **Support email** | ✅ DONE 2026-07-04: `androo.agi@gmail.com` in diagnostics.js + PRIVACY.md + TERMS.md + DOWNLOAD_PAGE.md (Andrew's pick; supersedes the earlier gmail swap). | ✅ DONE |
-| **License decision** | ✅ DONE 2026-07-04: MIT. REVISED 2026-07-22: PolyForm Noncommercial 1.0.0 (no commercial redistribution/sale). `LICENSE` at repo root; TERMS.md §7 points to it. | ✅ DONE |
+| **License decision** | ✅ DONE 2026-07-04: MIT (reaffirmed 2026-07-22, Hermes-style: MIT code + branding not licensed). `LICENSE` at repo root; TERMS.md §7 points to it. | ✅ DONE |
 | **Code signing** (optional but removes the SmartScreen/SAC wall) | Procure an Authenticode cert; sign the installer. Until then INSTALL.md + DOWNLOAD_PAGE.md must keep the unsigned caveat. | ☐ FUTURE |
 
 ## Cut & publish order (the installer bakes the frontend — order matters)

@@ -3,7 +3,7 @@
   "version": "0.6.5",
   "private": true,
   "description": "A local-first, gamified desktop harness for building and running real AI-agent teams.",
-  "license": "PolyForm-Noncommercial-1.0.0",
+  "license": "MIT",
   "author": "Andrew Sims",
   "repository": {
     "type": "git",
