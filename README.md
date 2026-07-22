@@ -159,3 +159,7 @@ StarNet is source-available under the [PolyForm Noncommercial License 1.0.0](LIC
 You are free to use, study, modify, and share it for any noncommercial purpose. Selling
 StarNet, redistributing it commercially, or otherwise profiting from it is not permitted.
 Third-party components remain under their original licenses — see [NOTICE.md](NOTICE.md).
+
+The license covers the code only. The **StarNet** name, logo, and station artwork are the
+branding of Andrew Sims and are **not** licensed for reuse — forks and derivatives (which the
+license permits for noncommercial use) must ship under their own name and identity.

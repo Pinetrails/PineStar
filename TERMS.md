@@ -62,6 +62,9 @@ noncommercial purposes only — commercial redistribution or sale is not permitt
 cover use of the app; the license governs the code itself. Third-party components remain under
 their original licenses (see `NOTICE.md`).
 
+The license does not grant any rights to the StarNet name, logo, or station artwork. Forks and
+derivatives must not present themselves as StarNet or use its branding.
+
 ## 8. Contact
 
 Everything else: androo.agi@gmail.com.
