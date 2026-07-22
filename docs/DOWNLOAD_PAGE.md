@@ -22,13 +22,14 @@ Pick the asset for your platform:
 | Platform | Download this asset |
 | --- | --- |
 | **Windows** (10/11, 64-bit) | `StarNet_<version>_x64-setup.exe` |
-| **macOS** — all Macs, including Apple Silicon (M1–M4) | `StarNet_<version>_x64.dmg` |
+| **macOS — Apple Silicon** (M1–M4) | `StarNet_<version>_aarch64.dmg` |
+| **macOS — Intel** | `StarNet_<version>_x64.dmg` |
 
-> **Apple Silicon Macs use the `x64` DMG too.** Until StarNet is Apple-notarized, opening the
-> native `aarch64` build on Apple Silicon fails with a false *"StarNet is damaged and can't be
-> opened"* error that offers no override. The `x64` build runs on every Mac (Apple Silicon runs
-> it through Rosetta 2) with only the normal one-time security warning. The `aarch64.dmg`
-> becomes the recommended Apple Silicon download once notarization ships.
+> **Apple Silicon Macs: use the native `aarch64` DMG.** Until StarNet is Apple-notarized, its
+> first launch shows a false *"StarNet is damaged and can't be opened"* dialog — nothing is
+> wrong with the file, and a single Terminal command clears it (step-by-step in INSTALL.md).
+> Avoid the `x64` DMG on Apple Silicon: it runs under Rosetta 2 translation, which macOS now
+> warns *"will stop working with a future version of macOS."*
 
 > **macOS honesty note:** the macOS build is produced by the same CI and is cryptographically
 > signed for updates, but it's had **less real-world testing than the Windows build** at
@@ -52,10 +53,12 @@ app. This is expected for an early build — it does not mean anything is wrong 
   then **Run anyway**. On some Windows 11 machines, **Smart App Control (SAC)** is a *hard*
   block that "Run anyway" cannot bypass; if you're on enforced SAC, you'll need to wait for a
   signed build.
-- **macOS:** the app is **unsigned and un-notarized**, so Gatekeeper blocks the first launch
-  (*"cannot be opened…"*). The fix on current macOS is **System Settings → Privacy & Security →
-  Open Anyway**; on older macOS it's **right-click the app → Open**. Remember: download the
-  `x64` DMG on every Mac, including Apple Silicon (see the note above).
+- **macOS:** the app is **unsigned and un-notarized**, so Gatekeeper blocks the first launch.
+  On **Apple Silicon** (the `aarch64` DMG) the block is a false *"damaged"* dialog with no
+  Open Anyway button — clear it once with a Terminal command:
+  `xattr -dr com.apple.quarantine /Applications/StarNet.app`. On **Intel** (the `x64` DMG)
+  the fix is **System Settings → Privacy & Security → Open Anyway**, or on older macOS
+  **right-click the app → Open**.
 
 The full step-by-step for every platform — including how to check your SAC mode and how to
 approve the app on macOS — is in **[INSTALL.md](../INSTALL.md)**. Read it before you install;
