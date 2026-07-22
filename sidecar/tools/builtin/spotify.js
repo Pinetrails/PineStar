@@ -7,7 +7,7 @@
 
    Playback control needs Spotify Premium AND an active device (open Spotify on a phone/desktop/web player
    once). When either is missing, Spotify's own 403/404 is surfaced verbatim so the agent can tell the user
-   exactly what to do. If Spotify isn't connected, every tool returns a clear "connect it in Settings" error.
+   exactly what to do. If Spotify isn't connected, every tool returns a clear "connect it in TOOLSETS" error.
 
    makeSpotifyTools({ store, fetchImpl? }) -> { tools[], register(reg), _internals }
    See test/spotify.tools.test.js. */
@@ -49,7 +49,7 @@
       if (res.status >= 200 && res.status < 300) return json || {};
       const err = json && json.error;
       const msg = (err && (err.message || err.reason)) || ('HTTP ' + res.status);
-      if (res.status === 401) throw new Error('Spotify auth failed — try reconnecting in Settings. (' + msg + ')');
+      if (res.status === 401) throw new Error('Spotify auth failed — try reconnecting in TOOLSETS. (' + msg + ')');
       if (res.status === 403) throw new Error('Spotify refused this (often: needs Spotify Premium): ' + msg);
       if (res.status === 404 && /player/.test(pathQ)) throw new Error('No active Spotify device — open Spotify on any device, start playing once, then retry. (' + msg + ')');
       if (res.status === 429) throw new Error('Spotify rate-limited the request — wait a moment and retry.');
