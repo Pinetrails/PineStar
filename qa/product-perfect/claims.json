@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "da75da04758abe04ccb7c2a36af947c23422f4b6",
+    "sourceCommit": "6ab9aaa4c9abd59ff08360a277a67272bf64a8e8",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 283578,
-        "sha256": "ffbc6d72fa4d46e61a6eaf52292a247eabe2f8e931fe2159b33a01b42e09a37d"
+        "bytes": 283623,
+        "sha256": "b335c4f7049afbfce7c9e9a9a4bb09e2a9f87c188b8621b90a89abe0e4296002"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -273,8 +273,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 47404,
-        "sha256": "c322dd4a145f24a68b2edb1c1a014c8324637b328ab747e4c92cf14eee20149d"
+        "bytes": 47401,
+        "sha256": "b217ca8e67d0fbbf6a2b3ac94f7c0101b688bc07dbfc1cb965ad5a5539e18e9b"
       },
       {
         "path": "frontend/app/hint.js",
@@ -838,8 +838,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 208801,
-        "sha256": "c2673ea55b38ad3a3124d57af6cf8956a7dda869582f582f5d20a8474a6fc5ef"
+        "bytes": 208798,
+        "sha256": "63f63a4233af37cba02fbc16d7782fd734a52f415e45b9866a82a6cee3365f35"
       },
       {
         "path": "frontend/css/asciifx.css",
