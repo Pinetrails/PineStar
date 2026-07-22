@@ -4701,7 +4701,7 @@ const Chat = (() => {
     const have = {}; placed.forEach(t => { have[t] = true; });
     const active = toolRows().filter(r => r.cap == null || have[r.cap]);
     const missing = toolRows().filter(r => r.cap && !have[r.cap]).map(r => r.label);
-    // JUKEBOX is a two-step unlock: place the prop (grants the tools) AND connect Spotify in Settings (the tools
+    // JUKEBOX is a two-step unlock: place the prop (grants the tools) AND connect Spotify in TOOLSETS (the tools
     // are inert until the OAuth session exists). If it's placed but Spotify isn't connected, say so honestly
     // rather than listing spotify as fully live — the truthful-telemetry law applies to /tools too.
     let jukeNote = '';

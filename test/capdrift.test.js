@@ -41,7 +41,7 @@ for (const propId of Object.keys(MAP)) {
 /* ---- 4. registry objectTypes unreachable from a placed prop are the KNOWN conferrals only ----
    orchestrator: conferred by role (the overseer), never by a placeable object.
    (jukebox is now a placeable grant via CAP_PROP_MAP — a placed JUKEBOX projects the spotify tools,
-   inert until Spotify is connected in Settings — so it is reachable, not a conferral.)
+   inert until Spotify is connected in TOOLSETS — so it is reachable, not a conferral.)
    Anything else unreachable = a grant family no station can ever earn = dead registry weight. */
 const CONFERRED = ['orchestrator'];
 const reachable = new Set(Object.values(MAP));
