@@ -848,7 +848,10 @@ const World = (() => {
     kindleArmed = false; kindleP = 0; kindleHolding = false; kindlePeak = 0;
     awakeFrozen = true; wakeDark = 0.92; wakeDarkTarget = 0.92; camAnim = null; if (agent) agent.dir = 'north';   // newborn faces AWAY until the Turn
   }
-  function setWakeProgress(p) { p = p < 0 ? 0 : p > 1 ? 1 : p; wakeDarkTarget = 0.92 * (1 - p); }
+  // setWakeProgress LIFTS the awakening veil — it must never CREATE darkness in a lit room. The deferred
+  // interview replays the meeting beats (bumpTruth) during ordinary play, so outside the ceremony
+  // (awakeFrozen false) this is a no-op — the veil only moves while a birth/re-wake actually owns the room.
+  function setWakeProgress(p) { if (!awakeFrozen) return; p = p < 0 ? 0 : p > 1 ? 1 : p; wakeDarkTarget = 0.92 * (1 - p); }
   function igniteSpark() { sparkAt = performance.now(); bornAt = performance.now(); wakeDark = 0.985; wakeDarkTarget = 0.985; kindleArmed = false; kindleP = 0; }   // the mind catches fire — snap to near-total dark so the spark is the ONLY light (and end any kindle)
   /* THE KINDLING — the pre-ignition beat: one dim, almost-dead ember sits where the mind will be, and the
      user must HOLD to bring it to life. Sustained attention fills kindleP; releasing lets it ebb. When it
@@ -860,7 +863,7 @@ const World = (() => {
   }
   function kindleHold(down) { if (kindleArmed) kindleHolding = !!down; }
   function camPushIn() { if (!cache || !agent || agent.unplaced) return; const [s, x, y] = camCenterOn(agent.px, agent.py - 4, 3.2); camTweenTo(s, x, y, 2600); }
-  function camCreep() { if (!cache || !agent || agent.unplaced || camAnim) return; const [s, x, y] = camCenterOn(agent.px, agent.py - 4, scale * 1.035); camTweenTo(s, x, y, 600); }   // a hair closer with each truth
+  function camCreep() { if (!cache || !agent || agent.unplaced || camAnim || !awakeFrozen) return; const [s, x, y] = camCenterOn(agent.px, agent.py - 4, scale * 1.035); camTweenTo(s, x, y, 600); }   // a hair closer with each truth — ceremony-only (the deferred interview must never steal the live camera)
   function camPunch() { if (!agent || agent.unplaced || camAnim) return; const b = scale; const [s1, x1, y1] = camCenterOn(agent.px, agent.py - 4, b * 1.06); const [s0, x0, y0] = camCenterOn(agent.px, agent.py - 4, b); camTweenTo(s1, x1, y1, 150, t => t, () => camTweenTo(s0, x0, y0, 240)); }   // eyes finding yours
   function camPullBack() { if (!cache) return; const W = cache.W, H = cache.H; const s = clampz(Math.min(cv.width / W, cv.height / H), MINZ, MAXZ); camTweenTo(s, (cv.width - W * s) / 2, (cv.height - H * s) / 2, 1700); }   // recompute fit at fire time -> no jump on release
   // the Turn: the newborn finds the Commander — head leads, then the body pivots north -> side -> south and holds your gaze
