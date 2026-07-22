@@ -746,6 +746,7 @@ const ModelDock = (() => {
     init,
     refresh: () => fetchModels(true),
     reflect,
+    open: openDock,   // programmatic open — the model_not_found error door lands here (the PRIMARY model picker; Settings→MODELS is only the fallback chain)
     close: closeDock,
     normalizeEffort,
     // reuse surface for per-target pickers (bay / dossier) — pure data + label/effort helpers, no side effects

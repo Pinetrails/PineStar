@@ -1610,6 +1610,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       CONFIG_FILES.map(f => fileCard(a, f)).join('') +
       personaCard(a) +
       modelCard(a) +
+      approvalCard(a) +
       workshopCard(a) +
       agCommand(a);   // SKIN swap + DANGER delete — lives at the END of CONFIG, off the BRIEF landing tab
   }
@@ -1631,6 +1632,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div id="ag-workshop-msg" class="msg"></div>' +
       '<div id="ag-ws-live"><div class="dim" style="font-size:11px;">reading the build list…</div></div>' +
       '<div class="dim" style="font-size:11px;margin-top:6px;line-height:1.35;">Separate from this: the AUTONOMY dial’s night-shift beats let the agent pick its <i>own</i> small jobs while you’re away — those deliver to your rail the same way. This card is the list <b>you</b> queue (the ◈ on a quest, or /build-away in COMMS).</div>' +
+    '</div>';
+  }
+
+  // Per-agent APPROVAL posture (dossier CONFIG card): the same ASK / FULL ACCESS choice as the create screen,
+  // changeable any time — until now the ONLY post-create path was the /yolo slash command in COMMS, which most
+  // Commanders never find (a creation-time picker with no live-app twin — the codex-sign-in escape class).
+  // Applies via access.config.setApproval → pushRoster, so the sidecar's per-run consent gate flips with it.
+  function approvalCard(a) {
+    const full = !!(a && a.approvalMode === 'full');
+    const chip = (id, label, desc, sel) =>
+      '<button type="button" class="ov-vchip' + (sel ? ' sel' : '') + '" data-approval="' + id + '" data-name="' + esc(label) + '" title="' + esc(desc) + '" aria-pressed="' + (sel ? 'true' : 'false') + '">' + esc(label) + '</button>';
+    return '<div class="cf-card">' +
+      '<div class="cf-head"><span class="cf-file">✋ approval</span><span class="cf-badge">PER-AGENT</span></div>' +
+      '<div class="cf-desc">Whether this agent stops to check with you before it writes, runs, or reaches out — the same choice you made at its creation. Change it any time (<code>/yolo</code> in COMMS is the shortcut).</div>' +
+      '<div class="ov-vchips" id="ag-approval-chips">' +
+        chip('ask', 'ASK FOR APPROVAL', 'stops to check with you before it writes, runs, or reaches out', !full) +
+        chip('full', 'FULL ACCESS', 'runs everything itself — no approval prompts', full) +
+      '</div>' +
+      '<div id="ag-approval-msg" class="msg"></div>' +
     '</div>';
   }
 
@@ -1764,6 +1784,34 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const ok = access.config.setPersona(a && a.id, id);
         if (ok === false) { setPMsg('could not change personality', false); sfx('bad'); return; }
         notify('personality → ' + (chip.dataset.name || id).toUpperCase() + (id === 'unhinged' ? ' — it swears, for real' : ''), 'good');
+        sfx('click'); rerender('agents');
+      }));
+    }
+    // APPROVAL chips — apply via access.config.setApproval, then rerender so the sel chip reflects recorded
+    // truth. FULL ACCESS is the dangerous pick, so it keeps the house two-press confirm (the personality
+    // UNHINGED pattern): press one names what it means (warn tint), press two applies; anything else disarms.
+    const apWrap = body.querySelector('#ag-approval-chips');
+    if (apWrap) {
+      const apMsg = body.querySelector('#ag-approval-msg');
+      const setApMsg = (t, ok) => { if (apMsg) { apMsg.textContent = t || ''; apMsg.className = 'msg' + (ok ? ' ok' : ''); } };
+      let apArmed = null;
+      const apDisarm = () => { if (apArmed) { apArmed.textContent = apArmed.dataset.name; apArmed.classList.remove('arm'); apArmed = null; } };
+      const curMode = (a && a.approvalMode === 'full') ? 'full' : 'ask';
+      apWrap.querySelectorAll('.ov-vchip').forEach(chip => chip.addEventListener('click', () => {
+        const id = chip.dataset.approval;
+        if (!id || id === curMode) { apDisarm(); return; }
+        if (id === 'full' && apArmed !== chip) {
+          apDisarm(); apArmed = chip;
+          chip.classList.add('arm');
+          chip.textContent = 'FULL ACCESS — SURE? no approval prompts';
+          sfx('click');
+          return;
+        }
+        apDisarm();
+        if (!(access.config && access.config.setApproval)) { setApMsg('approval change unavailable', false); sfx('bad'); return; }
+        const ok = access.config.setApproval(a && a.id, id);
+        if (ok === false) { setApMsg('could not change approval', false); sfx('bad'); return; }
+        notify(id === 'full' ? '⚡ ' + ((a && a.name) || 'agent') + ' now runs with FULL ACCESS — no approval prompts' : '✋ ' + ((a && a.name) || 'agent') + ' will ask before risky moves again', id === 'full' ? 'warn' : 'good');
         sfx('click'); rerender('agents');
       }));
     }
@@ -2785,7 +2833,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // hasStoredCredential is the honest getter; fall back to the older signals if an old harness lacks it.
       const set = h.hasStoredCredential ? h.hasStoredCredential(provider)
         : ((h.configured && h.configured(provider)) || !!(h.getKey && h.getKey(provider)));
-      if (set) out.push({ provider, key: h.getKey ? h.getKey(provider) : '', baseUrl: h.getBaseUrl ? h.getBaseUrl(provider) : '', model: (h.getModel && h.getModel()) || '', local: provider === 'ollama' });
+      // A KEYLESS custom endpoint (vLLM / LM Studio / any no-auth OpenAI-compatible server) still earns its row:
+      // the ✎ STATION LINK editor lives ONLY on this row, so gating it on a stored key froze the endpoint at
+      // whatever onboarding stored — and REMOVE-ing the last custom key stranded a still-active endpoint with no
+      // editor. hasStoredCredential('custom') stays false for it (an endpoint is configuration, not a credential).
+      const keylessEp = provider === 'custom' && !!(h.getBaseUrl && h.getBaseUrl('custom'));
+      if (set || keylessEp) out.push({ provider, key: h.getKey ? h.getKey(provider) : '', baseUrl: h.getBaseUrl ? h.getBaseUrl(provider) : '', model: (h.getModel && h.getModel()) || '', local: provider === 'ollama' });
     }
     addProvider(active);
     if (active !== 'openrouter') addProvider('openrouter');
@@ -3171,7 +3224,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
           rerender('settings');
         } else if (act === 'rm') {
-          if (b.dataset.armed) { if (h.setKey) h.setKey('', row.provider); invalidateProviderHealth(row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect(); if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh(); sfx('bad'); rerender('settings'); return; }
+          // a KEYLESS custom row has no key to clear — its REMOVE disconnects the endpoint itself (setBaseUrl('')),
+          // otherwise the armed confirm would "remove" nothing and the row would immortally re-render.
+          const keylessCustomRm = row.provider === 'custom' && !row.key && !!row.baseUrl;
+          if (b.dataset.armed) {
+            if (keylessCustomRm && h.setBaseUrl) { h.setBaseUrl('', 'custom'); notify('removed the custom endpoint — add it again anytime from the CUSTOM card', 'warn'); }
+            else { if (h.setKey) h.setKey('', row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); }
+            invalidateProviderHealth(row.provider); if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect(); if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh(); sfx('bad'); rerender('settings'); return;
+          }
           // Arm: make the destructive state impossible to miss — filled --bad button + pulse, red hairline on the row,
           // and an inline "click again to confirm" hint. Disarms after 5s, restoring the calm state.
           const rowEl = b.closest('.key-row');
