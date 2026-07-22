@@ -1,13 +1,13 @@
 # Installing StarNet (Desktop)
 
-StarNet desktop ships for **Windows, macOS, and Linux**. Every platform is built by the same
-CI release train and updates through the same signed feed. None of the builds are code-signed
+StarNet desktop ships for **Windows and macOS**. Both platforms are built by the same
+CI release train and update through the same signed feed. None of the builds are code-signed
 for the operating system yet (no paid Windows Authenticode certificate, no Apple Developer
 cert), so each OS will warn you before letting a new app run. This is expected for an early
 build — below is exactly what you'll see on each platform and what to do.
 
-> **Honesty note for macOS and Linux users:** these builds are produced by the same CI and are
-> cryptographically signed for auto-updates, but they have had **less real-world testing than
+> **Honesty note for macOS users:** the macOS build is produced by the same CI and is
+> cryptographically signed for updates, but it has had **less real-world testing than
 > the Windows build** at launch. If something is broken, please tell us:
 > **androo.agi@gmail.com**. We'd rather hear about it than have you assume it's supposed to be
 > that way.
@@ -22,14 +22,13 @@ Pick the asset for your platform:
 | Platform | Download this asset |
 | --- | --- |
 | **Windows** (10/11, 64-bit) | `StarNet_<version>_x64-setup.exe` |
-| **macOS — Apple Silicon** (M1/M2/M3/M4) | `StarNet_<version>_aarch64.dmg` |
-| **macOS — Intel** | `StarNet_<version>_x64.dmg` |
-| **Linux — Debian/Ubuntu** | `StarNet_<version>_amd64.deb` |
-| **Linux — anything else** | `StarNet_<version>_amd64.AppImage` |
+| **macOS** — all Macs, including Apple Silicon (M1/M2/M3/M4) | `StarNet_<version>_x64.dmg` |
 
-Not sure which macOS you have? Apple menu → **About This Mac**. If it says "Apple M…" pick
-**Apple Silicon (aarch64)**; if it says "Intel" pick **Intel (x64)**. Installing the wrong one
-will not run.
+> **Apple Silicon Macs: download the `x64` DMG too.** Until StarNet is Apple-notarized, macOS
+> blocks the un-notarized native `aarch64` build outright on Apple Silicon — the `x64` build is
+> the one that runs on every Mac (Apple Silicon runs it through Rosetta 2, with only the
+> one-time "Open Anyway" approval described below). The `aarch64.dmg` on the releases page will
+> become the recommended Apple Silicon download once notarization ships.
 
 ---
 
@@ -86,8 +85,8 @@ un-notarized apps without an explicit override.
 
 To install:
 
-1. Open the `.dmg` you downloaded (the correct one for your chip — Apple Silicon `aarch64` or
-   Intel `x64`) and drag **StarNet** into **Applications**, as the DMG window shows.
+1. Open the `x64` `.dmg` you downloaded (yes, on Apple Silicon too — see the note in the
+   Download section) and drag **StarNet** into **Applications**, as the DMG window shows.
 2. Try to open StarNet from Applications. macOS will block it the first time.
 3. Approve it, using whichever your macOS version supports:
    - **Current macOS (Ventura / Sonoma and newer):** open **System Settings → Privacy &
@@ -106,58 +105,20 @@ Quit StarNet, then drag **StarNet** from **Applications** to the Trash.
 
 ---
 
-## Linux
+## Updates
 
-Two formats are provided. Pick one:
+Once installed, StarNet on **Windows** updates itself through its built-in updater (System →
+Updates). It checks the public releases channel, verifies each update's cryptographic
+signature against a key baked into the app, and installs verified updates in place.
 
-### Debian / Ubuntu (`.deb`)
+On **macOS**, automatic updates aren't wired up yet — when a new version ships, download the
+newest `.dmg` from the releases page and replace the app in Applications. Automatic macOS
+updates arrive together with the notarized build.
 
-```bash
-sudo apt install ./StarNet_<version>_amd64.deb
-```
-
-`apt` will pull in the runtime libraries StarNet needs. If you install the `.deb` a different
-way and hit a missing-library error, the dependencies StarNet (a Tauri/WebKitGTK app) needs at
-runtime are the WebKitGTK stack and friends:
-
-```bash
-sudo apt install libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2
-```
-
-(These mirror the WebKit + tray + SVG libraries the CI build links against.)
-
-### AppImage (any distro)
-
-The AppImage is a single self-contained file — no install step:
-
-```bash
-chmod +x StarNet_<version>_amd64.AppImage
-./StarNet_<version>_amd64.AppImage
-```
-
-If it won't launch, your distro may be missing WebKitGTK. Install `libwebkit2gtk-4.1-0`
-(Debian/Ubuntu) or your distro's equivalent WebKit2GTK 4.1 package, plus a working FUSE if the
-AppImage complains about mounting.
-
-### Uninstalling (Linux)
-
-- `.deb`: `sudo apt remove starnet`
-- AppImage: just delete the file.
-
----
-
-## Updates (all platforms)
-
-Once installed, StarNet updates itself through its built-in updater (System → Updates). It
-checks the public releases channel, verifies each update's cryptographic signature against a
-key baked into the app, and installs verified updates in place. You do not need to re-download
-from this page for routine updates — on any platform.
-
-This updater signature is **separate** from OS code-signing (Authenticode / Apple notarization
-/ Linux packaging). It protects the integrity of updates and is **always active**, on every
-platform, regardless of whether the OS considers the app "signed." So even though the macOS and
-Windows builds trip their OS's first-run warning, every update they pull afterward is
-cryptographically verified before it installs.
+This updater signature is **separate** from OS code-signing (Authenticode / Apple
+notarization). It protects the integrity of updates and is **always active**, regardless of
+whether the OS considers the app "signed." So even though the builds trip their OS's first-run
+warning, every update pulled afterward is cryptographically verified before it installs.
 
 ## Why unsigned?
 
