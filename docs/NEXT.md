@@ -1242,8 +1242,14 @@ promise?" (sibling of "where's its UI?").
   send/rapid-toggle · J4 summon→deliverable→OPEN serve contract · J5 parityCheck sweep;
   Guardian 5th gate (8943/9343). Known limits: mock-provider boundary (proves seams not
   model output); J4 asserts the serve contract over HTTP, not a real tab-nav.
-- **EL-2 · Saboteur mutators** — adversarial twist layer over journeys (garbage input, rapid
-  panel toggles mid-run, provider-error injection). After EL-1.
+- **EL-2 · Saboteur mutators — FIRST SLICE BUILT 2026-07-21 on `agent/bug-discovery-system`.**
+  `npm run qa:saboteur` inventories the live declarative route table and runs a seeded,
+  replayable hostile-input sweep against an isolated real sidecar: launch-token bypass, hostile
+  Origin, and five malformed JSON shapes on stateful seams. Failures persist a full evidence report,
+  dedup into the QA ledger, and the sweep is composed into every Guardian cycle. Calibration at
+  v0.6.4: 317/317 attacks green (seed 644). Pure planner/triage locks are in `qa-saboteur.test.js`.
+  OPEN: the journey-mutator half (rapid panel toggles mid-run, provider disconnect/slow-stream,
+  restart-at-write boundaries) and installed-exe weekly mutation pass.
 - **EL-4 · Installed-app weekly smoke** — CDP-attach to the installed exe and run the parity
   sweep there; the dev sidecar can never see the WebView2-cache class. Session task, weekly.
 - **EL-5 · ESCAPE 2026-07-07: Telegram bot token silently destroyed** — ✅ FIX MERGED

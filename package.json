@@ -95,6 +95,7 @@
     "qa:sweep": "node scripts/qa/evidence-sweep.mjs",
     "qa:sweep:dry": "node scripts/qa/evidence-sweep.mjs --dry-run",
     "qa:journeys": "node scripts/qa/journeys.mjs",
+    "qa:saboteur": "node scripts/qa/saboteur.mjs",
     "qa:session-power-tools": "node scripts/qa/session-power-tools-journey.mjs",
     "qa:work-console": "node scripts/qa/work-console-journey.mjs",
     "qa:atlas": "node scripts/qa/cartographer.mjs --sweep",
