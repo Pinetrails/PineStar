@@ -4268,6 +4268,13 @@ function startTelegram(token, key, model, agentCfg) {
     roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
     setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
     modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; },   // re-warm on demand if a boot-time /models failure left it empty
+    // MEDIA INGEST: a photo/video/voice/file sent in Telegram is downloaded (adapter getFile), stored in the
+    // resolved agent's workspace .attachments/ (the SAME store browser uploads use), and expanded into provider
+    // image/text blocks by the SAME expandUserAttachments the interactive run host calls — so "send the bot a
+    // photo" behaves exactly like attaching it in COMMS, no extra vision key needed.
+    fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
+    expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId),
     // ONE-RESOLVER LAW: the hub hands us the EXACT agentId the run executes as (floor plan > /talk binding >
     // configured > tg_<chatId>). This one-shot slot feeds the work-item intercept below, so the crate on the
     // belt and the queue HUD attribute to the SAME agent that actually works — never a parallel guess.
@@ -4483,23 +4490,42 @@ function getDevHub() {
     roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
     setModel: (agentId, model) => setAgentModelFromChannel(agentId, model),
     modelCatalog: () => { maybeRewarmModelCatalog(); return orModelCatalogIds; },
-    onResolved: (info) => { devResolved = info; }
+    onResolved: (info) => { devResolved = info; },
+    // MEDIA (dev): the injected message carries its own bytes as a dataUrl (no bot server to download from) —
+    // fetchMedia just decodes it; save/expand are the REAL attachment seams, so this route live-proves the same
+    // ingest path Telegram media takes (download -> workspace .attachments/ -> provider image blocks).
+    fetchMedia: (item) => {
+      const m = /^data:[^;,]*;base64,([\s\S]*)$/.exec(String((item && item.dataUrl) || ''));
+      if (!m) return Promise.resolve({ ok: false, error: 'dev media item carries no dataUrl' });
+      try { return Promise.resolve({ ok: true, buffer: Buffer.from(m[1], 'base64') }); }
+      catch (e) { return Promise.resolve({ ok: false, error: 'bad base64' }); }
+    },
+    saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
+    expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId)
   });
   return devHub;
 }
 async function handleDevInbound(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   if (!DEV_MODE) return json(404, { error: 'not found' });
-  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (_) { return json(400, { error: 'bad json' }); }
+  // 8MB body ceiling: a dev media item rides base64-inline (there is no bot server to download from)
+  let body; try { body = JSON.parse(await readBody(req, 1 << 23)) || {}; } catch (_) { return json(400, { error: 'bad json' }); }
   const text = String(body.text == null ? '' : body.text).trim();
-  if (!text) return json(400, { error: 'text required' });
+  // media items mimic the adapter's normalized shape + carry their bytes: { kind, name, mime, size?, dataUrl }
+  const media = Array.isArray(body.media) ? body.media.slice(0, 6).map(x => ({
+    kind: String((x && x.kind) || 'file'), fileId: 'dev', name: String((x && x.name) || 'file'),
+    mime: String((x && x.mime) || ''), size: Number(x && x.size) || 0, dataUrl: String((x && x.dataUrl) || '')
+  })) : [];
+  if (!text && !media.length) return json(400, { error: 'text or media required' });
   const chatId = String(body.chatId || 'devchat').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 32) || 'devchat';
   const hub = getDevHub();
   devReplies.delete(chatId);
   // same intercept shape as the Telegram wiring: resolution lands synchronously in onInbound's first slice;
   // only a real TASK directive places a crate (belt is work-only); the settle owns the queue decrement.
   devResolved = null;
-  const settled = Promise.resolve(hub.onInbound({ chatId, userId: String(body.userId || 'dev'), text, chatType: 'dm' }))
+  const inMsg = { chatId, userId: String(body.userId || 'dev'), text, chatType: 'dm' };
+  if (media.length) inMsg.media = media;
+  const settled = Promise.resolve(hub.onInbound(inMsg))
     .catch(e => { console.warn('[dev-inbound] error:', (e && e.message) || e); return { error: (e && e.message) || String(e) }; });
   let agentId = '', workitemId = '', isTask = false;
   try {

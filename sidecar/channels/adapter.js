@@ -112,7 +112,7 @@
         const m = n.message;
         if (!admitted(m)) return;
         if (m.chatType === 'dm' && !ownerOk(m.userId)) return;   // a non-owner DM never reaches the run host
-        onInbound({
+        const im = {
           channel: name,
           chatId: String(m.chatId),
           chatType: m.chatType === 'group' ? 'group' : 'dm',
@@ -121,7 +121,11 @@
           text: m.text == null ? '' : String(m.text),
           messageId: m.messageId == null ? '' : String(m.messageId),
           ts: clock.now()
-        });
+        };
+        // media rides through untouched (additive): [{ kind, fileId, name, mime, size }] from the platform's
+        // normalize. The hub downloads the bytes via this adapter's getFile and turns them into attachments.
+        if (Array.isArray(m.media) && m.media.length) im.media = m.media;
+        onInbound(im);
       } else if (n.callback && onCallback) {
         if (!owner || String(n.callback.userId) === owner) onCallback(n.callback);   // only the owner's taps act
       }
@@ -245,6 +249,14 @@
           r = await transport.send(String(chatId), t, sendOpts || {});
         }
         return r;
+      },
+
+      // Download one media file's bytes (transport-optional): { ok, buffer?, error? }, never throws. A transport
+      // without getFile answers honestly instead of pretending — the hub's note then says media isn't supported.
+      getFile(fileId, opts2) {
+        if (typeof transport.getFile !== 'function') return Promise.resolve({ ok: false, error: 'media download not supported on this channel' });
+        try { return Promise.resolve(transport.getFile(fileId, opts2)); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'getFile threw' }); }
       },
 
       // minimal identity (the reference harness's chat-info lookup -> {name,type}); transports may override with a richer lookup.

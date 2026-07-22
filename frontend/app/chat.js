@@ -635,12 +635,71 @@ const Chat = (() => {
       row.addEventListener('drop', e => { e.preventDefault(); row.classList.remove('attach-dragover'); if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
     }
   }
+  const ATTACH_VIDEO_EXT = { mp4: 1, mov: 1, webm: 1, m4v: 1, mkv: 1, avi: 1, ogv: 1 };
+  function isVideoFile(f) {
+    if (/^video\//.test(String(f && f.type || ''))) return true;
+    return !!ATTACH_VIDEO_EXT[String(f && f.name || '').split('.').pop().toLowerCase()];
+  }
+  // VIDEO SIGHT: the model can't watch a video, but it CAN see stills. Decode the clip right here in the
+  // browser (a <video> + canvas — no server dependency, no extra key) and pull a few spread-out frames as
+  // JPEG images that ride along as ordinary image attachments. Resolves [] on any decode failure (codec the
+  // browser can't play, corrupt file) — the video file itself still attaches, nothing breaks.
+  function extractVideoFrames(file, frameCount) {
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      const done = frames => { try { URL.revokeObjectURL(url); } catch (_) {} v.removeAttribute('src'); resolve(frames); };
+      const bail = () => done([]);
+      const timer = setTimeout(bail, 15000);   // a codec the browser can't decode must not hang the composer
+      v.muted = true; v.preload = 'auto'; v.src = url;
+      v.onerror = () => { clearTimeout(timer); bail(); };
+      v.onloadedmetadata = async () => {
+        try {
+          let dur = Number(v.duration);
+          // Chrome reports duration=Infinity for streamed/recorded webm (no duration header). The standard fix:
+          // seek far past the end, wait for the clamp, and read the REAL duration back.
+          if (!isFinite(dur)) {
+            await new Promise((res) => { const t2 = setTimeout(res, 3000); v.onseeked = () => { clearTimeout(t2); res(); }; v.currentTime = 1e9; });
+            dur = Number(v.duration);
+          }
+          if (!isFinite(dur) || dur <= 0 || !v.videoWidth || !v.videoHeight) { clearTimeout(timer); return bail(); }
+          const n = Math.max(1, Math.min(frameCount || 3, 4));
+          // spread through the clip, skipping the very edges (black lead-ins / end cards)
+          const times = n === 1 ? [dur / 2] : Array.from({ length: n }, (_, i) => dur * (0.1 + 0.8 * i / (n - 1)));
+          const scale = Math.min(1, 960 / Math.max(v.videoWidth, v.videoHeight));   // cap frame size; vision needs no 4K
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(v.videoWidth * scale));
+          c.height = Math.max(1, Math.round(v.videoHeight * scale));
+          const ctx = c.getContext('2d');
+          const base = String(file.name || 'video').replace(/\.[a-z0-9]+$/i, '');
+          const frames = [];
+          for (let i = 0; i < times.length; i++) {
+            await new Promise((res, rej) => { v.onseeked = res; v.onerror = rej; v.currentTime = times[i]; });
+            ctx.drawImage(v, 0, 0, c.width, c.height);
+            const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.8));
+            if (blob && blob.size) frames.push(new File([blob], base + '-frame-' + (i + 1) + '.jpg', { type: 'image/jpeg' }));
+          }
+          clearTimeout(timer); done(frames);
+        } catch (_) { clearTimeout(timer); bail(); }
+      };
+    });
+  }
   function handleFiles(fileList) {
     const files = Array.from(fileList || []);
     for (const f of files) {
       if (!f) continue;
-      if (f.size > ATTACH_MAX_FILE_BYTES) { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('“' + f.name + '” is too large to attach (max 8MB)', 'warn'); continue; }
-      stageFile(f);
+      const oversized = f.size > ATTACH_MAX_FILE_BYTES;
+      if (oversized && !isVideoFile(f)) { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('“' + f.name + '” is too large to attach (max 8MB)', 'warn'); continue; }
+      if (!oversized) stageFile(f);
+      if (isVideoFile(f)) {
+        // even an over-limit video still contributes SIGHT: its frames are small JPEGs and attach fine
+        if (oversized && typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('“' + f.name + '” is over 8MB — attaching still frames only', 'warn');
+        extractVideoFrames(f, 3).then(frames => {
+          if (!frames.length && oversized && typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not decode “' + f.name + '” for frames', 'warn');
+          for (const fr of frames) stageFile(fr);
+          if (frames.length) renderAttachStrip();
+        });
+      }
     }
     renderAttachStrip();
   }

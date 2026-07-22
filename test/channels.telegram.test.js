@@ -114,8 +114,65 @@ async function run() {
     A.eq(normalize({ update_id: 2, message: { message_id: 10, text: 'yo', chat: { id: -200, type: 'supergroup' }, from: { id: 6, first_name: 'X' } } }).message.userName, 'X', 'falls back to first_name when no username');
     A.eq(normalize({ update_id: 3, callback_query: { id: 'q1', data: 'approve:p1', from: { id: 7 }, message: { message_id: 11, chat: { id: 111 } } } }),
       { offset: 3, callback: { chatId: 111, userId: 7, data: 'approve:p1', callbackId: 'q1', messageId: 11 } }, 'callback_query -> callback');
-    A.eq(normalize({ update_id: 4, message: { message_id: 12, chat: { id: 111, type: 'private' }, sticker: {} } }), { offset: 4, message: null }, 'non-text message -> message:null (offset still advances)');
+    A.eq(normalize({ update_id: 4, message: { message_id: 12, chat: { id: 111, type: 'private' }, sticker: {} } }), { offset: 4, message: null }, 'unknown/empty payload -> message:null (offset still advances)');
     A.eq(normalize({ foo: 1 }), null, 'no update_id -> null (skipped, no offset advance)');
+  }
+
+  // ---- F2. normalize() MEDIA truth table: photos/videos/voice/docs are ADMITTED, not dropped ----
+  {
+    const chat = { id: 111, type: 'private' }, from = { id: 5, username: 'andro' };
+    // photo (sizes ordered small->large; largest wins) with a caption
+    const p = normalize({ update_id: 10, message: { message_id: 20, chat, from, caption: 'look at this',
+      photo: [{ file_id: 'small', file_size: 100 }, { file_id: 'big', file_size: 900 }] } });
+    A.ok(p && p.message, 'photo message is admitted');
+    A.eq(p.message.text, 'look at this', 'caption becomes the message text');
+    A.eq(p.message.media, [{ kind: 'photo', fileId: 'big', name: 'photo.jpg', mime: 'image/jpeg', size: 900 }], 'largest photo size selected');
+    // video: the clip AND its preview thumbnail (the model-visible frame) both ride
+    const v = normalize({ update_id: 11, message: { message_id: 21, chat, from,
+      video: { file_id: 'vid1', file_name: 'clip.mp4', mime_type: 'video/mp4', file_size: 5000, thumbnail: { file_id: 'th1', file_size: 40 } } } });
+    A.ok(v && v.message, 'video message is admitted');
+    A.eq(v.message.text, '', 'no caption -> empty text (still admitted)');
+    A.eq(v.message.media, [
+      { kind: 'video', fileId: 'vid1', name: 'clip.mp4', mime: 'video/mp4', size: 5000 },
+      { kind: 'photo', fileId: 'th1', name: 'video-preview-frame.jpg', mime: 'image/jpeg', size: 40 }
+    ], 'video carries the clip + its thumbnail as a photo frame');
+    // legacy `thumb` field name (pre-Bot-API-6.x) still yields the frame
+    const v2 = normalize({ update_id: 12, message: { message_id: 22, chat, from,
+      video: { file_id: 'vid2', thumb: { file_id: 'th2' } } } });
+    A.eq(v2.message.media.length, 2, 'legacy thumb field also yields the preview frame');
+    // voice + document
+    const vo = normalize({ update_id: 13, message: { message_id: 23, chat, from, voice: { file_id: 'voi', file_size: 800 } } });
+    A.eq(vo.message.media[0].kind, 'audio', 'voice -> audio media item');
+    const doc = normalize({ update_id: 14, message: { message_id: 24, chat, from, document: { file_id: 'd1', file_name: 'report.pdf', mime_type: 'application/pdf' } } });
+    A.eq(doc.message.media[0], { kind: 'document', fileId: 'd1', name: 'report.pdf', mime: 'application/pdf', size: 0 }, 'document admitted with name+mime');
+    // static sticker = viewable webp photo; animated/video stickers stay out
+    A.eq(normalize({ update_id: 15, message: { message_id: 25, chat, from, sticker: { file_id: 's1' } } }).message.media[0].mime, 'image/webp', 'static sticker -> webp photo');
+    A.eq(normalize({ update_id: 16, message: { message_id: 26, chat, from, sticker: { file_id: 's2', is_animated: true } } }), { offset: 16, message: null }, 'animated sticker stays dropped');
+    // text-only messages keep the EXACT old shape (no media field) — additive contract
+    A.eq('media' in normalize({ update_id: 17, message: { message_id: 27, chat, from, text: 'plain' } }).message, false, 'text-only message has no media field');
+  }
+
+  // ---- F3. transport.getFile: two-step Bot API download -> { ok, buffer }; errors/size caps degrade, never throw ----
+  {
+    const bytes = Buffer.from('JPEGDATA');
+    const fileResp = () => ({ status: 200, ok: true, json: async () => ({}), arrayBuffer: async () => bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength), headers: { get: (h) => h === 'content-length' ? String(bytes.length) : null } });
+    const f = fakeFetch((url) => url.indexOf('/file/bot') !== -1 ? fileResp() : resp(200, { ok: true, result: { file_path: 'photos/p1.jpg' } }));
+    const t = makeTelegramTransport({ fetch: f, token: 'TKN' });
+    const r = await t.getFile('abc');
+    A.eq(r.ok, true, 'getFile ok');
+    A.eq(Buffer.from(r.buffer).toString(), 'JPEGDATA', 'bytes round-trip');
+    A.eq(f.calls[0].url, 'https://api.telegram.org/botTKN/getFile', 'step 1 hits getFile');
+    A.eq(f.calls[0].body, { file_id: 'abc' }, 'file_id in body');
+    A.eq(f.calls[1].url, 'https://api.telegram.org/file/botTKN/photos/p1.jpg', 'step 2 downloads via /file/bot<token>/<path>');
+    // size cap via content-length refuses BEFORE buffering
+    const rCap = await t.getFile('abc', { maxBytes: 2 });
+    A.ok(rCap.ok === false && /too large/.test(rCap.error), 'maxBytes refused via content-length');
+    // Bot API error -> honest { ok:false }
+    const tErr = makeTelegramTransport({ fetch: fakeFetch(() => resp(400, { ok: false, error_code: 400, description: 'file not found' })), token: 'TKN' });
+    A.eq((await tErr.getFile('zzz')).ok, false, 'getFile API error -> ok:false');
+    // network throw -> never throws
+    const tNet = makeTelegramTransport({ fetch: fakeFetch(() => ({ __throw: new Error('ECONNRESET') })), token: 'TKN' });
+    A.eq((await tNet.getFile('zzz')).ok, false, 'network error -> ok:false, never throws');
   }
 
   const getUpdatesCalls = (f) => f.calls.filter(c => c.url.indexOf('/getUpdates') !== -1);
@@ -140,6 +197,29 @@ async function run() {
     A.eq(inbox[0], { channel: 'telegram', chatId: '999', chatType: 'dm', userId: '1', userName: 'a', text: 'ping', messageId: '1', ts: 1234 }, 'normalized InboundMessage via the real pipeline');
     const gus = getUpdatesCalls(f);
     A.ok(gus[1] && gus[1].body.offset === 51, 'second getUpdates confirmed offset 50+1 (each update fetched once)');
+    await a.disconnect();
+  }
+
+  // ---- G2. end-to-end MEDIA: a video message rides the real transport+normalize+adapter into onInbound ----
+  {
+    const inbox = [];
+    let gu = 0;
+    const f = fakeFetch((url) => {
+      if (url.indexOf('/getUpdates') !== -1) {
+        gu++;
+        if (gu === 1) return resp(200, { ok: true, result: [{ update_id: 60, message: { message_id: 3, caption: 'watch this', chat: { id: 999, type: 'private' }, from: { id: 1, username: 'a' },
+          video: { file_id: 'v9', file_name: 'demo.mp4', mime_type: 'video/mp4', file_size: 1000, thumbnail: { file_id: 't9', file_size: 50 } } } }] });
+        return { __park: true };
+      }
+      return resp(200, { ok: true, result: { message_id: 1 } });
+    });
+    const a = makeTelegramAdapter({ fetch: f, token: 'TKN', dropPendingOnConnect: false, onInbound: m => inbox.push(m), clock: { now: () => 7 }, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 8 && !inbox.length; i++) await tick();
+    A.eq(inbox.length, 1, 'media message delivered inbound (no longer dropped)');
+    A.eq(inbox[0].text, 'watch this', 'caption rides as text');
+    A.eq(inbox[0].media.map(m => m.kind), ['video', 'photo'], 'clip + preview frame both ride');
+    A.ok(typeof a.getFile === 'function', 'adapter exposes getFile for the hub');
     await a.disconnect();
   }
 

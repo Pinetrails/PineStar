@@ -429,6 +429,81 @@ async function run() {
     A.eq(sends[0].t, 'newest reply', 'the delivered reply is the newest run\'s, not a stale retry');
   }
 
+  // ---- M. MEDIA ingest: a photo/video message downloads, stores, and rides the run as attachments ----
+  {
+    const store = fakeStore(); let lastRun = null; const saved = [], fetched = [];
+    const runOnce = async (o) => { lastRun = o; o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'seen' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      fetchMedia: (it) => { fetched.push(it.fileId); return Promise.resolve({ ok: true, buffer: Buffer.from('BYTES-' + it.fileId) }); },
+      saveAttachment: (agentId, name, dataUrl) => { saved.push({ agentId, name, dataUrl }); const img = /^data:image\//.test(dataUrl); return Promise.resolve({ ok: true, id: 'id-' + name, name, path: '.attachments/' + name, mediaType: img ? 'image/jpeg' : 'video/mp4', kind: img ? 'image' : 'file' }); },
+      expandAttachments: (messages, agentId) => {
+        // stand-in for expandUserAttachments: turn the ref'd turn into blocks (image block per image ref)
+        return Promise.resolve(messages.map(m => (m.attachments ? { role: m.role, content: [{ type: 'text', text: m.content }].concat(m.attachments.filter(a => a.kind === 'image').map(a => ({ type: 'image_url', image_url: { url: 'expanded:' + a.name } }))) } : m)));
+      }
+    });
+    const msg = dm('watch this', '77');
+    msg.media = [
+      { kind: 'video', fileId: 'v1', name: 'demo.mp4', mime: 'video/mp4', size: 1000 },
+      { kind: 'photo', fileId: 't1', name: 'video-preview-frame.jpg', mime: 'image/jpeg', size: 50 }
+    ];
+    await hub.onInbound(msg);
+    A.eq(fetched, ['v1', 't1'], 'both media items downloaded');
+    A.eq(saved.map(s => s.agentId), ['tg_77', 'tg_77'], 'stored in the RESOLVED agent\'s workspace');
+    A.ok(/^data:video\/mp4;base64,/.test(saved[0].dataUrl), 'video bytes stored as a typed data URL');
+    const turn = store.appends.find(x => x.role === 'user');
+    A.ok(/watch this/.test(turn.content) && /demo\.mp4/.test(turn.content) && /\.attachments\//.test(turn.content), 'persisted user turn = caption + honest media notes with saved paths');
+    A.ok(/preview-frame\.jpg is a still frame from the video/.test(turn.content), 'video+frame cross-reference note present');
+    const last = lastRun.messages[lastRun.messages.length - 1];
+    A.ok(Array.isArray(last.content) && last.content.some(b => b.type === 'image_url' && /expanded:video-preview-frame\.jpg/.test(b.image_url.url)), 'run message carries the EXPANDED image block (the model can SEE the frame)');
+    A.eq('attachments' in last, false, 'no raw attachments field leaks to the provider after expansion');
+  }
+
+  // ---- M2. media-only message (no caption) is still admitted; download failure degrades to an honest note ----
+  {
+    const store = fakeStore(); let lastRun = null; const sends = [];
+    const runOnce = async (o) => { lastRun = o; o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
+    const hub = makeChannelHub({
+      runOnce, store, send: (c, t) => { sends.push(t); return Promise.resolve({ ok: true }); }, secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      fetchMedia: () => Promise.resolve({ ok: false, error: 'file too large (999 bytes)' }),
+      saveAttachment: () => Promise.resolve({ ok: true }), expandAttachments: (m) => Promise.resolve(m)
+    });
+    const msg = dm('', '78'); msg.media = [{ kind: 'photo', fileId: 'p1', name: 'photo.jpg', mime: 'image/jpeg', size: 100 }];
+    await hub.onInbound(msg);
+    A.ok(lastRun, 'media-only message (empty text) still runs — no silent drop');
+    const last = lastRun.messages[lastRun.messages.length - 1];
+    A.ok(/could not download the photo/.test(String(last.content)) && /file too large/.test(String(last.content)), 'failed download becomes an honest note the model reads');
+    A.eq(sends.length, 1, 'the agent still replies');
+  }
+
+  // ---- M3. media without wiring (no fetchMedia/saveAttachment) degrades honestly, never drops the message ----
+  {
+    const store = fakeStore(); let lastRun = null;
+    const runOnce = async (o) => { lastRun = o; o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
+    const hub = makeChannelHub({ runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen() });
+    const msg = dm('here', '79'); msg.media = [{ kind: 'video', fileId: 'v1', name: 'a.mp4', mime: 'video/mp4', size: 10 }];
+    await hub.onInbound(msg);
+    const last = lastRun.messages[lastRun.messages.length - 1];
+    A.ok(/media ingest is not wired/.test(String(last.content)), 'unwired channel says so instead of pretending');
+  }
+
+  // ---- M4. oversized media item is refused with a note BEFORE any download ----
+  {
+    const store = fakeStore(); let lastRun = null; const fetched = [];
+    const runOnce = async (o) => { lastRun = o; o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      fetchMedia: (it) => { fetched.push(it.fileId); return Promise.resolve({ ok: true, buffer: Buffer.from('x') }); },
+      saveAttachment: () => Promise.resolve({ ok: true, id: 'i', name: 'n', path: '.attachments/n', mediaType: 'image/jpeg', kind: 'image' }),
+      expandAttachments: (m) => Promise.resolve(m)
+    });
+    const msg = dm('big one', '80'); msg.media = [{ kind: 'video', fileId: 'huge', name: 'big.mp4', mime: 'video/mp4', size: 50 * 1024 * 1024 }];
+    await hub.onInbound(msg);
+    A.eq(fetched, [], 'oversized item never downloaded');
+    const last = lastRun.messages[lastRun.messages.length - 1];
+    A.ok(/too large to ingest/.test(String(last.content)), 'oversized item noted honestly');
+  }
+
   A.report('channels.hub.test');
 }
 

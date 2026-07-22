@@ -72,6 +72,35 @@
         throw err;
       },
 
+      // Download ONE file the user sent the bot (photo/video/voice/document bytes). Two-step Bot API dance:
+      // getFile(file_id) -> result.file_path, then GET <apiBase>/file/bot<token>/<file_path>. NEVER throws —
+      // always { ok, buffer?, error? } so the hub's per-item degrade stays a note, not a crashed inbound.
+      // maxBytes (caller-supplied) refuses oversized bodies BEFORE buffering them (content-length when present,
+      // else a post-read length check). The token appears only in the URL, same as every other call here.
+      async getFile(fileId, opts2) {
+        const o3 = opts2 || {};
+        try {
+          const { data } = await call('getFile', { file_id: String(fileId) }, o3.signal);
+          if (!data || !data.ok || !data.result || !data.result.file_path) {
+            return { ok: false, error: (data && data.description) || 'getFile failed' };
+          }
+          const url = (o.apiBase || DEFAULT_API_BASE).replace(/\/+$/, '') + '/file/bot' + token + '/' + String(data.result.file_path);
+          const res = await fetchImpl(url, { method: 'GET', signal: o3.signal });
+          if (!res || !res.ok) return { ok: false, error: 'file download failed: http ' + ((res && res.status) || 0) };
+          const max = Number(o3.maxBytes) > 0 ? Number(o3.maxBytes) : Infinity;
+          const len = Number(res.headers && typeof res.headers.get === 'function' ? res.headers.get('content-length') : 0);
+          if (len > max) return { ok: false, error: 'file too large (' + len + ' bytes)' };
+          const ab = await res.arrayBuffer();
+          const buffer = Buffer.from(ab);
+          if (buffer.length > max) return { ok: false, error: 'file too large (' + buffer.length + ' bytes)' };
+          if (!buffer.length) return { ok: false, error: 'empty file' };
+          return { ok: true, buffer: buffer };
+        } catch (e) {
+          if (e && (e.name === 'AbortError' || e.aborted)) return { ok: false, error: 'aborted' };
+          return { ok: false, error: (e && e.message) || 'network error' };
+        }
+      },
+
       // never throws: a network/abort/HTTP error becomes a SendResult so the adapter's bounded resend can run.
       async send(chatId, text, sendOpts) {
         const o2 = sendOpts || {};
