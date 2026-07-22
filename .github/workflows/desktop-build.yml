@@ -169,7 +169,7 @@ jobs:
           Test build — not a public release. Pick your platform:
 
           ## macOS
-          1. Download the **`x64`** `.dmg` — on **every** Mac, including Apple Silicon (M1/M2/M3/M4). Until the build is notarized, macOS blocks the native `aarch64` build outright on Apple Silicon; the `x64` one runs everywhere (Apple Silicon uses Rosetta 2).
+          1. Download the **`x64`** `.dmg` — on **every** Mac, including Apple Silicon (M1/M2/M3/M4). Until the build is notarized, the native `aarch64` build fails on Apple Silicon with a false "damaged and can't be opened" error that offers no override; the `x64` one runs everywhere (Apple Silicon uses Rosetta 2) with only the normal warning below.
           2. Open it and drag **StarNet** onto the **Applications** folder.
           3. Launch it from Applications. If macOS says the app was **blocked**: click **Done**, then open **System Settings → Privacy & Security**, scroll to the bottom, click **Open Anyway**, and enter your password. One time only — this build isn't notarized yet.
 

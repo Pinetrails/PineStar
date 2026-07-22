@@ -24,11 +24,13 @@ Pick the asset for your platform:
 | **Windows** (10/11, 64-bit) | `StarNet_<version>_x64-setup.exe` |
 | **macOS** — all Macs, including Apple Silicon (M1/M2/M3/M4) | `StarNet_<version>_x64.dmg` |
 
-> **Apple Silicon Macs: download the `x64` DMG too.** Until StarNet is Apple-notarized, macOS
-> blocks the un-notarized native `aarch64` build outright on Apple Silicon — the `x64` build is
-> the one that runs on every Mac (Apple Silicon runs it through Rosetta 2, with only the
-> one-time "Open Anyway" approval described below). The `aarch64.dmg` on the releases page will
-> become the recommended Apple Silicon download once notarization ships.
+> **Apple Silicon Macs: download the `x64` DMG too.** Until StarNet is Apple-notarized, opening
+> the native `aarch64` build on Apple Silicon fails with a false *"StarNet is damaged and
+> can't be opened"* error that offers no override — nothing is actually wrong with the file,
+> but macOS gives you no way past that dialog. The `x64` build is the one that runs on every
+> Mac (Apple Silicon runs it through Rosetta 2, with only the one-time "Open Anyway" approval
+> described below). The `aarch64.dmg` on the releases page will become the recommended Apple
+> Silicon download once notarization ships.
 
 ---
 
