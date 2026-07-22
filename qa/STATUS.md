@@ -1,3 +1,4 @@
+- 2026-07-22 · claude/hermes-integration-rename-b5b7a4 -> trunk 6ab9aaa4 (snapshot 226a1c58) — repo-wide reference-harness de-identify: 12 docs REF_-renamed, ref-proven QA enums (needles moved in lockstep), comments reworded, "ported from" headers corrected to wire-compatible; KEPT NOTICE.md + IMPORT AGENT flow + x-hermes-session-id (license/feature/compat carve-outs). W0 re-stamp 5bfd8019; gates test:fast 376/376 + test:http FULL GREEN on trunk.
 - 2026-07-21 · claude/maximize-border-pc-58234b -> trunk 2e784db3 — titlebar unified 2px-SVG glyphs (maximized chrome weight-match, 3rd Andrew report), W0 surface re-stamped in-branch; gate 374 green.
 # QA STATION — dashboard
 
