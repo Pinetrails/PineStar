@@ -89,6 +89,11 @@
     // /models responses). Both stay null/off unless the profile asserts them — capability claims must
     // come from somewhere provable, never be assumed.
     const sendReasoningEffort = opts.sendReasoningEffort === true;
+    // Error identity: HTTP failures name the PROVIDER when the factory supplies a label. A raw
+    // "openai-compatible http 401" mid-run carried no provider identity, so the frontend's recovery
+    // classifier couldn't route a dead grok/kimi sign-in to its ⏼ RECONNECT door — users got the
+    // keyed-provider "＋ Add a key" door for a keyless subscription sign-in.
+    const errLabel = String(opts.label || 'openai-compatible');
     const profileSupportsTools = (typeof opts.supportsTools === 'boolean') ? opts.supportsTools : null;
     const defaultEffort = String(opts.reasoningEffort || '');
     // Static catalog fallback for endpoints with no usable /models (e.g. Perplexity, whose
@@ -247,7 +252,7 @@
         // params. Strip the named param and retry immediately (remembered per model, so later turns in the
         // run never pay the extra round-trip). Does not consume a transient-retry attempt.
         if (dropUnsupportedParam(body, res.status, detail)) { attempt--; continue; }
-        const err = new Error('openai-compatible http ' + res.status + ' - ' + detail);
+        const err = new Error(errLabel + ' http ' + res.status + ' - ' + detail);
         err.status = res.status;
         err.headers = res.headers;
         const cls = classifyApiError(err, { model: body.model });

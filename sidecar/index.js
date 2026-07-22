@@ -2234,12 +2234,24 @@ let codexAuthDead = codexAuthState.deadFromTokens(codexTokens);
 // Hand a Codex run a FRESH access_token: refresh when the JWT exp is within the skew window, persisting the
 // rotated tokens. Throws an auth error otherwise — `reloginRequired` tells the caller whether to prompt a new
 // ChatGPT sign-in (dead/missing refresh token) or surface a transient "retry later" (quota/network).
+let codexRefreshInFlight = null;   // SINGLE-FLIGHT refresh guard — see the comment inside ensureCodexAccessToken
 async function ensureCodexAccessToken() {
   if (!codexTokens || !codexTokens.access_token) {
     const e = new Error('Not signed in to ChatGPT — connect a ChatGPT subscription first.');
     e.code = 'codex_not_connected'; e.reloginRequired = true; throw e;
   }
   if (!codexAuth.accessTokenIsExpiring(codexTokens.access_token, codexAuth.REFRESH_SKEW_SECONDS, Date.now())) return codexTokens.access_token;
+  // SINGLE-FLIGHT: concurrent callers (two COMMS runs on one agent, a run + a /models poll) MUST share one
+  // refresh. The issuer ROTATES the refresh token, so two parallel refreshes race: the loser presents an
+  // already-consumed token, gets invalid_grant, and stamps a durable FALSE "SIGN-IN EXPIRED" over the live
+  // session the winner just refreshed (the 2026-07-08 consumed-refresh-token class, self-inflicted). Same
+  // coalescing the spotify store has always had (spotify/store.js `refreshing`). The check→assign below has
+  // no await between them, so it is race-free on the single JS thread.
+  if (codexRefreshInFlight) return codexRefreshInFlight;
+  codexRefreshInFlight = refreshCodexTokensOnce().finally(() => { codexRefreshInFlight = null; });
+  return codexRefreshInFlight;
+}
+async function refreshCodexTokensOnce() {
   let next;
   try {
     next = await codexAuth.refreshTokens({ fetch: globalThis.fetch, refresh_token: codexTokens.refresh_token, now: Date.now() });
@@ -2375,6 +2387,15 @@ async function ensureOAuthAccessToken(pid) {
     e.code = id + '_not_connected'; e.reloginRequired = true; throw e;
   }
   if (!entry.auth.accessTokenIsExpiring(entry.tokens, Date.now())) return entry.tokens.access_token;
+  // SINGLE-FLIGHT per provider — same guard (and same reasoning) as ensureCodexAccessToken above: parallel
+  // refreshes race on the rotated refresh token and the loser false-expires a live sign-in. Especially hot for
+  // kimi (~15-min access tokens + halfLifeRefresh ⇒ a refresh roughly every ~7 min under load). The transient
+  // `refreshInFlight` field lives only on the in-memory entry — saveOAuthTokens persists entry.tokens alone.
+  if (entry.refreshInFlight) return entry.refreshInFlight;
+  entry.refreshInFlight = refreshOAuthTokensOnce(id, entry).finally(() => { entry.refreshInFlight = null; });
+  return entry.refreshInFlight;
+}
+async function refreshOAuthTokensOnce(id, entry) {
   let next;
   try {
     next = await entry.auth.refreshTokens({ fetch: globalThis.fetch, refresh_token: entry.tokens.refresh_token, now: Date.now() });

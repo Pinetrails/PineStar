@@ -106,4 +106,28 @@ A.ok(/p !== 'codex' && p !== 'grok' && p !== 'kimi'/.test(keycta), 'keycta treat
   A.ok(/pid === 'codex'.*codexStatusKnown\s*=\s*\{\s*connected:\s*true/.test(signinHandler), "a card-driven codex sign-in lands in codexStatusKnown (the codex truth the row actually reads)");
 }
 
+// ---- 2026-07-22 auth-lifecycle hardening (source-locks; the live races/keychain failures need real tokens
+// or a packaged exe to reproduce, so these pin the mechanisms) ----
+{
+  const ui = read('frontend', 'app', 'stationui.js');
+  const harness = read('frontend', 'app', 'harness.js');
+  const sidecar = read('sidecar', 'index.js');
+  // single-flight refresh: concurrent refreshes on a ROTATING refresh token false-expire a live sign-in
+  // (the 2026-07-08 class, self-inflicted). Both the codex literal path and the grok/kimi shared path coalesce.
+  A.ok(/codexRefreshInFlight\s*=\s*refreshCodexTokensOnce\(\)\.finally/.test(sidecar), 'codex refresh is single-flight (coalesced in-flight promise)');
+  A.ok(/entry\.refreshInFlight\s*=\s*refreshOAuthTokensOnce\(id,\s*entry\)\.finally/.test(sidecar), 'grok/kimi refresh is single-flight per provider');
+  // desktop keychain writes: configured flips ONLY after the invoke proves itself; Settings callers await and
+  // render the honest failure (the optimistic flip toasted "stored in your OS keychain" over a rejected write).
+  A.ok(/\.then\(r => \{ setDesktopConfigured\(p, on\); return r; \}\)/.test(harness), 'setKey flips configured only after the keychain write resolves');
+  A.ok(/could not store the ' \+ provName\(provider\) \+ ' key in your OS keychain/.test(ui), 'Settings key save renders the honest keychain-failure copy');
+  // Settings OAuth state changes mirror into the desktop configured-map (genesis already did; Settings must too).
+  A.ok(/Harness\.setDesktopConfigured\('codex', true\)/.test(ui) && /Harness\.setDesktopConfigured\(pid, true\)/.test(ui), 'Settings sign-in feeds the desktop configured-map');
+  A.ok(/Harness\.setDesktopConfigured\('codex', false\)/.test(ui) && /Harness\.setDesktopConfigured\(pid, false\)/.test(ui), 'Settings disconnect clears the desktop configured-map');
+  // model reconcile on OAuth card select: a foreign global model slug must not ride to the new endpoint.
+  A.ok(/isOAuthProvider\(p\) && typeof fetch === 'function'/.test(ui) && /\/api\/auth\/' \+ p \+ '\/models/.test(ui), 'selecting an OAuth provider card reconciles the model against that provider\'s catalog');
+  // mid-run token death carries provider identity from the adapter (the RECONNECT door depends on it).
+  const factory = read('sidecar', 'providers', 'factory.js');
+  A.ok(/label: isDeviceOAuth \? \(profile\.name \|\| profile\.id\) : undefined/.test(factory), 'device-OAuth adapters are constructed with the provider label');
+}
+
 A.report('settings-oauth-rows.test');
