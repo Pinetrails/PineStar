@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "df16c3d2dd6d58424b9f0ddbfb9c4018122ce76b",
+    "sourceCommit": "12e197684eab0a46665510577536613856a17b96",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 282832,
-        "sha256": "ad7391b7399c8049f0387363110b9804387c454a996186cf74cc30a3f417f7d0"
+        "bytes": 283578,
+        "sha256": "ffbc6d72fa4d46e61a6eaf52292a247eabe2f8e931fe2159b33a01b42e09a37d"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -243,8 +243,8 @@
       },
       {
         "path": "frontend/app/friendlyerror.js",
-        "bytes": 28067,
-        "sha256": "d0ab043efe1b2b2c5d3f30e628b35d965af353a6920f768163bc07eb8a56bb55"
+        "bytes": 28689,
+        "sha256": "f17f5edaaf43d54e5a45302637862520afb469f15664f3d5472722ede05f6761"
       },
       {
         "path": "frontend/app/fullscreen.js",
@@ -348,8 +348,8 @@
       },
       {
         "path": "frontend/app/modeldock.js",
-        "bytes": 36419,
-        "sha256": "288d4663d794c858b5f038ce99546dfa0c46e5bdb85c1dd802f8b256f6bf987d"
+        "bytes": 36581,
+        "sha256": "e439e7d9ccbac7fcd95acee15541979440a1f99c64243302ab39df91676cb6a9"
       },
       {
         "path": "frontend/app/modelpicker.js",
@@ -633,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 404614,
-        "sha256": "e37114b70c9af7f16584083bf49d734d5d81a0761c3408b5dedddeb3b0a59b48"
+        "bytes": 409170,
+        "sha256": "aafdfa6457b0eb4eadf9f4e1a4a7d2330ecdd54b2f7f12dca709f98f84333b2e"
       },
       {
         "path": "frontend/app/study.js",
@@ -748,8 +748,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 52736,
-        "sha256": "ecb01a7def0126327d018cf28f325e6a890f78896725f508c40f74ddf04ad0c0"
+        "bytes": 54143,
+        "sha256": "a76a4aa2f8a80b03f176f4d80477f8703584dad23f377cb67b5240e65c20271c"
       },
       {
         "path": "frontend/app/windows/logbook.js",
