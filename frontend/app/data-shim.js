@@ -46,5 +46,14 @@ DATA.SKINS = {
   secretagent:  { name: 'Secret Agent',   set: 'secretagent',  scale: 0.404 },
   grimreaper:   { name: 'Grim Reaper',    set: 'grimreaper',   scale: 0.394 },
   plaguedoctor: { name: 'Plague Doctor',  set: 'plaguedoctor', scale: 0.376 },
+  johnwick:      { name: 'John Wick',      set: 'johnwick',      scale: 0.385 },
+  freddyfazbear: { name: 'Freddy',         set: 'freddyfazbear', scale: 0.368 },
+  ghostface:     { name: 'Ghostface',      set: 'ghostface',     scale: 0.376 },
+  morpheus:      { name: 'Morpheus',       set: 'morpheus',      scale: 0.385 },
+  ricksanchez:   { name: 'Rick',           set: 'ricksanchez',   scale: 0.376 },
+  ninjaturtle:   { name: 'Ninja Turtle',   set: 'ninjaturtle',   scale: 0.414 },
+  robocop:       { name: 'Robocop',        set: 'robocop',       scale: 0.385 },
+  minionchar:    { name: 'Minion',         set: 'minionchar',    scale: 0.404 },
+  claudecrab:    { name: 'Claude Crab',    set: 'claudecrab',    scale: 0.414 },
 };
 DATA.DEFAULT_SKIN = 'blank';
