@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StarNet — Give your AI a world to work in</title>
+<meta name="description" content="StarNet is a local-first desktop harness where you recruit AI agents into a living pixel-art station and watch them do real work with real models and tools. Open source. Windows and macOS.">
+<meta property="og:title" content="StarNet — Give your AI a world to work in">
+<meta property="og:description" content="Recruit AI agents into a living station on your machine, put them to work, and build your empire. Local-first. Open source. BYOK.">
+<meta property="og:image" content="https://androoagi.github.io/starnet/assets/og-card.png">
+<meta property="og:url" content="https://androoagi.github.io/starnet/">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="StarNet — Give your AI a world to work in">
+<meta name="twitter:description" content="Recruit AI agents into a living station on your machine, put them to work, and build your empire. Local-first. Open source. BYOK.">
+<meta name="twitter:image" content="https://androoagi.github.io/starnet/assets/og-card.png">
+<link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<!-- boot sequence overlay -->
+<div id="boot" aria-hidden="true">
+  <div class="boot-inner">
+    <div id="boot-lines"></div>
+    <span class="boot-cursor"></span>
+    <div class="boot-skip">// click anywhere to skip</div>
+  </div>
+</div>
+<div id="boot-flash" aria-hidden="true" hidden></div>
+
+<!-- CRT overlays -->
+<div class="crt-scan" aria-hidden="true"></div>
+<div class="crt-vignette" aria-hidden="true"></div>
+<div class="crt-flicker" aria-hidden="true"></div>
+
+<!-- HUD corner ticks -->
+<div class="tick tick-tl" aria-hidden="true"></div>
+<div class="tick tick-tr" aria-hidden="true"></div>
+<div class="tick tick-bl" aria-hidden="true"></div>
+<div class="tick tick-br" aria-hidden="true"></div>
+
+<!-- passing agent blips -->
+<div class="blips" aria-hidden="true">
+  <div class="blip" style="top:12%; width:5px; height:5px; animation-duration:13s; animation-delay:-2s;"><span style="width:42px;"></span></div>
+  <div class="blip" style="top:22%; width:3px; height:3px; animation-duration:21s; animation-delay:-9s;"><span style="width:26px;"></span></div>
+  <div class="blip" style="top:33%; width:6px; height:6px; animation-duration:10s; animation-delay:-5s;"><span style="width:54px;"></span></div>
+  <div class="blip" style="top:42%; width:2px; height:2px; animation-duration:26s; animation-delay:-14s;"><span style="width:20px;"></span></div>
+  <div class="blip" style="top:18%; width:3px; height:3px; animation-duration:17s; animation-delay:-11s;"><span style="width:32px;"></span></div>
+  <div class="blip" style="top:50%; width:4px; height:4px; animation-duration:15s; animation-delay:-7s;"><span style="width:38px;"></span></div>
+</div>
+
+<header class="topbar">
+  <a class="brand" href="#top">STARNET TERMLINK</a>
+  <nav class="topnav">
+    <a href="#station">WHAT IT IS</a>
+    <a href="#difference">FEATURES</a>
+    <a href="#download">DOWNLOAD</a>
+    <a href="docs/index.html">DOCS</a>
+    <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
+  </nav>
+  <span class="topbar-right">
+    <a class="social-link" data-social="discord" href="" hidden>DISCORD</a>
+    <a class="social-link" data-social="x" href="" hidden>X</a>
+    <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
+  </span>
+</header>
+
+<main id="top">
+
+  <!-- ===== hero ===== -->
+  <section class="hero">
+    <div class="grid-floor" aria-hidden="true"><div></div></div>
+    <div class="ember" aria-hidden="true"></div>
+    <div class="hero-inner">
+      <img class="hero-logo" src="assets/starnet-logo-glow.png" alt="StarNet">
+      <p class="tagline">Give your AI a world to work in.<span class="cursor"></span></p>
+      <p class="subline">Recruit AI agents into a living pixel-art station on your machine, connect real tools and real models, and watch your workforce think, build, research, and solve &mdash; for your goals.</p>
+      <div class="cta-row">
+        <a id="cta-download" class="btn btn-primary" href="#download">[ DOWNLOAD ]</a>
+        <a class="btn" href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">[ VIEW SOURCE ]</a>
+      </div>
+      <div class="hero-meta"><span id="ver-badge">v0.6.6</span> &middot; MIT open source &middot; Windows + macOS installers day one &middot; bring your own keys</div>
+    </div>
+  </section>
+
+  <!-- ===== what it is ===== -->
+  <section id="station" class="section">
+    <div class="section-head">
+      <span class="section-no">01</span>
+    </div>
+    <div class="split station">
+      <div class="split-copy">
+        <p class="lead">Recruit AI agents into a living simulation on your machine. Connect real tools and real models, then watch your workforce think, research, and build &mdash; the only limit is what you ask for.</p>
+        <ul class="contract">
+          <li><b>Placed gear is real capability.</b> A signal dish grants web, a cabinet grants files, a workbench grants a terminal &mdash; shared by the whole crew.</li>
+          <li><b>Every bay is another agent</b>, running its own work in parallel.</li>
+          <li><b>The floor is honest.</b> An agent at a lit desk means a live run &mdash; the timer on screen is the real one.</li>
+        </ul>
+        <p>You direct from COMMS. They think, browse, build files, and deliver &mdash; with your models, your keys, on your machine.</p>
+      </div>
+      <figure class="bezel live">
+        <div class="app-clip" aria-label="Live preview: the actual StarNet app running in your browser, clipped to the station camera">
+          <iframe id="live-app" src="app/index.html" scrolling="no" loading="lazy" tabindex="-1" title="StarNet live preview"></iframe>
+        </div>
+        <figcaption>// live preview</figcaption>
+      </figure>
+    </div>
+  </section>
+
+  <!-- ===== distinctions ===== -->
+  <section id="difference" class="section">
+    <div class="section-head">
+      <span class="section-no">02</span>
+      <h2>FEATURES</h2>
+    </div>
+    <ul class="contract distinctions">
+      <li><b>It studies you.</b> Your crew keeps a dossier on its commander &mdash; goals, taste, strengths. Agents propose what they learn; you approve or strike it.</li>
+      <li><b>Work sharpens itself.</b> Rate a delivery and the next pass is built from what you valued. Routines compound instead of decaying.</li>
+      <li><b>Night Shift.</b> The station keeps working while you're away &mdash; inside your leash, sandboxed, honest morning report.</li>
+      <li><b>Nothing fake, ever.</b> The app never shows state the harness can't prove. No fake progress, no invented counters, real costs.</li>
+      <li><b>Local-first, your keys.</b> Everything stays on your machine. OpenRouter key or OAuth sign-in. Zero telemetry &mdash; <a href="legal/privacy.html">we collect nothing</a>.</li>
+      <li><b>Plays well with other harnesses.</b> An MCP bridge and OpenAI-style endpoint let Claude Code, Hermes, or OpenClaw drive your station. <a href="docs/migrating.html">Coming from one of those?</a></li>
+    </ul>
+  </section>
+
+  <!-- ===== download ===== -->
+  <section id="download" class="section">
+    <div class="section-head">
+      <span class="section-no">03</span>
+      <h2>DOWNLOAD STARNET</h2>
+    </div>
+    <p class="dl-sub"><b>Windows and macOS installers, fully supported from day one.</b> Builds publish on the <a id="rel-page" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">releases page</a> and update through the same verified feed. Current version: <span class="ver">v0.6.6</span>.</p>
+    <div class="dl-grid">
+      <article class="dl-card" data-os="windows">
+        <div class="dl-os">WINDOWS</div>
+        <div class="dl-req">Windows 10 / 11 &middot; 64-bit</div>
+        <a class="btn btn-primary dl-btn" data-asset="x64-setup.exe" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .EXE INSTALLER ]</a>
+        <div class="dl-note">Authenticode-signed. SmartScreen may still warn while the new certificate builds reputation: More info &rarr; Run anyway.</div>
+      </article>
+      <article class="dl-card" data-os="mac-arm">
+        <div class="dl-os">MACOS &middot; APPLE SILICON</div>
+        <div class="dl-req">M1 / M2 / M3 / M4</div>
+        <a class="btn btn-primary dl-btn" data-asset="aarch64.dmg" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .DMG ]</a>
+        <div class="dl-note">Gatekeeper warning expected: right-click &rarr; Open.</div>
+      </article>
+    </div>
+    <div class="source-run">
+      <div class="source-run-head">// prefer to run from source? node 18+ is all you need</div>
+    <p class="dl-honesty">// honesty note: every build is cryptographically signed for auto-updates, and Windows installers are Authenticode code-signed. macOS builds aren't Apple-notarized yet, so Gatekeeper shows a one-time warning before first run; Windows SmartScreen may also warn until the signing certificate earns reputation. The <a href="docs/getting-started.html">getting-started guide</a> shows exactly what to click on each platform. Something broken? Tell us: <a href="mailto:androo.agi@gmail.com">androo.agi@gmail.com</a>.</p>
+  </section>
+
+  <!-- ===== docs ===== -->
+  <section id="docs" class="section">
+    <div class="section-head">
+      <span class="section-no">04</span>
+      <h2>DOCS</h2>
+    </div>
+    <p class="docs-links">
+      <a href="docs/getting-started.html">GETTING STARTED</a>
+      <a href="docs/providers.html">PROVIDERS &amp; KEYS</a>
+      <a href="docs/station.html">THE STATION</a>
+      <a href="docs/agents.html">AGENTS &amp; TEAMS</a>
+      <a href="docs/autonomy.html">NIGHT SHIFT</a>
+      <a href="docs/skills.html">SKILLS &amp; ROUTINES</a>
+      <a href="docs/connectors.html">CONNECTORS</a>
+      <a href="docs/migrating.html">FROM OPENCLAW / HERMES</a>
+      <a href="docs/troubleshooting.html">TROUBLESHOOTING</a>
+    </p>
+  </section>
+
+  <!-- ===== FAQ ===== -->
+  <section id="faq" class="section">
+    <div class="section-head">
+      <span class="section-no">05</span>
+      <h2>FAQ</h2>
+    </div>
+    <div class="faq">
+      <details>
+        <summary>Is StarNet free?</summary>
+        <p>The software is MIT-licensed open source and free to run. Model usage costs whatever your provider charges &mdash; you bring your own API key (or OAuth account), and StarNet shows you real cost per run. No markup, no subscription required to use your own keys.</p>
+      </details>
+      <details>
+        <summary>Is the work actually real?</summary>
+        <p>Yes &mdash; that's the whole point. Every agent run is a real model call with real tools; files get written, browsers get driven, and the ledger records real cost. The station never renders state the harness can't prove. If it looks like an agent is working, it is.</p>
+      </details>
+      <details>
+        <summary>Where does my data live?</summary>
+        <p>On your machine. Station state, transcripts, memory, and ledgers live in your local StarNet workspace. Requests go to your model provider only when an agent runs, and to the wider network only when you explicitly grant a network tool or connector.</p>
+      </details>
+      <details>
+        <summary>What do I need to start?</summary>
+        <p>A Windows or macOS machine and one model provider: an OpenRouter API key works everywhere, or use a supported OAuth sign-in. That's it &mdash; full power from minute one, nothing gated behind progression.</p>
+      </details>
+      <details>
+        <summary>Why does my OS warn me during install?</summary>
+        <p>Windows installers are Authenticode code-signed; SmartScreen can still warn while a new certificate builds reputation. macOS builds aren't Apple-notarized yet, so Gatekeeper shows a one-time warning. The <a href="docs/troubleshooting.html">troubleshooting guide</a> documents every warning honestly.</p>
+      </details>
+    </div>
+  </section>
+
+</main>
+
+<footer class="footer">
+  <div class="footer-line">STARNET &middot; a living station of AI agents, doing real work in the dark</div>
+  <div class="footer-links">
+    <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
+    <a href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
+    <a href="docs/index.html">DOCS</a>
+    <a href="docs/getting-started.html">INSTALL GUIDE</a>
+    <a class="social-link" data-social="discord" href="" hidden>DISCORD</a>
+    <a class="social-link" data-social="x" href="" hidden>X / TWITTER</a>
+    <a href="legal/privacy.html">PRIVACY</a>
+    <a href="legal/terms.html">TERMS</a>
+    <a href="mailto:androo.agi@gmail.com">CONTACT</a>
+  </div>
+  <div class="footer-fine">MIT license &middot; <span id="ver-foot">v0.6.6</span> &middot; &copy; <span id="year">2026</span> StarNet &middot; no telemetry, no tracking &mdash; <a href="legal/privacy.html">we collect nothing</a></div>
+</footer>
+
+<script src="site.js"></script>
+<script src="live-preview.js"></script>
+</body>
+</html>

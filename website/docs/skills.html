@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skills, recipes, routines — StarNet Docs</title>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<div class="crt-scan" aria-hidden="true"></div>
+<div class="crt-vignette" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="brand" href="../index.html">STARNET TERMLINK</a>
+  <nav class="topnav">
+    <a href="../index.html#features">FEATURES</a>
+    <a href="../index.html#download">DOWNLOAD</a>
+    <a href="index.html">DOCS</a>
+    <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
+  </nav>
+  <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <div class="side-title">// DOCS</div>
+    <a href="index.html">DOCS</a>
+    <a href="getting-started.html">GETTING STARTED</a>
+    <a href="providers.html">PROVIDERS & KEYS</a>
+    <a href="station.html">THE STATION</a>
+    <a href="agents.html">AGENTS & TEAMS</a>
+    <a href="autonomy.html">AUTONOMY & NIGHT SHIFT</a>
+    <a href="skills.html" class="active">SKILLS, RECIPES, ROUTINES</a>
+    <a href="connectors.html">CONNECTORS & INTEROP</a>
+    <a href="migrating.html">FROM OPENCLAW / HERMES</a>
+    <a href="troubleshooting.html">TROUBLESHOOTING</a>
+  </aside>
+  <main class="docs-main">
+<h1>SKILLS, RECIPES, ROUTINES</h1>
+<p class="doc-sub">// the HOW, the WHAT, and the WHEN of repeatable work</p>
+
+<h2>The three-layer model</h2>
+<table>
+<tr><th>Layer</th><th>Answers</th><th>Example</th></tr>
+<tr><td><b>Skill</b></td><td>HOW to do something well</td><td>"how we write release notes"</td></tr>
+<tr><td><b>Recipe</b></td><td>WHAT to produce</td><td>"weekly competitor digest"</td></tr>
+<tr><td><b>Routine</b></td><td>WHEN it happens</td><td>"every Monday, 9am"</td></tr>
+</table>
+<p>Skills teach technique, recipes define deliverables built from those techniques, and routines
+put recipes on a schedule. Each layer is inspectable and editable — no black-box "automations."</p>
+
+<h2>Skills</h2>
+<p>A skill is a packaged instruction set an agent loads when the task calls for it. Agents ship
+with class-appropriate skills, and gain more as you work together. Skills are
+<b>capability-gated</b>: a skill that needs a tool the agent hasn't been granted stays visibly
+dormant instead of silently failing — the skills panel always distinguishes what you chose to
+grant from what the station floor provides.</p>
+
+<h2>Recipes</h2>
+<p>A recipe captures a deliverable you'll want again: its inputs, its steps, its output format.
+Run one on demand, hand it to any capable agent, or attach it to a routine. Your usual recipe is
+offered as a one-tap prefill when you return to a session.</p>
+
+<h2>Routines</h2>
+<p>Routines are the schedule layer — see <a href="autonomy.html">Autonomy &amp; Night Shift</a>
+for how scheduled runs execute and report. A routine is always a real recipe run by a real
+agent; there is no separate, weaker "automation mode."</p>
+
+<h2>The loop closes: work that sharpens itself</h2>
+<p>Rate a delivered run and the station extracts <b>why</b> it landed (or didn't) into your
+taste profile. Recipes carry those learnings forward, the quest board regenerates around your
+current goals instead of stale ones, and the scout studies your history to pitch next moves you
+didn't think to ask for. A routine left running doesn't decay into noise &mdash; each cycle is
+built with more evidence of what you value than the last.</p>
+
+<div class="doc-next"><a href="autonomy.html">&larr; AUTONOMY &amp; NIGHT SHIFT</a><a href="connectors.html">NEXT: CONNECTORS &amp; INTEROP &rarr;</a></div>
+  </main>
+</div>
+
+<footer class="footer">
+  <div class="footer-links">
+    <a href="../index.html">HOME</a>
+    <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
+    <a href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
+    <a href="mailto:androo.agi@gmail.com">CONTACT</a>
+  </div>
+  <div class="footer-fine">MIT license &middot; StarNet</div>
+</footer>
+
+</body>
+</html>
