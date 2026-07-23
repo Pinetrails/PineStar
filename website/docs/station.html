@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The station — StarNet Docs</title>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<div class="crt-scan" aria-hidden="true"></div>
+<div class="crt-vignette" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="brand" href="../index.html">STARNET TERMLINK</a>
+  <nav class="topnav">
+    <a href="../index.html#features">FEATURES</a>
+    <a href="../index.html#download">DOWNLOAD</a>
+    <a href="index.html">DOCS</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
+  </nav>
+  <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <div class="side-title">// DOCS</div>
+    <a href="index.html">DOCS</a>
+    <a href="getting-started.html">GETTING STARTED</a>
+    <a href="providers.html">PROVIDERS & KEYS</a>
+    <a href="station.html" class="active">THE STATION</a>
+    <a href="agents.html">AGENTS & TEAMS</a>
+    <a href="autonomy.html">AUTONOMY & NIGHT SHIFT</a>
+    <a href="skills.html">SKILLS, RECIPES, ROUTINES</a>
+    <a href="connectors.html">CONNECTORS & INTEROP</a>
+    <a href="migrating.html">FROM OPENCLAW / HERMES</a>
+    <a href="troubleshooting.html">TROUBLESHOOTING</a>
+  </aside>
+  <main class="docs-main">
+<h1>THE STATION</h1>
+<p class="doc-sub">// the layout you draw is the workflow they run</p>
+
+<h2>Placed gear is real capability</h2>
+<p>Props aren't decoration. A <b>signal dish</b> grants web access, a <b>cabinet</b> grants
+files, a <b>workbench</b> grants a terminal — and so on across the catalog. Gear is
+<b>station-shared</b>: place a thing once and your whole crew can draw on it. You don't need to
+duplicate props room by room. Removing a prop revokes the capability on the very next run —
+the floor is the permission surface, no config files.</p>
+
+<h2>Bays are concurrency</h2>
+<p>Each bay you place hosts another agent running its own genuinely separate, bounded runs at
+the same time. A bay needs its own PC to run — and the station tells you honestly when one
+can't ("NO COMPUTE — ADD A PC") instead of pretending.</p>
+
+<h2>Build mode</h2>
+<p>Open build mode to lay floors, raise walls, cut doorways, and place props. The station is
+yours from minute one: there is no unlock tree, no gated progression, no grind. Full power
+immediately; the game layer is presentation, never permission.</p>
+
+<h2>Workstations</h2>
+<p>Every agent has a home desk — chosen when the agent is created. When a run uses a tool, the
+agent physically walks to the workstation that grants it. That trip is driven by the real tool
+call in the run, which is why watching the floor tells you what's actually happening.</p>
+
+<h2>Truthful telemetry</h2>
+<p>The core law of the whole product: <b>the app never asserts state the harness can't
+prove.</b> No fake progress bars, no idle animations pretending to be work, no "agents online"
+counters that aren't real. If the station shows an agent at a desk mid-run, there is a live run
+behind it; when you see nothing happening, nothing is happening. This is what makes the window
+worth glancing at.</p>
+
+<div class="doc-next"><a href="providers.html">&larr; PROVIDERS &amp; KEYS</a><a href="agents.html">NEXT: AGENTS &amp; TEAMS &rarr;</a></div>
+  </main>
+</div>
+
+<footer class="footer">
+  <div class="footer-links">
+    <a href="../index.html">HOME</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
+    <a href="mailto:androo.agi@gmail.com">CONTACT</a>
+  </div>
+  <div class="footer-fine">MIT license &middot; StarNet</div>
+</footer>
+
+</body>
+</html>

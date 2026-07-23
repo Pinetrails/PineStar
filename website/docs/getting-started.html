@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Getting started — StarNet Docs</title>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<div class="crt-scan" aria-hidden="true"></div>
+<div class="crt-vignette" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="brand" href="../index.html">STARNET TERMLINK</a>
+  <nav class="topnav">
+    <a href="../index.html#features">FEATURES</a>
+    <a href="../index.html#download">DOWNLOAD</a>
+    <a href="index.html">DOCS</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
+  </nav>
+  <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <div class="side-title">// DOCS</div>
+    <a href="index.html">DOCS</a>
+    <a href="getting-started.html" class="active">GETTING STARTED</a>
+    <a href="providers.html">PROVIDERS & KEYS</a>
+    <a href="station.html">THE STATION</a>
+    <a href="agents.html">AGENTS & TEAMS</a>
+    <a href="autonomy.html">AUTONOMY & NIGHT SHIFT</a>
+    <a href="skills.html">SKILLS, RECIPES, ROUTINES</a>
+    <a href="connectors.html">CONNECTORS & INTEROP</a>
+    <a href="migrating.html">FROM OPENCLAW / HERMES</a>
+    <a href="troubleshooting.html">TROUBLESHOOTING</a>
+  </aside>
+  <main class="docs-main">
+<h1>GETTING STARTED</h1>
+<p class="doc-sub">// from download to your first working agent</p>
+
+<h2>1. Download and install</h2>
+<p><b>Windows and macOS installers are fully supported from day one.</b> Linux ships from the
+same signed release train. Grab the right build from the
+<a href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">releases page</a>:</p>
+<table>
+<tr><th>Platform</th><th>Asset</th></tr>
+<tr><td>Windows 10 / 11 (64-bit)</td><td><code>StarNet_&lt;version&gt;_x64-setup.exe</code></td></tr>
+<tr><td>macOS — Apple Silicon (M1–M4)</td><td><code>StarNet_&lt;version&gt;_aarch64.dmg</code></td></tr>
+<tr><td>macOS — Intel</td><td><code>StarNet_&lt;version&gt;_x64.dmg</code></td></tr>
+<tr><td>Linux — Debian / Ubuntu</td><td><code>StarNet_&lt;version&gt;_amd64.deb</code></td></tr>
+<tr><td>Linux — anything else</td><td><code>StarNet_&lt;version&gt;_amd64.AppImage</code></td></tr>
+</table>
+<p>Not sure which Mac you have? Apple menu &rarr; <b>About This Mac</b>. "Apple M…" means
+Apple Silicon; "Intel" means Intel. The wrong one won't run.</p>
+
+<h3>Windows first run</h3>
+<p>Early builds aren't yet Authenticode-signed, so SmartScreen shows
+<i>"Windows protected your PC."</i> Click <b>More info</b> &rarr; <b>Run anyway</b>. The installer
+then runs normally. (One honest caveat: Windows 11 <b>Smart App Control</b> in enforce mode
+blocks all unsigned installers with no override — see <a href="troubleshooting.html">Troubleshooting</a>.)</p>
+
+<h3>macOS first run</h3>
+<ol>
+<li>Open the <code>.dmg</code> and drag <b>StarNet</b> into <b>Applications</b>.</li>
+<li>Open StarNet once — macOS blocks it the first time (the app isn't notarized yet).</li>
+<li>Approve it: <b>System Settings &rarr; Privacy &amp; Security</b>, scroll to Security,
+click <b>Open Anyway</b> — or on older macOS, right-click the app &rarr; <b>Open</b> &rarr; <b>Open</b>.</li>
+</ol>
+<p>You only do this once; afterwards StarNet opens normally.</p>
+
+<h3>Linux</h3>
+<pre><code># Debian / Ubuntu
+sudo apt install ./StarNet_&lt;version&gt;_amd64.deb
+
+# any distro
+chmod +x StarNet_&lt;version&gt;_amd64.AppImage
+./StarNet_&lt;version&gt;_amd64.AppImage</code></pre>
+
+<h2>2. Connect a provider</h2>
+<p>On first launch StarNet asks for one model provider. An
+<b>OpenRouter API key</b> works everywhere (hundreds of models through one key), or use a
+supported OAuth sign-in. Details in <a href="providers.html">Providers &amp; keys</a>.</p>
+
+<h2>3. Awaken your first agent</h2>
+<p>The onboarding flow walks you through recruiting your first crew member: a short interview
+shapes its dossier, it takes a desk in your station, and you give it its first task from the
+COMMS window. When it uses a real tool you'll see it move to the workstation that grants that
+tool — the animation is driven by the actual run, not a script.</p>
+
+<h2>4. Updates</h2>
+<p>StarNet updates itself (System &rarr; Updates). Every update is cryptographically verified
+against a key baked into the app before it installs — on every platform, independent of OS
+code-signing. You never need to re-download installers for routine updates.</p>
+
+<h2>Run from source</h2>
+<p>The sidecar runs on Node core modules alone — no <code>npm install</code> needed:</p>
+<pre><code>git clone https://github.com/nonfungiblefunyuns-ship-it/skynet-harness.git
+cd skynet-harness
+node sidecar/index.js
+# open http://localhost:8787</code></pre>
+
+<div class="doc-next"><span></span><a href="providers.html">NEXT: PROVIDERS &amp; KEYS &rarr;</a></div>
+  </main>
+</div>
+
+<footer class="footer">
+  <div class="footer-links">
+    <a href="../index.html">HOME</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
+    <a href="mailto:androo.agi@gmail.com">CONTACT</a>
+  </div>
+  <div class="footer-fine">MIT license &middot; StarNet</div>
+</footer>
+
+</body>
+</html>

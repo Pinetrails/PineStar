@@ -1,0 +1,102 @@
+/* STARNET — refit.css : premium polish for the REFIT (station-build) modal forms.
+   BAY PICKER · WORKSTATION PICKER · FILTER EDITOR · MERGER EDITOR — the pickers that ride the
+   .refit-guide card in build.js. This file replaces the old inline hex + inline layout on those
+   forms with the station's premium vocabulary: theme vars only (no hardcoded hex outside var()
+   fallbacks), settings-panel input styling, .sec-style region dividers, motion focus ring, and a
+   soft entrance on open. Loaded after app.css/comms.css, before motion.css — see index.html.
+
+   Contract: every selector here is authored to match a DOM id / class that build.js emits. If you
+   rename a class, grep build.js first. */
+
+/* ---------- form scaffold on the guide card ---------- */
+/* a labelled region inside a picker (mirrors the .sec divider vocabulary): a hairline rule + the
+   fields that follow. Keeps the AGENTS / MANUAL-ID / ACTIONS zones legible. */
+.refit-form { display: flex; flex-direction: column; gap: 0; }
+.refit-sec {
+  margin: 10px 0 5px; padding-top: 8px;
+  border-top: 1px solid var(--ph-faint);
+  font-size: 10.5px; letter-spacing: 2px; color: var(--ph-dim);
+  text-transform: uppercase;
+}
+.refit-sec:first-child { margin-top: 4px; border-top: none; padding-top: 0; }
+
+/* the quick-pick agent chips (was inline flex-wrap on .refit-bay-agents) */
+.refit-agents { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
+
+/* ---------- inputs — echo the SETTINGS panel field, sized for the compact card ---------- */
+/* base rule in app.css already themes input[type=text]/[type=number].key-input; these give the
+   picker fields the same phosphor grade at the card's tighter 11px monospace scale. */
+.refit-input,
+.refit-num {
+  font-family: 'VT323', monospace; color: var(--ph-bright);
+  background: var(--bg, #000);
+  border: 1px solid var(--ph-dim);
+  outline: none; border-radius: 3px;
+  text-shadow: 0 0 5px var(--ph-glow2);
+  box-shadow: inset 0 2px 5px rgba(0, 0, 0, .65);
+  transition: border-color var(--t-fast, .12s) ease, box-shadow var(--t-fast, .12s) ease;
+}
+.refit-input {
+  width: 100%; box-sizing: border-box; margin: 6px 0;
+  padding: 6px 8px; font-size: 15px; letter-spacing: .5px;
+}
+.refit-num { width: 52px; margin-left: 6px; padding: 4px 6px; font-size: 15px; text-align: center; }
+.refit-input::placeholder { color: var(--ph-dim); opacity: 1; }
+.refit-input:focus,
+.refit-num:focus { border-color: var(--ph); box-shadow: inset 0 0 18px rgba(0, 0, 0, .7), 0 0 12px var(--ph-glow2); }
+
+/* validation: a --bad hairline PLUS a small message line — visible but in-vocabulary (not just a
+   raw red border). build.js toggles .is-error on the field; .refit-error carries the reason. */
+.refit-input.is-error,
+.refit-num.is-error { border-color: var(--bad); box-shadow: inset 0 2px 5px rgba(0, 0, 0, .65), 0 0 10px rgba(255, 92, 77, .28); }
+.refit-error {
+  display: none; margin: -1px 0 4px; font-size: 11px; letter-spacing: .5px;
+  color: var(--bad); font-family: 'VT323', monospace;
+}
+.refit-input.is-error ~ .refit-error,
+.refit-error.show { display: block; }
+
+/* an inline field label (MERGER's "combine K =") */
+.refit-field { display: block; margin: 6px 0; font-family: 'VT323', monospace; font-size: 15px; letter-spacing: .5px; color: var(--text); }
+
+/* a soft note line (no-active-agents / lay-belts-first) — warn-amber, in-vocabulary */
+.refit-note { color: var(--warn); font-family: 'VT323', monospace; font-size: 14px; letter-spacing: .5px; margin: 6px 0; }
+.refit-note.bad { color: var(--gold); }
+
+/* ---------- FLOW STRIP: the one picture of the work pipeline, hot segment lit (belt-teach) ---------- */
+.refit-flowstrip { margin: 6px 0 8px; padding: 7px 8px 6px; border: 1px solid var(--ph-faint); background: rgba(0,0,0,.25); }
+.refit-flowstrip .flow-line { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 3px; }
+.flow-seg { font-family: 'VT323', monospace; font-size: 14px; letter-spacing: 1px; color: var(--ph-dim); padding: 1px 5px; border: 1px solid var(--ph-faint); }
+.flow-seg.hot { color: var(--gold); border-color: var(--gold); text-shadow: 0 0 6px rgba(var(--gold-rgb), .55); }
+.flow-seg.desk { border-style: dashed; }
+.flow-arrow { color: var(--ph-dim); font-size: 11px; }
+.refit-flowstrip .flow-note { margin-top: 5px; text-align: center; font-family: 'VT323', monospace; font-size: 12.5px; letter-spacing: .4px; color: var(--ph-dim); }
+
+/* ---------- FILTER route rows ---------- */
+.refit-filter-rows { margin: 4px 0 2px; }
+.refit-route-row { display: flex; align-items: center; gap: 5px; margin: 3px 0; }
+.refit-route-lbl { width: 104px; flex: 0 0 auto; font-family: 'VT323', monospace; font-size: 14px; letter-spacing: .5px; color: var(--ok); }
+/* a lane pick button in the selected state — replaces the old inline background/border hex so the
+   JS toggle just flips .sel (no inline hex in build.js). */
+.lane-btn.sel { background: var(--ph-faint); border-color: var(--ph); color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow2); }
+
+/* ---------- action row (ASSIGN · CANCEL · …) ---------- */
+.refit-actions { display: flex; gap: 6px; margin-top: 8px; }
+
+/* ---------- connector-portal editor state dot (a coloured ● glyph, so it themes via `color`) ---------- */
+.refit-conn-rows .conn-dot { background: none; width: auto; height: auto; border-radius: 0; color: var(--ph-dim); }
+.refit-conn-rows .conn-dot.ok { color: var(--ok); }
+.refit-conn-rows .conn-dot.warn { color: var(--warn); }
+.refit-conn-rows .conn-dot.bad { color: var(--bad); }
+
+/* ---------- entrance — a soft rise-in on the card when a picker opens (transform/opacity only) --- */
+.refit-guide.refit-swap .refit-guide-card { animation: refit-rise var(--t-med, .22s) var(--ease-out, cubic-bezier(.2, .7, .3, 1)); }
+@keyframes refit-rise {
+  from { opacity: 0; transform: translateY(8px) scale(.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .refit-guide.refit-swap .refit-guide-card { animation: none; }
+  .refit-input, .refit-num { transition: none; }
+}

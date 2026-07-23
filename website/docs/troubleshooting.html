@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Troubleshooting — StarNet Docs</title>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<div class="crt-scan" aria-hidden="true"></div>
+<div class="crt-vignette" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="brand" href="../index.html">STARNET TERMLINK</a>
+  <nav class="topnav">
+    <a href="../index.html#features">FEATURES</a>
+    <a href="../index.html#download">DOWNLOAD</a>
+    <a href="index.html">DOCS</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
+  </nav>
+  <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <div class="side-title">// DOCS</div>
+    <a href="index.html">DOCS</a>
+    <a href="getting-started.html">GETTING STARTED</a>
+    <a href="providers.html">PROVIDERS & KEYS</a>
+    <a href="station.html">THE STATION</a>
+    <a href="agents.html">AGENTS & TEAMS</a>
+    <a href="autonomy.html">AUTONOMY & NIGHT SHIFT</a>
+    <a href="skills.html">SKILLS, RECIPES, ROUTINES</a>
+    <a href="connectors.html">CONNECTORS & INTEROP</a>
+    <a href="migrating.html">FROM OPENCLAW / HERMES</a>
+    <a href="troubleshooting.html" class="active">TROUBLESHOOTING</a>
+  </aside>
+  <main class="docs-main">
+<h1>TROUBLESHOOTING</h1>
+<p class="doc-sub">// every warning documented honestly, every fix spelled out</p>
+
+<h2>Windows: "Windows protected your PC"</h2>
+<p>SmartScreen flags the installer because it's unsigned and new — not because anything is
+wrong. Click <b>More info</b> &rarr; <b>Run anyway</b>.</p>
+
+<h2>Windows 11: Smart App Control</h2>
+<p>SAC in <b>enforce mode</b> hard-blocks unsigned installers with no override — nothing the
+installer can do. Check your mode under <i>Windows Security &rarr; App &amp; browser control</i>:
+"Evaluation" or "Off" is fine; "On" means you'll need to wait for the Authenticode-signed build
+(on the roadmap). We don't recommend disabling SAC just for us — it can't be re-enabled without
+reinstalling Windows.</p>
+
+<h2>macOS: "cannot be opened" / "is damaged"</h2>
+<p>Gatekeeper's standard message for un-notarized apps; the file is fine. After the first
+blocked attempt: <b>System Settings &rarr; Privacy &amp; Security &rarr; Open Anyway</b>, or
+right-click the app &rarr; <b>Open</b> on older macOS. One-time only.</p>
+
+<h2>Linux: app won't launch</h2>
+<p>StarNet is a WebKitGTK app. If a library is missing:</p>
+<pre><code>sudo apt install libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2</code></pre>
+<p>AppImage complaining about mounting usually means missing FUSE — install your distro's
+FUSE package.</p>
+
+<h2>Updates</h2>
+<p>The built-in updater (System &rarr; Updates) checks the public releases channel and verifies
+every update's signature against a key baked into the app before installing. This runs on all
+platforms and is independent of the OS-signing warnings above — even an "unsigned" install
+pulls only cryptographically verified updates.</p>
+
+<h2>Uninstalling</h2>
+<ul>
+<li><b>Windows:</b> Settings &rarr; Apps &rarr; Installed apps.</li>
+<li><b>macOS:</b> quit StarNet, drag it from Applications to the Trash.</li>
+<li><b>Linux:</b> <code>sudo apt remove starnet</code>, or just delete the AppImage.</li>
+</ul>
+
+<h2>Still stuck?</h2>
+<p>Open an issue on <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness/issues" target="_blank" rel="noopener">GitHub</a> or email
+<a href="mailto:androo.agi@gmail.com">androo.agi@gmail.com</a>. We'd rather hear about a broken
+thing than have you assume it's supposed to be that way.</p>
+
+<div class="doc-next"><a href="connectors.html">&larr; CONNECTORS &amp; INTEROP</a><span></span></div>
+  </main>
+</div>
+
+<footer class="footer">
+  <div class="footer-links">
+    <a href="../index.html">HOME</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
+    <a href="mailto:androo.agi@gmail.com">CONTACT</a>
+  </div>
+  <div class="footer-fine">MIT license &middot; StarNet</div>
+</footer>
+
+</body>
+</html>

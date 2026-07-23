@@ -1,0 +1,737 @@
+/* marketplace.css — THE RECRUITMENT BAY overlay. Themed entirely off the shared phosphor vars
+   (--ph / --panel / --ink / --gold / --bezel / --well / --glass …) so it inherits whatever CRT theme
+   is active. Premium rebuild (agent/recruit-bay): a struck-metal console — engraved class SEALS (never a
+   character skin), a two-pane character-select / DOSSIER layout, lane filter, clearance pips, footer. */
+
+.mkt-scrim {
+  position: fixed; inset: 0; z-index: var(--z-overlay, 9000);
+  display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(ellipse 90% 70% at 50% 40%, rgba(0,0,0,.72), rgba(0,0,0,.9));
+  backdrop-filter: blur(1px);
+  animation: mkt-fade .14s ease-out;
+}
+/* CRT GLASS scanlines for the bay. The global scanline layer (style.css `body::after`, z950) can't
+   reach here — this scrim sits at z9000 and its ~72-90% black backdrop buries whatever's behind it, so
+   the bay would read as the ONE surface with no beam lines. Paint our own, over the console (pointer-
+   events:none), byte-for-byte matching `body::after` so it's indistinguishable from every window's glass.
+   SOURCE OF TRUTH for these stops = style.css `body::after` — retune both together. Respects `no-scan`. */
+.mkt-scrim::after {
+  content: ''; position: absolute; inset: 0; pointer-events: none; z-index: 20;
+  background:
+    repeating-linear-gradient(0deg,
+      rgba(0,0,0,0) 0px,
+      rgba(0,0,0,0) 1px,
+      rgba(0,0,0,0.13) 1.5px,
+      rgba(0,0,0,0.30) 2px,
+      rgba(0,0,0,0.13) 2.5px,
+      rgba(0,0,0,0) 3px),
+    repeating-linear-gradient(90deg, rgba(255,80,40,0.03) 0 1px, rgba(40,180,120,0.02) 1px 2px, rgba(60,120,255,0.03) 2px 3px);
+}
+@media (min-resolution: 1.75dppx) {
+  .mkt-scrim::after {
+    background:
+      repeating-linear-gradient(0deg,
+        rgba(0,0,0,0) 0px,
+        rgba(0,0,0,0) 1.5px,
+        rgba(0,0,0,0.13) 2.2px,
+        rgba(0,0,0,0.28) 3px,
+        rgba(0,0,0,0.13) 3.8px,
+        rgba(0,0,0,0) 4.5px),
+      repeating-linear-gradient(90deg, rgba(255,80,40,0.03) 0 1.5px, rgba(40,180,120,0.02) 1.5px 3px, rgba(60,120,255,0.03) 3px 4.5px);
+  }
+}
+body.no-scan .mkt-scrim::after { display: none; }
+@keyframes mkt-fade { from { opacity: 0; } to { opacity: 1; } }
+
+/* ---- the console frame ---- */
+.mkt {
+  position: relative; width: min(1180px, 96vw); max-height: 92vh; display: flex; flex-direction: column;
+  background: radial-gradient(ellipse 130% 90% at 50% 0%, var(--ph-glow2), transparent 44%), var(--panel);
+  border-radius: var(--r-lg, 11px);
+  box-shadow: var(--bezel, 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), 0 12px 34px rgba(0,0,0,.85), inset 0 0 56px rgba(0,0,0,.85));
+}
+.mkt::before { content: ""; position: absolute; inset: 0; border-radius: var(--r-lg, 11px); pointer-events: none; z-index: 5;
+  background: var(--glass, none); }
+.mkt::after { content: ""; position: absolute; inset: 0; border-radius: var(--r-lg, 11px); pointer-events: none; z-index: 6;
+  background: linear-gradient(115deg, transparent 38%, rgba(255,240,214,.045) 47%, transparent 56%);
+  background-size: 280% 280%; animation: mkt-glare 11s linear infinite; }
+@keyframes mkt-glare { from { background-position: 160% 0; } to { background-position: -60% 0; } }
+.mkt-screw { position: absolute; width: 9px; height: 9px; border-radius: 50%; z-index: 7;
+  background: radial-gradient(circle at 35% 30%, #4a3414, #140c03 70%);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.8), inset 0 0 2px rgba(255,210,150,.4); }
+.mkt-screw.tl { top: 9px; left: 9px; } .mkt-screw.tr { top: 9px; right: 9px; }
+.mkt-screw.bl { bottom: 9px; left: 9px; } .mkt-screw.br { bottom: 9px; right: 9px; }
+.mkt-brk { position: absolute; width: 15px; height: 15px; border: 2px solid var(--ph-dim); z-index: 7; opacity: .7; }
+.mkt-brk.tl { top: 4px; left: 4px; border-right: 0; border-bottom: 0; }
+.mkt-brk.tr { top: 4px; right: 4px; border-left: 0; border-bottom: 0; }
+.mkt-brk.bl { bottom: 4px; left: 4px; border-right: 0; border-top: 0; }
+.mkt-brk.br { bottom: 4px; right: 4px; border-left: 0; border-top: 0; }
+
+/* ---- head: nameplate + status + search + close ---- */
+.mkt-head {
+  position: relative; z-index: 10; flex: 0 0 auto;
+  display: flex; align-items: center; gap: 12px;
+  padding: 13px 18px 11px 20px; border-bottom: 1px solid var(--ph-dim);
+}
+.mkt-nameplate { display: flex; flex-direction: column; gap: 3px; min-width: 0; flex: 1 1 auto; }
+.mkt-title { color: var(--ink); align-self: flex-start; background: linear-gradient(180deg, var(--ph-bright), var(--ph));
+  padding: 3px 13px; letter-spacing: 3px; font-size: 16px; border-radius: 2px; text-shadow: none;
+  box-shadow: 0 0 12px var(--ph-glow2), inset 0 -2px 0 rgba(0,0,0,.25); }
+.mkt-sub { color: var(--ph-dim); font-size: 12.5px; letter-spacing: .5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mkt-search { display: flex; align-items: center; gap: 7px; padding: 5px 11px; min-width: 170px;
+  background: linear-gradient(180deg, #000, var(--panel2)); border-radius: 2px; border: 1px solid var(--ph-dim);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.6); color: var(--ph-dim);
+  transition: border-color var(--t-fast, 120ms) var(--ease-soft, ease), box-shadow var(--t-fast, 120ms) var(--ease-soft, ease); }
+.mkt-search:focus-within { border-color: var(--ph); box-shadow: inset 0 2px 6px rgba(0,0,0,.6), 0 0 11px var(--ph-glow2); }
+.mkt-search input { background: transparent; border: 0; outline: none; width: 100%; font-family: inherit; font-size: 15px; color: var(--ph-bright); letter-spacing: .5px; }
+.mkt-search input::placeholder { color: var(--ph-dim); opacity: 1; }   /* solid --ph-dim >=4.5:1 (WCAG AA); .7 was ~3.2:1 — matches the other placeholder rules */
+/* .mkt-x composes .x-btn (bright hover) — big/raised delta only */
+.mkt-x { font-size: 16px; border-width: 2px; border-radius: 2px; padding: 6px 10px; box-shadow: var(--raise); }
+.mkt-x:hover { box-shadow: var(--raise), 0 0 12px var(--ph-glow2); }
+
+/* ---- bar: tabs + lane filter ---- */
+.mkt-bar { position: relative; z-index: 10; flex: 0 0 auto; display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
+  padding: 9px 20px; border-bottom: 1px solid var(--ph-faint); }
+.mkt-tabs { display: flex; gap: 6px; margin-right: 6px; }
+.mkt-tab { font-family: inherit; font-size: 12.5px; letter-spacing: 1.5px; cursor: pointer;
+  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 2px; padding: 5px 13px; box-shadow: var(--raise); }
+.mkt-tab:hover { color: var(--ph-bright); border-color: var(--ph); }
+.mkt-tab.on { color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none; box-shadow: 0 0 12px var(--ph-glow2); }
+.mkt-tab:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
+.mkt-lanes { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.mkt-lanes-lbl { color: var(--ph-dim); font-size: 11.5px; letter-spacing: 2px; margin: 0 2px 0 4px; }
+.mkt-lane { font-family: inherit; font-size: 12px; letter-spacing: 1.2px; cursor: pointer; text-transform: uppercase;
+  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 2px; padding: 4px 12px; box-shadow: var(--raise); }
+.mkt-lane:hover { color: var(--ph-bright); border-color: var(--ph); }
+.mkt-lane.on { color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none; box-shadow: 0 0 10px var(--ph-glow2); }
+.mkt-lane .ct { opacity: .6; margin-left: 4px; font-size: 10.5px; }
+.mkt-lane:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
+
+/* ---- stage: two-pane roster + dossier (or a full-width form) ---- */
+.mkt-stage { position: relative; z-index: 10; flex: 1 1 auto; min-height: 0; display: grid; grid-template-columns: 1fr 360px; }
+.mkt-stage.form { display: block; overflow-y: auto; padding: 16px 18px; }
+.mkt-roster { overflow-y: auto; overflow-x: hidden; padding: 14px 16px 32px;
+  /* soft-clip the scroll edge so a long roster doesn't hard-cut mid-card at the bottom (audit item 8) */
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent);
+  mask-image: linear-gradient(180deg, #000 calc(100% - 26px), transparent); }
+.mkt-roster::-webkit-scrollbar, .mkt-dossier::-webkit-scrollbar { width: 9px; }
+.mkt-roster::-webkit-scrollbar-thumb, .mkt-dossier::-webkit-scrollbar-thumb { background: var(--ph-dim); border-radius: 9px; }
+
+/* ---- the engraved class SEAL (challenge-coin) — emblem only, never a skin ----
+   Premium pass: a real struck coin — machined accent rim ring, recessed floor, engraved inner groove,
+   and the emblem lit with a soft accent bloom so each class's colour actually registers. */
+.mkt-coin { position: relative; width: var(--coin, 64px); height: var(--coin, 64px); border-radius: var(--r-sm, 3px); flex: 0 0 auto;
+  background:
+    radial-gradient(circle at 50% 108%, color-mix(in srgb, var(--accent, var(--ph)) 12%, transparent), transparent 58%),
+    radial-gradient(circle at 50% 30%, #1f1710, #090503 80%);
+  border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 52%, #241a0d);
+  box-shadow:
+    inset 0 1px 0 rgba(var(--ph-bright-rgb),.1), inset 0 -4px 9px rgba(0,0,0,.78),
+    0 0 0 2px rgba(0,0,0,.7), 0 0 9px color-mix(in srgb, var(--accent, var(--ph)) 14%, transparent), 0 1px 2px rgba(0,0,0,.6);
+  display: flex; align-items: center; justify-content: center; }
+/* engraved inner groove ring — the coin's milled channel */
+.mkt-coin::before { content: ""; position: absolute; inset: 4px; border-radius: inherit; z-index: 1;
+  border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 30%, transparent); opacity: .7;
+  box-shadow: inset 0 1px 2px rgba(0,0,0,.7), 0 1px 0 rgba(var(--ph-bright-rgb),.05); }
+.mkt-coin::after { content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: 1; pointer-events: none;
+  background: radial-gradient(ellipse 54% 40% at 33% 24%, rgba(255,242,222,.09), transparent 62%); }
+.mkt-coin-ico { position: relative; z-index: 2; width: 56%; height: 56%; color: var(--accent, var(--ph));
+  filter: drop-shadow(0 1px 0 rgba(0,0,0,.6)) drop-shadow(0 0 5px color-mix(in srgb, var(--accent, var(--ph)) 38%, transparent));
+  display: flex; align-items: center; justify-content: center; }
+.mkt-coin-ico svg { width: 100%; height: 100%; display: block; }
+.mkt-coin-emoji { position: relative; z-index: 2; font-size: calc(var(--coin, 64px) * .42); line-height: 1; color: var(--accent, var(--ph-bright)); }
+/* (the typed-ASCII mark layer was removed 2026-07-16 — the engraved SVG coin above is the one emblem) */
+.mkt-seal { display: flex; flex-direction: column; align-items: center; gap: 5px; flex: 0 0 auto; }
+.mkt-seal-code { font-size: 10px; letter-spacing: 2.5px; color: var(--ph-dim); }
+.mkt-pips { display: inline-flex; gap: 2px; align-items: center; color: var(--ph-dim); font-size: 10px; }
+.mkt-pips b { color: var(--gold); filter: drop-shadow(0 0 3px rgba(var(--gold-rgb), .55)); }
+
+/* ---- the coin CARD (a class in the roster grid) — a stamped PERSONNEL DATA-PLATE ----
+   Premium terminal language (recruit-UI premium pass): hard corners, a full-height accent RAIL on the
+   left edge, hairline double border (outer line + recessed inner), micro-scanline plate texture, and the
+   class code as a huge debossed STENCIL watermark bleeding off the corner. Hover = phosphor bloom;
+   selected = accent frame + lit rail. No rounded web-card anywhere (the FNV plate reads square). */
+.mkt-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(238px, 1fr)); gap: 10px; }
+.mkt-card {
+  position: relative; display: grid; grid-template-columns: auto 1fr; gap: 12px; overflow: hidden;
+  padding: 12px 12px 11px 15px; border-radius: var(--r-sm, 3px); cursor: pointer; text-align: left; width: 100%;
+  /* the SETTINGS prov-card material, verbatim (Andrew's premium reference): a clean translucent-black
+     fill on a single crisp hairline + the shared raise. No plate textures, no double borders, no inner
+     vignettes — the crispness IS the premium. */
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--ph-dim); font-family: inherit;
+  box-shadow: var(--raise);
+  transition:
+    transform var(--t-fast, 120ms) var(--ease-out, ease),
+    box-shadow var(--t-fast, 120ms) var(--ease-soft, ease),
+    border-color var(--t-fast, 120ms) var(--ease-soft, ease);
+}
+/* shared card-entrance language (motion.css §13): capped per-index stagger via inline --ci. Scoped to .mkt-anim
+   so it plays ONCE on bay-open / tab-switch, never on every filter/search rebuild (audit item 8). */
+.mkt-roster.mkt-anim .mkt-card { animation: cardIn 0.34s var(--ease-out, ease) backwards;
+  animation-delay: calc(min(var(--ci, 0), 8) * 25ms); }
+/* the accent RAIL: full-height class-colour bar on the left edge (was a soft top strip) */
+.mkt-card::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(180deg, var(--accent, var(--ph)) 0 62%, color-mix(in srgb, var(--accent, var(--ph)) 28%, transparent));
+  opacity: .8; box-shadow: 1px 0 6px color-mix(in srgb, var(--accent, var(--ph)) 22%, transparent); }
+/* top-edge machined highlight — the plate catches the light along its milled edge */
+.mkt-card::after { content: ""; position: absolute; left: 0; top: 0; right: 0; height: 1px; pointer-events: none;
+  background: linear-gradient(90deg, rgba(var(--ph-bright-rgb), .14), transparent 70%); }
+/* hover = the line brightens; selected = the prov-card.conn treatment (bright line + INSET phosphor
+   glow — the "keyed row" read from settings) plus the lit accent rail. */
+.mkt-card:hover { transform: translateY(-1px); border-color: var(--ph);
+  box-shadow: var(--raise), 0 0 12px var(--ph-glow2); }
+.mkt-card:hover::before { opacity: 1; }
+.mkt-card.sel { border-color: var(--ph);
+  box-shadow: var(--raise), inset 0 0 12px var(--ph-glow2), 0 0 10px var(--ph-glow2); }
+.mkt-card.sel::before { opacity: 1; box-shadow: 1px 0 9px color-mix(in srgb, var(--accent, var(--ph)) 45%, transparent); }
+/* every card's code stamp lives in the right-side cluster (.mkt-card-code) — no in-card watermark */
+.mkt-card .mkt-seal { gap: 0; }
+.mkt-card.sel .mkt-coin { border-color: color-mix(in srgb, var(--accent, var(--ph)) 68%, #241a0d);
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.1), inset 0 -3px 8px rgba(0,0,0,.72), 0 0 0 1px color-mix(in srgb, var(--accent, var(--ph)) 32%, transparent); }
+.mkt-card.sel .mkt-coin-ico { filter: drop-shadow(0 1px 0 rgba(0,0,0,.55)) brightness(1.12); }
+
+/* ===== SETTINGS-CONSOLE ROWS (AGENTS tab): the class list reads like the SETTINGS provider list =====
+   The premium reference (Andrew, 2026-07-14) is the SETTINGS window: uniform amber rows, one per item,
+   left glyph socket, name + sub stacked, the status cluster RIGHT-ALIGNED, selection = the lit plate.
+   Class accents retreat to the typed mark + the code stamp — the row chrome itself is mono-amber. */
+.mkt-grid.mkt-rows { grid-template-columns: 1fr; gap: 7px; }
+.mkt-rows .mkt-card { grid-template-columns: auto 1fr auto; align-items: center; gap: 14px;
+  padding: 9px 14px 9px 12px; }
+.mkt-rows .mkt-card::before { width: 4px; background: var(--ph); opacity: 0; box-shadow: none; }
+.mkt-rows .mkt-card:hover { transform: none; }
+.mkt-rows .mkt-card.sel::before { opacity: 1; }
+.mkt-rows .mkt-card .mkt-name { font-size: 16px; letter-spacing: 1.6px; text-transform: uppercase; }
+.mkt-rows .mkt-card .mkt-tag { color: var(--ph-dim); }
+.mkt-rows .mkt-card.sel .mkt-tag { color: var(--text); opacity: .9; }
+.mkt-card-side { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex: 0 0 auto;
+  position: relative; z-index: 1; }
+.mkt-card-side .mkt-meta { margin: 0; padding: 0; }
+.mkt-card-code { color: var(--ph-dim); font-size: 10px; letter-spacing: 3px; opacity: .8; }
+.mkt-rows .mkt-coin { --coin: 66px; }
+/* the build tile reads as one quiet row in the list, not a tall grid cell */
+.mkt-rows .mkt-build { min-height: 52px; flex-direction: row; gap: 10px; }
+.mkt-rows .mkt-build .mkt-build-plus { font-size: 20px; }
+.mkt-card-id { min-width: 0; display: flex; flex-direction: column; gap: 4px; position: relative; z-index: 1; }
+.mkt-name { color: var(--ph-bright); font-size: 16.5px; letter-spacing: 1.4px; display: flex; align-items: center; gap: 7px;
+  text-shadow: 0 0 9px var(--ph-glow2); }
+.mkt-tag { color: color-mix(in srgb, var(--accent, var(--ph)) 78%, var(--text)); font-size: 12px; letter-spacing: .3px; opacity: .95; }
+.mkt-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: auto; padding-top: 5px; }
+.mkt-meta .mkt-tier { color: var(--ph-dim); font-size: 10px; letter-spacing: 1px; }
+.mkt-badge { font-size: 10px; letter-spacing: 1px; color: var(--ink); background: var(--gold); padding: 1px 5px; text-shadow: none; }
+.mkt-badge.mkt-here { background: var(--accent, var(--ph)); color: var(--ink); }
+/* chips = TERMINAL TAGS: debossed bracketed stamps, never pastel web pills. The lane tag reads in the
+   class's own colour on the bare plate — ink-on-fill is reserved for the ON filter / inverted plates. */
+.mkt-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; letter-spacing: 1.5px;
+  color: var(--text); background: rgba(0,0,0,.32); border: 1px solid var(--ph-dim); border-radius: 0; padding: 2px 8px;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.55); }
+.mkt-chip.lane { color: color-mix(in srgb, var(--accent, var(--ph)) 82%, var(--ph-bright));
+  background: color-mix(in srgb, var(--accent, var(--ph)) 9%, rgba(0,0,0,.3));
+  border-color: color-mix(in srgb, var(--accent, var(--ph)) 55%, transparent); text-shadow: none; }
+/* ---- toggleable picker chips (Class Loadouts S3 custom-class builder: kit + skill package) ---- */
+.mkt-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.mkt-chip.pick { cursor: pointer; font-family: inherit; padding: 5px 10px; letter-spacing: .8px; text-transform: uppercase;
+  color: var(--ph-dim); background: var(--panel2); border: 1px solid var(--ph-faint); }
+.mkt-chip.pick:hover { color: var(--ph-bright); border-color: var(--ph); }
+.mkt-chip.pick.sel { color: var(--ink); background: var(--accent, var(--ph)); border-color: var(--accent, var(--ph)); text-shadow: none; }
+.mkt-chip.pick:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
+.mkt-chips-loading { opacity: .7; }
+/* kit picker with a visible capability blurb next to each toggle (custom-class builder) */
+.mkt-kitpicks { display: flex; flex-direction: column; gap: 5px; margin-bottom: 4px; }
+.mkt-kitpick { display: flex; align-items: center; gap: 9px; }
+.mkt-kitpick .mkt-chip.pick { flex: 0 0 auto; min-width: 92px; }
+.mkt-kitpick-grant { color: var(--ph-dim); font-size: 11px; letter-spacing: .3px; text-transform: none; }
+.mkt-lbl-hint { color: var(--ph-dim); font-size: 10px; letter-spacing: .5px; opacity: .8; text-transform: none; }
+
+/* ---- the DOSSIER (right pane: the focused class detail + the action) ---- */
+.mkt-dossier { position: relative; border-left: 1px solid var(--ph-dim); overflow-y: auto;
+  background: linear-gradient(180deg, var(--ph-faint), transparent 30%), #070402; padding: 16px 16px 20px; }
+.mkt-dos-label { color: var(--ph-dim); font-size: 11px; letter-spacing: 3px; margin-bottom: 10px; }
+.mkt-dos-hero { position: relative; display: flex; gap: 14px; align-items: center; margin-bottom: 13px;
+  padding: 10px 10px 12px; border-bottom: 1px solid var(--ph-faint);
+  background: radial-gradient(ellipse 70% 90% at 18% 50%, color-mix(in srgb, var(--accent, var(--ph)) 8%, transparent), transparent 70%); }
+.mkt-dos-hero .mkt-seal { --coin: 96px; }
+.mkt-dos-hero .mkt-seal-code { font-size: 10px; letter-spacing: 3px; }
+.mkt-dos-hi { min-width: 0; }
+.mkt-dos-name { color: var(--ph-bright); font-size: 25px; letter-spacing: 1.4px; line-height: 1.05; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  text-shadow: 0 0 12px var(--ph-glow2); }
+.mkt-dos-tag { color: var(--accent, var(--ph)); font-size: 13.5px; margin-top: 6px; letter-spacing: .3px; }
+.mkt-dos-class { color: var(--ph-dim); font-size: 11px; letter-spacing: 2px; margin-top: 6px; }
+.mkt-spec { display: grid; grid-template-columns: auto 1fr; gap: 7px 12px; align-items: center;
+  padding: 10px 12px; margin-bottom: 12px; border-radius: 2px; background: var(--panel2);
+  border-left: 3px solid var(--accent, var(--ph)); border-top: 1px solid var(--ph-faint);
+  box-shadow: inset 0 1px 4px rgba(0,0,0,.55), inset 0 0 0 1px rgba(0,0,0,.5); }
+.mkt-spec .k { color: var(--ph-dim); font-size: 11px; letter-spacing: 1.5px; }
+.mkt-spec .v { color: var(--ph-bright); font-size: 13px; letter-spacing: .4px; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.mkt-bars { display: flex; flex-direction: column; gap: 6px; margin-bottom: 13px; }
+.mkt-barrow { display: flex; align-items: center; gap: 9px; }
+.mkt-barrow .bk { width: 70px; color: var(--ph-dim); font-size: 10.5px; letter-spacing: 1px; }
+.mkt-barrow .trk { flex: 1 1 auto; height: 7px; border-radius: 99px; background: var(--ph-faint); box-shadow: var(--well); overflow: hidden; }
+.mkt-barrow .fill { height: 100%; background: var(--accent, var(--ph)); opacity: .9; }
+.mkt-barrow .bv { width: 30px; text-align: right; color: var(--ph); font-size: 11px; }
+.mkt-block { margin-bottom: 12px; }
+.mkt-block .bh { color: var(--ph); font-size: 10.5px; letter-spacing: 2.5px; margin-bottom: 5px; }
+.mkt-block .bp { color: var(--text); font-size: 12.5px; line-height: 1.5; opacity: .9; margin: 0; }
+.mkt-block pre { color: var(--text); font-size: 12px; line-height: 1.5; white-space: pre-wrap; font-family: inherit; opacity: .82; margin: 0; }
+/* STANDING ORDERS as a disclosure — collapsed by default so the dossier isn't dominated by prompt text (audit item 8) */
+.mkt-orders > summary { cursor: pointer; list-style: none; }
+.mkt-orders > summary::-webkit-details-marker { display: none; }
+.mkt-orders > summary::before { content: '▸ '; color: var(--ph-dim); }
+.mkt-orders[open] > summary::before { content: '▾ '; }
+.mkt-orders > summary:hover { color: var(--ph-bright); }
+.mkt-orders[open] > pre { margin-top: 5px; }
+.mkt-block ul.mkt-starters { list-style: none; display: flex; flex-direction: column; gap: 5px; margin: 0; padding: 0; }
+.mkt-starters li { color: var(--ph-bright); font-size: 12.5px; padding: 6px 10px; border-radius: 0;
+  background: rgba(0,0,0,.26); border: 1px solid var(--ph-faint); border-left: 2px solid var(--ph-dim);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.45); }
+.mkt-starters li::before { content: "▸ "; color: var(--accent, var(--ph)); }
+
+/* ---- LOADOUT: DRAWS ON STATION GEAR + SKILL PACKAGE dossier rows (shared-gear model) ---- */
+.mkt-clr-note { color: var(--ph-dim); font-size: 10.5px; letter-spacing: .5px; opacity: .85; }
+.mkt-kit, .mkt-skills { display: flex; flex-direction: column; gap: 4px; }
+.mkt-kit-row, .mkt-skill-row { display: flex; align-items: baseline; gap: 9px; padding: 6px 10px; border-radius: 0;
+  background: rgba(0,0,0,.26); border: 1px solid var(--ph-faint); border-left: 2px solid var(--ph-dim);
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.45); }
+.mkt-kit-obj, .mkt-skill-name { flex: 0 0 auto; color: var(--ph-bright); font-size: 11px; letter-spacing: 1px;
+  min-width: 92px; text-transform: uppercase; }
+.mkt-kit-grant, .mkt-skill-desc { flex: 1 1 auto; color: var(--text); font-size: 12px; line-height: 1.4; opacity: .85; }
+/* present/missing state (shared-gear model): a ●/○ dot carries it (green ● = on station, dim ○ = not yet).
+   The single .mkt-kit-note footnote states the "add in REFIT" guidance ONCE, not per row (audit item 8). */
+.mkt-kit-row { flex-wrap: wrap; }
+.mkt-kit-dot { flex: 0 0 auto; align-self: center; color: var(--ok); font-size: 10px; line-height: 1; }
+.mkt-kit-row.mkt-kit-missing { opacity: .55; border-color: var(--ph-faint); }
+.mkt-kit-row.mkt-kit-missing .mkt-kit-dot { color: var(--ph-dim); }
+.mkt-kit-note { color: var(--ph-dim); font-size: 10.5px; letter-spacing: .4px; margin-top: 5px; opacity: .8; }
+.mkt-dos-cta { display: flex; flex-direction: column; gap: 8px; position: sticky; bottom: -20px;
+  padding-top: 16px; margin-top: 4px;
+  /* tightened so scrolled content is fully masked before the CTA (was a long 26% fade that let rows ghost
+     through under the button, audit item 8); the color matches the dossier's own #070402 floor. */
+  background: linear-gradient(180deg, transparent, #070402 20px); }
+.mkt-cta-row { display: flex; align-items: center; gap: 7px; }
+/* SUMMON = the STRUCK-METAL commit: the nameplate's stamped phosphor plate scaled to a bar, with the
+   class accent riding a machined edge-rail. One action language for every class — never a flat accent
+   fill (the old per-class fill read as an off-palette web button on cool accents). */
+.mkt-cta-main { position: relative; flex: 1 1 auto; cursor: pointer; font-family: inherit; font-size: 16px; letter-spacing: 2px; padding: 12px; border-radius: 2px;
+  color: var(--ink); border: 0; text-shadow: none; overflow: hidden;
+  background: linear-gradient(180deg, var(--ph-bright), var(--ph) 55%, color-mix(in srgb, var(--ph) 80%, #000));
+  border-left: 4px solid var(--accent, var(--ph));
+  box-shadow: 0 0 0 1px rgba(0,0,0,.85), 0 0 16px var(--ph-glow2),
+    inset 0 1px 0 rgba(255,255,255,.3), inset 0 -3px 0 rgba(0,0,0,.28), 0 2px 6px rgba(0,0,0,.5);
+  transition: box-shadow var(--t-fast, 120ms) var(--ease-soft, ease), filter var(--t-fast, 120ms) var(--ease-soft, ease); }
+.mkt-cta-main:hover { filter: brightness(1.07);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.85), 0 0 24px var(--ph-glow),
+    inset 0 1px 0 rgba(255,255,255,.34), inset 0 -3px 0 rgba(0,0,0,.28), 0 2px 8px rgba(0,0,0,.55); }
+/* the merged recruit door's SECOND verb (deploy to current) — quieter, outlined, never competes with SUMMON */
+.mkt-cta-alt { flex: 1 1 auto; cursor: pointer; font-family: inherit; font-size: 13.5px; letter-spacing: 1.2px; padding: 8px 12px; margin-top: 6px; border-radius: 2px;
+  color: var(--ph); background: transparent; border: 1px solid var(--ph-dim); text-shadow: inherit; }
+.mkt-cta-alt:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
+.mkt-cta-sub { color: var(--ph-dim); font-size: 11.5px; text-align: center; letter-spacing: .4px; }
+.mkt-cta-sub b { color: var(--ph-bright); }
+/* a re-spec CTA armed for its confirming click — CAUTION amber (not the destructive red of ⌫ DELETE), since
+   re-speccing rewrites but doesn't destroy. Overrides the accent fill so "RE-SPEC <NAME>?" reads unmistakably. */
+.mkt-cta-main.armed, .mkt-cta-alt.armed { color: var(--ink) !important; background: var(--gold) !important;
+  border-color: var(--gold) !important; text-shadow: none !important; box-shadow: 0 0 12px rgba(var(--gold-rgb), .5); }
+/* the narrow-viewport "‹ ROSTER" back control — hidden while both panes show, revealed with the dossier sheet */
+.mkt-dos-back { display: none; font-family: inherit; font-size: 12px; letter-spacing: 1.5px; cursor: pointer;
+  color: var(--ph); background: transparent; border: 1px solid var(--ph-dim); border-radius: 2px; padding: 5px 12px;
+  margin-bottom: 12px; align-self: flex-start; }
+.mkt-dos-back:hover { color: var(--ph-bright); border-color: var(--ph); background: var(--ph-faint); }
+.mkt-dos-back:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
+.mkt-dos-empty { font-style: italic; padding: 30px 12px; text-align: center; }   /* dim grade + size via the grouped empty rule (motion.css) */
+
+/* ---- the adopt-voice + save-as toolbar (deploy mode) lives atop the roster ---- */
+.mkt-toolbar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.mkt-hint { color: var(--text, var(--ph)); opacity: .9; font-size: 12.5px; letter-spacing: .3px; }
+.mkt-hint b { color: var(--gold); opacity: 1; }
+.mkt-adopt { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--text, var(--ph)); opacity: .9; font-size: 12px; letter-spacing: .3px; }
+.mkt-adopt input { accent-color: var(--ph); cursor: pointer; }
+
+/* ---- section headers + empty state ----
+   SETTINGS-console divider language (the premium reference): the label in plain glowing phosphor, a
+   hairline rule running the rest of the row, and a lone terminal diamond closing it — no inverted plate
+   (plates are for the window TITLE and ON states only). Pseudo-elements ride the flex row via `order`:
+   text (0) → rule (1, ::after) → diamond (2, ::before). */
+.mkt-sect-h { display: flex; align-items: center; gap: 12px; position: relative; color: var(--ph);
+  background: none; padding: 0; width: auto; max-width: none; text-shadow: 0 0 9px var(--ph-glow2);
+  font-size: 11.5px; letter-spacing: 3px; margin: 20px 0 10px; }
+.mkt-sect-h::after { content: ""; order: 1; flex: 1 1 auto; height: 1px; position: static;
+  width: auto; max-width: none; margin: 0; transform: none; pointer-events: none;
+  background: linear-gradient(90deg, var(--ph-dim), var(--ph-faint) 88%); }
+.mkt-sect-h::before { content: "◆"; order: 2; flex: 0 0 auto; color: var(--ph-dim); font-size: 9px; }
+.mkt-sect-h:first-child { margin-top: 2px; }
+/* the SPECIALIST ARCHIVE header doubles as its expand/collapse toggle — same divider, button reset */
+button.mkt-archive-head { font-family: inherit; font-size: 11.5px; letter-spacing: 3px; border: 0;
+  cursor: pointer; text-align: left; width: 100%; }
+button.mkt-archive-head:hover { color: var(--ph-bright); }
+button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+/* ARCHIVE plates read MOTHBALLED — dimmed + dusty until touched (deep cuts in storage, not the working
+   roster). Scoped to the grid that follows the archive toggle; hover/selection wakes the plate up. */
+.mkt-archive-head + .mkt-hint + .mkt-grid .mkt-card { opacity: .6; border-color: var(--ph-faint); }
+.mkt-archive-head + .mkt-hint + .mkt-grid .mkt-card:hover,
+.mkt-archive-head + .mkt-hint + .mkt-grid .mkt-card.sel { opacity: 1; border-color: var(--ph); }
+.mkt-empty { color: var(--text, var(--ph)); opacity: .7; font-size: 12.5px; line-height: 1.5; font-style: italic;
+  padding: 14px; border: 1px solid var(--ph-faint); border-radius: var(--r-sm, 3px); background: rgba(0,0,0,.25); text-align: center; }
+
+/* ---- footer status strip ---- */
+.mkt-foot { position: relative; z-index: 10; flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 20px; border-top: 1px solid var(--ph-dim); color: var(--ph-dim); font-size: 11.5px; letter-spacing: 1px; }
+.mkt-foot b { color: var(--gold); font-weight: normal; }
+.mkt-foot .reg { display: flex; align-items: center; gap: 8px; }
+.mkt-foot .reg .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 7px var(--ok); }
+
+/* the bay reuses the global .bb button; .sm is a compact variant local to the bay */
+.mkt .bb.sm { font-family: inherit; font-size: 11.5px; padding: 5px 10px; letter-spacing: .5px; cursor: pointer;
+  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 2px; }
+.mkt .bb.sm:hover { color: var(--ph-bright); border-color: var(--ph); }
+.mkt .bb.sm.danger:hover { color: var(--bad); border-color: var(--bad); }
+.mkt-do-save, .mkt-do-recipe-save, .mkt-do-launch { color: var(--ink) !important; background: var(--ph) !important; border-color: var(--ph) !important; text-shadow: none !important; }
+/* .mkt-del/.mkt-recipe-del/.mkt-fam-forget armed skin = the canonical danger-armed rule in app.css */
+
+/* ---- forms (save specialty / save mission / launch) reuse the .mkt-save shell ---- */
+.mkt-save { max-width: 600px; margin: 6px auto; display: flex; flex-direction: column; gap: 10px;
+  background: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 2px; padding: 16px 18px; }
+.mkt-save-h { color: var(--ink); background: var(--ph); align-self: flex-start; padding: 3px 12px; letter-spacing: 2px; font-size: 14px; border-radius: 2px; text-shadow: none; }
+.mkt-save-row { display: flex; gap: 10px; }
+.mkt-lbl { display: flex; flex-direction: column; gap: 4px; color: var(--ph); font-size: 12px; letter-spacing: 1px; }
+.mkt-lbl.mkt-grow { flex: 1 1 auto; }
+.mkt-in { font-family: inherit; font-size: 15px; color: var(--ph-bright);
+  background: linear-gradient(180deg, #000, color-mix(in srgb, var(--ph) 3%, var(--panel2)));
+  border: 1px solid var(--ph-dim); border-radius: 2px; padding: 8px 10px; width: 100%;
+  box-shadow: inset 0 2px 5px rgba(0,0,0,.55);
+  transition: border-color .12s, box-shadow .12s; }
+.mkt-in:focus { outline: none; border-color: var(--ph); box-shadow: inset 0 2px 5px rgba(0,0,0,.55), 0 0 9px var(--ph-glow2); }
+.mkt-emoji-in { width: 56px; text-align: center; font-size: 20px; }
+.mkt-save-acts { display: flex; gap: 8px; margin-top: 4px; }
+.mkt-save-acts .mkt-do-save, .mkt-save-acts .mkt-do-recipe-save, .mkt-save-acts .mkt-do-launch { margin-left: auto; }
+.mkt-save-acts .mkt-do-save.caution { background: transparent !important; color: var(--gold) !important; border-color: var(--gold) !important; }
+.mkt-launch-form textarea.mkt-in { resize: vertical; min-height: 2.6em; line-height: 1.45; font-size: 14px; }
+.mkt-recipe-form textarea.mkt-r-task { resize: vertical; min-height: 4.2em; line-height: 1.5; font-size: 14px; }
+.mkt-req { color: var(--bad); }   /* --bad IS the emphasis; no synthesized bold (VT323 single-weight) */
+.mkt-opt { color: var(--ph-dim); font-size: 10px; letter-spacing: .5px; }
+.mkt-in.mkt-bad { border-color: var(--bad); box-shadow: 0 0 8px rgba(255,92,77,.4); }
+/* TASK BRIEF v2 — launch-time intake: the recipe's material decisions as one-tap chip rows. The recommended
+   chip carries the gold suggested treatment (--gold-rgb, never a literal amber); "agent decides" stays plain. */
+.mkt-intake { display: flex; flex-direction: column; gap: 4px; margin: 2px 0 4px; }
+.mkt-intake-opts { display: flex; flex-wrap: wrap; gap: 6px; }
+.mkt-intake-opt { font: inherit; font-size: 13px; letter-spacing: .4px; cursor: pointer; color: var(--ph);
+  background: transparent; border: 1px solid var(--ph-dim); border-radius: 4px; padding: 4px 10px;
+  transition: color .1s, border-color .1s, background-color .1s, box-shadow .1s; }
+.mkt-intake-opt:hover { color: var(--ph-bright); border-color: var(--ph); }
+.mkt-intake-opt.sel { color: var(--ink); background: var(--ph); border-color: var(--ph); text-shadow: none; }
+.mkt-intake-opt.rec:not(.sel) { color: var(--gold); border-color: var(--gold); }
+.mkt-intake-opt.rec.sel { background: var(--gold); border-color: var(--gold); box-shadow: 0 0 9px rgba(var(--gold-rgb), .35); }
+.mkt-intake-skip { font-size: 11.5px; border-style: dashed; color: var(--ph-dim); }
+.mkt-launch-note { color: var(--ph-dim); font-size: 11.5px; }
+.mkt-launch-note b { color: var(--ph-bright); }
+.mkt-r-tokens { font-size: 11.5px; color: var(--ph-dim); letter-spacing: .3px; min-height: 18px; margin-top: -4px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.mkt-r-tok-lbl { color: var(--ph-dim); }
+.mkt-r-tok { color: var(--ink); background: var(--ph); border-radius: 2px; padding: 1px 7px; text-shadow: none; }
+.mkt-r-tok-none { color: var(--ph-dim); font-style: italic; }
+
+/* ---- recipe editor R2: fill-in rows, live preview, cadence/category selects ---- */
+.mkt-r-params { display: flex; flex-direction: column; gap: 5px; margin-bottom: 6px; }
+.mkt-r-prow { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.mkt-r-prow .mkt-r-pkey { flex: 0 0 26%; min-width: 90px; }
+.mkt-r-prow .mkt-r-plabel { flex: 1 1 22%; min-width: 90px; }
+.mkt-r-prow .mkt-r-pph { flex: 1 1 30%; min-width: 100px; }
+.mkt-r-preq { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; letter-spacing: .5px;
+  color: var(--ph-dim); text-transform: uppercase; white-space: nowrap; }
+.mkt-r-phint { font-size: 10.5px; }
+.mkt-recipe-form select.mkt-in { font-family: inherit; }
+.mkt-r-preview { white-space: pre-wrap; word-break: break-word; background: rgba(0,0,0,.28); border: 1px solid var(--ph-line, rgba(120,200,170,.25));
+  border-radius: 5px; padding: 9px 11px; font-size: 12.5px; line-height: 1.5; color: var(--ph-bright); max-height: 160px; overflow: auto; margin-bottom: 6px; }
+
+/* ---- recipe dossier R2/R3: fork provenance, cadence hint, live-routine badge, gear WANT ---- */
+.mkt-r-fork { font-size: 11.5px; color: var(--ph-dim); letter-spacing: .3px; margin: 2px 0 6px; }
+.mkt-r-fork b { color: var(--ph-bright); }
+.mkt-r-cadhint { font-size: 11.5px; color: var(--ph-dim); letter-spacing: .3px; margin: 2px 0 6px; }
+.mkt-r-cadhint b { color: var(--gold); }
+.mkt-r-live { display: flex; align-items: center; gap: 7px; font-size: 12px; letter-spacing: .3px; color: var(--gold);
+  background: rgba(217,168,90,.09); border: 1px solid rgba(217,168,90,.35); border-radius: 5px; padding: 6px 10px; margin: 4px 0 8px; }
+.mkt-r-live-dot { animation: mktPulse 2s ease-in-out infinite; }
+@keyframes mktPulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+
+/* ---- launch pane R3: MAKE ROUTINE cadence panel + unattended-run warning ---- */
+.mkt-r-routine { border: 1px solid var(--ph-line, rgba(120,200,170,.22)); border-radius: 6px; padding: 10px 12px; margin: 6px 0; background: rgba(0,0,0,.14); }
+.mkt-r-routine .mkt-l-custom[hidden] { display: none; }
+.mkt-r-pv { font-size: 11.5px; color: var(--ph-dim); min-height: 16px; margin-top: 4px; }
+.mkt-r-warn { font-size: 11.5px; line-height: 1.5; color: var(--gold); background: rgba(217,168,90,.08);
+  border-left: 3px solid var(--gold); border-radius: 3px; padding: 7px 10px; margin: 6px 0 0; }
+.mkt-r-warn.dim { color: var(--ph-dim); border-left-color: var(--ph-dim); background: rgba(0,0,0,.14); }
+.mkt-r-warn b { color: var(--ph-bright); }
+.mkt-r-warn-inline { color: var(--bad); }
+
+/* ---- IMPORT AGENT (Hermes / OpenClaw migration) — reuses the .mkt-save shell + phosphor vocabulary ---- */
+.mkt-imp-rows { display: flex; flex-direction: column; gap: 8px; }
+.mkt-imp-row { display: flex; flex-direction: column; gap: 3px; text-align: left; cursor: pointer;
+  color: var(--ph); background: linear-gradient(180deg, #000, color-mix(in srgb, var(--ph) 3%, var(--panel2)));
+  border: 1px solid var(--ph-dim); border-radius: 2px; padding: 9px 12px; font: inherit;
+  transition: border-color .12s, box-shadow .12s; }
+.mkt-imp-row:hover, .mkt-imp-row:focus-visible { outline: none; border-color: var(--ph); box-shadow: 0 0 9px var(--ph-glow2); }
+.mkt-imp-row-h { color: var(--ph-bright); font-size: 14px; letter-spacing: 1px; }
+.mkt-imp-row-path { color: var(--ph-dim); font-size: 11px; letter-spacing: .3px; word-break: break-all; }
+.mkt-imp-pick .mkt-imp-row-h { color: var(--gold); }
+.mkt-imp-dim { color: var(--ph-dim); font-size: 11px; letter-spacing: .3px; }
+.mkt-imp-origin { color: var(--ph-dim); font-size: 11.5px; letter-spacing: .3px; word-break: break-all; }
+.mkt-imp-sect { color: var(--ph); font-size: 11px; letter-spacing: 1.5px; margin-top: 4px; opacity: .85; }
+.mkt-imp-persona { color: var(--text, var(--ph)); font-size: 12.5px; line-height: 1.5; white-space: pre-wrap;
+  max-height: 132px; overflow-y: auto; background: rgba(0,0,0,.22); border: 1px solid var(--ph-faint);
+  border-radius: 2px; padding: 8px 10px; }
+.mkt-imp-transfers { display: flex; flex-direction: column; gap: 4px; }
+.mkt-imp-t { display: flex; gap: 10px; align-items: baseline; font-size: 12.5px; }
+.mkt-imp-t-k { color: var(--ph-dim); font-size: 10.5px; letter-spacing: 1px; min-width: 110px; }
+.mkt-imp-t-v { color: var(--ph-bright); }
+.mkt-save-acts .mkt-imp-recruit { margin-left: auto; }
+
+/* ---- ROUTINES console: "from recipe" provenance chip ---- */
+.mc-from-recipe { font-size: 10px; letter-spacing: .5px; color: var(--ph-bright); opacity: .85; white-space: nowrap; }
+
+/* ---- visible keyboard focus (scoped to the bay) ---- */
+.mkt .bb:focus-visible, .mkt-x:focus-visible, .mkt-card:focus-visible, .mkt-adopt input:focus-visible {
+  outline: 2px solid var(--ph); outline-offset: 2px; box-shadow: 0 0 9px var(--ph-glow2); }
+
+/* ===================== personalization: the glass box + the recommended shelf ===================== */
+.mkt-fam { margin: 2px 0 14px; border: 1px solid var(--ph-dim); border-radius: 2px; overflow: hidden;
+  background: linear-gradient(180deg, var(--ph-faint), transparent 60%), var(--panel2); }
+.mkt-fam.paused { opacity: .82; }
+.mkt-fam-head { display: flex; align-items: center; gap: 10px; width: 100%; font-family: inherit; text-align: left; cursor: pointer;
+  background: transparent; border: 0; color: var(--ph-bright); padding: 10px 12px; }
+.mkt-fam-head:hover { background: var(--ph-faint); }
+.mkt-fam-ico { color: var(--ph); font-size: 13px; flex: 0 0 auto; filter: drop-shadow(0 0 6px var(--ph-glow)); }
+.mkt-fam-ttl { color: var(--ph-bright); font-size: 12px; letter-spacing: 2px; flex: 0 0 auto; }
+.mkt-fam-meter { font-size: 11px; letter-spacing: 1px; padding: 1px 8px; border-radius: 999px; flex: 0 0 auto; border: 1px solid var(--ph-dim); color: var(--ph); }
+.mkt-fam-meter.known { color: var(--ink); background: var(--gold); border-color: var(--gold); text-shadow: none; }
+.mkt-fam-meter.cal { color: var(--ph-dim); border-color: var(--ph-faint); }
+.mkt-fam-note { color: var(--ph-dim); font-size: 11.5px; letter-spacing: .3px; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mkt-fam-caret { color: var(--ph); font-size: 12px; flex: 0 0 auto; }
+.mkt-fam-body { padding: 2px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+.mkt-fam-consent { font-size: 12px; line-height: 1.5; color: var(--text, var(--ph)); opacity: .92;
+  background: rgba(0,0,0,.25); border: 1px solid var(--ph-faint); border-radius: var(--r-sm, 3px); padding: 9px 11px; }
+.mkt-fam-consent b { color: var(--gold); }
+.mkt-fam-consent .bb.sm { margin-left: 4px; vertical-align: baseline; }
+.mkt-fam-bars { display: flex; flex-direction: column; gap: 6px; }
+.mkt-fam-bar { display: flex; align-items: center; gap: 9px; }
+.mkt-fam-k { color: var(--ph-dim); font-size: 10px; letter-spacing: 1px; width: 96px; flex: 0 0 auto; }
+.mkt-fam-trk { flex: 1 1 auto; height: 8px; border-radius: 999px; overflow: hidden; background: var(--ph-faint); border: 1px solid var(--ph-dim); }
+.mkt-fam-fill { display: block; height: 100%; background: linear-gradient(90deg, var(--ph), var(--ph-bright)); box-shadow: 0 0 8px var(--ph-glow); transition: width .35s ease; }
+.mkt-fam-v { color: var(--ph); font-size: 11px; width: 34px; text-align: right; flex: 0 0 auto; }
+.mkt-fam-acts { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.mkt-fam-priv { color: var(--ph-dim); font-size: 11px; letter-spacing: .3px; flex: 1 1 auto; }
+
+/* ---- "RECOMMENDED FOR YOU" / "SUGGESTED" shelves (affinity-ranked, pinned above the catalog) ----
+   gold TEXT dividers in the settings language (earned/personalized rank), never inverted plates. */
+.mkt-sect-h.mkt-rec-sect, .mkt-sect-h.mkt-suggest-sect { color: var(--gold); text-shadow: 0 0 9px rgba(var(--gold-rgb), .3); }
+.mkt-sect-h.mkt-rec-sect::after, .mkt-sect-h.mkt-suggest-sect::after { background: linear-gradient(90deg, rgba(var(--gold-rgb), .5), var(--ph-faint) 88%); }
+.mkt-sect-h.mkt-rec-sect::before, .mkt-sect-h.mkt-suggest-sect::before { color: var(--gold); }
+/* CURATED FOR YOUR WORKFLOW — the earned adaptive-recruitment shelf: the strongest gold read (it only
+   appears once the station has a warm read of real work). Accent via --gold-rgb, never a literal amber. */
+.mkt-sect-h.mkt-curated-sect { text-shadow: 0 0 14px rgba(var(--gold-rgb), .55); }
+.mkt-curated-sect + .mkt-rec-rail .mkt-rec { border-color: rgba(var(--gold-rgb), .55); }
+.mkt-curated-sect + .mkt-rec-rail .mkt-rec::before { background: linear-gradient(180deg, var(--gold) 0 62%, transparent); opacity: .9; }
+.mkt-curated-sect + .mkt-rec-rail .mkt-rec:hover { border-color: var(--gold); box-shadow: 0 0 15px rgba(var(--gold-rgb), .5); }
+.mkt-rec-rail { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-bottom: 4px; }
+.mkt-rec { position: relative; display: flex; flex-direction: column; gap: 7px; padding: 10px 10px 10px 13px; border-radius: 2px;
+  background: rgba(0,0,0,.3);
+  border: 1px solid var(--ph-dim); cursor: pointer; text-align: left; font-family: inherit; overflow: hidden;
+  box-shadow: var(--raise);
+  transition: border-color .12s, box-shadow .12s, transform .12s; }
+.mkt-rec::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(180deg, var(--accent, var(--ph)) 0 62%, color-mix(in srgb, var(--accent, var(--ph)) 28%, transparent)); opacity: .8; }
+.mkt-rec:hover { border-color: var(--ph); box-shadow: var(--raise), 0 0 12px var(--ph-glow2); transform: translateY(-1px); }
+.mkt-rec-top { display: flex; align-items: center; gap: 9px; }
+.mkt-rec-top .mkt-seal { --coin: 46px; gap: 0; }
+.mkt-rec-id { min-width: 0; }
+.mkt-rec-name { color: var(--ph-bright); font-size: 14px; letter-spacing: .6px; }
+.mkt-rec-tag { color: var(--accent, var(--ph)); font-size: 11.5px; letter-spacing: .3px; margin-top: 1px; }
+.mkt-rec-why { font-size: 11.5px; line-height: 1.4; color: var(--text, var(--ph)); opacity: .85; }
+.mkt-rec-why-k { color: var(--gold); font-size: 10px; letter-spacing: 1.5px; padding: 0 4px; margin-right: 4px; border: 1px solid rgba(var(--gold-rgb),.4); border-radius: 3px; }
+.mkt-suggest { border-color: var(--gold); }
+.mkt-suggest::before { background: var(--gold); }
+.mkt-suggest-spark { color: var(--gold); font-size: 18px; flex: 0 0 auto; filter: drop-shadow(0 0 7px rgba(var(--gold-rgb),.6)); }
+.mkt-suggest .mkt-rec-name { white-space: normal; font-size: 13px; line-height: 1.35; }
+.mkt-suggest-acts { display: flex; align-items: center; gap: 7px; margin-top: auto; }
+.mkt-suggest-review { color: var(--ink) !important; background: var(--gold) !important; border-color: var(--gold) !important; text-shadow: none !important; flex: 1 1 auto; }
+.mkt-suggest-dismiss { flex: 0 0 auto; }
+
+/* PROSPECTS — bespoke roles the station DRAFTED from real work (Slice 4). Draft treatment: a solid gold
+   hairline + soft gold inner glow (drafts glow, they never dash) + a provenance note. --gold-rgb only. */
+.mkt-sect-h.mkt-prospect-sect { color: var(--gold); text-shadow: 0 0 9px rgba(var(--gold-rgb), .3); }
+.mkt-sect-h.mkt-prospect-sect::after { background: linear-gradient(90deg, rgba(var(--gold-rgb), .5), var(--ph-faint) 88%); }
+.mkt-sect-h.mkt-prospect-sect::before { color: var(--gold); }
+.mkt-prospect { border: 1px solid rgba(var(--gold-rgb), .55); box-shadow: var(--raise), inset 0 0 12px rgba(var(--gold-rgb), .1); }
+.mkt-prospect::before { background: linear-gradient(180deg, var(--gold) 0 62%, transparent); opacity: .7; }
+.mkt-prospect:hover { border-color: var(--gold); box-shadow: 0 0 13px rgba(var(--gold-rgb), .4); }
+.mkt-prospect-glyph { color: var(--gold); font-size: 18px; flex: 0 0 auto; filter: drop-shadow(0 0 7px rgba(var(--gold-rgb), .55)); }
+.mkt-prospect-prov { font-size: 10px; letter-spacing: .3px; color: var(--ph-dim); opacity: .9; }
+.mkt-prospect-acts { display: flex; align-items: center; gap: 7px; margin-top: auto; }
+.mkt-prospect-open { color: var(--ink) !important; background: var(--gold) !important; border-color: var(--gold) !important; text-shadow: none !important; flex: 1 1 auto; }
+.mkt-prospect-dismiss { flex: 0 0 auto; }
+
+/* ---- SCOUT LOG — the scout's visible ATTEMPT LEDGER (what the station tried + the honest reason each time).
+   Collapsible strip modelled on the SUMMON CONFIG (.mkt-cfg) idiom: a caret head + a phosphor-dim body list, so a
+   dismissed draft is never the whole story. Every row is a real GET /api/scout ledger entry (truthful telemetry). */
+.mkt-scoutlog { margin: 4px 0 12px; border: 1px solid var(--ph-dim); border-radius: 2px; overflow: hidden; background: var(--panel2); }
+.mkt-scoutlog-head { display: flex; align-items: center; gap: 9px; width: 100%; font-family: inherit; text-align: left;
+  background: transparent; border: 0; color: var(--ph); padding: 9px 12px; cursor: pointer; }
+.mkt-scoutlog-head:hover { background: var(--ph-faint); }
+.mkt-scoutlog-caret { color: var(--ph); font-size: 12px; flex: 0 0 auto; }
+.mkt-scoutlog-ttl { color: var(--ph-bright); font-size: 11.5px; letter-spacing: 2px; flex: 0 0 auto; }
+.mkt-scoutlog-sum { color: var(--ph-dim); font-size: 11px; letter-spacing: .3px; flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mkt-scoutlog-body { padding: 2px 10px 10px; display: flex; flex-direction: column; gap: 7px; max-height: 260px; overflow-y: auto; }
+.mkt-slog-row { display: flex; align-items: flex-start; gap: 9px; padding: 6px 4px; border-top: 1px solid var(--ph-faint); }
+.mkt-slog-row:first-child { border-top: 0; }
+.mkt-slog-out { flex: 0 0 auto; font-size: 9.5px; letter-spacing: 1px; padding: 2px 6px; border-radius: 3px; border: 1px solid var(--ph-dim); color: var(--ph); margin-top: 1px; min-width: 62px; text-align: center; }
+.mkt-slog-out.ok { color: var(--ink); background: var(--gold); border-color: var(--gold); text-shadow: none; }
+.mkt-slog-out.no { color: var(--ph-bright); border-color: var(--ph); }
+.mkt-slog-out.mut { color: var(--ph-dim); border-color: var(--ph-faint); }
+.mkt-slog-out.err { color: #ff9a7a; border-color: rgba(255,120,80,.5); }
+.mkt-slog-main { min-width: 0; flex: 1 1 auto; }
+.mkt-slog-line { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.mkt-slog-kind { color: var(--ph-dim); font-size: 9.5px; letter-spacing: 1px; text-transform: uppercase; }
+.mkt-slog-ttl { color: var(--ph-bright); font-size: 12px; letter-spacing: .3px; }
+.mkt-slog-time { color: var(--ph-dim); font-size: 10.5px; margin-left: auto; flex: 0 0 auto; }
+.mkt-slog-reason { color: var(--text, var(--ph)); opacity: .8; font-size: 11px; line-height: 1.4; margin-top: 2px; }
+
+/* ---- R6: the "FOR YOU" discovery row (dossier-interest + goal-text ranked; honest category-spread fallback) ----
+   Phosphor-headed (not gold) so it reads as distinct from the affinity SUGGESTED/RECOMMENDED shelves. Each card's
+   WHY chip shows the recipe's browse CATEGORY — a truthful label, never a fabricated "popular" number. */
+.mkt-sect-h.mkt-foryou-sect { color: var(--ph-bright); }
+.mkt-foryou .mkt-rec-why-k { color: var(--ph-bright); border-color: var(--ph-dim); }
+
+/* ---- R6: IMPORT button in the recipes bar (file → validate → save as custom) ---- */
+.mkt-import { flex: 0 0 auto; margin-left: auto; }
+
+/* ---- R6: recipe dossier "PAIRS WITH SKILLS" — the skill refs render as inline chips, not stacked rows
+   (distinct from the agent dossier's SKILL PACKAGE, which keeps its name+desc stacked rows) ---- */
+.mkt-skills.mkt-pair { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+.mkt-skills.mkt-pair .mkt-skill-row { display: inline-flex; padding: 4px 10px; border-radius: 20px; gap: 0; }
+.mkt-skills.mkt-pair .mkt-skill-name { min-width: 0; }
+
+/* ---- SUMMON skin bar (the agent's APPEARANCE — its own choice, separate from the class) ----
+   The headline fix: 40px stills of a chunky sprite are unidentifiable, so the picker uses big
+   smooth-downscaled wells beside a LIVE preview stage (shared SkinStage) that plays the picked/hovered
+   skin's real walk cycle. Material/depth off the shared phosphor vars — same amber, premium feel. */
+.mkt-skinbar { margin: 0 0 12px; padding: 11px 13px; border: 1px solid var(--ph-dim); border-radius: 2px;
+  background: linear-gradient(180deg, var(--ph-faint), transparent 44%), var(--panel2);
+  box-shadow: var(--raise); }
+.mkt-skinlabel { display: block; color: var(--ph); letter-spacing: 1px; font-size: 13px; margin-bottom: 8px;
+  text-shadow: 0 1px 0 #000, 0 0 8px var(--ph-glow2); }
+/* two columns: a scrolling well of large thumbs on the left, the live stage pinned right */
+.mkt-skin-section { display: flex; gap: 13px; align-items: stretch; }
+.mkt-skin-section .skin-picker { flex: 1 1 auto; min-width: 0; display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr)); gap: 8px; align-content: flex-start;
+  max-height: 176px; overflow-y: auto; padding-right: 2px; }
+.mkt-skinbar .skin-thumb { position: relative; aspect-ratio: 1; width: 100%; height: auto; padding: 4px; cursor: pointer;
+  background: radial-gradient(ellipse 64% 42% at 50% 86%, var(--ph-glow2), transparent 72%), var(--panel2);
+  border: 1px solid var(--ph-dim); border-radius: 6px; box-shadow: var(--well);
+  display: flex; align-items: flex-end; justify-content: center;
+  transition: border-color var(--t-fast, 120ms) var(--ease-soft, ease),
+              box-shadow var(--t-fast, 120ms) var(--ease-soft, ease),
+              transform var(--t-fast, 120ms) var(--ease-out, ease); }
+/* smooth-downscale the ~92px sprite master (repo law: never nearest-neighbour crush a large thumb) */
+.mkt-skinbar .skin-thumb img { width: 86%; height: 86%; object-fit: contain; object-position: center bottom;
+  image-rendering: auto; }
+.mkt-skinbar .skin-thumb:hover { border-color: var(--ph); transform: translateY(-1px); box-shadow: var(--well), 0 0 12px var(--ph-glow2); }
+/* selected = an unmistakable bracket ring (corner L-brackets) + accent border, not a faint outline */
+.mkt-skinbar .skin-thumb.sel { border-color: var(--ph-bright);
+  box-shadow: var(--well), 0 0 0 1.5px var(--ph-bright), 0 0 12px var(--ph-glow); }
+.mkt-skinbar .skin-thumb.sel::before, .mkt-skinbar .skin-thumb.sel::after {
+  content: ""; position: absolute; width: 9px; height: 9px; border: 2px solid var(--ph-bright);
+  pointer-events: none; filter: drop-shadow(0 0 4px var(--ph-glow2)); }
+.mkt-skinbar .skin-thumb.sel::before { top: 3px; left: 3px; border-right: 0; border-bottom: 0; }
+.mkt-skinbar .skin-thumb.sel::after { bottom: 3px; right: 3px; border-left: 0; border-top: 0; }
+.mkt-skinbar .skin-thumb:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
+/* the live preview stage — the floor sprite itself, animated, so the demo can never lie */
+.mkt-skin-stage { flex: 0 0 132px; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.mkt-skin-stage-frame { width: 132px; height: 132px; box-sizing: border-box; overflow: hidden;
+  background-image: radial-gradient(ellipse 64% 44% at 50% 86%, var(--ph-glow2), transparent 72%);
+  background-color: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 6px; box-shadow: var(--well);
+  display: flex; align-items: flex-end; justify-content: center; }
+.mkt-skin-stage-frame img { width: 88%; height: 88%; object-fit: contain; object-position: center bottom;
+  image-rendering: auto; }
+.mkt-skin-stage-name { color: var(--ph-bright); letter-spacing: 1px; font-size: 13px; text-align: center;
+  text-shadow: 0 0 6px var(--ph-glow2); }
+/* narrow modal: drop the stage below the wells so neither crushes */
+@media (max-width: 560px) {
+  .mkt-skin-section { flex-direction: column; }
+  .mkt-skin-stage { flex: 0 0 auto; align-self: center; }
+}
+/* SUMMON model bar — reuses the shared .mp-* ModelPicker, laid out like the APPEARANCE skin bar */
+.mkt-modelbar .mkt-modelpick { display: flex; align-items: center; gap: 8px; }
+.mkt-modelbar .mp-wrap { width: 100%; }
+.mkt-modelbar .mp-model { flex: 1 1 auto; }
+/* the live stage caption names itself: a dim "LIVE PREVIEW —" label + the skin name SkinStage fills in */
+.mkt-stage-lbl { color: var(--ph-dim); letter-spacing: 1.5px; font-size: 10.5px; }
+
+/* ---- SUMMON CONFIG: the collapsible APPEARANCE + MODEL strip (keeps the class roster above the fold) ----
+   Slim resting bar with a one-line summary of the current picks; expands to the full skin stage + model picker.
+   Plain-label header rank (NOT the amber roster plate, NOT gold) — config is a secondary decision. */
+.mkt-cfg { margin: 0 0 12px; border: 1px solid var(--ph-dim); border-radius: 2px; overflow: hidden;
+  background: linear-gradient(180deg, var(--ph-faint), transparent 60%), var(--panel2); }
+.mkt-cfg-head { display: flex; align-items: center; gap: 9px; width: 100%; font-family: inherit; text-align: left;
+  cursor: pointer; background: transparent; border: 0; color: var(--ph-bright); padding: 9px 12px; }
+.mkt-cfg-head:hover { background: var(--ph-faint); }
+.mkt-cfg-caret { color: var(--ph); font-size: 12px; flex: 0 0 auto; }
+.mkt-cfg-ttl { color: var(--ph); font-size: 11.5px; letter-spacing: 2px; flex: 0 0 auto; }
+.mkt-cfg-sum { color: var(--ph-dim); font-size: 11.5px; letter-spacing: .3px; flex: 1 1 auto;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mkt-cfg-sum .mkt-cfg-k { color: var(--ph); opacity: .8; letter-spacing: 1px; margin: 0 4px 0 10px; font-size: 10.5px; }
+.mkt-cfg-sum .mkt-cfg-k:first-child { margin-left: 0; }
+.mkt-cfg-body { padding: 4px 12px 12px; }
+/* inside the config body the bars lose their own frames — the strip already IS the frame */
+.mkt-cfg-body .mkt-skinbar { margin: 0 0 10px; padding: 0; border: 0; background: none; box-shadow: none; }
+.mkt-cfg-body .mkt-skinbar:last-child { margin-bottom: 0; }
+/* SUMMON NAME field: uppercase echo matches the ≤18 UPPER normalization the summon actually applies */
+.mkt-namebar .mkt-in { max-width: 320px; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px; }
+.mkt-namebar .mkt-in::placeholder { text-transform: none; letter-spacing: .3px; color: var(--ph-dim); }
+.mkt-name-meta { max-width: 320px; display:flex; justify-content:space-between; gap:12px; margin-top:5px; font-size:12px; color:var(--ph-dim); }
+.mkt-name-help.warn, .mkt-name-count.over { color:var(--warn, #ffb34e); }
+.mkt-name-count { flex:0 0 auto; font-variant-numeric:tabular-nums; }
+.mkt-namebar .mkt-in[aria-invalid="true"] { border-color:var(--warn, #ffb34e); }
+
+/* ---- SUMMON commit summary: the confirm row above the CTA (skin thumb + model/effort + class code) ---- */
+.mkt-commit { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; padding: 8px 11px; margin-bottom: 9px;
+  border-radius: 2px; background: var(--panel2); border: 1px solid var(--ph-faint); box-shadow: var(--well); }
+.mkt-cs-cell { display: inline-flex; align-items: center; gap: 7px; color: var(--ph-bright); font-size: 12px; letter-spacing: .4px; }
+.mkt-cs-k { color: var(--ph-dim); font-size: 10px; letter-spacing: 1.5px; }
+.mkt-cs-skin { width: 26px; height: 26px; object-fit: contain; object-position: center bottom; image-rendering: auto;
+  background: radial-gradient(ellipse 66% 40% at 50% 84%, var(--ph-glow2), transparent 72%); border-radius: 4px; }
+.mkt-adopt-cta { margin: 0 0 2px; }
+
+/* ---- the ＋ build tile (a quiet recessed cell) + the custom-class builder form ---- */
+.mkt-build { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+  min-height: 116px; cursor: pointer; font-family: inherit; text-align: center;
+  border: 1px solid var(--ph-faint); border-radius: var(--r-sm, 3px); background: rgba(0,0,0,.2); color: var(--ph-dim);
+  transition: border-color .14s, color .14s, background .14s; }
+.mkt-build:hover { border-color: var(--ph); color: var(--ph-bright); background: var(--ph-faint); }
+.mkt-build:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
+.mkt-build-plus { font-size: 32px; line-height: 1; }
+.mkt-build-lbl { font-size: 12px; letter-spacing: 2px; }
+.mkt-yours-hint { margin: -4px 0 8px; }
+.mkt-build-preview { display: flex; align-items: center; gap: 12px; margin: 2px 0 4px; }
+.mkt-build-preview .mkt-coin { --coin: 64px; }
+.mkt-swatches { display: flex; gap: 8px; flex-wrap: wrap; }
+.mkt-sw { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; padding: 0;
+  border: 2px solid rgba(0,0,0,.55); box-shadow: 0 0 0 1px var(--ph-dim); }
+.mkt-sw:hover { box-shadow: 0 0 0 1px var(--ph-bright); }
+.mkt-sw.sel { box-shadow: 0 0 0 2px var(--ph-bright), 0 0 9px rgba(var(--ph-bright-rgb),.4); }
+.mkt-sw:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
+.mkt-segs { display: flex; gap: 6px; flex-wrap: wrap; }
+.mkt-seg { font-family: inherit; font-size: 12px; letter-spacing: 1px; cursor: pointer; padding: 5px 12px; border-radius: 2px;
+  color: var(--ph); background: var(--panel2); border: 1px solid var(--ph-dim); }
+.mkt-seg:hover { color: var(--ph-bright); border-color: var(--ph); }
+.mkt-seg.sel { color: var(--ink); background: var(--ph); border-color: var(--ph); }
+.mkt-build-form textarea.mkt-b-area { resize: vertical; line-height: 1.5; font-size: 14px; }
+.mkt-save-acts .mkt-do-build { margin-left: auto; color: var(--ink) !important; background: var(--ph) !important; border-color: var(--ph) !important; text-shadow: none !important; }
+
+/* ---- responsive: collapse the dossier; the card click opens it as a full-width sheet ---- */
+@media (max-width: 820px) {
+  .mkt-stage { grid-template-columns: 1fr; }
+  .mkt-dossier { display: none; border-left: 0; border-top: 1px solid var(--ph-dim); }
+  .mkt.show-dossier .mkt-roster { display: none; }
+  .mkt.show-dossier .mkt-dossier { display: block; }
+  /* the sheet needs its own way out — reveal the back control only while it's the visible pane */
+  .mkt.show-dossier .mkt-dos-back { display: inline-flex; align-items: center; }
+  .mkt-grid { grid-template-columns: 1fr; }
+  .mkt-foot .reg { display: none; }
+}

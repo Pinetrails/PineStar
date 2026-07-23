@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Providers & keys — StarNet Docs</title>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="docs.css">
+</head>
+<body>
+
+<div class="crt-scan" aria-hidden="true"></div>
+<div class="crt-vignette" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="brand" href="../index.html">STARNET TERMLINK</a>
+  <nav class="topnav">
+    <a href="../index.html#features">FEATURES</a>
+    <a href="../index.html#download">DOWNLOAD</a>
+    <a href="index.html">DOCS</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
+  </nav>
+  <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <div class="side-title">// DOCS</div>
+    <a href="index.html">DOCS</a>
+    <a href="getting-started.html">GETTING STARTED</a>
+    <a href="providers.html" class="active">PROVIDERS & KEYS</a>
+    <a href="station.html">THE STATION</a>
+    <a href="agents.html">AGENTS & TEAMS</a>
+    <a href="autonomy.html">AUTONOMY & NIGHT SHIFT</a>
+    <a href="skills.html">SKILLS, RECIPES, ROUTINES</a>
+    <a href="connectors.html">CONNECTORS & INTEROP</a>
+    <a href="migrating.html">FROM OPENCLAW / HERMES</a>
+    <a href="troubleshooting.html">TROUBLESHOOTING</a>
+  </aside>
+  <main class="docs-main">
+<h1>PROVIDERS &amp; KEYS</h1>
+<p class="doc-sub">// your models, your keys, your costs — nothing resold behind your back</p>
+
+<h2>Bring your own key (BYOK)</h2>
+<p>StarNet talks to models through <b>your</b> credentials. The simplest path is an
+<a href="https://openrouter.ai" target="_blank" rel="noopener">OpenRouter</a> API key: one key,
+hundreds of models, transparent per-token pricing. Paste it once in Settings and every agent can
+use any model you allow.</p>
+
+<h2>Supported provider families</h2>
+<ul>
+<li><b>OpenRouter</b> — the recommended default; widest model selection.</li>
+<li><b>Anthropic</b> — direct API key for Claude models.</li>
+<li><b>OpenAI-compatible endpoints</b> — point StarNet at any API that speaks the OpenAI wire
+format, including local servers.</li>
+<li><b>Gemini</b> — direct Google API key.</li>
+<li><b>OAuth sign-ins</b> — supported providers let you sign in with an account instead of
+pasting a key (including Grok and Kimi sign-in flows).</li>
+</ul>
+
+<h2>Where keys live</h2>
+<p>Keys are stored locally in your OS keychain via the desktop shell — never in plain project
+files, never sent anywhere except the provider they belong to. Provider requests leave your
+machine only when an agent actually runs.</p>
+
+<h2>Service keys (the KEYS tab)</h2>
+<p>Beyond model providers, agents sometimes need platform keys to do real work — a Stripe test
+key, a GitHub token, a search API key. The <b>KEYS</b> tab lets you paste any service key;
+StarNet exposes it to agent runs as an environment variable and tells the agent only the
+<b>name</b> of what's available, never the value. The key itself never enters the model prompt.</p>
+
+<h2>Cost honesty</h2>
+<p>Every run records what it actually cost, from the provider's own usage numbers. The ledger
+shows real spend per agent and per task — there is no abstraction layer marking up your tokens,
+and no meter that guesses.</p>
+
+<div class="doc-next"><a href="getting-started.html">&larr; GETTING STARTED</a><a href="station.html">NEXT: THE STATION &rarr;</a></div>
+  </main>
+</div>
+
+<footer class="footer">
+  <div class="footer-links">
+    <a href="../index.html">HOME</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/skynet-harness" target="_blank" rel="noopener">GITHUB</a>
+    <a href="https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
+    <a href="mailto:androo.agi@gmail.com">CONTACT</a>
+  </div>
+  <div class="footer-fine">MIT license &middot; StarNet</div>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,11 @@
+/* demo.css — WEBSITE EMBED ONLY. The landing iframe shows the app below native size;
+   the full-strength glass overlays (scanlines z950 / vignette z940) downscale into a
+   muddy haze, so the embed runs them at roughly half strength. */
+body::after { opacity: 0.45; }
+body::before { opacity: 0.55; }
+body:not(.no-flicker) #app { animation: none; }
+
+/* the camera-panel chrome tags sit at the panel corners — the landing clip cuts them
+   in half, so the embed hides them (and the CINEMA control, inert with pointer-events
+   off anyway). Embed-only; the app keeps its chrome. */
+.cam-label, .cam-rec, .cam-feed, .cam-cine { display: none !important; }
