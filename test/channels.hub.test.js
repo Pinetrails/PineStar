@@ -547,6 +547,47 @@ async function run() {
     A.eq(runs.length, 3, 'same groupId in different chats + different groups in one chat = separate runs');
   }
 
+  // ---- T1. typing indicator: chatAction refreshed while the run is in flight, ceased before delivery ----
+  {
+    const store = fakeStore(); const typed = []; const sends = [];
+    const runOnce = async (o) => {
+      await new Promise(r => setTimeout(r, 40));   // a "slow" run: several refresh intervals long
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'done!' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: (c, t) => { sends.push(t); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      chatAction: (chatId) => { typed.push(chatId); return Promise.resolve({ ok: true }); }, typingRefreshMs: 250
+    });
+    await hub.onInbound(dm('slow one', '70'));
+    A.ok(typed.length >= 1, 'typing action fired at least once during the run');
+    A.eq(typed[0], '70', 'typing action targets the inbound chat');
+    A.eq(sends, ['done!'], 'reply still delivered normally');
+    const after = typed.length;
+    await new Promise(r => setTimeout(r, 30));
+    A.eq(typed.length, after, 'typing refreshes CEASE once the reply is out (no lingering bubble)');
+  }
+
+  // ---- T2. typing degrades honestly: a non-retryable failure = ONE probe, no hammering; /commands never type ----
+  {
+    const store = fakeStore(); const typed = [];
+    const runOnce = async (o) => {
+      await new Promise(r => setTimeout(r, 20));
+      o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' });
+      o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+      chatAction: () => { typed.push(1); return Promise.resolve({ ok: false, error: 'typing not supported on this channel', retryable: false }); }, typingRefreshMs: 1
+    });
+    await hub.onInbound(dm('hi', '71'));
+    A.eq(typed.length, 1, 'unsupported channel probed exactly once per run');
+    typed.length = 0;
+    await hub.onInbound(dm('/help', '71'));
+    A.eq(typed.length, 0, 'a control command never lights the typing bubble (no run happens)');
+  }
+
   A.report('channels.hub.test');
 }
 

@@ -101,6 +101,23 @@
         }
       },
 
+      // sendChatAction — the "typing…" bubble (Hermes parity). Telegram shows it for ~5s per call; the hub's
+      // keep-alive loop refreshes it while a run is in flight. NEVER throws — always { ok, error?, retryable?,
+      // retryAfter? } (same normalized shape as send) so the hub's loop can back off on 429 or stop on a hard
+      // error. Purely cosmetic: a failure here must never affect the real reply path.
+      async sendChatAction(chatId, action) {
+        try {
+          const { data, res } = await call('sendChatAction', { chat_id: chatId, action: action || 'typing' });
+          if (data && data.ok) return { ok: true };
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          const retryAfter = data && data.parameters && data.parameters.retry_after;
+          return { ok: false, error: (data && data.description) || ('http ' + code), retryable: code === 429 || code >= 500, retryAfter: retryAfter };
+        } catch (e) {
+          if (e && (e.name === 'AbortError' || e.aborted)) return { ok: false, error: 'aborted', retryable: false };
+          return { ok: false, error: (e && e.message) || 'network error', retryable: true };
+        }
+      },
+
       // never throws: a network/abort/HTTP error becomes a SendResult so the adapter's bounded resend can run.
       async send(chatId, text, sendOpts) {
         const o2 = sendOpts || {};

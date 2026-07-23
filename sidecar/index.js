@@ -4249,6 +4249,8 @@ function startTelegram(token, key, model, agentCfg) {
   const hub = makeChannelHub({
     channel: 'telegram', runOnce: runOnce, store: channelStore,
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
+    chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     secrets: () => {
       const t = (channelSecrets && channelSecrets.telegram) || {};
       const provider = normalizeProvider(t.provider);

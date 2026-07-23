@@ -253,6 +253,15 @@
         return r;
       },
 
+      // Fire one "typing…" chat-action (transport-optional, like getFile): { ok, error?, retryable?, retryAfter? },
+      // never throws. A transport without sendChatAction answers ok:false NON-retryable, so the hub's keep-alive
+      // loop stops after one probe instead of hammering a channel that can't show typing at all.
+      chatAction(chatId) {
+        if (typeof transport.sendChatAction !== 'function') return Promise.resolve({ ok: false, error: 'typing not supported on this channel', retryable: false });
+        try { return Promise.resolve(transport.sendChatAction(String(chatId))); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'sendChatAction threw', retryable: false }); }
+      },
+
       // Download one media file's bytes (transport-optional): { ok, buffer?, error? }, never throws. A transport
       // without getFile answers honestly instead of pretending — the hub's note then says media isn't supported.
       getFile(fileId, opts2) {
