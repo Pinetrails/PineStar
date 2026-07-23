@@ -120,6 +120,12 @@ a:hover{ color:var(--amber); }
 .topnav{ display:flex; gap:clamp(12px,2.5vw,28px); flex-wrap:wrap; }
 .topnav a{ color:var(--amber-d); text-decoration:none; font-size:16px; letter-spacing:1.5px; }
 .topnav a:hover{ color:var(--amber-b); text-shadow:0 0 8px rgba(255,157,47,.4); }
+@media (max-width:620px){
+  .topbar{ justify-content:center; text-align:center; gap:10px 16px; padding-top:14px; }
+  .topnav{ justify-content:center; gap:10px 16px; }
+  .topnav a{ font-size:15px; letter-spacing:1px; }
+  .topbar-right{ width:100%; justify-content:center; }
+}
 .live-dot{ display:flex; align-items:center; gap:8px; white-space:nowrap; }
 .live-dot .dot{ width:7px; height:7px; background:var(--amber); box-shadow:0 0 8px var(--amber); animation:sc-twinkle 2s ease-in-out infinite; }
 
@@ -204,7 +210,9 @@ a:hover{ color:var(--amber); }
 .split{ display:grid; grid-template-columns:1.1fr 1fr; gap:clamp(24px,4vw,48px); align-items:center; }
 /* the live-preview split gives the station the bigger column so the room reads at near-app size */
 .split.station{ grid-template-columns:1fr 1.5fr; }
-@media (max-width:860px){ .split{ grid-template-columns:1fr; } }
+/* .split.station beats the plain .split reset on specificity — name it here too,
+   or the section-01 grid stays two-column and crushes the copy on phones. */
+@media (max-width:860px){ .split, .split.station{ grid-template-columns:1fr; } }
 .split-copy .lead{ font-size:clamp(19px,2.3vw,23px); line-height:1.45; color:var(--ink); margin:0 0 18px; }
 .split-copy p{ font-size:18px; line-height:1.55; color:var(--ink-d); }
 .contract{ list-style:none; margin:0 0 18px; padding:0; }
