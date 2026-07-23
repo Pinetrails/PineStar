@@ -56,9 +56,7 @@ DATA.SKINS = {
   masterchief:   { name: 'Master Chief',   set: 'masterchief',   scale: 0.376 },
   pikachu:       { name: 'Pikachu',        set: 'pikachu',       scale: 0.36  },
   caseyjones:    { name: 'Casey Jones',    set: 'caseyjones',    scale: 0.404 },
-  finn:          { name: 'Finn',           set: 'finn',          scale: 0.404 },
-  jake:          { name: 'Jake',           set: 'jake',          scale: 0.436 },
-  mordecai:      { name: 'Mordecai',       set: 'mordecai',      scale: 0.36  },
-  rigby:         { name: 'Rigby',          set: 'rigby',         scale: 0.436 },
+  finn:          { name: 'Finn',           set: 'finn',          scale: 0.394 },
+  jake:          { name: 'Jake',           set: 'jake',          scale: 0.404 },
 };
 DATA.DEFAULT_SKIN = 'blank';
