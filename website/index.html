@@ -7,12 +7,13 @@
 <meta name="description" content="StarNet is a local-first desktop harness where you recruit AI agents into a living pixel-art station and watch them do real work with real models and tools. Open source. Windows and macOS.">
 <meta property="og:title" content="StarNet — Give your AI a world to work in">
 <meta property="og:description" content="Recruit AI agents into a living station on your machine, put them to work, and build your empire. Local-first. Open source. BYOK.">
-<meta property="og:image" content="assets/og-card.png">
+<meta property="og:image" content="https://androoagi.github.io/starnet/assets/og-card.png">
+<meta property="og:url" content="https://androoagi.github.io/starnet/">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="StarNet — Give your AI a world to work in">
 <meta name="twitter:description" content="Recruit AI agents into a living station on your machine, put them to work, and build your empire. Local-first. Open source. BYOK.">
-<meta name="twitter:image" content="assets/og-card.png">
+<meta name="twitter:image" content="https://androoagi.github.io/starnet/assets/og-card.png">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
 <link rel="stylesheet" href="styles.css">
 </head>
@@ -135,7 +136,7 @@
         <div class="dl-os">WINDOWS</div>
         <div class="dl-req">Windows 10 / 11 &middot; 64-bit</div>
         <a class="btn btn-primary dl-btn" data-asset="x64-setup.exe" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .EXE INSTALLER ]</a>
-        <div class="dl-note">SmartScreen will warn (unsigned): More info &rarr; Run anyway.</div>
+        <div class="dl-note">Authenticode-signed. SmartScreen may still warn while the new certificate builds reputation: More info &rarr; Run anyway.</div>
       </article>
       <article class="dl-card" data-os="mac-arm">
         <div class="dl-os">MACOS &middot; APPLE SILICON</div>
@@ -146,7 +147,7 @@
     </div>
     <div class="source-run">
       <div class="source-run-head">// prefer to run from source? node 18+ is all you need</div>
-    <p class="dl-honesty">// honesty note: every build is cryptographically signed for auto-updates, but early builds aren't yet OS code-signed (no Authenticode / Apple notarization), so Windows and macOS will each show a one-time "unknown publisher" warning before first run. The <a href="docs/getting-started.html">getting-started guide</a> shows exactly what to click on each platform. Something broken? Tell us: <a href="mailto:androo.agi@gmail.com">androo.agi@gmail.com</a>.</p>
+    <p class="dl-honesty">// honesty note: every build is cryptographically signed for auto-updates, and Windows installers are Authenticode code-signed. macOS builds aren't Apple-notarized yet, so Gatekeeper shows a one-time warning before first run; Windows SmartScreen may also warn until the signing certificate earns reputation. The <a href="docs/getting-started.html">getting-started guide</a> shows exactly what to click on each platform. Something broken? Tell us: <a href="mailto:androo.agi@gmail.com">androo.agi@gmail.com</a>.</p>
   </section>
 
   <!-- ===== docs ===== -->
@@ -193,7 +194,7 @@
       </details>
       <details>
         <summary>Why does my OS warn me during install?</summary>
-        <p>Early builds aren't yet code-signed with a paid OS certificate, so SmartScreen and Gatekeeper flag them as "unknown publisher." The <a href="docs/troubleshooting.html">troubleshooting guide</a> documents every warning honestly, including the one Windows 11 Smart App Control case we can't bypass.</p>
+        <p>Windows installers are Authenticode code-signed; SmartScreen can still warn while a new certificate builds reputation. macOS builds aren't Apple-notarized yet, so Gatekeeper shows a one-time warning. The <a href="docs/troubleshooting.html">troubleshooting guide</a> documents every warning honestly.</p>
       </details>
     </div>
   </section>

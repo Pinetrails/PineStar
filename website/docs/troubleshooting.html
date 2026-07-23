@@ -42,15 +42,9 @@
 <p class="doc-sub">// every warning documented honestly, every fix spelled out</p>
 
 <h2>Windows: "Windows protected your PC"</h2>
-<p>SmartScreen flags the installer because it's unsigned and new — not because anything is
-wrong. Click <b>More info</b> &rarr; <b>Run anyway</b>.</p>
-
-<h2>Windows 11: Smart App Control</h2>
-<p>SAC in <b>enforce mode</b> hard-blocks unsigned installers with no override — nothing the
-installer can do. Check your mode under <i>Windows Security &rarr; App &amp; browser control</i>:
-"Evaluation" or "Off" is fine; "On" means you'll need to wait for the Authenticode-signed build
-(on the roadmap). We don't recommend disabling SAC just for us — it can't be re-enabled without
-reinstalling Windows.</p>
+<p>The installer is Authenticode code-signed, but SmartScreen can still flag it while the
+certificate is new and building reputation — not because anything is wrong. Click
+<b>More info</b> &rarr; <b>Run anyway</b>.</p>
 
 <h2>macOS: "cannot be opened" / "is damaged"</h2>
 <p>Gatekeeper's standard message for un-notarized apps; the file is fine. After the first
