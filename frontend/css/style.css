@@ -852,6 +852,19 @@ body.no-scan .crt-scan { display: none; }
 .cf.cf-on { border-left-color: var(--ph); box-shadow: 0 0 10px var(--ph-glow2); }
 .cf.cf-ro { border-left-color: var(--ph-faint); opacity: 0.92; }
 .cf-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* per-agent CONFIG cards (personality / model / approval / while-you're-away) — same card
+   language as .cf; this class had NO rule, so the cards ran together as bare unspaced divs. */
+.cf-card {
+  border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-dim);
+  background: rgba(0,0,0,0.35); padding: 8px 11px 10px; margin-bottom: 10px;
+  border-radius: var(--r-sm); box-shadow: var(--raise);
+}
+.cf-card .cf-head { margin-bottom: 4px; }
+.cf-card .cf-desc { margin: 0 0 8px; }
+.cf-card .ov-vchips { margin: 2px 0 4px; }
+.cf-card .msg:empty { display: none; }
+.cf-card .set-row { margin: 6px 0; }
+.cf-file { font-size: 14px; color: var(--ph-bright); letter-spacing: 1px; }
 .cf-name { font-size: 14px; color: var(--ph-bright); letter-spacing: 1px; }
 .cf-badge { font-size: 10px; letter-spacing: 1px; border: 1px solid var(--ph-dim); padding: 0 5px; }
 .cf-badge.you { color: var(--gold); border-color: var(--gold); }
