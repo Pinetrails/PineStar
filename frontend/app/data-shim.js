@@ -54,11 +54,11 @@ DATA.SKINS = {
   robocop:       { name: 'Robocop',        set: 'robocop',       scale: 0.385 },
   minionchar:    { name: 'Minion',         set: 'minionchar',    scale: 0.404 },
   masterchief:   { name: 'Master Chief',   set: 'masterchief',   scale: 0.376 },
-  pikachu:       { name: 'Pikachu',        set: 'pikachu',       scale: 0.345 },
-  caseyjones:    { name: 'Casey Jones',    set: 'caseyjones',    scale: 0.376 },
-  finn:          { name: 'Finn',           set: 'finn',          scale: 0.376 },
-  jake:          { name: 'Jake',           set: 'jake',          scale: 0.404 },
+  pikachu:       { name: 'Pikachu',        set: 'pikachu',       scale: 0.36  },
+  caseyjones:    { name: 'Casey Jones',    set: 'caseyjones',    scale: 0.404 },
+  finn:          { name: 'Finn',           set: 'finn',          scale: 0.404 },
+  jake:          { name: 'Jake',           set: 'jake',          scale: 0.436 },
   mordecai:      { name: 'Mordecai',       set: 'mordecai',      scale: 0.36  },
-  rigby:         { name: 'Rigby',          set: 'rigby',         scale: 0.425 },
+  rigby:         { name: 'Rigby',          set: 'rigby',         scale: 0.436 },
 };
 DATA.DEFAULT_SKIN = 'blank';
