@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Troubleshooting — StarNet Docs</title>
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
-<link rel="stylesheet" href="docs.css">
+<link rel="stylesheet" href="docs.css?v=20260723">
 </head>
 <body>
 
@@ -51,12 +51,6 @@ certificate is new and building reputation — not because anything is wrong. Cl
 blocked attempt: <b>System Settings &rarr; Privacy &amp; Security &rarr; Open Anyway</b>, or
 right-click the app &rarr; <b>Open</b> on older macOS. One-time only.</p>
 
-<h2>Linux: app won't launch</h2>
-<p>StarNet is a WebKitGTK app. If a library is missing:</p>
-<pre><code>sudo apt install libwebkit2gtk-4.1-0 libayatana-appindicator3-1 librsvg2-2</code></pre>
-<p>AppImage complaining about mounting usually means missing FUSE — install your distro's
-FUSE package.</p>
-
 <h2>Updates</h2>
 <p>The built-in updater (System &rarr; Updates) checks the public releases channel and verifies
 every update's signature against a key baked into the app before installing. This runs on all
@@ -67,7 +61,6 @@ pulls only cryptographically verified updates.</p>
 <ul>
 <li><b>Windows:</b> Settings &rarr; Apps &rarr; Installed apps.</li>
 <li><b>macOS:</b> quit StarNet, drag it from Applications to the Trash.</li>
-<li><b>Linux:</b> <code>sudo apt remove starnet</code>, or just delete the AppImage.</li>
 </ul>
 
 <h2>Still stuck?</h2>
