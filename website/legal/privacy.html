@@ -216,6 +216,18 @@ app-data folder for your OS — Windows: <code>%APPDATA%\ai.skynet.harness\</cod
 If you ever ran the developer-mode sidecar on Windows, also delete <code>%LOCALAPPDATA%\StarNet\</code>.
 Provider API keys and channel tokens held in the OS keychain can be removed there too (search
 your credential manager / keychain for <code>ai.skynet.harness</code>).</p>
+<h2>This website (starnetos.com)</h2>
+<p>The website you're reading is a static site with no accounts, no cookies, no analytics, and no
+tracking scripts. Two things are worth stating plainly:</p>
+<ul>
+<li>It's served through <strong>Cloudflare</strong>, which — like any host/CDN — processes standard
+  request logs (IP address, user agent) to deliver the pages. We add nothing on top.</li>
+<li>The download page makes one anonymous request to <strong>api.github.com</strong> from your browser
+  to look up the latest release version and exact installer links. GitHub sees that request the same
+  way it would if you visited the releases page yourself.</li>
+</ul>
+<p>The "live preview" on the homepage is the real app running entirely in your browser from a
+seeded demo save; anything you do in it stays in your browser's local storage and goes nowhere.</p>
 <h2>Changes</h2>
 <p>If this changes, we'll update this document. Questions: androo.agi@gmail.com.</p>
   </main>

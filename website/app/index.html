@@ -4,12 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>STARNET</title>
-<!-- VT323 (the house typeface) is shipped LOCALLY via @font-face in css/style.css
-     (frontend/assets/fonts/vt323.woff2, SIL OFL) so the CRT look survives an offline /
-     air-gapped boot. The Google Fonts link below is a SECONDARY online enhancement only
-     (fuller unicode subsets); it is NOT required for the app to render in VT323. -->
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+<!-- VT323 ships LOCALLY via @font-face in css/style.css (assets/fonts/vt323.woff2, SIL OFL).
+     WEBSITE EMBED ONLY: the app's secondary Google Fonts link is removed here — the public
+     site promises zero third-party requests, and the local woff2 fully covers the embed. -->
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/app.css">
 <link rel="stylesheet" href="css/comms.css">
