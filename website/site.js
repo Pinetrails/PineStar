@@ -2,7 +2,7 @@
 (function(){
   'use strict';
 
-  var FALLBACK_VERSION = '0.6.5';
+  var FALLBACK_VERSION = '0.6.6';
 
   // Community links — paste real URLs here and the DISCORD / X links appear
   // everywhere automatically. Empty string keeps them hidden (no dead links).
@@ -14,7 +14,7 @@
     var url = SOCIAL[a.getAttribute('data-social')];
     if(url){ a.href = url; a.hidden = false; a.target = '_blank'; a.rel = 'noopener'; }
   });
-  var RELEASES_REPO = 'nonfungiblefunyuns-ship-it/starnet-releases';
+  var RELEASES_REPO = 'androoAGI/starnet-releases';
   var RELEASES_PAGE = 'https://github.com/' + RELEASES_REPO + '/releases/latest';
 
   /* ---------- boot sequence (once per session) ---------- */
@@ -68,16 +68,11 @@
       // Apple Silicon Macs report Intel in UA; default to arm (the common case for new downloads)
       return 'mac-arm';
     }
-    if(/Android/i.test(ua)) return null;
-    if(/Linux/i.test(ua) || /Linux/i.test(plat)) return 'linux-appimage';
     return null;
   }
 
   var os = detectOS();
-  var osLabels = {
-    'windows':'WINDOWS', 'mac-arm':'MACOS', 'mac-intel':'MACOS',
-    'linux-deb':'LINUX', 'linux-appimage':'LINUX'
-  };
+  var osLabels = { 'windows':'WINDOWS', 'mac-arm':'MACOS', 'mac-intel':'MACOS' };
   if(os){
     var card = document.querySelector('.dl-card[data-os="' + os + '"]');
     if(card) card.classList.add('detected');

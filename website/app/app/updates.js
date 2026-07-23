@@ -10,7 +10,7 @@ const Updates = (() => {
   // ALL user data (workspaces live in Application Support; localStorage/IndexedDB in the WebView
   // store keyed by the unchanged bundle id — both OUTSIDE the app bundle the installer replaces).
   // Kept in sync with tauri.conf.json plugins.updater.endpoints[0] (same repo, /releases/latest).
-  const RELEASES_PAGE = 'https://github.com/nonfungiblefunyuns-ship-it/starnet-releases/releases/latest';
+  const RELEASES_PAGE = 'https://github.com/androoAGI/starnet-releases/releases/latest';
   const CORE = (typeof UpdateCore !== 'undefined') ? UpdateCore : null;
   const TAURI = (typeof window !== 'undefined' && window.__TAURI__ && window.__TAURI__.core) ? window.__TAURI__.core : null;
   const invoke = (cmd, args) => TAURI.invoke(cmd, args || {});
