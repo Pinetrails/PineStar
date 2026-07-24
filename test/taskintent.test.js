@@ -53,6 +53,22 @@ A.eq(Policy.validateQuestion(material({ question: 'What does good look like?', o
 A.eq(Policy.validateQuestion(material({ options: ['operators', 'Operators'] }), { questions: [] }).ok, false, 'duplicate options do not masquerade as distinct choices');
 A.eq(Policy.validateQuestion(material({ discoverable: true }), { questions: [] }).ok, false, 'a discoverable gap must be researched instead of asked');
 A.eq(Policy.validateQuestion(material({ recommended: 'not listed' }), { questions: [] }).ok, false, 'recommended default must be one of the visible choices');
+
+// RECOMMENDATION MATCHING — a formatting slip must not silently cost the Commander the ★ suggestion, and a
+// rescue must never resolve to the WRONG chip. Every accepted form returns the CANONICAL option text.
+{
+  const opts = ['operators', 'executives', 'customers'];
+  for (const near of ['operators', 'Operators', 'operators.', 'operators!', '"operators"', '“operators”', 'the operators', '  operators  ']) {
+    A.eq(Policy.matchOption(opts, near), 'operators', 'near-miss recommendation resolves to the canonical option: ' + JSON.stringify(near));
+    A.eq(Policy.validateQuestion(material({ recommended: near }), { questions: [] }).question.recommended, 'operators', 'the stored recommendation is canonical, never the model spelling: ' + JSON.stringify(near));
+  }
+  for (const miss of ['', 'not listed', 'ops team', 'whoever']) {
+    A.eq(Policy.matchOption(opts, miss), '', 'a genuine miss stays rejected rather than guessing: ' + JSON.stringify(miss));
+  }
+  A.eq(Policy.matchOption(['ship it', 'do not ship it'], 'ship'), '', 'an ambiguous substring matching two options fails closed');
+  A.eq(Policy.matchOption(['ship it', 'do not ship it'], 'do not ship it.'), 'do not ship it', 'negation is never collapsed into its opposite');
+  A.eq(Policy.matchOption(['A. keep it', 'B. drop it'], 'keep it'), 'A. keep it', 'an enumerator prefix still resolves uniquely');
+}
 A.eq(Policy.validateQuestion(material({ dimension: 'vibes' }), { questions: [] }).ok, false, 'unknown decision dimensions fail closed');
 A.eq(Policy.validateQuestion(material({ newBlocker: false }), { questions: [{ answer: 'operators' }] }).ok, false, 'second question requires a newly exposed blocker');
 A.eq(Policy.validateQuestion(material({ newBlocker: true }), { questions: [{ answer: '' }] }).ok, false, 'second question cannot precede the first answer');
@@ -99,6 +115,21 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   await s2.ask(incomplete.id, material({ question: 'Which group owns this dashboard?' }), 250);
   await s2.prepare({ key: 'stream:w3', text: 'operators' }, 260);
   A.eq(s2.patterns(5)[0].count, 2, 'unfinished work never contributes relationship evidence');
+
+  // GROUNDED RECOMMENDATION — the suggestion drawn from the Commander's OWN answered history. It is the only
+  // provable one on this surface, so it must appear ONLY when actually observed (>=2), and never leak across
+  // questions or outlive its own answer.
+  {
+    const open = { text: parsed.question, options: parsed.options, answer: '' };
+    const g = s2.groundedFor(open);
+    A.ok(g && g.option === 'operators' && g.count === 2, 'a decision answered twice becomes a grounded suggestion with its real count');
+    A.eq(s2.groundedFor({ text: parsed.question, options: parsed.options, answer: 'customers' }), null, 'an already-answered question is never re-suggested');
+    A.eq(s2.groundedFor({ text: 'what output format do you want?', options: ['PDF', 'HTML'], answer: '' }), null, 'a different question never inherits another decision history');
+    A.eq(s2.groundedFor({ text: parsed.question, options: ['interns', 'vendors'], answer: '' }), null, 'history that is no longer an offered option cannot ground a chip');
+    A.eq(s2.groundedFor({ text: parsed.question, options: ['operators'], answer: '' }), null, 'a one-option question is never grounded');
+    // the count is REAL: it is the same number patterns() reports, not a fabricated confidence
+    A.eq(g.count, s2.patterns(5).find(p => p.answer === 'operators').count, 'the displayed count IS the observed pattern count');
+  }
 
   const cancelled = await s2.prepare({ id: 'tb_cancel', key: 'stream:cancel', text: 'Build a report' }, 300);
   await s2.ask(cancelled.id, material(), 310);
@@ -241,6 +272,16 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   A.ok(/\.choice\.suggested/.test(cssSrc) && /--gold-rgb/.test(cssSrc.slice(cssSrc.indexOf('.choice.suggested'), cssSrc.indexOf('.choice.suggested') + 700)), 'the suggested chip uses the theme gold vocabulary, never a literal amber');
   A.ok(/briefFor/.test(hubSrc) && /suggested: ' \+ q\.recommended/.test(hubSrc), 'the channel fallback carries the stored recommendation');
   A.ok(/briefFor: \(key\) => taskBriefStore\.active\(key\)/.test(indexSrc), 'both hub compositions read recommendations from the durable store');
+
+  // GROUNDED SUGGESTION wiring — the observed-history recommendation must reach every surface, outrank the
+  // model's guess, and stay visually separable from it (provable vs asserted must never look identical).
+  A.ok(/grounded = q0 \? taskBriefStore\.groundedFor\(q0, pats\)/.test(indexSrc), 'the briefs route serves the grounded suggestion for the open question');
+  A.ok(/j\.grounded \|\| null/.test(chatSrc), 'COMMS reads the grounded field the response already carried');
+  A.ok(/you chose this ' \+ g\.count \+ ' times before/.test(chatSrc), 'the grounded why-line states a real observed count, never a vague confidence');
+  A.ok(/tq-reason' \+ \(g \? ' grounded' : ''\)/.test(chatSrc), 'a grounded suggestion is marked so it cannot be mistaken for the model guess');
+  A.ok(/\.tq-reason\.grounded/.test(cssSrc), 'the grounded why-line has its own provable-source styling');
+  A.ok(/groundedFor: \(q\) => taskBriefStore\.groundedFor\(q\)/.test(indexSrc) && /groundedFor \? groundedFor\(q\)/.test(hubSrc), 'messaging channels carry the same grounded suggestion as COMMS');
+  A.ok(/console\.warn\('\[taskbrief\] brief_ask rejected/.test(fs.readFileSync(path.join(__dirname, '../sidecar/taskbrief-tools.js'), 'utf8')), 'a hidden-tool rejection is logged instead of silently downgrading the surface');
 
   // TASK BRIEF v2 — recipe intake: declared material decisions, settled at launch or aimed mid-run.
   const Recipes = require('../frontend/app/recipes.js');

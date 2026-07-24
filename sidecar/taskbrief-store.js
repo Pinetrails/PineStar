@@ -174,7 +174,30 @@ function makeTaskBriefStore(deps) {
     return Object.values(bins).filter(x => x.count >= 2).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, Number.isFinite(limit) ? limit : 5);
   }
 
-  return { read, list, active, prepare, ask, proceed, complete, patterns, fingerprintQuestion, _durable: durable };
+  // GROUNDED RECOMMENDATION (2026-07-24). patterns() already knows which answer the Commander keeps choosing
+  // for a given question — that is the one suggestion on this surface that is PROVABLE rather than a model
+  // guess, and until now it was only whispered into the prompt as weak prose while the UI threw it away.
+  // Same question (fingerprint) + an answer that resolves to one of THIS question's options + chosen >= 2
+  // times => a suggestion we can defend with a count. Returns canonical option text, or null. Never a guess:
+  // if nothing was observed twice, this returns null and the model's own recommendation stands.
+  function groundedFor(question, pool) {
+    const q = question && typeof question === 'object' ? question : null;
+    if (!q || q.answer || !Array.isArray(q.options) || q.options.length < 2) return null;
+    const fpText = fingerprintQuestion(q.text);
+    if (!fpText) return null;
+    let best = null;
+    for (const p of (Array.isArray(pool) ? pool : patterns(50))) {
+      if (fingerprintQuestion(p.question) !== fpText) continue;
+      const option = Policy.matchOption(q.options, p.answer);
+      if (!option) continue;
+      if (!best || p.count > best.count || (p.count === best.count && p.updatedAt > best.updatedAt)) {
+        best = { option, count: p.count, lastAt: p.updatedAt };
+      }
+    }
+    return best;
+  }
+
+  return { read, list, active, prepare, ask, proceed, complete, patterns, groundedFor, fingerprintQuestion, _durable: durable };
 }
 
 module.exports = { makeTaskBriefStore, normalize, normalizeBrief, normalizeQuestion, fingerprintQuestion };

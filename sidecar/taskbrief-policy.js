@@ -8,6 +8,34 @@ const CANCEL = /^\s*(cancel|stop|never\s*mind|nevermind|forget\s+(?:it|that)|dro
 const REPLACE = /^\s*(?:new\s+task\s*:|instead\s*,?|forget\s+that\s*[,;:]?|change\s+of\s+plan\s*[:,]?)\s*(.+)$/i;
 
 function clean(v, n) { return String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n); }
+
+// RECOMMENDATION MATCHING (2026-07-24). The model writes `recommended` as free text and near-misses its own
+// option list constantly — a trailing period, a leading article, a smart quote, an "A." enumerator. Requiring
+// byte-equality made every one of those a HARD REJECT, and because brief_ask is a hidden tool the failure was
+// invisible in both the transcript and the logs; the retry advice then steers the model to the plain marker
+// path, which stores NO recommendation at all. So a formatting slip silently cost the Commander the ★ chip and
+// looked identical to "the agent had no opinion".
+// Match in widening tiers and always return the CANONICAL option text. The loose tiers count ONLY when they
+// resolve to exactly one option — an ambiguous rescue fails closed rather than risk marking the wrong chip.
+const QUOTES = /[‘’“”'"`]/g;
+function loosen(v) {
+  return String(v == null ? '' : v).toLowerCase().replace(QUOTES, '')
+    .replace(/[\s.,;:!?)\]]+$/, '').replace(/^[\s([]+/, '').replace(/^(?:a|an|the)\s+/, '')
+    .replace(/\s+/g, ' ').trim();
+}
+function matchOption(options, candidate) {
+  const list = Array.isArray(options) ? options.filter(Boolean) : [];
+  const c = clean(candidate, 72);
+  if (!list.length || !c) return '';
+  const exact = list.find(o => o.toLowerCase() === c.toLowerCase());
+  if (exact) return exact;                                        // tier 1 — unchanged legacy behaviour
+  const lc = loosen(c);
+  if (!lc) return '';
+  const near = list.filter(o => loosen(o) === lc);                // tier 2 — punctuation/article/quote slip
+  if (near.length) return near.length === 1 ? near[0] : '';
+  const part = list.filter(o => { const lo = loosen(o); return lo && (lo.indexOf(lc) >= 0 || lc.indexOf(lo) >= 0); });
+  return part.length === 1 ? part[0] : '';                        // tier 3 — enumerator/truncation, unique only
+}
 function routeReply(text, explicit) {
   const raw = clean(text, 4000);
   const action = clean(explicit, 16).toLowerCase();
@@ -33,12 +61,13 @@ function validateQuestion(candidate, brief) {
   if (!DIMENSIONS.has(dimension)) return { ok: false, error: 'dimension must be one of: ' + Array.from(DIMENSIONS).join(', ') };
   if (!question || VAGUE.test(question)) return { ok: false, error: 'ask one concrete, non-vague question' };
   if (options.length < 2) return { ok: false, error: 'provide 2-3 genuinely different options' };
-  if (!recommended || !options.some(x => x.toLowerCase() === recommended.toLowerCase())) return { ok: false, error: 'recommended must exactly match one option' };
+  const pick = matchOption(options, recommended);
+  if (!pick) return { ok: false, error: 'recommended must match one option (copy it verbatim from options)' };
   if (!reason) return { ok: false, error: 'state why this decision materially changes the result' };
   if (c.discoverable !== false) return { ok: false, error: 'inspect available context first; discoverable must be false' };
   if (prior.length >= 2) return { ok: false, error: 'this task already used its two-question limit' };
   if (prior.length === 1 && (c.newBlocker !== true || !prior[0].answer)) return { ok: false, error: 'a second question requires an answered first question and a newly exposed blocker' };
-  return { ok: true, question: { dimension, question, text: question, options, recommended: options.find(x => x.toLowerCase() === recommended.toLowerCase()), reason, newBlocker: c.newBlocker === true } };
+  return { ok: true, question: { dimension, question, text: question, options, recommended: pick, reason, newBlocker: c.newBlocker === true } };
 }
 
 function validateProceed(candidate) {
@@ -59,4 +88,4 @@ function canMutate(brief, tool) {
     : { ok: false, reason: 'settle the Task Brief with brief_proceed, or ask the one material question with brief_ask, before consequential work' };
 }
 
-module.exports = { DIMENSIONS, routeReply, validateQuestion, validateProceed, canMutate, clean };
+module.exports = { DIMENSIONS, routeReply, validateQuestion, validateProceed, canMutate, clean, matchOption };

@@ -942,7 +942,7 @@ const Chat = (() => {
       if (!activeWs || activeWs.id !== id || isBusy()) return;
       const b = j && Array.isArray(j.briefs) && j.briefs[0];
       const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
-      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options, recommended: q.recommended || '', reason: q.reason || '' });
+      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options, recommended: q.recommended || '', reason: q.reason || '', grounded: (j && j.grounded) || null });
     } catch (_) { /* a missing/offline sidecar leaves history readable; the next load retries */ }
   }
 
@@ -2901,9 +2901,13 @@ const Chat = (() => {
     clearNudge();   // the question CLAIMS the moment: a live gentle nudge leaves whole (prompt + chips) — its chip
                     // row would be wiped by choices() below anyway, and a stuck activeNudge would mute beats forever
     pendingTaskQuestion = Object.assign({}, tq, { streamId: activeWs && activeWs.id });
-    // The host-validated recommended default (brief_ask path) gets the gold suggested chip + a one-line why.
-    // A marker-path question stores no recommendation, so rec resolves empty and this renders plain chips.
-    const rec = String(tq.recommended || '').trim().toLowerCase();
+    // TWO KINDS of suggestion, and they must never be confused. GROUNDED comes from the Commander's own
+    // answered history (taskBriefStore.groundedFor: same question, same option, >=2 times) — provable, so it
+    // outranks the model's assertion and states its count. The model's brief_ask recommendation is a guess
+    // with a rationale; it stands only when nothing was actually observed. A marker-path question has
+    // neither, so rec resolves empty and this renders plain chips.
+    const g = (tq.grounded && tq.grounded.option && Number(tq.grounded.count) >= 2) ? tq.grounded : null;
+    const rec = String((g && g.option) || tq.recommended || '').trim().toLowerCase();
     const items = tq.options.map(o => {
       const suggested = !!(rec && o.toLowerCase() === rec);
       return { label: suggested ? '★ ' + o : o, value: o, suggested };
@@ -2911,10 +2915,14 @@ const Chat = (() => {
     items.push({ label: 'use your judgment', value: '', skip: true });
     const q = row('agent'); q.d.classList.add('nudge');
     q.body.textContent = '⌖ ' + tq.question;
-    if (rec && items.some(it => it.suggested) && String(tq.reason || '').trim()) {
-      const why = document.createElement('div'); why.className = 'tq-reason';
-      why.textContent = '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim();
-      q.body.appendChild(why);
+    const marked = items.some(it => it.suggested);
+    const why = (rec && marked) ? (g
+      ? '★ suggested: ' + g.option + ' — you chose this ' + g.count + ' times before'
+      : (String(tq.reason || '').trim() ? '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim() : '')) : '';
+    if (why) {
+      const el = document.createElement('div'); el.className = 'tq-reason' + (g ? ' grounded' : '');
+      el.textContent = why;
+      q.body.appendChild(el);
     }
     autoscroll();
     choices(items, item => {
@@ -3013,18 +3021,21 @@ const Chat = (() => {
   // task run-end, so one fetch here always sees the stored row. Fail-open on every path — offline sidecar,
   // mismatched text, or a marker-path question (no recommendation stored) renders exactly the plain chips.
   async function presentTaskQuestion(ws, tq) {
-    let recommended = '', reason = '';
+    let recommended = '', reason = '', grounded = null;
     try {
       const r = await fetch('/api/task-briefs?key=' + encodeURIComponent('stream:' + ws.id) + '&status=clarifying&limit=1', { cache: 'no-store' });
       if (r.ok) {
         const j = await r.json();
         const b = j && Array.isArray(j.briefs) && j.briefs[0];
         const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
-        if (q && !q.answer && q.text === tq.question) { recommended = q.recommended || ''; reason = q.reason || ''; }
+        if (q && !q.answer && q.text === tq.question) {
+          recommended = q.recommended || ''; reason = q.reason || '';
+          grounded = j.grounded || null;   // this response always carried it; the client used to drop it
+        }
       }
     } catch (_) { /* enrichment only — the question itself never depends on this fetch */ }
     if (!isActiveWs(ws)) return;   // the Commander switched away mid-fetch; restoreTaskQuestion re-presents on return
-    offerTaskQuestion(Object.assign({}, tq, { recommended, reason }));
+    offerTaskQuestion(Object.assign({}, tq, { recommended, reason, grounded }));
   }
 
   // R4 PAYOFF RECEIPT: one provable line at the exact moment an answer/observation lands in the dossier, so

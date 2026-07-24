@@ -838,7 +838,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   color: var(--gold); border-color: var(--gold); background: rgba(var(--gold-rgb), .08);
   box-shadow: inset 0 1px 0 rgba(var(--gold-rgb),.15), 0 0 9px rgba(var(--gold-rgb), .35), 0 1px 0 rgba(0,0,0,.35);
 }
-.tq-reason { font-size: 12px; color: var(--ph-dim); letter-spacing: 0.3px; margin-top: 3px; }
+.tq-reason { font-size: 13px; color: var(--ph-dim); letter-spacing: 0.3px; margin-top: 3px; }
+/* a GROUNDED suggestion is provable (the Commander's own answered history, with a count), so it earns the
+   gold voice the ★ chip wears; the model's unprovable guess stays in the dim register above. */
+.tq-reason.grounded { color: var(--gold); }
 
 /* TASTE EXTRACTION "my read" card (chat.js briefReadCard) — the mid-run announce-and-act read.
    REGISTER (2026-07-24): this is a CARD, not a work-log micro-line. It states what the run believes it was
