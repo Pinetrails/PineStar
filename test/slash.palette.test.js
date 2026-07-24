@@ -43,6 +43,21 @@ A.ok(src.indexOf('Recipes.list') >= 0 && src.indexOf("source: 'recipe'") >= 0, '
 A.ok(src.indexOf('MintStore.candidates') >= 0 && src.indexOf('Recipes.saveCustom') >= 0, 'palette wires recurring-task suggestions to recipe saves');
 A.ok(src.indexOf("directive.type === 'insert'") >= 0, 'palette applies insert directives from skill and recipe commands');
 A.ok(src.indexOf('rawInput') >= 0, 'palette preserves typed slash arguments during dispatch');
-A.ok(src.indexOf('serverBacked && await dispatchSlash') >= 0, 'server-backed commands try dispatch before local fallback');
+A.ok(src.indexOf('item.serverBacked || typeof item.run !==') >= 0, 'server-backed commands try dispatch before local fallback');
+
+// --- command-doors lane: server-executed commands + the in-session loop ---
+A.ok(src.indexOf("name: 'away'") >= 0 && src.indexOf("name: 'routine'") >= 0, 'palette fallback includes the server-executed away and routine commands');
+A.ok(src.indexOf("name: 'loop'") >= 0 && src.indexOf('loopCommand') >= 0, 'palette maps the loop command to its handler');
+A.ok(src.indexOf("aliases: ['build-away', 'buildaway']") >= 0, 'away keeps the original build-away name reachable');
+A.ok(src.indexOf("directive.type === 'say'") >= 0, 'palette prints say directives returned by server-executed commands');
+A.ok(src.indexOf('typeof item.run !== ') >= 0, 'a server command with no local action refuses honestly instead of silently doing nothing');
+A.ok(src.indexOf('argsHint') >= 0, 'palette carries the registry argsHint so arg-taking commands show their shape');
+A.ok(src.indexOf('LOOP_MIN_MS') >= 0 && src.indexOf('LOOP_MAX_ITERS') >= 0, 'the loop carries a minimum cadence and an iteration budget');
+A.ok(src.indexOf('loopStop(activeWs.id') >= 0, 'stop ends an armed loop, not just a live run');
+// A loop tick goes through send(), which routes text into interview()/TaskIntent when one of those owns the
+// input — so an unguarded tick would ANSWER the station's own question. It must obey the same gate /goal does.
+A.ok(/goalBlocked\(activeWs\)/.test(src.slice(src.indexOf('function loopTick'), src.indexOf('function loopCommand'))), 'a loop tick obeys goalBlocked, so it cannot answer an interview or approval prompt');
+A.ok(src.indexOf('LOOP_MAX_SKIPS') >= 0 && src.indexOf('loopEnded') >= 0, 'a loop that dies unattended is bounded and can still explain itself');
+A.ok(src.indexOf('needsServer && await dispatchSlash') >= 0, 'a command with no local action still asks the sidecar before refusing');
 
 A.report('slash.palette.test');

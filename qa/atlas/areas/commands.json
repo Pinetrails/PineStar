@@ -1,6 +1,6 @@
 {
   "area": "commands",
-  "updatedAt": "2026-07-18T01:12:00.000Z",
+  "updatedAt": "2026-07-24T00:00:00.000Z",
   "entries": [
     {
       "id": "command/agents",
@@ -37,6 +37,44 @@
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false
+    },
+    {
+      "id": "command/away",
+      "kind": "command",
+      "area": "commands",
+      "name": "/away — queue work for this agent to build on its own away shift",
+      "purpose": "Put a door on the away-workshop subsystem (grant, backlog, shift) which previously had only the catalog-orphan /build-away in the browser fallback list.",
+      "promise": "Typing /away <text> queues onto the REAL per-agent workshop backlog and states the grant state in the same breath; /away on|off writes the grant; /away list marks a row as waiting in OUTBOX only when its manifest still validates on disk (the same proof the count uses), and says so plainly when the files are gone; /away now reports a shift that RAN but produced nothing as a failure, never as delivered work.",
+      "wiring": {
+        "files": [
+          "sidecar/slash.js",
+          "sidecar/slash-actions.js",
+          "sidecar/index.js",
+          "frontend/app/chat.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/slash.test.js (build-away alias canonicalizes to away)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/slash-actions.test.js (queue/grant/list + grant-off honesty + reserved-word boundary)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/slash-actions.test.js (fired:true + no-manifest is a failure; parked items say they will not be retried)"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-24T00:00:00.000Z",
+      "lastSeen": "2026-07-24T00:00:00.000Z",
+      "missing": false,
+      "notes": "Replaces the old /build-away, which existed ONLY in chat.js FALLBACK_SLASH_COMMANDS and was absent from this atlas, sidecar/slash.js and /api/slash/catalog. build-away is kept as an alias."
     },
     {
       "id": "command/background",
@@ -544,6 +582,42 @@
       "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). /insights → 'Insights (lifetime run history for agent): 0 runs, $0.00, 0 tokens.' — read from /api/insights, honest zeros."
     },
     {
+      "id": "command/loop",
+      "kind": "command",
+      "area": "commands",
+      "name": "/loop — repeat a prompt on an interval in this workstream",
+      "purpose": "The in-session watcher shape: keep re-asking the same question on a clock while you watch, distinct from /goal (judge-driven) and /routine (persisted, headless).",
+      "promise": "Typing /loop <interval> <prompt> re-sends that prompt into THIS workstream every interval, visible in COMMS, capped at 20 runs and refusing sub-minute cadence; it skips a tick while the stream is busy or unfocused rather than firing into the wrong conversation; /stop and /loop off end it; the status line states it does not survive closing StarNet.",
+      "wiring": {
+        "files": [
+          "sidecar/slash.js",
+          "frontend/app/chat.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/slash.test.js (registry: stays a client directive, args preserved)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/slash.palette.test.js (SOURCE-GREP only — pins handler wiring, goalBlocked guard, budget constants; proves no runtime behavior)"
+        },
+        {
+          "kind": "audit",
+          "ref": "live 2026-07-24 :9400 — fired 1/20 in its own stream, 2 ticks skipped while another stream was focused, 0 cross-stream turns, /stop ended an armed idle loop"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-24T00:00:00.000Z",
+      "lastSeen": "2026-07-24T00:00:00.000Z",
+      "missing": false,
+      "notes": "dispatch:client — it drives send() in the browser. Deliberately in-memory: a loop that resurrected after a restart would spend real money unasked. Live-walked 2026-07-24: cross-stream canary proved a tick never enters another workstream. No harness test drives a real tick — the behavioral evidence is the live walk, not the greps."
+    },
+    {
       "id": "command/memory",
       "kind": "command",
       "area": "commands",
@@ -910,6 +984,40 @@
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false
+    },
+    {
+      "id": "command/routine",
+      "kind": "command",
+      "area": "commands",
+      "name": "/routine — list, create, preview, pause or delete a scheduled routine",
+      "purpose": "Give the chat surface the cron CRUD the ROUTINES panel already had, so a Commander can schedule recurring work without leaving COMMS.",
+      "promise": "Typing /routine lists the REAL cron jobs with their stored cadence and next-fire time; /routine add <schedule> | <task> mints one through the same validation + mint gate as POST /api/cron; every reply naming a routine that cannot fire — including the mint-gate duplicate — says the scheduler is disarmed. The routine is bound to the agent the workstream is talking to, and rows owned by another agent are labelled.",
+      "wiring": {
+        "files": [
+          "sidecar/slash.js",
+          "sidecar/slash-actions.js",
+          "sidecar/index.js",
+          "frontend/app/chat.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/slash.test.js (server directive + argsHint)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/slash-actions.test.js (create/pause/rm/preview + disarmed-scheduler honesty)"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-24T00:00:00.000Z",
+      "lastSeen": "2026-07-24T00:00:00.000Z",
+      "missing": false,
+      "notes": "dispatch:server — the sidecar executes it and returns a say directive. No run-now verb: firing streams NDJSON through handleCronRun and stays in the ROUTINES panel."
     },
     {
       "id": "command/save",

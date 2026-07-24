@@ -4036,6 +4036,11 @@ const Chat = (() => {
   // catch keeps what already streamed instead of logging an error, and drop that stream's type-ahead queue — a
   // deliberate stop means "I'm taking over", not "now run my backlog".
   function stopActive() {
+    // /loop: Stop ends the interval watcher too, or the next tick fires a run the user just said they didn't
+    // want. Checked BEFORE the isBusy() guard on purpose — a loop is usually WAITING between ticks when you
+    // reach for Stop, and an idle-but-armed loop must still be stoppable. Worded "you stopped it" rather than
+    // "you stopped the run", because there may well be no run in flight to stop.
+    if (activeWs) loopStop(activeWs.id, 'you stopped it');
     if (!activeWs || !isBusy()) return;
     const id = activeWs.id;
     interrupted.add(id);
@@ -4236,7 +4241,12 @@ const Chat = (() => {
     Object.freeze({ name: 'save', desc: 'save the current station state', action: 'save' }),
     Object.freeze({ name: 'agents', aliases: ['tasks'], desc: 'show active agents and running streams', action: 'agents' }),
     Object.freeze({ name: 'background', aliases: ['bg', 'btw'], desc: 'run a prompt in a new background workstream', action: 'background' }),
-    Object.freeze({ name: 'build-away', aliases: ['buildaway', 'away'], desc: 'queue an idea for this agent to build while you are away', action: 'build-away' }),
+    // /away and /routine are dispatch:'server' commands — the sidecar executes them and returns the text. They
+    // are listed here so the palette knows them before the catalog fetch lands; with no sidecar they honestly
+    // refuse (runSlash) rather than silently doing nothing.
+    Object.freeze({ name: 'away', aliases: ['build-away', 'buildaway'], desc: 'queue work for this agent to build on its own away shift', argsHint: '[<what to build> | list | on | off | now]', action: 'away' }),
+    Object.freeze({ name: 'routine', aliases: ['routines'], desc: 'list, create, preview, pause or delete a scheduled routine', argsHint: '[list | add <schedule> | <task> | preview <schedule> | pause N | rm N]', action: 'routine' }),
+    Object.freeze({ name: 'loop', desc: 'repeat a prompt on an interval in this workstream', argsHint: '<interval> <prompt> | status | off', action: 'loop' }),
     Object.freeze({ name: 'goal', desc: 'set an autonomous standing goal (status/pause/resume/clear)', action: 'goal' }),
     Object.freeze({ name: 'subgoal', desc: 'add a criterion the goal loop must also satisfy', action: 'subgoal' }),
     Object.freeze({ name: 'model', desc: 'show or set the active model', action: 'model' }),
@@ -4531,31 +4541,126 @@ const Chat = (() => {
     const arr = queued.get(activeWs.id) || [];
     localLine(arr.length ? ('Queue: ' + arr.length + ' pending - ' + arr.map((t, i) => (i + 1) + '. ' + String(t).slice(0, 80)).join(' | ')) : 'Queue is empty for this stream.');
   }
-  // W3 — the free-text "build this while I'm away" entry point. Queues the typed idea onto the focused
-  // agent's away-workshop backlog (POST /api/workshop/queue via WorkshopStore). One line in, one confirm out.
-  function buildAwayCommand(args) {
-    const text = String(args || '').trim();
-    if (!text) return localLine('Usage: /build-away <what to build> — queues it for this agent to build on its own recurring away shift.');
-    if (typeof WorkshopStore === 'undefined' || !WorkshopStore.queue) return localLine('Away workshop isn’t available on this station.');
-    const agentId = (activeWs && activeWs.agentId) || 'agent';
-    // pass the display name so a needsGrant warning can name the agent.
-    WorkshopStore.queue({ agentId: agentId, text: text, sourceType: 'text', name: name }).then(res => {
-      if (!res || !res.ok) { localLine('Couldn’t queue that: ' + ((res && res.error) || 'the station refused it') + '.'); return; }
-      // ADOPTION (Lane F): the confirm copy comes from WorkshopStore.queueConfirmLine — it encodes the TRUTH that
-      // away builds run on a recurring shift WHILE THE STATION IS UP (never "while the app is closed").
-      if (res.needsGrant) {
-        // queued, but the grant is OFF → it will never build. Show the honest warn + a one-tap toggle (openGrant).
-        localLine(res.warn || 'saved to the build list — but “build while away” is off, so it won’t be built yet.');
-        choices([{ label: '⚙ Turn on “build while away”', value: 'grant' }], () => {
-          WorkshopStore.openGrant(res.agentId || agentId).then(g => {
-            localLine((g && g.ok) ? '✓ “build while away” is on — ' + name + ' will build this on its next away shift.'
-              : 'Couldn’t turn it on: ' + ((g && g.error) || 'try the AUTONOMY settings') + '.');
-          });
-        });
-        return;
+  /* ---- /loop — an in-session interval WATCHER.
+     Deliberately a THIRD shape, not a duplicate of the two that already exist:
+       /goal    — judge-driven; keeps going until an objective is judged met (goalloop.js).
+       /routine — persisted + cron-scheduled; runs headless and survives a restart.
+       /loop    — the same prompt, on a clock, in THIS workstream, visible in COMMS: "keep checking X".
+     It lives in memory ONLY and dies with the tab. That is a feature, and the status line says so out loud —
+     a loop that silently resurrected after a restart would spend real money nobody asked for. Every tick is a
+     real model turn, so it carries a hard iteration budget and refuses sub-minute cadence. */
+  const LOOP_MIN_MS = 60 * 1000;        // one real model turn per tick — sub-minute cadence is a spend trap
+  const LOOP_MAX_ITERS = 20;            // budget backstop; re-issue /loop to extend deliberately
+  const LOOP_MAX_SKIPS = 20;            // a loop that can never fire must not re-arm forever (see loopTick)
+  const loops = new Map();              // wsId -> { ms, label, prompt, fired, skipped, skipStreak, timer, startedAt }
+  const loopEnded = new Map();          // wsId -> one-shot explanation for a loop that died while you were away
+
+  function loopParseInterval(tok) {
+    const m = String(tok || '').trim().toLowerCase().match(/^(\d+)\s*(s|sec|secs|m|min|mins|h|hr|hrs)?$/);
+    if (!m) return null;
+    const n = parseInt(m[1], 10);
+    if (!(n > 0)) return null;
+    const u = (m[2] || 'm')[0];
+    return n * (u === 's' ? 1000 : u === 'h' ? 3600000 : 60000);
+  }
+  function loopLabel(ms) {
+    if (ms % 3600000 === 0) return (ms / 3600000) + 'h';
+    if (ms % 60000 === 0) return (ms / 60000) + 'm';
+    return Math.round(ms / 1000) + 's';
+  }
+  // why  = printed NOW into the live transcript (only safe when the loop's own stream is focused).
+  // note = remembered instead, so a loop that had to die while you were elsewhere can still explain itself the
+  //        next time you ask /loop status. A watcher that vanishes with no account of itself is the failure
+  //        mode here: the user armed it and would otherwise never learn it stopped.
+  function loopStop(wsId, why, note) {
+    const rec = loops.get(wsId);
+    if (!rec) return false;
+    try { clearTimeout(rec.timer); } catch (_) {}
+    loops.delete(wsId);
+    const ran = ' (ran ' + rec.fired + ' time' + (rec.fired === 1 ? '' : 's') + ')';
+    if (why) localLine('Loop stopped — ' + why + ran + '.');
+    else if (note) {
+      loopEnded.set(wsId, 'Your loop stopped — ' + note + ran + '.');
+      if (loopEnded.size > 20) loopEnded.delete(loopEnded.keys().next().value);   // bounded: this is a courtesy note, not a log
+    }
+    return true;
+  }
+  function loopArm(rec) {
+    try { clearTimeout(rec.timer); } catch (_) {}
+    rec.timer = setTimeout(() => loopTick(rec), rec.ms);
+  }
+  function loopTick(rec) {
+    if (!loops.has(rec.wsId)) return;                                  // stopped while we were waiting
+    // The stream this loop belongs to is GONE (deleted with the workstream, or with its agent) — there is
+    // nothing left to watch, and re-arming would leave a timer running for the life of the tab that /loop off
+    // can never reach (it keys off the ACTIVE stream). End it, and leave a note for /loop status.
+    const alive = (typeof Workstreams !== 'undefined' && Workstreams.get) ? !!Workstreams.get(rec.wsId) : true;
+    if (!alive) return void loopStop(rec.wsId, null, 'its workstream was deleted');
+    const focused = !!activeWs && activeWs.id === rec.wsId;
+    // BUDGET: checked only while focused, because loopStop's line goes to the ONE live transcript element —
+    // announcing "your loop hit its budget" into whatever stream you happen to be reading blames an unrelated
+    // conversation. Unfocused, it waits and announces when you come back.
+    if (rec.fired >= LOOP_MAX_ITERS) {
+      if (focused) return void loopStop(rec.wsId, 'it hit its ' + LOOP_MAX_ITERS + '-run budget');
+      return void loopArm(rec);
+    }
+    // Fire ONLY into the stream this loop belongs to: send() targets the ACTIVE workstream, so a tick while the
+    // user reads another stream would inject the prompt into the wrong conversation.
+    // goalBlocked() is the SAME discipline the goal loop obeys: an interview, a live beat, an unanswered task
+    // question, an open dialogue or a pending tool approval all own the input. Without it, send() routes the
+    // tick's text into interview(text)/TaskIntent.routeReply — the loop would answer the station's own question
+    // with "check the build" and count it as a run.
+    if (!focused || isBusy() || goalBlocked(activeWs)) {
+      rec.skipped++;
+      // Only an UNFOCUSED tick counts toward the death streak. Being busy or mid-approval is a legitimate,
+      // self-clearing wait — killing a watcher because one long run overlapped it would be a surprise.
+      if (!focused) {
+        rec.skipStreak++;
+        if (rec.skipStreak >= LOOP_MAX_SKIPS) return void loopStop(rec.wsId, null, 'it went ' + LOOP_MAX_SKIPS + ' turns without its workstream being open');
       }
-      localLine(WorkshopStore.queueConfirmLine(name));
-    });
+      return void loopArm(rec);
+    }
+    rec.fired++; rec.skipStreak = 0;
+    loopArm(rec);
+    send(rec.prompt);
+  }
+  function loopCommand(args) {
+    if (!activeWs) return localLine('No active workstream to loop in.');
+    const raw = String(args || '').trim();
+    const wsId = activeWs.id;
+    const cur = loops.get(wsId);
+    const low = raw.toLowerCase();
+
+    if (low === 'off' || low === 'stop' || low === 'clear') {
+      if (!loopStop(wsId, 'you stopped it')) localLine('No loop is running in this workstream.');
+      return;
+    }
+    if (!raw || low === 'status') {
+      if (!cur) {
+        // if this stream's loop died while the user was elsewhere, account for it once, then forget it
+        const ended = loopEnded.get(wsId);
+        if (ended) { loopEnded.delete(wsId); return localLine(ended + ' /loop <interval> <prompt> to start another.'); }
+        return localLine('No loop in this workstream. /loop <interval> <prompt> — e.g. /loop 5m check whether the build went green.');
+      }
+      return localLine('Loop: every ' + cur.label + ', ' + cur.fired + '/' + LOOP_MAX_ITERS + ' runs done'
+        + (cur.skipped ? ', ' + cur.skipped + ' tick' + (cur.skipped === 1 ? '' : 's') + ' skipped (a run, a question or another stream had the floor)' : '')
+        + ' — "' + String(cur.prompt).slice(0, 60) + '". It stops if you close StarNet; /routine makes it permanent.');
+    }
+
+    const sp = raw.search(/\s/);
+    const ms = sp === -1 ? null : loopParseInterval(raw.slice(0, sp));
+    const prompt = sp === -1 ? '' : raw.slice(sp + 1).trim();
+    if (ms == null || !prompt) {
+      return localLine('Usage: /loop <interval> <prompt> — e.g. /loop 5m check whether the deploy went green. '
+        + 'Also: /loop status, /loop off.');
+    }
+    if (ms < LOOP_MIN_MS) return localLine('Minimum loop interval is 1 minute — every run costs a real model turn.');
+    if (cur) loopStop(wsId, null);                                     // replace, don't stack two loops on one stream
+    const rec = { wsId: wsId, ms: ms, label: loopLabel(ms), prompt: prompt, fired: 0, skipped: 0, skipStreak: 0, timer: null, startedAt: Date.now() };
+    loops.set(wsId, rec);
+    loopArm(rec);
+    localLine('Looping every ' + rec.label + ' (up to ' + LOOP_MAX_ITERS + ' runs): "' + prompt.slice(0, 60) + '". '
+      + 'First run in ' + rec.label + '. Each run costs a real model turn — /loop off to stop, /stop also ends it.');
   }
   function steerCommand(args) {
     if (!activeWs) return localLine('No active workstream.');
@@ -4974,7 +5079,7 @@ const Chat = (() => {
       usage: usageCommand, queue: queueCommand, steer: steerCommand, undo: undoCommand,
       compress: compressCommand, title: titleCommand, resume: resumeCommand,
       save: saveCommand, agents: agentsCommand, background: backgroundCommand,
-      goal: goalCommand, subgoal: subgoalCommand, 'build-away': buildAwayCommand,
+      goal: goalCommand, subgoal: subgoalCommand, loop: loopCommand,
       clear: clearCommand, history: historyCommand, whoami: whoamiCommand, insights: insightsCommand,
       model: modelCommand, personality: personalityCommand, yolo: yoloCommand,
       reasoning: reasoningCommand, fast: fastCommand, voice: voiceCommand,
@@ -5024,7 +5129,11 @@ const Chat = (() => {
         slashServerCommands = (j && Array.isArray(j.commands)) ? j.commands : null;
         slashCatalogLoaded = key;
       })
-      .catch(() => { slashServerCommands = null; slashCatalogLoaded = key; })
+      // A FAILED fetch must not be remembered as "loaded": marking it done pinned the tab into catalog-less mode
+      // for that placed-key forever, and server-executed commands (/away, /routine) have no local action to fall
+      // back to — they would refuse for the rest of the session even though the sidecar was healthy and never
+      // asked again. Leaving `loaded` unset lets the next keystroke retry.
+      .catch(() => { slashServerCommands = null; })
       .then(() => {
         slashCatalogLoading = null;
         if (input && input.value && input.value[0] === '/') openSlash(input.value.slice(1));
@@ -5057,6 +5166,9 @@ const Chat = (() => {
       aliases: Array.isArray(c.aliases) ? c.aliases.slice() : [],
       desc: c.desc || c.description || '',
       category: c.category || 'General',
+      // the registry has always published argsHint; it was dropped here, so the palette could never show that
+      // a command TAKES an argument (/steer <guidance> read as a no-arg command). Carry it through.
+      argsHint: c.argsHint || '',
       action: action,
       source: c.source || source || 'server',
       serverBacked: source === 'server',
@@ -5127,7 +5239,10 @@ const Chat = (() => {
     slashItems.forEach((c, i) => {
       const it = document.createElement('div'); it.className = 'slash-item' + (i === slashSel ? ' sel' : ''); it.setAttribute('role', 'option');
       it.id = SLASH_OPT_ID(i); it.setAttribute('aria-selected', i === slashSel ? 'true' : 'false');
-      const nm = document.createElement('span'); nm.className = 'slash-name'; nm.textContent = '/' + c.name;
+      // show the ARGUMENT SHAPE next to the name ("/loop <interval> <prompt>") — without it the palette reads
+      // as if every command were arg-less, which is exactly how arg-taking commands went unused.
+      const nm = document.createElement('span'); nm.className = 'slash-name';
+      nm.textContent = '/' + c.name + (c.argsHint ? ' ' + c.argsHint : '');
       const ds = document.createElement('span'); ds.className = 'slash-desc'; ds.textContent = c.desc || '';
       it.appendChild(nm); it.appendChild(ds);
       // reveal the command SURFACE: a dim category tag (the existing `category` field) so the palette groups
@@ -5161,6 +5276,15 @@ const Chat = (() => {
       return true;
     }
     if (directive.type === 'insert') return insertSlashText(directive.text, directive.select);
+    // SAY — the sidecar already EXECUTED this command (dispatch:'server') and handed back the finished text.
+    // The browser's only job is to print it: a multi-line readout becomes a collapsible card, one line stays a
+    // line. Nothing here re-derives or re-formats state, so this surface cannot disagree with the sidecar's.
+    if (directive.type === 'say') {
+      const lines = Array.isArray(directive.lines) ? directive.lines.filter(s => String(s || '').trim()) : [];
+      if (lines.length) systemCard(directive.title || 'Result', lines);
+      else localLine(String(directive.text || '').trim() || 'Done.');
+      return true;
+    }
     return false;
   }
   async function dispatchSlash(item, rawInput) {
@@ -5168,7 +5292,13 @@ const Chat = (() => {
       const r = await fetch('/api/slash/dispatch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: rawInput || ('/' + item.name), placed: slashPlacedTypes() })
+        // agentId rides the dispatch so a server action acts on the agent this stream is actually talking to
+        // (the away workshop is per-agent) rather than guessing a default.
+        body: JSON.stringify({
+          input: rawInput || ('/' + item.name),
+          placed: slashPlacedTypes(),
+          agentId: (activeWs && activeWs.agentId) || 'agent'
+        })
       });
       const j = await r.json().catch(() => null);
       return !!(r.ok && j && j.ok && applySlashDirective(j.directive));
@@ -5179,11 +5309,22 @@ const Chat = (() => {
     const rawInput = input ? input.value : '';
     input.value = ''; closeSlash(); autoGrowInput();   // consume the "/query"; a recipe's run() then refills the input
     if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
-    if (item.serverBacked && await dispatchSlash(item, rawInput)) return;
+    // Try the sidecar for anything server-backed OR anything with no local action at all. The second half
+    // matters on a cold start: before the catalog fetch lands, /away and /routine are only known from the
+    // FALLBACK list (serverBacked === false) and have no handler — without this they would refuse without ever
+    // having asked the station, which is a claim the browser cannot make honestly.
+    const needsServer = item.serverBacked || typeof item.run !== 'function';
+    if (needsServer && await dispatchSlash(item, rawInput)) return;
     // FALLBACK path (command not resolved by the server dispatcher): parse the trailing text off the raw
-    // "/name rest…" input and hand it to the local action, so an arg-taking builtin (e.g. /build-away) still
-    // gets its argument even when the server slash catalog doesn't know it. Arg-less actions ignore it.
+    // "/name rest…" input and hand it to the local action, so an arg-taking builtin still gets its argument
+    // even when the server slash catalog doesn't know it. Arg-less actions ignore it.
     const args = String(rawInput || '').replace(/^\/\S+\s*/, '');
+    // A dispatch:'server' command has NO local action by design. When the sidecar can't be reached it used to
+    // throw on a null run() inside a bare catch — the command silently did nothing at all. Say so instead.
+    if (typeof item.run !== 'function') {
+      localLine('/' + item.name + ' runs on the station, and the station did not answer just now — check the UPLINK indicator, then try again.');
+      return;
+    }
     try { item.run(args); } catch (_) {}
   }
 

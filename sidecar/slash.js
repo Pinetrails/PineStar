@@ -237,6 +237,31 @@ const BUILTIN_COMMANDS = Object.freeze([
     action: 'cron'
   }),
   Object.freeze({
+    name: 'routine',
+    aliases: ['routines'],
+    category: 'Tools',
+    desc: 'list, create, preview, pause or delete a scheduled routine',
+    argsHint: '[list | add <schedule> | <task> | preview <schedule> | pause N | resume N | rm N]',
+    action: 'routine',
+    dispatch: 'server'
+  }),
+  Object.freeze({
+    name: 'away',
+    aliases: ['build-away', 'buildaway'],   // both spellings the old client-only /build-away answered to
+    category: 'Tools',
+    desc: 'queue work for this agent to build on its own away shift',
+    argsHint: '[<what to build> | list | on | off | now]',
+    action: 'away',
+    dispatch: 'server'
+  }),
+  Object.freeze({
+    name: 'loop',
+    category: 'Session',
+    desc: 'repeat a prompt on an interval in this workstream',
+    argsHint: '<interval> <prompt> | status | off',
+    action: 'loop'
+  }),
+  Object.freeze({
     name: 'suggestions',
     aliases: ['suggest'],
     category: 'Tools',
@@ -479,12 +504,16 @@ function dispatch(input, opts) {
       }
     };
   }
+  // A command declaring dispatch:'server' names a door the SIDECAR opens, not the browser. The endpoint awaits
+  // the matching slash-actions handler and rewrites this into a { type:'say', text } directive carrying one
+  // honest line. Keeping the execution server-side is what lets every surface (COMMS palette, channel hub,
+  // external harness) run the same command and read the same answer instead of each re-implementing a fetch.
   return {
     ok: true,
     command: visibleCommand(c),
     args: hit.args,
     directive: {
-      type: 'client',
+      type: c.dispatch === 'server' ? 'server' : 'client',
       action: c.action,
       args: hit.args
     }

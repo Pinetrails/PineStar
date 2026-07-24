@@ -161,6 +161,7 @@ const skillGuard = require('./skills/guard.js');            // guard scanner for
 const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
 const skillCurator = require('./skillcurator.js');          // skill lifecycle/consolidation maintenance
 const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
+const slashActionsMod = require('./slash-actions.js');     // server-side execution for dispatch:'server' commands
 const Recipes = require('../frontend/app/recipes.js');     // built-in mission recipes, also exposed as slash commands
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
 const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
@@ -6325,38 +6326,48 @@ function handleCronCreate(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   readBody(req, 1 << 16).then(async raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
-    // TZ HONESTY (additive, G4.1 parity with /api/cron/preview): honor an optional IANA `body.tz` so a wall-clock
-    // schedule ("0 9 * * *") fires on the caller's LOCAL 9:00 instead of the host-default (UTC-or-SKYNET_CRON_TZ).
-    // A tz-less body resolves under the host default exactly as before (no signature break, no behavior change for
-    // existing callers); an INVALID tz is REJECTED here (400) rather than silently firing on UTC — so the routine's
-    // rendered cadence label ("9:00 your local time") can never lie about when it actually fires.
-    let schedule; try { schedule = parseCronScheduleOr400(body.schedule, Date.now(), body.tz); } catch (e) { return json(e.code || 400, { error: e.message }); }
-    let agentId; try { agentId = parseCronAgentIdOr400(body.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
-    let provider; try { provider = parseCronProviderOr400(body.provider); } catch (e) { return json(e.code || 400, { error: e.message }); }
-    // W6 MINT GATE — server is the authority. If this agent already has a routine with the same (or near-same)
-    // name, return the EXISTING job with a plain anti-retry message instead of minting a second one. Same guard
-    // as routine.create so every create path funnels through it.
-    const gate = mintGate(agentId, body.name);
-    if (gate.dup) return json(200, { ok: true, duplicate: true, job: gate.dup, message: mintLedger.ANTI_RETRY });
-    if (gate.reason === 'declined') return json(200, { ok: false, declined: true, message: mintLedger.ANTI_RETRY });
-    const id = crypto.randomUUID();
-    try {
-      // G4.3: re-read-modify-write UNDER the cron lock so a concurrent advance/CRUD save is not clobbered.
-      await withCronWrite(jobs => cronStore.createJob(jobs, {
-        id: id, name: body.name, prompt: body.prompt, schedule: schedule,
-        agentId: agentId, model: body.model, provider: provider, deliver: body.deliver,
-        enabled: body.enabled, repeat: body.repeat,
-        // MISFIRE POLICY (2026-07-15 audit): optional 'fire_once'|'skip'; the store normalizes anything
-        // else to null (schedule-derived default: daily/cron -> fire_once, fast intervals -> skip).
-        misfire: body.misfire,
-        // R3: pass through the caller-supplied provenance bag ({ recipeId } from MAKE ROUTINE). cron-store normMeta
-        // keeps only a plain object; absent → null. Additive — no existing caller sends it and old jobs load fine.
-        meta: body.meta
-      }, { id: id, now: Date.now() }));
-    } catch (e) { return json(500, { error: 'could not save the routine: ' + ((e && e.message) || e) }); }
-    recordMint(agentId, { name: body.name, kind: 'routine' });   // W6: log the creation in the agent's ledger
-    json(200, { ok: true, job: cronStore.getJob(cronJobs, id) });
+    const out = await createCronJobFromSpec(body);
+    return json(out.status || 200, out.body);
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+/* createCronJobFromSpec(body) — the CREATE path, extracted so POST /api/cron and the /routine slash action mint
+   routines through the identical validation, mint gate and locked write. Returns { status, body } shaped exactly
+   like the HTTP response the route used to build inline. Never throws. */
+async function createCronJobFromSpec(body) {
+  body = body || {};
+  const out = (status, obj) => ({ status: status, body: obj });
+  // TZ HONESTY (additive, G4.1 parity with /api/cron/preview): honor an optional IANA `body.tz` so a wall-clock
+  // schedule ("0 9 * * *") fires on the caller's LOCAL 9:00 instead of the host-default (UTC-or-SKYNET_CRON_TZ).
+  // A tz-less body resolves under the host default exactly as before (no signature break, no behavior change for
+  // existing callers); an INVALID tz is REJECTED here (400) rather than silently firing on UTC — so the routine's
+  // rendered cadence label ("9:00 your local time") can never lie about when it actually fires.
+  let schedule; try { schedule = parseCronScheduleOr400(body.schedule, Date.now(), body.tz); } catch (e) { return out(e.code || 400, { error: e.message }); }
+  let agentId; try { agentId = parseCronAgentIdOr400(body.agentId); } catch (e) { return out(e.code || 400, { error: e.message }); }
+  let provider; try { provider = parseCronProviderOr400(body.provider); } catch (e) { return out(e.code || 400, { error: e.message }); }
+  // W6 MINT GATE — server is the authority. If this agent already has a routine with the same (or near-same)
+  // name, return the EXISTING job with a plain anti-retry message instead of minting a second one. Same guard
+  // as routine.create so every create path funnels through it.
+  const gate = mintGate(agentId, body.name);
+  if (gate.dup) return out(200, { ok: true, duplicate: true, job: gate.dup, message: mintLedger.ANTI_RETRY });
+  if (gate.reason === 'declined') return out(200, { ok: false, declined: true, message: mintLedger.ANTI_RETRY });
+  const id = crypto.randomUUID();
+  try {
+    // G4.3: re-read-modify-write UNDER the cron lock so a concurrent advance/CRUD save is not clobbered.
+    await withCronWrite(jobs => cronStore.createJob(jobs, {
+      id: id, name: body.name, prompt: body.prompt, schedule: schedule,
+      agentId: agentId, model: body.model, provider: provider, deliver: body.deliver,
+      enabled: body.enabled, repeat: body.repeat,
+      // MISFIRE POLICY (2026-07-15 audit): optional 'fire_once'|'skip'; the store normalizes anything
+      // else to null (schedule-derived default: daily/cron -> fire_once, fast intervals -> skip).
+      misfire: body.misfire,
+      // R3: pass through the caller-supplied provenance bag ({ recipeId } from MAKE ROUTINE). cron-store normMeta
+      // keeps only a plain object; absent → null. Additive — no existing caller sends it and old jobs load fine.
+      meta: body.meta
+    }, { id: id, now: Date.now() }));
+  } catch (e) { return out(500, { error: 'could not save the routine: ' + ((e && e.message) || e) }); }
+  recordMint(agentId, { name: body.name, kind: 'routine' });   // W6: log the creation in the agent's ledger
+  return out(200, { ok: true, job: cronStore.getJob(cronJobs, id) });
 }
 
 // POST /api/cron/update — edit fields + pause/resume (folded via an `enabled` flag in the patch). body: { id, patch }
@@ -6417,28 +6428,38 @@ function handleCronPreview(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   readBody(req, 4096).then(raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
-    const now = Date.now();
-    let sched; try { sched = parseCronScheduleOr400(body.schedule, now, body.tz); } catch (e) { return json(e.code || 400, { ok: false, error: e.message }); }
-    // a cron schedule resolves under its own tz, else the host tz; interval/once are absolute-ms (UTC display).
-    const tz = sched.kind === 'cron' ? cron._internals.tzFor(sched, CRON_HOST_TZ) : 'UTC';
-    const localFmt = (ms) => {
-      try {
-        return new Intl.DateTimeFormat('en-US', {
-          timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true,
-          weekday: 'short', month: 'short', day: 'numeric', timeZoneName: 'short'
-        }).format(ms);
-      } catch (_) { return cron._internals.iso(ms); }
-    };
-    const next = [], localNext = [];
-    let t = cron.nextFireAt(sched, null, now, { defaultTz: CRON_HOST_TZ });
-    for (let i = 0; i < 5 && t != null && !isNaN(t); i++) {
-      next.push(cron._internals.iso(t));
-      localNext.push(localFmt(t));
-      if (sched.kind === 'once') break;                                 // a one-shot has exactly one fire
-      t = cron.nextFireAt(sched, cron._internals.iso(t), t, { defaultTz: CRON_HOST_TZ });   // advance one period
-    }
-    json(200, { ok: true, kind: sched.kind, display: sched.display, tz: tz, next: next, localNext: localNext });
+    const out = cronPreviewOf(body.schedule, body.tz);
+    if (!out.ok) return json(out.status || 400, { ok: false, error: out.error });
+    json(200, { ok: true, kind: out.kind, display: out.display, tz: out.tz, next: out.next, localNext: out.localNext });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+/* cronPreviewOf(scheduleStr, tz?) — the preview COMPUTATION, extracted so /api/cron/preview and the /routine
+   slash action resolve a schedule through the exact same code (a second implementation would eventually
+   disagree about when a routine fires, and "when does this run" is precisely what a user trusts us on).
+   Returns { ok:true, kind, display, tz, next[], localNext[] } or { ok:false, status, error }. Never throws. */
+function cronPreviewOf(scheduleStr, tzIn) {
+  const now = Date.now();
+  let sched; try { sched = parseCronScheduleOr400(scheduleStr, now, tzIn); } catch (e) { return { ok: false, status: e.code || 400, error: e.message }; }
+  // a cron schedule resolves under its own tz, else the host tz; interval/once are absolute-ms (UTC display).
+  const tz = sched.kind === 'cron' ? cron._internals.tzFor(sched, CRON_HOST_TZ) : 'UTC';
+  const localFmt = (ms) => {
+    try {
+      return new Intl.DateTimeFormat('en-US', {
+        timeZone: tz, hour: 'numeric', minute: '2-digit', hour12: true,
+        weekday: 'short', month: 'short', day: 'numeric', timeZoneName: 'short'
+      }).format(ms);
+    } catch (_) { return cron._internals.iso(ms); }
+  };
+  const next = [], localNext = [];
+  let t = cron.nextFireAt(sched, null, now, { defaultTz: CRON_HOST_TZ });
+  for (let i = 0; i < 5 && t != null && !isNaN(t); i++) {
+    next.push(cron._internals.iso(t));
+    localNext.push(localFmt(t));
+    if (sched.kind === 'once') break;                                 // a one-shot has exactly one fire
+    t = cron.nextFireAt(sched, cron._internals.iso(t), t, { defaultTz: CRON_HOST_TZ });   // advance one period
+  }
+  return { ok: true, kind: sched.kind, display: sched.display, tz: tz, next: next, localNext: localNext };
 }
 
 /* POST /api/cron/run — run a routine NOW, streamed as NDJSON exactly like /api/run (strictly better than the reference harness,
@@ -7644,14 +7665,92 @@ function serveSlashCatalog(req, res) {
   res.end(JSON.stringify(slash.catalog(slashOptions(placedTypes))));
 }
 
-// POST /api/slash/dispatch { input } -- resolve a slash command to a typed client directive. The browser
-// performs local UI actions for Plan 1; this endpoint establishes the shared dispatch seam without changing
-// shared bus/schema contracts.
+/* SERVER-EXECUTED SLASH COMMANDS. Commands declaring dispatch:'server' in the registry name an action here
+   instead of a hand-written fetch() in chat.js. Deps are thin closures over the SAME stores and helpers the
+   HTTP routes use — never a second implementation, so a command can't drift from the panel that shows the
+   same state. See sidecar/slash-actions.js for the contract. */
+const slashActions = slashActionsMod.makeSlashActions({
+  now: () => Date.now(),
+  cron: {
+    jobs: () => cronJobs,
+    armed: () => cronArmed,
+    preview: (str) => cronPreviewOf(str, null),
+    create: async (spec) => {
+      const r = await createCronJobFromSpec(spec);
+      const b = r.body || {};
+      if (r.status !== 200) return { ok: false, error: b.error || 'the station refused that routine' };
+      return b;                                    // { ok, job } | { ok, duplicate, job } | { ok:false, declined }
+    },
+    // setEnabled, NOT a general `update(id, patch)`: this only pauses/resumes. Named for exactly what it does so
+    // a future caller cannot hand it {prompt:'x'} and have the prompt silently discarded (and the job resumed as
+    // a side effect) while being told ok:true. Field edits belong on handleCronUpdate's cronStore.updateJob path.
+    setEnabled: async (id, on) => {
+      if (!cronStore.getJob(cronJobs, id)) return { ok: false, error: 'no such routine' };
+      const want = on === true;
+      try {
+        await withCronWrite(jobs => want ? cronStore.resumeJob(jobs, id, { now: Date.now() }) : cronStore.pauseJob(jobs, id));
+      } catch (e) { return { ok: false, error: (e && e.message) || 'the write failed' }; }
+      return { ok: true, job: cronStore.getJob(cronJobs, id) };
+    },
+    remove: async (id) => {
+      const doomed = cronStore.getJob(cronJobs, id);
+      if (!doomed) return { ok: false, error: 'no such routine' };
+      try { await withCronWrite(jobs => cronStore.removeJob(jobs, id)); }
+      catch (e) { return { ok: false, error: (e && e.message) || 'the write failed' }; }
+      // same sticky decline as the HTTP route: a routine the Commander deletes must not be re-minted by its agent.
+      if (doomed.name) markMintDeclined(doomed.agentId, doomed.name);
+      return { ok: true };
+    }
+  },
+  workshop: {
+    state: async (agentId) => {
+      let rec; try { rec = workshopStore.read(agentId); } catch (e) { return { ok: false, error: (e && e.message) || 'unreadable' }; }
+      // count only builds whose manifest STILL validates against real files — the same proof the OUTBOX panel
+      // demands before it shows a card, so the two can never disagree about what is waiting. The ids ride back
+      // so the per-row marker is drawn from the same proof as the count (never from builtRunId alone).
+      const pendingIds = [];
+      for (const it of (rec.backlog || [])) {
+        if (!it || !it.builtRunId) continue;
+        try { if (await validateWorkshopManifest(agentId, it.builtRunId)) pendingIds.push(String(it.builtRunId)); } catch (_) {}
+      }
+      return { ok: true, backlog: rec.backlog || [], granted: workshopOf(agentId), pending: pendingIds.length, pendingIds: pendingIds };
+    },
+    grant: async (agentId, on) => {
+      try { await workshopStore.setGrant(agentId, on); } catch (e) { return { ok: false, error: 'could not save that setting' }; }
+      try { if (on) await armWorkshopShift(agentId); else await disarmWorkshopShift(agentId); } catch (_) {}
+      return { ok: true };
+    },
+    queue: async (agentId, text) => {
+      const item = { id: crypto.randomUUID(), title: String(text || '').slice(0, 200), detail: '', source: 'queued' };
+      let r; try { r = await workshopStore.queue(agentId, item, Date.now()); } catch (e) { return { ok: false, error: 'could not queue that' }; }
+      if (r.reason === 'duplicate') return { ok: false, error: 'that is already on the build list' };
+      if (r.reason === 'discarded') return { ok: false, error: 'that work was discarded before and will not be rebuilt' };
+      return { ok: true, granted: workshopOf(agentId) };
+    },
+    shiftNow: async (agentId) => {
+      let r; try { r = await runWorkshopShift(agentId, { broadcast: true }); }
+      catch (e) { return { ok: false, error: (e && e.message) || 'the shift threw' }; }
+      return Object.assign({ ok: true }, r || {});
+    }
+  }
+});
+
+// POST /api/slash/dispatch { input } -- resolve a slash command to a typed directive. Client directives are
+// performed by the browser; a dispatch:'server' command is EXECUTED here and returns { type:'say' } carrying the
+// finished text, so every surface that can POST here gets the same answer without re-implementing the command.
 async function handleSlashDispatch(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad json' }); }
   const input = body.input != null ? body.input : ('/' + String(body.command || ''));
   const out = slash.dispatch(input, slashOptions(placedTypesFrom(body.placed)));
+  if (out.ok && out.directive && out.directive.type === 'server') {
+    const ctx = { agentId: /^[A-Za-z0-9_-]{1,40}$/.test(String(body.agentId || '')) ? String(body.agentId) : 'agent' };
+    const r = await slashActions.run(out.directive.action, out.directive.args, ctx);
+    // A refusal is still a 200: the command RAN and produced an honest answer ("no such routine"). Only an
+    // unknown action is a 404 — the browser must be able to tell "it said no" from "it never executed".
+    if (r && r.status === 404) return json(404, { ok: false, error: r.text || 'unknown action' });
+    out.directive = { type: 'say', ok: r ? r.ok !== false : false, text: (r && r.text) || '', title: (r && r.title) || '', lines: (r && r.lines) || [] };
+  }
   json(out.ok ? 200 : (out.status || 400), out);
 }
 
