@@ -4038,8 +4038,9 @@ const Chat = (() => {
   function stopActive() {
     // /loop: Stop ends the interval watcher too, or the next tick fires a run the user just said they didn't
     // want. Checked BEFORE the isBusy() guard on purpose — a loop is usually WAITING between ticks when you
-    // reach for Stop, and an idle-but-armed loop must still be stoppable.
-    if (activeWs) loopStop(activeWs.id, 'you stopped the run');
+    // reach for Stop, and an idle-but-armed loop must still be stoppable. Worded "you stopped it" rather than
+    // "you stopped the run", because there may well be no run in flight to stop.
+    if (activeWs) loopStop(activeWs.id, 'you stopped it');
     if (!activeWs || !isBusy()) return;
     const id = activeWs.id;
     interrupted.add(id);
@@ -4550,7 +4551,9 @@ const Chat = (() => {
      real model turn, so it carries a hard iteration budget and refuses sub-minute cadence. */
   const LOOP_MIN_MS = 60 * 1000;        // one real model turn per tick — sub-minute cadence is a spend trap
   const LOOP_MAX_ITERS = 20;            // budget backstop; re-issue /loop to extend deliberately
-  const loops = new Map();              // wsId -> { ms, label, prompt, fired, skipped, timer, startedAt }
+  const LOOP_MAX_SKIPS = 20;            // a loop that can never fire must not re-arm forever (see loopTick)
+  const loops = new Map();              // wsId -> { ms, label, prompt, fired, skipped, skipStreak, timer, startedAt }
+  const loopEnded = new Map();          // wsId -> one-shot explanation for a loop that died while you were away
 
   function loopParseInterval(tok) {
     const m = String(tok || '').trim().toLowerCase().match(/^(\d+)\s*(s|sec|secs|m|min|mins|h|hr|hrs)?$/);
@@ -4565,12 +4568,21 @@ const Chat = (() => {
     if (ms % 60000 === 0) return (ms / 60000) + 'm';
     return Math.round(ms / 1000) + 's';
   }
-  function loopStop(wsId, why) {
+  // why  = printed NOW into the live transcript (only safe when the loop's own stream is focused).
+  // note = remembered instead, so a loop that had to die while you were elsewhere can still explain itself the
+  //        next time you ask /loop status. A watcher that vanishes with no account of itself is the failure
+  //        mode here: the user armed it and would otherwise never learn it stopped.
+  function loopStop(wsId, why, note) {
     const rec = loops.get(wsId);
     if (!rec) return false;
     try { clearTimeout(rec.timer); } catch (_) {}
     loops.delete(wsId);
-    if (why) localLine('Loop stopped — ' + why + ' (ran ' + rec.fired + ' time' + (rec.fired === 1 ? '' : 's') + ').');
+    const ran = ' (ran ' + rec.fired + ' time' + (rec.fired === 1 ? '' : 's') + ')';
+    if (why) localLine('Loop stopped — ' + why + ran + '.');
+    else if (note) {
+      loopEnded.set(wsId, 'Your loop stopped — ' + note + ran + '.');
+      if (loopEnded.size > 20) loopEnded.delete(loopEnded.keys().next().value);   // bounded: this is a courtesy note, not a log
+    }
     return true;
   }
   function loopArm(rec) {
@@ -4579,13 +4591,36 @@ const Chat = (() => {
   }
   function loopTick(rec) {
     if (!loops.has(rec.wsId)) return;                                  // stopped while we were waiting
-    if (rec.fired >= LOOP_MAX_ITERS) return void loopStop(rec.wsId, 'it hit its ' + LOOP_MAX_ITERS + '-run budget');
-    // Only fire into the stream the loop belongs to: send() targets the ACTIVE workstream, so firing while the
-    // user is reading another stream would inject this prompt into the wrong conversation. Skip and re-arm
-    // instead — and count the skip so /loop status can say why nothing happened.
-    if (!activeWs || activeWs.id !== rec.wsId) { rec.skipped++; return void loopArm(rec); }
-    if (isBusy()) { rec.skipped++; return void loopArm(rec); }          // never stack a tick on a live run
-    rec.fired++;
+    // The stream this loop belongs to is GONE (deleted with the workstream, or with its agent) — there is
+    // nothing left to watch, and re-arming would leave a timer running for the life of the tab that /loop off
+    // can never reach (it keys off the ACTIVE stream). End it, and leave a note for /loop status.
+    const alive = (typeof Workstreams !== 'undefined' && Workstreams.get) ? !!Workstreams.get(rec.wsId) : true;
+    if (!alive) return void loopStop(rec.wsId, null, 'its workstream was deleted');
+    const focused = !!activeWs && activeWs.id === rec.wsId;
+    // BUDGET: checked only while focused, because loopStop's line goes to the ONE live transcript element —
+    // announcing "your loop hit its budget" into whatever stream you happen to be reading blames an unrelated
+    // conversation. Unfocused, it waits and announces when you come back.
+    if (rec.fired >= LOOP_MAX_ITERS) {
+      if (focused) return void loopStop(rec.wsId, 'it hit its ' + LOOP_MAX_ITERS + '-run budget');
+      return void loopArm(rec);
+    }
+    // Fire ONLY into the stream this loop belongs to: send() targets the ACTIVE workstream, so a tick while the
+    // user reads another stream would inject the prompt into the wrong conversation.
+    // goalBlocked() is the SAME discipline the goal loop obeys: an interview, a live beat, an unanswered task
+    // question, an open dialogue or a pending tool approval all own the input. Without it, send() routes the
+    // tick's text into interview(text)/TaskIntent.routeReply — the loop would answer the station's own question
+    // with "check the build" and count it as a run.
+    if (!focused || isBusy() || goalBlocked(activeWs)) {
+      rec.skipped++;
+      // Only an UNFOCUSED tick counts toward the death streak. Being busy or mid-approval is a legitimate,
+      // self-clearing wait — killing a watcher because one long run overlapped it would be a surprise.
+      if (!focused) {
+        rec.skipStreak++;
+        if (rec.skipStreak >= LOOP_MAX_SKIPS) return void loopStop(rec.wsId, null, 'it went ' + LOOP_MAX_SKIPS + ' turns without its workstream being open');
+      }
+      return void loopArm(rec);
+    }
+    rec.fired++; rec.skipStreak = 0;
     loopArm(rec);
     send(rec.prompt);
   }
@@ -4601,7 +4636,12 @@ const Chat = (() => {
       return;
     }
     if (!raw || low === 'status') {
-      if (!cur) return localLine('No loop in this workstream. /loop <interval> <prompt> — e.g. /loop 5m check whether the build went green.');
+      if (!cur) {
+        // if this stream's loop died while the user was elsewhere, account for it once, then forget it
+        const ended = loopEnded.get(wsId);
+        if (ended) { loopEnded.delete(wsId); return localLine(ended + ' /loop <interval> <prompt> to start another.'); }
+        return localLine('No loop in this workstream. /loop <interval> <prompt> — e.g. /loop 5m check whether the build went green.');
+      }
       return localLine('Loop: every ' + cur.label + ', ' + cur.fired + '/' + LOOP_MAX_ITERS + ' runs done'
         + (cur.skipped ? ', ' + cur.skipped + ' tick' + (cur.skipped === 1 ? '' : 's') + ' skipped (busy or another stream open)' : '')
         + ' — "' + String(cur.prompt).slice(0, 60) + '". It stops if you close StarNet; /routine makes it permanent.');
@@ -4616,7 +4656,7 @@ const Chat = (() => {
     }
     if (ms < LOOP_MIN_MS) return localLine('Minimum loop interval is 1 minute — every run costs a real model turn.');
     if (cur) loopStop(wsId, null);                                     // replace, don't stack two loops on one stream
-    const rec = { wsId: wsId, ms: ms, label: loopLabel(ms), prompt: prompt, fired: 0, skipped: 0, timer: null, startedAt: Date.now() };
+    const rec = { wsId: wsId, ms: ms, label: loopLabel(ms), prompt: prompt, fired: 0, skipped: 0, skipStreak: 0, timer: null, startedAt: Date.now() };
     loops.set(wsId, rec);
     loopArm(rec);
     localLine('Looping every ' + rec.label + ' (up to ' + LOOP_MAX_ITERS + ' runs): "' + prompt.slice(0, 60) + '". '
@@ -5089,7 +5129,11 @@ const Chat = (() => {
         slashServerCommands = (j && Array.isArray(j.commands)) ? j.commands : null;
         slashCatalogLoaded = key;
       })
-      .catch(() => { slashServerCommands = null; slashCatalogLoaded = key; })
+      // A FAILED fetch must not be remembered as "loaded": marking it done pinned the tab into catalog-less mode
+      // for that placed-key forever, and server-executed commands (/away, /routine) have no local action to fall
+      // back to — they would refuse for the rest of the session even though the sidecar was healthy and never
+      // asked again. Leaving `loaded` unset lets the next keystroke retry.
+      .catch(() => { slashServerCommands = null; })
       .then(() => {
         slashCatalogLoading = null;
         if (input && input.value && input.value[0] === '/') openSlash(input.value.slice(1));
@@ -5265,7 +5309,12 @@ const Chat = (() => {
     const rawInput = input ? input.value : '';
     input.value = ''; closeSlash(); autoGrowInput();   // consume the "/query"; a recipe's run() then refills the input
     if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
-    if (item.serverBacked && await dispatchSlash(item, rawInput)) return;
+    // Try the sidecar for anything server-backed OR anything with no local action at all. The second half
+    // matters on a cold start: before the catalog fetch lands, /away and /routine are only known from the
+    // FALLBACK list (serverBacked === false) and have no handler — without this they would refuse without ever
+    // having asked the station, which is a claim the browser cannot make honestly.
+    const needsServer = item.serverBacked || typeof item.run !== 'function';
+    if (needsServer && await dispatchSlash(item, rawInput)) return;
     // FALLBACK path (command not resolved by the server dispatcher): parse the trailing text off the raw
     // "/name rest…" input and hand it to the local action, so an arg-taking builtin still gets its argument
     // even when the server slash catalog doesn't know it. Arg-less actions ignore it.
@@ -5273,7 +5322,7 @@ const Chat = (() => {
     // A dispatch:'server' command has NO local action by design. When the sidecar can't be reached it used to
     // throw on a null run() inside a bare catch — the command silently did nothing at all. Say so instead.
     if (typeof item.run !== 'function') {
-      localLine('/' + item.name + ' needs the station to run it, and the station did not answer. Check the UPLINK indicator and try again.');
+      localLine('/' + item.name + ' runs on the station, and the station did not answer just now — check the UPLINK indicator, then try again.');
       return;
     }
     try { item.run(args); } catch (_) {}

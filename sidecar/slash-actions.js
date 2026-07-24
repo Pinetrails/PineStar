@@ -48,12 +48,16 @@ function makeSlashActions(deps) {
     return list.find(j => j && String(j.id) === t) || null;
   }
 
-  function jobLine(j, i) {
+  // `me` = the agent this chat is bound to. The cron store holds EVERY agent's routines (same as the ROUTINES
+  // panel), so a row owned by someone else is named — otherwise a positional /routine rm could delete another
+  // agent's routine with nothing on screen to warn you.
+  function jobLine(j, i, me) {
     const state = j.enabled === false ? 'paused' : 'scheduled';
     const when = j.enabled === false ? 'paused'
       : (j.nextRunAt ? ('next ' + j.nextRunAt) : 'no next fire');
     const last = j.lastStatus ? ('; last ' + j.lastStatus + (j.lastError ? ' (' + String(j.lastError).slice(0, 60) + ')' : '')) : '';
-    return (i + 1) + '. ' + (j.name || '(unnamed)') + ' — ' + (j.scheduleDisplay || 'no schedule')
+    const owner = (me && j.agentId && String(j.agentId) !== String(me)) ? ' (' + j.agentId + '’s)' : '';
+    return (i + 1) + '. ' + (j.name || '(unnamed)') + owner + ' — ' + (j.scheduleDisplay || 'no schedule')
       + ' [' + state + ', ' + when + ']' + last;
   }
 
@@ -66,15 +70,19 @@ function makeSlashActions(deps) {
     return cron.armed() ? '' : ' Routines are NOT armed right now, so nothing will fire — /cron on to arm them.';
   }
 
-  async function routineAction(args) {
+  async function routineAction(args, ctx) {
     if (!cron || typeof cron.jobs !== 'function') return fail('Routines are not available on this station.');
     const { verb, rest } = splitVerb(args);
     const all = (cron.jobs() || []).filter(Boolean);
+    // The routine belongs to the agent this workstream is talking to — same rule /away uses. Without this every
+    // chat-created routine silently landed on the default 'agent', which may have a different model/credential
+    // than the specialist the user was addressing.
+    const me = String((ctx && ctx.agentId) || 'agent');
 
     if (!verb || verb === 'list') {
       if (!all.length) return say('No routines yet. /routine add <schedule> | <task> — e.g. /routine add every 30m | check the build.' + armedNote());
       const shown = all.slice(0, MAX_LIST);
-      const lines = shown.map(jobLine);
+      const lines = shown.map((j, i) => jobLine(j, i, me));
       if (all.length > shown.length) lines.push('… and ' + (all.length - shown.length) + ' more (see the ROUTINES panel).');
       const note = armedNote();
       if (note) lines.push(note.trim());
@@ -86,9 +94,11 @@ function makeSlashActions(deps) {
       if (typeof cron.preview !== 'function') return fail('Schedule preview is not wired on this station.');
       const p = cron.preview(rest);
       if (!p || p.ok === false) return fail(String((p && p.error) || 'Could not read that schedule.'));
-      const lines = (p.localNext || []).map((t, i) => (i + 1) + '. ' + t);
-      if (!lines.length) lines.push('(no upcoming fire times — the schedule is valid but never comes due)');
-      return card((p.display || rest) + ' — next ' + lines.length, lines);
+      const fires = (p.localNext || []).map((t, i) => (i + 1) + '. ' + t);
+      // count the REAL fire times, not the rows — a placeholder row must never inflate the header into
+      // claiming one upcoming fire when there are none (e.g. a one-shot whose time has already passed).
+      const title = (p.display || rest) + (fires.length ? ' — next ' + fires.length : ' — no upcoming fires');
+      return card(title, fires.length ? fires : ['(this schedule is valid but never comes due again)']);
     }
 
     if (verb === 'add' || verb === 'new') {
@@ -105,18 +115,31 @@ function makeSlashActions(deps) {
       if (!schedule) return fail('That routine has no schedule — /routine add <schedule> | <task>.');
       if (!task) return fail('That routine has no task — say what it should do after the pipe.');
       if (typeof cron.create !== 'function') return fail('Creating routines is not wired on this station.');
-      const r = await cron.create({ name: task.slice(0, 60), prompt: task, schedule: schedule });
+      const r = await cron.create({ name: task.slice(0, 60), prompt: task, schedule: schedule, agentId: me });
       if (!r || r.ok === false) {
-        if (r && r.declined) return fail('You deleted a routine by that name before, so it will not be re-created.');
+        // The mint ledger's decline is STICKY and has no un-decline API, so "you deleted this before" is a dead
+        // end unless we name the way out. Names normalize to lowercase-alphanumeric (mint-ledger normName), so a
+        // slightly different wording genuinely mints — say that rather than leaving the user stuck.
+        if (r && r.declined) return fail('You deleted a routine by that name before, so the station will not re-create it. Give this one a slightly different name.');
         return fail(String((r && r.error) || 'The station refused that routine.'));
       }
       if (r.duplicate) {
         const j = r.job || {};
-        return say('A routine named "' + (j.name || task.slice(0, 60)) + '" already exists (' + (j.scheduleDisplay || 'no schedule') + ') — not creating a second one.');
+        // armedNote here too: this reply NAMES a routine, and the atlas promise is that any reply naming a
+        // routine which cannot fire says so. The duplicate branch used to be the one that stayed silent.
+        return say('A routine named "' + (j.name || task.slice(0, 60)) + '" already exists (' + (j.scheduleDisplay || 'no schedule') + ') — not creating a second one.' + armedNote());
       }
       const j = r.job || {};
+      // Render the first fire in LOCAL wall-clock via the same preview path the panel uses. j.nextRunAt is a raw
+      // UTC ISO string; showing that for "0 9 * * *" reads as 13:00 to a New Yorker who asked for 9am (G4.1).
+      let first = '';
+      if (j.nextRunAt) {
+        let local = null;
+        try { const p = cron.preview(schedule); if (p && p.ok !== false && p.localNext && p.localNext.length) local = p.localNext[0]; } catch (_) {}
+        first = ', first fire ' + (local || j.nextRunAt);
+      }
       return say('Routine created: "' + (j.name || task.slice(0, 60)) + '" — ' + (j.scheduleDisplay || schedule)
-        + (j.nextRunAt ? ', first fire ' + j.nextRunAt : '') + '.' + armedNote());
+        + first + '.' + armedNote());
     }
 
     // NOTE: no `run` verb. Firing a routine on demand streams NDJSON through handleCronRun, which is welded to
@@ -129,13 +152,18 @@ function makeSlashActions(deps) {
     if (verb === 'pause' || verb === 'resume') {
       const j = pickFrom(all, rest);
       if (!j) return fail(rest ? ('No routine ' + rest + ' — /routine list to see them.') : ('Usage: /routine ' + verb + ' <number>'));
-      if (typeof cron.update !== 'function') return fail('Editing routines is not wired on this station.');
+      if (typeof cron.setEnabled !== 'function') return fail('Editing routines is not wired on this station.');
       const want = verb === 'resume';
-      const r = await cron.update(j.id, { enabled: want });
+      const r = await cron.setEnabled(j.id, want);
       if (!r || r.ok === false) return fail('Could not ' + verb + ' "' + (j.name || j.id) + '": ' + String((r && r.error) || 'the write failed') + '.');
       const nj = r.job || {};
-      return say('"' + (nj.name || j.name || j.id) + '" is now ' + (want ? 'scheduled' : 'paused')
-        + (want && nj.nextRunAt ? ' — next fire ' + nj.nextRunAt : '') + '.' + (want ? armedNote() : ''));
+      const nm = nj.name || j.name || j.id;
+      if (!want) return say('"' + nm + '" is now paused.');
+      // A resume only re-arms if the schedule still has a future fire. resumeJob leaves nextRunAt null for an
+      // expired one-shot, so "is now scheduled" would assert a run that can never happen — /routine list would
+      // immediately contradict it with "no next fire".
+      if (!nj.nextRunAt) return say('"' + nm + '" is un-paused, but its schedule has no future fire left, so it will not run. Delete it, or make a new routine with a fresh schedule.');
+      return say('"' + nm + '" is now scheduled — next fire ' + nj.nextRunAt + '.' + armedNote());
     }
 
     if (verb === 'rm' || verb === 'remove' || verb === 'delete') {
@@ -165,7 +193,10 @@ function makeSlashActions(deps) {
     'no-capability': 'this agent has no model credential it can build with yet — add a key in SETTINGS → PROVIDERS',
     'empty-backlog': 'there is nothing queued to build — /away <what to build> adds one',
     'not-granted': '"build while away" is off for this agent — /away on to turn it on',
-    'bad-agent': 'that agent id is not one of your station agents'
+    'bad-agent': 'that agent id is not one of your station agents',
+    // these two come back with fired:TRUE — the shift ran and produced nothing usable. See awayAction.
+    'run-failed': 'the build run itself failed',
+    'no-manifest': 'the run finished but produced no valid deliverable'
   };
   function shiftReason(code) {
     const c = String(code || '').trim();
@@ -185,8 +216,14 @@ function makeSlashActions(deps) {
       const st = await workshop.state(agentId);
       if (!st || st.ok === false) return fail('Could not read the away workshop: ' + String((st && st.error) || 'no answer') + '.');
       const items = (st.backlog || []).slice(0, MAX_LIST);
+      // Mark a row "waiting in OUTBOX" ONLY when its manifest still validates on disk — the same proof the
+      // OUTBOX panel demands. Keying off builtRunId alone made the rows contradict this card's own count
+      // (two rows claiming to wait, above a line saying one is waiting).
+      const ready = Array.isArray(st.pendingIds) ? st.pendingIds.map(String) : null;
+      const isReady = (it) => it && it.builtRunId && (ready ? ready.indexOf(String(it.builtRunId)) !== -1 : false);
       const lines = items.map((it, i) => (i + 1) + '. ' + String((it && (it.title || it.detail)) || '(untitled)').slice(0, 120)
-        + (it && it.builtRunId ? '  [built — waiting in OUTBOX]' : ''));
+        + (isReady(it) ? '  [built — waiting in OUTBOX]'
+          : (it && it.builtRunId ? '  [was built, but its files are gone]' : '')));
       if (!items.length) lines.push('(nothing queued — /away <what to build> adds one)');
       if ((st.backlog || []).length > items.length) lines.push('… and ' + ((st.backlog || []).length - items.length) + ' more.');
       if (st.pending) lines.push('' + st.pending + ' finished build' + (st.pending === 1 ? '' : 's') + ' waiting for your keep/discard — open OUTBOX.');
@@ -209,7 +246,15 @@ function makeSlashActions(deps) {
       const r = await workshop.shiftNow(agentId);
       if (!r || r.ok === false) return fail('Could not run an away shift: ' + String((r && r.error) || 'the station refused it') + '.');
       if (r.fired === false) return say('No away shift ran — ' + shiftReason(r.reason) + '.');
-      return say('Away shift ran' + (r.built ? ' and built "' + String(r.built).slice(0, 80) + '"' : '') + '. Finished work waits in OUTBOX for keep or discard.');
+      // A shift that RAN but produced no valid manifest still returns fired:true (reason 'run-failed' /
+      // 'no-manifest'). Reporting that as "finished work waits in OUTBOX" would be a flat lie: nothing landed,
+      // and the item may have been PARKED, which means it will never be retried unless it is re-queued.
+      if (r.reason && r.reason !== 'built') {
+        return fail('An away shift ran but produced nothing usable — ' + shiftReason(r.reason)
+          + (r.parked ? '. That item is now parked and will NOT be retried — /away <the same idea> to queue it again.' : '.'));
+      }
+      const title = (r.manifest && r.manifest.title) ? String(r.manifest.title).slice(0, 80) : '';
+      return say('Away shift built' + (title ? ' "' + title + '"' : ' a deliverable') + '. It waits in OUTBOX for keep or discard.');
     }
 
     // Anything else is the thing to build.

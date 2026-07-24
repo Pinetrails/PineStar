@@ -44,7 +44,7 @@
       "area": "commands",
       "name": "/away — queue work for this agent to build on its own away shift",
       "purpose": "Put a door on the away-workshop subsystem (grant, backlog, shift) which previously had only the catalog-orphan /build-away in the browser fallback list.",
-      "promise": "Typing /away <text> queues onto the REAL per-agent workshop backlog and states the grant state in the same breath; /away on|off writes the grant; /away list shows the real backlog plus only those finished builds whose manifest still validates.",
+      "promise": "Typing /away <text> queues onto the REAL per-agent workshop backlog and states the grant state in the same breath; /away on|off writes the grant; /away list marks a row as waiting in OUTBOX only when its manifest still validates on disk (the same proof the count uses), and says so plainly when the files are gone; /away now reports a shift that RAN but produced nothing as a failure, never as delivered work.",
       "wiring": {
         "files": [
           "sidecar/slash.js",
@@ -62,6 +62,10 @@
         {
           "kind": "test",
           "ref": "test/slash-actions.test.js (queue/grant/list + grant-off honesty + reserved-word boundary)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/slash-actions.test.js (fired:true + no-manifest is a failure; parked items say they will not be retried)"
         }
       ],
       "status": "mapped",
@@ -594,11 +598,15 @@
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/slash.test.js (stays a client directive)"
+          "ref": "test/slash.test.js (registry: stays a client directive, args preserved)"
         },
         {
           "kind": "test",
-          "ref": "test/slash.palette.test.js (handler mapped, budget constants, stop ends an armed loop)"
+          "ref": "test/slash.palette.test.js (SOURCE-GREP only — pins handler wiring, goalBlocked guard, budget constants; proves no runtime behavior)"
+        },
+        {
+          "kind": "audit",
+          "ref": "live 2026-07-24 :9400 — fired 1/20 in its own stream, 2 ticks skipped while another stream was focused, 0 cross-stream turns, /stop ended an armed idle loop"
         }
       ],
       "status": "mapped",
@@ -607,7 +615,7 @@
       "firstSeen": "2026-07-24T00:00:00.000Z",
       "lastSeen": "2026-07-24T00:00:00.000Z",
       "missing": false,
-      "notes": "dispatch:client — it drives send() in the browser. Deliberately in-memory: a loop that resurrected after a restart would spend real money unasked."
+      "notes": "dispatch:client — it drives send() in the browser. Deliberately in-memory: a loop that resurrected after a restart would spend real money unasked. Live-walked 2026-07-24: cross-stream canary proved a tick never enters another workstream. No harness test drives a real tick — the behavioral evidence is the live walk, not the greps."
     },
     {
       "id": "command/memory",
@@ -983,7 +991,7 @@
       "area": "commands",
       "name": "/routine — list, create, preview, pause or delete a scheduled routine",
       "purpose": "Give the chat surface the cron CRUD the ROUTINES panel already had, so a Commander can schedule recurring work without leaving COMMS.",
-      "promise": "Typing /routine lists the REAL cron jobs with their stored cadence and next-fire time; /routine add <schedule> | <task> mints one through the same validation + mint gate as POST /api/cron; every reply naming a routine that cannot fire also says the scheduler is disarmed.",
+      "promise": "Typing /routine lists the REAL cron jobs with their stored cadence and next-fire time; /routine add <schedule> | <task> mints one through the same validation + mint gate as POST /api/cron; every reply naming a routine that cannot fire — including the mint-gate duplicate — says the scheduler is disarmed. The routine is bound to the agent the workstream is talking to, and rows owned by another agent are labelled.",
       "wiring": {
         "files": [
           "sidecar/slash.js",

@@ -7681,9 +7681,12 @@ const slashActions = slashActionsMod.makeSlashActions({
       if (r.status !== 200) return { ok: false, error: b.error || 'the station refused that routine' };
       return b;                                    // { ok, job } | { ok, duplicate, job } | { ok:false, declined }
     },
-    update: async (id, patch) => {
+    // setEnabled, NOT a general `update(id, patch)`: this only pauses/resumes. Named for exactly what it does so
+    // a future caller cannot hand it {prompt:'x'} and have the prompt silently discarded (and the job resumed as
+    // a side effect) while being told ok:true. Field edits belong on handleCronUpdate's cronStore.updateJob path.
+    setEnabled: async (id, on) => {
       if (!cronStore.getJob(cronJobs, id)) return { ok: false, error: 'no such routine' };
-      const want = patch && patch.enabled !== false;
+      const want = on === true;
       try {
         await withCronWrite(jobs => want ? cronStore.resumeJob(jobs, id, { now: Date.now() }) : cronStore.pauseJob(jobs, id));
       } catch (e) { return { ok: false, error: (e && e.message) || 'the write failed' }; }
@@ -7703,13 +7706,14 @@ const slashActions = slashActionsMod.makeSlashActions({
     state: async (agentId) => {
       let rec; try { rec = workshopStore.read(agentId); } catch (e) { return { ok: false, error: (e && e.message) || 'unreadable' }; }
       // count only builds whose manifest STILL validates against real files — the same proof the OUTBOX panel
-      // demands before it shows a card, so the two can never disagree about what is waiting.
-      let pending = 0;
+      // demands before it shows a card, so the two can never disagree about what is waiting. The ids ride back
+      // so the per-row marker is drawn from the same proof as the count (never from builtRunId alone).
+      const pendingIds = [];
       for (const it of (rec.backlog || [])) {
         if (!it || !it.builtRunId) continue;
-        try { if (await validateWorkshopManifest(agentId, it.builtRunId)) pending++; } catch (_) {}
+        try { if (await validateWorkshopManifest(agentId, it.builtRunId)) pendingIds.push(String(it.builtRunId)); } catch (_) {}
       }
-      return { ok: true, backlog: rec.backlog || [], granted: workshopOf(agentId), pending: pending };
+      return { ok: true, backlog: rec.backlog || [], granted: workshopOf(agentId), pending: pendingIds.length, pendingIds: pendingIds };
     },
     grant: async (agentId, on) => {
       try { await workshopStore.setGrant(agentId, on); } catch (e) { return { ok: false, error: 'could not save that setting' }; }

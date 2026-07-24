@@ -25,11 +25,11 @@ function deps(over) {
       armed: () => true,
       preview: (s) => ({ ok: true, display: 'every 30m', localNext: ['Fri, Jul 24, 10:00 AM EDT'] }),
       create: async (spec) => { calls.push(['create', spec]); return { ok: true, job: job({ name: spec.name }) }; },
-      update: async (id, patch) => { calls.push(['update', id, patch]); return { ok: true, job: job({ enabled: patch.enabled }) }; },
+      setEnabled: async (id, on) => { calls.push(['setEnabled', id, on]); return { ok: true, job: job({ enabled: on }) }; },
       remove: async (id) => { calls.push(['remove', id]); return { ok: true }; }
     },
     workshop: {
-      state: async () => ({ ok: true, backlog: [], granted: true, pending: 0 }),
+      state: async () => ({ ok: true, backlog: [], granted: true, pending: 0, pendingIds: [] }),
       grant: async (a, on) => { calls.push(['grant', a, on]); return { ok: true }; },
       queue: async (a, text) => { calls.push(['queue', a, text]); return { ok: true, granted: true }; },
       shiftNow: async () => ({ ok: true, fired: true, built: 'a thing' })
@@ -99,6 +99,42 @@ const mk = (over) => { const d = deps(over); return { S: makeSlashActions(d), ca
     const r = await S.run('routine', 'add every 30m | check build');
     A.ok(/already exists/.test(r.text), 'a mint-gate duplicate is reported as existing, not created');
     A.ok(!/created/i.test(r.text), 'a duplicate never claims a creation happened');
+    // EVERY reply naming a routine that cannot fire must say the scheduler is disarmed — the duplicate branch
+    // was the one that stayed silent, quietly contradicting the atlas promise.
+    const dis = await mk({ cron: { armed: () => false, create: async () => ({ ok: true, duplicate: true, job: job({ name: 'check build' }) }) } })
+      .S.run('routine', 'add every 30m | check build');
+    A.ok(/NOT armed/.test(dis.text), 'the duplicate reply also warns when the scheduler is disarmed');
+  }
+
+  {
+    // AGENT BINDING: a routine created from a stream belongs to THAT stream's agent, not the default 'agent'.
+    // /away already honored ctx.agentId; /routine dropped it, so chat-made routines landed on the wrong agent
+    // (possibly a different model/credential) and the mint-gate dedup was scoped to the wrong ledger.
+    const { S, calls } = mk();
+    await S.run('routine', 'add every 30m | check the build', { agentId: 'scout' });
+    A.eq(calls[0][1].agentId, 'scout', 'a chat-created routine is bound to the stream’s agent');
+    // and a row owned by someone else is NAMED, so a positional rm cannot silently hit another agent's routine
+    const listed = await mk({ cron: { jobs: () => [job({ agentId: 'nova' })] } }).S.run('routine', 'list', { agentId: 'scout' });
+    A.ok(/nova/.test(listed.lines[0]), 'a routine owned by another agent is labelled in the listing');
+  }
+
+  {
+    // A one-shot whose time has passed resumes with nextRunAt null — "is now scheduled" would assert a run
+    // that can never happen, and /routine list would immediately contradict it with "no next fire".
+    const { S } = mk({
+      cron: { jobs: () => [job()], setEnabled: async () => ({ ok: true, job: job({ enabled: true, nextRunAt: null }) }) }
+    });
+    const r = await S.run('routine', 'resume 1');
+    A.ok(!/is now scheduled/.test(r.text), 'a resume with no future fire never claims it is scheduled');
+    A.ok(/will not run/.test(r.text), 'it says plainly that the routine will not run');
+  }
+
+  {
+    // the preview header counts REAL fire times, never the placeholder row
+    const { S } = mk({ cron: { preview: () => ({ ok: true, display: 'once at 2020-01-01', localNext: [] }) } });
+    const r = await S.run('routine', 'preview 2020-01-01T00:00:00Z');
+    A.ok(/no upcoming fires/.test(r.title), 'a schedule with no future fire says so in the header');
+    A.ok(!/next 1/.test(r.title), 'the header never claims one upcoming fire when there are none');
   }
 
   {
@@ -106,6 +142,8 @@ const mk = (over) => { const d = deps(over); return { S: makeSlashActions(d), ca
     const r = await S.run('routine', 'add every 30m | check build');
     A.eq(r.ok, false, 'a declined name is refused');
     A.ok(/deleted/.test(r.text), 'the refusal explains WHY (you deleted it before)');
+    // the mint decline is STICKY with no un-decline API — a refusal that does not name the way out is a dead end
+    A.ok(/different name/.test(r.text), 'the declined refusal names the escape (use a different name)');
   }
 
   {
@@ -123,6 +161,7 @@ const mk = (over) => { const d = deps(over); return { S: makeSlashActions(d), ca
     const { S, calls } = mk({ cron: { jobs: () => [job(), job({ id: 'j2' })] } });
     const r = await S.run('routine', 'pause 2');
     A.eq(calls[0][1], 'j2', 'a positional argument resolves to the right routine id');
+    A.eq(calls[0][2], false, 'pause asks for enabled=false explicitly');
     A.ok(/paused/.test(r.text), 'the pause is confirmed');
     const miss = await S.run('routine', 'pause 9');
     A.eq(miss.ok, false, 'an out-of-range position is refused');
@@ -195,7 +234,7 @@ const mk = (over) => { const d = deps(over); return { S: makeSlashActions(d), ca
   {
     const { S } = mk({
       workshop: {
-        state: async () => ({ ok: true, granted: false, pending: 2, backlog: [{ title: 'a thing' }, { title: 'built thing', builtRunId: 'r1' }] })
+        state: async () => ({ ok: true, granted: false, pending: 1, pendingIds: ['r1'], backlog: [{ title: 'a thing' }, { title: 'built thing', builtRunId: 'r1' }] })
       }
     });
     const r = await S.run('away', 'list');
@@ -203,6 +242,38 @@ const mk = (over) => { const d = deps(over); return { S: makeSlashActions(d), ca
     A.ok(/built — waiting in OUTBOX/.test(r.lines[1]), 'a finished build is marked as waiting');
     A.ok(r.lines.some(l => /waiting for your keep\/discard/.test(l)), 'pending builds are surfaced');
     A.ok(r.lines.some(l => /Build while away: OFF/.test(l)), 'the grant state is always stated');
+  }
+
+  {
+    // A row marker must come from the SAME manifest proof as the count. Keyed off builtRunId alone, a build
+    // whose files are gone printed "waiting in OUTBOX" directly above a line saying nothing was waiting.
+    const { S } = mk({
+      workshop: {
+        state: async () => ({ ok: true, granted: true, pending: 0, pendingIds: [], backlog: [{ title: 'vanished build', builtRunId: 'gone' }] })
+      }
+    });
+    const r = await S.run('away', 'list');
+    A.ok(!/waiting in OUTBOX/.test(r.lines[0]), 'a build whose manifest no longer validates is not shown as waiting');
+    A.ok(/files are gone/.test(r.lines[0]), 'it says what actually happened to it');
+  }
+
+  {
+    // THE LIE THIS GUARDS: runWorkshopShift returns fired:TRUE with reason 'run-failed'/'no-manifest' when the
+    // shift ran and produced nothing. Reporting that as a delivered build is the exact opposite of the truth.
+    const failed = await mk({ workshop: { shiftNow: async () => ({ ok: true, fired: true, reason: 'no-manifest', parked: false }) } })
+      .S.run('away', 'now');
+    A.eq(failed.ok, false, 'a shift that produced nothing is a failure, not a success');
+    A.ok(!/waits in OUTBOX/.test(failed.text), 'a failed shift never claims work is waiting in OUTBOX');
+    A.ok(/nothing usable/.test(failed.text), 'it says the shift produced nothing usable');
+    // a PARKED item will never be retried — the user must be told, or the work silently disappears
+    const parked = await mk({ workshop: { shiftNow: async () => ({ ok: true, fired: true, reason: 'run-failed', parked: true }) } })
+      .S.run('away', 'now');
+    A.ok(/parked/.test(parked.text) && /NOT be retried/.test(parked.text), 'a parked item says it will not be retried');
+    // and the success path reads the REAL manifest title (the old code read r.built, which never exists)
+    const built = await mk({ workshop: { shiftNow: async () => ({ ok: true, fired: true, reason: 'built', manifest: { title: 'a build-time dashboard' } }) } })
+      .S.run('away', 'now');
+    A.ok(/a build-time dashboard/.test(built.text), 'a real build names itself from the manifest');
+    A.ok(/OUTBOX/.test(built.text), 'a real build points at OUTBOX');
   }
 
   {
