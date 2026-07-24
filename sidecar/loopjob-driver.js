@@ -1,0 +1,309 @@
+/* sidecar/loopjob-driver.js — the LOOP tick DRIVER (standing objectives, S1), determinism-split clean.
+
+   The orchestration half of the loop subsystem: it owns the per-tick decision flow (roll each loop's daily
+   budget bucket → ask the pure gate whether an iteration may fire → CLAIM + persist BEFORE launching →
+   fire through the injected run host → harvest → settle + persist → ledger the decision) and the in-flight
+   LEASE map. Every ambient dependency is INJECTED — there is NO Date.now / Math.random / new Date() /
+   setInterval / setTimeout / fs / crypto here, so it passes test/lint-determinism.js and is headless-testable
+   with a fake clock + a fake runOnce, exactly like cron-driver.js and nightshift-driver.js. The ambient half
+   — the real setInterval, Date.now, crypto.randomUUID, the loops.json load/persist, the boot reconcile —
+   lives ONLY in sidecar/index.js (the lint-exempt composition root).
+
+   makeLoopDriver(deps) -> { applyTick(nowMs) -> {fired,skipped,deferred,planned}, leases:Map, abortAllLeases() }
+
+     deps.getLoops()        -> LoopJob[]           // read the live store (index.js mirror)
+     deps.setLoops(loops)   -> bool                // replace + PERSIST; FALSE means the write did not reach
+                                                   //   disk, and the driver then fires NOTHING this tick
+     deps.runOnce(opts)     -> Promise<result>     // the SAME run host the browser uses (index.js runOnce)
+     deps.newId()           -> string              // a fresh runId (crypto.randomUUID in index.js)
+     deps.newAbort()        -> AbortController
+     deps.now()             -> int ms              // wall clock for COMPLETION timestamps (a run settles long
+                                                   //   after applyTick's nowMs is stale)
+     deps.isHalted()        -> bool                // the durable station E-STOP
+     deps.concurrencyFree(agentId) -> bool         // the agent's run mutex
+     deps.agentExists(agentId)     -> bool         // a loop whose agent was deleted must STOP, never fire
+     deps.precheck({loop})  -> {ok,reason}|bool    // OPTIONAL purely-local readiness (credential, workdir still
+                                                   //   blessed). A stand-down no model call could have avoided
+                                                   //   must not cost money — nightshift's NS-2 cold-leash fix.
+     deps.identityForAgent(agentId, loop) -> {system?, model?} | null
+     deps.providerForLoop(loop, ident)    -> string
+     deps.getKey(provider, loop)          -> string
+     deps.hasCredential(provider, key, loop) -> bool
+     deps.defaultModel      -> string
+     deps.persona           -> string | ()=>string // the autonomous system prompt (re-read per fire if a getter)
+     deps.harvest(loop, runResult, iterN) -> {title,summary,commit,files,usd,text} | Promise<...>
+                                                   // OPTIONAL. Where S3 hangs the git work (commit the
+                                                   //   iteration onto the loop branch) and where a non-git loop
+                                                   //   reads its workshop manifest. Default = derive a title
+                                                   //   from the run text and record nothing it cannot prove.
+     deps.ledger(entry)     -> void                // autonomy-ledger append; source:'loop' is already allowed
+     deps.emit(name,payload)-> void                // OPTIONAL. NOTE: shared/events.js is the FROZEN, OWNED
+                                                   //   contract and has no loop.* events, so S1 adds none —
+                                                   //   the LOOPS window polls GET /api/loops the same way the
+                                                   //   ROUTINES window polls /api/cron. A loop.* event family
+                                                   //   is a later additive request to the contract owner.
+     deps.maxParallel       -> int                 // loops that may have an iteration in flight at once (4)
+     deps.maxRunMs          -> int                 // zombie-claim ceiling handed to the pure gate as staleMs
+
+   WHY ADVANCE-BEFORE-RUN MATTERS HERE. A loop has no wall-clock "next fire" to advance, so the crash-safety
+   primitive is the durable fire-claim (loopjob-store.claimFire): stamp it, PERSIST it, and only then launch.
+   If the persist fails we launch nothing — firing over an unpersisted claim is how a crash-restart
+   double-spends. This is the same transactional-dispatch receipt cron-driver.js proved out. */
+'use strict';
+(function (root, factory) {
+  const api = factory(
+    typeof require === 'function' ? require('./loopjob.js') : (root.SK && root.SK.loopjob),
+    typeof require === 'function' ? require('./loopjob-store.js') : (root.SK && root.SK.loopjobStore)
+  );
+  if (typeof module !== 'undefined' && module.exports) module.exports = api;
+  else { (root.SK = root.SK || {}).loopjobDriver = api; }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (LJ, store) {
+  'use strict';
+
+  const DEFAULT_MAX_PARALLEL = 4;
+  const DEFAULT_MAX_RUN_MS = 900000;      // 15 min — the zombie-claim ceiling, extended by live heartbeats
+  const TITLE_WORDS = 12;
+
+  function noop() {}
+  function isFn(v) { return typeof v === 'function'; }
+
+  /* defaultHarvest — what we can honestly say about an iteration knowing ONLY the run result. The title is the
+     model's own first line, trimmed; there is no commit and no file list because this layer performed no git
+     and inspected no disk. S3 injects a real harvest that commits onto the loop branch and returns the sha.
+     Claiming a commit we did not make would be exactly the lie the product forbids. */
+  function defaultHarvest(loop, res) {
+    const text = String((res && res.text) || '');
+    const first = text.split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
+    const title = first.replace(/^[#>*\-\s]+/, '').split(/\s+/).slice(0, TITLE_WORDS).join(' ');
+    return {
+      text: text,
+      title: title || null,
+      summary: text.slice(0, 1200) || null,
+      commit: null,
+      files: [],
+      usd: (res && typeof res.usd === 'number' && isFinite(res.usd)) ? res.usd : 0
+    };
+  }
+
+  function makeLoopDriver(deps) {
+    deps = deps || {};
+    const getLoops = deps.getLoops || (() => []);
+    const setLoops = deps.setLoops || (() => true);
+    const runOnce = deps.runOnce;
+    const newId = deps.newId || (() => 'loop-run');
+    const newAbort = deps.newAbort || (() => ({ abort() {}, signal: null }));
+    const now = deps.now || (() => 0);
+    const isHalted = deps.isHalted || (() => false);
+    const concurrencyFree = deps.concurrencyFree || (() => true);
+    const agentExists = deps.agentExists;
+    const ledger = deps.ledger || noop;
+    const emit = deps.emit || noop;
+    const harvest = isFn(deps.harvest) ? deps.harvest : defaultHarvest;
+    const maxParallel = deps.maxParallel != null ? deps.maxParallel : DEFAULT_MAX_PARALLEL;
+    const maxRunMs = deps.maxRunMs != null ? deps.maxRunMs : DEFAULT_MAX_RUN_MS;
+
+    // loopId -> { runId, abort, startedAt }. In-memory only; the DURABLE half is the fire-claim on the record,
+    // which is what survives a restart. Both are consulted by the gate.
+    const leases = new Map();
+
+    function personaOf() {
+      const p = deps.persona;
+      return isFn(p) ? String(p() || '') : String(p || '');
+    }
+
+    function note(kind, loop, extra) {
+      try {
+        ledger(Object.assign({
+          source: 'loop', kind: kind, jobId: loop && loop.id, agentId: loop && loop.agentId
+        }, extra || {}));
+      } catch (_) { /* telemetry must never break a run */ }
+    }
+
+    /* buildMessages — the iteration prompt: the standing objective, then the LEDGER DIGEST. The digest is what
+       makes this a loop rather than a retry storm; see loopjob.digest. */
+    function buildMessages(loop) {
+      const digest = LJ.digest(loop, {});
+      const body = digest ? (loop.objective + '\n\n' + digest) : loop.objective;
+      return [{ role: 'user', content: body }];
+    }
+
+    /* settle — record an iteration's outcome durably. Wrapped so that EVERY exit path from a fired run
+       (success, throw, abort) lands here exactly once; an unsettled iteration would hold its claim until the
+       zombie ceiling and stall the loop for maxRunMs. */
+    function settle(loopId, runId, result) {
+      const at = now();
+      const next = store.settleIteration(getLoops(), loopId, Object.assign({ runId: runId }, result), { now: at });
+      setLoops(next);
+      leases.delete(loopId);
+      const loop = store.getLoop(next, loopId);
+      const it = loop && (loop.iterations || []).slice().reverse().find(x => String(x.runId) === String(runId));
+      note(result.status === 'ok' ? 'act' : 'decline', loop, {
+        runId: runId,
+        reason: it ? it.outcome : (result.status === 'ok' ? 'ok' : 'error'),
+        binding: loop ? loop.state : null,
+        detail: { iteration: it ? it.n : 0, usd: (it && it.usd) || 0, converged: !!(it && it.outcome === 'noop') }
+      });
+      try { emit('loop.result', { loopId: loopId, runId: runId, outcome: it ? it.outcome : 'failed' }); } catch (_) {}
+      return next;
+    }
+
+    /* fireLoop — launch ONE iteration. Returns true if a run was actually launched.
+
+       Order is load-bearing: claim → PERSIST → start-iteration → PERSIST → launch. A failed persist at either
+       step aborts before any spend (see the header's advance-before-run note). */
+    function fireLoop(loop, nowMs) {
+      const ident = deps.identityForAgent ? (deps.identityForAgent(loop.agentId, loop) || {}) : {};
+      const provider = deps.providerForLoop ? deps.providerForLoop(loop, ident) : (loop.provider || null);
+      const key = deps.getKey ? deps.getKey(provider, loop) : null;
+      const hasCred = deps.hasCredential ? deps.hasCredential(provider, key, loop) : true;
+      if (!hasCred) {
+        note('skip', loop, { reason: 'no-credential', binding: 'precheck' });
+        return false;
+      }
+
+      const runId = String(newId());
+
+      // 1. durable claim, persisted BEFORE anything is launched.
+      if (!setLoops(store.claimFire(getLoops(), loop.id, { now: nowMs }))) {
+        note('defer', loop, { reason: 'claim-persist-failed', binding: 'persist' });
+        return false;
+      }
+      // 2. take the iteration slot (iterationCount advances at START so a crash still burns it).
+      if (!setLoops(store.startIteration(getLoops(), loop.id, { runId: runId, now: nowMs }))) {
+        note('defer', loop, { reason: 'start-persist-failed', binding: 'persist' });
+        return false;
+      }
+
+      const fresh = store.getLoop(getLoops(), loop.id) || loop;
+      const iterN = fresh.iterationCount;
+      const ac = newAbort();
+      leases.set(loop.id, { runId: runId, abort: ac, startedAt: nowMs });
+
+      note('fire', fresh, { runId: runId, reason: 'iteration-' + iterN, binding: 'verdict', detail: { iteration: iterN } });
+      try { emit('loop.fire', { loopId: loop.id, runId: runId, iteration: iterN }); } catch (_) {}
+
+      const opts = {
+        key: key,
+        model: fresh.model || ident.model || deps.defaultModel,
+        provider: provider,
+        system: ident.system || personaOf(),
+        messages: buildMessages(fresh),
+        agentId: fresh.agentId,
+        isTask: true,
+        signal: ac.signal,
+        runId: runId,
+        streamId: 'loop-' + fresh.id,          // one durable stream per LOOP, so its iterations share a thread
+        surface: 'autonomous',
+        trigger: 'loop',
+        station: deps.stationFor ? deps.stationFor(fresh.agentId) : undefined,
+        // a per-iteration USD ceiling, when the Commander set one. 0 = ungoverned (budgetcaps.js semantics).
+        maxCostUsd: (fresh.budget && fresh.budget.perIterationUsd) || undefined,
+        emit: deps.runEmit ? deps.runEmit(fresh, runId) : undefined
+      };
+
+      let p;
+      try { p = runOnce(opts); } catch (e) {
+        settle(loop.id, runId, { status: 'error', error: (e && e.message) || 'run host threw' });
+        return false;
+      }
+
+      // NOTE the harvest is invoked INSIDE a then-callback (not eagerly), so a harvest that throws
+      // SYNCHRONOUSLY rejects this link rather than escaping the chain — an escaped throw here would be an
+      // unhandled rejection that takes down a 24/7 process. The trailing .catch is the last-resort net: a
+      // driver whose bookkeeping throws must degrade to a stranded lease, never to a dead sidecar.
+      Promise.resolve(p)
+        .then(
+          (res) => Promise.resolve().then(() => harvest(fresh, res || {}, iterN)).then(
+            (h) => settle(loop.id, runId, Object.assign({ status: 'ok' }, h || {})),
+            // a harvest failure (e.g. git refused the commit) is a REAL iteration failure, not a silent
+            // success: the work did not land, so the loop must not park a candidate the Commander cannot act on.
+            (e) => settle(loop.id, runId, { status: 'error', error: 'harvest: ' + ((e && e.message) || 'failed') })
+          ),
+          (e) => settle(loop.id, runId, {
+            status: 'error',
+            cancelled: !!(e && (e.name === 'AbortError' || /abort/i.test(String(e.message || '')))),
+            error: (e && e.message) || 'run failed'
+          })
+        )
+        .catch((e) => {
+          try { leases.delete(loop.id); } catch (_) {}
+          note('decline', fresh, { runId: runId, reason: 'settle-threw', binding: 'internal', detail: { err: String((e && e.message) || e).slice(0, 200) } });
+        });
+      return true;
+    }
+
+    /* applyTick — one pass over every loop. */
+    function applyTick(nowMs) {
+      const halted = isHalted();
+      let fired = 0, skipped = 0, deferred = 0, planned = 0;
+
+      // roll every loop's daily budget bucket first, persisting once if any changed. Done before the gate so a
+      // loop that was budget-bound yesterday is genuinely free today rather than free-on-the-tick-after.
+      const rolledAll = getLoops().map(l => LJ.rollBudgetDay(l, { now: nowMs }));
+      if (rolledAll.some((l, i) => l !== getLoops()[i])) setLoops(rolledAll);
+
+      for (const loop of getLoops()) {
+        if (!loop) continue;
+
+        // a loop whose agent was deleted must STOP — never fire under a ghost, never silently keep spending.
+        if (agentExists && loop.enabled !== false && !agentExists(loop.agentId)) {
+          setLoops(store.stopLoop(getLoops(), loop.id, 'the agent "' + loop.agentId + '" no longer exists', { now: nowMs }));
+          note('skip', loop, { reason: 'agent-missing', binding: 'precheck' });
+          skipped++;
+          continue;
+        }
+
+        const inFlight = leases.has(loop.id);
+        const d = LJ.decide(loop, {
+          halted: halted,
+          agentBusy: !concurrencyFree(loop.agentId),
+          inFlight: inFlight,
+          precheck: deps.precheck ? deps.precheck({ loop: loop }) : undefined
+        }, { now: nowMs, staleMs: maxRunMs });
+
+        if (!d.fire) {
+          // only the states that are genuinely a per-tick DECISION are worth a ledger row; a paused/stopped/
+          // dormant loop would otherwise write a row every 60s forever and drown the real decisions.
+          if (d.binding === 'concurrency' || d.binding === 'precheck' || d.binding === 'budget') {
+            note('skip', loop, { reason: d.binding, binding: d.binding, detail: { note: d.detail || '' } });
+          }
+          skipped++;
+          continue;
+        }
+
+        planned++;
+        if (leases.size >= maxParallel) {
+          // over the fan-out cap: HELD, not dropped. Nothing is advanced, so it is still eligible next tick.
+          note('defer', loop, { reason: 'at-capacity', binding: 'concurrency-cap' });
+          deferred++;
+          continue;
+        }
+        if (fireLoop(loop, nowMs)) fired++; else skipped++;
+      }
+
+      try { emit('loop.tick', { fired: fired, skipped: skipped, deferred: deferred, planned: planned }); } catch (_) {}
+      return { fired: fired, skipped: skipped, deferred: deferred, planned: planned };
+    }
+
+    /* abortAllLeases — the E-STOP hook. Aborts every in-flight iteration; each one's rejection path settles it
+       as 'cancelled', which costs neither the fail streak nor the dry streak. Returns how many were aborted.
+       Must never throw: an E-STOP that fails halfway is worse than no E-STOP. */
+    function abortAllLeases() {
+      let n = 0;
+      for (const lease of leases.values()) {
+        try { if (lease && lease.abort && isFn(lease.abort.abort)) lease.abort.abort(); } catch (_) {}
+        n++;
+      }
+      return n;
+    }
+
+    return {
+      applyTick: applyTick,
+      abortAllLeases: abortAllLeases,
+      leases: leases,
+      _internals: { fireLoop: fireLoop, settle: settle, buildMessages: buildMessages, defaultHarvest: defaultHarvest }
+    };
+  }
+
+  return { makeLoopDriver: makeLoopDriver, DEFAULT_MAX_PARALLEL: DEFAULT_MAX_PARALLEL, DEFAULT_MAX_RUN_MS: DEFAULT_MAX_RUN_MS };
+});

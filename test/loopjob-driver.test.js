@@ -1,0 +1,275 @@
+/* node test/loopjob-driver.test.js — the LOOP tick driver (standing objectives, S1).
+
+   Drives makeLoopDriver with a fake clock, a fake runOnce and an in-memory store — no wall clock, no fs, no
+   network — exactly like nightshift-driver.test.js. What it proves:
+
+     1. ADVANCE-BEFORE-RUN: the fire-claim is persisted BEFORE the run host is ever called, and a failed
+        persist fires NOTHING (the double-spend guard).
+     2. THE VERDICT IS THE TRIGGER: a full review queue stops the tick from firing; a verdict releases it.
+     3. Every settlement path lands exactly once — success, throw, abort, and a failed harvest.
+     4. A deleted agent stops the loop instead of firing under a ghost.
+     5. The fan-out cap DEFERS (still eligible next tick), never drops.
+     6. The prompt actually carries the ledger digest, so the loop has memory. */
+'use strict';
+const A = require('./_assert.js');
+const LJ = require('../sidecar/loopjob.js');
+const S = require('../sidecar/loopjob-store.js');
+const { makeLoopDriver } = require('../sidecar/loopjob-driver.js');
+
+const T0 = 1700006400000;                 // UTC-midnight aligned (see loopjob.test.js for why)
+const MIN = 60000, HOUR = 3600000;
+
+// ---- a fake world: an in-memory store + a scriptable run host ------------------------------------------
+function world(opts) {
+  opts = opts || {};
+  let loops = opts.loops || [];
+  let clock = T0;
+  const calls = [];          // every runOnce invocation
+  const ledger = [];
+  const persistFails = opts.persistFails || (() => false);
+  let idN = 0;
+
+  const pending = [];        // unresolved run promises, resolved by the test
+  const deps = {
+    getLoops: () => loops,
+    setLoops: (next) => { if (persistFails()) return false; loops = next; return true; },
+    runOnce: (o) => {
+      calls.push(o);
+      if (opts.runThrows) throw new Error('run host exploded');
+      return new Promise((resolve, reject) => pending.push({ resolve, reject, opts: o }));
+    },
+    newId: () => 'run' + (++idN),
+    newAbort: () => { const s = { aborted: false }; return { signal: s, abort() { s.aborted = true; } }; },
+    now: () => clock,
+    isHalted: () => !!opts.halted,
+    concurrencyFree: () => opts.agentBusy !== true,
+    agentExists: opts.agentExists,
+    precheck: opts.precheck,
+    defaultModel: 'test-model',
+    persona: 'STATION PERSONA',
+    harvest: opts.harvest,
+    ledger: (e) => ledger.push(e),
+    maxParallel: opts.maxParallel,
+    maxRunMs: opts.maxRunMs
+  };
+
+  const drv = makeLoopDriver(deps);
+  return {
+    drv, ledger, calls, pending,
+    get loops() { return loops; },
+    loop: (id) => S.getLoop(loops, id || 'l1'),
+    tick: (at) => { if (at != null) clock = at; return drv.applyTick(clock); },
+    advance: (ms) => { clock += ms; },
+    // resolve the oldest in-flight run, then let the settle microtasks drain
+    finish: (res) => { const p = pending.shift(); p.resolve(res); return new Promise(r => setImmediate(r)); },
+    fail: (err) => { const p = pending.shift(); p.reject(err); return new Promise(r => setImmediate(r)); },
+    seed: (spec) => { loops = S.createLoop(loops, Object.assign({ id: 'l1', objective: 'find bugs' }, spec), { now: T0 }); }
+  };
+}
+
+(async function run() {
+
+  // ---- 1. a plain fire: claim persisted before the run host is called -----------------------------------
+  {
+    const w = world(); w.seed({});
+    const res = w.tick(T0);
+    A.eq(res.fired, 1, 'one enabled loop fires one iteration');
+    A.eq(w.calls.length, 1, 'the run host was called exactly once');
+    A.eq(w.loop().iterationCount, 1, 'the iteration slot was taken at start');
+    A.eq(w.loop().iterations[0].outcome, 'running', 'and recorded as running');
+    A.eq(w.loop().iterations[0].runId, 'run1', 'carrying the runId that was launched');
+    A.ok(w.loop().fireClaim != null, 'the durable fire-claim is held while in flight');
+    A.eq(w.drv.leases.size, 1, 'the in-memory lease is held too');
+
+    const o = w.calls[0];
+    A.eq(o.agentId, 'agent', 'the run is attributed to the loop agent');
+    A.eq(o.isTask, true, 'a loop iteration is a TASK run');
+    A.eq(o.surface, 'autonomous', 'and an autonomous one');
+    A.eq(o.trigger, 'loop', 'tagged with the loop trigger, distinct from schedule/nightshift');
+    A.eq(o.streamId, 'loop-l1', 'iterations of one loop share one durable stream');
+    A.eq(o.model, 'test-model', 'the host default model is used when the loop pins none');
+    A.eq(o.system, 'STATION PERSONA', 'the autonomous persona is the system prompt');
+    A.ok(/find bugs/.test(o.messages[0].content), 'the objective is the directive');
+
+    // a second tick while in flight must NOT double-fire
+    A.eq(w.tick(T0 + MIN).fired, 0, 'a tick during an in-flight iteration fires nothing');
+    A.eq(w.calls.length, 1, 'and never re-enters the run host');
+
+    await w.finish({ text: 'Fixed the null deref in auth.js', usd: 0.12 });
+    A.eq(w.loop().iterations[0].outcome, 'candidate', 'the settled iteration is a review candidate');
+    A.eq(w.loop().iterations[0].title, 'Fixed the null deref in auth.js', 'the title is the model\'s own first line');
+    A.eq(w.loop().iterations[0].usd, 0.12, 'the real cost is recorded');
+    A.eq(w.loop().iterations[0].commit, null, 'and NO commit is claimed — this layer performed no git');
+    A.eq(w.loop().fireClaim, null, 'settlement releases the durable claim');
+    A.eq(w.drv.leases.size, 0, 'and the lease');
+    A.ok(w.ledger.some(e => e.kind === 'fire' && e.source === 'loop'), 'the fire is ledgered under source:loop');
+    A.ok(w.ledger.some(e => e.kind === 'act' && e.reason === 'candidate'), 'and so is the outcome');
+  }
+
+  // ---- 2. INVARIANT: a failed persist fires NOTHING (the double-spend guard) -----------------------------
+  {
+    let failing = true;
+    const w = world({ persistFails: () => failing });
+    // seed BEFORE arming the failure so the loop exists
+    failing = false; w.seed({}); failing = true;
+
+    const res = w.tick(T0);
+    A.eq(res.fired, 0, 'a store that cannot persist the claim fires nothing');
+    A.eq(w.calls.length, 0, 'the run host is never reached — no spend over an unpersisted claim');
+    A.ok(w.ledger.some(e => e.kind === 'defer' && e.reason === 'claim-persist-failed'),
+      'and the refusal is ledgered, not silent');
+
+    failing = false;
+    A.eq(w.tick(T0 + MIN).fired, 1, 'once the store recovers, the loop fires normally');
+  }
+
+  // ---- 3. INVARIANT: the VERDICT is the trigger ----------------------------------------------------------
+  {
+    const w = world(); w.seed({ queueCap: 1 });
+    w.tick(T0);
+    await w.finish({ text: 'did a thing', usd: 0 });
+    A.eq(w.loop().state, 'waiting', 'one candidate at queueCap 1 parks the loop');
+
+    A.eq(w.tick(T0 + HOUR).fired, 0, 'and NO amount of ticking fires it — a clock cannot advance a loop');
+    A.eq(w.tick(T0 + 5 * HOUR).fired, 0, 'still nothing hours later');
+    A.eq(LJ.decide(w.loop(), {}, { now: T0 + 5 * HOUR }).binding, 'queue-full', 'the reason is nameable');
+
+    // the Commander rules on it — THIS is the trigger. The verdict lands through the store (exactly what the
+    // /api/loops/verdict route does), then the next ordinary tick picks it up.
+    const ruled = S.recordVerdict(w.loops, 'l1', 1, 'approved', { now: T0 + 6 * HOUR });
+    const after = world({ loops: ruled });
+    A.eq(after.loop().state, 'idle', 'the verdict released the queue');
+    A.eq(after.tick(T0 + 6 * HOUR).fired, 1, 'and the very next tick fires the next iteration');
+    A.eq(after.loop().iterationCount, 2, 'iteration 2 is under way');
+  }
+
+  // ---- 4. the ledger digest actually reaches the prompt (the loop has MEMORY) ----------------------------
+  {
+    let loops = S.createLoop([], { id: 'l1', objective: 'find bugs', queueCap: 5 }, { now: T0 });
+    loops = S.startIteration(S.claimFire(loops, 'l1', { now: T0 }), 'l1', { runId: 'r1', now: T0 });
+    loops = S.settleIteration(loops, 'l1', { runId: 'r1', status: 'ok', text: 'w', title: 'rewrote the CI config' }, { now: T0 + MIN });
+    loops = S.recordVerdict(loops, 'l1', 1, 'rejected', { now: T0 + HOUR, note: 'never touch CI' });
+
+    const w = world({ loops: loops });
+    w.tick(T0 + 2 * HOUR);
+    const prompt = w.calls[0].messages[0].content;
+    A.ok(/find bugs/.test(prompt), 'the standing objective leads the prompt');
+    A.ok(/never touch CI/.test(prompt), 'the REJECTION REASON is carried into the next iteration');
+    A.ok(/NOTHING-TO-DO/.test(prompt), 'and the convergence escape hatch is offered');
+  }
+
+  // ---- 5. every failure path settles exactly once --------------------------------------------------------
+  {
+    // a rejected run promise
+    const w = world(); w.seed({});
+    w.tick(T0);
+    await w.fail(new Error('provider 500'));
+    A.eq(w.loop().iterations[0].outcome, 'failed', 'a rejected run settles as failed');
+    A.ok(/provider 500/.test(w.loop().iterations[0].error), 'carrying the real error');
+    A.eq(w.drv.leases.size, 0, 'and releases the lease');
+
+    // an aborted run (E-STOP) is CANCELLED, not failed
+    const w2 = world(); w2.seed({});
+    w2.tick(T0);
+    const aborted = w2.drv.abortAllLeases();
+    A.eq(aborted, 1, 'abortAllLeases reports what it aborted');
+    const e = new Error('aborted'); e.name = 'AbortError';
+    await w2.fail(e);
+    A.eq(w2.loop().iterations[0].outcome, 'cancelled', 'an aborted iteration is cancelled, not a failure');
+    A.eq(w2.loop().failStreak, 0, 'so it costs no failure streak');
+
+    // a run host that throws synchronously
+    const w3 = world({ runThrows: true }); w3.seed({});
+    w3.tick(T0);
+    A.eq(w3.loop().iterations[0].outcome, 'failed', 'a synchronous run-host throw still settles the iteration');
+    A.eq(w3.drv.leases.size, 0, 'and never strands the lease');
+
+    // a harvest that fails = the work did NOT land, so the iteration failed
+    const w4 = world({ harvest: () => { throw new Error('git refused: dirty tree'); } }); w4.seed({});
+    w4.tick(T0);
+    await w4.finish({ text: 'I fixed everything' });
+    A.eq(w4.loop().iterations[0].outcome, 'failed', 'a failed harvest is a failed iteration, not a silent success');
+    A.ok(/dirty tree/.test(w4.loop().iterations[0].error), 'and names why the work could not land');
+  }
+
+  // ---- 6. a deleted agent stops the loop instead of firing under a ghost ---------------------------------
+  {
+    const w = world({ agentExists: () => false }); w.seed({});
+    const res = w.tick(T0);
+    A.eq(res.fired, 0, 'nothing fires for a missing agent');
+    A.eq(w.loop().state, 'stopped', 'the loop is STOPPED, not left quietly spinning');
+    A.ok(/no longer exists/.test(w.loop().stopReason), 'and says so');
+    A.eq(w.tick(T0 + HOUR).fired, 0, 'it stays stopped');
+  }
+
+  // ---- 7. gates that must cost nothing --------------------------------------------------------------------
+  {
+    const w = world({ halted: true }); w.seed({});
+    A.eq(w.tick(T0).fired, 0, 'the station E-STOP blocks every loop');
+    A.eq(w.calls.length, 0, 'with zero spend');
+
+    const w2 = world({ agentBusy: true }); w2.seed({});
+    A.eq(w2.tick(T0).fired, 0, 'a busy agent blocks its loop');
+
+    const w3 = world({ precheck: () => ({ ok: false, reason: 'no credential' }) }); w3.seed({});
+    A.eq(w3.tick(T0).fired, 0, 'a local precheck failure blocks BEFORE the model call');
+    A.ok(w3.ledger.some(e => e.kind === 'skip' && e.binding === 'precheck'), 'and is ledgered');
+    A.eq(w3.loop().iterationCount, 0, 'and costs no iteration slot');
+  }
+
+  // ---- 8. the fan-out cap DEFERS, never drops -------------------------------------------------------------
+  {
+    let loops = [];
+    for (let i = 1; i <= 4; i++) loops = S.createLoop(loops, { id: 'l' + i, objective: 'o' + i }, { now: T0 });
+    const w = world({ loops: loops, maxParallel: 2 });
+    const res = w.tick(T0);
+    A.eq(res.fired, 2, 'only maxParallel loops fire at once');
+    A.eq(res.deferred, 2, 'the rest are DEFERRED');
+    A.eq(res.planned, 4, 'all four were eligible');
+    A.ok(w.ledger.some(e => e.kind === 'defer' && e.reason === 'at-capacity'), 'the deferral is ledgered');
+
+    // deferred loops advanced nothing, so they are still eligible
+    A.eq(S.getLoop(w.loops, 'l3').iterationCount, 0, 'a deferred loop burned no iteration');
+    A.eq(S.getLoop(w.loops, 'l3').fireClaim, null, 'and holds no claim');
+    await w.finish({ text: 'done a' });
+    await w.finish({ text: 'done b' });
+    A.eq(w.tick(T0 + MIN).fired, 2, 'they drain on the next tick');
+  }
+
+  // ---- 9. a zombie claim is reclaimed (a crash cannot wedge a loop forever) -------------------------------
+  {
+    let loops = S.claimFire(S.createLoop([], { id: 'l1', objective: 'o' }, { now: T0 }), 'l1', { now: T0 });
+    const w = world({ loops: loops, maxRunMs: 10 * MIN });
+    A.eq(w.tick(T0 + 2 * MIN).fired, 0, 'a fresh claim from a previous process suppresses re-fire');
+    A.eq(w.tick(T0 + 30 * MIN).fired, 1, 'a claim past the ceiling is reclaimed and the loop resumes');
+  }
+
+  // ---- 10. convergence through the driver: NOTHING-TO-DO parks it dormant ---------------------------------
+  {
+    const w = world(); w.seed({ dryStopAfter: 2, queueCap: 5 });
+    w.tick(T0);
+    await w.finish({ text: 'I checked everything. NOTHING-TO-DO' });
+    A.eq(w.loop().iterations[0].outcome, 'noop', 'the declared convergence is read');
+    A.eq(w.loop().state, 'idle', 'one dry pass is not convergence');
+    w.tick(T0 + HOUR);
+    await w.finish({ text: 'NOTHING-TO-DO' });
+    A.eq(w.loop().state, 'dormant', 'two in a row parks it DORMANT');
+    A.eq(w.tick(T0 + 2 * HOUR).fired, 0, 'and it stops spending');
+    A.eq(w.calls.length, 2, 'exactly two runs were ever paid for');
+    A.ok(w.ledger.some(e => e.detail && e.detail.converged === true), 'convergence is ledgered as such');
+  }
+
+  // ---- 11. gate:'auto' never queues and keeps going --------------------------------------------------------
+  {
+    const w = world({ harvest: (loop, res) => ({ text: res.text, title: 'auto fix', commit: 'deadbee', files: [{ path: 'a.js' }], usd: 0.05 }) });
+    w.seed({ gate: 'auto', queueCap: 1 });
+    w.tick(T0);
+    await w.finish({ text: 'merged it' });
+    A.eq(w.loop().iterations[0].verdict, 'approved', 'an auto iteration is self-approved at settle');
+    A.eq(w.loop().iterations[0].commit, 'deadbee', 'the harvest commit IS recorded when a harvest proves one');
+    A.eq(w.loop().state, 'idle', 'and nothing queues');
+    A.eq(w.tick(T0 + MIN).fired, 1, 'so an auto loop keeps going without a review');
+  }
+
+  A.report('loopjob-driver (LOOP tick driver)');
+})().catch(e => { console.log('FAIL: unexpected throw — ' + (e && e.stack || e)); process.exit(1); });
