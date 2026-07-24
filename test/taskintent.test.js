@@ -131,6 +131,43 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
     A.eq(g.count, s2.patterns(5).find(p => p.answer === 'operators').count, 'the displayed count IS the observed pattern count');
   }
 
+  // ASK-WORTHINESS — a dimension the Commander habitually waves off with "use your judgment" stops being
+  // asked about. Conservative on purpose: a false suppression silently guesses at something they cared about.
+  {
+    const SKIP = 'Use your judgment. Choose the most sensible reversible default and continue the original task.';
+    const s3 = makeStore(memFs());
+    let n = 0;
+    const decide = async (dimension, answer) => {
+      const t = 1000 + (n * 10), uid = dimension + '_' + (n++), key = 'stream:' + uid;
+      const text = 'which ' + dimension + ' applies for ' + uid + '?';
+      const b = await s3.prepare({ id: 'tb_' + uid, key, streamId: uid, text: 'Do a thing' }, t);
+      await s3.ask(b.id, { dimension, question: text, text, options: ['alpha', 'beta'], recommended: 'alpha', reason: 'matters', discoverable: false }, t + 1);
+      await s3.prepare({ key, text: answer }, t + 2);
+      await s3.proceed(b.id, { objective: 'ship' }, t + 3);
+      await s3.complete(b.id, 'run_' + uid, t + 4);
+    };
+    await decide('scope', SKIP); await decide('scope', SKIP);
+    A.eq(s3.deferredDimensions().length, 0, 'two deferrals is not yet a habit — the question still gets asked');
+    await decide('scope', SKIP);
+    A.eq(s3.deferredDimensions().join(), 'scope', 'a third deferral in one dimension stops the agent asking about it');
+    // engagement protects a dimension: real answers outweigh the skips
+    for (let i = 0; i < 3; i++) await decide('audience', SKIP);
+    for (let i = 0; i < 5; i++) await decide('audience', 'operators');
+    A.eq(s3.deferredDimensions().indexOf('audience'), -1, 'a dimension they actually engage with is never suppressed by a minority of skips');
+    // an answer that merely MENTIONS judgment is a real answer, not a deferral
+    const s4 = makeStore(memFs()); n = 0;
+    const s4decide = async () => {
+      const t = 1000 + (n * 10), uid = 'safety_' + (n++), key = 'stream:' + uid;
+      const text = 'which safety bar for ' + uid + '?';
+      const b = await s4.prepare({ id: 'tb_' + uid, key, streamId: uid, text: 'Do a thing' }, t);
+      await s4.ask(b.id, { dimension: 'safety', question: text, text, options: ['alpha', 'beta'], recommended: 'alpha', reason: 'matters', discoverable: false }, t + 1);
+      await s4.prepare({ key, text: 'I trust your judgment on encryption, but use AES-256' }, t + 2);
+      await s4.proceed(b.id, { objective: 'ship' }, t + 3); await s4.complete(b.id, 'r_' + uid, t + 4);
+    };
+    await s4decide(); await s4decide(); await s4decide();
+    A.eq(s4.deferredDimensions().length, 0, 'an answer that merely mentions judgment is never miscounted as a deferral');
+  }
+
   const cancelled = await s2.prepare({ id: 'tb_cancel', key: 'stream:cancel', text: 'Build a report' }, 300);
   await s2.ask(cancelled.id, material(), 310);
   const cancelResult = await s2.prepare({ key: 'stream:cancel', text: 'never mind' }, 320);
@@ -282,6 +319,28 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   A.ok(/\.tq-reason\.grounded/.test(cssSrc), 'the grounded why-line has its own provable-source styling');
   A.ok(/groundedFor: \(q\) => taskBriefStore\.groundedFor\(q\)/.test(indexSrc) && /groundedFor \? groundedFor\(q\)/.test(hubSrc), 'messaging channels carry the same grounded suggestion as COMMS');
   A.ok(/console\.warn\('\[taskbrief\] brief_ask rejected/.test(fs.readFileSync(path.join(__dirname, '../sidecar/taskbrief-tools.js'), 'utf8')), 'a hidden-tool rejection is logged instead of silently downgrading the surface');
+
+  // ASK-WORTHINESS wiring — the gate refuses at the tool, the prompt says so first, and a store without the
+  // capability (older/injected) still works. Plus the typed-answer escape hatch is finally VISIBLE.
+  {
+    const toolsSrc = fs.readFileSync(path.join(__dirname, '../sidecar/taskbrief-tools.js'), 'utf8');
+    const cxSrc = fs.readFileSync(path.join(__dirname, '../sidecar/commander-context.js'), 'utf8');
+    A.ok(/typeof store\.deferredDimensions === 'function'/.test(toolsSrc), 'the ask-worthiness gate degrades safely when the store cannot answer');
+    A.ok(/deferred\.indexOf\(checked\.question\.dimension\) >= 0/.test(toolsSrc), 'a habitually deferred dimension is refused at the tool boundary');
+    A.ok(/<deferred_decisions provenance="commander-observed">/.test(cxSrc), 'the deferred dimensions are declared to the model with honest provenance');
+    A.ok(/deferredDimensions = taskBriefStore\.deferredDimensions\(\)/.test(indexSrc) && /goal, patterns, deferredDimensions/.test(indexSrc), 'runOnce feeds the observed deferrals into the composed context');
+    A.eq(CommanderContext.compose({ deferredDimensions: [] }), '', 'no observed deferrals -> no block');
+    A.ok(/scope/.test(CommanderContext.compose({ deferredDimensions: ['scope'] })), 'an observed deferral names the dimension it covers');
+    const gate = await (async () => {
+      const reg = makeRegistry();
+      registerTaskBriefTools(reg, { ask: async () => ({ id: 'b' }), proceed: async () => null, deferredDimensions: () => ['scope'] }, { brief: { id: 'b', status: 'ready', questions: [] } }, { now: () => 1 });
+      const args = { dimension: 'scope', question: 'how wide should this go?', options: ['just the api', 'the whole service'], recommended: 'just the api', reason: 'changes the work', discoverable: false };
+      return reg.get('brief.ask').run(args).then(() => '').catch(e => e.message);
+    })();
+    A.ok(/repeatedly answered "use your judgment"/.test(gate) && /correctable assumption/.test(gate), 'the refusal steers to deciding + surfacing an assumption, never to silent guessing');
+    A.ok(/tq-hint/.test(chatSrc) && /more than one is fine/.test(chatSrc), 'the chip row tells the Commander a typed answer is accepted');
+    A.ok(/\.tq-hint/.test(cssSrc), 'the typed-answer hint is styled as a quiet affordance note');
+  }
 
   // TASK BRIEF v2 — recipe intake: declared material decisions, settled at launch or aimed mid-run.
   const Recipes = require('../frontend/app/recipes.js');

@@ -48,6 +48,11 @@ function normalize(raw) {
   return { briefs: Array.isArray(x.briefs) ? x.briefs.map(normalizeBrief).filter(b => b.id && b.key).slice(-CAP) : [] };
 }
 
+// The literal deferral the UI sends when the Commander taps "use your judgment" (fork.js taskAnswerMessage),
+// and what a channel user types when they take the same escape hatch ('Reply with a choice, or say "use your
+// judgment."'). Anchored so an ordinary answer that merely mentions judgment is never miscounted as a skip.
+const SKIP_ANSWER = /^\s*use your judgment\b/i;
+
 function fingerprintQuestion(text) {
   return String(text || '').toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3)
     .filter(t => !/^(this|that|with|from|what|which|should|would|could|your|their|about)$/.test(t))
@@ -197,7 +202,35 @@ function makeTaskBriefStore(deps) {
     return best;
   }
 
-  return { read, list, active, prepare, ask, proceed, complete, patterns, groundedFor, fingerprintQuestion, _durable: durable };
+  // ASK-WORTHINESS (2026-07-24). Every "use your judgment" tap is ALREADY persisted as a real answer string
+  // (fork.js taskAnswerMessage), so the Commander's own "stop asking me this" signal has been sitting on disk
+  // all along, uninterpreted. A dimension they habitually defer is one the agent should decide itself — and
+  // then state as a correctable assumption in the read card — rather than burn one of its two questions on.
+  // Deliberately CONSERVATIVE: suppressing a question is more consequential than merely suggesting a default,
+  // because a false suppression silently guesses at something the Commander cared about. So it needs real
+  // repetition (>=3) AND deferrals to be at least half of what they did with that dimension. Marker-path
+  // questions carry no dimension and are attributed to none.
+  function dimensionDeferrals() {
+    const tally = {};
+    for (const b of list({ limit: 200 })) {
+      if (b.status !== 'done') continue;
+      for (const q of b.questions) {
+        const dim = bounded(q.dimension, 24);
+        if (!dim || !q.answer) continue;
+        const t = tally[dim] || (tally[dim] = { dimension: dim, deferred: 0, answered: 0 });
+        t.answered++;
+        if (SKIP_ANSWER.test(q.answer)) t.deferred++;
+      }
+    }
+    return Object.values(tally);
+  }
+  function deferredDimensions() {
+    return dimensionDeferrals()
+      .filter(t => t.deferred >= 3 && t.deferred * 2 >= t.answered)
+      .map(t => t.dimension);
+  }
+
+  return { read, list, active, prepare, ask, proceed, complete, patterns, groundedFor, dimensionDeferrals, deferredDimensions, fingerprintQuestion, _durable: durable };
 }
 
 module.exports = { makeTaskBriefStore, normalize, normalizeBrief, normalizeQuestion, fingerprintQuestion };

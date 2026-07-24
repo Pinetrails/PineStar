@@ -2924,6 +2924,13 @@ const Chat = (() => {
       el.textContent = why;
       q.body.appendChild(el);
     }
+    // The chips read as "pick exactly one", but a TYPED reply has always been a first-class answer here: while
+    // a question is pending, free text routes through TaskIntent.routeReply and is stored verbatim as the
+    // answer. So "both operators and executives" already worked — nothing said so. This is the same escape
+    // hatch the channels spell out in text, and it covers "more than one" and "none of these" alike.
+    const hint = document.createElement('div'); hint.className = 'tq-hint';
+    hint.textContent = 'or just type your answer below — more than one is fine';
+    q.body.appendChild(hint);
     autoscroll();
     choices(items, item => {
       vanish(q.d);

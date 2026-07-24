@@ -37,6 +37,16 @@ function compose(input) {
   if (dossier && existing.indexOf(dossier) < 0) lines.push('<commander_context provenance="commander-dossier">\n' + dossier + '\n</commander_context>');
   const goal = input.goal && (input.goal.title || input.goal.text || input.goal.goal);
   if (goal) lines.push('<active_goal provenance="commander-confirmed">' + clip(goal, 500) + '</active_goal>');
+  // ASK-WORTHINESS: dimensions the Commander has repeatedly waved off with "use your judgment". The tool gate
+  // (taskbrief-tools) refuses these outright; saying so here spends no turn discovering that, and names the
+  // honest alternative — decide it, then surface the choice as a correctable assumption.
+  const deferred = Array.isArray(input.deferredDimensions) ? input.deferredDimensions.slice(0, 8) : [];
+  if (deferred.length) {
+    lines.push('<deferred_decisions provenance="commander-observed">');
+    lines.push('The Commander has repeatedly answered "use your judgment" on these decision dimensions: '
+      + deferred.map(d => clip(d, 24)).join(', ') + '. Do NOT ask about them. Choose the most sensible reversible default and state it as a correctable assumption in brief_proceed.');
+    lines.push('</deferred_decisions>');
+  }
   const patterns = Array.isArray(input.patterns) ? input.patterns : [];
   if (patterns.length) {
     lines.push('<observed_task_patterns strength="weak; never override current instructions">');
