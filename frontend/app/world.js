@@ -3193,6 +3193,15 @@ const World = (() => {
   let renderFaults = 0;         // consecutive throwing frames
   let lastFaultMsg = '';        // de-dupe console spam: only log a NEW error message
   const RENDER_FAULT_LIMIT = 30;
+
+  /* The backdrop the station floats in — THE VOID by default, or whichever the commander picked
+     (SpaceBG owns the registry + the selection; StationUI's appearance section sets it). Base
+     fill included, so callers never pre-fill. `cam` lets finite-distance layers parallax; the
+     fallback exists because a missing SpaceBG must still leave a black stage, not a stale frame. */
+  function drawBackdrop(now, cam) {
+    if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now, cam);
+    else { ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height); }
+  }
   function frame(now) {
     if (running) raf = requestAnimationFrame(frame);   // schedule next frame FIRST — a throw below can't kill the loop
     try {
@@ -3248,11 +3257,12 @@ const World = (() => {
     tick(dt, now);
 
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
-    // THE VOID: deep-space backdrop (nebulas → dust field → twinkle bands), base fill included.
-    if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now);
-    else { ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height); }
-
-    if (!cache) return;   // wrapper frame() already scheduled the next rAF — never double-schedule here
+    if (!cache) {
+      // no bake yet — still paint the backdrop so the stage is never a blank rect. No camera to
+      // parallax against here (the settle block below is what resolves it), so pass none.
+      drawBackdrop(now, null);
+      return;   // wrapper frame() already scheduled the next rAF — never double-schedule here
+    }
     if (fitNeeded && !camAnim) { fitCamera(); fitNeeded = false; }   // the scripted awakening camera owns the transform while it runs
     cinecamTick(now);   // the idle auto-director: may cast/re-cast a 'cine' follow-lock (never touches a 'session' lock; inert while the Commander is active)
     if (camLock && !camAnim) {   // FOLLOW-LOCK: continuously trail the locked body (session select or the idle cinecam)
@@ -3271,6 +3281,13 @@ const World = (() => {
         scale = camLerp.scale; panX = camLerp.panX; panY = camLerp.panY; camLerp = null;
       }
     }
+    /* THE BACKDROP — what the station floats in (SpaceBG). Drawn AFTER the camera settle block
+       above so its parallax reads THIS frame's pan: sampling the camera before camAnim/camLock/
+       camLerp ran would leave every finite-distance layer a frame behind the station, which is
+       exactly the "picture behind a picture" tell the parallax exists to kill. Still screen
+       space, still under the identity transform, still first — nothing has drawn yet. */
+    drawBackdrop(now, { panX, panY, scale });
+
     ctx.setTransform(scale, 0, 0, scale, panX, panY); ctx.imageSmoothingEnabled = false;
 
     ctx.drawImage(cache.baseCv, 0, 0);

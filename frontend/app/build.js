@@ -1277,8 +1277,9 @@ const Build = (() => {
     const t = T();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    // THE VOID backdrop, shared with the live world (SpaceBG) so entering/exiting REFIT doesn't jump the sky
-    if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now);
+    // The backdrop, shared with the live world (SpaceBG) so entering/exiting REFIT doesn't jump the sky —
+    // same selection, same camera contract (REFIT's zoom is the world's `scale`), so the parallax matches too.
+    if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now, { panX, panY, scale: zoom });
     else { ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height); }
 
     ctx.setTransform(zoom, 0, 0, zoom, panX, panY);
