@@ -187,15 +187,15 @@ const BUILTIN_COMMANDS = Object.freeze([
   Object.freeze({
     name: 'reasoning',
     category: 'Configuration',
-    desc: 'show reasoning-mode support status',
-    argsHint: '[status]',
+    desc: 'show or set how hard the model thinks before answering',
+    argsHint: '[none|minimal|low|medium|high|xhigh]',
     action: 'reasoning'
   }),
   Object.freeze({
     name: 'fast',
     category: 'Configuration',
-    desc: 'show fast-mode support status',
-    argsHint: '[status]',
+    desc: 'drop reasoning effort to minimal for quicker, cheaper replies',
+    argsHint: '',
     action: 'fast'
   }),
   Object.freeze({

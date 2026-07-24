@@ -406,36 +406,34 @@
       "kind": "command",
       "area": "commands",
       "name": "/fast — show fast-mode support status",
-      "purpose": "Honestly report that there is no separate fast-mode runtime toggle and point the Commander to /model to switch to a cheaper/faster model.",
-      "promise": "Typing /fast prints the honest status ('no global toggle is active', current model), and any arg other than 'status' returns the guidance to use /model — it never claims a fast mode that does not exist.",
+      "purpose": "One-word shortcut to the fastest, cheapest setting, for users who will never think in terms of a reasoning dial.",
+      "promise": "Typing /fast drops reasoning effort to minimal through the SAME real dial /reasoning writes, confirms the before -> after levels, and names the command to restore the previous one. If effort is already minimal or none it says so and changes nothing. It never claims a \"fast mode\" as an independent switch, because StarNet has none.",
       "wiring": {
         "files": [
           "sidecar/slash.js",
-          "sidecar/index.js",
-          "frontend/app/chat.js"
+          "frontend/app/chat.js",
+          "frontend/app/app.js",
+          "frontend/app/harness.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/slash.test.js (fast in catalog; dispatch resolves)"
+          "ref": "test/slash.config.test.js (/fast writes reasoningEffort minimal via applyConfig; the dead placeholder string cannot return)"
         },
         {
-          "kind": "test",
-          "ref": "test/slash.palette.test.js (fastCommand mapped)"
+          "kind": "audit",
+          "ref": "live 2026-07-24 :9400 — /fast moved high -> minimal and the next /api/run body carried reasoningEffort \"minimal\"; a second /fast correctly reported already-fastest and wrote nothing"
         }
       ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "3d0ebc1d1732a2e0ae86a8d8fa772031ee8d3386",
-        "date": "2026-07-18T01:12:00.000Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). /fast → 'Fast mode: no global toggle is active. Current model: anthropic/claude-haiku-4.5.' — honest, never claims a fast mode that does not exist."
+      "notes": "Was a DEAD door: it advertised argsHint [status] and any other arg answered \"Fast mode is not a separate runtime toggle yet\". Grep confirmed no fast-mode toggle exists anywhere (\"fast\" appears only as a model TIER tag in specialty resolution), so rather than keep a command that could only ever say no, it now drives the reasoning dial that genuinely governs reply latency and cost. Re-audit owed: dropped from perfected because the implementation changed."
     },
     {
       "id": "command/goal",
@@ -810,36 +808,34 @@
       "kind": "command",
       "area": "commands",
       "name": "/reasoning — show reasoning-mode support status",
-      "purpose": "Honestly report that reasoning effort is controlled by the selected model (not a separate StarNet toggle) and show the context window.",
-      "promise": "Typing /reasoning prints that reasoning is controlled by the current model plus the context used/limit; a non-status arg returns the honest guidance to pick a reasoning-capable model — it never claims a toggle that does not exist.",
+      "purpose": "Let the Commander set how hard the model thinks before answering — the real per-provider reasoning dial the run payload already carried.",
+      "promise": "Typing /reasoning shows the current effort for the active provider; /reasoning <none|minimal|low|medium|high|xhigh> WRITES it through App.applyConfig, and the confirmation is printed only after the harness store reads the new value back. An unknown token is refused rather than silently normalized to medium. A model with no reasoning dial gets a warn-not-block note. The chosen level rides the next /api/run payload and persists across reload.",
       "wiring": {
         "files": [
           "sidecar/slash.js",
-          "sidecar/index.js",
-          "frontend/app/chat.js"
+          "frontend/app/chat.js",
+          "frontend/app/app.js",
+          "frontend/app/harness.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/slash.test.js (reasoning in catalog; dispatch resolves)"
+          "ref": "test/slash.config.test.js (applyConfig effort branch; read-back-before-claiming; unknown level refused; the old false claim cannot return)"
         },
         {
-          "kind": "test",
-          "ref": "test/slash.palette.test.js (reasoningCommand mapped)"
+          "kind": "audit",
+          "ref": "live 2026-07-24 :9400 — /reasoning high then /fast; captured /api/run bodies carried reasoningEffort \"xhigh\" then \"minimal\"; survived a full page reload on both the harness store and the agent"
         }
       ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "3d0ebc1d1732a2e0ae86a8d8fa772031ee8d3386",
-        "date": "2026-07-18T01:12:00.000Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). /reasoning → 'Reasoning: controlled by the selected model (anthropic/claude-haiku-4.5). Context window is still calibrating.' — honest, no fake toggle."
+      "notes": "Was a NOTE-ONLY placeholder: any non-status arg answered \"Reasoning effort is not a separate StarNet toggle yet\", which was false — Harness.get/setReasoningEffort, the model dock and the run payload all carried the dial already; the command simply never reached it. applyAgentConfig gained a reasoningEffort branch (it handled model/persona/approval but not effort). Re-audit owed: dropped from perfected because the implementation changed."
     },
     {
       "id": "command/reload-mcp",
