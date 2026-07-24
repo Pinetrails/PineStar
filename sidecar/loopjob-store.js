@@ -54,7 +54,7 @@
    THE CHECK CHANGES THE STATE MACHINE (S2). A red check is NOT an error and NOT a review item: the run
    succeeded, the work simply is not ready, so the iteration lands 'red' and its failure output is fed into the
    next iteration's prompt (loopjob.digest). Only a check the loop can PROVE was not rewritten counts as green
-   — see loopcheck.js. Two consequences worth stating plainly:
+   — see loopjob-check.js. Two consequences worth stating plainly:
      · exitOn:'check-green' completes the loop ('done') on a TRUSTED green only. An unprovable or tampered
        green stops for review and must never declare the objective met.
      · gate:'auto' ("full access to merge") does NOT auto-approve an iteration whose check mustReview. Full
@@ -153,7 +153,7 @@
          checkCmd is authored by the HUMAN at loop-creation time and is never editable by the model: it is not
          in the iteration prompt, not a tool argument, and the agent has no route to change it. The agent's job
          is to make the check pass; it has no say in what the check IS. That separation is the entire reason a
-         machine-checked exit condition can be trusted at all — see loopcheck.js for the other half (proving
+         machine-checked exit condition can be trusted at all — see loopjob-check.js for the other half (proving
          the agent did not simply rewrite the tests). */
       checkCmd: spec.checkCmd != null ? str(spec.checkCmd, 600) : null,
       checkTimeoutMs: Math.max(1000, Math.min(600000, parseInt(spec.checkTimeoutMs, 10) || 120000)),

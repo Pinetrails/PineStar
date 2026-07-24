@@ -117,6 +117,7 @@ const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tic
 const loopjob = require('./loopjob.js');                   // LOOPS: pure gate + ledger digest for standing objectives
 const loopjobStore = require('./loopjob-store.js');        // LOOPS: pure LoopJob lifecycle reducer (iterations, verdicts)
 const { makeLoopDriver } = require('./loopjob-driver.js'); // LOOPS: the verdict-triggered tick driver
+const loopcheck = require('./loopjob-check.js');           // LOOPS: pure host-check verdict + tamper guard
 const nightshift = require('./nightshift.js');            // NS-1: pure planner for the server-owned night-shift driver
 const { makeNightshiftDriver } = require('./nightshift-driver.js'); // NS-1: the restart-safe idle-autonomy tick driver
 const contextpack = require('./contextpack.js');          // NS-2: pure recency-weighted context pack for the propose step
@@ -166,7 +167,7 @@ const skillCurator = require('./skillcurator.js');          // skill lifecycle/c
 const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
 const Recipes = require('../frontend/app/recipes.js');     // built-in mission recipes, also exposed as slash commands
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
-const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
+const { makeShellTool, runCommand: shellRunCommand } = require('./tools/builtin/shell.js');   // the workbench capability: shell.exec (+ the shared spawn primitive the LOOP host-check reuses verbatim)
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
 const { makeProcLedger } = require('./procledger.js');              // persistent child-PID ledger — boot sweep reaps force-kill orphans
 const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
@@ -4074,6 +4075,74 @@ function loopPrecheck(loop) {
   } catch (e) { return { ok: false, reason: 'precheck error: ' + ((e && e.message) || e) }; }
 }
 
+/* ---- THE HOST-RUN CHECK (S2). This is the only place in the product that executes a NON-git command at a
+   blessed project root, and the trust story is what makes that defensible:
+
+     · the command is authored by the HUMAN when they create the loop (POST /api/loops `checkCmd`);
+     · it is never placed in the iteration prompt, never exposed as a tool, and no model can read or edit it;
+     · it only ever runs at a root that `isBlessedRoot` still approves, re-checked every single iteration;
+     · the agent's own `verify.run` tool stays jailed exactly as it was — this is a separate, host-side gate.
+
+   The agent's job is to make the check pass. It has no say in what the check IS. Everything about whether a
+   pass can be BELIEVED lives in the pure loopcheck.js. ---- */
+const LOOP_CHECK_MAX_BYTES = 64000;
+
+// the changed-file list at a blessed root, and whether we could establish it at all. `gitProven:false` is not
+// an error — it is the honest "we cannot enumerate what changed here", which loopcheck treats as unsafe.
+async function loopChangedFiles(root) {
+  try {
+    const r = await runGit(root, ['status', '--porcelain'], 15000);
+    if (!r.ok) return { gitProven: false, files: [] };
+    return { gitProven: true, files: loopcheck.parseChangedFiles(r.stdout) };
+  } catch (_) { return { gitProven: false, files: [] }; }
+}
+
+/* runLoopCheck — run the loop's human-authored check at its blessed root and judge the result.
+   `before` is the pre-iteration changed-file snapshot, so the paths attributed to THIS iteration are the ones
+   that appeared during it — not every uncommitted edit left by earlier iterations. */
+async function runLoopCheck(loop, before) {
+  if (!loop || !loop.checkCmd || !loop.workdir) return loopcheck.verdict({ result: null });
+  // RE-CHECK THE BLESSING EVERY ITERATION. A root blessed yesterday may have been revoked since, and a loop
+  // grinding unattended is exactly the case where a stale grant would go unnoticed.
+  if (!isBlessedRoot(loop.workdir)) {
+    return Object.assign(loopcheck.verdict({ result: { exitCode: 1, out: '' } }), {
+      mustReview: true, note: 'the project folder is no longer a blessed root — the check was NOT run'
+    });
+  }
+  const res = await shellRunCommand({
+    spawn: childSpawn, cmd: loop.checkCmd, cwd: loop.workdir,
+    timeoutMs: loop.checkTimeoutMs || 120000, maxBytes: LOOP_CHECK_MAX_BYTES,
+    clock: { now: () => Date.now() }, isWin: process.platform === 'win32'
+  });
+  const after = await loopChangedFiles(loop.workdir);
+  /* TRUST IS THE FULL UNCOMMITTED STATE, NOT THIS ITERATION'S DELTA.
+
+     The first version of this diffed after-minus-before, so it only flagged check files THIS iteration
+     touched. A live walk caught the hole: anything modified between iterations (or already dirty when the
+     loop started) was attributed to "pre-existing" and never flagged again — so a tampered test file only had
+     to survive one settlement to become invisible, and a loop started on an already-weakened tree would trust
+     every green it ever saw.
+
+     The question that decides trust is not "who changed the tests" but "are the tests currently in a state
+     git has not recorded". So the verdict reads the WHOLE dirty set. `before` is kept only to say whether
+     this iteration introduced it, which is a message detail, never the trust decision. */
+  const beforeSet = new Set((before && before.files) || []);
+  const introduced = after.files.filter(f => !beforeSet.has(f));
+  const v = loopcheck.verdict({
+    result: res,
+    changed: after.files,
+    gitProven: after.gitProven,
+    extraPaths: loop.checkPaths
+  });
+  if (v.tampered) {
+    const fresh = v.tamperedPaths.filter(p => introduced.indexOf(p) >= 0);
+    v.note = v.note + (fresh.length
+      ? ' (this iteration changed ' + fresh.length + ' of them)'
+      : ' (already modified before this iteration — commit or revert them so the loop can vouch for a pass)');
+  }
+  return v;
+}
+
 /* the LOOP tick driver — pure orchestration, every ambient dep injected here. Deliberately reuses the cron
    credential/identity/station resolvers: a loop iteration is the same kind of unattended run a routine fires,
    so it must resolve provider, key and station identically or the two paths would drift. */
@@ -4111,6 +4180,9 @@ const loopDriver = makeLoopDriver({
   defaultModel: CRON_DEFAULT_MODEL,
   maxParallel: LOOP_MAX_PARALLEL,
   maxRunMs: LOOP_MAX_RUN_MS,
+  // the pre-iteration changed-file snapshot, so the check attributes files to THIS iteration only.
+  snapshot: (loop) => (loop && loop.workdir && loop.checkCmd) ? loopChangedFiles(loop.workdir) : Promise.resolve(null),
+  check: (loop, ctx) => runLoopCheck(loop, ctx && ctx.before),
   ledger: (entry) => { try { autonomyLedger.record(entry); } catch (_) {} },
   // VISIBILITY: forward each iteration's run events to the floor through the SAME redacted egress the routed
   // and scheduled lanes use (runTeeView: tool_call name-only, tool_result outcome-only, metadata whole,
@@ -4200,6 +4272,9 @@ function handleLoopsCreate(req, res) {
     // project it cannot touch, and the first iteration would fail for a reason the Commander never saw.
     const workdir = body.workdir != null ? String(body.workdir) : null;
     if (workdir) { try { if (!fs.statSync(workdir).isDirectory()) return json(400, { error: 'not a folder: ' + workdir }); } catch (e) { return json(400, { error: 'that folder does not exist: ' + workdir }); } }
+    // A check needs somewhere to run. Accepting a checkCmd with no workdir would create a loop whose stated
+    // exit condition could never be evaluated — a promise the harness cannot keep.
+    if (body.checkCmd && !workdir) return json(400, { error: 'a check command needs a project folder — set workdir' });
     const id = crypto.randomUUID();
     try {
       loopJobs = loopjobStore.createLoop(loopJobs, {
@@ -4207,6 +4282,11 @@ function handleLoopsCreate(req, res) {
         agentId: agentId, model: body.model, provider: provider,
         gate: body.gate, queueCap: body.queueCap, maxIterations: body.maxIterations,
         dryStopAfter: body.dryStopAfter, workdir: workdir,
+        // S2 — the human-authored host-run check. This is the ONLY moment `checkCmd` is ever accepted from
+        // outside: it arrives on an interactive, token-guarded create, is frozen onto the record, and from
+        // then on nothing the model does can reach it.
+        checkCmd: body.checkCmd, checkTimeoutMs: body.checkTimeoutMs, checkPaths: body.checkPaths,
+        exitOn: body.exitOn, redStopAfter: body.redStopAfter,
         perDayUsd: body.perDayUsd, perIterationUsd: body.perIterationUsd, meta: body.meta
       }, { id: id, now: Date.now() });
       saveLoops();

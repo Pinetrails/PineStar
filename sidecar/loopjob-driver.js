@@ -112,6 +112,15 @@
     // how often a live iteration persists its liveness heartbeat. Throttled so the token path never writes.
     const heartbeatMs = deps.heartbeatMs != null ? deps.heartbeatMs : DEFAULT_HEARTBEAT_MS;
     const tee = isFn(deps.tee) ? deps.tee : null;
+    /* THE HOST-RUN CHECK (S2). Two hooks, both optional — a loop with no check behaves exactly as before.
+         snapshot(loop) -> Promise<any>   taken BEFORE the iteration runs, so the check can attribute changed
+                                          files to THIS iteration rather than to everything uncommitted.
+         check(loop, { iterN, before }) -> Promise<Verdict>
+       The verdict rides into settleIteration as result.check, where a red lands 'red' (feeds forward) and only
+       a TRUSTED green may complete the objective. Deliberately NOT the model's business: the check command
+       never enters the prompt and no tool can reach it. */
+    const snapshot = isFn(deps.snapshot) ? deps.snapshot : null;
+    const check = isFn(deps.check) ? deps.check : null;
 
     // loopId -> { runId, abort, startedAt }. In-memory only; the DURABLE half is the fire-claim on the record,
     // which is what survives a restart. Both are consulted by the gate.
@@ -188,6 +197,10 @@
       const iterN = fresh.iterationCount;
       const ac = newAbort();
       leases.set(loop.id, { runId: runId, abort: ac, startedAt: nowMs, beatAt: nowMs });
+      // take the pre-iteration snapshot NOW (before any work), so the check can tell what THIS iteration
+      // changed rather than inheriting every uncommitted edit from earlier iterations. A snapshot failure is
+      // not fatal — it degrades the verdict to "cannot prove", which loopcheck already treats as unsafe.
+      const beforeP = snapshot ? Promise.resolve().then(() => snapshot(fresh)).catch(() => null) : Promise.resolve(null);
 
       /* the per-run EMIT SINK, mirroring cron-driver's. It does three load-bearing jobs:
 
@@ -266,12 +279,19 @@
             if (state.errMsg) return settle(loop.id, runId, { status: 'error', error: state.errMsg });
             // hand the harvest the run result WITH the streamed text folded in (runOnce doesn't carry it).
             const withText = Object.assign({}, res || {}, { text: (res && res.text) || state.buf });
-            return Promise.resolve().then(() => harvest(fresh, withText, iterN)).then(
-              (h) => settle(loop.id, runId, Object.assign({ status: 'ok' }, h || {})),
+            // RUN THE CHECK between the work and the settlement. A check that THROWS is not a pass and not a
+            // silent skip — it becomes an explicit un-trusted verdict, because "we could not verify" must never
+            // read as "verified fine".
+            const checkP = check
+              ? beforeP.then(before => check(fresh, { iterN: iterN, before: before }))
+                .catch(e => ({ ran: true, passed: false, trusted: false, mustReview: true, tampered: false, tamperedPaths: [], gitProven: false, summary: '', note: 'the check could not be run — ' + ((e && e.message) || e) }))
+              : Promise.resolve(null);
+            return checkP.then(verdict => Promise.resolve().then(() => harvest(fresh, withText, iterN)).then(
+              (h) => settle(loop.id, runId, Object.assign({ status: 'ok', check: verdict }, h || {})),
               // a harvest failure (e.g. git refused the commit) is a REAL iteration failure, not a silent
               // success: the work did not land, so the loop must not park a candidate the Commander cannot act on.
               (e) => settle(loop.id, runId, { status: 'error', error: 'harvest: ' + ((e && e.message) || 'failed') })
-            );
+            ));
           },
           (e) => settle(loop.id, runId, {
             status: 'error',

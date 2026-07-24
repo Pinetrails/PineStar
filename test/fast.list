@@ -299,7 +299,7 @@ test/cron.dst.test.js
 test/cron.durability.test.js
 test/cron.lock.test.js
 test/loopjob.test.js
-test/loopcheck.test.js
+test/loopjob-check.test.js
 test/loopjob-driver.test.js
 test/cron.oneshot.test.js
 test/cron.run-now.test.js

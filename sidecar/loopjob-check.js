@@ -1,4 +1,4 @@
-/* sidecar/loopcheck.js — the PURE verdict core for a LOOP's host-run check (standing objectives, S2).
+/* sidecar/loopjob-check.js — the PURE verdict core for a LOOP's host-run check (standing objectives, S2).
 
    THE POINT. An open-ended loop ends when the model says it is done — which is the single thing models are
    worst at, because they are trained to be helpful and will invent work rather than concede. A BUILD·TEST·VERIFY

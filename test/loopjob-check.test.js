@@ -9,7 +9,7 @@
    modified. Unprovable is treated exactly like unsafe. */
 'use strict';
 const A = require('./_assert.js');
-const LC = require('../sidecar/loopcheck.js');
+const LC = require('../sidecar/loopjob-check.js');
 
 const green = { exitCode: 0, out: '42 passing' };
 const red = { exitCode: 1, out: '2 failing\n40 passing' };
