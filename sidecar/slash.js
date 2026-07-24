@@ -54,8 +54,9 @@ const BUILTIN_COMMANDS = Object.freeze([
   Object.freeze({
     name: 'usage',
     category: 'Info',
-    desc: 'show token and spend totals',
-    action: 'usage'
+    desc: 'show real spend from the station ledger',
+    action: 'usage',
+    dispatch: 'server'
   }),
   Object.freeze({
     name: 'queue',
@@ -207,8 +208,9 @@ const BUILTIN_COMMANDS = Object.freeze([
   Object.freeze({
     name: 'tools',
     category: 'Tools',
-    desc: 'show tools granted by the workstation',
-    action: 'tools'
+    desc: 'show the tools this agent can actually call',
+    action: 'tools',
+    dispatch: 'server'
   }),
   Object.freeze({
     name: 'skills',

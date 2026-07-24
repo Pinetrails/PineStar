@@ -7732,6 +7732,38 @@ const slashActions = slashActionsMod.makeSlashActions({
       catch (e) { return { ok: false, error: (e && e.message) || 'the shift threw' }; }
       return Object.assign({ ok: true }, r || {});
     }
+  },
+  // The SAME rows handleToolsetsList serves the TOOLSETS console: families derived from CAP_REGISTRY, with the
+  // persisted enable-state and the live floor layered on. /tools reads this instead of a hardcoded literal, so
+  // it can never name a tool the registry does not grant, nor advertise a family whose switch is OFF.
+  tools: {
+    rows: (placedTypes) => {
+      const placedSet = {}; for (const t of (placedTypes || [])) placedSet[t] = true;
+      return toolsetRows(CAP_REGISTRY).map(r => ({
+        id: r.id, label: r.label, object: r.object, tools: r.tools,
+        enabled: toolsetDisabled[r.id] !== false,
+        placed: !!(r.object && placedSet[r.object]),
+        consentGated: r.consentGated
+      }));
+    },
+    spotifyConnected: async () => { try { const st = await spotifyStore.status(); return !!(st && st.connected); } catch (_) { return null; } }
+  },
+  // The durable spend ledger — the same one the budget caps enforce against, and the same reads
+  // handleBudgetStatus serves. It counts EVERY run (cron, away, night shift, channels), which is exactly what
+  // the browser-side counter could not see.
+  budget: {
+    snapshot: async (agentId) => {
+      const t = Date.now();
+      return {
+        ok: true,
+        today: ledger.usdForDay(t),
+        lifetime: ledger.totalUsd(),
+        runs: ledger.count(),
+        tokens: ledger.all().reduce((s, r) => s + (Number(r && r.tokens) || 0), 0),
+        agentUsd: ledger.usdForAgent(agentId),
+        caps: { perRun: effectiveCaps.perRun, perAgent: effectiveCaps.perAgent, perDay: effectiveCaps.perDay, global: effectiveCaps.global }
+      };
+    }
   }
 });
 
@@ -7742,9 +7774,15 @@ async function handleSlashDispatch(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad json' }); }
   const input = body.input != null ? body.input : ('/' + String(body.command || ''));
-  const out = slash.dispatch(input, slashOptions(placedTypesFrom(body.placed)));
+  const placed = placedTypesFrom(body.placed);
+  const out = slash.dispatch(input, slashOptions(placed));
   if (out.ok && out.directive && out.directive.type === 'server') {
-    const ctx = { agentId: /^[A-Za-z0-9_-]{1,40}$/.test(String(body.agentId || '')) ? String(body.agentId) : 'agent' };
+    // `placed` rides the ctx too: /tools answers "what can THIS agent call", which depends on the props on its
+    // floor — the browser is the only one that knows the live floor, so it must travel with the dispatch.
+    const ctx = {
+      agentId: /^[A-Za-z0-9_-]{1,40}$/.test(String(body.agentId || '')) ? String(body.agentId) : 'agent',
+      placed: placed
+    };
     const r = await slashActions.run(out.directive.action, out.directive.args, ctx);
     // A refusal is still a 200: the command RAN and produced an honest answer ("no such routine"). Only an
     // unknown action is a 404 — the browser must be able to tell "it said no" from "it never executed".
