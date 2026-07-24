@@ -5544,7 +5544,8 @@ const World = (() => {
     U.bus.on('channel.inbound', p => {
       const dish = capPropFor('dish', p && p.agentId);
       if (dish && PropSprites.pulseProp) PropSprites.pulseProp(dish.id, 'dish');
-      hudNote('📡 message received — ' + String((p && p.channel) || 'channel').toUpperCase(), 'good');
+      // channel may be an instance id ('telegram:<botId>' — multi-bot); the HUD names the PLATFORM, not internals.
+      hudNote('📡 message received — ' + String((p && p.channel) || 'channel').split(':')[0].toUpperCase(), 'good');
     });
     // G0.6 CHANNEL REPLY MADE VISIBLE: the outbound side of the same on-ramp. hub.js emits channel.delivery
     // { channel, chatId, runId, ok, chunks, reason, agentId? } on every reply-send. Mirror the inbound copy
@@ -5569,7 +5570,7 @@ const World = (() => {
         dish = capPropFor('dish', null);   // legacy/command send (no attribution): any dish, single-agent floor
       }
       if (dish && PropSprites.pulseProp) PropSprites.pulseProp(dish.id, 'dish');
-      hudNote('📤 reply sent · ' + String(p.channel || 'channel').toLowerCase(), 'good');
+      hudNote('📤 reply sent · ' + String(p.channel || 'channel').split(':')[0].toLowerCase(), 'good');   // instance ids ('telegram:<botId>') stay internal
     });
     // EL-11 #11 CHANNEL TROUBLE MADE VISIBLE: transport health (channel.connect) used to be seen ONLY inside the open
     // CHANNELS panel. A drop/fatal-token that happens while you're anywhere else in the station now surfaces a single
@@ -5579,7 +5580,9 @@ const World = (() => {
       if (!p || !p.channel) return;
       const state = String(p.state || '').toLowerCase();
       if (state !== 'down' && state !== 'error') return;   // healthy reconnects are not alarms
-      const name = String(p.channel).toUpperCase();
+      // 'telegram:<botId>' (an agent-bound bot instance) reads as 'TELEGRAM BOT' — platform truth without leaking ids.
+      const raw = String(p.channel);
+      const name = raw.indexOf(':') >= 0 ? (raw.split(':')[0].toUpperCase() + ' BOT') : raw.toUpperCase();
       const why = p.detail ? ' — ' + String(p.detail) : '';
       hudNote((state === 'error' ? '⚠ ' + name + ' sign-in/token error' : '⚠ ' + name + ' connection down') + why, 'bad');
     });

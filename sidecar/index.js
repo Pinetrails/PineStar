@@ -6246,6 +6246,9 @@ function handleStateSnapshot(req, res) {
     }
   };
   try { addHubRuns(telegram && telegram.hub, 'telegram'); } catch (_) {}
+  // multi-bot telegram: each agent-bound bot has its OWN hub/inflight — list their live runs too, or an SSE
+  // reconnect mid-run would clear that agent's floor/HUD state (same reason as the generic channels below).
+  try { for (const w of telegramBots.values()) addHubRuns(w && w.hub, 'telegram'); } catch (_) {}
   try { addHubRuns(discord && discord.hub, 'discord'); } catch (_) {}
   // generic channels (slack/matrix/signal) run through the SAME hub shape — list their live runs too, or a
   // reconnect would wipe a live Slack/Matrix/Signal run's floor/HUD state that E-STOP can still see and kill.
