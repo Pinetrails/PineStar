@@ -832,7 +832,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .choice.quiet:disabled { cursor: default; opacity: 0.7; }
 /* TASK BRIEF — the host-validated recommended default on a task question: gold-marked so one tap accepts
    the suggestion. Rendered ONLY when the durable brief carries a REAL recommendation (the brief_ask path);
-   marker-path questions have none and stay plain chips. Accent via --gold-rgb, never a literal amber. */
+   marker-path questions carry no MODEL recommendation and stay plain chips there — but they may still wear a
+   GROUNDED chip, which is derived from the Commander's own answered history rather than from the unvalidated
+   question, so it cannot be fabricated. Accent via --gold-rgb, never a literal amber. */
 .choice.suggested { color: var(--gold); border-color: var(--gold); text-shadow: 0 0 5px rgba(var(--gold-rgb), .45); }
 .choice.suggested:hover, .choice.suggested:focus-visible {
   color: var(--gold); border-color: var(--gold); background: rgba(var(--gold-rgb), .08);
@@ -886,6 +888,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .tb-read-assump:hover, .tb-read-assump:focus-visible {
   color: var(--ph-bright); border-color: var(--ph); border-style: solid; background: var(--ph-faint); outline: none;
 }
+/* a retired card (correction already folded in, or the run ended): the chips must stop advertising an action
+   they can no longer perform — the input they wrote into is gone. */
+.tb-read-assump:disabled { opacity: .45; cursor: default; }
+.tb-read-assump:disabled:hover { color: var(--ph); border-color: var(--ph-dim); border-style: dashed; background: transparent; }
 .tb-read-fix { margin-top: 7px; }
 /* SPECIFICITY, not preference: the base field rule is `input:not([type])` (0,1,1) and this input carries no
    type attribute, so a bare `.tb-read-in` (0,1,0) LOSES — the correction box silently rendered at the 19px

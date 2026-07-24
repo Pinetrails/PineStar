@@ -2902,12 +2902,18 @@ const Chat = (() => {
                     // row would be wiped by choices() below anyway, and a stuck activeNudge would mute beats forever
     pendingTaskQuestion = Object.assign({}, tq, { streamId: activeWs && activeWs.id });
     // TWO KINDS of suggestion, and they must never be confused. GROUNDED comes from the Commander's own
-    // answered history (taskBriefStore.groundedFor: same question, same option, >=2 times) — provable, so it
-    // outranks the model's assertion and states its count. The model's brief_ask recommendation is a guess
-    // with a rationale; it stands only when nothing was actually observed. A marker-path question has
-    // neither, so rec resolves empty and this renders plain chips.
+    // answered history (taskBriefStore.groundedFor: same question, same option, >=2 times, no tie) — provable,
+    // so it outranks the model's assertion and states its count. The model's brief_ask recommendation is a
+    // guess with a rationale; it stands only when nothing was actually observed.
+    // NOTE: a marker-path question stores no `recommended`, but it CAN still carry a grounded suggestion —
+    // that one is derived from the Commander's answers, not from the unvalidated question, so it stays honest.
+    // Only the model's own guess is gated on the validated path.
     const g = (tq.grounded && tq.grounded.option && Number(tq.grounded.count) >= 2) ? tq.grounded : null;
-    const rec = String((g && g.option) || tq.recommended || '').trim().toLowerCase();
+    const has = v => !!v && tq.options.some(o => o.toLowerCase() === String(v).trim().toLowerCase());
+    // Fall back to the model's guess if the grounded option is not among the rendered choices (stale history,
+    // edited options) — otherwise a mismatch would silently cost BOTH the chip and the model's rationale.
+    const rec = String((has(g && g.option) ? g.option : tq.recommended) || '').trim().toLowerCase();
+    const useGrounded = !!(g && has(g.option));
     const items = tq.options.map(o => {
       const suggested = !!(rec && o.toLowerCase() === rec);
       return { label: suggested ? '★ ' + o : o, value: o, suggested };
@@ -2916,11 +2922,11 @@ const Chat = (() => {
     const q = row('agent'); q.d.classList.add('nudge');
     q.body.textContent = '⌖ ' + tq.question;
     const marked = items.some(it => it.suggested);
-    const why = (rec && marked) ? (g
+    const why = (rec && marked) ? (useGrounded
       ? '★ suggested: ' + g.option + ' — you chose this ' + g.count + ' times before'
       : (String(tq.reason || '').trim() ? '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim() : '')) : '';
     if (why) {
-      const el = document.createElement('div'); el.className = 'tq-reason' + (g ? ' grounded' : '');
+      const el = document.createElement('div'); el.className = 'tq-reason' + (useGrounded ? ' grounded' : '');
       el.textContent = why;
       q.body.appendChild(el);
     }
@@ -2928,8 +2934,10 @@ const Chat = (() => {
     // a question is pending, free text routes through TaskIntent.routeReply and is stored verbatim as the
     // answer. So "both operators and executives" already worked — nothing said so. This is the same escape
     // hatch the channels spell out in text, and it covers "more than one" and "none of these" alike.
+    // Worded without a direction: this line sits ABOVE the chip row (choices() appends that to the log after
+    // this body), so "below" would have pointed at the composer past the very options it is an alternative to.
     const hint = document.createElement('div'); hint.className = 'tq-hint';
-    hint.textContent = 'or just type your answer below — more than one is fine';
+    hint.textContent = 'or ignore these and type your own answer — more than one is fine';
     q.body.appendChild(hint);
     autoscroll();
     choices(items, item => {
@@ -2988,6 +2996,7 @@ const Chat = (() => {
     const line = document.createElement('div'); line.className = 'tb-read-fix';
     const input = document.createElement('input'); input.className = 'tb-read-in';
     input.placeholder = 'correct anything — it folds straight into the run';
+    const chips = [];
     const asum = (Array.isArray(p.assumptions) ? p.assumptions : []).filter(Boolean);
     if (asum.length) {
       // The chips carried no affordance copy — a dim '~ …' row reads as decoration, not as "tap this to argue".
@@ -2999,13 +3008,19 @@ const Chat = (() => {
         const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'tb-read-assump'; chip.textContent = a;
         chip.onclick = () => { input.value = 'Not "' + a + '" — '; input.focus(); };   // tap = start the correction; the user's own words ARE the taste signal
         wrap.appendChild(chip);
+        chips.push(chip);
       }
       r.body.appendChild(wrap);
     }
+    // Once the card can no longer steer, the chips must stop LOOKING like they can. They live on r.body while
+    // the input lives on `line`, so replacing the line's contents used to detach the input and leave every chip
+    // still lit — tapping one then wrote into a detached node and focused nothing, a promise the copy made
+    // ("tap to correct") and the card silently broke.
+    const retire = () => { for (const c of chips) { c.disabled = true; c.title = 'this read is closed — say it in chat instead'; } };
     const send = () => {
       const text = input.value.trim(); if (!text) return;
       const rid = (typeof Channels !== 'undefined' && Channels.runIdOf) ? Channels.runIdOf(ws.id) : null;
-      if (!rid) { input.value = ''; input.placeholder = 'run already finished — say it in chat instead'; return; }
+      if (!rid) { input.value = ''; input.placeholder = 'run already finished — say it in chat instead'; retire(); return; }
       fetch('/api/run/steer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId: rid, text: text }) })
         .then(res => res.ok ? res.json() : null)
         .then(d => {
@@ -3014,6 +3029,7 @@ const Chat = (() => {
           const tag = document.createElement('span'); tag.className = 'tb-read-ack' + (ok ? '' : ' err');
           tag.textContent = ok ? '✔ folded into the run — ' + text : '✕ the run already ended — say it in chat instead';
           line.appendChild(tag);
+          retire();
         })
         .catch(() => { input.placeholder = 'could not reach the run — say it in chat'; });
     };
@@ -3026,7 +3042,9 @@ const Chat = (() => {
   // TASK BRIEF v2: enrich a run-end marker question with the durable brief's host-validated recommendation
   // before rendering the chips. Safe ordering: the sidecar persists the question BEFORE it emits the buffered
   // task run-end, so one fetch here always sees the stored row. Fail-open on every path — offline sidecar,
-  // mismatched text, or a marker-path question (no recommendation stored) renders exactly the plain chips.
+  // mismatched text, or a marker-path question (no MODEL recommendation stored) renders exactly the plain
+  // chips — though a marker question may still carry a grounded suggestion, which comes from the Commander's
+  // own answered history rather than from the unvalidated question.
   async function presentTaskQuestion(ws, tq) {
     let recommended = '', reason = '', grounded = null;
     try {

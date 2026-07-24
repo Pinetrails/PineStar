@@ -97,29 +97,59 @@
   const TASK_LINE = /^\s*TASK_QUESTION:\s*(.+?)\s*\|\|\s*(.+?)\s*$/mi;
   const TASK_Q_CHARS = 240, TASK_OPT_CHARS = 72, TASK_MAX_OPTS = 3;
   function taskClean(s, max) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, max); }
-  // ONE canonical loosening for comparing options to each other and to a recommendation, shared by this
-  // browser-side parse and the host policy (taskbrief-policy) so the two option producers can never drift on
-  // what counts as "the same option". Case, padding, quotes, trailing punctuation and a leading article are
-  // all noise: "operators", "operators." and "the operators" are one choice presented three times, and
-  // offering them as three chips makes the decision look richer than it is.
+  // Normalizers shared by this browser-side parse and the host policy (taskbrief-policy), so the two option
+  // producers can never drift on what counts as "the same option". There are deliberately TWO strengths:
+  //
+  //   taskLoosen  — for MATCHING a recommendation/answer to an option. Strips case, padding, quotes, trailing
+  //                 punctuation and a leading article or list enumerator ("A.", "2)"), all of which are pure
+  //                 formatting noise around an otherwise identical choice.
+  //   taskSameOption — for DEDUPING one option against another. Strips strictly less: only a leading "the".
+  //                 "the doc" vs "a doc" is update-the-existing vs make-a-new-one, a real distinction, and
+  //                 folding them collapsed genuine alternatives and then rejected the question as "not a
+  //                 decision" — whereas "operators" vs "the operators" is one choice written twice. Dropping
+  //                 only the definite article separates those two cases. When in doubt this errs toward
+  //                 KEEPING both: a slightly redundant chip is a blemish, destroying a real alternative is a bug.
+  //
+  // Neither does substring matching: containment inverts negation ("not dark" contains "dark").
   const TASK_QUOTES = /[‘’“”'"`]/g;
-  function taskLoosen(v) {
+  const TASK_ENUM = /^(?:[a-z]|\d{1,2})\s*[.):]\s+/;   // "A. ", "2) ", "iii: " style list markers
+  function taskTrim(v) {
     return String(v == null ? '' : v).toLowerCase().replace(TASK_QUOTES, '')
-      .replace(/[\s.,;:!?)\]]+$/, '').replace(/^[\s([]+/, '').replace(/^(?:a|an|the)\s+/, '')
-      .replace(/\s+/g, ' ').trim();
+      .replace(/[\s.,;:!?)\]]+$/, '').replace(/^[\s([]+/, '').replace(/\s+/g, ' ').trim();
   }
+  function taskLoosen(v) {
+    return taskTrim(v).replace(TASK_ENUM, '').replace(/^(?:a|an|the)\s+/, '').trim();
+  }
+  function taskDedupeKey(v) { return taskTrim(v).replace(/^the\s+/, '').trim(); }
+  function taskSameOption(a, b) { const k = taskDedupeKey(a); return !!k && k === taskDedupeKey(b); }
   function taskDedupeOptions(list) {
-    return (Array.isArray(list) ? list : [])
-      .map(function (x) { return taskClean(x, TASK_OPT_CHARS); })
-      .filter(function (x) { return taskLoosen(x); })            // a punctuation-only "option" is not a choice
-      .filter(function (x, i, a) { return a.findIndex(function (y) { return taskLoosen(y) === taskLoosen(x); }) === i; })
-      .slice(0, TASK_MAX_OPTS);
+    // Cap BEFORE the O(n^2) pairwise compare: `options` is model-controlled and the wire schema declares no
+    // maxItems, so a 4000-entry array used to block the single-process sidecar for seconds. Only the first
+    // few can ever be offered anyway, so scan a small bounded window and stop.
+    const seen = [];
+    const src = Array.isArray(list) ? list.slice(0, 32) : [];
+    for (let i = 0; i < src.length && seen.length < TASK_MAX_OPTS; i++) {
+      const x = taskClean(src[i], TASK_OPT_CHARS);
+      if (!taskTrim(x)) continue;                                  // a punctuation-only "option" is not a choice
+      let dup = false;
+      for (let j = 0; j < seen.length; j++) if (taskSameOption(seen[j], x)) { dup = true; break; }
+      if (!dup) seen.push(x);
+    }
+    return seen;
   }
   function taskParse(text) {
     const m = TASK_LINE.exec(String(text == null ? '' : text));
     if (!m) return null;
     const question = taskClean(m[1], TASK_Q_CHARS);
-    const options = taskDedupeOptions(m[2].split('|'));
+    // The marker is the LAST-RESORT path — taken by exactly the models that format badly, and unlike brief_ask
+    // it has no retry loop. Returning null here does not mean "fail closed": upstream it means "no question was
+    // asked", so the brief completes as done and the raw `TASK_QUESTION: …` line leaks into the transcript and
+    // out to channels. So dedupe is best-effort: if it would leave fewer than two choices, keep the raw list
+    // rather than destroy a recoverable question.
+    const deduped = taskDedupeOptions(m[2].split('|'));
+    const options = deduped.length >= 2
+      ? deduped
+      : m[2].split('|').map(x => taskClean(x, TASK_OPT_CHARS)).filter(Boolean).slice(0, TASK_MAX_OPTS);
     return question && options.length >= 2 ? { question, options } : null;
   }
   function taskStrip(text) {
@@ -159,7 +189,7 @@
   }
   const TaskIntent = {
     parse: taskParse, strip: taskStrip, directive: taskDirective, answerMessage: taskAnswerMessage, routeReply: taskRouteReply,
-    loosen: taskLoosen, dedupeOptions: taskDedupeOptions,
+    loosen: taskLoosen, dedupeOptions: taskDedupeOptions, sameOption: taskSameOption,
     MAX_QUESTION: TASK_Q_CHARS, MAX_OPTION: TASK_OPT_CHARS, MAX_OPTIONS: TASK_MAX_OPTS
   };
 

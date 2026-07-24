@@ -68,6 +68,15 @@ A.eq(Policy.validateQuestion(material({ recommended: 'not listed' }), { question
   A.eq(Policy.matchOption(['ship it', 'do not ship it'], 'ship'), '', 'an ambiguous substring matching two options fails closed');
   A.eq(Policy.matchOption(['ship it', 'do not ship it'], 'do not ship it.'), 'do not ship it', 'negation is never collapsed into its opposite');
   A.eq(Policy.matchOption(['A. keep it', 'B. drop it'], 'keep it'), 'A. keep it', 'an enumerator prefix still resolves uniquely');
+  A.eq(Policy.matchOption(['2) ship', '3) hold'], 'ship'), '2) ship', 'a numeric enumerator resolves too');
+  // NEGATION INVERSION (caught in review 2026-07-24). A substring tier used to rescue enumerators, but the
+  // negated option CONTAINS the positive one, so every one of these resolved to the exact opposite of intent
+  // and the uniqueness guard could not help — exactly one option matched, it was just the wrong one.
+  A.eq(Policy.matchOption(['publish', 'do not publish'], "don't publish"), '', 'a contracted negation never resolves to its opposite');
+  A.eq(Policy.matchOption(['include tests', 'skip tests'], 'do not include tests'), '', 'a spelled-out negation never resolves to its opposite');
+  A.eq(Policy.matchOption(['dark', 'light'], 'not dark'), '', '"not dark" is not a vote for dark');
+  A.eq(Policy.matchOption(['operators', 'executives'], 'anyone but operators'), '', 'an exclusion never resolves to the excluded option');
+  A.eq(Policy.matchOption(['operators', 'executives'], 'definitely not operators'), '', 'an emphatic exclusion never resolves to the excluded option');
 }
 
 // NEAR-DUPLICATE OPTIONS — "operators", "operators." and "the operators" are ONE choice offered three times.
@@ -77,12 +86,25 @@ A.eq(Policy.validateQuestion(material({ recommended: 'not listed' }), { question
   A.eq(ask(['operators', 'operators.', 'the operators']).ok, false, 'three spellings of one choice is not a decision');
   A.eq(ask(['PDF', 'PDF.']).ok, false, 'a punctuation-only difference is not a second option');
   A.eq(ask(['yes', 'yes!', 'no']).question.options, ['yes', 'no'], 'a fake trilemma collapses to the honest dilemma');
-  A.eq(ask(['a report', 'the report', 'a dashboard']).question.options, ['a report', 'a dashboard'], 'article-only differences collapse but real alternatives survive');
   A.eq(ask(['operators', 'executives', 'customers']).question.options, ['operators', 'executives', 'customers'], 'genuinely distinct options are untouched');
-  // the MARKER fallback used to have no dedupe at all, so it could land a worse question than brief_ask allows
-  A.eq(TaskIntent.parse('TASK_QUESTION: pick? || dark | Dark | dark.'), null, 'the marker path fails closed when every option is the same choice');
-  A.eq(TaskIntent.parse('TASK_QUESTION: pick? || dark | dark. | light').options, ['dark', 'light'], 'the marker path dedupes exactly like the host policy');
   A.eq(TaskIntent.dedupeOptions(['x', '  ', '.', 'X']), ['x'], 'blank and punctuation-only entries are never offered as choices');
+  // Deduping is deliberately STRICTER than recommendation-matching: an article carries meaning between two
+  // options ("the doc" = the existing one, "a doc" = a new one), so folding them destroyed real alternatives
+  // and then rejected the whole question as "not a decision".
+  A.eq(TaskIntent.dedupeOptions(['the doc', 'a doc']), ['the doc', 'a doc'], 'definite vs indefinite are different choices, not a duplicate');
+  A.eq(TaskIntent.dedupeOptions(['operators', 'operators.', 'the operators']), ['operators'], 'a bare noun and its definite form ARE one choice');
+  A.eq(TaskIntent.dedupeOptions(['a report', 'the report']), ['a report', 'the report'], 'a-vs-the survives: make a new one vs use the existing one');
+  A.eq(ask(['operators', 'operators.', 'the operators']).ok, false, 'three spellings of one choice is still not a decision');
+  // The MARKER path is the last resort and has NO retry loop, so dedupe there is best-effort: nulling the
+  // parse does not mean "fail closed" upstream, it means "no question asked" — the brief completes as done
+  // and the raw TASK_QUESTION: line leaks into the transcript and out to channels.
+  A.eq(TaskIntent.parse('TASK_QUESTION: who is this for? || the operators | operators.').options, ['the operators', 'operators.'], 'a recoverable marker question is never destroyed by dedupe');
+  A.eq(TaskIntent.parse('TASK_QUESTION: pick? || dark | Dark | dark.').options, ['dark', 'Dark', 'dark.'], 'an all-duplicate marker keeps its raw options rather than leaking the protocol line');
+  A.eq(TaskIntent.parse('TASK_QUESTION: pick? || dark | dark. | light').options, ['dark', 'light'], 'a marker with a real alternative still dedupes');
+  // model-controlled input: cap BEFORE the pairwise compare or a huge option list blocks the sidecar
+  const huge = Array.from({ length: 20000 }, (_, i) => 'opt' + i);
+  const t0 = Date.now(); TaskIntent.dedupeOptions(huge); const spent = Date.now() - t0;
+  A.ok(spent < 250, 'a pathological option list cannot block the single-process sidecar (took ' + spent + 'ms)');
 }
 A.eq(Policy.validateQuestion(material({ dimension: 'vibes' }), { questions: [] }).ok, false, 'unknown decision dimensions fail closed');
 A.eq(Policy.validateQuestion(material({ newBlocker: false }), { questions: [{ answer: 'operators' }] }).ok, false, 'second question requires a newly exposed blocker');
@@ -146,6 +168,41 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
     A.eq(g.count, s2.patterns(5).find(p => p.answer === 'operators').count, 'the displayed count IS the observed pattern count');
   }
 
+  // GROUNDED HONESTY (caught in review 2026-07-24). This is the ONE surface labelled provable, so every way it
+  // could misquote the Commander is a correctness bug, not a polish item.
+  {
+    const SKIP = 'Use your judgment. Choose the most sensible reversible default and continue the original task.';
+    const Q = parsed.question, OPTS = parsed.options;
+    let k = 0;
+    const run = async (store, answer, opts) => {
+      const t = 5000 + (k * 10), uid = 'gh' + (k++), key = 'stream:' + uid;
+      const b = await store.prepare({ id: 'tb_' + uid, key, streamId: uid, text: 'Build a dashboard' }, t);
+      await store.ask(b.id, { dimension: 'audience', question: Q, text: Q, options: opts || OPTS, recommended: (opts || OPTS)[0], reason: 'matters', discoverable: false }, t + 1);
+      await store.prepare({ key, text: answer }, t + 2);
+      await store.proceed(b.id, { objective: 'ship' }, t + 3); await store.complete(b.id, 'r' + uid, t + 4);
+    };
+    const open = { text: Q, options: OPTS, answer: '' };
+
+    const neg = makeStore(memFs());
+    await run(neg, 'not operators'); await run(neg, 'not operators');
+    A.eq(neg.groundedFor(open), null, 'a negated answer never becomes a "you chose operators" claim');
+
+    const skip = makeStore(memFs());
+    await run(skip, SKIP); await run(skip, SKIP);
+    A.eq(skip.groundedFor(open), null, 'declining to choose twice is not a choice made twice');
+
+    const tie = makeStore(memFs());
+    await run(tie, 'operators'); await run(tie, 'operators'); await run(tie, 'executives'); await run(tie, 'executives');
+    A.eq(tie.groundedFor(open), null, 'a dead heat is not a preference');
+    await run(tie, 'operators');
+    A.eq(tie.groundedFor(open).count, 3, 'a clear winner still surfaces with its real count');
+
+    const split = makeStore(memFs());
+    await run(split, 'operators'); await run(split, 'operators'); await run(split, 'operators.'); await run(split, 'operators.');
+    const sg = split.groundedFor(open);
+    A.eq([sg.option, sg.count], ['operators', 4], 'counts fold across spellings of the same option instead of understating');
+  }
+
   // ASK-WORTHINESS — a dimension the Commander habitually waves off with "use your judgment" stops being
   // asked about. Conservative on purpose: a false suppression silently guesses at something they cared about.
   {
@@ -181,6 +238,37 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
     };
     await s4decide(); await s4decide(); await s4decide();
     A.eq(s4.deferredDimensions().length, 0, 'an answer that merely mentions judgment is never miscounted as a deferral');
+
+    // A deferral that still STATES a constraint is an engaged answer — suppressing the dimension would mute
+    // decisions the Commander is actively steering.
+    const s5 = makeStore(memFs()); n = 0;
+    for (const a of ['Use your judgment, but keep it under 3 pages', 'Use your judgment — stay inside the api package', 'use your judgment but do not touch billing']) {
+      const t = 1000 + (n * 10), uid = 'eng_' + (n++), key = 'stream:' + uid, text = 'how wide ' + uid + '?';
+      const b = await s5.prepare({ id: 'tb_' + uid, key, streamId: uid, text: 'Do a thing' }, t);
+      await s5.ask(b.id, { dimension: 'scope', question: text, text, options: ['alpha', 'beta'], recommended: 'alpha', reason: 'matters', discoverable: false }, t + 1);
+      await s5.prepare({ key, text: a }, t + 2);
+      await s5.proceed(b.id, { objective: 'ship' }, t + 3); await s5.complete(b.id, 'r_' + uid, t + 4);
+    }
+    A.eq(s5.deferredDimensions(), [], 'a deferral carrying a real constraint does not suppress the dimension');
+
+    // RECOVERY. Suppression blocks brief_ask, the only path that records a dimension — so without a way back
+    // the latch is permanent by construction and there is no reset route, setting, or UI.
+    const s6 = makeStore(memFs()); n = 0;
+    const s6decide = async (dimension, answer) => {
+      const t = 1000 + (n * 10), uid = 'rec_' + (n++), key = 'stream:' + uid, text = 'which ' + dimension + ' for ' + uid + '?';
+      const b = await s6.prepare({ id: 'tb_' + uid, key, streamId: uid, text: 'Do a thing' }, t);
+      await s6.ask(b.id, { dimension, question: text, text, options: ['alpha', 'beta'], recommended: 'alpha', reason: 'matters', discoverable: false }, t + 1);
+      await s6.prepare({ key, text: answer }, t + 2);
+      await s6.proceed(b.id, { objective: 'ship' }, t + 3); await s6.complete(b.id, 'r_' + uid, t + 4);
+    };
+    for (let i = 0; i < 3; i++) await s6decide('scope', SKIP);
+    A.eq(s6.deferredDimensions(), ['scope'], 'three pure deferrals suppress the dimension');
+    for (let i = 0; i < 8; i++) await s6decide('audience', 'alpha');
+    A.eq(s6.deferredDimensions(), [], 'a probe is allowed through after PROBE_GAP completed tasks');
+    await s6decide('scope', 'alpha');
+    A.eq(s6.deferredDimensions(), [], 'answering the probe for real re-opens the dimension immediately');
+    for (let i = 0; i < 3; i++) await s6decide('scope', SKIP);
+    A.eq(s6.deferredDimensions(), ['scope'], 'and deferring again re-suppresses it — the signal stays live in both directions');
   }
 
   const cancelled = await s2.prepare({ id: 'tb_cancel', key: 'stream:cancel', text: 'Build a report' }, 300);
@@ -330,7 +418,8 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   A.ok(/grounded = q0 \? taskBriefStore\.groundedFor\(q0, pats\)/.test(indexSrc), 'the briefs route serves the grounded suggestion for the open question');
   A.ok(/j\.grounded \|\| null/.test(chatSrc), 'COMMS reads the grounded field the response already carried');
   A.ok(/you chose this ' \+ g\.count \+ ' times before/.test(chatSrc), 'the grounded why-line states a real observed count, never a vague confidence');
-  A.ok(/tq-reason' \+ \(g \? ' grounded' : ''\)/.test(chatSrc), 'a grounded suggestion is marked so it cannot be mistaken for the model guess');
+  A.ok(/tq-reason' \+ \(useGrounded \? ' grounded' : ''\)/.test(chatSrc), 'a grounded suggestion is marked so it cannot be mistaken for the model guess');
+  A.ok(/has\(g && g\.option\) \? g\.option : tq\.recommended/.test(chatSrc), 'a grounded option that is not among the choices falls back to the model recommendation instead of losing both');
   A.ok(/\.tq-reason\.grounded/.test(cssSrc), 'the grounded why-line has its own provable-source styling');
   A.ok(/groundedFor: \(q\) => taskBriefStore\.groundedFor\(q\)/.test(indexSrc) && /groundedFor \? groundedFor\(q\)/.test(hubSrc), 'messaging channels carry the same grounded suggestion as COMMS');
   A.ok(/console\.warn\('\[taskbrief\] brief_ask rejected/.test(fs.readFileSync(path.join(__dirname, '../sidecar/taskbrief-tools.js'), 'utf8')), 'a hidden-tool rejection is logged instead of silently downgrading the surface');

@@ -16,10 +16,17 @@ function clean(v, n) { return String(v == null ? '' : v).replace(/\s+/g, ' ').tr
 // invisible in both the transcript and the logs; the retry advice then steers the model to the plain marker
 // path, which stores NO recommendation at all. So a formatting slip silently cost the Commander the ★ chip and
 // looked identical to "the agent had no opinion".
-// Match in widening tiers and always return the CANONICAL option text. The loose tiers count ONLY when they
-// resolve to exactly one option — an ambiguous rescue fails closed rather than risk marking the wrong chip.
-// `loosen` is the SHARED protocol normalizer from fork.js (the one module the browser parse and this host
-// policy both already speak), so the two option producers cannot drift on what counts as the same option.
+// Matching is EQUALITY-ONLY, on the normalized form. It always returns the CANONICAL option text.
+//
+// A substring tier used to live here to rescue enumerators ("A. keep it" vs "keep it"). It was removed
+// 2026-07-24 after review: substring containment silently INVERTS negations, because the negated option
+// contains the positive one but not the reverse. Every one of these resolved to the OPPOSITE of the intent:
+//     ["publish" | "do not publish"]      + "don't publish"        -> "publish"
+//     ["include tests" | "skip tests"]    + "do not include tests" -> "include tests"
+//     ["operators" | "executives"]        + "not operators"        -> "operators"
+// The per-tier uniqueness guard could not catch it — exactly one option matches, it is just the wrong one.
+// Enumerator prefixes are handled inside `loosen` instead (fork.js), which is meaning-preserving. Anything
+// that is not an equality match after normalization is a genuine miss and fails closed.
 const loosen = TaskIntent.loosen;
 function matchOption(options, candidate) {
   const list = Array.isArray(options) ? options.filter(Boolean) : [];
@@ -29,10 +36,8 @@ function matchOption(options, candidate) {
   if (exact) return exact;                                        // tier 1 — unchanged legacy behaviour
   const lc = loosen(c);
   if (!lc) return '';
-  const near = list.filter(o => loosen(o) === lc);                // tier 2 — punctuation/article/quote slip
-  if (near.length) return near.length === 1 ? near[0] : '';
-  const part = list.filter(o => { const lo = loosen(o); return lo && (lo.indexOf(lc) >= 0 || lc.indexOf(lo) >= 0); });
-  return part.length === 1 ? part[0] : '';                        // tier 3 — enumerator/truncation, unique only
+  const near = list.filter(o => loosen(o) === lc);                // tier 2 — punctuation/quote/article/enumerator
+  return near.length === 1 ? near[0] : '';                        // ambiguous or absent -> fail closed
 }
 function routeReply(text, explicit) {
   const raw = clean(text, 4000);
