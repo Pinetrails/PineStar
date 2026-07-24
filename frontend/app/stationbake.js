@@ -26,8 +26,13 @@ const StationBake = (() => {
      faces are derived per room now, from that room's wall hue (which itself defaults to the
      room's FLOOR hue, so a station is varied the moment it's built). The HULL tones stay global
      on purpose: the outside of the station is one shell, the inside of each room is decorated.
-     Offsets were fitted so a `hull`-hued room reproduces the classic constants near-exactly. */
-  const WALL_TONE = { face: -0.15, top: 0.10, cap: 0.35 };
+
+     TONE SEPARATION IS THE WHOLE JOB. A wall face at only -0.15 off the deck's own base reads as
+     the SAME surface as the floor — same value, same plate rhythm — so the room looks like one
+     continuous field with an arbitrary seam across it rather than a floor with walls around it.
+     Walls are vertical, they face away from the ceiling lamps, and they must sit clearly DARKER
+     than the deck they enclose. */
+  const WALL_TONE = { face: -0.40, top: -0.10, cap: 0.30 };
   let wallPalCache = null;
   function wallPal(z) {
     let p = wallPalCache && wallPalCache.get(z);
@@ -608,8 +613,11 @@ const StationBake = (() => {
     b.fillStyle = U.shade(pal.cap, -0.45); b.fillRect(X, topY - 1, T, 1);            // 1px darker seam beneath
     // THE FACE — per material
     (WALL_RECIPES[wallMatOf(e.z)] || WALL_RECIPES.plating)(b, pal, X, topY, h, e, n, room, Y + inFace);
-    // floor-contact cap line (identical to the old look)
-    b.fillStyle = pal.top; b.fillRect(X, Y + inFace, T, 1);
+    // FLOOR-CONTACT SEAM. This used to be a LIGHT line (wallTop), which is exactly backwards: a
+    // highlight at the junction fuses the wall into the deck. Where a vertical surface meets a
+    // horizontal one, no light reaches — it is the darkest line in the room, and it is what tells
+    // the eye "the floor stops here".
+    b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X, Y + inFace, T, 1);
   }
 
   /* ---------- WALL RECIPES — one per material, each painting ONE tile's interior face ----------
@@ -619,10 +627,13 @@ const StationBake = (() => {
      so 0 gives a flat unadorned face. A recipe owns the face ONLY — never the crown or the foot. */
   const wallDet = () => Math.max(0, DEPTH.wallDetail);
 
-  // the foot every recipe shares: a darker base course and a hard contact shadow at the floor line
+  /* the foot every recipe shares — a graded skirt of shadow pooling where the wall meets the deck.
+     Deliberately NOT scaled all the way out by wallDetail: even a "flat" wall must stay seated on
+     the floor, and this band is what seats it. Three hard steps, darkest at the contact line. */
   function wallFoot(b, tone, X, footY, wd) {
-    b.fillStyle = U.shade(tone, -0.22 * wd); b.fillRect(X, footY - 2, T, 2);
-    b.fillStyle = U.shade(tone, -0.42 * wd); b.fillRect(X, footY - 1, T, 1);
+    b.fillStyle = U.shade(tone, -0.16 - 0.08 * wd); b.fillRect(X, footY - 4, T, 4);
+    b.fillStyle = U.shade(tone, -0.30 - 0.10 * wd); b.fillRect(X, footY - 2, T, 2);
+    b.fillStyle = U.shade(tone, -0.46 - 0.12 * wd); b.fillRect(X, footY - 1, T, 1);
   }
 
   /* PLATING — the classic standing metal, but no longer starved: the weld line, vent panels and
@@ -804,13 +815,17 @@ const StationBake = (() => {
         b.fillStyle = wallTop; b.fillRect(X, Y + face, T, 1);
         b.fillStyle = 'rgba(255,255,255,0.05)'; b.fillRect(X, Y, T, 1);
       } else if (e.side === 's') {
-        b.fillStyle = wallTop; b.fillRect(X, Y + T - dep, T, 1);
+        // the south wall is seen as its TOP surface plus the shadow it drops onto the deck in
+        // front of it — same contact-seam law as the north face, mirrored.
+        b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X, Y + T - dep, T, 1);
         b.fillStyle = wallFace; b.fillRect(X, Y + T - fw, T, fw);
+        b.fillStyle = U.shade(pal.face, 0.14); b.fillRect(X, Y + T - fw, T, 1);   // lit top edge of the wall
         b.fillStyle = rib; b.fillRect(X + 5, Y + T - fw, 1, fw);
         if (e.exterior) { b.fillStyle = wallDk; b.fillRect(X, Y + T, T, out); }
       } else if (e.side === 'w') {
-        b.fillStyle = wallTop; b.fillRect(X + fw, Y, 1, T);
+        b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X + fw, Y, 1, T);      // contact seam onto the deck
         b.fillStyle = wallFace; b.fillRect(X, Y, fw, T);
+        b.fillStyle = U.shade(pal.face, 0.14); b.fillRect(X, Y, 1, T);            // lit top edge
         b.fillStyle = rib; b.fillRect(X, Y + 5, fw, 1);
         if (e.exterior) {
           const side = Math.max(out, Math.round(e.room ? WALL.side : WALL.side * 0.6));
@@ -819,8 +834,9 @@ const StationBake = (() => {
           b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X - side, Y, 1, T);
         }
       } else {
-        b.fillStyle = wallTop; b.fillRect(X + T - dep, Y, 1, T);
+        b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X + T - dep, Y, 1, T);
         b.fillStyle = wallFace; b.fillRect(X + T - fw, Y, fw, T);
+        b.fillStyle = U.shade(pal.face, 0.14); b.fillRect(X + T - 1, Y, 1, T);
         b.fillStyle = rib; b.fillRect(X + T - fw, Y + 5, fw, 1);
         if (e.exterior) {
           const side = Math.max(out, Math.round(e.room ? WALL.side : WALL.side * 0.6));
@@ -1099,7 +1115,12 @@ const StationBake = (() => {
     b.globalCompositeOperation = 'source-over';
 
     // riveted rim + bolts PER footprint — each room/corridor frames itself, so the void between
-    // distant (or mid-build, not-yet-connected) rooms stays open instead of one rim crossing space
+    // distant (or mid-build, not-yet-connected) rooms stays open instead of one rim crossing space.
+    // SOURCE-ATOP like the seam grid above: the rim is a rectangle, but the hull it frames has had
+    // its rounded corners erased by the chamfer pass. Painting it unclipped left the rim's square
+    // corner (and its bolts) hanging in empty space beside every rounded corner — the little
+    // detached "ladder" fragments. Clipping to existing hull pixels is the whole fix.
+    b.globalCompositeOperation = 'source-atop';
     b.lineWidth = 2;
     for (const r of G.allRects) {
       const x1 = r.x1 * T - pad, y1 = r.y1 * T - pad, x2 = (r.x2 + 1) * T + pad, y2 = (r.y2 + 1) * T + pad;
@@ -1108,6 +1129,7 @@ const StationBake = (() => {
       for (let x = x1 + 6; x < x2; x += 18) { b.fillRect(x, y1 + 2, 2, 2); b.fillRect(x, y2 - 4, 2, 2); }
       for (let y = y1 + 6; y < y2; y += 18) { b.fillRect(x1 + 2, y, 2, 2); b.fillRect(x2 - 4, y, 2, 2); }
     }
+    b.globalCompositeOperation = 'source-over';
 
     // floors
     for (const r of G.allRects) (G.isCorridor(r.z) ? bakeCorridorFloor : bakeRoomFloor)(b, r);
