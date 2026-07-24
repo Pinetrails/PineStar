@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "eaec8d430f809d2362061bded936fd37b1b4825e",
+    "sourceCommit": "e8faab89cdc59a45166bc71a31201a68ffbba08f",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -758,8 +758,8 @@
       },
       {
         "path": "frontend/app/windows/messaging.js",
-        "bytes": 33425,
-        "sha256": "90894efd2c3082b42d3e438f71dccb2bfe0e8e935c9a1ccfbbb1ae10cd2696c5"
+        "bytes": 41884,
+        "sha256": "afb87a5995964a1693a0393989fd1a59b6e9547fc85ee8fbb4077ae134a9edf5"
       },
       {
         "path": "frontend/app/windows/outbox.js",
@@ -873,8 +873,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 86529,
-        "sha256": "113d408e321917ab319ffc9f7dc91d09321b7fb336340bd4f1f363acda9d77f1"
+        "bytes": 87337,
+        "sha256": "65018094e89b0eaff5bbd213624bd1db8853dbb52ca356b0862c11fc5cac0980"
       },
       {
         "path": "frontend/css/titlebar.css",
