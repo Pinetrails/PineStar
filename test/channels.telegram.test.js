@@ -57,6 +57,38 @@ async function run() {
     A.ok(e && e.fatal === true && /another instance|webhook/i.test(e.message), '409 -> fatal with actionable detail');
   }
 
+  // ---- B7. getMe: token probe — id/username surfaced; bad token / network -> { ok:false }, never throws ----
+  {
+    const f = fakeFetch(() => resp(200, { ok: true, result: { id: 7446, is_bot: true, first_name: 'Overseer Bot', username: 'OverseerBot' } }));
+    const t = makeTelegramTransport({ fetch: f, token: 'TKN' });
+    A.eq(await t.getMe(), { ok: true, id: '7446', username: 'OverseerBot', name: 'Overseer Bot' }, 'getMe surfaces the stable id + username');
+    A.eq(f.calls[0].url, 'https://api.telegram.org/botTKN/getMe', 'getMe hits the right method');
+    const tbad = makeTelegramTransport({ fetch: fakeFetch(() => resp(401, { ok: false, error_code: 401, description: 'Unauthorized' })), token: 'BAD' });
+    const rb = await tbad.getMe();
+    A.ok(rb.ok === false && /Unauthorized/.test(rb.error), 'bad token -> ok:false with the Telegram description');
+    const tnet2 = makeTelegramTransport({ fetch: fakeFetch(() => ({ __throw: new Error('net down') })), token: 'TKN' });
+    const rn2 = await tnet2.getMe();
+    A.ok(rn2.ok === false && /net down/.test(rn2.error), 'network error -> ok:false, never throws');
+  }
+
+  // ---- B6. sendChatAction: right method/body; 429 retryable with retryAfter; 400 not; network never throws ----
+  {
+    const f = fakeFetch(() => resp(200, { ok: true, result: true }));
+    const t = makeTelegramTransport({ fetch: f, token: 'TKN' });
+    A.eq(await t.sendChatAction(555), { ok: true }, 'sendChatAction ok');
+    A.eq(f.calls[0].url, 'https://api.telegram.org/botTKN/sendChatAction', 'sendChatAction hits the right method');
+    A.eq(f.calls[0].body, { chat_id: 555, action: 'typing' }, 'action defaults to typing');
+    const t429 = makeTelegramTransport({ fetch: fakeFetch(() => resp(429, { ok: false, error_code: 429, description: 'Too Many Requests', parameters: { retry_after: 7 } })), token: 'TKN' });
+    const r429 = await t429.sendChatAction(555);
+    A.ok(r429.ok === false && r429.retryable === true && r429.retryAfter === 7, '429 -> retryable with retry_after');
+    const t400 = makeTelegramTransport({ fetch: fakeFetch(() => resp(400, { ok: false, error_code: 400, description: 'Bad Request: chat not found' })), token: 'TKN' });
+    const r400 = await t400.sendChatAction(1);
+    A.ok(r400.ok === false && !r400.retryable, '400 -> not retryable (stops the keep-alive loop)');
+    const tnet = makeTelegramTransport({ fetch: fakeFetch(() => ({ __throw: new Error('net down') })), token: 'TKN' });
+    const rn = await tnet.sendChatAction(1);
+    A.ok(rn.ok === false && rn.retryable === true, 'network error -> never throws, retryable result');
+  }
+
   // ---- B5. deleteWebhook posts the right method and never throws ----
   {
     const fdw = fakeFetch(() => resp(200, { ok: true, result: true }));

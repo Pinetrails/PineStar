@@ -94,6 +94,7 @@ const { makePathTrust } = require('./pathtrust.js');            // NS-5: convers
 const { makeProjectBless, projectScopeLine } = require('./projectbless.js');      // NS-5c: ADD-a-project bless core (second doorway, same grant machinery) + project-scoped run context line
 const { makeFolderPick } = require('./folderpick.js');          // Projects rail "browse": native OS folder chooser (convenience only — bless stays the consent)
 const { makeTelegramAdapter } = require('./channels/telegram.js');
+const { makeTelegramTransport } = require('./channels/telegram.transport.js');   // multi-bot connect: getMe token probe
 const { makeChannelStore } = require('./channels/store.js');
 const { makeChannelHub } = require('./channels/hub.js');
 const { makeOpenAiCompat } = require('./openai-compat.js');   // /v1/* OpenAI-compatible surface (external harness ingress)
@@ -2853,8 +2854,11 @@ const cronEmit = (name, payload) => { try { return cronEmitValidated(name, redac
 // they resolve correctly even though the channel adapters connect after this point in boot.
 const autoNotifier = makeAutoNotifier({
   send: (chatId, text, channel) => {
-    // fan out by channel name: the two bespoke slots else the generic map (slack/matrix/signal).
-    const ch = (channel === 'discord') ? discord : (!channel || channel === 'telegram') ? telegram : genericChannels[channel];
+    // fan out by channel name: the two bespoke slots, a per-instance telegram bot ('telegram:<botId>' — the ping
+    // arrives FROM the agent's own contact), else the generic map (slack/matrix/signal).
+    const ch = (channel === 'discord') ? discord
+      : (typeof channel === 'string' && channel.indexOf('telegram:') === 0) ? telegramBots.get(channel.slice('telegram:'.length))
+      : (!channel || channel === 'telegram') ? telegram : genericChannels[channel];
     const p = (ch && ch.adapter) ? ch.adapter.send(chatId, redact(text)) : Promise.resolve({ ok: false, error: 'channel not connected' });
     // DELIVERY HONESTY (2026-07-15 audit): transports NEVER throw — a failure is a resolved { ok:false,
     // error } SendResult. Normalize that to a rejection so the notifier's per-send outcome reporting
@@ -2871,7 +2875,9 @@ const autoNotifier = makeAutoNotifier({
   },
   chatsFor: (agentId) => {
     if (!(channelSecrets && channelSecrets.notifyAutonomous)) return [];   // global opt-in gate (default off — anti-spam)
-    try { const map = channelStore.loadChatMap(); return Object.keys(map.chats || {}).filter(cid => map.chats[cid] && map.chats[cid].agentId === agentId).map(cid => ({ chatId: cid, channel: (map.chats[cid] && map.chats[cid].channel) || 'telegram' })); } catch (_) { return []; }
+    // rec.chatId (multi-bot telegram): a bot-scoped record's KEY is namespaced ('<botId>|<chatId>') — the real
+    // chatId rides on the record; legacy records keep key==chatId.
+    try { const map = channelStore.loadChatMap(); return Object.keys(map.chats || {}).filter(cid => map.chats[cid] && map.chats[cid].agentId === agentId).map(cid => ({ chatId: (map.chats[cid] && map.chats[cid].chatId) || cid, channel: (map.chats[cid] && map.chats[cid].channel) || 'telegram' })); } catch (_) { return []; }
   },
   jobName: (jobId) => { const j = (cronJobs || []).find(x => x && x.id === jobId); return (j && j.name) || 'a routine'; },
   jobAgent: (jobId) => { const j = (cronJobs || []).find(x => x && x.id === jobId); return (j && j.agentId) || null; }
@@ -4266,6 +4272,8 @@ function startTelegram(token, key, model, agentCfg) {
   const hub = makeChannelHub({
     channel: 'telegram', runOnce: runOnce, store: channelStore,
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
+    chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     secrets: () => {
       const t = (channelSecrets && channelSecrets.telegram) || {};
       const provider = normalizeProvider(t.provider);
@@ -4379,6 +4387,101 @@ function stopTelegram() {
   telegram = null;
   telegramStatus = { connected: false, state: 'down', detail: '' };
 }
+
+/* ---- MULTI-BOT TELEGRAM: agent-bound bot profiles ------------------------------------------------------
+   Each additional bot is a SEPARATE BotFather token bound to ONE roster agent — its own Telegram contact.
+   Keyed by the bot's stable numeric id (from getMe, learned at connect; usernames can be renamed). Records
+   persist in channelSecrets.telegramBots = { <botId>: { token, username, botName, agentId, system, name,
+   provider, key, model, baseUrl, reasoningEffort, enabled, ownerId } } — a NESTED collection, deliberately
+   NOT a top-level channel id, so stripTokens/CHANNEL_IDS-driven code never touches it (additive to old saves).
+   Each instance runs the SAME adapter+hub pipeline as the station bot, with three differences:
+     • HARD-LOCK: resolveAgent always answers the bound agentId (top of the hub's resolution order), and the
+       roster/setModel control surface is absent — a bound bot IS its agent; belts//talk never reroute it.
+     • Its hub channel id is 'telegram:<botId>' (events schema takes any string), which keeps its durable
+       outbox, chat records and delivery telemetry separate from the station bot's.
+     • Chat records are namespaced (same numeric chatId exists on EVERY bot a user DMs) — the wrapped store
+       keys them '<botId>|<chatId>' while stamping the REAL chatId on the record for the notifier. */
+const telegramBots = new Map();   // botId -> { adapter, hub, status }
+function telegramBotRecords() { return (channelSecrets && channelSecrets.telegramBots) || {}; }
+function saveTelegramBotRecord(botId, patch) {   // merge-persist ONE bot's record; null patch = delete the record
+  const all = Object.assign({}, telegramBotRecords());
+  if (patch === null) delete all[botId];
+  else all[botId] = Object.assign({}, all[botId] || {}, patch);
+  channelSecrets = Object.assign({}, channelSecrets, { telegramBots: all });
+  return saveChannelSecrets(channelSecrets);
+}
+// chat-record namespace wrapper: '<botId>|<chatId>' keys so two bots DM'd by the same user never cross-bind;
+// the REAL chatId + this instance's channel ride ON the record so the notifier can still address the chat.
+function makeBotScopedStore(botId) {
+  return Object.assign(Object.create(channelStore), {
+    getChatRecord(chatId) { return channelStore.getChatRecord(botId + '|' + String(chatId)); },
+    saveChatRecord(chatId, patch) {
+      return channelStore.saveChatRecord(botId + '|' + String(chatId), Object.assign({}, patch, { chatId: String(chatId), channel: 'telegram:' + botId }));
+    }
+  });
+}
+function startTelegramBot(botId) {
+  stopTelegramBot(botId);
+  const recOf = () => telegramBotRecords()[botId] || {};
+  const rec = recOf();
+  const token = String(rec.token || '');
+  if (!token) throw new Error('bot ' + botId + ' has no saved token');
+  let adapterRef = null;
+  const entry = { adapter: null, hub: null, status: { connected: false, state: 'connecting', detail: '' } };
+  const hub = makeChannelHub({
+    channel: 'telegram:' + botId, runOnce: runOnce, store: makeBotScopedStore(botId),
+    send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    // live per-message read (same contract as the station bot): provider config falls back to the station
+    // record then the app runtime keys, so a bot added on a keychain desktop needs no plaintext key of its own.
+    secrets: () => {
+      const r = recOf();
+      const main = (channelSecrets && channelSecrets.telegram) || {};
+      const provider = normalizeProvider(r.provider || main.provider);
+      const key = providerRuntimeKey(provider, r.key || main.key || '');
+      const baseUrl = providerRuntimeBaseUrl(provider, r.baseUrl || '');
+      return { key, model: r.model || main.model, provider, baseUrl, configured: providerHasCredential(provider, key, baseUrl), reasoningEffort: resolveReasoningEffort(provider, r.reasoningEffort), agentId: r.agentId, system: r.system };
+    },
+    persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
+    briefFor: (key) => taskBriefStore.active(key),
+    newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
+    // HARD-LOCK: this bot IS its bound agent — resolveAgent (top of the hub's resolution order) always answers
+    // it, so /talk bindings and floor routing can never quietly change who @ThisBot is. No roster/setModel
+    // surface: /agents and /model answer their honest "not available here" fallback.
+    resolveAgent: () => (recOf().agentId || null),
+    resolveStation: (agentId) => router.stationFor(agentId),
+    fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
+    expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId)
+  });
+  const adapter = makeTelegramAdapter({
+    fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
+    // owner-only admission per bot (trust-on-first-use): each contact is claimed independently.
+    ownerUserId: rec.ownerId || '',
+    onOwnerClaim: (uid) => {
+      const ok = saveTelegramBotRecord(botId, { ownerId: String(uid) });
+      console.log('  · telegram bot ' + (rec.username ? '@' + rec.username : botId) + ' owner claimed (userId ' + String(uid) + ')' + (ok ? '' : ' — NOT persisted; re-claims on restart'));
+    },
+    onInbound: (m) => { Promise.resolve(hub.onInbound(m)).catch(e => console.warn('[telegram:' + botId + '] inbound error:', (e && e.message) || e)); },
+    onCallback: hub.onCallback,
+    onStatus: (s) => {
+      const state = (s && s.state) || 'down';
+      entry.status = { connected: state === 'up' && telegramBots.get(botId) === entry, state: state, detail: (s && s.detail) || '' };
+      hub.onStatus(s);
+    }
+  });
+  adapterRef = adapter;
+  entry.adapter = adapter; entry.hub = hub;
+  telegramBots.set(botId, entry);
+  adapter.connect();
+  console.log('  · telegram bot ' + (rec.username ? '@' + rec.username : botId) + ' connecting…');
+}
+function stopTelegramBot(botId) {
+  const e = telegramBots.get(botId);
+  if (e && e.adapter) { try { e.adapter.disconnect(); } catch (_) {} }
+  telegramBots.delete(botId);
+}
+function stopAllTelegramBots() { for (const id of [...telegramBots.keys()]) stopTelegramBot(id); }
 
 // H6.2: Discord — the adapter shipped fully-tested but the host never started it. Wire it the SAME way as
 // Telegram, but through the generic channelRegistry/wireChannel so there is one inbound->runOnce path. The live
@@ -4783,6 +4886,10 @@ const GENERIC_CHANNEL_RX = {
   disconnect: /^\/api\/channels\/(slack|matrix|signal)\/disconnect$/,
   status: /^\/api\/channels\/(slack|matrix|signal)\/status$/
 };
+// multi-bot telegram: add a new agent-bound bot (token probe via getMe), and per-bot resume/disconnect.
+const TG_BOT_RX = {
+  act: /^\/api\/channels\/telegram\/bots\/(\d+)\/(connect|disconnect)$/
+};
 const ROUTES = [
   { m: 'POST', exact: '/api/session', h: handleApiSession },
   { m: 'POST', exact: '/api/run', h: handleRun, errorPolicy: runFailPolicy },
@@ -4830,6 +4937,8 @@ const ROUTES = [
   { m: 'POST', exact: '/api/dossier', h: handleDossier },
   { m: 'POST', exact: '/api/goals', h: handleGoals },   // GROWTH Tier 2: the active goal-arc summary for cron personas
   { m: 'POST', exact: '/api/channels/telegram/disconnect', h: handleChannelDisconnect },
+  { m: 'POST', exact: '/api/channels/telegram/bots/connect', h: handleTelegramBotAdd },
+  { m: 'POST', rx: TG_BOT_RX.act, h: (req, res, gm) => handleTelegramBotAction(req, res, gm[1], gm[2]) },
   { m: 'POST', exact: '/api/channels/discord/connect', h: handleDiscordConnect },
   { m: 'POST', exact: '/api/channels/discord/sync', h: handleDiscordSync },
   { m: 'POST', exact: '/api/channels/discord/disconnect', h: handleDiscordDisconnect },
@@ -5046,6 +5155,14 @@ server.listen(PORT, '127.0.0.1', () => {
     if (t.enabled && tgTok && t.model && providerHasCredential(t.provider, providerRuntimeKey(t.provider, t.key || ''), providerRuntimeBaseUrl(t.provider, t.baseUrl || t.base_url || ''))) { startTelegram(tgTok, t.key || '', t.model, { agentId: t.agentId, system: t.system, name: t.name, provider: t.provider, baseUrl: t.baseUrl || t.base_url || '', reasoningEffort: t.reasoningEffort }); console.log('  · telegram auto-started from saved config'); }
     else if (channelTokenRuntime.telegram && envKey && envModel) { startTelegram(channelTokenRuntime.telegram, envKey, envModel, {}); console.log('  · telegram auto-started from env'); }
   } catch (e) { console.warn('[channels] telegram auto-start failed:', (e && e.message) || e); }
+  // multi-bot telegram: auto-start every saved+enabled agent-bound bot (each fails independently — one bad
+  // token must never keep the others, or the station bot, offline).
+  for (const bid of Object.keys(telegramBotRecords())) {
+    try {
+      const r = telegramBotRecords()[bid];
+      if (r && r.enabled !== false && r.token) { startTelegramBot(bid); console.log('  · telegram bot ' + (r.username ? '@' + r.username : bid) + ' auto-started from saved config'); }
+    } catch (e) { console.warn('[channels] telegram bot ' + bid + ' auto-start failed:', (e && e.message) || e); }
+  }
   // H6.2: same auto-start for Discord (saved config else env), through the generic registry path.
   try {
     const d = (channelSecrets && channelSecrets.discord) || {};
@@ -5148,6 +5265,7 @@ function gracefulShutdown(signal) {
   try { if (typeof subagents !== 'undefined' && subagents && subagents.interruptAll) subagents.interruptAll(); } catch (_) {}   // stop watchable background workers
   try { if (typeof connectors !== 'undefined' && connectors && connectors.close) Promise.resolve(connectors.close()).catch(() => {}); } catch (_) {}   // close MCP connectors (stdio children get taskkill/SIGTERM)
   try { stopTelegram(); } catch (_) {}   // disconnect the Telegram long-poll adapter
+  try { stopAllTelegramBots(); } catch (_) {}   // …and every agent-bound bot's poller
   try { stopDiscord(); } catch (_) {}    // disconnect the Discord gateway socket
   try { for (const ac of runs.values()) { try { ac.abort(); } catch (_) {} } } catch (_) {}   // abort any in-flight run so it stops spending
   try { if (typeof cronLock !== 'undefined' && cronLock && cronLock.release) cronLock.release(); } catch (_) {}   // drop cron.lock so the next boot's tick isn't wedged
@@ -9589,7 +9707,9 @@ function handleHalt(req, res) {
     const w = genericChannels[id];
     return (w && w.hub && w.hub._internals) ? w.hub._internals.inflight : null;
   });
-  const halted = killAll(runs, tgInflight, dcInflight, ...genericInflights);   // browser runs + ALL channel hub runs, in one kill (see sidecar/halt.js)
+  // multi-bot telegram: every agent-bound bot's hub runs die on E-STOP too, exactly like the station bot's.
+  const tgBotInflights = [...telegramBots.values()].map((w) => (w && w.hub && w.hub._internals) ? w.hub._internals.inflight : null);
+  const halted = killAll(runs, tgInflight, dcInflight, ...genericInflights, ...tgBotInflights);   // browser runs + ALL channel hub runs, in one kill (see sidecar/halt.js)
   let cronAborted = 0;
   try { cronAborted = cronDriver.abortAllLeases(); } catch (_) {}   // Phase 0: E-STOP also aborts in-flight cron runs (unattended spend)
   let beatAborted = 0;
@@ -9684,6 +9804,7 @@ async function handleChannelDisconnect(req, res) {
 }
 
 // GET /api/channels/telegram/status — booleans + poll state ONLY; never the token/key (those stay server-side).
+// `bots` mirrors the bulk payload's multi-bot list so both status doors tell one story.
 function handleChannelStatus(req, res) {
   const t = (channelSecrets && channelSecrets.telegram) || {};
   const configured = !!channelToken('telegram', '', t);   // keychain/runtime token (desktop) or plaintext record (bare)
@@ -9692,7 +9813,73 @@ function handleChannelStatus(req, res) {
   // disk, not in the keychain) — which the durability fix prevents, but truthful telemetry must be able to say it.
   const durable = configured && (isChannelTokenDurable('telegram') || !!t.token);
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, durable: durable, state: telegramStatus.state, detail: telegramStatus.detail || '', warning: String(channelWarn.telegram || ''), notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous) }));
+  res.end(JSON.stringify({ connected: telegramStatus.connected, configured: configured, durable: durable, state: telegramStatus.state, detail: telegramStatus.detail || '', warning: String(channelWarn.telegram || ''), notifyAutonomous: !!(channelSecrets && channelSecrets.notifyAutonomous), bots: telegramBotsStatusList() }));
+}
+
+// POST /api/channels/telegram/bots/connect { token, agentId, system?, agentName?, key?, model?, provider?,
+// baseUrl?, reasoningEffort? } — add (or re-key) an AGENT-BOUND bot: probe the token with getMe FIRST (instant
+// validation + the bot's stable id/username, before anything persists), refuse the station bot's own token and
+// note when a paste re-keys an already-known bot. Provider config falls back to the station record/app runtime,
+// so on a configured station this is just token + agentId. Secrets are NEVER echoed back.
+async function handleTelegramBotAdd(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const token = String(body.token || '').trim();
+  const agentId = String(body.agentId || '').trim();
+  if (!token) return json(400, { error: 'missing bot token — create one with @BotFather and paste it here' });
+  if (!agentId) return json(400, { error: 'pick which agent this bot should be' });
+  const main = (channelSecrets && channelSecrets.telegram) || {};
+  const provider = normalizeProvider(body.provider || main.provider);
+  const key = providerRuntimeKey(provider, String(body.key || '').trim() || String(main.key || ''));
+  const baseUrl = providerRuntimeBaseUrl(provider, body.baseUrl || body.base_url || '');
+  const model = String(body.model || '').trim() || String(main.model || '');
+  if (!model) return json(400, { error: 'connect your agent first — choose a model in Settings → Providers' });
+  if (!providerHasCredential(provider, key, baseUrl)) return json(400, { error: providerCredentialError(provider) });
+  // getMe probe: proves the token AND names the bot before anything is saved or started.
+  let me;
+  try { me = await makeTelegramTransport({ fetch: globalThis.fetch, token, apiBase: TELEGRAM_API_BASE }).getMe(); }
+  catch (e) { me = { ok: false, error: (e && e.message) || 'probe failed' }; }
+  if (!me || !me.ok) return json(400, { error: 'Telegram rejected that token — ' + ((me && me.error) || 'check it against @BotFather') });
+  const botId = String(me.id);
+  // the station bot's token can't double as an agent bot: one poller per token (Telegram hard rule).
+  if (channelToken('telegram', '', main) === token) return json(400, { error: '@' + (me.username || 'that bot') + ' is already the station bot — create a fresh bot with @BotFather for this agent' });
+  const prev = telegramBotRecords()[botId] || {};
+  const persisted = saveTelegramBotRecord(botId, {
+    token: token, username: me.username || '', botName: me.name || '',
+    // persist the provider KEY on the record (like the station/generic channels do) — without it the bot only
+    // works while a runtime/station key happens to exist and dies on restart with "no provider configured"
+    // even though the add-flow validated a key. Codex/OAuth providers carry no key by design.
+    key: providerUsesCodex(provider) ? undefined : (String(body.key || '').trim() || prev.key || undefined),
+    agentId: agentId,
+    system: (typeof body.system === 'string' && body.system) ? body.system : (prev.system || ''),
+    name: String(body.agentName || '').trim() || prev.name || '',
+    provider: provider, model: model, baseUrl: baseUrl || undefined,
+    reasoningEffort: resolveReasoningEffort(provider, body.reasoningEffort || body.reasoning_effort || prev.reasoningEffort),
+    enabled: true, ownerId: prev.ownerId || undefined
+  });
+  try { startTelegramBot(botId); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+  const live = telegramBots.get(botId);
+  json(200, { botId: botId, username: me.username || '', rebound: !!prev.token, state: (live && live.status && live.status.state) || 'connecting', persisted: !!persisted });
+}
+
+// POST /api/channels/telegram/bots/<botId>/connect (resume from saved) | /disconnect { purge? }.
+// disconnect keeps the record (RESUME is one click); purge:true FORGETS the bot entirely — record + token gone.
+async function handleTelegramBotAction(req, res, botId, verb) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  const rec = telegramBotRecords()[botId];
+  if (!rec) return json(404, { error: 'unknown bot' });
+  if (verb === 'connect') {
+    if (!rec.token) return json(400, { error: 'no saved token for this bot — paste it again to reconnect' });
+    const persisted = saveTelegramBotRecord(botId, { enabled: true });
+    try { startTelegramBot(botId); } catch (e) { return json(500, { error: (e && e.message) || 'failed to start' }); }
+    return json(200, { botId: botId, state: 'connecting', persisted: !!persisted });
+  }
+  let purge = false;
+  try { const b = JSON.parse((await readBody(req, 4096)) || '{}'); purge = !!(b && b.purge); } catch (_) {}
+  stopTelegramBot(botId);
+  const persisted = purge ? saveTelegramBotRecord(botId, null) : saveTelegramBotRecord(botId, { enabled: false });
+  // `purged` is a DESTRUCTION claim — only assert it when the read-back proved the record left the disk.
+  json(200, { connected: false, purged: purge && persisted, persisted: !!persisted });
 }
 
 // POST /api/channels/discord/connect { token, key?, model, provider? } — the Messaging tab's Discord card hands over
@@ -9780,6 +9967,22 @@ async function handleChannelNotify(req, res) {
    family. Secrets are NEVER echoed back; non-secret connection config (matrix homeserver / signal endpoint +
    account) persists on the record so reconnect is one click. ---- */
 
+// multi-bot telegram: the one bots-status truth, shared by the bespoke telegram GET and the bulk payload —
+// every saved agent-bound bot with LIVE per-instance transport state. Never a token.
+function telegramBotsStatusList() {
+  const bots = telegramBotRecords();
+  return Object.keys(bots).map((bid) => {
+    const r = bots[bid] || {};
+    const live = telegramBots.get(bid);
+    const st = (live && live.status) || { connected: false, state: 'down', detail: '' };
+    return {
+      botId: bid, username: String(r.username || ''), agentId: String(r.agentId || ''), agentName: String(r.name || ''),
+      connected: !!st.connected, state: st.state || 'down', detail: st.detail || '',
+      configured: !!r.token, enabled: r.enabled !== false, ownerLocked: !!r.ownerId
+    };
+  });
+}
+
 // the one status truth per channel, shared by the per-channel GET and the bulk GET /api/channels/status.
 function channelStatusPayload(id) {
   const rec = (channelSecrets && channelSecrets[id]) || {};
@@ -9807,6 +10010,9 @@ function channelStatusPayload(id) {
   // them lets the panel prefill its fields for a one-click reconnect. Tokens/keys stay server-side, always.
   if (id === 'matrix' || id === 'signal') { out.endpoint = String(rec.endpoint || ''); }
   if (id === 'signal') { out.account = String(rec.account || ''); }
+  // multi-bot telegram: every saved agent-bound bot, with LIVE per-instance transport truth. Additive — an old
+  // frontend just ignores the field; the panel's bot list paints exclusively from this.
+  if (id === 'telegram') out.bots = telegramBotsStatusList();
   return out;
 }
 

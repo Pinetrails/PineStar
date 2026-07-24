@@ -52,6 +52,22 @@
         try { await call('deleteWebhook', { drop_pending_updates: false }); } catch (_) {}
       },
 
+      // getMe — validate a token and learn WHO this bot is ({ id, username, name }) BEFORE anything is persisted.
+      // The multi-bot connect flow keys each bot instance by the stable numeric id (usernames can be renamed) and
+      // uses the username as the card label. NEVER throws — { ok:false, error } lets the route answer a clean 400.
+      async getMe() {
+        try {
+          const { data, res } = await call('getMe', {});
+          if (data && data.ok && data.result && data.result.id != null) {
+            return { ok: true, id: String(data.result.id), username: String(data.result.username || ''), name: String(data.result.first_name || '') };
+          }
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          return { ok: false, error: (data && data.description) || ('http ' + code) };
+        } catch (e) {
+          return { ok: false, error: (e && e.message) || 'network error' };
+        }
+      },
+
       async getUpdates(args) {
         const a = args || {};
         const { data, res } = await call('getUpdates', {
@@ -98,6 +114,23 @@
         } catch (e) {
           if (e && (e.name === 'AbortError' || e.aborted)) return { ok: false, error: 'aborted' };
           return { ok: false, error: (e && e.message) || 'network error' };
+        }
+      },
+
+      // sendChatAction — the "typing…" bubble (Hermes parity). Telegram shows it for ~5s per call; the hub's
+      // keep-alive loop refreshes it while a run is in flight. NEVER throws — always { ok, error?, retryable?,
+      // retryAfter? } (same normalized shape as send) so the hub's loop can back off on 429 or stop on a hard
+      // error. Purely cosmetic: a failure here must never affect the real reply path.
+      async sendChatAction(chatId, action) {
+        try {
+          const { data, res } = await call('sendChatAction', { chat_id: chatId, action: action || 'typing' });
+          if (data && data.ok) return { ok: true };
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          const retryAfter = data && data.parameters && data.parameters.retry_after;
+          return { ok: false, error: (data && data.description) || ('http ' + code), retryable: code === 429 || code >= 500, retryAfter: retryAfter };
+        } catch (e) {
+          if (e && (e.name === 'AbortError' || e.aborted)) return { ok: false, error: 'aborted', retryable: false };
+          return { ok: false, error: (e && e.message) || 'network error', retryable: true };
         }
       },
 

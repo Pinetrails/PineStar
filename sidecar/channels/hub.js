@@ -174,6 +174,12 @@
     const fetchMedia = typeof o.fetchMedia === 'function' ? o.fetchMedia : null;
     const saveAttachmentFn = typeof o.saveAttachment === 'function' ? o.saveAttachment : null;
     const expandAttachments = typeof o.expandAttachments === 'function' ? o.expandAttachments : null;
+    // TYPING INDICATOR (Hermes parity): chatAction(chatId) fires ONE platform "typing…" action (adapter.chatAction
+    // -> Telegram sendChatAction). Optional — absent means the channel simply shows no typing bubble, exactly the
+    // old behavior. Telegram's bubble expires ~5s after each action, so the keep-alive loop below refreshes every
+    // typingRefreshMs (default 4s: safely inside the 5s window at half the API traffic of the reference's 2s).
+    const chatAction = typeof o.chatAction === 'function' ? o.chatAction : null;
+    const typingRefreshMs = Number.isFinite(o.typingRefreshMs) ? Math.max(250, o.typingRefreshMs) : 4000;
     const MAX_MEDIA_PER_MESSAGE = 10;                // a full Telegram album is 10 items; a merged album must fit
     const MAX_MEDIA_BYTES = 8 * 1024 * 1024;         // mirrors attachments.js MAX_BYTES (saveAttachment re-enforces)
     if (typeof runOnce !== 'function') throw new Error('makeChannelHub: runOnce is required');
@@ -197,6 +203,31 @@
     function agentIdFor(chatId) {
       const tail = String(chatId).replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 40 - agentPrefix.length);
       return agentPrefix + (tail || '0');
+    }
+
+    // ---- typing keep-alive: refresh the platform's "typing…" bubble while a run is in flight ---------------
+    // Returns a stop() closure. The loop is detached (fire-and-forget) and PURELY cosmetic: any failure degrades
+    // to no bubble, never touches the reply path. Backoff mirrors send(): a 429's retry_after (capped 30s) is
+    // waited out; a non-retryable failure (bad chat, unsupported channel) stops the loop for this run entirely —
+    // one probe, no hammering. There is no "stop typing" API on any platform: stopping just means ceasing
+    // refreshes and letting the client-side ~5s timer expire, which is why stop() runs BEFORE deliver() — the
+    // final reply must never race a fresh 5s bubble that would linger after the answer (reference-harness lesson).
+    function startTyping(chatId) {
+      if (!chatAction) return function () {};
+      let stopped = false;
+      (async () => {
+        while (!stopped) {
+          let r;
+          try { r = await chatAction(chatId); } catch (e) { r = { ok: false, retryable: true }; }
+          if (stopped) break;
+          if (r && r.ok === false && !r.retryable) break;
+          const waitMs = (r && r.ok === false && Number(r.retryAfter) > 0)
+            ? Math.min(Number(r.retryAfter) * 1000, 30000)
+            : typingRefreshMs;
+          await sleep(waitMs);
+        }
+      })().catch(function () {});
+      return function () { stopped = true; };
     }
 
     // agentId (optional, last arg) names WHICH roster agent produced this reply, so the floor can pulse the RIGHT
@@ -483,6 +514,17 @@
         return;
       }
 
+      // TYPING: from here on a real run WILL happen — light the platform's "typing…" bubble now (it also covers
+      // media download/ingest, which can take seconds) and keep refreshing until the reply is built. Stopped in
+      // the finally BEFORE deliver() so the bubble can expire rather than linger past the answer. The wrapper
+      // try/finally does not re-indent the body (matches this file's existing low-indent try style below).
+      const stopTyping = startTyping(chatId);
+      // hoisted OUT of the typing try-block: deliver() below the finally reads all three.
+      let state = null;          // the LAST attempt's assembled state (buf/errMsg/reason/transient)
+      let lastRunId = '';        // the runId actually delivered under (the last attempt's)
+      let reply;
+      try {
+
       // MEDIA: download + store what the user actually sent (photos/videos/voice/files) BEFORE the turn is built,
       // so the model's view of this message carries the real pixels/files instead of a blind spot it has to
       // apologize for. ingestMedia never throws by contract; the belt-and-suspenders catch degrades to a note.
@@ -538,8 +580,6 @@
       // abort/superseded are what halt.js's E-STOP reads; the extra fields are additive and invisible to it.
       const myRec = { runId: '', abort: null, superseded: false, agentId: agentId, startedAt: null };
       inflight.set(chatId, myRec);
-      let state = null;          // the LAST attempt's assembled state (buf/errMsg/reason/transient)
-      let lastRunId = '';        // the runId actually delivered under (the last attempt's)
       let attempt = 0;
       try {
       for (;;) {
@@ -597,7 +637,6 @@
       }
 
       // persist the assistant turn only on a real, non-error reply; build the outgoing text.
-      let reply;
       if (state.errMsg) {
         // an exhausted supersede-retry gets an HONEST channel reply (never the raw internal mutex message) — the
         // user's message was NOT lost silently; they can simply resend. Any other error surfaces its own message.
@@ -627,6 +666,8 @@
         if (reply) { try { store.appendTurn(agentId, 'assistant', reply); } catch (_) {} }
         if (state.reason && state.reason !== 'done') reply += endNote(state.reason);
       }
+
+      } finally { stopTyping(); }   // cease refreshes BEFORE deliver — the bubble must die with the reply, not after
       await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), agentId);
     }
 
