@@ -114,6 +114,9 @@ const cron = require('./cron.js');                         // pure schedule math
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const mintLedger = require('./mint-ledger.js');            // W6: pure dedup gate + per-agent mint ledger (never re-create what exists)
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
+const loopjob = require('./loopjob.js');                   // LOOPS: pure gate + ledger digest for standing objectives
+const loopjobStore = require('./loopjob-store.js');        // LOOPS: pure LoopJob lifecycle reducer (iterations, verdicts)
+const { makeLoopDriver } = require('./loopjob-driver.js'); // LOOPS: the verdict-triggered tick driver
 const nightshift = require('./nightshift.js');            // NS-1: pure planner for the server-owned night-shift driver
 const { makeNightshiftDriver } = require('./nightshift-driver.js'); // NS-1: the restart-safe idle-autonomy tick driver
 const contextpack = require('./contextpack.js');          // NS-2: pure recency-weighted context pack for the propose step
@@ -4013,6 +4016,312 @@ function disarmCron() {
   return true;
 }
 
+/* ==== LOOPS — standing objectives (S1). The ambient half of the loopjob subsystem. ========================
+
+   A LOOP is the Commander's standing objective, iterated server-side, with each iteration parked for review;
+   the NEXT iteration is triggered by the Commander's VERDICT, not by a clock. That is what distinguishes it
+   from a routine (WHEN) and from the night shift (IDLE). The pure halves are loopjob.js (the gate + the
+   ledger digest) and loopjob-store.js (the record lifecycle); loopjob-driver.js owns the tick orchestration.
+   Everything ambient — this file, the timer, Date.now, crypto.randomUUID, the fs — lives ONLY here.
+
+   NO ARM CEREMONY. Unlike cron (which is inert behind SKYNET_CRON_ENABLED because a routine is a background
+   surprise), CREATING a loop IS the arming action: the Commander explicitly said "keep doing this". Gating it
+   behind a second switch would be exactly the permission wall the product forbids. The timer therefore arms
+   itself whenever a live loop exists and stands itself down when none does — so a station with no loops pays
+   no timer, and there is no state where a loop exists but silently never runs.
+
+   The E-STOP still owns it: `loopsHalted` is a DURABLE stand-down (survives restart) engaged by POST /api/halt
+   alongside the cron/night-shift halts, and lifted only by an explicit POST /api/loops/resume. ============= */
+const LOOPS_FILE = path.join(WORKSPACES, 'loops.json');
+const LOOPS_HALT_FILE = path.join(WORKSPACES, 'loops.halt.json');
+// 20s, not cron's 60s: after the Commander rules on a candidate the next iteration should start while they are
+// still looking at the screen. A loop with nothing to do costs one gate evaluation per tick — no model call.
+// ENV() already prefixes STARNET_/SKYNET_ — pass the bare suffix, never the prefixed name.
+const LOOP_TICK_MS = Math.max(5000, parseInt(ENV('LOOP_TICK_MS') || '20000', 10) || 20000);
+const LOOP_MAX_PARALLEL = Math.max(1, parseInt(ENV('LOOP_MAX_PARALLEL') || '2', 10) || 2);
+const LOOP_MAX_RUN_MS = Math.max(60000, parseInt(ENV('LOOP_MAX_RUN_MS') || '1800000', 10) || 1800000);
+
+function loadLoops() {
+  try { return loopjobStore.loadEnvelope(loadResilient(LOOPS_FILE, 'loops')).loops; }
+  catch (e) { console.warn('[loops] load failed:', (e && e.message) || e); return []; }
+}
+let loopJobs = loadLoops();
+function saveLoops() { saveResilient(LOOPS_FILE, loopjobStore.toEnvelope(loopJobs)); }   // throws; CRUD routes surface it
+function loadLoopsHalted() {
+  try { const raw = loadResilient(LOOPS_HALT_FILE, 'loops-halt'); return !!(raw && raw.halted); } catch (_) { return false; }
+}
+let loopsHalted = loadLoopsHalted();
+function saveLoopsHalted(v) { try { saveResilient(LOOPS_HALT_FILE, { halted: !!v }); } catch (e) { console.warn('[loops] halt persist failed:', (e && e.message) || e); } }
+
+/* loopPrecheck — the PURELY-LOCAL readiness gate, evaluated BEFORE any spend (the night shift's NS-2
+   cold-leash discipline: a stand-down no model call could have avoided must cost neither money nor an
+   iteration slot).
+
+   It is a NAMED function, not an inline dep, because BOTH the driver and GET /api/loops must run it. Live
+   proof caught why: with no credential the driver correctly refused to spend, but the UI projection still
+   reported binding:null / wouldFire:true — so the LOOPS window would have shown a loop as "ready" while the
+   autonomy ledger recorded a stand-down every single tick. Anything that stops a loop from firing has to be
+   visible to the same gate the UI renders from, or the panel is asserting state the harness contradicts. */
+function loopPrecheck(loop) {
+  try {
+    if (!loop || !loop.objective || !String(loop.objective).trim()) return { ok: false, reason: 'this loop has no objective' };
+    if (loop.workdir && !fs.existsSync(loop.workdir)) return { ok: false, reason: 'the project folder is gone: ' + loop.workdir };
+    const provider = cronProviderFor(loop);
+    if (!cronHasCredential(provider, cronKeyFor(provider))) {
+      return { ok: false, reason: 'no credential for ' + (provider || 'the selected provider') + ' — add a key in the KEYS tab' };
+    }
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: 'precheck error: ' + ((e && e.message) || e) }; }
+}
+
+/* the LOOP tick driver — pure orchestration, every ambient dep injected here. Deliberately reuses the cron
+   credential/identity/station resolvers: a loop iteration is the same kind of unattended run a routine fires,
+   so it must resolve provider, key and station identically or the two paths would drift. */
+const loopDriver = makeLoopDriver({
+  getLoops: () => loopJobs,
+  // TRANSACTIONAL DISPATCH: an honest false receipt means the durable write did NOT land, and the driver then
+  // launches nothing (firing over an unpersisted fire-claim is the crash-restart double-spend window). On
+  // failure we roll the RAM mirror back to disk so the loop stays eligible and retries, rather than living as
+  // a RAM-only advance a restart would forget. Same shape as the cron setJobs receipt.
+  setLoops: (next) => {
+    try { loopJobs = next; saveLoops(); return true; }
+    catch (e) {
+      console.warn('[loops] persist failed:', (e && e.message) || e);
+      try { loopJobs = loadLoops(); } catch (_) { /* disk unreadable too — keep the RAM mirror */ }
+      return false;
+    }
+  },
+  runOnce: (opts) => runOnce(opts),
+  newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
+  isHalted: () => loopsHalted,
+  // the same-agent run mutex. A loop must never elbow past an interactive run the Commander is watching.
+  concurrencyFree: (agentId) => { try { return concurrencyGate.inFlight(agentId) === 0; } catch (_) { return true; } },
+  // DELETED-AGENT GUARD, mirroring cron's: fail-OPEN on an empty roster (a boot before the first push must
+  // never reap a legitimate loop on missing data); the hero 'agent' is undeletable and always passes.
+  agentExists: (agentId) => { const id = String(agentId || ''); return !id || id === 'agent' || agentRoster.size === 0 || agentRoster.has(id); },
+  // PURELY-LOCAL readiness, evaluated BEFORE any spend (the night shift's NS-2 cold-leash fix): a stand-down
+  // that no model call could have avoided must not cost money or an iteration slot.
+  precheck: ({ loop }) => loopPrecheck(loop),
+  getKey: (provider) => cronKeyFor(provider),
+  providerForLoop: (loop) => cronProviderFor(loop),
+  hasCredential: (provider, key) => cronHasCredential(provider, key),
+  identityForAgent: (agentId) => cronIdentityFor(agentId),
+  stationFor: (agentId) => router.stationFor(agentId),
+  persona: () => cronSystemFor('agent'),
+  defaultModel: CRON_DEFAULT_MODEL,
+  maxParallel: LOOP_MAX_PARALLEL,
+  maxRunMs: LOOP_MAX_RUN_MS,
+  ledger: (entry) => { try { autonomyLedger.record(entry); } catch (_) {} },
+  // VISIBILITY: forward each iteration's run events to the floor through the SAME redacted egress the routed
+  // and scheduled lanes use (runTeeView: tool_call name-only, tool_result outcome-only, metadata whole,
+  // everything else dropped). A loop iteration is unattended work, so it must be observable live in the one
+  // shape the station already speaks — and these are existing agent.* contract events, not new ones.
+  tee: (name, payload) => {
+    try { const view = require('./channels/sse.js').runTeeView(name, payload); if (view) cronEmit(name, view); } catch (_) {}
+  },
+  // NOTE: no bus emit. shared/events.js is the FROZEN, OWNED contract and carries no loop.* family, so S1 adds
+  // none — the LOOPS window polls GET /api/loops exactly as the ROUTINES window polls /api/cron. A loop.*
+  // event family is a later ADDITIVE request to the contract owner, not something this lane invents.
+  emit: null
+});
+
+let loopTimer = null;
+// a loop is "live" if it could ever fire again; a stopped/dormant/paused one cannot, so it must not hold a timer.
+function anyLiveLoop() { return (loopJobs || []).some(l => l && l.enabled !== false && l.state !== 'stopped' && l.state !== 'dormant'); }
+function loopTick() {
+  try { loopDriver.applyTick(Date.now()); } catch (e) { console.warn('[loops] tick error:', (e && e.message) || e); }
+  // stand the timer down once nothing can fire — a station with no live loops pays nothing.
+  if (!anyLiveLoop() && loopDriver.leases.size === 0) disarmLoops();
+}
+function armLoops(quiet) {
+  if (loopTimer) return false;                       // idempotent — a second arm must not stack two timers
+  if (loopsHalted) return false;                     // durable E-STOP: nothing arms until explicitly resumed
+  if (!anyLiveLoop()) return false;
+  if (!quiet) console.log('  · loops armed — ' + loopJobs.filter(l => l && l.enabled !== false).length + ' standing objective(s), ' + Math.round(LOOP_TICK_MS / 1000) + 's tick');
+  loopTimer = setInterval(loopTick, LOOP_TICK_MS);
+  if (loopTimer.unref) loopTimer.unref();            // the http server keeps the process alive; the ticker alone shouldn't
+  return true;
+}
+function disarmLoops() {
+  if (!loopTimer) return false;
+  try { clearInterval(loopTimer); } catch (_) {}
+  loopTimer = null;
+  return true;
+}
+
+/* ---- LOOPS API. The pure reducers own the record math; these handlers are the ambient glue (mint an id,
+   stamp the clock, persist through the throwing saveLoops so a failed write surfaces as a 500, re-arm the
+   timer whenever a mutation could have made a loop live again).
+
+   Every mutating route ends by calling armLoops(true): creating a loop, resuming one, or ruling on a
+   candidate can all make a previously-quiet loop eligible, and the VERDICT case is the whole product —
+   the Commander's click is what starts the next iteration. ---- */
+const loopJson = (res) => (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+
+// GET /api/loops — the LOOPS window's poll. Every field is a durable record value or a pure derivation of
+// one (loopjob.summarize), including the BINDING that names why a quiet loop is quiet.
+function handleLoopsList(req, res) {
+  const json = loopJson(res);
+  const now = Date.now();
+  const rows = (loopJobs || []).map(l => loopjob.summarize(l, {
+    now: now,
+    staleMs: LOOP_MAX_RUN_MS,
+    // the SAME inputs the driver's gate sees, so the panel can never claim a loop is ready when the driver is
+    // standing it down (see loopPrecheck).
+    inp: {
+      halted: loopsHalted,
+      inFlight: loopDriver.leases.has(l.id),
+      agentBusy: (() => { try { return concurrencyGate.inFlight(l.agentId) !== 0; } catch (_) { return false; } })(),
+      precheck: loopPrecheck(l)
+    }
+  }));
+  json(200, {
+    loops: rows,
+    halted: loopsHalted,
+    // TRUTHFUL TELEMETRY: `armed` is whether a timer is genuinely running, not whether loops exist. The window
+    // must be able to say "this loop will not advance right now" when that is the truth.
+    armed: !!loopTimer,
+    tickMs: LOOP_TICK_MS,
+    inFlight: loopDriver.leases.size
+  });
+}
+
+// POST /api/loops — create a standing objective. body: { name, objective, agentId?, gate?, queueCap?,
+// maxIterations?, dryStopAfter?, workdir?, model?, provider?, perDayUsd?, perIterationUsd? }
+function handleLoopsCreate(req, res) {
+  const json = loopJson(res);
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const objective = String(body.objective || '').trim();
+    if (!objective) return json(400, { error: 'a loop needs an objective — what should it keep doing?' });
+    let agentId; try { agentId = parseCronAgentIdOr400(body.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    let provider; try { provider = parseCronProviderOr400(body.provider); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    // A workdir must EXIST at create time. Accepting a path that is not there would let the loop claim a
+    // project it cannot touch, and the first iteration would fail for a reason the Commander never saw.
+    const workdir = body.workdir != null ? String(body.workdir) : null;
+    if (workdir) { try { if (!fs.statSync(workdir).isDirectory()) return json(400, { error: 'not a folder: ' + workdir }); } catch (e) { return json(400, { error: 'that folder does not exist: ' + workdir }); } }
+    const id = crypto.randomUUID();
+    try {
+      loopJobs = loopjobStore.createLoop(loopJobs, {
+        id: id, name: body.name || objective.slice(0, 60), objective: objective,
+        agentId: agentId, model: body.model, provider: provider,
+        gate: body.gate, queueCap: body.queueCap, maxIterations: body.maxIterations,
+        dryStopAfter: body.dryStopAfter, workdir: workdir,
+        perDayUsd: body.perDayUsd, perIterationUsd: body.perIterationUsd, meta: body.meta
+      }, { id: id, now: Date.now() });
+      saveLoops();
+    } catch (e) { return json(500, { error: 'could not save the loop: ' + ((e && e.message) || e) }); }
+    armLoops(true);
+    json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() }) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/loops/update — edit a loop. body: { id, patch }
+function handleLoopsUpdate(req, res) {
+  const json = loopJson(res);
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
+    const patch = Object.assign({}, body.patch || {});
+    if (Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
+      try { patch.agentId = parseCronAgentIdOr400(patch.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    }
+    try { loopJobs = loopjobStore.updateLoop(loopJobs, id, patch, { now: Date.now() }); saveLoops(); }
+    catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    armLoops(true);
+    json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() }) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+/* POST /api/loops/verdict — THE REVIEW GATE, and the loop's actual trigger. body: { id, n, verdict, note }
+
+   Rejection CASCADES to every un-approved candidate stacked above n (THE STACKING LAW — see the
+   loopjob-store header): iteration n+1 was built on a tree containing un-approved n, so it cannot survive n's
+   rejection. The response reports `cascaded` so the UI can confirm what the click actually cost; the UI is
+   expected to have WARNED with the same number (loopjob.stackedAbove) BEFORE the click. */
+function handleLoopsVerdict(req, res) {
+  const json = loopJson(res);
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    const loop = loopjobStore.getLoop(loopJobs, id);
+    if (!loop) return json(404, { error: 'no such loop' });
+    const n = parseInt(body.n, 10);
+    const verdict = body.verdict === 'approved' ? 'approved' : (body.verdict === 'rejected' ? 'rejected' : null);
+    if (!verdict) return json(400, { error: 'verdict must be "approved" or "rejected"' });
+    const target = (loop.iterations || []).find(it => it && it.n === n);
+    if (!target) return json(404, { error: 'no iteration #' + body.n + ' on this loop' });
+    if (target.outcome !== 'candidate') return json(409, { error: 'iteration #' + n + ' produced nothing to review (' + target.outcome + ')' });
+    if (target.verdict) return json(409, { error: 'iteration #' + n + ' was already ' + target.verdict });
+
+    const willCascade = verdict === 'rejected' ? loopjob.stackedAbove(loop, n).map(it => it.n) : [];
+    try {
+      loopJobs = loopjobStore.recordVerdict(loopJobs, id, n, verdict, { now: Date.now(), note: body.note });
+      saveLoops();
+    } catch (e) { return json(500, { error: 'could not save the verdict: ' + ((e && e.message) || e) }); }
+    try {
+      autonomyLedger.record({
+        source: 'loop', kind: verdict === 'approved' ? 'earn' : 'decline', jobId: id, agentId: loop.agentId,
+        reason: 'verdict-' + verdict, binding: 'commander',
+        detail: { iteration: n, cascaded: willCascade.length, noted: !!(body.note && String(body.note).trim()) }
+      });
+    } catch (_) {}
+    // a freed queue slot means the loop may fire again NOW — this is the verdict-as-trigger, made real.
+    armLoops(true);
+    json(200, { ok: true, cascaded: willCascade, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() }) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/loops/control — pause / resume / stop one loop, or lift the durable E-STOP for all of them.
+// body: { id?, action:'pause'|'resume'|'stop'|'unhalt' }
+function handleLoopsControl(req, res) {
+  const json = loopJson(res);
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const action = String(body.action || '');
+    if (action === 'unhalt') {
+      if (loopsHalted) { loopsHalted = false; saveLoopsHalted(false); }
+      armLoops(true);
+      return json(200, { ok: true, halted: loopsHalted, armed: !!loopTimer });
+    }
+    const id = String(body.id || '');
+    if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
+    const now = Date.now();
+    try {
+      if (action === 'pause') loopJobs = loopjobStore.pauseLoop(loopJobs, id, body.reason || 'paused by the Commander', { now: now });
+      else if (action === 'resume') loopJobs = loopjobStore.resumeLoop(loopJobs, id, { now: now });
+      else if (action === 'stop') loopJobs = loopjobStore.stopLoop(loopJobs, id, body.reason, { now: now });
+      else return json(400, { error: 'action must be pause, resume, stop or unhalt' });
+      saveLoops();
+    } catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    // stopping/pausing must also kill an iteration already in flight — otherwise the Commander clicks STOP and
+    // the run keeps spending until it finishes, which the button plainly implies it will not.
+    if (action !== 'resume') {
+      const lease = loopDriver.leases.get(id);
+      try { if (lease && lease.abort && typeof lease.abort.abort === 'function') lease.abort.abort(); } catch (_) {}
+    }
+    armLoops(true);
+    json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: now }) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/loops/remove — delete a loop and its ledger. body: { id }
+function handleLoopsRemove(req, res) {
+  const json = loopJson(res);
+  readBody(req, 4096).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
+    const lease = loopDriver.leases.get(id);
+    try { if (lease && lease.abort && typeof lease.abort.abort === 'function') lease.abort.abort(); } catch (_) {}
+    try { loopJobs = loopjobStore.removeLoop(loopJobs, id); saveLoops(); }
+    catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    if (!anyLiveLoop()) disarmLoops();
+    json(200, { ok: true });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
 /* ---- QUEST V3: the standing QUEST REFRESH engine (questrefresh.js owns the pure half; this is the ambient
    half — the durable file, the tick timer, the ONE aux model call, the mints through questStore). Two
    triggers, both through the same gate: the 24h cadence (a slate never goes stale) and the caught-up fast
@@ -5032,6 +5341,13 @@ const ROUTES = [
   { m: 'POST', exact: '/api/cron/preview', h: handleCronPreview },
   { m: 'POST', exact: '/api/cron/arm', h: handleCronArm },
   { m: 'POST', exact: '/api/cron/run', h: handleCronRun },
+  // ---- LOOPS (standing objectives): the review gate is /verdict, and it is also the loop's trigger ----
+  { m: 'GET', exact: '/api/loops', h: handleLoopsList },
+  { m: 'POST', exact: '/api/loops', h: handleLoopsCreate },
+  { m: 'POST', exact: '/api/loops/update', h: handleLoopsUpdate },
+  { m: 'POST', exact: '/api/loops/verdict', h: handleLoopsVerdict },
+  { m: 'POST', exact: '/api/loops/control', h: handleLoopsControl },
+  { m: 'POST', exact: '/api/loops/remove', h: handleLoopsRemove },
   // ---- away workshop (W1/W2): grant toggle, backlog queue, pending deliverables, decide, force-fire a shift ----
   { m: 'POST', exact: '/api/workshop/grant', h: handleWorkshopGrant },
   { m: 'POST', exact: '/api/workshop/queue', h: handleWorkshopQueue },
@@ -5225,6 +5541,13 @@ server.listen(PORT, '127.0.0.1', () => {
     if (cronArmed && cronHalted) console.log('  · cron is E-STOP halted — timer stays down until resumed (routines panel or autonomy dial)');
     if (cronArmed && !cronHalted) armCron();
   } catch (e) { console.warn('[cron] start failed:', (e && e.message) || e); }
+  // LOOPS: no env gate and no arm ceremony — CREATING a loop is the arming action, so a station that has live
+  // standing objectives resumes them here and a station with none pays no timer. The durable E-STOP halt
+  // (loops.halt.json) freezes them ACROSS restarts until an explicit unhalt, exactly like cron's.
+  try {
+    if (loopsHalted && anyLiveLoop()) console.log('  · loops are E-STOP halted — no iteration runs until resumed');
+    else armLoops();
+  } catch (e) { console.warn('[loops] start failed:', (e && e.message) || e); }
   // NIGHT SHIFT (OPT-IN, NS-1): arms iff SKYNET_NIGHTSHIFT_ENABLED OR the posture already permits acting at boot
   // (initiative ≥ 'leash'). Inert otherwise — no timer, no fire, byte-identical for a Commander who never dials up.
   // A live posture write that RAISES initiative to acting also arms it (POST /api/autonomy/posture), so it starts
@@ -9744,12 +10067,19 @@ function handleHalt(req, res) {
   // claiming "N routines armed" — so the tray held the process alive AFTER the user paused. The flag persists
   // (survives restart) and lifts only on an explicit resume (POST /api/cron/arm or an autonomy-dial re-write).
   try { if (cronArmed && !cronHalted) { cronHalted = true; saveCronHalted(true); disarmCron(); } } catch (_) {}
+  // LOOPS get the same durable stand-down. An in-flight iteration is aborted (it settles as 'cancelled', which
+  // costs neither the failure streak nor the convergence streak), the timer comes down, and the flag PERSISTS —
+  // so a loop the Commander E-STOPped does not quietly resume itself after a restart. It lifts only on an
+  // explicit POST /api/loops/control {action:'unhalt'}.
+  let loopAborted = 0;
+  try { loopAborted = loopDriver.abortAllLeases() || 0; } catch (_) {}
+  try { if (!loopsHalted) { loopsHalted = true; saveLoopsHalted(true); } disarmLoops(); } catch (_) {}
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
   try { inputGuard.observe('halt').catch(() => {}); } catch (_) {}   // diagnostic only: never release an unowned global clip
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted, cronAborted, beatAborted }));   // honest counts: run-controllers aborted + cron leases aborted + driver-path beat aborted (additive field)
+  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted }));   // honest counts: run-controllers aborted + cron leases aborted + driver-path beat aborted + loop iterations aborted (additive fields)
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the

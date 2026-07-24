@@ -253,7 +253,16 @@
       rejectedCount: its.filter(it => it.verdict === 'rejected').length,
       noopCount: its.filter(it => it.outcome === 'noop').length,
       dryStreak: loop.dryStreak || 0,
+      failStreak: loop.failStreak || 0,
       dryStopAfter: dryStopOf(loop),
+      // the last few iterations regardless of outcome. Without this the panel can show a loop that has run 12
+      // times with nothing to review and no way to say WHY — a failing loop would look identical to an idle
+      // one. `error` is the real settled error string, never a generic "something went wrong".
+      recent: its.slice(-5).map(it => ({
+        n: it.n, outcome: it.outcome, title: it.title, error: it.error,
+        verdict: it.verdict, endedAt: it.endedAt, usd: it.usd
+      })),
+      lastError: (() => { const f = its.slice().reverse().find(it => it.outcome === 'failed'); return f ? f.error : null; })(),
       budget: loop.budget ? {
         perDayUsd: loop.budget.perDayUsd || 0,
         perIterationUsd: loop.budget.perIterationUsd || 0,

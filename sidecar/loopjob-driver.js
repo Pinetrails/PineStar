@@ -37,6 +37,11 @@
                                                    //   reads its workshop manifest. Default = derive a title
                                                    //   from the run text and record nothing it cannot prove.
      deps.ledger(entry)     -> void                // autonomy-ledger append; source:'loop' is already allowed
+     deps.tee(name, payload, {loopId,runId,iteration}) -> void
+                                                   // OPTIONAL per-run event forwarder, so an unattended
+                                                   //   iteration is observable live. The host applies its own
+                                                   //   egress redaction (runTeeView), exactly as cron does.
+     deps.heartbeatMs       -> int                 // throttle for the durable liveness write (30s)
      deps.emit(name,payload)-> void                // OPTIONAL. NOTE: shared/events.js is the FROZEN, OWNED
                                                    //   contract and has no loop.* events, so S1 adds none —
                                                    //   the LOOPS window polls GET /api/loops the same way the
@@ -62,6 +67,7 @@
 
   const DEFAULT_MAX_PARALLEL = 4;
   const DEFAULT_MAX_RUN_MS = 900000;      // 15 min — the zombie-claim ceiling, extended by live heartbeats
+  const DEFAULT_HEARTBEAT_MS = 30000;     // durable liveness write interval while an iteration streams
   const TITLE_WORDS = 12;
 
   function noop() {}
@@ -101,6 +107,9 @@
     const harvest = isFn(deps.harvest) ? deps.harvest : defaultHarvest;
     const maxParallel = deps.maxParallel != null ? deps.maxParallel : DEFAULT_MAX_PARALLEL;
     const maxRunMs = deps.maxRunMs != null ? deps.maxRunMs : DEFAULT_MAX_RUN_MS;
+    // how often a live iteration persists its liveness heartbeat. Throttled so the token path never writes.
+    const heartbeatMs = deps.heartbeatMs != null ? deps.heartbeatMs : DEFAULT_HEARTBEAT_MS;
+    const tee = isFn(deps.tee) ? deps.tee : null;
 
     // loopId -> { runId, abort, startedAt }. In-memory only; the DURABLE half is the fire-claim on the record,
     // which is what survives a restart. Both are consulted by the gate.
@@ -177,7 +186,43 @@
       const fresh = store.getLoop(getLoops(), loop.id) || loop;
       const iterN = fresh.iterationCount;
       const ac = newAbort();
-      leases.set(loop.id, { runId: runId, abort: ac, startedAt: nowMs });
+      leases.set(loop.id, { runId: runId, abort: ac, startedAt: nowMs, beatAt: nowMs });
+
+      /* the per-run EMIT SINK, mirroring cron-driver's. It does three load-bearing jobs:
+
+         1. LIVENESS. Every progress event proves the iteration is genuinely alive, so it renews the durable
+            heartbeat (throttled — the token path must not persist on every delta). Without this a real
+            long-running iteration outlives maxRunMs, gets declared a ZOMBIE, and is re-fired while still
+            running. Nothing else calls store.renewHeartbeat, so the whole heartbeat mechanism hangs off here.
+         2. OUTCOME CAPTURE. runOnce RESOLVES on a failed run and reports the failure through events, so a
+            driver that trusted only the promise would settle a broken iteration as a review candidate and ask
+            the Commander to approve work that never happened.
+         3. VISIBILITY. Forwards to the injected tee so an unattended iteration is observable live, in exactly
+            the redacted shape the host already applies to other autonomous runs. */
+      // `buf` accumulates the streamed reply. runOnce does NOT return the assistant text (it resolves with
+      // {reason, messages, usd, turns, …}), so the token stream is where the iteration's own account of its
+      // work comes from — the same way cron-driver captures it. This is what the convergence reader and the
+      // candidate title are read from, so without it every candidate is titleless and NOTHING-TO-DO is never seen.
+      const state = { buf: '', errMsg: null, reason: null, cancelled: false };
+      const sink = function (name, payload) {
+        const p = payload || {};
+        const lease = leases.get(loop.id);
+        if (lease) {
+          lease.beatAt = now();
+          if (lease.beatAt - (lease.persistedBeatAt || 0) > heartbeatMs) {
+            lease.persistedBeatAt = lease.beatAt;
+            try { setLoops(store.renewHeartbeat(getLoops(), loop.id, { now: lease.beatAt })); } catch (_) {}
+          }
+        }
+        if (name === 'agent.token') { state.buf += (p.delta || ''); return; }   // accumulated here; never teed out
+        if (name === 'agent.run.error') state.errMsg = p.message || 'run error';
+        else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
+        else if (name === 'agent.run.end') {
+          state.reason = p.reason;
+          if (p.reason === 'cancelled') state.cancelled = true;
+        }
+        if (tee) { try { tee(name, p, { loopId: loop.id, runId: runId, iteration: iterN }); } catch (_) {} }
+      };
 
       note('fire', fresh, { runId: runId, reason: 'iteration-' + iterN, binding: 'verdict', detail: { iteration: iterN } });
       try { emit('loop.fire', { loopId: loop.id, runId: runId, iteration: iterN }); } catch (_) {}
@@ -198,7 +243,7 @@
         station: deps.stationFor ? deps.stationFor(fresh.agentId) : undefined,
         // a per-iteration USD ceiling, when the Commander set one. 0 = ungoverned (budgetcaps.js semantics).
         maxCostUsd: (fresh.budget && fresh.budget.perIterationUsd) || undefined,
-        emit: deps.runEmit ? deps.runEmit(fresh, runId) : undefined
+        emit: sink
       };
 
       let p;
@@ -213,12 +258,21 @@
       // driver whose bookkeeping throws must degrade to a stranded lease, never to a dead sidecar.
       Promise.resolve(p)
         .then(
-          (res) => Promise.resolve().then(() => harvest(fresh, res || {}, iterN)).then(
-            (h) => settle(loop.id, runId, Object.assign({ status: 'ok' }, h || {})),
-            // a harvest failure (e.g. git refused the commit) is a REAL iteration failure, not a silent
-            // success: the work did not land, so the loop must not park a candidate the Commander cannot act on.
-            (e) => settle(loop.id, runId, { status: 'error', error: 'harvest: ' + ((e && e.message) || 'failed') })
-          ),
+          (res) => {
+            // runOnce RESOLVES on a failed run — the failure arrives through the sink (state.errMsg) or as an
+            // end reason. Trusting the promise alone would park a broken iteration as a review candidate and
+            // ask the Commander to approve work that never happened.
+            if (state.cancelled) return settle(loop.id, runId, { status: 'error', cancelled: true, error: 'cancelled' });
+            if (state.errMsg) return settle(loop.id, runId, { status: 'error', error: state.errMsg });
+            // hand the harvest the run result WITH the streamed text folded in (runOnce doesn't carry it).
+            const withText = Object.assign({}, res || {}, { text: (res && res.text) || state.buf });
+            return Promise.resolve().then(() => harvest(fresh, withText, iterN)).then(
+              (h) => settle(loop.id, runId, Object.assign({ status: 'ok' }, h || {})),
+              // a harvest failure (e.g. git refused the commit) is a REAL iteration failure, not a silent
+              // success: the work did not land, so the loop must not park a candidate the Commander cannot act on.
+              (e) => settle(loop.id, runId, { status: 'error', error: 'harvest: ' + ((e && e.message) || 'failed') })
+            );
+          },
           (e) => settle(loop.id, runId, {
             status: 'error',
             cancelled: !!(e && (e.name === 'AbortError' || /abort/i.test(String(e.message || '')))),
