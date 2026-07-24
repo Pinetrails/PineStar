@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Troubleshooting — StarNet Docs</title>
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
-<link rel="stylesheet" href="docs.css?v=20260723">
+<link rel="stylesheet" href="docs.css?v=20260724">
 </head>
 <body>
 
@@ -46,8 +46,20 @@
 certificate is new and building reputation — not because anything is wrong. Click
 <b>More info</b> &rarr; <b>Run anyway</b>.</p>
 
-<h2>macOS: "cannot be opened" / "is damaged"</h2>
-<p>Gatekeeper's standard message for un-notarized apps; the file is fine. After the first
+<h2>macOS: "is damaged and can't be opened" (Apple Silicon)</h2>
+<p>StarNet is not Apple-notarized yet, and on Apple Silicon that makes Gatekeeper report a
+downloaded native build as <b>damaged</b>. The file is not damaged &mdash; this is just how
+macOS phrases "un-notarized arm64 app from the internet". Unlike the Intel warning below,
+this dialog gives you <b>no Open Anyway button</b>, and right-click &rarr; Open will not
+work either.</p>
+<p>Drag StarNet into <b>Applications</b>, then open <b>Terminal</b> (Cmd-Space, type
+"Terminal") and run this once:</p>
+<pre><code>xattr -dr com.apple.quarantine /Applications/StarNet.app</code></pre>
+<p>Then launch it from Applications normally. You only need this once per install &mdash; and
+it goes away entirely once notarization lands.</p>
+
+<h2>macOS: "cannot be opened because Apple cannot check it" (Intel)</h2>
+<p>Gatekeeper's standard un-notarized message on Intel Macs; the file is fine. After the first
 blocked attempt: <b>System Settings &rarr; Privacy &amp; Security &rarr; Open Anyway</b>, or
 right-click the app &rarr; <b>Open</b> on older macOS. One-time only.</p>
 

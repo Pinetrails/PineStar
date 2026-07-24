@@ -15,7 +15,7 @@
 <meta name="twitter:description" content="Recruit AI agents into a living station on your machine, put them to work, and build your empire. Local-first. Open source. BYOK.">
 <meta name="twitter:image" content="https://starnetos.com/assets/og-card.png">
 <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
-<link rel="stylesheet" href="styles.css?v=20260723">
+<link rel="stylesheet" href="styles.css?v=20260724">
 </head>
 <body>
 
@@ -142,12 +142,18 @@
         <div class="dl-os">MACOS &middot; APPLE SILICON</div>
         <div class="dl-req">M1 / M2 / M3 / M4</div>
         <a class="btn btn-primary dl-btn" data-asset="aarch64.dmg" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .DMG ]</a>
-        <div class="dl-note">Gatekeeper warning expected: right-click &rarr; Open.</div>
+        <div class="dl-note">Not Apple-notarized yet, so macOS falsely calls this build <b>damaged</b> &mdash; and that dialog has <b>no</b> Open Anyway button. Nothing is wrong with the file. After dragging it to Applications, clear the download flag once in Terminal:<br><code>xattr -dr com.apple.quarantine /Applications/StarNet.app</code><br><a href="docs/getting-started.html">Full steps &rarr;</a></div>
+      </article>
+      <article class="dl-card" data-os="mac-intel">
+        <div class="dl-os">MACOS &middot; INTEL</div>
+        <div class="dl-req">Intel Macs only</div>
+        <a class="btn btn-primary dl-btn" data-asset="x64.dmg" href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">[ .DMG ]</a>
+        <div class="dl-note">For Intel hardware. On Apple Silicon this runs through Rosetta and macOS now warns that Rosetta will stop working in a future release &mdash; take the Apple Silicon build instead. Gatekeeper blocks the first launch: <b>System Settings &rarr; Privacy &amp; Security &rarr; Open Anyway</b>.</div>
       </article>
     </div>
     <div class="source-run">
       <div class="source-run-head">// prefer to run from source? node 18+ is all you need</div>
-    <p class="dl-honesty">// honesty note: every build is cryptographically signed for auto-updates, and Windows installers are Authenticode code-signed. macOS builds aren't Apple-notarized yet, so Gatekeeper shows a one-time warning before first run; Windows SmartScreen may also warn until the signing certificate earns reputation. The <a href="docs/getting-started.html">getting-started guide</a> shows exactly what to click on each platform. Something broken? Tell us: <a href="mailto:androo.agi@gmail.com">androo.agi@gmail.com</a>.</p>
+    <p class="dl-honesty">// honesty note: every build is cryptographically signed for auto-updates, and Windows installers are Authenticode code-signed. macOS builds aren't Apple-notarized yet, so Gatekeeper blocks the first launch &mdash; on Apple Silicon it does that with a false "damaged" message that needs a one-time Terminal command to clear, not a button. Windows SmartScreen may also warn until the signing certificate earns reputation. The <a href="docs/getting-started.html">getting-started guide</a> shows exactly what to click on each platform. Something broken? Tell us: <a href="mailto:androo.agi@gmail.com">androo.agi@gmail.com</a>.</p>
   </section>
 
   <!-- ===== docs ===== -->

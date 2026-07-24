@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Getting started — StarNet Docs</title>
 <link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
-<link rel="stylesheet" href="docs.css?v=20260723">
+<link rel="stylesheet" href="docs.css?v=20260724">
 </head>
 <body>
 
@@ -60,9 +60,28 @@ still show <i>"Windows protected your PC"</i> — click <b>More info</b> &rarr; 
 The installer then runs normally.</p>
 
 <h3>macOS first run</h3>
+<p>StarNet isn't Apple-notarized yet, so macOS blocks the first launch. What you see — and how
+you clear it — depends on your chip.</p>
+
+<h4>Apple Silicon (the <code>aarch64</code> DMG)</h4>
+<p>macOS reports the app as <i>"StarNet is damaged and can't be opened. You should move it to
+the Trash."</i> <b>It is not damaged.</b> That is simply how macOS describes an un-notarized
+arm64 app downloaded from the internet. This dialog has <b>no Open Anyway button</b>, and
+right-click &rarr; Open will not help — so clear the download flag directly:</p>
 <ol>
 <li>Open the <code>.dmg</code> and drag <b>StarNet</b> into <b>Applications</b>.</li>
-<li>Open StarNet once — macOS blocks it the first time (the app isn't notarized yet).</li>
+<li>Open <b>Terminal</b> (Cmd-Space, type "Terminal", Enter) and run:
+<pre><code>xattr -dr com.apple.quarantine /Applications/StarNet.app</code></pre></li>
+<li>Launch StarNet from Applications normally.</li>
+</ol>
+<p>Once per install. If you later update by downloading a new DMG, run it again for that copy.
+This disappears entirely once StarNet is notarized.</p>
+
+<h4>Intel (the <code>x64</code> DMG)</h4>
+<ol>
+<li>Open the <code>.dmg</code> and drag <b>StarNet</b> into <b>Applications</b>.</li>
+<li>Open StarNet once — macOS blocks it with <i>"cannot be opened because Apple cannot check
+it for malicious software."</i></li>
 <li>Approve it: <b>System Settings &rarr; Privacy &amp; Security</b>, scroll to Security,
 click <b>Open Anyway</b> — or on older macOS, right-click the app &rarr; <b>Open</b> &rarr; <b>Open</b>.</li>
 </ol>
