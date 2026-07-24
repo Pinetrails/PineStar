@@ -264,7 +264,7 @@
       if (!c || !c.unpriced) return;
       unpricedUsage.push({ model: modelId || '(unknown)', tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 });
     }
-    function end(reason) {
+    function end(reason, extra) {
       // A3/Lane5: surface WHY the model stopped when it's a truncation/policy stop, ADDITIVELY — on BOTH the return
       // value (index.js gates reflection/study/skills on it) AND the agent.run.end event (the frontend renders a
       // "cut short" recap instead of a delivered crate). The event field is now schema-declared (optional) so old
@@ -272,9 +272,19 @@
       const cut = (lastFinishReason === 'length' || lastFinishReason === 'content_filter') ? lastFinishReason : null;
       const endPayload = { agentId, runId, reason, turns, usd: spentUsd };
       if (cut) endPayload.finishReason = cut;
+      // Budget-stop legibility: a 'budget' stop names WHICH cap fired (scope + the effective $ cap), ADDITIVELY,
+      // on both the event and the return — the frontend renders "hit the $X per-run spend cap → BUDGET settings"
+      // instead of an unexplained stop. Scope is gated to the schema enum so a bad caller can't push an
+      // out-of-contract payload; both fields are simply absent on every other reason (old payloads stay valid).
+      const bs = extra && extra.budgetScope;
+      if (reason === 'budget' && (bs === 'run' || bs === 'agent' || bs === 'day' || bs === 'global')) {
+        endPayload.budgetScope = bs;
+        if (typeof extra.budgetCapUsd === 'number' && isFinite(extra.budgetCapUsd)) endPayload.budgetCapUsd = extra.budgetCapUsd;
+      }
       emit('agent.run.end', endPayload);
       const out = { reason, messages, usd: spentUsd, turns, tokens: spentTokens, model, unpricedUsage: unpricedUsage.slice() };
       if (cut) out.finishReason = cut;
+      if (endPayload.budgetScope) { out.budgetScope = endPayload.budgetScope; if (endPayload.budgetCapUsd != null) out.budgetCapUsd = endPayload.budgetCapUsd; }
       return out;
     }
 
@@ -345,12 +355,12 @@
         messages.push({ role: 'system', content: '<iteration_limit>You have reached the maximum number of tool-using turns (' + maxIters + '). Do NOT call any more tools. Give your best final answer to the user now using what you already have.</iteration_limit>' });
         // fall through: the grace turn runs below; if it still calls tools, the next pass ends max_iters.
       }
-      if (spentUsd >= maxCostUsd) return end('budget');   // per-RUN hard ceiling
+      if (spentUsd >= maxCostUsd) return end('budget', { budgetScope: 'run', budgetCapUsd: maxCostUsd });   // per-RUN hard ceiling
       // CROSS-RUN BUDGET: day/global pool over the ledger. check() emits any threshold crossing itself and
       // returns a block descriptor when a soft cap is reached (no resume headroom left) -> stop as 'budget'.
       if (budget) {
         const b = budget.check(spentUsd);
-        if (b) return end('budget');
+        if (b) return end('budget', { budgetScope: b.scope, budgetCapUsd: b.cap });
       }
       // COMPUTE GATE: a model turn needs a compute capability (a computer in the room).
       if (capCtx && typeof capCtx.canRun === 'function' && !capCtx.canRun()) {

@@ -478,6 +478,7 @@ const Harness = (() => {
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = '', full = '', lastUsage = null, runId = null, errMsg = null, endReason = null, finishReason = null;
+    let budgetScope = null, budgetCapUsd = null;   // additive: WHICH spend cap ended a 'budget' run (+ its $ cap)
 
     for (;;) {
       const { value, done } = await reader.read();
@@ -531,7 +532,12 @@ const Harness = (() => {
             if (payload.runId) { delete runModels[payload.runId]; internalRuns.delete(payload.runId); }
             // latch the lead's stop reason AND (Lane 5, additive) WHY it stopped when the provider truncated/
             // filtered it — the caller renders a "cut short" recap instead of a delivered crate for those.
-            if (!payload.runId || payload.runId === runId) { endReason = payload.reason; finishReason = payload.finishReason || null; }
+            if (!payload.runId || payload.runId === runId) {
+              endReason = payload.reason; finishReason = payload.finishReason || null;
+              // additive budget-stop detail: which cap fired + the effective $ cap (absent on non-budget stops)
+              budgetScope = payload.budgetScope || null;
+              budgetCapUsd = (typeof payload.budgetCapUsd === 'number' && isFinite(payload.budgetCapUsd)) ? payload.budgetCapUsd : null;
+            }
             break;   // the lead's own end, not a forwarded worker's
         }
       }
@@ -539,8 +545,8 @@ const Harness = (() => {
     totals.calls++;
     // surface the error to the caller (do NOT swallow it just because some text streamed first) —
     // a network/fetch failure still throws below; this is for in-band run errors / capdenied.
-    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason, finishReason };
-    return { text: full, usage: lastUsage, runId, endReason, finishReason };
+    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason, finishReason, budgetScope, budgetCapUsd };
+    return { text: full, usage: lastUsage, runId, endReason, finishReason, budgetScope, budgetCapUsd };
   }
 
   /* Read-only fetch of an agent's notebook (its memory.md) from the sidecar. The agent writes these notes

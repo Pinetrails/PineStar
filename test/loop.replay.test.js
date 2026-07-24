@@ -223,6 +223,31 @@ function chatFixture() {
     A.eq(res.reason, 'budget', 'a budget block ends the run as budget');
     A.eq(provider.callCount(), 0, 'no model call is made when the budget blocks up front');
     A.eq(names(seq), ['agent.run.start', 'agent.run.end'], 'budget block: start then end, no paid turn');
+    // budget-stop legibility (additive): the end event + return name WHICH cap fired and its effective $ cap
+    const endEv = seq.find(e => e.name === 'agent.run.end');
+    A.eq(endEv.payload.budgetScope, 'day', 'a pool block carries its scope on agent.run.end');
+    A.eq(endEv.payload.budgetCapUsd, 40, 'a pool block carries the effective $ cap on agent.run.end');
+    A.eq(res.budgetScope, 'day', 'the return value carries the blocked scope too');
+    A.eq(res.budgetCapUsd, 40, 'the return value carries the effective $ cap too');
+  }
+
+  // ---- per-RUN hard ceiling: maxCostUsd 0 blocks before any paid call, named as scope 'run' ----
+  {
+    const { seq, emit } = setup();
+    const provider = makeReplayProvider(chatFixture());
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'hi' }], provider, emit, cost: makeCostEngine({ priceOf: provider.priceOf }), model: 'replay/model', agentId: 'a', runId: 'r', limits: { maxCostUsd: 0 } });
+    A.eq(res.reason, 'budget', 'spentUsd >= maxCostUsd ends the run as budget');
+    A.eq(provider.callCount(), 0, 'no model call is made past the per-run ceiling');
+    const endEv = seq.find(e => e.name === 'agent.run.end');
+    A.eq(endEv.payload.budgetScope, 'run', 'the per-run hard ceiling is named scope run');
+    A.eq(endEv.payload.budgetCapUsd, 0, 'the per-run cap value rides the event');
+    // a clean stop must NOT carry the budget fields (additive — absent on every other reason)
+    const { seq: seq2, emit: emit2 } = setup();
+    const p2 = makeReplayProvider(chatFixture());
+    await runAgentLoop({ messages: [{ role: 'user', content: 'hi' }], provider: p2, emit: emit2, cost: makeCostEngine({ priceOf: p2.priceOf }), model: 'replay/model', agentId: 'a', runId: 'r2' });
+    const cleanEnd = seq2.find(e => e.name === 'agent.run.end');
+    A.eq(cleanEnd.payload.budgetScope, undefined, 'a clean done run omits budgetScope');
+    A.eq(cleanEnd.payload.budgetCapUsd, undefined, 'a clean done run omits budgetCapUsd');
   }
 
   // ---- a permissive budget does not interfere; the loop returns total tokens (for the ledger) ----

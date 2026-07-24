@@ -18,7 +18,10 @@ function boot(port, workspaces, attemptsLeft) {
     const child = spawn(process.execPath, [INDEX], {
       env: Object.assign({}, process.env, {
         STARNET_PORT: String(port),
-        STARNET_WORKSPACES: workspaces
+        STARNET_WORKSPACES: workspaces,
+        // the token-gated-POST probe below uses /api/budget/resume{day}; shipped pool defaults are UNGOVERNED
+        // (2026-07-23 budget-legibility pass — resume on an ungoverned scope 409s), so govern the day pool here.
+        STARNET_BUDGET_PER_DAY: '40'
       }),
       stdio: ['ignore', 'pipe', 'pipe']
     });

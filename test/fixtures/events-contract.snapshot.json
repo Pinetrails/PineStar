@@ -54,6 +54,8 @@
     ],
     "properties": [
       "agentId",
+      "budgetCapUsd",
+      "budgetScope",
       "finishReason",
       "reason",
       "runId",
