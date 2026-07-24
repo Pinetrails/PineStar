@@ -4432,15 +4432,20 @@ function startTelegramBot(botId) {
     channel: 'telegram:' + botId, runOnce: runOnce, store: makeBotScopedStore(botId),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
-    // live per-message read (same contract as the station bot): provider config falls back to the station
-    // record then the app runtime keys, so a bot added on a keychain desktop needs no plaintext key of its own.
+    // live per-message read (same contract as the station bot). THE BOT IS ITS AGENT: identity (system prompt),
+    // model and provider come from the LIVE roster entry first — a dossier edit or model switch applies to the
+    // bot's next message with no reconnect, and two bots bound to different agents stay genuinely different
+    // even when the connect-time frontend had a stale/empty local copy of the prompt. The record's own values
+    // are the fallback (roster row deleted), then the station record. Keys fall back record → station → runtime,
+    // so a bot added on a keychain desktop needs no plaintext key of its own.
     secrets: () => {
       const r = recOf();
+      const ra = (typeof agentRoster !== 'undefined' && agentRoster.get) ? agentRoster.get(String(r.agentId || '')) : null;
       const main = (channelSecrets && channelSecrets.telegram) || {};
-      const provider = normalizeProvider(r.provider || main.provider);
+      const provider = normalizeProvider((ra && ra.provider) || r.provider || main.provider);
       const key = providerRuntimeKey(provider, r.key || main.key || '');
       const baseUrl = providerRuntimeBaseUrl(provider, r.baseUrl || '');
-      return { key, model: r.model || main.model, provider, baseUrl, configured: providerHasCredential(provider, key, baseUrl), reasoningEffort: resolveReasoningEffort(provider, r.reasoningEffort), agentId: r.agentId, system: r.system };
+      return { key, model: (ra && ra.model) || r.model || main.model, provider, baseUrl, configured: providerHasCredential(provider, key, baseUrl), reasoningEffort: resolveReasoningEffort(provider, r.reasoningEffort), agentId: r.agentId, system: (ra && ra.system) || r.system };
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),
