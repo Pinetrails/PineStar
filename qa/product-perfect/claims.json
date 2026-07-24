@@ -1828,11 +1828,15 @@
     {
       "id": "manual-mcp-connect",
       "domain": "integrations",
-      "claim": "Users can connect HTTP or local stdio MCP servers and discover their tools.",
+      "claim": "Users can connect remote HTTP MCP servers and discover their tools. Local stdio servers are refused on the desktop host, and the panel says so instead of offering a form that cannot work.",
       "surfaceLocators": [
         {
           "path": "frontend/app/windows/connectors.js",
-          "needle": "Remote http(s) servers, or a local"
+          "needle": "Remote http(s) MCP servers."
+        },
+        {
+          "path": "frontend/app/windows/connectors.js",
+          "needle": "Local <code>stdio</code> MCP servers can’t run here."
         }
       ],
       "authorityChecks": [
@@ -1845,12 +1849,17 @@
           "kind": "contains",
           "path": "sidecar/mcp/manager.js",
           "needle": "tools/list"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/mcp/transport.stdio.js",
+          "needle": "deps.userControlIsolated === true"
         }
       ],
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
       "ownerWave": "W6",
-      "qualification": "Manual manager paths exist; W6 still needs live connect/fail/revoke evidence.",
+      "qualification": "Manual manager paths exist; W6 still needs live connect/fail/revoke evidence. 2026-07-24: the previous wording claimed local stdio connectivity, which the shipped app never had — the installed desktop pins STARNET_MCP_STDIO=0 and makeStdioTransport requires a broker-proven isolated cell that no production path sets, so the stdio form was withdrawn in favour of an in-panel explanation.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [

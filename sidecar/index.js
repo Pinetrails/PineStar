@@ -2469,7 +2469,9 @@ if (require.main === module) {
   inputGuard.observe('boot').catch(() => {});
 }
 const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
-const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env });
+// serviceEnv: the KEYS-tab vars a shell child must receive. Lazy + per call — sanitizeChildEnv strips every
+// *_API_KEY from the inherited env, so without this the pasted key never reaches curl (see servicekeys.runEnv).
+const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: () => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV }) });
 try { console.log('[exec-env]', JSON.stringify(executionEnvironment.describe())); } catch (_) {}
 const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200 });
 
@@ -2523,8 +2525,11 @@ function saveConnectorConfigs() {
 /* ---- Custom service API keys (the KEYS tab's "add an unlisted platform"): a third credential class beside
    provider keys and connector tokens. Persisted in a PROTECTED sibling file (outside the fs jail, never on the
    bus; /api/servicekeys responses carry a masked last4, never the value). Enabled keys are applied to
-   process.env (shell.exec children inherit it — that is HOW a pasted key actually works for an agent), with
-   servicekeys.applyEnv's ownership guard so an operator-exported ambient var is never clobbered. The prompt
+   process.env with servicekeys.applyEnv's ownership guard so an operator-exported ambient var is never
+   clobbered. NOTE: a shell child does NOT simply inherit process.env — environment.js hands it a
+   sanitizeChildEnv() snapshot that strips every *_KEY/_TOKEN name, which silently severed this whole feature
+   until the executionEnvironment `serviceEnv` hook (servicekeys.runEnv) merged the enabled vars back in per
+   call. Change either side and re-run test/servicekeys.env.test.js — the prompt PROMISES the var is there. The prompt
    seam advertises the env-var NAMES only, gated on shell.exec being in the run's resolved tools. ---- */
 const SERVICEKEYS_FILE = path.join(CONNECTORS_DIR, 'servicekeys.json');
 // Every model-provider keyEnv name (+ its STARNET_/SKYNET_ scoped forms, which ENV() also reads): a KEYS

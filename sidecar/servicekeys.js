@@ -180,6 +180,28 @@
     return nextOwned;
   }
 
+  /* The env map a shell run must actually RECEIVE. Names of the ENABLED keys, resolved from the HOST
+     env that applyEnv already populated — so the ambient-wins ownership rule is honoured for free, a
+     key pasted after boot is live on the very next run, and a disabled/removed one disappears (applyEnv
+     scrubs what it owns). Pure: reads `hostEnv`, never writes it.
+     WHY THIS EXISTS: spawn does NOT inherit process.env here. environment.js hands every shell child a
+     sanitizeChildEnv() snapshot that strips any name matching _KEY/_TOKEN/_SECRET/… — and deriveEnvVar
+     always ends in _API_KEY, so 100% of KEYS-tab entries were stripped while promptBlock still told the
+     model the variable was there (the model expanded empty and got a 401). This map is merged back into
+     the child env per call; the VALUE still never enters the prompt. */
+  function runEnv(list, hostEnv, opts) {
+    const src = hostEnv || {};
+    const reserved = reservedSet(opts);
+    const out = {};
+    for (const r of cleanList(list)) {
+      if (r.enabled === false) continue;
+      if (!r.envVar || reserved.has(r.envVar)) continue;   // never let a paste shadow a provider/billing key
+      const v = src[r.envVar];
+      if (v != null && v !== '') out[r.envVar] = String(v);
+    }
+    return out;
+  }
+
   /* The system-prompt block. NAMES only — the value never enters the prompt (the model uses the env
      var from its shell). '' when nothing is enabled, so the assembly seam stays byte-identical for a
      user with no service keys. The caller gates this on shell.exec being in the run's resolved tools:
@@ -199,5 +221,5 @@
       + '\n</service_keys>';
   }
 
-  return { NAME_MAX, KEY_MAX, LIST_MAX, slug, deriveEnvVar, validate, mask, toPublic, upsert, setEnabled, remove, applyEnv, promptBlock };
+  return { NAME_MAX, KEY_MAX, LIST_MAX, slug, deriveEnvVar, validate, mask, toPublic, upsert, setEnabled, remove, applyEnv, runEnv, promptBlock };
 });

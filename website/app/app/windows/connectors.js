@@ -51,7 +51,7 @@
       '<p class="set-about">Attach an <b>MCP server</b> to give your agents external tools (GitHub, Slack, a database…). ' +
         'Its tools appear automatically and run through the same approval gate as the built-ins. ' +
         '<span class="dim">(Looking to chat with your agent FROM Slack or Telegram instead? That’s ✉ CHANNELS.)</span> ' +
-        '<span class="dim">(Remote http(s) servers, or a local <code>stdio</code> command. Secrets are stored locally by the sidecar and never displayed.)</span></p>' +
+        '<span class="dim">(Remote http(s) MCP servers. Secrets are stored locally by the sidecar and never displayed.)</span></p>' +
       '<div id="mc-list" class="mc-list"><span class="loading pulse">loading…</span></div>' +
       '<div class="sec"><span class="sec-l" id="mc-form-h">ADD A CONNECTOR</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<div class="mc-form" id="mc-form">' +
@@ -61,6 +61,8 @@
         '<div class="mc-seg" id="mc-transport" role="tablist">' +
           '<button type="button" class="mc-seg-btn active" data-tp="http" role="tab" aria-selected="true">HTTP</button>' +
           '<button type="button" class="mc-seg-btn" data-tp="stdio" role="tab" aria-selected="false">STDIO (local)</button>' +
+          // kept as a TAB, not deleted: someone arriving with an `npx …` config from another harness needs to be
+          // told WHY it has no home here and what to do instead. Selecting it shows an explanation, never inputs.
         '</div>' +
         // ---- HTTP fields ----
         '<div class="mc-tp-fields" data-tp="http">' +
@@ -72,13 +74,20 @@
           '<div class="mc-hint">Custom request headers as <code>Name: value</code>, one per line.</div>' +
         '</div>' +
         // ---- STDIO fields ----
+        // NO INPUTS HERE, DELIBERATELY. The installed app pins STARNET_MCP_STDIO=0 (src-tauri/src/main.rs) and
+        // makeStdioTransport refuses without a broker-proven isolated cell (sidecar/mcp/transport.stdio.js), so a
+        // local child MCP server can NEVER connect on the desktop host. This pane used to offer command/args/cwd/env
+        // fields: the config saved, the connect threw, and the doomed row sat red in the list forever. Offering the
+        // form was a truthful-telemetry violation — a UI asserting a capability the backend permanently refuses.
         '<div class="mc-tp-fields" data-tp="stdio" style="display:none">' +
-          '<input id="mc-command" class="key-input" placeholder="command — e.g. npx" autocomplete="off" spellcheck="false">' +
-          '<div class="mc-hint">Allowed launchers: <code>node</code>, <code>npx</code>, <code>npm</code>, <code>pnpm</code>, <code>yarn</code>, <code>python</code>, <code>uvx</code>.</div>' +
-          '<input id="mc-args" class="key-input" placeholder="args (space-separated) — e.g. -y @modelcontextprotocol/server-github" autocomplete="off" spellcheck="false">' +
-          '<input id="mc-cwd" class="key-input" placeholder="working directory (optional)" autocomplete="off" spellcheck="false">' +
-          '<textarea id="mc-env" class="key-input mc-kv" placeholder="env vars (optional), one per line:&#10;GITHUB_TOKEN=ghp_…" spellcheck="false" rows="2"></textarea>' +
-          '<div class="mc-hint">Environment for the child process as <code>NAME=value</code>, one per line. Secret-looking values are never echoed back.</div>' +
+          '<div class="mc-detail">Local <code>stdio</code> MCP servers can’t run here.</div>' +
+          '<div class="mc-hint">StarNet will not spawn an unsandboxed child process on your machine, so a ' +
+            '<code>npx …</code> / <code>uvx …</code> server (the kind most desktop MCP clients use) has no way to start. ' +
+            'Saving one would leave a connector that never connects.</div>' +
+          '<div class="mc-hint"><b>Instead:</b> if the service publishes a <b>remote</b> MCP endpoint, add it on the ' +
+            '<b>HTTP</b> tab. If it only ships a local server — or only a plain REST API — paste the service’s API key ' +
+            'on the <b>KEYS</b> tab and give the agent a <b>workbench</b>; it can then call the API directly from its ' +
+            'terminal, with the key supplied as an environment variable that never enters the prompt.</div>' +
         '</div>' +
         '<input id="mc-timeout" class="key-input" type="number" min="1000" max="600000" placeholder="timeout ms (optional, default 30000)" autocomplete="off">' +
         '<div class="mc-hint">How long to wait for the handshake / a tool call before giving up. Default 30s.</div>' +
@@ -189,6 +198,11 @@
     function setTransport(tp) {
       body.querySelectorAll('.mc-seg-btn').forEach(b => { const a = b.dataset.tp === tp; b.classList.toggle('active', a); b.setAttribute('aria-selected', a ? 'true' : 'false'); });
       body.querySelectorAll('.mc-tp-fields').forEach(f => { f.style.display = f.dataset.tp === tp ? '' : 'none'; });
+      // stdio can never connect on this host, so the commit action is disabled rather than offering a save that
+      // is guaranteed to end in a permanently-red row. The pane still explains where to go instead.
+      const dead = tp === 'stdio';
+      addBtn.disabled = dead;
+      addBtn.title = dead ? 'local stdio MCP servers cannot run on this host — use the HTTP tab, or the KEYS tab + a workbench' : '';
     }
     body.querySelector('#mc-transport').addEventListener('click', ev => {
       const b = ev.target.closest('.mc-seg-btn'); if (!b) return; setTransport(b.dataset.tp); sfx('tick');
@@ -211,7 +225,7 @@
       addBtn.textContent = '+ ADD & CONNECT';
       cancelBtn.style.display = 'none';
       idInput.disabled = false;
-      ['#mc-id', '#mc-label', '#mc-url', '#mc-token', '#mc-headers', '#mc-command', '#mc-args', '#mc-cwd', '#mc-env', '#mc-timeout']
+      ['#mc-id', '#mc-label', '#mc-url', '#mc-token', '#mc-headers', '#mc-timeout']
         .forEach(s => { const el = body.querySelector(s); if (el) el.value = ''; });
       setTransport('http');
     }
@@ -229,12 +243,10 @@
       body.querySelector('#mc-timeout').value = (c.timeoutMs && c.timeoutMs !== 30000) ? c.timeoutMs : '';
       setTransport(c.transport === 'stdio' ? 'stdio' : 'http');
       if (c.transport === 'stdio') {
-        body.querySelector('#mc-command').value = c.command || '';
-        body.querySelector('#mc-args').value = (c.args || []).join(' ');
-        body.querySelector('#mc-cwd').value = c.cwd || '';
-        // env values are redacted server-side; show keys with a placeholder so the user knows what's set.
-        const envKeys = Object.keys(c.env || {});
-        body.querySelector('#mc-env').value = envKeys.map(k => k + '=' + (c.env[k] === '<redacted>' ? '' : c.env[k])).join('\n');
+        // A legacy stdio row from before this pane stopped offering the form. There is nothing editable that
+        // could make it connect on this host, so EDIT shows the explanation and leaves REMOVE as the cure.
+        msgEl.classList.remove('ok');
+        msgEl.textContent = 'stdio connectors cannot run on this host — remove it, or re-add the server on the HTTP tab.';
       } else {
         body.querySelector('#mc-url').value = c.url || '';
         body.querySelector('#mc-token').value = '';   // never round-trip the token
@@ -255,7 +267,10 @@
       const tools = (c.tools && c.tools.length) ? '<div class="mc-tools">' + c.tools.map(t => '<code>' + esc(t) + '</code>').join('') + '</div>' : '';
       const detail = (c.state === 'error' && c.detail) ? '<div class="mc-detail">' + esc(c.detail) + '</div>' : '';
       const where = c.transport === 'stdio'
-        ? ('<span class="mc-tag">stdio</span> <code>' + esc([c.command].concat(c.args || []).join(' ')) + '</code>' + (c.hasEnv ? ' · env set' : ''))
+        ? ('<span class="mc-tag">stdio</span> <code>' + esc([c.command].concat(c.args || []).join(' ')) + '</code>' + (c.hasEnv ? ' · env set' : '') +
+           // a legacy row from before the form was withdrawn: say plainly that it cannot come up, so its red
+           // state reads as "unsupported here", not "flaky server the user should keep retrying".
+           '<div class="mc-hint">Local stdio servers cannot run on this host — this connector will never connect. Remove it, or re-add the server on the HTTP tab.</div>')
         : ('<span class="mc-tag">http</span> ' + esc(c.url) + (c.hasToken ? ' · token saved' : '') + (c.hasHeaders ? ' · headers set' : ''));
       const timeout = (c.timeoutMs && c.timeoutMs !== 30000) ? '<span class="dim"> · ' + Math.round(c.timeoutMs / 1000) + 's</span>' : '';
       return '<div class="mc-row" data-id="' + esc(c.id) + '" data-enabled="' + (c.enabled ? '1' : '0') + '" style="--ci:' + (ri || 0) + '">' +
@@ -331,14 +346,10 @@
         if (h.bad) { sfx('bad'); msgEl.classList.remove('ok'); msgEl.textContent = 'header needs "Name: value" — check: ' + h.bad; return; }
         payload.headers = h.out;
       } else {
-        const command = (body.querySelector('#mc-command').value || '').trim();
-        if (!command) { sfx('bad'); msgEl.classList.remove('ok'); msgEl.textContent = 'a stdio command is required'; return; }
-        payload.command = command;
-        payload.args = (body.querySelector('#mc-args').value || '').trim().split(/\s+/).filter(Boolean);
-        const cwd = (body.querySelector('#mc-cwd').value || '').trim(); if (cwd) payload.cwd = cwd;
-        const e = parseKV(body.querySelector('#mc-env').value, '=');
-        if (e.bad) { sfx('bad'); msgEl.classList.remove('ok'); msgEl.textContent = 'env var needs "NAME=value" — check: ' + e.bad; return; }
-        payload.env = e.out;
+        // belt for the disabled ADD button: never POST a stdio config the host is guaranteed to refuse.
+        sfx('bad'); msgEl.classList.remove('ok');
+        msgEl.textContent = 'local stdio MCP servers cannot run on this host — use the HTTP tab, or the KEYS tab + a workbench.';
+        return;
       }
       const to = (body.querySelector('#mc-timeout').value || '').trim();
       if (to) payload.timeout = Number(to);
