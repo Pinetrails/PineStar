@@ -4253,8 +4253,8 @@ const Chat = (() => {
     Object.freeze({ name: 'model', desc: 'show or set the active model', action: 'model' }),
     Object.freeze({ name: 'personality', desc: 'show or set the active personality', action: 'personality' }),
     Object.freeze({ name: 'yolo', desc: 'toggle full-access approval mode', action: 'yolo' }),
-    Object.freeze({ name: 'reasoning', desc: 'show reasoning-mode support status', action: 'reasoning' }),
-    Object.freeze({ name: 'fast', desc: 'show fast-mode support status', action: 'fast' }),
+    Object.freeze({ name: 'reasoning', desc: 'show or set how hard the model thinks before answering', argsHint: '[none|minimal|low|medium|high|xhigh]', action: 'reasoning' }),
+    Object.freeze({ name: 'fast', desc: 'drop reasoning effort to minimal for quicker, cheaper replies', action: 'fast' }),
     Object.freeze({ name: 'voice', desc: 'show or toggle spoken replies', action: 'voice' }),
     // no local action by design — the sidecar owns CAP_REGISTRY + the toolset switches (dispatch:'server')
     Object.freeze({ name: 'tools', desc: 'show the tools this agent can actually call', action: 'tools' }),
@@ -4849,19 +4849,67 @@ const Chat = (() => {
       localLine('Approval mode: ' + (want ? 'full access. The agent will not pause for approval prompts.' : 'ask first. The agent will pause before gated actions.') );
     } else localLine('Could not change approval mode.');
   }
-  function reasoningCommand(args) {
-    const raw = String(args || '').trim();
-    const cs = (typeof Harness !== 'undefined' && Harness.contextState) ? Harness.contextState((activeWs && activeWs.agentId) || 'agent') : null;
-    const model = (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '';
-    if (raw && raw.toLowerCase() !== 'status') return localLine('Reasoning effort is not a separate StarNet toggle yet. Pick a reasoning-capable model with /model; usage events still track reasoning tokens when the provider reports them.');
-    localLine('Reasoning: controlled by the selected model' + (model ? ' (' + model + ')' : '') + '. '
-      + (cs && cs.limit ? 'Context window ' + (cs.used || 0) + '/' + cs.limit + ' tokens.' : 'Context window is still calibrating.'));
+  /* ---- reasoning effort — a REAL dial, not a status readout.
+     The old handler answered "Reasoning effort is not a separate StarNet toggle yet", which was simply false:
+     Harness stores it per PROVIDER, persists it, the model dock sets it alongside model+provider, and every run
+     payload carries it (harness.js chat()). The command just never reached any of that. */
+  const REASONING_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+  // normalizeReasoningEffort maps ANY unknown token to 'medium'. These are the inputs that legitimately mean
+  // medium, so a typo can be told apart from a real request instead of silently applying a level nobody asked for.
+  const MEDIUM_ALIASES = ['med', 'mid', 'medium'];
+  function reasoningLevelOf(raw) {
+    if (typeof Harness === 'undefined' || !Harness.normalizeReasoningEffort) return null;
+    const n = Harness.normalizeReasoningEffort(raw);
+    if (n === 'medium' && MEDIUM_ALIASES.indexOf(raw) === -1) return null;   // hit the silent default => unknown token
+    return n;
   }
-  function fastCommand(args) {
-    const raw = String(args || '').trim();
-    const model = (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '';
-    if (raw && raw.toLowerCase() !== 'status') return localLine('Fast mode is not a separate runtime toggle yet. Use /model <fast-model-id> to switch to a cheaper or lower-latency model.');
-    localLine('Fast mode: no global toggle is active. Current model: ' + (model || 'not selected') + '.');
+  // WARN-not-block (same precedent as /model against the warmed catalog): if the selected model has no reasoning
+  // dial, setting one is a no-op — say so rather than letting the confirmation imply an effect it won't have.
+  function reasoningModelNote() {
+    try {
+      if (typeof ModelDock === 'undefined' || !ModelDock._internals || !ModelDock._internals.supportsReasoning) return '';
+      const model = (Harness.getModel && Harness.getModel()) || '';
+      if (!model) return '';
+      const ok = ModelDock._internals.supportsReasoning({ id: model, provider: (Harness.getProv && Harness.getProv()) || '' });
+      return ok ? '' : ' Note: ' + model + " doesn't appear to expose a reasoning dial, so this may have no effect until you pick a model that does.";
+    } catch (_) { return ''; }
+  }
+  function reasoningCommand(args) {
+    if (typeof Harness === 'undefined' || !Harness.getReasoningEffort) return localLine('Reasoning controls are not available in this surface.');
+    const raw = String(args || '').trim().toLowerCase();
+    const prov = (Harness.getProv && Harness.getProv()) || '';
+    const cur = Harness.getReasoningEffort(prov);
+    if (!raw || raw === 'status') {
+      return localLine('Reasoning effort: ' + cur + (prov ? ' (for ' + prov + ')' : '') + '. Set it with /reasoning '
+        + REASONING_LEVELS.join('|') + ' — lower answers faster and cheaper, higher thinks longer first.' + reasoningModelNote());
+    }
+    const want = reasoningLevelOf(raw);
+    if (!want) return localLine('"' + raw + '" is not a reasoning level. Pick one of: ' + REASONING_LEVELS.join(', ') + '.');
+    if (want === cur) return localLine('Reasoning effort is already ' + cur + '.' + reasoningModelNote());
+    if (typeof App === 'undefined' || !App.applyConfig) return localLine('Reasoning effort could not be changed on this surface.');
+    App.applyConfig({ reasoningEffort: want });
+    // READ BACK before claiming it: only the store's own answer proves the write landed (truthful telemetry).
+    const now = Harness.getReasoningEffort((Harness.getProv && Harness.getProv()) || prov);
+    if (now !== want) return localLine('Could not set reasoning effort to ' + want + ' — it is still ' + now + '.');
+    localLine('Reasoning effort: ' + cur + ' → ' + want + (prov ? ' (for ' + prov + ')' : '')
+      + '. Takes effect on your next message.' + reasoningModelNote());
+  }
+  /* ---- /fast — a shortcut onto that SAME dial.
+     StarNet has no separate "fast mode", and inventing one would be a lie — the old handler admitted as much and
+     then did nothing at all. Minimal reasoning effort IS what makes replies come back quickly and cheaply, so
+     /fast drives the real control instead of pretending to be its own switch. */
+  function fastCommand() {
+    if (typeof Harness === 'undefined' || !Harness.getReasoningEffort) return localLine('Reasoning controls are not available in this surface.');
+    const prov = (Harness.getProv && Harness.getProv()) || '';
+    const cur = Harness.getReasoningEffort(prov);
+    if (cur === 'minimal' || cur === 'none') {
+      return localLine('Already as fast as it gets — reasoning effort is ' + cur + '. /reasoning medium to let it think longer.');
+    }
+    if (typeof App === 'undefined' || !App.applyConfig) return localLine('Reasoning effort could not be changed on this surface.');
+    App.applyConfig({ reasoningEffort: 'minimal' });
+    const now = Harness.getReasoningEffort((Harness.getProv && Harness.getProv()) || prov);
+    if (now !== 'minimal') return localLine('Could not switch to minimal reasoning — effort is still ' + now + '.');
+    localLine('Reasoning effort: ' + cur + ' → minimal — quicker, cheaper replies. /reasoning ' + cur + ' to put it back.' + reasoningModelNote());
   }
   function voiceCommand(args) {
     if (typeof Voice === 'undefined') return localLine('Voice controls are not available in this surface.');
