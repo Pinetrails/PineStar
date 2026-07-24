@@ -46,6 +46,9 @@ const Build = (() => {
 
   // interaction state
   let tool = 'room', kind = 'hab', style = 'cobalt', mat = 'plate', hallWidth = 2, propType = 'desk', propCat = 'workstation', propTier = 'functional';
+  // PAINT targets one surface at a time — the deck or the walls — so the palette stays two rows
+  // instead of four. 'follow' wall colour = inherit the room's floor hue (the default).
+  let paintTarget = 'floor', wallMat = 'plating', wallStyle = 'follow';
   let drag = null, hoverRoomId = null, hoverPropId = null, hoverTile = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
   let dupe = null;   // DUPE tool clipboard: {type:'prop'|'room', rects (rel to top-left), …} — armed = ghost follows cursor, click stamps
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
@@ -288,7 +291,8 @@ const Build = (() => {
       // TWO AXES, TWO ROWS: the MATERIAL (what the deck is made of) and the HUE (what colour it
       // is). They compose — every material renders in whatever colour is selected — so the
       // Commander picks a deck the same way you'd pick flooring: the stuff, then the shade.
-      paletteLabel = 'DECK';
+      const walls = paintTarget === 'walls';
+      paletteLabel = walls ? 'WALLS' : 'DECK';
       const row = (caption) => {
         const wrap = document.createElement('div'); wrap.className = 'refit-palrow refit-propcats';
         const cap = document.createElement('div'); cap.className = 'refit-palcap'; cap.textContent = caption;
@@ -296,33 +300,74 @@ const Build = (() => {
         pal.appendChild(wrap);
         return wrap;
       };
-      const matRow = row('MATERIAL');
-      (station.MAT_ORDER || Object.keys(station.FLOOR_MATERIALS || {})).forEach(mid => {
-        const def = station.FLOOR_MATERIALS[mid];
-        if (!def) return;
+      // TARGET — deck or walls. Two surfaces, one palette; reuses the tier-toggle idiom.
+      const tgt = document.createElement('div'); tgt.className = 'refit-tiers';
+      tgt.setAttribute('aria-label', 'Paint target');
+      [['floor', '▧ DECK'], ['walls', '▤ WALLS']].forEach(([id, label]) => {
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = 'refit-swatch refit-matswatch' + (mid === mat ? ' active' : '');
+        b.className = 'bb sm refit-tier refit-painttarget' + (paintTarget === id ? ' active' : '');
+        b.dataset.target = id;
+        b.setAttribute('aria-pressed', paintTarget === id ? 'true' : 'false');
+        b.textContent = label;
+        b.onclick = () => { paintTarget = id; renderPalette(); setHint(); sfx('click'); };
+        tgt.appendChild(b);
+      });
+      pal.appendChild(tgt);
+
+      const matRow = row('MATERIAL');
+      const catalog = walls ? (station.WALL_MATERIALS || {}) : (station.FLOOR_MATERIALS || {});
+      const order = walls ? (station.WALL_ORDER || Object.keys(catalog)) : (station.MAT_ORDER || Object.keys(catalog));
+      order.forEach(mid => {
+        const def = catalog[mid];
+        if (!def) return;
+        const active = walls ? (mid === wallMat) : (mid === mat);
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'refit-swatch refit-matswatch' + (active ? ' active' : '');
         b.dataset.mat = mid;
-        b.setAttribute('aria-pressed', mid === mat ? 'true' : 'false');
-        b.appendChild(matSwatchCanvas(mid, styleBaseFor(mid)));
+        b.dataset.surface = walls ? 'wall' : 'floor';
+        b.setAttribute('aria-pressed', active ? 'true' : 'false');
+        b.appendChild(walls ? wallSwatchCanvas(mid, wallBaseFor(mid)) : matSwatchCanvas(mid, styleBaseFor(mid)));
         const nm = document.createElement('span'); nm.className = 'refit-matname'; nm.textContent = def.label;
         b.appendChild(nm);
-        b.title = def.label + ' deck';
+        b.title = def.label + (walls ? ' walls' : ' deck');
         // picking a material also moves the hue to the one it was drawn for (wood wants a wood
         // tone) — visibly, in the row below, so the Commander can still override it right after.
-        b.onclick = () => { mat = mid; if (def.suggest && station.FLOOR_STYLES[def.suggest]) style = def.suggest; renderPalette(); setHint(); sfx('click'); };
+        b.onclick = () => {
+          if (walls) { wallMat = mid; if (def.suggest && station.FLOOR_STYLES[def.suggest]) wallStyle = def.suggest; }
+          else { mat = mid; if (def.suggest && station.FLOOR_STYLES[def.suggest]) style = def.suggest; }
+          renderPalette(); setHint(); sfx('click');
+        };
         matRow.appendChild(b);
       });
+
       const hueRow = row('COLOUR');
-      Object.keys(station.FLOOR_STYLES).forEach(sid => {
+      if (walls) {
+        // AUTO — walls inherit the room's deck hue. This is the default and the one most people
+        // want, so it leads the row rather than hiding at the end.
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = 'refit-swatch' + (sid === style ? ' active' : '');
-        b.setAttribute('aria-pressed', sid === style ? 'true' : 'false');
+        b.className = 'refit-swatch refit-matswatch' + (wallStyle === 'follow' ? ' active' : '');
+        b.dataset.hue = 'follow';
+        b.setAttribute('aria-pressed', wallStyle === 'follow' ? 'true' : 'false');
+        b.appendChild(wallSwatchCanvas(wallMat, null));
+        const nm = document.createElement('span'); nm.className = 'refit-matname'; nm.textContent = 'AUTO';
+        b.appendChild(nm);
+        b.title = 'match the room’s deck colour';
+        b.onclick = () => { wallStyle = 'follow'; renderPalette(); sfx('click'); };
+        hueRow.appendChild(b);
+      }
+      Object.keys(station.FLOOR_STYLES).forEach(sid => {
+        const cur = walls ? wallStyle : style;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'refit-swatch' + (sid === cur ? ' active' : '');
+        b.dataset.hue = sid;
+        b.setAttribute('aria-pressed', sid === cur ? 'true' : 'false');
         b.appendChild(swatchCanvas(station.FLOOR_STYLES[sid].base));
         b.title = station.FLOOR_STYLES[sid].label;
-        b.onclick = () => { style = sid; renderPalette(); sfx('click'); };
+        b.onclick = () => { if (walls) wallStyle = sid; else style = sid; renderPalette(); sfx('click'); };
         hueRow.appendChild(b);
       });
     }
@@ -429,6 +474,25 @@ const Build = (() => {
     return c;
   }
 
+  // the hue a WALL swatch previews in. AUTO has no hue of its own, so it borrows the currently
+  // selected deck colour — which is exactly what "match the deck" will produce.
+  function wallBaseFor(mid) {
+    const def = station.WALL_MATERIALS && station.WALL_MATERIALS[mid];
+    if (wallStyle !== 'follow' && station.FLOOR_STYLES[wallStyle]) return station.FLOOR_STYLES[wallStyle].base;
+    const sid = (def && def.suggest && station.FLOOR_STYLES[def.suggest]) ? def.suggest : style;
+    return (station.FLOOR_STYLES[sid] || station.FLOOR_STYLES.hull).base;
+  }
+  // same contract as matSwatchCanvas: painted by the REAL wall recipes, never a hand-drawn mock
+  function wallSwatchCanvas(mid, base) {
+    const c = document.createElement('canvas'); c.width = 40; c.height = 26;
+    const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+    const b = base || wallBaseFor(mid);
+    x.fillStyle = b; x.fillRect(0, 0, 40, 26);
+    try { if (typeof StationBake !== 'undefined' && StationBake.sampleWall) StationBake.sampleWall(x, mid, b, 4, 26, 12); }
+    catch (e) { /* a swatch must never break the palette */ }
+    return c;
+  }
+
   function selectTool(id) {
     tool = id; drag = null; connectFrom = null; dupe = null; hideTip(); hidePropCard();
     root.querySelectorAll('.refit-tool').forEach(b => {
@@ -442,7 +506,12 @@ const Build = (() => {
   function setHint(msg) {
     if (!hintEl) return;
     const t = TOOLS.find(x => x.id === tool);
-    hintEl.textContent = msg || (t ? t.hint : '') + '  ·  wheel = zoom · space-drag = pan';
+    // PAINT means two different gestures depending on which surface is targeted — say which
+    let base = t ? t.hint : '';
+    if (tool === 'paint') base = paintTarget === 'walls'
+      ? 'click a room to clad its walls'
+      : 'click a room to lay the selected deck · drag to paint single tiles in the colour';
+    hintEl.textContent = msg || base + '  ·  wheel = zoom · space-drag = pan';
   }
   function setCursor() {
     if (!cv) return;
@@ -1100,6 +1169,12 @@ const Build = (() => {
     feedback(station.moveProp(d.propId, dx, dy), ev, 'relocated');
   }
   function commitPaint(d, ev) {
+    // WALLS are a whole-room surface — there's no per-tile wall, so a drag means the same thing
+    // as a click here rather than silently doing nothing.
+    if (paintTarget === 'walls') {
+      feedback(station.setWalls(d.roomId, { style: wallStyle, mat: wallMat }), ev, 'walls clad');
+      return;
+    }
     if (d.moved) {
       const tiles = [...d.cells].map(k => { const p = k.split(','); return [+p[0], +p[1]]; });
       feedback(station.paintTiles(d.roomId, tiles, style), ev, 'painted');

@@ -92,4 +92,54 @@ for (const mat of MATS) {
 /* an unknown material falls back to plate rather than painting nothing (the dispatcher default) */
 A.eq(sample('no-such-material', 4, 4).join('|'), sigs.plate, 'an unknown material falls back to plate');
 
+/* ---------------- WALL materials ---------------- */
+
+const WALLS = ['plating', 'ribbed', 'panelled', 'viewport', 'pipework', 'wainscot', 'hedge'];
+const FACE_H = 23;   // WALL.up 14 + NFACE 9 — the shipped room face height
+// the wall recipes also clear (viewport) — record that as a distinct op so a hole is comparable
+function wallRecorder() {
+  const c = recorder();
+  c.clearRect = (x, y, w, h) => c.ops.push('c ' + [x, y, w, h].join(' '));
+  return c;
+}
+const wallSample = (mat, cols, h) => { const c = wallRecorder(); StationBake.sampleWall(c, mat, '#2b3340', cols, h || FACE_H, TILE); return c.ops; };
+
+const wsigs = {};
+for (const mat of WALLS) {
+  const a = wallSample(mat, 4);
+  A.ok(a.length > 0, 'wall ' + mat + ' paints marks');
+  A.eq(a.join('|'), wallSample(mat, 4).join('|'), 'wall ' + mat + ' is deterministic');
+  wsigs[mat] = a.join('|');
+}
+for (let i = 0; i < WALLS.length; i++) {
+  for (let j = i + 1; j < WALLS.length; j++) {
+    A.ok(wsigs[WALLS[i]] !== wsigs[WALLS[j]], 'walls ' + WALLS[i] + ' and ' + WALLS[j] + ' render as different surfaces');
+  }
+}
+A.eq(wallSample('no-such-wall', 4).join('|'), wsigs.plating, 'an unknown wall material falls back to plating');
+
+/* VIEWPORT is the only recipe allowed to CUT the wall — that hole is the whole feature, and it
+   must not appear in any other material (a stray clearRect would punch the station open). */
+const cuts = mat => wallSample(mat, 4).filter(o => o.startsWith('c ')).length;
+A.ok(cuts('viewport') > 0, 'viewport cuts glass out of the wall');
+for (const mat of WALLS) if (mat !== 'viewport') A.eq(cuts(mat), 0, 'wall ' + mat + ' never cuts a hole in the station');
+
+/* the shared foot: every recipe must seat itself on the floor line, or the wall floats */
+for (const mat of WALLS) {
+  const footRow = wallSample(mat, 4).filter(o => { const p = o.split(' '); return p[0] === 'f' && +p[2] === FACE_H - 1; });
+  A.ok(footRow.length > 0, 'wall ' + mat + ' paints a contact shadow at the floor line');
+}
+
+/* wall marks stay inside the face — nothing may paint above the top (that's the crown's band,
+   drawn by the common code) or below the floor line. */
+for (const mat of WALLS) {
+  const bad = wallSample(mat, 3).filter(o => {
+    const p = o.split(' ');
+    if (p[0] !== 'f' && p[0] !== 'c') return false;
+    const x = +p[1], y = +p[2], w = +p[3], h = +p[4];
+    return y < 0 || x < 0 || y + h > FACE_H || x + w > 3 * TILE;
+  });
+  A.eq(bad, [], 'wall ' + mat + ' paints only within its own face');
+}
+
 A.report('stationbake.materials');

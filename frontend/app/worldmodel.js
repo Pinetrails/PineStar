@@ -151,6 +151,24 @@ const WorldModel = (() => {
   };
   const MAT_ORDER = ['plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
 
+  /* the WALL material catalog — the deck's opposite number. Walls carry the same two axes as the
+     floor (hue × recipe) and read from the same FLOOR_STYLES hue catalog, because a room should be
+     able to be cobalt all the way up. `room.wallStyle` null means "follow this room's floor hue",
+     which is what makes a freshly-built station instantly varied instead of one brown-grey box.
+     `viewport` is the odd one out: it doesn't PAINT the wall, it punches a hole in it — the bake
+     leaves those pixels transparent so the live drifting starfield behind the station shows
+     through. Baked stars would be a lie; the real sky is already back there. */
+  const WALL_MATERIALS = {
+    plating:  { label: 'PLATING',  suggest: null },
+    ribbed:   { label: 'RIBBED',   suggest: null },
+    panelled: { label: 'PANEL',    suggest: null },
+    viewport: { label: 'VIEWPORT', suggest: null },
+    pipework: { label: 'PIPEWORK', suggest: null },
+    wainscot: { label: 'WAINSCOT', suggest: 'walnut' },
+    hedge:    { label: 'HEDGE',    suggest: 'fern' },
+  };
+  const WALL_ORDER = ['plating', 'ribbed', 'panelled', 'viewport', 'pipework', 'wainscot', 'hedge'];
+
   /* room categories — a capability-zone label + a default floor (hue + material). kind drives
      nothing behavioural yet (capability mapping is a later pass); it tags the zone + seeds the
      look. `mat` is the DEFAULT deck material a room of this kind is built with — a room whose
@@ -168,6 +186,14 @@ const WorldModel = (() => {
   // a room's effective deck material: explicit override, else the kind default, else plate.
   const matOfRoom = rm => (rm && FLOOR_MATERIALS[rm.floorMat]) ? rm.floorMat
     : ((rm && ROOM_KINDS[rm.kind] && ROOM_KINDS[rm.kind].mat) || 'plate');
+  // walls: material defaults to plating; hue defaults to FOLLOWING THE FLOOR, so every room's
+  // walls harmonize with its deck without the Commander having to pick twice.
+  const wallMatOfRoom = rm => (rm && WALL_MATERIALS[rm.wallMat]) ? rm.wallMat : 'plating';
+  const wallStyleOfRoom = rm => {
+    if (rm && FLOOR_STYLES[rm.wallStyle]) return rm.wallStyle;
+    if (rm && FLOOR_STYLES[rm.floorStyle]) return rm.floorStyle;
+    return 'hull';
+  };
   const KIND_ORDER = ['hab', 'bridge', 'lab', 'factory', 'quarters', 'storage'];
 
   /* ---------- pure geometry helpers ---------- */
@@ -194,7 +220,7 @@ const WorldModel = (() => {
     doc.rooms[id] = {
       id, kind: 'hab', name: 'HAB-01',
       rects: [{ x1: 0, y1: 0, x2: 17, y2: 10 }],
-      floorStyle: 'hull', wallStyle: 'hull', tier: 0, floorPaint: {}
+      floorStyle: 'hull', floorMat: null, wallStyle: null, wallMat: null, tier: 0, floorPaint: {}
     };
     doc.order.push(id);
     doc.meta.spawnRoomId = id;
@@ -327,7 +353,7 @@ const WorldModel = (() => {
       const label = ROOM_KINDS[kind].label;
       doc.rooms[id] = {
         id, kind, name: opts.name || (label + '-' + pad2(doc._nid - 1)),
-        rects, floorStyle, floorMat, wallStyle: 'hull', tier: 0, floorPaint: {}
+        rects, floorStyle, floorMat, wallStyle: null, wallMat: null, tier: 0, floorPaint: {}
       };
       doc.order.push(id);
       if (!doc.meta.spawnRoomId && kind !== 'corridor') doc.meta.spawnRoomId = id;
@@ -415,6 +441,29 @@ const WorldModel = (() => {
       snapshot();
       if (styleId != null) { rm.floorStyle = styleId; rm.floorPaint = {}; }
       rm.floorMat = nextMat;
+      emit(rm.rects.slice());
+      return { ok: true };
+    }
+
+    /* WALLS — the deck's opposite number, same shape: hue AND material in ONE undo slot. A null
+       style means "follow the floor hue", so clearing back to the default is expressible
+       (`{style: null}` is "leave alone"; pass `{style: 'follow'}` to reset it). */
+    function setWalls(id, opts) {
+      const rm = doc.rooms[id];
+      if (!rm) return fail('NOT_FOUND', 'no such room');
+      const o = opts || {};
+      const wantStyle = o.style === 'follow' ? null : (o.style == null ? undefined : o.style);
+      const wantMat = o.mat == null ? undefined : o.mat;
+      if (wantStyle !== undefined && wantStyle !== null && !FLOOR_STYLES[wantStyle]) return fail('BAD_STYLE', 'unknown wall colour');
+      if (wantMat !== undefined && !WALL_MATERIALS[wantMat]) return fail('BAD_MAT', 'unknown wall material');
+      // picking the room's own floor hue IS "follow" — normalize so it never serializes redundantly
+      const nextStyle = wantStyle === undefined ? (rm.wallStyle || null)
+        : (wantStyle === rm.floorStyle ? null : wantStyle);
+      const nextMat = wantMat === undefined ? (rm.wallMat || null) : (wantMat === 'plating' ? null : wantMat);
+      if ((rm.wallStyle || null) === nextStyle && (rm.wallMat || null) === nextMat) return { ok: true };
+      snapshot();
+      rm.wallStyle = nextStyle;
+      rm.wallMat = nextMat;
       emit(rm.rects.slice());
       return { ok: true };
     }
@@ -833,7 +882,11 @@ const WorldModel = (() => {
         nameOf: id => (doc.rooms[id] ? doc.rooms[id].name : ''),
         kindOf: id => (doc.rooms[id] ? doc.rooms[id].kind : null),
         matOf: id => matOfRoom(doc.rooms[id]),   // effective deck material (override, else kind default)
-        FLOOR_STYLES, FLOOR_MATERIALS
+        // walls: effective material, and the base colour to derive the wall palette from (a room's
+        // own wall hue when set, else its floor hue — so walls harmonize with the deck by default)
+        wallMatOf: id => wallMatOfRoom(doc.rooms[id]),
+        wallBaseOf: id => styleBase(wallStyleOfRoom(doc.rooms[id])),
+        FLOOR_STYLES, FLOOR_MATERIALS, WALL_MATERIALS
       };
     }
 
@@ -1000,12 +1053,14 @@ const WorldModel = (() => {
       // reads
       doc: () => doc, rooms, roomById, roomAt, bounds, spawnRoomId,
       props, propById, propAt, belts, beltAt,
-      getSeq: () => seq, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, ROOM_KINDS, KIND_ORDER, TILE, MIN_ROOM, MIN_HALL,
+      getSeq: () => seq, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, WALL_MATERIALS, WALL_ORDER, ROOM_KINDS, KIND_ORDER, TILE, MIN_ROOM, MIN_HALL,
       matOfRoom: id => matOfRoom(doc.rooms[id]),   // the room's effective deck material (for the palette's active state)
+      wallMatOfRoom: id => wallMatOfRoom(doc.rooms[id]),
+      wallStyleOfRoom: id => wallStyleOfRoom(doc.rooms[id]),
       // validation (no mutation — for ghost previews)
       canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun,
       // mutations
-      addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, paintTiles, renameRoom,
+      addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, setWalls, paintTiles, renameRoom,
       addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState,
       setBelt, removeBelt, removeBelts, placeBeltRun, connectBelt,
       // agent-bay binding queries
@@ -1036,6 +1091,13 @@ const WorldModel = (() => {
       if (!Array.isArray(rm.rects)) rm.rects = [];
       if (!rm.floorPaint) rm.floorPaint = {};
       if (!FLOOR_MATERIALS[rm.floorMat]) rm.floorMat = null;
+      // Walls are additive too. Every room written before the wall axis carries a literal
+      // wallStyle:'hull' that NOTHING ever read — it's noise, not intent, and keeping it would
+      // pin every legacy room's walls to hull instead of letting them follow their own floor.
+      // The absence of a wallMat key is the reliable tell that a room predates the axis.
+      if (!('wallMat' in rm)) rm.wallStyle = null;
+      if (!FLOOR_STYLES[rm.wallStyle]) rm.wallStyle = null;
+      if (!WALL_MATERIALS[rm.wallMat]) rm.wallMat = null;
     }
     // props are additive (v1 docs predate them); make the read paths total over any blob.
     if (!Array.isArray(doc.props)) doc.props = [];
@@ -1063,7 +1125,7 @@ const WorldModel = (() => {
   }
 
   return {
-    TILE, MARGIN, MIN_ROOM, MIN_HALL, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, ROOM_KINDS, KIND_ORDER,
+    TILE, MARGIN, MIN_ROOM, MIN_HALL, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, WALL_MATERIALS, WALL_ORDER, ROOM_KINDS, KIND_ORDER,
     create: doc => makeStation(doc),
     deserialize: doc => makeStation(clone(doc)),
     defaultDoc: freshDoc,

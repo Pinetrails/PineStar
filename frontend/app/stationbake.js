@@ -21,6 +21,28 @@ const StationBake = (() => {
   const wallTop = '#4a463a', wallFace = '#2b2820', wallDk = '#1d1a14', hullC = '#191712';
   const wallCap = '#7c7258';   // the lit TOP surface of a tall wall — bright on purpose: it survives the ambient bake and defines wall height at any zoom
 
+  /* PER-ROOM WALL PALETTE. The four constants above used to paint every wall in the station one
+     colour — a cobalt bridge and a rust foundry had identical brown-grey walls. The interior
+     faces are derived per room now, from that room's wall hue (which itself defaults to the
+     room's FLOOR hue, so a station is varied the moment it's built). The HULL tones stay global
+     on purpose: the outside of the station is one shell, the inside of each room is decorated.
+     Offsets were fitted so a `hull`-hued room reproduces the classic constants near-exactly. */
+  const WALL_TONE = { face: -0.15, top: 0.10, cap: 0.35 };
+  let wallPalCache = null;
+  function wallPal(z) {
+    let p = wallPalCache && wallPalCache.get(z);
+    if (p) return p;
+    const base = (G && G.wallBaseOf && G.wallBaseOf(z)) || '#33302a';
+    p = { base, face: U.shade(base, WALL_TONE.face), top: U.shade(base, WALL_TONE.top), cap: U.shade(base, WALL_TONE.cap) };
+    if (!wallPalCache) wallPalCache = new Map();
+    wallPalCache.set(z, p);
+    return p;
+  }
+  const wallMatOf = z => {
+    const m = G && G.wallMatOf ? G.wallMatOf(z) : null;
+    return WALL_RECIPES[m] ? m : 'plating';
+  };
+
   /* live-tunable WALL HEIGHT — same contract as LIGHT below: the CRT LAB writes these and
      re-bakes. Height only ever extrudes OUTSIDE the floor footprint (up-screen above north
      edges, down-screen below the hull, sideways past e/w edges), so no walkable tile is ever
@@ -30,7 +52,11 @@ const StationBake = (() => {
        skirt  = hull extrusion depth below the station silhouette (the south wall seen outside)
        side   = width of the e/w wall-top band beyond the floor edge
        capH   = thickness of the lit cap that crowns a tall wall */
-  const WALL = { up: 9, corUp: 0, skirt: 32, side: 12, capH: 3 };
+  const WALL = { up: 14, corUp: 0, skirt: 32, side: 12, capH: 3 };   // up 9→14 (2026-07-24): the wall materials need surface to live on
+  /* VIEWPORT holes punched by the wall pass this bake. buildLightMap cuts the ambient mask over
+     them — without that the sky behind a window renders at the interior's 23% and reads as a
+     black pane. Reset per bake alongside the wall palette cache. */
+  let viewportRects = [];
 
   /* live-tunable lighting — the CRT LAB (crtlab.js, dev-gated) writes these and calls
      World.rebake() to re-run the bake. These ARE the shipped defaults.
@@ -59,7 +85,7 @@ const StationBake = (() => {
        floorDetail= amplitude of the V2 floor-material pass (deck plates, seams, rivets,
                     per-kind recipes, perimeter trim). Scales every U.shade delta the floor
                     draws, so 0 = a flat unadorned deck, 1 = shipped, >1 = overdriven. */
-  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1 };   // dither 0.15 = Andrew's dialed value (2026-07-13 crtlab COPY VALUES)
+  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, wallDetail: 1 };   // dither 0.15 = Andrew's dialed value (2026-07-13 crtlab COPY VALUES)
 
   const CORNER = {
     tl: { cx: 1, cy: 1, a0: Math.PI, a1: 1.5 * Math.PI },
@@ -118,7 +144,7 @@ const StationBake = (() => {
         const nz = (nx < 0 || ny < 0 || nx >= COLS || ny >= ROWS) ? null : zg[idx(nx, ny)];
         if (nz === z) continue;                       // interior — no edge
         const door = nz != null && (G_.canStep(x, y, nx, ny) || G_.canStep(nx, ny, x, y));
-        edges.push({ x, y, side, room, door, exterior: nz == null });
+        edges.push({ x, y, z, side, room, door, exterior: nz == null });   // z = the zone this wall belongs to (its room owns the wall palette)
         if (side === 'n' && nz == null) extN.add(x + ',' + y);   // tiles with a TALL north face (lamp fixtures mount on it)
       }
     }
@@ -563,52 +589,201 @@ const StationBake = (() => {
       return;
     }
 
-    // up > 0 → clean standing metal plating, painted in the STATION'S OWN PIXEL IDIOM: opaque
-    // colours stepped via U.shade (hard 1px transitions), a per-tile plate seam on the floor's
-    // tile grid, and sparse single-pixel accents — so at 3x the face grain matches the floor
-    // grain. NO low-alpha full-width washes (those read as blur next to the hard floor steps).
+    // up > 0 → a standing interior face, painted in the STATION'S OWN PIXEL IDIOM: opaque colours
+    // stepped via U.shade (hard 1px transitions), grain that matches the floor's at 3x, and NO
+    // low-alpha full-width washes (those read as blur next to the hard floor steps). The FACE
+    // itself is per-material (WALL_RECIPES); the crown, hull lip and floor-contact line are
+    // common to every material because they define the wall's silhouette and height.
+    const pal = wallPal(e.z);
     const capH = Math.max(2, Math.round(WALL.capH));
     const h = up + inFace, topY = Y - up;              // all integer already (up/capH rounded, T/inFace int)
     const n = h2(e.x, e.y, 'nwall');
-    // per-tile plate tone: discrete opaque jitter (±0.03..0.06), keyed on the hash so long walls
-    // read as individual plates without ever crossing into a gradient
-    const plate = U.shade(wallFace, ((n % 4) - 1.5) * 0.03);   // one of 4 hard tones, opaque
-    // dark hull lip above the crown (the old NCAP band, pushed up with the wall)
+    // dark hull lip above the crown (the old NCAP band, pushed up with the wall) — HULL tone, not
+    // the room's: this is the shell seen from outside.
     b.fillStyle = wallDk; b.fillRect(X, topY - capH - 2, T, 2);
     // lit crown — opaque cap band, 1px lighter top edge, 1px darker seam beneath. Kept BRIGHT:
     // after the ambient bake this continuous line defines the wall height at any zoom.
-    b.fillStyle = wallCap; b.fillRect(X, topY - capH, T, capH);
-    b.fillStyle = U.shade(wallCap, 0.30); b.fillRect(X, topY - capH, T, 1);          // 1px lighter top edge
-    b.fillStyle = U.shade(wallCap, -0.45); b.fillRect(X, topY - 1, T, 1);            // 1px darker seam beneath
-    // face: opaque stepped bands — lighter top course, base plate tone, darker foot. Hard 1px
-    // transitions, exactly how bakeRoomFloor steps its values.
+    b.fillStyle = pal.cap; b.fillRect(X, topY - capH, T, capH);
+    b.fillStyle = U.shade(pal.cap, 0.30); b.fillRect(X, topY - capH, T, 1);          // 1px lighter top edge
+    b.fillStyle = U.shade(pal.cap, -0.45); b.fillRect(X, topY - 1, T, 1);            // 1px darker seam beneath
+    // THE FACE — per material
+    (WALL_RECIPES[wallMatOf(e.z)] || WALL_RECIPES.plating)(b, pal, X, topY, h, e, n, room, Y + inFace);
+    // floor-contact cap line (identical to the old look)
+    b.fillStyle = pal.top; b.fillRect(X, Y + inFace, T, 1);
+  }
+
+  /* ---------- WALL RECIPES — one per material, each painting ONE tile's interior face ----------
+     Signature: (b, pal, X, topY, h, e, n, room, footY). `pal` is the room's derived wall palette,
+     `h` the full face height, `footY` the floor-contact row. Every mark is opaque and stepped off
+     `pal.face`, deterministic on the tile hash / bake-pixel coords, and scaled by DEPTH.wallDetail
+     so 0 gives a flat unadorned face. A recipe owns the face ONLY — never the crown or the foot. */
+  const wallDet = () => Math.max(0, DEPTH.wallDetail);
+
+  // the foot every recipe shares: a darker base course and a hard contact shadow at the floor line
+  function wallFoot(b, tone, X, footY, wd) {
+    b.fillStyle = U.shade(tone, -0.22 * wd); b.fillRect(X, footY - 2, T, 2);
+    b.fillStyle = U.shade(tone, -0.42 * wd); b.fillRect(X, footY - 1, T, 1);
+  }
+
+  /* PLATING — the classic standing metal, but no longer starved: the weld line, vent panels and
+     conduit drops that used to be gated behind the up>=18 CRT-lab preset (i.e. never rendered in
+     the shipped game) now run at any height, plus a mid-height bumper rail that gives a long wall
+     a horizon instead of one flat tone. */
+  function wallPlating(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const plate = U.shade(pal.face, ((n % 4) - 1.5) * 0.03 * wd);
     b.fillStyle = plate; b.fillRect(X, topY, T, h);
     const topCourse = Math.max(2, Math.min(4, (h / 3) | 0));
-    b.fillStyle = U.shade(plate, 0.10); b.fillRect(X, topY, T, topCourse);            // lit top course (opaque)
-    b.fillStyle = U.shade(plate, 0.16); b.fillRect(X, topY, T, 1);                    // 1px bright course edge
-    b.fillStyle = U.shade(plate, -0.22); b.fillRect(X, Y + inFace - 2, T, 2);         // 2px darker foot / floor AO
-    b.fillStyle = U.shade(plate, -0.42); b.fillRect(X, Y + inFace - 1, T, 1);         // 1px hard contact shadow
-    // per-tile darker plate seam at the tile boundary (aligns with the floor's tile grid — the
-    // floor draws its grid at X and X+? ; this 1px seam at the left tile edge matches that pitch)
-    b.fillStyle = U.shade(wallFace, -0.34); b.fillRect(X, topY, 1, h);
-    // sparse single-pixel accents like the floor's (deterministic on the hash): a bright rivet
-    // dot high on the plate and an occasional dark speck, both opaque, both 1px
-    b.fillStyle = U.shade(plate, 0.24); b.fillRect(X + 2 + (n % 7), topY + 1 + (n % 2), 1, 1);
-    if (n % 5 === 0) { b.fillStyle = U.shade(plate, -0.30); b.fillRect(X + 4 + (n % 5), topY + 3 + (n % 3), 1, 1); }
-    // richer dressing only at the tall CRT-lab 'Towering' preset — the shipped up:10 stays clean
-    if (up >= 18) {
-      b.fillStyle = U.shade(wallFace, -0.30); b.fillRect(X, topY + ((h * 0.55) | 0), T, 1);   // opaque weld line
-      if (room && n % 4 === 0) {                                                        // recessed vent panel
-        b.fillStyle = '#1a1712'; b.fillRect(X + 7, topY + 4, 4, 5);
-        b.fillStyle = U.shade('#1a1712', -0.4);
-        for (let i = 0; i < 2; i++) b.fillRect(X + 8, topY + 5 + i * 2, 2, 1);
-      } else if (n % 7 === 3) {                                                         // pale conduit drop
-        b.fillStyle = U.shade(wallFace, 0.22); b.fillRect(X + 2, topY + 2, 1, h - 6);
+    b.fillStyle = U.shade(plate, 0.10 * wd); b.fillRect(X, topY, T, topCourse);       // lit top course
+    b.fillStyle = U.shade(plate, 0.16 * wd); b.fillRect(X, topY, T, 1);               // 1px bright course edge
+    wallFoot(b, plate, X, footY, wd);
+    b.fillStyle = U.shade(pal.face, -0.34 * wd); b.fillRect(X, topY, 1, h);           // per-tile plate seam
+    // BUMPER RAIL — a hard horizontal band ~58% down, lit on top. This is the single biggest
+    // legibility win on a tall wall: it gives the eye a line to read height against.
+    const rail = topY + Math.round(h * 0.58);
+    b.fillStyle = U.shade(plate, -0.26 * wd); b.fillRect(X, rail, T, 2);
+    b.fillStyle = U.shade(plate, 0.14 * wd); b.fillRect(X, rail, T, 1);
+    b.fillStyle = U.shade(plate, 0.20 * wd); b.fillRect(X + 2 + (n % 7), topY + 1 + (n % 2), 1, 1);   // rivet
+    if (n % 5 === 0) { b.fillStyle = U.shade(plate, -0.30 * wd); b.fillRect(X + 4 + (n % 5), topY + 3 + (n % 3), 1, 1); }
+    if (h >= 14) {
+      b.fillStyle = U.shade(pal.face, -0.30 * wd); b.fillRect(X, topY + ((h * 0.28) | 0), T, 1);      // weld line
+      if (room && n % 9 === 0) {                                                     // recessed vent panel
+        b.fillStyle = U.shade(pal.face, -0.55 * wd); b.fillRect(X + 6, topY + 3, 5, 6);
+        b.fillStyle = U.shade(pal.face, -0.72 * wd);
+        for (let i = 0; i < 3; i++) b.fillRect(X + 7, topY + 4 + i * 2, 3, 1);
+      } else if (n % 11 === 3) {                                                     // pale conduit drop
+        b.fillStyle = U.shade(pal.face, 0.20 * wd); b.fillRect(X + 2, topY + 2, 1, h - 6);
       }
     }
-    // floor-contact cap line (identical to the old look)
-    b.fillStyle = wallTop; b.fillRect(X, Y + inFace, T, 1);
   }
+
+  /* RIBBED — vertical structural ribs on a 4px pitch, each a lit column beside a deep channel.
+     The strongest vertical rhythm of any recipe; reads as engine-room / pressure bulkhead. */
+  function wallRibbed(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const body = U.shade(pal.face, ((n % 3) - 1) * 0.02 * wd);
+    b.fillStyle = body; b.fillRect(X, topY, T, h);
+    for (let i = 0; i < T; i += 4) {
+      b.fillStyle = U.shade(body, -0.34 * wd); b.fillRect(X + i, topY, 1, h);        // deep channel
+      b.fillStyle = U.shade(body, 0.15 * wd); b.fillRect(X + i + 1, topY, 1, h);     // lit rib edge
+      b.fillStyle = U.shade(body, -0.10 * wd); b.fillRect(X + i + 3, topY, 1, h);    // rib shadow side
+    }
+    // top and bottom rails cap the ribs so they don't float
+    b.fillStyle = U.shade(body, 0.12 * wd); b.fillRect(X, topY, T, 2);
+    b.fillStyle = U.shade(body, 0.20 * wd); b.fillRect(X, topY, T, 1);
+    const rail = topY + Math.round(h * 0.62);
+    b.fillStyle = U.shade(body, -0.28 * wd); b.fillRect(X, rail, T, 2);
+    b.fillStyle = U.shade(body, 0.10 * wd); b.fillRect(X, rail, T, 1);
+    wallFoot(b, body, X, footY, wd);
+  }
+
+  /* PANEL — one large recessed panel per tile: inset border, lit inner top-left bevel, shaded
+     bottom-right. The finished command-deck read; deliberately the calmest recipe. */
+  function wallPanelled(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const body = U.shade(pal.face, ((n % 3) - 1) * 0.018 * wd);
+    b.fillStyle = body; b.fillRect(X, topY, T, h);
+    b.fillStyle = U.shade(body, -0.30 * wd); b.fillRect(X, topY, 1, h);              // tile seam
+    const pTop = topY + 2, pH = Math.max(4, h - 6);
+    b.fillStyle = U.shade(body, -0.20 * wd); b.fillRect(X + 2, pTop, T - 4, pH);     // recess
+    b.fillStyle = U.shade(body, 0.06 * wd); b.fillRect(X + 3, pTop + 1, T - 6, pH - 2);
+    b.fillStyle = U.shade(body, 0.18 * wd); b.fillRect(X + 3, pTop + 1, T - 6, 1);   // lit inner top
+    b.fillStyle = U.shade(body, 0.14 * wd); b.fillRect(X + 3, pTop + 1, 1, pH - 2);  // lit inner left
+    b.fillStyle = U.shade(body, -0.24 * wd); b.fillRect(X + T - 4, pTop + 1, 1, pH - 2);
+    b.fillStyle = U.shade(body, -0.24 * wd); b.fillRect(X + 3, pTop + pH - 2, T - 6, 1);
+    b.fillStyle = U.shade(body, 0.22 * wd); b.fillRect(X, topY, T, 1);               // trim line along the run
+    wallFoot(b, body, X, footY, wd);
+  }
+
+  /* VIEWPORT — the only recipe that does not paint a wall: it CUTS one. The glass band is cleared
+     to transparent so the live drifting starfield behind the station shows through the hole (see
+     buildLightMap, which also punches the ambient mask here or the sky would render at 23%).
+     Baked stars would be a lie — the real sky is already back there, and it moves. */
+  function wallViewport(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const body = U.shade(pal.face, ((n % 3) - 1) * 0.02 * wd);
+    b.fillStyle = body; b.fillRect(X, topY, T, h);
+    const gTop = topY + 3, gH = Math.max(3, h - 9);
+    b.clearRect(X + 1, gTop, T - 1, gH);                     // THE HOLE — 1px left mullion kept per tile
+    viewportRects.push({ x: X + 1, y: gTop, w: T - 1, h: gH });
+    // frame: bright sill under the glass, shaded head above, mullion at the tile seam
+    b.fillStyle = U.shade(body, -0.40 * wd); b.fillRect(X, gTop - 1, T, 1);          // head shadow
+    b.fillStyle = U.shade(body, 0.26 * wd); b.fillRect(X, gTop + gH, T, 2);          // lit sill
+    b.fillStyle = U.shade(body, 0.34 * wd); b.fillRect(X, gTop + gH, T, 1);
+    b.fillStyle = U.shade(body, 0.10 * wd); b.fillRect(X, gTop, 1, gH);              // mullion
+    wallFoot(b, body, X, footY, wd);
+  }
+
+  /* PIPEWORK — plating overrun with conduit: vertical pipe runs with a lit highlight column, a
+     horizontal cable tray, and the occasional valve block. The utility/engine-room read. */
+  function wallPipework(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const body = U.shade(pal.face, ((n % 4) - 1.5) * 0.025 * wd);
+    b.fillStyle = body; b.fillRect(X, topY, T, h);
+    b.fillStyle = U.shade(body, -0.30 * wd); b.fillRect(X, topY, 1, h);
+    const pipe = (px, w) => {                                                        // a round-read pipe
+      b.fillStyle = U.shade(body, -0.34 * wd); b.fillRect(X + px, topY, w, h);
+      b.fillStyle = U.shade(body, 0.24 * wd); b.fillRect(X + px + 1, topY, 1, h);    // highlight column
+      b.fillStyle = U.shade(body, -0.48 * wd); b.fillRect(X + px + w - 1, topY, 1, h);
+    };
+    pipe(2 + (n % 2), 3);
+    if (n % 3 !== 0) pipe(8, 2);
+    const tray = topY + Math.round(h * 0.66);                                        // horizontal cable tray
+    b.fillStyle = U.shade(body, -0.38 * wd); b.fillRect(X, tray, T, 3);
+    b.fillStyle = U.shade(body, 0.16 * wd); b.fillRect(X, tray, T, 1);
+    if (n % 7 === 2) {                                                               // valve block
+      b.fillStyle = U.shade(body, 0.10 * wd); b.fillRect(X + 1 + (n % 2), topY + 4, 5, 4);
+      b.fillStyle = U.shade(body, -0.44 * wd); b.fillRect(X + 2 + (n % 2), topY + 5, 3, 1);
+    }
+    wallFoot(b, body, X, footY, wd);
+  }
+
+  /* WAINSCOT — timber panelling to the chair rail, plain wall above. The warm habitat recipe; the
+     board pitch is 3px so it reads as narrower boards than the PLANK floor's, which stops a
+     wainscot wall above a plank deck from looking like one continuous surface. */
+  function wallWainscot(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const upper = U.shade(pal.face, 0.10 * wd);
+    b.fillStyle = upper; b.fillRect(X, topY, T, h);                                  // plain plaster above
+    b.fillStyle = U.shade(upper, -0.08 * wd); b.fillRect(X, topY, 1, h);
+    const railY = topY + Math.round(h * 0.42);
+    const boardTop = railY + 2;
+    b.fillStyle = U.shade(pal.face, -0.10 * wd); b.fillRect(X, boardTop, T, footY - boardTop);
+    for (let i = 0; i < T; i += 3) {                                                 // vertical boards
+      const bn = h2(e.x * 4 + i, e.y, 'wsc');
+      b.fillStyle = U.shade(pal.face, (((bn % 5) - 2) * 0.020 - 0.10) * wd); b.fillRect(X + i, boardTop, 3, footY - boardTop);
+      b.fillStyle = U.shade(pal.face, -0.36 * wd); b.fillRect(X + i, boardTop, 1, footY - boardTop);      // board seam
+      b.fillStyle = U.shade(pal.face, 0.04 * wd); b.fillRect(X + i + 1, boardTop, 1, footY - boardTop);   // lit face
+      if (bn % 4 === 0) b.fillStyle = U.shade(pal.face, -0.18 * wd), b.fillRect(X + i + 1, boardTop + 2 + (bn % 4), 1, 2);  // grain fleck
+    }
+    b.fillStyle = U.shade(pal.face, -0.34 * wd); b.fillRect(X, railY, T, 2);         // chair rail
+    b.fillStyle = U.shade(pal.face, 0.30 * wd); b.fillRect(X, railY, T, 1);          // lit rail edge
+    wallFoot(b, pal.face, X, footY, wd);
+  }
+
+  /* HEDGE — a living wall. Same principle as the TURF deck: NO lattice, no seams, no bevels; the
+     read comes from dense blade scatter alone, darker toward the base where light doesn't reach. */
+  function wallHedge(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const body = U.shade(pal.face, -0.06 * wd);
+    b.fillStyle = body; b.fillRect(X, topY, T, h);
+    const TONE = [-0.26, -0.14, 0.08, 0.20];
+    const leaves = Math.max(8, Math.round(T * h / 7));
+    for (let i = 0; i < leaves; i++) {
+      const r = hp(X, topY, i);
+      const ly = (r >>> 5) % h;
+      const depth = -0.16 * (ly / Math.max(1, h));                                   // darker toward the base
+      b.fillStyle = U.shade(body, (TONE[(r >>> 11) & 3] + depth) * wd);
+      b.fillRect(X + (r % T), topY + ly, 1, Math.min(1 + ((r >>> 14) % 2), h - ly));
+    }
+    b.fillStyle = U.shade(body, 0.22 * wd); b.fillRect(X + (hp(X, topY, 91) % T), topY, 1, 2);   // lit crown sprig
+    wallFoot(b, body, X, footY, wd);
+  }
+
+  const WALL_RECIPES = {
+    plating: wallPlating, ribbed: wallRibbed, panelled: wallPanelled,
+    viewport: wallViewport, pipework: wallPipework, wainscot: wallWainscot, hedge: wallHedge
+  };
 
   function bakeWalls(b) {
     for (const e of edges) {
@@ -616,6 +791,9 @@ const StationBake = (() => {
       if (e.door) { bakeThreshold(b, e, X, Y); continue; }
       const fw = e.room ? FACEW : 2, out = e.room ? 4 : 2, face = e.room ? NFACE : 5;
       const dep = fw + 1, rib = 'rgba(0,0,0,0.25)';
+      // the SIDE faces (s/w/e) and interior seams carry the room's own wall tone too — otherwise a
+      // cobalt room's tall north wall would meet three brown-grey walls at its corners.
+      const pal = wallPal(e.z), wallFace = pal.face, wallTop = pal.top;
       // walls only extrude OUTSIDE the tile when the neighbour is void. Interior boundaries
       // (a non-door seam to another zone) draw the face only, so the wall never smears onto
       // an adjacent room/corridor floor (v7 render.js parity).
@@ -880,6 +1058,11 @@ const StationBake = (() => {
     for (const l of lampPos) cut(l.x, l.y, l.r, LIGHT.pool);   // lamps punch bright pools out of the darker ambient → the lights carry the room
     // doorway light spill so corridors and rooms read as connected
     for (const [x1, y1, x2, y2] of G.doorDefs) cut((x1 + x2 + 1) / 2 * T, (y1 + y2 + 1) / 2 * T, T * 1.6, LIGHT.door);
+    // VIEWPORT GLASS — clear the ambient mask fully over every window the wall pass cut, so the
+    // live starfield behind the hole reads at its own brightness instead of the interior's 23%.
+    // A hard-edged fill, not a gradient: the frame around it is a hard pixel edge too.
+    L.fillStyle = 'rgba(0,0,0,1)';
+    for (const v of viewportRects) L.fillRect(v.x, v.y, v.w, v.h);
     L.globalCompositeOperation = 'source-over';
     ditherLight(L, lightCv.width, lightCv.height);
     const flickers = [];
@@ -936,10 +1119,13 @@ const StationBake = (() => {
     // chamfer floor-cut + curved interior wall pass
     for (const [ccx, ccy, kind] of G.chamfers) {
       const X = ccx * T, Y = ccy * T, A = CORNER[kind], ax = X + A.cx * T, ay = Y + A.cy * T;
+      // a rounded corner belongs to the room it was cut from — take that room's wall palette so a
+      // coloured room's corner arc doesn't revert to the old universal brown-grey.
+      const cPal = wallPal(G.zoneGrid[G.idx(ccx, ccy)]);
       b.save(); spandrelPath(b, kind, ax, ay, T); b.clip('evenodd');
       b.fillStyle = hullC; b.fillRect(X - 1, Y - 1, T + 2, T + 2); b.restore();
       b.lineWidth = 4.5; b.strokeStyle = wallDk; b.beginPath(); b.arc(ax, ay, T + 2.25, A.a0, A.a1); b.stroke();
-      b.lineWidth = 5; b.strokeStyle = wallFace; b.beginPath(); b.arc(ax, ay, T - 2.5, A.a0, A.a1); b.stroke();
+      b.lineWidth = 5; b.strokeStyle = cPal.face; b.beginPath(); b.arc(ax, ay, T - 2.5, A.a0, A.a1); b.stroke();
       b.lineWidth = 1; b.strokeStyle = 'rgba(0,0,0,0.25)';
       for (let k = 1; k <= 2; k++) {
         const ang = A.a0 + (A.a1 - A.a0) * k / 3;
@@ -948,7 +1134,7 @@ const StationBake = (() => {
         b.lineTo(ax + Math.cos(ang) * T, ay + Math.sin(ang) * T); b.stroke();
       }
       b.lineWidth = 2; b.strokeStyle = '#28241b'; b.beginPath(); b.arc(ax, ay, HR - 2, A.a0, A.a1); b.stroke();
-      b.lineWidth = 1; b.strokeStyle = wallTop; b.beginPath(); b.arc(ax, ay, T - 5.5, A.a0, A.a1); b.stroke();
+      b.lineWidth = 1; b.strokeStyle = cPal.top; b.beginPath(); b.arc(ax, ay, T - 5.5, A.a0, A.a1); b.stroke();
 
       // TALL WALL over a curved top corner: sweep the interior wall arc up-screen, easing from
       // full height at the north end down to zero at the side end (side walls carry no face),
@@ -976,11 +1162,11 @@ const StationBake = (() => {
         }
         for (const [ix, c] of cols) {
           const faceH = c.base - c.top; if (faceH <= 0) continue;
-          b.fillStyle = wallFace; b.fillRect(ix, c.top, 1, faceH + 1);            // face column, integer
+          b.fillStyle = cPal.face; b.fillRect(ix, c.top, 1, faceH + 1);            // face column, integer
           // crown = opaque cap pixels stepped up the curve (pixel stairs, not a stroke)
-          b.fillStyle = wallCap; b.fillRect(ix, c.top - capH, 1, capH);
-          b.fillStyle = U.shade(wallCap, 0.30); b.fillRect(ix, c.top - capH, 1, 1); // 1px lit top edge
-          b.fillStyle = U.shade(wallCap, -0.45); b.fillRect(ix, c.top - 1, 1, 1);   // 1px darker seam beneath crown
+          b.fillStyle = cPal.cap; b.fillRect(ix, c.top - capH, 1, capH);
+          b.fillStyle = U.shade(cPal.cap, 0.30); b.fillRect(ix, c.top - capH, 1, 1); // 1px lit top edge
+          b.fillStyle = U.shade(cPal.cap, -0.45); b.fillRect(ix, c.top - 1, 1, 1);   // 1px darker seam beneath crown
         }
       }
     }
@@ -1006,6 +1192,8 @@ const StationBake = (() => {
       return false;
     }
     G = geo; T = geo.TILE; HR = T + pad; W = geo.W; H = geo.H;
+    wallPalCache = null;   // per-room wall palettes are derived from THIS geometry — never reuse across bakes
+    viewportRects = [];    // ...and so are the window holes the wall pass punches
     VX = viewport ? viewport.x : 0; VY = viewport ? viewport.y : 0;
     CW = viewport ? viewport.w : W; CH = viewport ? viewport.h : H;
     lampPos = []; chamferAt = {}; extN = new Set();
@@ -1194,7 +1382,32 @@ const StationBake = (() => {
     } finally { T = prevT; }
   }
 
-  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, sampleMaterial, CHUNK_PX, LIGHT, WALL, DEPTH };
+  /* WALL SAMPLE — the wall counterpart of sampleMaterial, painting a strip of interior face
+     through the real WALL_RECIPES. VIEWPORT is the special case: it clears its glass to
+     transparent, so the sample lays a few stars behind first — which is honest, because a real
+     viewport shows the real (moving) sky through exactly that hole. `viewportRects` is saved and
+     restored so drawing a palette chip can never inject phantom windows into a live bake. */
+  function sampleWall(ctx, matId, base, cols, height, tile) {
+    const recipe = WALL_RECIPES[matId] || WALL_RECIPES.plating;
+    const prevT = T, prevRects = viewportRects;
+    T = tile || 12;
+    viewportRects = [];
+    const h = Math.max(6, height || 24);
+    try {
+      const pal = { base, face: U.shade(base, WALL_TONE.face), top: U.shade(base, WALL_TONE.top), cap: U.shade(base, WALL_TONE.cap) };
+      if (matId === 'viewport') {                       // the sky the glass will reveal
+        ctx.fillStyle = '#05060c'; ctx.fillRect(0, 0, cols * T, h);
+        for (let i = 0; i < cols * 4; i++) {
+          const r = hp(i * 7, 3, 5);
+          ctx.fillStyle = (r % 5) ? 'rgba(200,214,255,0.75)' : 'rgba(255,236,200,0.9)';
+          ctx.fillRect(r % (cols * T), (r >>> 8) % h, 1, 1);
+        }
+      }
+      for (let i = 0; i < cols; i++) recipe(ctx, pal, i * T, 0, h, { x: i, y: 0, z: 'sample' }, h2(i, 0, 'sample'), true, h);
+    } finally { T = prevT; viewportRects = prevRects; }
+  }
+
+  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, sampleMaterial, sampleWall, CHUNK_PX, LIGHT, WALL, DEPTH };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = StationBake;
