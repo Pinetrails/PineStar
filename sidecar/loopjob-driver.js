@@ -42,13 +42,16 @@
                                                    //   iteration is observable live. The host applies its own
                                                    //   egress redaction (runTeeView), exactly as cron does.
      deps.heartbeatMs       -> int                 // throttle for the durable liveness write (30s)
-     deps.emit(name,payload)-> void                // OPTIONAL. NOTE: shared/events.js is the FROZEN, OWNED
-                                                   //   contract and has no loop.* events, so S1 adds none —
-                                                   //   the LOOPS window polls GET /api/loops the same way the
-                                                   //   ROUTINES window polls /api/cron. A loop.* event family
-                                                   //   is a later additive request to the contract owner.
      deps.maxParallel       -> int                 // loops that may have an iteration in flight at once (4)
      deps.maxRunMs          -> int                 // zombie-claim ceiling handed to the pure gate as staleMs
+
+   NO loop.* BUS EVENTS, DELIBERATELY. shared/events.js is the FROZEN, OWNED contract; it carries no loop.*
+   family and this lane does not get to invent one (additive changes go through the owner). So the driver emits
+   nothing of its own: the LOOPS window polls GET /api/loops exactly as the ROUTINES window polls /api/cron, the
+   durable audit trail rides the autonomy ledger (which already allows source:'loop'), and per-iteration
+   visibility rides `tee` — which forwards the run's EXISTING agent.* contract events. test/lint-emits.js
+   enforces this: an emit of an unregistered event name fails the gate, which is how the first draft's
+   loop.fire/loop.result/loop.tick were caught.
 
    WHY ADVANCE-BEFORE-RUN MATTERS HERE. A loop has no wall-clock "next fire" to advance, so the crash-safety
    primitive is the durable fire-claim (loopjob-store.claimFire): stamp it, PERSIST it, and only then launch.
@@ -103,7 +106,6 @@
     const concurrencyFree = deps.concurrencyFree || (() => true);
     const agentExists = deps.agentExists;
     const ledger = deps.ledger || noop;
-    const emit = deps.emit || noop;
     const harvest = isFn(deps.harvest) ? deps.harvest : defaultHarvest;
     const maxParallel = deps.maxParallel != null ? deps.maxParallel : DEFAULT_MAX_PARALLEL;
     const maxRunMs = deps.maxRunMs != null ? deps.maxRunMs : DEFAULT_MAX_RUN_MS;
@@ -152,7 +154,6 @@
         binding: loop ? loop.state : null,
         detail: { iteration: it ? it.n : 0, usd: (it && it.usd) || 0, converged: !!(it && it.outcome === 'noop') }
       });
-      try { emit('loop.result', { loopId: loopId, runId: runId, outcome: it ? it.outcome : 'failed' }); } catch (_) {}
       return next;
     }
 
@@ -225,7 +226,6 @@
       };
 
       note('fire', fresh, { runId: runId, reason: 'iteration-' + iterN, binding: 'verdict', detail: { iteration: iterN } });
-      try { emit('loop.fire', { loopId: loop.id, runId: runId, iteration: iterN }); } catch (_) {}
 
       const opts = {
         key: key,
@@ -335,7 +335,6 @@
         if (fireLoop(loop, nowMs)) fired++; else skipped++;
       }
 
-      try { emit('loop.tick', { fired: fired, skipped: skipped, deferred: deferred, planned: planned }); } catch (_) {}
       return { fired: fired, skipped: skipped, deferred: deferred, planned: planned };
     }
 

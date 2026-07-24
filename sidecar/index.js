@@ -4122,7 +4122,7 @@ const loopDriver = makeLoopDriver({
   // NOTE: no bus emit. shared/events.js is the FROZEN, OWNED contract and carries no loop.* family, so S1 adds
   // none — the LOOPS window polls GET /api/loops exactly as the ROUTINES window polls /api/cron. A loop.*
   // event family is a later ADDITIVE request to the contract owner, not something this lane invents.
-  emit: null
+  // (no bus emit — see the "NO loop.* BUS EVENTS" note in loopjob-driver.js)
 });
 
 let loopTimer = null;
