@@ -4231,7 +4231,8 @@ const Chat = (() => {
     Object.freeze({ name: 'insights', desc: 'usage rollup from the run history', action: 'insights' }),
     Object.freeze({ name: 'branch', aliases: ['fork'], desc: 'fork this conversation into a new workstream', action: 'branch' }),
     Object.freeze({ name: 'status', desc: 'show current stream and run state', action: 'status' }),
-    Object.freeze({ name: 'usage', desc: 'show token and spend totals', action: 'usage' }),
+    // no local action by design — the sidecar owns the spend ledger (dispatch:'server')
+    Object.freeze({ name: 'usage', desc: 'show real spend from the station ledger', action: 'usage' }),
     Object.freeze({ name: 'queue', aliases: ['q'], desc: 'show or add queued follow-up text', action: 'queue' }),
     Object.freeze({ name: 'steer', desc: 'queue steering guidance for the current task', action: 'steer' }),
     Object.freeze({ name: 'undo', desc: 'remove the last local exchange', action: 'undo' }),
@@ -4255,7 +4256,8 @@ const Chat = (() => {
     Object.freeze({ name: 'reasoning', desc: 'show reasoning-mode support status', action: 'reasoning' }),
     Object.freeze({ name: 'fast', desc: 'show fast-mode support status', action: 'fast' }),
     Object.freeze({ name: 'voice', desc: 'show or toggle spoken replies', action: 'voice' }),
-    Object.freeze({ name: 'tools', desc: 'show tools granted by the workstation', action: 'tools' }),
+    // no local action by design — the sidecar owns CAP_REGISTRY + the toolset switches (dispatch:'server')
+    Object.freeze({ name: 'tools', desc: 'show the tools this agent can actually call', action: 'tools' }),
     Object.freeze({ name: 'skills', desc: 'show installed skill recipes', action: 'skills' }),
     Object.freeze({ name: 'memory', desc: 'show the active agent memory records', action: 'memory' }),
     Object.freeze({ name: 'bundles', desc: 'list recipe and skill slash bundles', action: 'bundles' }),
@@ -4524,12 +4526,10 @@ const Chat = (() => {
       + (model ? '; model ' + model + (provider ? ' via ' + provider : '') : '') + '.'
       + (g && g.status !== 'cleared' ? (' ' + GoalLoop.statusLine(g)) : ''));
   }
-  function usageCommand() {
-    const t = (typeof Harness !== 'undefined' && Harness.totals) ? Harness.totals() : { tokens: 0, cost: 0, calls: 0 };
-    const c = (activeWs && typeof Workstreams !== 'undefined' && Workstreams.costOf) ? Workstreams.costOf(activeWs.id) : { tokens: 0, usd: 0, calls: 0 };
-    localLine('Usage: lifetime ' + (t.tokens || 0) + ' tokens (≈¾ word each), ' + U.usd(t.cost || 0) + ' spent, ' + (t.calls || 0)
-      + ' model calls. This stream: ' + (c.tokens || 0) + ' tokens, ' + U.usd(c.usd || 0) + ', ' + (c.calls || 0) + ' calls.');
-  }
+  // NOTE: /usage moved to the sidecar (dispatch:'server'). It read Harness.totals(), which only accumulates runs
+  // THIS BROWSER watched — every routine, away shift, night-shift beat and Telegram run spends real money and
+  // never touched it, so the figure it labelled "lifetime" structurally under-reported and disagreed with the
+  // ledger the budget caps enforce against. The ledger is the authority; see sidecar/slash-actions.js.
   function queueCommand(args) {
     if (!activeWs) return localLine('No active workstream.');
     const text = String(args || '').trim();
@@ -4887,35 +4887,9 @@ const Chat = (() => {
     }
     localLine('Usage: /voice [on|off|status|handsfree]');
   }
-  function toolRows() {
-    return [
-      { cap: null, label: 'compute', tools: 'model.chat' },
-      { cap: 'dish', label: 'web', tools: 'web_search, web_fetch' },
-      { cap: 'cabinet', label: 'files', tools: 'fs.read, fs.list, fs.write/edit' },
-      { cap: 'notebook', label: 'memory', tools: 'notebook.read, notebook.write' },
-      { cap: 'workbench', label: 'terminal', tools: 'shell.exec, verify.run' },
-      { cap: 'studio', label: 'image', tools: 'image.generate, image.analyze' },
-      { cap: 'jukebox', label: 'spotify', tools: 'spotify controls' }
-    ];
-  }
-  async function toolsCommand() {
-    const placed = slashPlacedTypes();
-    const have = {}; placed.forEach(t => { have[t] = true; });
-    const active = toolRows().filter(r => r.cap == null || have[r.cap]);
-    const missing = toolRows().filter(r => r.cap && !have[r.cap]).map(r => r.label);
-    // JUKEBOX is a two-step unlock: place the prop (grants the tools) AND connect Spotify in TOOLSETS (the tools
-    // are inert until the OAuth session exists). If it's placed but Spotify isn't connected, say so honestly
-    // rather than listing spotify as fully live — the truthful-telemetry law applies to /tools too.
-    let jukeNote = '';
-    if (have.jukebox) {
-      let connected = false;
-      try { const j = await (await fetch('/api/spotify/status', { cache: 'no-store' })).json(); connected = !!(j && j.connected); } catch (_) {}
-      if (!connected) jukeNote = ' Spotify not connected — connect it in TOOLSETS (the JUKEBOX row) to use it.';
-    }
-    localLine('Tools: ' + active.map(r => r.label + ' (' + r.tools + ')').join('; ')
-      + (missing.length ? '. Locked until placed: ' + missing.join(', ') + '.' : '.')
-      + jukeNote);
-  }
+  // /tools and /usage are dispatch:'server' — the sidecar owns CAP_REGISTRY and the spend ledger, so it answers
+  // them (see sidecar/slash-actions.js). The browser versions were removed rather than kept as a fallback: a
+  // hardcoded tool list and a browser-only spend counter are exactly the two things that were lying.
   async function skillsCommand() {
     try {
       const key = slashCatalogKey();
@@ -5076,14 +5050,14 @@ const Chat = (() => {
     return {
       retry: retryLast, stop: stopActive, copy: copyLastReply, help: showHelp,
       new: newWorkstreamCommand, branch: branchWorkstreamCommand, status: statusCommand,
-      usage: usageCommand, queue: queueCommand, steer: steerCommand, undo: undoCommand,
+      queue: queueCommand, steer: steerCommand, undo: undoCommand,
       compress: compressCommand, title: titleCommand, resume: resumeCommand,
       save: saveCommand, agents: agentsCommand, background: backgroundCommand,
       goal: goalCommand, subgoal: subgoalCommand, loop: loopCommand,
       clear: clearCommand, history: historyCommand, whoami: whoamiCommand, insights: insightsCommand,
       model: modelCommand, personality: personalityCommand, yolo: yoloCommand,
       reasoning: reasoningCommand, fast: fastCommand, voice: voiceCommand,
-      tools: toolsCommand, skills: skillsCommand, memory: memoryCommand,
+      skills: skillsCommand, memory: memoryCommand,
       bundles: bundlesCommand, cron: cronCommand, suggestions: suggestionsCommand,
       blueprint: blueprintCommand, 'reload-mcp': reloadMcpCommand,
       'reload-skills': reloadSkillsCommand, debug: debugCommand, version: versionCommand

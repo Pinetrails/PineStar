@@ -21,6 +21,8 @@ function makeSlashActions(deps) {
   const d = deps || {};
   const cron = d.cron || {};
   const workshop = d.workshop || {};
+  const tools = d.tools || {};
+  const budget = d.budget || {};
   const now = typeof d.now === 'function' ? d.now : () => 0;
 
   const say = (text) => ({ ok: true, text: String(text || '') });
@@ -273,7 +275,76 @@ function makeSlashActions(deps) {
     return say('Queued for the away workshop: "' + raw.slice(0, 80) + '".' + grantNote(r.granted !== false));
   }
 
-  const ACTIONS = { routine: routineAction, away: awayAction };
+  /* ---------------- /tools ----------------
+
+     WHY THIS IS SERVER-SIDE. The browser used to print a HARDCODED list of tool names ("web (web_search,
+     web_fetch)") keyed only on which props were placed. Two ways that lied: the names were a literal that
+     drifted from CAP_REGISTRY, and it ignored the TOOLSETS toggle entirely — a family switched OFF still
+     read as available, so /tools advertised tools the run would never be given. The registry lives here, so
+     the answer is computed here from the same rows the TOOLSETS console renders. */
+  async function toolsAction(args, ctx) {
+    if (!tools || typeof tools.rows !== 'function') return fail('The tool registry is not available on this station.');
+    const placed = Array.isArray(ctx && ctx.placed) ? ctx.placed : [];
+    let rows;
+    try { rows = tools.rows(placed) || []; } catch (e) { return fail('Could not read the tool registry: ' + ((e && e.message) || e)); }
+
+    const live = rows.filter(r => r.placed && r.enabled !== false);
+    const off = rows.filter(r => r.placed && r.enabled === false);
+    const unplaced = rows.filter(r => !r.placed);
+    const lines = [];
+    for (const r of live) lines.push('✓ ' + r.label + ' — ' + (r.tools || []).join(', ') + (r.consentGated ? '  (asks before acting)' : ''));
+    // A family whose prop IS placed but whose switch is OFF is the case the old readout got flatly wrong.
+    for (const r of off) lines.push('✗ ' + r.label + ' — switched OFF in TOOLSETS, so these will not be offered');
+    if (unplaced.length) lines.push('Locked until placed: ' + unplaced.map(r => r.label + (r.object ? ' (' + r.object + ')' : '')).join(', ') + '.');
+    // JUKEBOX is a TWO-step unlock: the prop grants the tools, but they are inert until Spotify's OAuth exists.
+    const juke = live.find(r => r.id === 'jukebox');
+    if (juke && typeof tools.spotifyConnected === 'function') {
+      let connected = null;
+      try { connected = await tools.spotifyConnected(); } catch (_) { connected = null; }
+      if (connected === false) lines.push('Spotify is not connected — the JUKEBOX tools are listed but inert until you connect it in TOOLSETS.');
+    }
+    // "compute" is the gate to spend a model turn at all, not a callable tool — say so rather than listing it.
+    lines.push('Every agent can also think and reply (the compute grant); that is not a callable tool.');
+    if (!live.length && !off.length) return say('This agent has no tools yet — place props in REFIT to grant them. ' + lines[lines.length - 2 >= 0 ? lines.length - 2 : 0]);
+    return card('Tools for this agent (' + live.length + ' active)', lines);
+  }
+
+  /* ---------------- /usage ----------------
+
+     WHY THIS IS SERVER-SIDE. The browser reported Harness.totals() as "lifetime" spend, but that counter only
+     accumulates runs THIS BROWSER watched. Every headless run — routines, away shifts, night shift, Telegram —
+     spends real money and never touches it, so the number structurally under-reported and disagreed with the
+     sidecar's own ledger (the one the budget caps actually enforce against). The ledger is the authority. */
+  function usd(n) {
+    const v = Number(n) || 0;
+    if (v > 0 && v < 0.01) return '<$0.01';
+    return '$' + v.toFixed(2);
+  }
+  async function usageAction(args, ctx) {
+    if (!budget || typeof budget.snapshot !== 'function') return fail('Spend tracking is not available on this station.');
+    const agentId = String((ctx && ctx.agentId) || 'agent');
+    let s;
+    try { s = await budget.snapshot(agentId); } catch (e) { return fail('Could not read the spend ledger: ' + ((e && e.message) || e)); }
+    if (!s || s.ok === false) return fail('Could not read the spend ledger: ' + String((s && s.error) || 'no answer') + '.');
+    const caps = s.caps || {};
+    const lines = [];
+    const dayCap = Number(caps.perDay) > 0 ? (' of ' + usd(caps.perDay) + ' daily cap') : '';
+    lines.push('Today: ' + usd(s.today) + dayCap + '.');
+    const tok = Number(s.tokens) > 0 ? (', ~' + Math.round(Number(s.tokens)).toLocaleString('en-US') + ' tokens') : '';
+    lines.push('All time: ' + usd(s.lifetime) + ' across ' + (Number(s.runs) || 0) + ' run' + ((Number(s.runs) === 1) ? '' : 's') + tok + '.');
+    lines.push('This agent (' + agentId + '): ' + usd(s.agentUsd) + '.');
+    const capBits = [];
+    if (Number(caps.perRun) > 0) capBits.push('per run ' + usd(caps.perRun));
+    if (Number(caps.perDay) > 0) capBits.push('per day ' + usd(caps.perDay));
+    if (Number(caps.global) > 0) capBits.push('total ' + usd(caps.global));
+    lines.push(capBits.length ? ('Caps: ' + capBits.join(' · ') + '.') : 'No spend caps are set — SETTINGS → BUDGET.');
+    // The point of moving this server-side: say WHOSE numbers these are, so the figure is not read as
+    // "what I watched happen in this window".
+    lines.push('From the station ledger — includes routines, away shifts and messaging runs, not just this window.');
+    return card('Spend', lines);
+  }
+
+  const ACTIONS = { routine: routineAction, away: awayAction, tools: toolsAction, usage: usageAction };
 
   /* run(action, args, ctx) -> { ok, text? , title?, lines? }. NEVER throws: a broken dep must degrade to an
      honest refusal line, because the caller (an HTTP handler) would otherwise 500 on a typo'd command. */

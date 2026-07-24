@@ -1304,11 +1304,12 @@
       "kind": "command",
       "area": "commands",
       "name": "/tools — show tools granted by the workstation",
-      "purpose": "Show which tool families the active agent actually has, derived from the capabilities placed on its floor — and honestly mark the ones still locked.",
-      "promise": "Typing /tools lists the live tool families (always compute; web/files/memory/terminal/image/spotify only when the matching prop is placed) and names the locked ones; a placed-but-unconnected Jukebox is called out honestly rather than listed as live.",
+      "purpose": "Answer \"what can this agent actually call right now\" from the real capability registry, not from a list typed into the UI.",
+      "promise": "Typing /tools lists each toolset family with the REAL tool names CAP_REGISTRY grants it, split three ways: active (prop placed AND the TOOLSETS switch on), placed-but-switched-OFF (named explicitly, tools NOT advertised), and locked-until-placed (naming the objectType required). A placed Jukebox with no Spotify session is called out as inert. compute is described as a grant, never listed as a callable tool.",
       "wiring": {
         "files": [
           "sidecar/slash.js",
+          "sidecar/slash-actions.js",
           "sidecar/index.js",
           "frontend/app/chat.js"
         ],
@@ -1317,20 +1318,21 @@
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/slash.test.js (tools in catalog; dispatch resolves)"
+          "ref": "test/slash.test.js (registry: dispatch:server)"
         },
         {
           "kind": "test",
-          "ref": "test/slash.palette.test.js (toolsCommand mapped)"
+          "ref": "test/slash-actions.test.js (real tool names; placed-but-disabled family withholds its tools; unplaced listed as locked; jukebox inert note)"
+        },
+        {
+          "kind": "audit",
+          "ref": "live 2026-07-24 :9400 — toggling the cabinet toolset OFF moved FILE CABINET from active to \"switched OFF\" and dropped the count 4->3, verified against POST /api/toolsets/cabinet"
         }
       ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "3d0ebc1d1732a2e0ae86a8d8fa772031ee8d3386",
-        "date": "2026-07-18T01:12:00.000Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
-      "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). /tools → 'Tools: compute (model.chat). Locked until placed: web, files, memory, terminal, image, spotify.' — truthful capability gating on the seeded bare-floor agent.",
+      "notes": "Was dispatch:client reading a HARDCODED literal (chat.js toolRows) that understated the real surface ~3x (web claimed 2 tools, CAP_REGISTRY grants 14) and ignored the TOOLSETS switch entirely, so a disabled family still read as available. Now dispatch:server off toolsetRows(CAP_REGISTRY) + the persisted enable-state. Re-audit owed: status dropped from perfected because the implementation changed.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false
@@ -1376,11 +1378,12 @@
       "kind": "command",
       "area": "commands",
       "name": "/usage — show token and spend totals",
-      "purpose": "Show lifetime and this-stream token/spend/call totals so the Commander can see real cost.",
-      "promise": "Typing /usage prints lifetime tokens/$/calls (Harness.totals) and this-stream tokens/$/calls (Workstreams.costOf) — real accumulated numbers, zero when nothing has run.",
+      "purpose": "Tell the Commander what the station has actually SPENT, from the same ledger the budget caps enforce against.",
+      "promise": "Typing /usage prints today's spend (against the daily cap when one is set), all-time spend with run count and token total, and this agent's share — every figure read from the sidecar spend ledger, so it includes headless runs (routines, away shifts, night shift, messaging) the browser never observed. Sub-cent spend renders as </usr/bin/bash.01, never /usr/bin/bash.00. An unreadable ledger refuses rather than reporting zero.",
       "wiring": {
         "files": [
           "sidecar/slash.js",
+          "sidecar/slash-actions.js",
           "sidecar/index.js",
           "frontend/app/chat.js"
         ],
@@ -1389,20 +1392,21 @@
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/slash.test.js (usage in catalog; dispatch resolves)"
+          "ref": "test/slash.test.js (registry: dispatch:server)"
         },
         {
           "kind": "test",
-          "ref": "test/slash.palette.test.js (usageCommand mapped)"
+          "ref": "test/slash-actions.test.js (ledger-sourced today/lifetime/tokens/per-agent + caps; sub-cent; unreadable ledger refuses)"
+        },
+        {
+          "kind": "audit",
+          "ref": "live 2026-07-24 :9400 — ledger seeded with 3 HEADLESS runs (.504); /usage reported .50 / 3 runs / 43,900 tokens and per-agent /usr/bin/bash.42 vs .08, matching GET /api/budget/status"
         }
       ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "3d0ebc1d1732a2e0ae86a8d8fa772031ee8d3386",
-        "date": "2026-07-18T01:12:00.000Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
-      "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). /usage → 'Usage: lifetime 0 tokens (≈¾ word each), $0.00 spent, 0 model calls. This stream: 0 tokens, $0.00, 0 calls.' — honest zeros, no fabricated spend.",
+      "notes": "Was dispatch:client reading Harness.totals(), a counter that only accumulates runs THIS BROWSER watched — it labelled that \"lifetime\" while every cron/away/night-shift/Telegram run spent real money it never saw, structurally disagreeing with the ledger the caps enforce against. Reads effectiveCaps directly rather than GET /api/budget/status, whose caps key is clobbered by budget.status() (pre-existing; the Budget panel compensates with its own precedence chain). Re-audit owed: status dropped from perfected because the implementation changed.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false
