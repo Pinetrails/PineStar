@@ -146,8 +146,8 @@
     // The "keeps working headless" promise is FULL-CONTRAST (a real capability, not fine print), lifted out of the
     // opacity-.55 intro. The opt-in label reads as a plain sentence with its description on its own line.
     let html =
-      '<p class="set-about">Reach your agent from real messaging apps. Every connected channel talks to the <b>same agent</b> ' +
-        '(same memory, tools, and workspace) using this app\'s current provider + model.</p>' +
+      '<p class="set-about">Reach your agents from real messaging apps. A connected channel talks to the <b>same agent</b> you see here ' +
+        '(same memory, tools, and workspace) — and on Telegram you can give <b>each agent its own bot</b>, a separate contact that always answers as that agent (see AGENT BOTS below).</p>' +
       // HONESTY (2026-07-15): closing the desktop app STOPS the sidecar (the shell reaps it on exit), so "works
       // with the app closed" was a false promise — and some channels deliberately discard the offline backlog on
       // reconnect (anti-stale-directive). Claim exactly what the harness proves: headless of THIS window, alive
