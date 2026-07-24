@@ -9822,6 +9822,10 @@ async function handleTelegramBotAdd(req, res) {
   const prev = telegramBotRecords()[botId] || {};
   const persisted = saveTelegramBotRecord(botId, {
     token: token, username: me.username || '', botName: me.name || '',
+    // persist the provider KEY on the record (like the station/generic channels do) — without it the bot only
+    // works while a runtime/station key happens to exist and dies on restart with "no provider configured"
+    // even though the add-flow validated a key. Codex/OAuth providers carry no key by design.
+    key: providerUsesCodex(provider) ? undefined : (String(body.key || '').trim() || prev.key || undefined),
     agentId: agentId,
     system: (typeof body.system === 'string' && body.system) ? body.system : (prev.system || ''),
     name: String(body.agentName || '').trim() || prev.name || '',

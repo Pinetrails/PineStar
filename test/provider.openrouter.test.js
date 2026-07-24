@@ -176,6 +176,28 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(evs.filter(e => e.type === 'text').map(e => e.delta).join(''), 'ok', 'after the 408 retry it streams normally');
   }
 
+  // K2. LOW-CREDIT SELF-HEAL: a 402 that NAMES the affordable ceiling ("can only afford N") retries ONCE with
+  //     max_tokens clamped to 90% of N — a funded-but-small balance must run, not strand. A genuinely broke
+  //     account (afford < 1024) keeps the honest fail-fast 402.
+  {
+    let bodies = [];
+    const lowCredit = async (url, opts) => {
+      bodies.push(JSON.parse(opts.body));
+      if (bodies.length === 1) return new Response('{"error":{"message":"This request requires more credits, or fewer max_tokens. You requested up to 64000 tokens, but can only afford 51917."}}', { status: 402 });
+      return new Response(['data: ' + JSON.stringify({ choices: [{ delta: { content: 'healed' } }] }), 'data: [DONE]', ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const evs2 = await collect(makeOpenRouterProvider({ fetch: lowCredit, key: 'k' }), { model: 'm', messages: [] });
+    A.eq(bodies.length, 2, '402-with-afford retried exactly once');
+    A.eq(bodies[1].max_tokens, Math.floor(51917 * 0.9), 'retry clamped max_tokens to 90% of the stated affordable ceiling');
+    A.eq(evs2.filter(e => e.type === 'text').map(e => e.delta).join(''), 'healed', 'the healed request streamed normally');
+
+    let broke = 0;
+    const brokeFetch = async () => { broke++; return new Response('{"error":{"message":"can only afford 300."}}', { status: 402 }); };
+    let threwBroke = false;
+    try { await collect(makeOpenRouterProvider({ fetch: brokeFetch, key: 'k' }), { model: 'm', messages: [] }); } catch (e) { threwBroke = /402/.test(e.message); }
+    A.ok(threwBroke && broke === 1, 'afford below the 1024 floor keeps the honest fail-fast 402 (no useless paid retry)');
+  }
+
   // L. prompt caching: applyCacheControl marks the system prefix cacheable for Anthropic-style models ONLY.
   //    NOTE: this asserts the wire SHAPE, not a real cache HIT — Anthropic only caches a prefix above a per-model
   //    minimum (~1024–4096 tokens), so the tiny 'SYS PREFIX' here would run uncached live. A real hit is proven by

@@ -294,6 +294,7 @@
     // POST the chat request, retrying transient failures (429/5xx + network resets) BEFORE the stream
     // starts — safe because no tokens have been emitted yet. Aborts propagate at once. Returns an ok Response.
     async function requestWithRetry(body, signal) {
+      let lowCreditHealed = false;   // one-shot: a 402 affordability refusal retries ONCE with a clamped max_tokens
       for (let attempt = 0; ; attempt++) {
         if (signal && signal.aborted) throw abortError();
         let res;
@@ -318,6 +319,22 @@
         let detail = res.statusText || '';
         try { const j = await res.json(); detail = (j && j.error && j.error.message) || JSON.stringify(j); }
         catch (e) { try { detail = (await res.text()).slice(0, 300); } catch (_) {} }
+        // LOW-CREDIT SELF-HEAL (402): with max_tokens unset, OpenRouter reserves the model's FULL output
+        // ceiling against the account balance — a low-credit account gets "requires more credits, or fewer
+        // max_tokens … can only afford N" even though the actual reply needs a fraction of N. That stranded
+        // real users (WAKE preflight + every channel run dead on a funded-but-small balance). The refusal
+        // names the affordable ceiling, so retry ONCE with max_tokens clamped to 90% of it (floor 1024 —
+        // below that the account is genuinely broke and the honest 402 stands, credits URL included).
+        if (res.status === 402 && !lowCreditHealed) {
+          const m = /can only afford (\d+)/i.exec(detail);
+          const afford = m ? Math.floor(Number(m[1]) * 0.9) : 0;
+          const cur = Number(body.max_tokens || 0);
+          if (afford >= 1024 && (!cur || afford < cur)) {
+            lowCreditHealed = true;
+            body = Object.assign({}, body, { max_tokens: afford });
+            continue;
+          }
+        }
         const err = new Error('openrouter http ' + res.status + ' — ' + detail);
         err.status = res.status;
         err.headers = res.headers;   // H6.1: let classifyApiError read Retry-After / X-RateLimit-Reset off the real response
