@@ -52,6 +52,22 @@
         try { await call('deleteWebhook', { drop_pending_updates: false }); } catch (_) {}
       },
 
+      // getMe — validate a token and learn WHO this bot is ({ id, username, name }) BEFORE anything is persisted.
+      // The multi-bot connect flow keys each bot instance by the stable numeric id (usernames can be renamed) and
+      // uses the username as the card label. NEVER throws — { ok:false, error } lets the route answer a clean 400.
+      async getMe() {
+        try {
+          const { data, res } = await call('getMe', {});
+          if (data && data.ok && data.result && data.result.id != null) {
+            return { ok: true, id: String(data.result.id), username: String(data.result.username || ''), name: String(data.result.first_name || '') };
+          }
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          return { ok: false, error: (data && data.description) || ('http ' + code) };
+        } catch (e) {
+          return { ok: false, error: (e && e.message) || 'network error' };
+        }
+      },
+
       async getUpdates(args) {
         const a = args || {};
         const { data, res } = await call('getUpdates', {

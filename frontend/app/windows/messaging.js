@@ -33,7 +33,27 @@
         read: (b) => ({ token: (b.querySelector('#tg-token').value || '').trim() }),
         clear: (b) => { b.querySelector('#tg-token').value = ''; },
         emptyMsg: 'paste your @BotFather token first',
-        okMsg: '✓ connected — open Telegram and DM your bot' },
+        okMsg: '✓ connected — open Telegram and DM your bot',
+        // multi-bot: each additional bot is a SEPARATE Telegram contact hard-bound to one agent. The list paints
+        // exclusively from the status payload's bots[] (truthful per-instance transport state); the add flow is
+        // token + agent — the sidecar validates the token with getMe before anything persists.
+        extraHtml:
+          '<div class="ch-bots" id="tg-bots">' +
+            '<div class="ch-bots-head">AGENT BOTS <span class="dim">— a separate Telegram contact per agent</span></div>' +
+            '<div id="tg-bots-list"></div>' +
+            '<details class="ch-setup" id="tg-bot-addbox"><summary>ADD A BOT</summary>' +
+              '<ol class="ch-steps">' +
+                '<li>In Telegram open <b>@BotFather</b> → <code>/newbot</code> → name it after your agent → copy the token.</li>' +
+                '<li>Paste it below and pick which agent answers it. That bot <b>is</b> that agent — DM it directly, no /talk needed.</li>' +
+              '</ol>' +
+              '<label class="ch-lbl" for="tg-bot-token">BOT TOKEN <span class="dim">— from @BotFather</span></label>' +
+              '<input id="tg-bot-token" type="password" class="key-input" placeholder="123456789:ABCdef..." autocomplete="off" spellcheck="false">' +
+              '<label class="ch-lbl" for="tg-bot-agent">RUNS AS</label>' +
+              '<select id="tg-bot-agent" class="key-input"></select>' +
+              '<div class="set-save"><button class="bb sm" id="tg-bot-add">+ ADD AGENT BOT</button></div>' +
+              '<div id="tg-bots-msg" class="msg"></div>' +
+            '</details>' +
+          '</div>' },
 
       { id: 'discord', title: 'DISCORD', pre: 'dc', glyph: '◈', accent: '#7c83f5',
         // HONESTY: server/channel messages need a chat allowlist no production path supplies yet — DMs only today.
@@ -159,6 +179,7 @@
             '<button class="bb xs danger" id="' + c.pre + '-forget" style="display:none" title="' + (c.id === 'signal' ? 'removes the saved bridge URL and registered number from this machine' : 'permanently deletes the saved token from this machine (record + OS keychain) — you’d have to set it up again') + '">' + (c.id === 'signal' ? '✕ REMOVE CONFIGURATION' : '⌫ FORGET') + '</button>' +
           '</div>' +
           '<div id="' + c.pre + '-msg" class="msg"></div>' +
+          (c.extraHtml || '') +
         '</div>';
     }
     body.innerHTML = html;
@@ -180,6 +201,39 @@
       if (!el) return;
       el.className = 'msg' + (kind === 'ok' ? ' ok' : kind === 'info' ? ' info' : '');
       el.textContent = text || '';
+    }
+
+    // ---- multi-bot telegram: paint the AGENT BOTS list from status.bots (per-instance transport truth) ----
+    function paintTelegramBots(bots) {
+      const list = body.querySelector('#tg-bots-list');
+      if (!list) return;
+      list.textContent = '';
+      for (const bItem of (Array.isArray(bots) ? bots : [])) {
+        const row = document.createElement('div');
+        row.className = 'tg-bot-row' + (bItem.connected ? ' on' : '');
+        row.dataset.bot = String(bItem.botId || '');
+        const name = document.createElement('span');
+        name.className = 'tg-bot-name';
+        name.textContent = (bItem.username ? '@' + bItem.username : 'bot ' + bItem.botId) + ' → ' + (bItem.agentName || bItem.agentId || '?');
+        const state = document.createElement('span');
+        const inFlight = !bItem.connected && (bItem.state === 'connecting' || bItem.state === 'reconnecting');
+        state.className = 'ch-state ' + stateClass(bItem.connected, inFlight, bItem.state, bItem.configured);
+        state.textContent = bItem.connected ? '● connected' : inFlight ? '◐ connecting…'
+          : bItem.state === 'error' ? ('✕ ' + (bItem.detail || 'error')) : (bItem.enabled === false ? '○ off' : '○ offline');
+        if (bItem.ownerLocked) state.title = 'owner-locked';
+        row.appendChild(name); row.appendChild(state);
+        const btn = (label, act, danger) => {
+          const b = document.createElement('button');
+          b.className = 'bb xs' + (danger ? ' danger' : ''); b.textContent = label; b.dataset.act = act; b.dataset.bot = String(bItem.botId || '');
+          row.appendChild(b); return b;
+        };
+        if (!bItem.connected && bItem.configured) btn('⏵', 'resume', false).title = 'reconnect this bot';
+        if (bItem.connected || bItem.enabled !== false) btn('⏏', 'off', false).title = 'disconnect (token kept)';
+        btn('⌫', 'forget', true).title = 'forget this bot — removes its saved token';
+        list.appendChild(row);
+      }
+      const wrap = body.querySelector('#tg-bots');
+      if (wrap) wrap.classList.toggle('empty', !(Array.isArray(bots) && bots.length));
     }
 
     function paintCard(c, st) {
@@ -231,6 +285,8 @@
         if (savedPlaceholder[inp.id] == null) savedPlaceholder[inp.id] = inp.getAttribute('placeholder') || '';
         inp.placeholder = (configured && !inp.value) ? '•••• saved — paste to replace' : savedPlaceholder[inp.id];
       });
+
+      if (c.id === 'telegram') { try { paintTelegramBots(st && st.bots); } catch (_) {} }
 
       // finalize a pending connect's MESSAGE from the proven status (not the optimistic POST body).
       if (pendingConnect[c.id]) {
@@ -437,6 +493,76 @@
         inp.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); body.querySelector('#' + c.pre + '-connect').click(); } });
       });
     }
+
+    // ---- multi-bot telegram wiring: add / resume / disconnect / forget --------------------------------------
+    (function wireTelegramBots() {
+      const msgEl = body.querySelector('#tg-bots-msg');
+      const sel = body.querySelector('#tg-bot-agent');
+      if (!sel) return;
+      function fillAgents() {
+        const cur = sel.value;
+        sel.textContent = '';
+        for (const a of (H.present || [])) {
+          if (!a || !a.id) continue;
+          const o = document.createElement('option');
+          o.value = a.id; o.textContent = a.name || a.id;
+          sel.appendChild(o);
+        }
+        if (cur) sel.value = cur;
+      }
+      fillAgents();
+      const addBox = body.querySelector('#tg-bot-addbox');
+      if (addBox) addBox.addEventListener('toggle', fillAgents);   // roster may have changed since build
+      body.querySelector('#tg-bot-add').addEventListener('click', async () => {
+        const tokInp = body.querySelector('#tg-bot-token');
+        const token = (tokInp.value || '').trim();
+        const agentId = sel.value;
+        if (!token) { sfx('bad'); setMsg(msgEl, 'paste a @BotFather token for the new bot first', ''); return; }
+        if (!agentId) { sfx('bad'); setMsg(msgEl, 'pick which agent this bot should be', ''); return; }
+        const ag = (H.present || []).find(a => a && a.id === agentId) || null;
+        const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
+        const usingCodex = provider === 'codex' || provider === 'openai-codex';
+        const key = (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey(provider) || '') : '';
+        const baseUrl = (typeof Harness !== 'undefined' && Harness.getBaseUrl) ? (Harness.getBaseUrl(provider) || '') : '';
+        const hasStoredKey = !!(typeof Harness !== 'undefined' && Harness.configured && Harness.configured(provider));
+        const model = (typeof Harness !== 'undefined' && Harness.getModel()) || '';
+        if (!model || (!usingCodex && !key && !hasStoredKey)) { sfx('bad'); setMsg(msgEl, '✕ connect your agent\'s provider + model in SETTINGS first', ''); return; }
+        setMsg(msgEl, 'checking the token with Telegram…', 'info');
+        try {
+          const r = await Harness.api.post('/api/channels/telegram/bots/connect', {
+            token, agentId, key, model, provider, baseUrl,
+            system: (ag && ag.systemPrompt) || '', agentName: (ag && ag.name) || ''
+          });
+          const j = r.j || {};
+          if (!r.ok || j.error) { sfx('bad'); setMsg(msgEl, '✕ ' + (j.error || ('HTTP ' + r.status)), ''); }
+          else {
+            sfx('click'); tokInp.value = '';
+            // the CONNECTED claim stays with the list row (painted from proven per-instance status) — this line
+            // only asserts what getMe proved: the token is real and the bot is bound.
+            setMsg(msgEl, '✓ @' + (j.username || 'bot') + (j.rebound ? ' re-bound' : ' added') + ' — connecting; DM it on Telegram once the row shows ●', 'ok');
+          }
+        } catch (e) { sfx('bad'); setMsg(msgEl, '✕ ' + ((e && e.message) || 'failed to reach the sidecar'), ''); }
+        refreshAll();
+      });
+      // row actions by delegation (rows re-render on every status paint)
+      body.querySelector('#tg-bots-list').addEventListener('click', (ev) => {
+        const b = ev.target && ev.target.closest ? ev.target.closest('button[data-act]') : null;
+        if (!b) return;
+        const botId = b.dataset.bot, act = b.dataset.act;
+        if (!botId) return;
+        const doPost = async (path, payload, okText) => {
+          try { const r = await Harness.api.post(path, payload || {}); const j = r.j || {};
+            if (!r.ok || j.error) { sfx('bad'); setMsg(msgEl, '✕ ' + (j.error || ('HTTP ' + r.status)), ''); }
+            else { sfx('click'); if (okText) setMsg(msgEl, okText, 'info'); } }
+          catch (_) { sfx('bad'); setMsg(msgEl, '✕ could not reach the sidecar', ''); }
+          refreshAll();
+        };
+        if (act === 'resume') doPost('/api/channels/telegram/bots/' + botId + '/connect', {}, null);
+        else if (act === 'off') doPost('/api/channels/telegram/bots/' + botId + '/disconnect', {}, 'bot disconnected — token kept; ⏵ to reconnect');
+        else if (act === 'forget') armed('tg-bot-forget-' + botId, b, '⌫', '⌫ SURE?', () =>
+          doPost('/api/channels/telegram/bots/' + botId + '/disconnect', { purge: true }, 'bot forgotten — its token was removed'));
+      });
+    })();
 
     // ---- the ONE global "ping me when I work on my own" opt-in (persisted server-side; cron reads it) ----
     const notifyBox = body.querySelector('#ch-notify');

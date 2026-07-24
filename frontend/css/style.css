@@ -1116,6 +1116,15 @@ body.no-scan .crt-scan { display: none; }
   font-family: inherit; font-size: inherit; letter-spacing: .5px; cursor: pointer; padding: 0; margin-left: 2px;
 }
 .ch-door:hover { color: var(--ph-bright); text-shadow: 0 0 6px var(--ph-glow2); }
+/* multi-bot telegram: the AGENT BOTS block inside the telegram card — one row per bound bot contact */
+.ch-bots { margin-top: 10px; padding-top: 8px; border-top: 1px dashed color-mix(in srgb, var(--accent, var(--ph)) 30%, transparent); }
+.ch-bots-head { font-size: 11px; letter-spacing: 1.5px; color: var(--ph); text-transform: uppercase; margin-bottom: 4px; }
+.tg-bot-row { display: flex; align-items: center; gap: 7px; padding: 4px 2px; border-bottom: 1px solid rgba(255,255,255,.05); }
+.tg-bot-row:last-child { border-bottom: 0; }
+.tg-bot-name { font-size: 12.5px; color: var(--ph); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tg-bot-row .ch-state { font-size: 11px; }
+.tg-bot-row .bb.xs { flex: 0 0 auto; }
+.tg-bot-row.on .tg-bot-name { color: var(--ph-bright); }
 .up-mini {
   display: flex; align-items: center; justify-content: space-between; gap: 10px;
   border: 1px solid var(--ph-faint); background: var(--panel2); padding: 7px 8px; margin: 6px 0;
