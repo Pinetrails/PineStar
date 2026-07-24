@@ -1,0 +1,322 @@
+/* node test/loopjob.test.js — the PURE LOOP core (standing objectives, S1).
+
+   Proves the two halves of the determinism split hold their invariants under an injected clock:
+     loopjob.js       — the GATE (decide), the convergence reader, the ledger digest
+     loopjob-store.js — the record lifecycle (iterations, verdicts, streaks, budget, envelope)
+
+   The four invariants that actually matter for a loop that spends real money 24/7:
+     1. THE VERDICT ADVANCES IT — a full review queue parks the loop; a verdict frees it. No clock involved.
+     2. THE STACKING LAW — rejecting #n cascades 'discarded' to every un-approved candidate above it.
+     3. CONVERGENCE IS REAL — N honest NOTHING-TO-DO passes park the loop DORMANT instead of burning forever.
+     4. NOTHING GOES QUIET UNNAMED — decide() always names a binding when it refuses to fire.
+
+   Everything is driven from a fixed epoch; no wall-clock read anywhere (same discipline as cron.test.js). */
+'use strict';
+const A = require('./_assert.js');
+const LJ = require('../sidecar/loopjob.js');
+const S = require('../sidecar/loopjob-store.js');
+
+// A fixed ms epoch, deliberately aligned to UTC MIDNIGHT (2023-11-15T00:00:00Z). The budget bucket rolls on
+// the UTC day boundary, so an unaligned epoch makes "T0 + 2 hours" silently cross into tomorrow and hand a
+// test a fresh daily allowance. Keep this aligned or the budget assertions below stop meaning what they say.
+const T0 = 1700006400000;
+const MIN = 60000, HOUR = 3600000, DAY = 86400000;
+
+const mk = (spec, at) => S.createLoop([], Object.assign({ id: 'l1', name: 'sweep', objective: 'find bugs' }, spec), { now: at == null ? T0 : at });
+const one = (loops) => S.getLoop(loops, 'l1');
+
+// a full iteration cycle: claim -> start -> settle. `res` shapes the outcome.
+function cycle(loops, res, at) {
+  loops = S.claimFire(loops, 'l1', { now: at });
+  loops = S.startIteration(loops, 'l1', { runId: res.runId, now: at });
+  return S.settleIteration(loops, 'l1', res, { now: at + MIN });
+}
+
+// ---- 1. makeLoop: safe defaults (a beginners product must not default to "spend freely") ----
+{
+  const l = one(mk());
+  A.eq(l.gate, 'review', 'default gate is REVIEW — nothing is applied without a click');
+  A.eq(l.state, 'idle', 'a new loop is idle and armed (no arm-it-later ceremony)');
+  A.eq(l.enabled, true, 'a new loop is enabled — no gating law');
+  A.eq(l.queueCap, LJ.QUEUE_CAP_DEFAULT, 'queueCap defaults to the shipped cap');
+  A.eq(l.iterationCount, 0, 'no iterations yet');
+  A.eq(l.iterations, [], 'ledger starts empty');
+  A.eq(l.budget.spentTodayUsd, 0, 'daily spend starts at zero');
+  A.eq(one(mk({ gate: 'auto' })).gate, 'auto', 'gate:auto is honored when explicitly asked for');
+  A.eq(one(mk({ gate: 'nonsense' })).gate, 'review', 'an unknown gate value falls back to REVIEW, never auto');
+  A.throws(() => S.createLoop([], { id: '../escape', objective: 'x' }, { now: T0 }), 'a path-escaping id is refused');
+}
+
+// ---- 2. decide: every refusal is NAMED (invariant 4) ----
+{
+  const live = mk();
+  A.eq(LJ.decide(one(live), {}, { now: T0 }).fire, true, 'a fresh enabled loop fires');
+  A.eq(LJ.decide(one(live), {}, { now: T0 }).binding, null, 'a firing loop has no binding');
+
+  A.eq(LJ.decide(one(live), { halted: true }, { now: T0 }).binding, 'halted', 'E-STOP binds first');
+  A.eq(LJ.decide(one(live), { agentBusy: true }, { now: T0 }).binding, 'concurrency', 'a busy agent binds');
+  A.eq(LJ.decide(one(live), { inFlight: true }, { now: T0 }).binding, 'in-flight', 'an in-flight iteration binds');
+  A.eq(LJ.decide(one(live), { precheck: { ok: false, reason: 'no key' } }, { now: T0 }).binding, 'precheck',
+    'a local precheck failure binds BEFORE any spend');
+  A.eq(LJ.decide(one(live), { precheck: { ok: false, reason: 'no key' } }, { now: T0 }).detail, 'no key',
+    'the precheck reason is carried through to the UI');
+
+  A.eq(LJ.decide(one(S.pauseLoop(live, 'l1', 'by hand', { now: T0 })), {}, { now: T0 }).binding, 'paused', 'paused binds');
+  A.eq(LJ.decide(one(S.stopLoop(live, 'l1', 'done', { now: T0 })), {}, { now: T0 }).binding, 'stopped', 'stopped binds');
+
+  const capped = one(mk({ maxIterations: 2 }));
+  A.eq(LJ.decide(Object.assign({}, capped, { iterationCount: 2 }), {}, { now: T0 }).binding, 'max-iterations',
+    'the iteration ceiling binds');
+
+  // every binding decide can produce is a declared gate name — no ad-hoc strings leaking to the UI
+  for (const b of ['halted', 'disabled', 'stopped', 'dormant', 'paused', 'max-iterations', 'budget', 'in-flight', 'queue-full', 'concurrency', 'precheck']) {
+    A.ok(LJ.GATES.indexOf(b) >= 0, 'binding "' + b + '" is a declared gate');
+  }
+}
+
+// ---- 3. the durable fire-claim: crash-safe, but never a permanent wedge ----
+{
+  let loops = S.claimFire(mk(), 'l1', { now: T0 });
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + MIN, staleMs: 10 * MIN }).binding, 'in-flight',
+    'a fresh claim suppresses re-fire across a restart (no double-spend)');
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + 30 * MIN, staleMs: 10 * MIN }).fire, true,
+    'a ZOMBIE claim past staleMs is reclaimed — a dead holder never wedges the loop forever');
+
+  const beat = S.renewHeartbeat(loops, 'l1', { now: T0 + 25 * MIN });
+  A.eq(LJ.decide(one(beat), {}, { now: T0 + 30 * MIN, staleMs: 10 * MIN }).binding, 'in-flight',
+    'a live heartbeat keeps a long-but-real iteration from being declared a zombie');
+}
+
+// ---- 4. INVARIANT 1: the queue parks the loop, the VERDICT frees it (not a clock) ----
+{
+  let loops = mk({ queueCap: 2 });
+  loops = cycle(loops, { runId: 'r1', status: 'ok', text: 'fixed the null deref', title: 'fix null deref' }, T0);
+  A.eq(one(loops).state, 'idle', '1 pending under a cap of 2 -> loop keeps working (stacking, not blocking)');
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + HOUR }).fire, true, 'and it may fire again immediately');
+
+  loops = cycle(loops, { runId: 'r2', status: 'ok', text: 'fixed the off-by-one', title: 'fix off-by-one' }, T0 + HOUR);
+  A.eq(one(loops).state, 'waiting', '2 pending at a cap of 2 -> the loop parks itself');
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + 2 * HOUR }).binding, 'queue-full', 'and names the queue as the reason');
+  A.eq(one(loops).stopReason, '2 waiting on your review', 'the park reason is human-readable, not a spinner');
+
+  loops = S.recordVerdict(loops, 'l1', 1, 'approved', { now: T0 + 3 * HOUR });
+  A.eq(one(loops).state, 'idle', 'a VERDICT frees the queue — this is the loop trigger');
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + 3 * HOUR }).fire, true, 'the next iteration may start at once');
+  A.eq(LJ.pendingReviews(one(loops)).length, 1, 'only the un-ruled candidate is still pending');
+}
+
+// ---- 5. queueCap 1 = strictly blocking (the conservative shape, still reachable) ----
+{
+  let loops = mk({ queueCap: 1 });
+  loops = cycle(loops, { runId: 'r1', status: 'ok', text: 'did a thing', title: 'a thing' }, T0);
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + HOUR }).binding, 'queue-full',
+    'queueCap 1 blocks after a single candidate — one un-reviewed thing at a time');
+}
+
+// ---- 6. INVARIANT 2: THE STACKING LAW — rejection cascades to everything built on top ----
+{
+  let loops = mk({ queueCap: 5 });
+  for (let i = 1; i <= 4; i++) {
+    loops = cycle(loops, { runId: 'r' + i, status: 'ok', text: 'work ' + i, title: 'work ' + i }, T0 + i * HOUR);
+  }
+  A.eq(LJ.pendingReviews(one(loops)).length, 4, '4 candidates stacked');
+  A.eq(LJ.stackedAbove(one(loops), 2).map(it => it.n), [3, 4], 'stackedAbove(2) names exactly what a reject would cost');
+
+  loops = S.recordVerdict(loops, 'l1', 2, 'rejected', { now: T0 + 9 * HOUR, note: 'do not touch the build config' });
+  const its = one(loops).iterations;
+  A.eq(its.find(it => it.n === 1).verdict, null, '#1 (below the rejection) is untouched — still awaiting review');
+  A.eq(its.find(it => it.n === 2).verdict, 'rejected', '#2 is rejected');
+  A.eq(its.find(it => it.n === 2).verdictNote, 'do not touch the build config', 'the reason is durable');
+  A.eq(its.find(it => it.n === 3).verdict, 'discarded', '#3 was built on #2 -> discarded');
+  A.eq(its.find(it => it.n === 4).verdict, 'discarded', '#4 too');
+  A.eq(its.find(it => it.n === 4).verdictNote, 'discarded — built on top of rejected #2',
+    'a discarded row says WHY it died, so the UI never shows unexplained vanished work');
+  A.eq(LJ.pendingReviews(one(loops)).length, 1, 'only #1 remains reviewable');
+
+  // approval must NEVER cascade — it is not a claim about work the Commander has not seen
+  let ok2 = mk({ queueCap: 5 });
+  for (let i = 1; i <= 3; i++) ok2 = cycle(ok2, { runId: 'q' + i, status: 'ok', text: 'w' + i, title: 'w' + i }, T0 + i * HOUR);
+  ok2 = S.recordVerdict(ok2, 'l1', 1, 'approved', { now: T0 + 9 * HOUR });
+  A.eq(LJ.pendingReviews(one(ok2)).map(it => it.n), [2, 3], 'approving #1 leaves #2 and #3 pending — no silent auto-approve');
+}
+
+// ---- 7. INVARIANT 3: convergence is real (and honest) ----
+{
+  A.eq(LJ.nextOutcomeFor('all clear, NOTHING-TO-DO here'), 'noop', 'the declared marker is read anywhere in the text');
+  A.eq(LJ.nextOutcomeFor('nothing-to-do'), 'noop', 'and case-insensitively');
+  A.eq(LJ.nextOutcomeFor('there was nothing much to do'), 'candidate',
+    'ordinary prose about having little to do is NOT convergence — only the exact token counts');
+  A.eq(LJ.nextOutcomeFor(''), 'candidate', 'an empty reply is not a convergence claim');
+
+  let loops = mk({ dryStopAfter: 3, queueCap: 5 });
+  loops = cycle(loops, { runId: 'd1', status: 'ok', text: 'NOTHING-TO-DO' }, T0);
+  A.eq(one(loops).dryStreak, 1, 'a dry pass counts');
+  A.eq(one(loops).state, 'idle', 'but one dry pass does not park the loop');
+  loops = cycle(loops, { runId: 'd2', status: 'ok', text: 'NOTHING-TO-DO' }, T0 + HOUR);
+  loops = cycle(loops, { runId: 'd3', status: 'ok', text: 'NOTHING-TO-DO' }, T0 + 2 * HOUR);
+  A.eq(one(loops).state, 'dormant', '3 honest dry passes -> DORMANT, not an infinite burn');
+  A.eq(one(loops).enabled, false, 'a dormant loop is disabled, so it cannot spend');
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + DAY }).binding, 'dormant', 'and stays bound a day later');
+  A.ok(/nothing left to do/.test(one(loops).stopReason), 'the dormant reason states the truth plainly');
+
+  // real work resets the streak — a loop that finds something is not converging
+  let mixed = mk({ dryStopAfter: 2, queueCap: 5 });
+  mixed = cycle(mixed, { runId: 'm1', status: 'ok', text: 'NOTHING-TO-DO' }, T0);
+  mixed = cycle(mixed, { runId: 'm2', status: 'ok', text: 'found one', title: 'found one' }, T0 + HOUR);
+  A.eq(one(mixed).dryStreak, 0, 'a real candidate resets the dry streak');
+  A.eq(one(mixed).state, 'idle', 'and the loop stays live');
+
+  // resuming a dormant loop clears the streak (the Commander looked and said keep going)
+  const woke = one(S.resumeLoop(cycle(cycle(mk({ dryStopAfter: 2 }), { runId: 'z1', status: 'ok', text: 'NOTHING-TO-DO' }, T0),
+    { runId: 'z2', status: 'ok', text: 'NOTHING-TO-DO' }, T0 + HOUR), 'l1', { now: T0 + DAY }));
+  A.eq(woke.state, 'idle', 'resume lifts DORMANT');
+  A.eq(woke.dryStreak, 0, 'and clears the streak so it does not instantly re-park');
+  A.eq(woke.iterationCount, 2, 'but the loop KEEPS its memory across a resume');
+}
+
+// ---- 8. failure streak parks the loop instead of retrying forever ----
+{
+  let loops = mk();
+  loops = cycle(loops, { runId: 'f1', status: 'error', error: 'provider 500' }, T0);
+  A.eq(one(loops).failStreak, 1, 'a failure counts');
+  A.eq(one(loops).state, 'idle', 'one failure is survivable');
+  loops = cycle(loops, { runId: 'f2', status: 'error', error: 'provider 500' }, T0 + HOUR);
+  loops = cycle(loops, { runId: 'f3', status: 'error', error: 'provider 500' }, T0 + 2 * HOUR);
+  A.eq(one(loops).state, 'paused', '3 failures in a row park the loop');
+  A.ok(/provider 500/.test(one(loops).stopReason), 'and the stop reason quotes the real error');
+
+  // a success clears the streak
+  let rec = mk();
+  rec = cycle(rec, { runId: 'g1', status: 'error', error: 'blip' }, T0);
+  rec = cycle(rec, { runId: 'g2', status: 'ok', text: 'fine', title: 'fine' }, T0 + HOUR);
+  A.eq(one(rec).failStreak, 0, 'a success clears the failure streak');
+}
+
+// ---- 9. budget: daily cap binds, rolls at the UTC day boundary ----
+{
+  let loops = mk({ perDayUsd: 1.0, queueCap: 9 });
+  loops = cycle(loops, { runId: 'b1', status: 'ok', text: 'w', title: 'w', usd: 0.6 }, T0);
+  A.eq(one(loops).budget.spentTodayUsd, 0.6, 'iteration cost accrues to the day bucket');
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + HOUR }).fire, true, '$0.60 of $1.00 still fires');
+  loops = cycle(loops, { runId: 'b2', status: 'ok', text: 'w', title: 'w', usd: 0.5 }, T0 + HOUR);
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + 2 * HOUR }).binding, 'budget', 'over the daily cap the loop stops spending');
+  A.ok(/daily cap/.test(LJ.decide(one(loops), {}, { now: T0 + 2 * HOUR }).detail), 'and says so in dollars');
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + DAY + HOUR }).fire, true, 'the bucket rolls at the next UTC day');
+  A.eq(LJ.budgetLeft(one(mk({ perDayUsd: 0 })), { now: T0 }), null, 'perDayUsd 0 = UNGOVERNED (never "block everything")');
+}
+
+// ---- 10. gate:'auto' — applies its own work, never queues ----
+{
+  let loops = mk({ gate: 'auto', queueCap: 1 });
+  loops = cycle(loops, { runId: 'a1', status: 'ok', text: 'merged it', title: 'merged it', commit: 'abc1234' }, T0);
+  const it = one(loops).iterations[0];
+  A.eq(it.verdict, 'approved', 'an auto loop stamps its own verdict at settle');
+  A.ok(/full access to merge/.test(it.verdictNote), 'and the record says WHY it was approved — no fake review');
+  A.eq(it.commit, 'abc1234', 'the commit it produced is recorded');
+  A.eq(LJ.pendingReviews(one(loops)).length, 0, 'nothing queues');
+  loops = cycle(loops, { runId: 'a2', status: 'ok', text: 'merged again', title: 'again' }, T0 + HOUR);
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + 2 * HOUR }).fire, true, 'an auto loop is never parked by a queue it cannot build');
+}
+
+// ---- 11. the digest: the loop's MEMORY (without this it re-finds bug #1 forever) ----
+{
+  let loops = mk({ queueCap: 5 });
+  loops = cycle(loops, { runId: 'x1', status: 'ok', text: 'w', title: 'fixed the login redirect' }, T0);
+  loops = cycle(loops, { runId: 'x2', status: 'ok', text: 'w', title: 'rewrote the build config' }, T0 + HOUR);
+  loops = cycle(loops, { runId: 'x3', status: 'ok', text: 'NOTHING-TO-DO' }, T0 + 2 * HOUR);
+  // rule oldest-first, which is the only order the FIFO queue offers: approving #1 leaves #2 reviewable,
+  // and rejecting #2 then has nothing above it to cascade onto.
+  loops = S.recordVerdict(loops, 'l1', 1, 'approved', { now: T0 + 3 * HOUR });
+  loops = S.recordVerdict(loops, 'l1', 2, 'rejected', { now: T0 + 4 * HOUR, note: 'never touch the build config' });
+
+  const d = LJ.digest(one(loops), {});
+  A.ok(/never touch the build config/.test(d), 'the REJECTION REASON is in the digest — the highest-value signal');
+  A.ok(d.indexOf('REJECTED') < d.indexOf('ALREADY DONE'), 'rejections lead — a boundary must not be buried under history');
+  A.ok(/fixed the login redirect/.test(d), 'approved work is listed as already done');
+  A.ok(/NOTHING-TO-DO/.test(d), 'the convergence escape hatch is offered every iteration');
+  A.ok(/Do NOT invent busywork/.test(d), 'and inventing work is explicitly forbidden');
+  A.ok(/iteration="4"/.test(d), 'the digest announces which iteration this is');
+  A.eq(LJ.digest(one(mk()), {}), '', 'a loop with no history injects NOTHING (no empty ceremony block)');
+}
+
+// ---- 12. settlement fencing + ledger integrity ----
+{
+  let loops = S.startIteration(S.claimFire(mk(), 'l1', { now: T0 }), 'l1', { runId: 'r1', now: T0 });
+  const stale = S.settleIteration(loops, 'l1', { runId: 'OTHER', status: 'ok', text: 'w' }, { now: T0 + MIN });
+  A.eq(one(stale).iterations[0].outcome, 'running', 'a settlement from a DIFFERENT run is fenced out');
+
+  const settled = S.settleIteration(loops, 'l1', { runId: 'r1', status: 'ok', text: 'w', title: 't' }, { now: T0 + MIN });
+  A.eq(one(settled).iterations[0].outcome, 'candidate', 'the matching run settles');
+  A.eq(one(settled).fireClaim, null, 'settlement clears the fire-claim');
+  const twice = S.settleIteration(settled, 'l1', { runId: 'r1', status: 'ok', text: 'w' }, { now: T0 + 2 * MIN });
+  A.eq(one(twice).iterations.length, 1, 'a double settlement does not duplicate the row');
+
+  // a verdict can only be cast once, and only on a real candidate
+  let v = S.recordVerdict(settled, 'l1', 1, 'approved', { now: T0 + HOUR });
+  v = S.recordVerdict(v, 'l1', 1, 'rejected', { now: T0 + 2 * HOUR, note: 'changed my mind' });
+  A.eq(one(v).iterations[0].verdict, 'approved', 'a settled verdict is immutable — no silent re-rule');
+  A.eq(one(S.recordVerdict(settled, 'l1', 99, 'approved', { now: T0 })).iterations[0].verdict, null,
+    'a verdict on a non-existent iteration is a no-op');
+
+  // iterationCount advances at START, so a crashed iteration still burns its slot
+  const crashed = S.startIteration(mk({ maxIterations: 1 }), 'l1', { runId: 'c1', now: T0 });
+  A.eq(one(crashed).iterationCount, 1, 'the slot is taken at start');
+  A.eq(LJ.decide(one(crashed), {}, { now: T0 + DAY, staleMs: MIN }).binding, 'max-iterations',
+    'a crash mid-iteration cannot silently replay past the ceiling');
+}
+
+// ---- 13. cancellation costs neither streak ----
+{
+  let loops = cycle(mk(), { runId: 'k1', status: 'error', cancelled: true }, T0);
+  A.eq(one(loops).iterations[0].outcome, 'cancelled', 'an E-STOPped iteration is recorded as cancelled');
+  A.eq(one(loops).failStreak, 0, 'a cancellation is not a failure');
+  A.eq(one(loops).dryStreak, 0, 'nor a convergence signal');
+}
+
+// ---- 14. envelope: fail-closed, and a hand-edited file cannot NaN its way into firing ----
+{
+  A.eq(S.loadEnvelope(null).loops, [], 'null -> empty store');
+  A.eq(S.loadEnvelope('not json').loops, [], 'garbage -> empty store');
+  A.eq(S.loadEnvelope({ loops: [{ id: 'ok', gate: 'auto' }, { id: '../bad' }, null] }).loops.length, 1,
+    'malformed / path-escaping records are dropped');
+  const poisoned = S.loadEnvelope({ loops: [{ id: 'p', budget: { perDayUsd: 'free', spentTodayUsd: null }, iterationCount: 'lots' }] }).loops[0];
+  A.eq(poisoned.budget.perDayUsd, 0, 'a non-numeric cap normalizes to ungoverned, not NaN');
+  A.eq(poisoned.iterationCount, 0, 'a non-numeric counter normalizes to 0');
+  A.eq(S.loadEnvelope({ loops: [{ id: 'p', gate: 'whatever' }] }).loops[0].gate, 'review',
+    'a corrupted gate value can never load as AUTO — the store fails toward asking');
+
+  const round = S.loadEnvelope(JSON.stringify(S.toEnvelope(mk({ gate: 'auto', perDayUsd: 5 }))));
+  A.eq(round.loops[0].gate, 'auto', 'a real auto loop survives a persist round-trip');
+  A.eq(round.loops[0].budget.perDayUsd, 5, 'and so does its cap');
+}
+
+// ---- 15. ledger retention never evicts un-reviewed work ----
+{
+  let loops = mk({ queueCap: 999, dryStopAfter: 999 });
+  // one real candidate, then a flood of settled noops well past the cap
+  loops = cycle(loops, { runId: 'keep', status: 'ok', text: 'w', title: 'the one that matters' }, T0);
+  for (let i = 0; i < S.ITER_CAP + 20; i++) {
+    loops = cycle(loops, { runId: 'n' + i, status: 'ok', text: 'NOTHING-TO-DO' }, T0 + (i + 2) * MIN);
+  }
+  const l = one(loops);
+  A.ok(l.iterations.length <= S.ITER_CAP, 'the ledger is capped');
+  A.eq(LJ.pendingReviews(l).length, 1, 'the un-reviewed candidate SURVIVED the prune');
+  A.eq(LJ.pendingReviews(l)[0].title, 'the one that matters', 'and it is the right one');
+}
+
+// ---- 16. summarize: the UI projection is provable, never a spinner over an unknown ----
+{
+  let loops = mk({ queueCap: 1, perDayUsd: 2 });
+  loops = cycle(loops, { runId: 's1', status: 'ok', text: 'w', title: 'a fix', usd: 0.25 }, T0);
+  const s = LJ.summarize(one(loops), { now: T0 + HOUR });
+  A.eq(s.state, 'waiting', 'state is reported');
+  A.eq(s.binding, 'queue-full', 'and WHY it is quiet');
+  A.eq(s.pendingCount, 1, 'pending count matches the ledger');
+  A.eq(s.pending[0].title, 'a fix', 'the pending item carries what the agent actually did');
+  A.eq(s.budget.spentTodayUsd, 0.25, 'spend is real, not estimated');
+  A.eq(s.budget.leftTodayUsd, 1.75, 'and headroom is derived from it');
+  A.eq(s.wouldFire, false, 'wouldFire agrees with the binding');
+  A.ok(s.binding !== null || s.wouldFire === true, 'a quiet loop ALWAYS has a named binding (invariant 4)');
+}
+
+A.report('loopjob (pure LOOP core)');
