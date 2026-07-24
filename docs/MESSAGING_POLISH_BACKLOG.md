@@ -33,6 +33,42 @@ Our channel is a clean two-layer pipeline (fetch transport → transport-agnosti
 
 Live edit-streaming + edit throttle/`_edit_overflow_split` + draft streaming; MarkdownV2 table/spoiler/blockquote rewrite + separate HTML keyboard path; code-fence repair in the chunker (moot for plain text); DoH + fallback-IP transport + proxy auto-detection (censorship/scale); connection-pool drain / pool-size tuning / wedge heartbeat (httpx/PTB artifacts); full pid/argv/psutil single-instance lockfile (EADDRINUSE + 409-fatal cover the realistic double-launch); pairing codes / owner-admin tiers / per-scope slash allowlists / per-user rate-limit (multi-tenant — trust-on-first-use is the right-sized version); clarify inline keyboard (would need a **requested** new `shared/events.js` rung + a clarify tool/loop seam — free-text "which did you mean?" suffices); paginated model-picker keyboard; media in/out (photo/voice/document), edited-message reprocessing, group @mention gating; fsync-before-rename / RLock (already atomic; no Python-threads problem in single-threaded Node).
 
+## STATUS — C6 INLINE KEYBOARDS SHIPPED (2026-07-24, both gates green, additive-only)
+
+The P2 "interactive consent inline keyboard" row above, **plus** the multiple-choice keyboard that §3 had left
+in the mine, are now built. No `shared/events.js` change was needed after all — the §3 note that a clarify
+keyboard "would need a new rung + a clarify tool/loop seam" turned out to be wrong on both counts: `brief.ask`
+already IS the clarify tool, and a button tap re-enters through `processInbound` carrying the option's own text,
+so it is literally the typed-answer path with no second code path and no new event.
+
+- ✅ **New `channels/prompts.js`** — bounded (200, oldest-first) token→meaning registry + the `callback_data`
+  codec (`q|c:<token>:<idx>`, ~13 bytes). The token indirection is what keeps a 4000-char option inside
+  Telegram's 64-byte cap. Single-use pops; entries keyed by token, never resolved FIFO.
+- ✅ **Multiple choice** — a `TASK_QUESTION` reply now ships an inline keyboard (full option text stays in the
+  body, buttons carry a short numbered echo). A tap re-enters as the option's own text; a typed `2` coerces to
+  the same canonical text (`coerceChoice`). A channel without button deps renders the old numbered list byte-identically.
+- ✅ **Approve/deny** — **per-chat opt-in, default OFF** (`/approvals on|off`, persisted on the chat record).
+  Opted-in chats run `surface:'interactive'` with a `prompt` closure; the HOST keeps the pause/resolve
+  (`channelAskConsent`/`channelResolveConsent` over the real `consentwait.js`), the hub owns only the render and
+  the button→decision hop. Deliberately a separate map from `pendingByRun` — the browser's card resolves by a
+  runId it never has for a channel run, so sharing it would surface prompts the app cannot answer.
+- ✅ **Command menu sync** — one `COMMANDS` table in `hub.js` now drives `parseCommand`, `/help`, AND
+  `setMyCommands`, so Telegram's blue "/" menu can no longer drift from what the hub implements.
+- ✅ **Transport** — `answerCallbackQuery` (mandatory: an unacked tap spins then errors client-side),
+  `editMessageText` (stamp the decision, strip the spent keyboard), `setMyCommands`.
+
+Two bugs found in the reference harness while mining it and deliberately NOT ported: its approval resolution
+pops the session queue head, so with two concurrent prompts a tap on the second answers the first; and its four
+callback-state dicts have no eviction, so an ignored keyboard leaks forever.
+
+Tests: `test/channels.buttons.test.js` (registry/codec/coercion/menu + hub round-trips over the REAL
+`consentwait.js`) and `test/channels.telegram.buttons.e2e.test.js` (the real sidecar process against a fake Bot
+API: menu published, keyboard sent, tap → ack + edit + re-entry, double-tap starts nothing, non-owner tap
+dropped, and an approved `fs.write` that actually lands on disk).
+
+Still open from the table above: P1 MarkdownV2 formatting, P2 `/model` picker keyboard, reactions, `(i/N)`
+indicator, outbound media.
+
 ## STATUS — all P0 SHIPPED (2026-06-14, suite green, additive-only)
 
 - ✅ **P0-A** owner-only DM admission (trust-on-first-use) — `adapter.js` owner gate + `telegram.js`/`index.js` wiring + persisted `ownerId`; tests in `channels.adapter.test.js`.

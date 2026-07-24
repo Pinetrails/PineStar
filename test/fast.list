@@ -354,6 +354,7 @@ test/channels.secrets.test.js
 test/channels.hub.test.js
 test/channels.outbox.test.js
 test/channels.commands.test.js
+test/channels.buttons.test.js
 test/channels.sse.test.js
 test/mcp.client.test.js
 test/mcp.transport.test.js

@@ -262,6 +262,33 @@
         catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'sendChatAction threw', retryable: false }); }
       },
 
+      // ---- inline-keyboard round-trip (C6) ---------------------------------------------------------------
+      // All three are transport-OPTIONAL and follow the chatAction/getFile pattern exactly: a channel whose
+      // transport lacks the method answers { ok:false, error } instead of throwing, and the hub then falls back
+      // to its numbered-text rendering. That fallback is what keeps Discord/Slack/Matrix/Signal working unchanged
+      // while Telegram gets real buttons.
+
+      // Acknowledge one inline-keyboard tap (kills the button's spinner; optional toast text).
+      answerCallback(callbackId, text) {
+        if (typeof transport.answerCallback !== 'function') return Promise.resolve({ ok: false, error: 'inline keyboards not supported on this channel' });
+        try { return Promise.resolve(transport.answerCallback(String(callbackId), text)); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'answerCallback threw' }); }
+      },
+
+      // Rewrite an already-sent message (and strip its keyboard by omitting reply_markup from opts).
+      editMessage(chatId, messageId, text, editOpts) {
+        if (typeof transport.editMessage !== 'function') return Promise.resolve({ ok: false, error: 'message editing not supported on this channel' });
+        try { return Promise.resolve(transport.editMessage(String(chatId), String(messageId), text == null ? '' : String(text), editOpts || {})); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'editMessage threw' }); }
+      },
+
+      // Publish the bot's slash-command menu (one-shot, at connect).
+      setCommands(list) {
+        if (typeof transport.setCommands !== 'function') return Promise.resolve({ ok: false, error: 'command menus not supported on this channel' });
+        try { return Promise.resolve(transport.setCommands(list)); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'setCommands threw' }); }
+      },
+
       // Download one media file's bytes (transport-optional): { ok, buffer?, error? }, never throws. A transport
       // without getFile answers honestly instead of pretending — the hub's note then says media isn't supported.
       getFile(fileId, opts2) {

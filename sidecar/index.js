@@ -96,7 +96,8 @@ const { makeFolderPick } = require('./folderpick.js');          // Projects rail
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeTelegramTransport } = require('./channels/telegram.transport.js');   // multi-bot connect: getMe token probe
 const { makeChannelStore } = require('./channels/store.js');
-const { makeChannelHub } = require('./channels/hub.js');
+const { makeChannelHub, menuCommands } = require('./channels/hub.js');
+const { makePromptRegistry } = require('./channels/prompts.js');   // C6: the bounded token→meaning map behind inline keyboards
 const { makeOpenAiCompat } = require('./openai-compat.js');   // /v1/* OpenAI-compatible surface (external harness ingress)
 const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
 const { parseSlackTokens } = require('./channels/slack.js');                       // slack stores its two tokens as ONE secret string
@@ -2010,6 +2011,53 @@ function blanketSetFor(agentId) {
 }
 const pendingByRun = new Map();            // runId -> Map(promptId -> resolve(decision)); the live consent prompts
 const pendingSummonByRun = new Map();      // runId -> Map(requestId -> resolve(newAgentId|null)); live team.summon requests awaiting the browser
+
+/* ---- CHANNEL CONSENT (C6): the pause/resolve behind a messaging approve/deny keyboard ---------------------
+   A chat that opted into `/approvals` runs surface:'interactive', so the broker await-pauses on a prompt just
+   like a browser run does. The TIMING is the browser's, byte-for-byte: the same unit-tested makeConsentWait,
+   the same CONSENT_TIMEOUT_MS fail-closed floor, the same instant deny on abort. The hub owns only the
+   keyboard render and the button→decision hop; nothing about pausing a run lives out there.
+
+   Deliberately a SEPARATE map from pendingByRun: the browser's consent card resolves a prompt with the runId
+   it learned from its OWN NDJSON stream, which it never has for a channel run. Putting these in pendingByRun
+   would surface prompts through GET /api/state/snapshot that the app is structurally unable to answer — a card
+   that lies about being actionable. A Telegram prompt is answered on Telegram (or it fail-closes). */
+const channelPendingByRun = new Map();     // runId -> Map(promptId -> finish(decision)); live CHANNEL consent prompts
+function channelAskConsent(o) {
+  const runId = String((o && o.runId) || '');
+  let pend = channelPendingByRun.get(runId);
+  if (!pend) { pend = new Map(); channelPendingByRun.set(runId, pend); }
+  // the exact fields the browser's consent card renders, so both surfaces describe one ask identically.
+  const fields = {
+    tool: (o.call && o.call.name) || 'tool',
+    scope: (o.tool && o.tool.scope) || 'write',
+    argsSummary: consentSummary(o.call)
+  };
+  return makeConsentWait({
+    pending: pend, signal: o.signal, timeoutMs: CONSENT_TIMEOUT_MS, extendMs: CONSENT_ACK_EXTEND_MS,
+    uuid: () => crypto.randomUUID(),
+    // onPrompt is the hub's cue to render the keyboard. It is called synchronously while the deny timer is
+    // already armed, so a throw from the renderer must never escape into the waiter (it would leave the run
+    // paused with no timer owner) — hence the guard.
+    emitPrompt: (promptId) => { try { if (typeof o.onPrompt === 'function') o.onPrompt(promptId, fields); } catch (_) {} }
+  }).ask().then((decision) => {
+    // makeConsentWait removes its own promptId; drop the run's bucket once the last prompt settles so a long
+    // -lived channel can't accumulate one empty Map per run forever.
+    if (pend.size === 0) channelPendingByRun.delete(runId);
+    return decision;
+  });
+}
+// Resolve one prompt BY ITS OWN ID. (The reference harness resolves the session's queue head instead, so with
+// two concurrent prompts a tap on the second answers the first — keying by promptId makes that unrepresentable.)
+// Returns false when the host already settled it: timed out, aborted by a superseding message, or E-STOPped.
+function channelResolveConsent(runId, promptId, decision) {
+  const d = (decision === 'once' || decision === 'session' || decision === 'always' || decision === 'full') ? decision : 'deny';
+  const pend = channelPendingByRun.get(String(runId == null ? '' : runId));
+  const finish = pend && pend.get(String(promptId == null ? '' : promptId));
+  if (!finish) return false;
+  finish(d);
+  return true;
+}
 // unconditional hardline floor: protected files no flag (not even Full Access) can write. The authoritative
 // resolved-abs-path floor belongs in dispatch AFTER resolveInside; this catches the reachable relative cases.
 function hardlineFloor(call) {
@@ -2024,7 +2072,10 @@ function hardlineFloor(call) {
    the bus, never returned by /status) so polling survives a restart with no browser open. The adapter is the
    lone ambient-I/O edge (injected globalThis.fetch); the hub drives the SAME runOnce host with
    surface:'autonomous' (a headless chat has no browser to answer a consent prompt — ungranted writes
-   default-deny and the run continues). Opt-in: nothing starts unless the Commander connects (or env is set). */
+   default-deny and the run continues) — unless a chat opted into approve/deny buttons with `/approvals on`,
+   which flips THAT chat to surface:'interactive' and answers the prompt over an inline keyboard (C6; the
+   pause/resolve stays here in channelAskConsent/channelResolveConsent, the hub only renders and routes the
+   tap). Opt-in: nothing starts unless the Commander connects (or env is set). */
 const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the STARNET station, reachable over Telegram. '
   + 'Address the user as "Commander", keep a spark of personality, and keep replies concise and chat-friendly. '
   + 'When the Commander gives you a task you have REAL tools (web search/read, files, memory) — use them and '
@@ -4280,6 +4331,13 @@ function startTelegram(token, key, model, agentCfg) {
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
     chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    // INLINE KEYBOARDS (C6): multiple-choice answers and — for chats that ran /approvals on — approve/deny.
+    // The registry is per-BOT (its tokens address this bot's messages only). askConsent/resolveConsent keep the
+    // pause/resolve in the host; the hub only renders the keyboard and routes the tap back.
+    prompts: makePromptRegistry({ newId: () => crypto.randomUUID() }),
+    answerCallback: (cbId, text) => adapterRef ? adapterRef.answerCallback(cbId, text) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    askConsent: channelAskConsent, resolveConsent: channelResolveConsent,
     secrets: () => {
       const t = (channelSecrets && channelSecrets.telegram) || {};
       const provider = normalizeProvider(t.provider);
@@ -4385,8 +4443,20 @@ function startTelegram(token, key, model, agentCfg) {
   // first getUpdates round-trip succeeds, or to 'error' if the token is bad. The panel derives CONNECTED from this.
   telegramStatus = { connected: false, state: 'connecting', detail: '' };
   adapter.connect();
+  publishCommandMenu(adapter, 'telegram');
   console.log('  · telegram channel connecting…');
   return { secretsPersisted };
+}
+
+// Publish the bot's "/" menu from the hub's OWN command table, so Telegram can never offer a command the hub
+// doesn't implement (or hide one it does). Fire-and-forget and non-blocking: an empty menu is cosmetic, and a
+// slow setMyCommands must never delay or fail a connect (a lesson the reference harness learned the hard way —
+// it had to move this off the connect path entirely after slow calls blew its connect timeout).
+function publishCommandMenu(adapter, label) {
+  if (!adapter || typeof adapter.setCommands !== 'function') return;
+  Promise.resolve(adapter.setCommands(menuCommands()))
+    .then((r) => { if (r && r.ok === false) console.warn('[' + label + '] command menu not published: ' + (r.error || 'unknown')); })
+    .catch(() => {});
 }
 function stopTelegram() {
   if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
@@ -4463,7 +4533,13 @@ function startTelegramBot(botId) {
     resolveStation: (agentId) => router.stationFor(agentId),
     fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
     saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
-    expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId)
+    expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId),
+    // INLINE KEYBOARDS (C6) — same wiring as the station bot, with its OWN registry so tokens minted for this
+    // bot's messages can never address another bot's chat. /approvals is per-chat here too.
+    prompts: makePromptRegistry({ newId: () => crypto.randomUUID() }),
+    answerCallback: (cbId, text) => adapterRef ? adapterRef.answerCallback(cbId, text) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    askConsent: channelAskConsent, resolveConsent: channelResolveConsent
   });
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
@@ -4485,6 +4561,7 @@ function startTelegramBot(botId) {
   entry.adapter = adapter; entry.hub = hub;
   telegramBots.set(botId, entry);
   adapter.connect();
+  publishCommandMenu(adapter, 'telegram:' + botId);
   console.log('  · telegram bot ' + (rec.username ? '@' + rec.username : botId) + ' connecting…');
 }
 function stopTelegramBot(botId) {
