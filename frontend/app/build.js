@@ -14,7 +14,7 @@ const Build = (() => {
   const TOOLS = [
     { id: 'room', key: '1', label: '▦ ROOM', hint: 'drag on the grid to place a room', cursor: 'crosshair' },
     { id: 'hall', key: '2', label: '═ HALLWAY', hint: 'drag along an axis to run a corridor — any length', cursor: 'crosshair' },
-    { id: 'paint', key: '3', label: '▧ PAINT', hint: 'drag to paint deck tiles · click a room to fill it', cursor: 'cell' },
+    { id: 'paint', key: '3', label: '▧ PAINT', hint: 'click a room to lay the selected deck · drag to paint single tiles in the colour', cursor: 'cell' },
     { id: 'move', key: '4', label: '✥ MOVE', hint: 'drag a room to relocate it', cursor: 'move' },
     { id: 'reclaim', key: '5', label: '⌫ RECLAIM', hint: 'click a room, prop, or belt to tear it down · drag across a belt to clear the whole run (UNDO restores it)', cursor: 'not-allowed' },
     { id: 'prop', key: '6', label: '⚇ PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
@@ -45,7 +45,7 @@ const Build = (() => {
   const MINZ = 0.4, MAXZ = 6;
 
   // interaction state
-  let tool = 'room', kind = 'hab', style = 'cobalt', hallWidth = 2, propType = 'desk', propCat = 'workstation', propTier = 'functional';
+  let tool = 'room', kind = 'hab', style = 'cobalt', mat = 'plate', hallWidth = 2, propType = 'desk', propCat = 'workstation', propTier = 'functional';
   let drag = null, hoverRoomId = null, hoverPropId = null, hoverTile = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
   let dupe = null;   // DUPE tool clipboard: {type:'prop'|'room', rects (rel to top-left), …} — armed = ghost follows cursor, click stamps
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
@@ -285,7 +285,36 @@ const Build = (() => {
       pal.appendChild(grid);
       try { paintThumbs(performance.now()); } catch (e) {}   // first frame now, so the gallery isn't blank for a beat
     } else if (tool === 'paint') {
-      paletteLabel = 'DECK PAINT';
+      // TWO AXES, TWO ROWS: the MATERIAL (what the deck is made of) and the HUE (what colour it
+      // is). They compose — every material renders in whatever colour is selected — so the
+      // Commander picks a deck the same way you'd pick flooring: the stuff, then the shade.
+      paletteLabel = 'DECK';
+      const row = (caption) => {
+        const wrap = document.createElement('div'); wrap.className = 'refit-palrow refit-propcats';
+        const cap = document.createElement('div'); cap.className = 'refit-palcap'; cap.textContent = caption;
+        wrap.appendChild(cap);
+        pal.appendChild(wrap);
+        return wrap;
+      };
+      const matRow = row('MATERIAL');
+      (station.MAT_ORDER || Object.keys(station.FLOOR_MATERIALS || {})).forEach(mid => {
+        const def = station.FLOOR_MATERIALS[mid];
+        if (!def) return;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'refit-swatch refit-matswatch' + (mid === mat ? ' active' : '');
+        b.dataset.mat = mid;
+        b.setAttribute('aria-pressed', mid === mat ? 'true' : 'false');
+        b.appendChild(matSwatchCanvas(mid, styleBaseFor(mid)));
+        const nm = document.createElement('span'); nm.className = 'refit-matname'; nm.textContent = def.label;
+        b.appendChild(nm);
+        b.title = def.label + ' deck';
+        // picking a material also moves the hue to the one it was drawn for (wood wants a wood
+        // tone) — visibly, in the row below, so the Commander can still override it right after.
+        b.onclick = () => { mat = mid; if (def.suggest && station.FLOOR_STYLES[def.suggest]) style = def.suggest; renderPalette(); setHint(); sfx('click'); };
+        matRow.appendChild(b);
+      });
+      const hueRow = row('COLOUR');
       Object.keys(station.FLOOR_STYLES).forEach(sid => {
         const b = document.createElement('button');
         b.type = 'button';
@@ -294,7 +323,7 @@ const Build = (() => {
         b.appendChild(swatchCanvas(station.FLOOR_STYLES[sid].base));
         b.title = station.FLOOR_STYLES[sid].label;
         b.onclick = () => { style = sid; renderPalette(); sfx('click'); };
-        pal.appendChild(b);
+        hueRow.appendChild(b);
       });
     }
     if (label) label.textContent = paletteLabel || 'OPTIONS';
@@ -378,6 +407,25 @@ const Build = (() => {
     for (let i = 0; i <= 24; i += 6) x.fillRect(i, 0, 1, 20);
     for (let j = 0; j <= 20; j += 6) x.fillRect(0, j, 24, 1);
     x.fillStyle = U.shade(base, 0.22); x.fillRect(1, 1, 1, 1); x.fillRect(7, 7, 1, 1); x.fillRect(13, 13, 1, 1);
+    return c;
+  }
+
+  // the hue a material's swatch previews in: its own suggested tone if it has one (wood in a wood
+  // colour), otherwise whatever hue is currently selected — so the chip shows what you'd get.
+  function styleBaseFor(mid) {
+    const def = station.FLOOR_MATERIALS && station.FLOOR_MATERIALS[mid];
+    const sid = (def && def.suggest && station.FLOOR_STYLES[def.suggest]) ? def.suggest : style;
+    return (station.FLOOR_STYLES[sid] || station.FLOOR_STYLES.hull).base;
+  }
+  /* the material chip is rendered by the REAL bake (StationBake.sampleMaterial paints through the
+     same per-tile painters the station uses), so a deck preview can never promise a look the
+     station won't deliver. Falls back to the flat colour chip if the bake module isn't loaded. */
+  function matSwatchCanvas(mid, base) {
+    const c = document.createElement('canvas'); c.width = 40; c.height = 24;
+    const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+    x.fillStyle = base; x.fillRect(0, 0, 40, 24);
+    try { if (typeof StationBake !== 'undefined' && StationBake.sampleMaterial) StationBake.sampleMaterial(x, mid, base, 4, 2, 12); }
+    catch (e) { /* a swatch must never break the palette */ }
     return c;
   }
 
@@ -1056,7 +1104,9 @@ const Build = (() => {
       const tiles = [...d.cells].map(k => { const p = k.split(','); return [+p[0], +p[1]]; });
       feedback(station.paintTiles(d.roomId, tiles, style), ev, 'painted');
     } else {
-      feedback(station.setFloor(d.roomId, style), ev, 'deck repainted');   // a plain click fills the room
+      // a plain click LAYS THE WHOLE DECK — material and hue together, in one undo slot, so
+      // "undo" reverses the deck the Commander just saw laid rather than half of it.
+      feedback(station.setDeck(d.roomId, { style, mat }), ev, 'deck laid');
     }
   }
   function commitReclaim(d, ev) {   // RECLAIM

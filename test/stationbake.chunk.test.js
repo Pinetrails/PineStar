@@ -248,4 +248,15 @@ A.eq(reset.stats.chunkCount, 1, 'origin reset can rebuild only the visible chunk
 A.ok(canvases.every(boundedCanvas),
   'origin reset does not allocate full-world base/light canvases');
 
+/* Deck MATERIAL selection rides the same chunk path as everything above; the per-material
+   pixel work is asserted in stationbake.materials.test.js instead. It can't be asserted HERE:
+   this file's canvas mock resolves a gradient fillStyle to a single value, so the room-lighting
+   pass flattens the whole footprint and every floor mark under it becomes invisible. */
+const matGeo = mat => { const g = makeGeo(); g.matOf = () => mat; return g; };
+for (const mat of ['grate', 'hex', 'plank', 'turf']) {
+  const g = matGeo(mat);
+  A.eq(pixelDiff(composeLayer(StationBake.bakeIncremental(g, null, null), 'base'), StationBake.bake(g).baseCv), 0,
+    mat + ' deck bakes identically chunked and monolithic');
+}
+
 A.report('stationbake.chunk');

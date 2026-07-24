@@ -117,22 +117,57 @@ const WorldModel = (() => {
     indigo:   { base: '#282a48', label: 'INDIGO' },
     violet:   { base: '#332941', label: 'VIOLET' },
     orchid:   { base: '#3e2a3a', label: 'ORCHID' },
+    // natural tones — the hues the PLANK / TURF materials were drawn for. Same dark substrate
+    // band as everything above: a wood deck is a DARK wood deck, so the room-light pools still
+    // read on top of it. (Any material still renders in any hue — these are just the fitting ones.)
+    walnut:   { base: '#3b2b20', label: 'WALNUT' },
+    oak:      { base: '#46372a', label: 'OAK' },
+    ash:      { base: '#3a3630', label: 'ASH' },
+    fern:     { base: '#2a3f24', label: 'FERN' },
     // value poles — the bright + near-black ends of the range (stark, deliberate)
     bone:     { base: '#e7e3d9', label: 'BONE' },
     onyx:     { base: '#0e0e12', label: 'ONYX' },
   };
 
-  /* room categories — a capability-zone label + a default floor. kind drives nothing
-     behavioural yet (capability mapping is a later pass); it tags the zone + seeds the look. */
-  const ROOM_KINDS = {
-    hab:      { label: 'HAB',      floor: 'hull' },
-    bridge:   { label: 'BRIDGE',   floor: 'cobalt' },
-    lab:      { label: 'LAB',      floor: 'sterile' },
-    factory:  { label: 'FOUNDRY',  floor: 'rust' },
-    quarters: { label: 'QUARTERS', floor: 'verdant' },
-    storage:  { label: 'STORAGE',  floor: 'rust' },
-    corridor: { label: 'CORRIDOR', floor: 'corridor' },
+  /* the deck MATERIAL catalog — the second floor axis, orthogonal to colour.
+     FLOOR_STYLES picks the HUE; this picks the RECIPE the bake draws in that hue (plate seams,
+     grate holes, wood grain, grass blades...). Both compose: every material derives its marks
+     from the tile's own base via U.shade, so a TURF deck painted COBALT is blue grass — odd,
+     but coherent and the user's call. `pitch` is the plate/plank cell in tiles; `suggest` is the
+     hue the PAINT palette pre-selects when you pick that material (a UI convenience only — the
+     model never forces a colour). This catalog is the sole source: add a material here, give it
+     a recipe in stationbake, and it appears in the DECK MATERIAL palette automatically. */
+  const FLOOR_MATERIALS = {
+    plate: { label: 'PLATE',  pitch: [2, 2], suggest: null },
+    panel: { label: 'PANEL',  pitch: [4, 1], suggest: null },
+    tile:  { label: 'TILE',   pitch: [2, 2], suggest: null },
+    tread: { label: 'TREAD',  pitch: [2, 2], suggest: null },
+    soft:  { label: 'MATTED', pitch: [3, 2], suggest: null },
+    // v4 additions — the decks that don't look like the old station
+    grate: { label: 'GRATE',  pitch: [1, 1], suggest: 'onyx' },
+    hex:   { label: 'HEX',    pitch: [1, 1], suggest: 'sterile' },
+    plank: { label: 'PLANK',  pitch: [5, 1], suggest: 'walnut' },
+    turf:  { label: 'TURF',   pitch: [1, 1], suggest: 'fern' },
   };
+  const MAT_ORDER = ['plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
+
+  /* room categories — a capability-zone label + a default floor (hue + material). kind drives
+     nothing behavioural yet (capability mapping is a later pass); it tags the zone + seeds the
+     look. `mat` is the DEFAULT deck material a room of this kind is built with — a room whose
+     floorMat is null renders at this material, which is what keeps every station built before
+     the material axis existed rendering pixel-identical. */
+  const ROOM_KINDS = {
+    hab:      { label: 'HAB',      floor: 'hull',     mat: 'plate' },
+    bridge:   { label: 'BRIDGE',   floor: 'cobalt',   mat: 'panel' },
+    lab:      { label: 'LAB',      floor: 'sterile',  mat: 'tile'  },
+    factory:  { label: 'FOUNDRY',  floor: 'rust',     mat: 'tread' },
+    quarters: { label: 'QUARTERS', floor: 'verdant',  mat: 'soft'  },
+    storage:  { label: 'STORAGE',  floor: 'rust',     mat: 'tread' },
+    corridor: { label: 'CORRIDOR', floor: 'corridor', mat: 'plate' },
+  };
+  // a room's effective deck material: explicit override, else the kind default, else plate.
+  const matOfRoom = rm => (rm && FLOOR_MATERIALS[rm.floorMat]) ? rm.floorMat
+    : ((rm && ROOM_KINDS[rm.kind] && ROOM_KINDS[rm.kind].mat) || 'plate');
   const KIND_ORDER = ['hab', 'bridge', 'lab', 'factory', 'quarters', 'storage'];
 
   /* ---------- pure geometry helpers ---------- */
@@ -286,10 +321,13 @@ const WorldModel = (() => {
       snapshot();
       const id = 'r' + (doc._nid++);
       const floorStyle = FLOOR_STYLES[opts.floorStyle] ? opts.floorStyle : ROOM_KINDS[kind].floor;
+      // null = "inherit the kind default" — never write the default out, so a room built today
+      // and a room built before the material axis existed serialize (and render) identically.
+      const floorMat = FLOOR_MATERIALS[opts.floorMat] ? opts.floorMat : null;
       const label = ROOM_KINDS[kind].label;
       doc.rooms[id] = {
         id, kind, name: opts.name || (label + '-' + pad2(doc._nid - 1)),
-        rects, floorStyle, wallStyle: 'hull', tier: 0, floorPaint: {}
+        rects, floorStyle, floorMat, wallStyle: 'hull', tier: 0, floorPaint: {}
       };
       doc.order.push(id);
       if (!doc.meta.spawnRoomId && kind !== 'corridor') doc.meta.spawnRoomId = id;
@@ -338,6 +376,45 @@ const WorldModel = (() => {
       snapshot();
       rm.floorStyle = styleId;
       rm.floorPaint = {};   // a whole-room repaint clears per-tile overrides
+      emit(rm.rects.slice());
+      return { ok: true };
+    }
+
+    /* the MATERIAL axis. Picking the room-kind's own default normalizes back to null so the
+       serialized doc never carries a redundant value (and an old save round-trips unchanged). */
+    function setMaterial(id, matId) {
+      const rm = doc.rooms[id];
+      if (!rm) return fail('NOT_FOUND', 'no such room');
+      if (!FLOOR_MATERIALS[matId]) return fail('BAD_MAT', 'unknown deck material');
+      const kindMat = (ROOM_KINDS[rm.kind] && ROOM_KINDS[rm.kind].mat) || 'plate';
+      const next = matId === kindMat ? null : matId;
+      if ((rm.floorMat || null) === next) return { ok: true };   // no-op: don't burn an undo slot
+      snapshot();
+      rm.floorMat = next;
+      emit(rm.rects.slice());
+      return { ok: true };
+    }
+
+    /* lay a whole deck — hue AND material — in ONE undo slot. This is what the REFIT PAINT tool
+       commits on a room click, so "undo" reverses the deck the Commander saw laid, not half of it.
+       Either field may be omitted to leave that axis alone. */
+    function setDeck(id, opts) {
+      const rm = doc.rooms[id];
+      if (!rm) return fail('NOT_FOUND', 'no such room');
+      const o = opts || {};
+      const styleId = o.style == null ? null : o.style;
+      const matId = o.mat == null ? null : o.mat;
+      if (styleId != null && !FLOOR_STYLES[styleId]) return fail('BAD_STYLE', 'unknown floor');
+      if (matId != null && !FLOOR_MATERIALS[matId]) return fail('BAD_MAT', 'unknown deck material');
+      const kindMat = (ROOM_KINDS[rm.kind] && ROOM_KINDS[rm.kind].mat) || 'plate';
+      const nextMat = matId == null ? (rm.floorMat || null) : (matId === kindMat ? null : matId);
+      // a whole-room repaint also clears per-tile overrides, so having any is itself a change
+      const styleChanges = styleId != null && (rm.floorStyle !== styleId || !!Object.keys(rm.floorPaint || {}).length);
+      const matChanges = (rm.floorMat || null) !== nextMat;
+      if (!styleChanges && !matChanges) return { ok: true };
+      snapshot();
+      if (styleId != null) { rm.floorStyle = styleId; rm.floorPaint = {}; }
+      rm.floorMat = nextMat;
       emit(rm.rects.slice());
       return { ok: true };
     }
@@ -755,7 +832,8 @@ const WorldModel = (() => {
         doorDefs, zoneGrid, idx, canStep, baseColorOf, walkable, path, blockedTiles,
         nameOf: id => (doc.rooms[id] ? doc.rooms[id].name : ''),
         kindOf: id => (doc.rooms[id] ? doc.rooms[id].kind : null),
-        FLOOR_STYLES
+        matOf: id => matOfRoom(doc.rooms[id]),   // effective deck material (override, else kind default)
+        FLOOR_STYLES, FLOOR_MATERIALS
       };
     }
 
@@ -922,11 +1000,12 @@ const WorldModel = (() => {
       // reads
       doc: () => doc, rooms, roomById, roomAt, bounds, spawnRoomId,
       props, propById, propAt, belts, beltAt,
-      getSeq: () => seq, FLOOR_STYLES, ROOM_KINDS, KIND_ORDER, TILE, MIN_ROOM, MIN_HALL,
+      getSeq: () => seq, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, ROOM_KINDS, KIND_ORDER, TILE, MIN_ROOM, MIN_HALL,
+      matOfRoom: id => matOfRoom(doc.rooms[id]),   // the room's effective deck material (for the palette's active state)
       // validation (no mutation — for ghost previews)
       canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun,
       // mutations
-      addRoom, placeHallway, removeRoom, moveRoom, setFloor, paintTiles, renameRoom,
+      addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, paintTiles, renameRoom,
       addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState,
       setBelt, removeBelt, removeBelts, placeBeltRun, connectBelt,
       // agent-bay binding queries
@@ -950,7 +1029,14 @@ const WorldModel = (() => {
     // drop order entries with no live room object, and repair any room missing a rects[] array —
     // so a truncated / hand-edited save can never crash the read paths (eachRectWorld/bounds/project).
     doc.order = doc.order.filter(id => doc.rooms[id] && typeof doc.rooms[id] === 'object');
-    for (const id of doc.order) { const rm = doc.rooms[id]; if (!Array.isArray(rm.rects)) rm.rects = []; if (!rm.floorPaint) rm.floorPaint = {}; }
+    // floorMat is additive (docs predate the material axis): null/unknown means "inherit the kind
+    // default", so a legacy blob and a hand-edited one both fall back to the exact pre-material look.
+    for (const id of doc.order) {
+      const rm = doc.rooms[id];
+      if (!Array.isArray(rm.rects)) rm.rects = [];
+      if (!rm.floorPaint) rm.floorPaint = {};
+      if (!FLOOR_MATERIALS[rm.floorMat]) rm.floorMat = null;
+    }
     // props are additive (v1 docs predate them); make the read paths total over any blob.
     if (!Array.isArray(doc.props)) doc.props = [];
     // legacy repair: the 2×2 workflow docks shipped as block:false for a while, so agents walked
@@ -977,7 +1063,7 @@ const WorldModel = (() => {
   }
 
   return {
-    TILE, MARGIN, MIN_ROOM, MIN_HALL, FLOOR_STYLES, ROOM_KINDS, KIND_ORDER,
+    TILE, MARGIN, MIN_ROOM, MIN_HALL, FLOOR_STYLES, FLOOR_MATERIALS, MAT_ORDER, ROOM_KINDS, KIND_ORDER,
     create: doc => makeStation(doc),
     deserialize: doc => makeStation(clone(doc)),
     defaultDoc: freshDoc,

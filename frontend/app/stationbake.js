@@ -143,15 +143,193 @@ const StationBake = (() => {
        soft  (QUARTERS)        — wide 3×2 low-contrast plates with warm matted lifts.
      Every room also gets a PERIMETER TRIM COURSE (a darker border course where floor meets
      wall, catch-lit on its room-facing edge) and pale guide ticks across door thresholds.
-     DEPTH.floorDetail scales every delta the material draws; DEPTH.floorWear rides on top. */
+     DEPTH.floorDetail scales every delta the material draws; DEPTH.floorWear rides on top.
+
+     V4 adds four decks that deliberately DON'T read as the old station — the material axis is
+     user-chosen now (WorldModel.FLOOR_MATERIALS → REFIT ▧ PAINT), not just a per-kind default:
+       grate — open catwalk mesh: top-lit bars over a dark void, substructure glimpsed below.
+       hex   — honeycomb cells on an offset lattice: advanced-tech, nothing else here is non-rectilinear.
+       plank — staggered wood boards: per-board tone, grain hairlines, occasional knot.
+       turf  — hydroponic growth: pure blade scatter, NO lattice at all. The absence of a grid
+               is the whole point; it is what separates a grown surface from a built one. */
   const MAT_BY_KIND = { hab: 'plate', bridge: 'panel', lab: 'tile', factory: 'tread', storage: 'tread', quarters: 'soft' };
-  const MAT_PITCH = { plate: [2, 2], panel: [4, 1], tile: [2, 2], tread: [2, 2], soft: [3, 2] };
+  const MAT_PITCH = { plate: [2, 2], panel: [4, 1], tile: [2, 2], tread: [2, 2], soft: [3, 2], grate: [1, 1], hex: [1, 1], plank: [5, 1], turf: [1, 1] };
+  const MAT_NO_WEAR = { tile: 1, grate: 1, turf: 1 };   // gloss, open mesh and growth don't take boot scuffs
+  // the room's deck material — the model's per-room choice when it has one, else the kind default
+  // (a station built before the material axis existed has none, and bakes exactly as it always did).
+  const matOf = z => {
+    const m = G.matOf ? G.matOf(z) : null;
+    return (m && MAT_PITCH[m]) ? m : (MAT_BY_KIND[(G.kindOf && G.kindOf(z)) || 'hab'] || 'plate');
+  };
+  /* cheap deterministic per-PIXEL hash. h2 hashes a string, which is fine at ~5 marks per tile but
+     not at the ~25 turf needs. Keyed on bake-pixel coords (the same space the Bayer dither uses),
+     so a pixel resolves identically no matter which chunk viewport bakes it. */
+  const hp = (a, c, k) => {
+    let n = (Math.imul(a | 0, 374761393) + Math.imul(c | 0, 668265263) + Math.imul(k | 0, 1442695041)) | 0;
+    n = Math.imul(n ^ (n >>> 13), 1274126177);
+    return (n ^ (n >>> 16)) >>> 0;
+  };
+
+  /* ---------- per-tile deck painters — one per material ----------
+     Each paints ONE tile in that tile's own base colour. bakeRoomFloor AND the REFIT palette
+     sampler both go through paintDeck, so the swatch a Commander clicks is drawn by the exact
+     code that bakes the station — a deck preview here can never drift from the deck they get. */
+
+  function deckSlab(b, mat, base, x, y, X, Y, z, n, fd) {
+    const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
+    const sh = d => U.shade(base, d * fd);
+    const PW = MAT_PITCH[mat][0], PH = MAT_PITCH[mat][1];
+    px(X, Y, T, T, base);
+    // V3 SLAB TILES — the tile texture itself is dimensional now, not a flat fill with
+    // lines drawn on it: each plate renders as a slab — dark GROUT at the plate boundary,
+    // a lit BEVEL along the slab's top/left, a shaded bevel along its bottom/right, and a
+    // 2-step body shade down the slab (upper course a hair lighter). The dimension comes
+    // from edge placement, not contrast, so the deck stays a quiet background surface.
+    const pxc = Math.floor(x / PW), pyc = Math.floor(y / PH);
+    const pn = h2(pxc, pyc, z + ':pl');
+    const lx = x % PW, ly = y % PH;
+    const checker = mat === 'tile' ? ((pxc + pyc) % 2 ? 0.022 : -0.016) : 0;
+    const body = ((pn % 5) - 2) * 0.014 + checker;
+    const step = PH > 1 ? (ly === 0 ? 0.016 : -0.012) : 0;   // slab body: light upper course → dark lower
+    px(X, Y, T, T, sh(body + step));
+    if (lx === 0) { px(X, Y, 1, T, sh(-0.30)); px(X + 1, Y, 1, T, sh(body + 0.07)); }   // grout + lit west bevel
+    if (ly === 0) { px(X, Y, T, 1, sh(-0.30)); px(X, Y + 1, T, 1, sh(body + 0.07)); }   // grout + lit north bevel
+    if (lx === PW - 1) px(X + T - 1, Y, 1, T, sh(body - 0.14));                          // shaded east bevel
+    if (ly === PH - 1) px(X, Y + T - 1, T, 1, sh(body - 0.14));                          // shaded south bevel
+    // material dressing — rivets on alternating plate joints only
+    if ((mat === 'plate' || mat === 'tread') && lx === 0 && ly === 0 && (pxc + pyc) % 2 === 0) {
+      px(X + 2, Y + 2, 2, 2, sh(0.16)); px(X + 3, Y + 3, 1, 1, sh(-0.22));
+    }
+    if (mat === 'tread') {
+      if (n % 2 === 0) {                                           // stamped tread ticks on half the tiles
+        px(X + 2 + (n % 3), Y + 4, 3, 1, sh(-0.14));
+        px(X + 5 + (n % 3), Y + 8, 3, 1, sh(-0.14));
+      }
+      if (y % (PH * 3) === 0) px(X, Y, T, 1, sh(-0.35));           // weld line every 3rd plate row
+    } else if (mat === 'tile' && pn % 7 === 0) {
+      px(X + T - 5, Y + 2, 2, 1, sh(0.20));                        // specular tick on a gloss tile
+    } else if (mat === 'soft' && pn % 3 === 0) {
+      px(X + 1, Y + 1, T - 2, T - 2, sh(0.035));                   // warm matted lift on some plates
+    }
+    // sparse one-off features (v1 survivors, now material-aware: labs/bridge stay clean)
+    if (mat === 'plate' || mat === 'tread' || mat === 'soft') {
+      if (n % 19 === 3 && mat !== 'soft') {
+        px(X + 2, Y + 2, T - 4, T - 4, sh(-0.25));                 // recessed vent hatch
+        for (let i = 0; i < 3; i++) px(X + 3, Y + 4 + i * 3, T - 6, 1, sh(-0.5));
+      } else if (n % 23 === 5) {
+        px(X + 2, Y + 2, T - 4, T - 4, sh(-0.12));                 // access panel
+        b.strokeStyle = sh(-0.4); b.lineWidth = 1; b.strokeRect(X + 2.5, Y + 2.5, T - 5, T - 5);
+        px(X + T / 2 - 2, Y + T / 2, 4, 1, sh(-0.5));
+      } else if (n % 31 === 7) {
+        b.fillStyle = 'rgba(0,0,0,' + (0.13 * fd).toFixed(3) + ')';                // old oil stain
+        b.beginPath(); b.ellipse(X + (n % 8), Y + (n % 6) + 3, 5, 3, 0, 0, 7); b.fill();
+      }
+    }
+  }
+
+  /* GRATE — open catwalk mesh. A 4px lattice of top-lit bars over a dark void, so the read comes
+     from the HOLES: this is the one deck that sits darker than its own base. Heavier structural
+     beams every third tile keep long runs from turning into flat noise. */
+  function deckGrate(b, base, x, y, X, Y, z, n, fd) {
+    const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
+    const sh = d => U.shade(base, d * fd);
+    px(X, Y, T, T, base);
+    px(X, Y, T, T, sh(-0.50));                                        // the void between the bars
+    if (n % 3 === 0) px(X, Y + 4 + (n % 5), T, 1, sh(-0.34));          // a strut on the deck far below
+    for (let i = 0; i < T; i += 4) { px(X + i, Y, 2, T, sh(-0.04)); px(X + i, Y, 1, T, sh(0.09)); }   // vertical bars + lit west edge
+    for (let j = 0; j < T; j += 4) { px(X, Y + j, T, 2, sh(0.02)); px(X, Y + j, T, 1, sh(0.15)); }    // horizontals woven over + lit north edge
+    if (x % 3 === 0) { px(X, Y, 2, T, sh(-0.18)); px(X, Y, 1, T, sh(0.05)); }   // structural beam
+    if (y % 3 === 0) { px(X, Y, T, 2, sh(-0.14)); px(X, Y, T, 1, sh(0.11)); }
+  }
+
+  /* HEX — honeycomb. Two 12×6 cells per tile on a half-cell-offset lattice: flat top and bottom,
+     diagonal shoulders, short side walls. Everything else on the station is rectilinear, so the
+     non-square lattice alone is what makes this read as a different technology. */
+  function deckHex(b, base, x, y, X, Y, z, n, fd) {
+    const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
+    const sh = d => U.shade(base, d * fd);
+    px(X, Y, T, T, base);
+    for (let row = 0; row < 2; row++) {
+      const cy = Y + row * 6, off = row ? 6 : 0, cx = X + off - (off ? 12 : 0);
+      // two passes so the offset row's half-cells at both tile edges are drawn
+      for (let c = 0; c < (off ? 2 : 1); c++) {
+        const ox0 = cx + c * 12;
+        const cn = h2(Math.floor((ox0 - X) / 12) + x * 2, y * 2 + row, z + ':hx');
+        const body = ((cn % 5) - 2) * 0.016;
+        px(Math.max(X, ox0 + 2), cy + 1, Math.min(8, X + T - Math.max(X, ox0 + 2)), 4, sh(body));   // cell body
+        px(Math.max(X, ox0 + 2), cy, Math.min(8, X + T - Math.max(X, ox0 + 2)), 1, sh(-0.30));      // flat top grout
+        px(Math.max(X, ox0 + 2), cy + 1, Math.min(8, X + T - Math.max(X, ox0 + 2)), 1, sh(body + 0.11));  // catch-light under it
+        // diagonal shoulders + side walls (clipped to the tile by the guards)
+        const dot = (dx, dy, col) => { const ax = ox0 + dx; if (ax >= X && ax < X + T) px(ax, cy + dy, 1, 1, col); };
+        dot(1, 1, sh(-0.30)); dot(10, 1, sh(-0.30));
+        dot(0, 2, sh(-0.30)); dot(11, 2, sh(-0.30));
+        dot(0, 3, sh(-0.26)); dot(11, 3, sh(-0.26));
+        dot(1, 4, sh(-0.22)); dot(10, 4, sh(-0.22));
+        px(Math.max(X, ox0 + 2), cy + 5, Math.min(8, X + T - Math.max(X, ox0 + 2)), 1, sh(body - 0.16));  // shaded flat bottom
+      }
+    }
+  }
+
+  /* PLANK — laid wood boards, 5 tiles long and one tile deep, staggered every third row so end
+     seams never line up (the tell of real flooring). Per-board tone, grain hairlines along the
+     run, and the occasional knot. Warm, and the only deck that reads as CARPENTRY. */
+  function deckPlank(b, base, x, y, X, Y, z, n, fd) {
+    const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
+    const sh = d => U.shade(base, d * fd);
+    const PWp = MAT_PITCH.plank[0];
+    const stagger = (y % 3) * 2;
+    const rel = ((x - stagger) % PWp + PWp) % PWp;              // safe mod: x-stagger can go negative
+    const pn = h2(Math.floor((x - stagger) / PWp), y, z + ':pk');
+    const body = ((pn % 7) - 3) * 0.018;                         // per-BOARD tone (whole board, not per tile)
+    px(X, Y, T, T, base);
+    px(X, Y, T, T, sh(body));
+    px(X, Y, T, 1, sh(body + 0.10));                             // lit top edge of the board
+    px(X, Y + T - 2, T, 1, sh(body - 0.10));                     // shadow into the gap
+    px(X, Y + T - 1, T, 1, sh(body - 0.30));                     // the gap between boards
+    if (rel === 0) { px(X, Y, 1, T, sh(body - 0.32)); px(X + 1, Y, 1, T, sh(body + 0.06)); }   // butt-end seam
+    px(X, Y + 3 + (n % 3), T, 1, sh(body - 0.07));               // grain hairlines running with the board
+    px(X, Y + 7 + (n % 3), T, 1, sh(body - 0.05));
+    if (n % 3 === 0) px(X, Y + 5, T, 1, sh(body + 0.05));
+    if (n % 29 === 4) {                                          // knot
+      px(X + 3 + (n % 4), Y + 4, 4, 3, sh(body - 0.26));
+      px(X + 4 + (n % 4), Y + 5, 2, 1, sh(body - 0.40));
+    }
+  }
+
+  /* TURF — hydroponic growth. Pure blade scatter with low-frequency clumping and NO lattice of any
+     kind: no grout, no bevels, no seams. That absence is the entire design — every other deck here
+     is a built surface, and the only way to read "grown" at 12px is to remove the grid. */
+  function deckTurf(b, base, x, y, X, Y, z, n, fd) {
+    const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
+    const sh = d => U.shade(base, d * fd);
+    const clump = h2(x >> 1, y >> 1, z + ':cl');                 // 2×2-tile patches read denser/sparser
+    const cl = ((clump % 5) - 2) * 0.020;
+    px(X, Y, T, T, base);
+    px(X, Y, T, T, sh(cl));
+    const TONE = [-0.20, -0.10, 0.07, 0.16];
+    for (let i = 0; i < 22; i++) {
+      const r = hp(X, Y, i);
+      const by = (r >>> 5) % T;
+      px(X + (r % T), Y + by, 1, Math.min(1 + ((r >>> 13) % 3), T - by), sh(cl + TONE[(r >>> 11) & 3]));
+    }
+    if ((clump % 4) === 0) {                                     // a taller blade catching the room light
+      const r = hp(X, Y, 99);
+      px(X + (r % T), Y + ((r >>> 6) % (T - 3)), 1, 3, sh(cl + 0.24));
+    }
+  }
+
+  function paintDeck(b, mat, base, x, y, X, Y, z, n, fd) {
+    if (mat === 'grate') return deckGrate(b, base, x, y, X, Y, z, n, fd);
+    if (mat === 'hex') return deckHex(b, base, x, y, X, Y, z, n, fd);
+    if (mat === 'plank') return deckPlank(b, base, x, y, X, Y, z, n, fd);
+    if (mat === 'turf') return deckTurf(b, base, x, y, X, Y, z, n, fd);
+    return deckSlab(b, mat, base, x, y, X, Y, z, n, fd);
+  }
 
   function bakeRoomFloor(b, r) {
     const px = (x, y, w, h, c) => { b.fillStyle = c; b.fillRect(x, y, w, h); };
     const fd = Math.max(0, DEPTH.floorDetail);
-    const mat = MAT_BY_KIND[(G.kindOf && G.kindOf(r.z)) || 'hab'] || 'plate';
-    const PW = MAT_PITCH[mat][0], PH = MAT_PITCH[mat][1];
+    const mat = matOf(r.z);
     const zg = G.zoneGrid, idx = G.idx, COLS = G.COLS, ROWS = G.ROWS;
     const zAt = (x, y) => (x < 0 || y < 0 || x >= COLS || y >= ROWS) ? null : zg[idx(x, y)];
     const doorTo = (x, y, nx, ny) => { const nz = zAt(nx, ny); return nz != null && nz !== r.z && (G.canStep(x, y, nx, ny) || G.canStep(nx, ny, x, y)); };
@@ -160,57 +338,12 @@ const StationBake = (() => {
       const base = G.baseColorOf(r.z, x, y);
       const X = x * T, Y = y * T, n = h2(x, y, r.z);
       const sh = d => U.shade(base, d * fd);
-      px(X, Y, T, T, base);
-      // V3 SLAB TILES — the tile texture itself is dimensional now, not a flat fill with
-      // lines drawn on it: each plate renders as a slab — dark GROUT at the plate boundary,
-      // a lit BEVEL along the slab's top/left, a shaded bevel along its bottom/right, and a
-      // 2-step body shade down the slab (upper course a hair lighter). The dimension comes
-      // from edge placement, not contrast, so the deck stays a quiet background surface.
-      const pxc = Math.floor(x / PW), pyc = Math.floor(y / PH);
-      const pn = h2(pxc, pyc, r.z + ':pl');
-      const lx = x % PW, ly = y % PH;
-      const checker = mat === 'tile' ? ((pxc + pyc) % 2 ? 0.022 : -0.016) : 0;
-      const body = ((pn % 5) - 2) * 0.014 + checker;
-      const step = PH > 1 ? (ly === 0 ? 0.016 : -0.012) : 0;   // slab body: light upper course → dark lower
-      px(X, Y, T, T, sh(body + step));
-      if (lx === 0) { px(X, Y, 1, T, sh(-0.30)); px(X + 1, Y, 1, T, sh(body + 0.07)); }   // grout + lit west bevel
-      if (ly === 0) { px(X, Y, T, 1, sh(-0.30)); px(X, Y + 1, T, 1, sh(body + 0.07)); }   // grout + lit north bevel
-      if (lx === PW - 1) px(X + T - 1, Y, 1, T, sh(body - 0.14));                          // shaded east bevel
-      if (ly === PH - 1) px(X, Y + T - 1, T, 1, sh(body - 0.14));                          // shaded south bevel
-      // material dressing — rivets on alternating plate joints only
-      if ((mat === 'plate' || mat === 'tread') && lx === 0 && ly === 0 && (pxc + pyc) % 2 === 0) {
-        px(X + 2, Y + 2, 2, 2, sh(0.16)); px(X + 3, Y + 3, 1, 1, sh(-0.22));
-      }
-      if (mat === 'tread') {
-        if (n % 2 === 0) {                                           // stamped tread ticks on half the tiles
-          px(X + 2 + (n % 3), Y + 4, 3, 1, sh(-0.14));
-          px(X + 5 + (n % 3), Y + 8, 3, 1, sh(-0.14));
-        }
-        if (y % (PH * 3) === 0) px(X, Y, T, 1, sh(-0.35));           // weld line every 3rd plate row
-      } else if (mat === 'tile' && pn % 7 === 0) {
-        px(X + T - 5, Y + 2, 2, 1, sh(0.20));                        // specular tick on a gloss tile
-      } else if (mat === 'soft' && pn % 3 === 0) {
-        px(X + 1, Y + 1, T - 2, T - 2, sh(0.035));                   // warm matted lift on some plates
-      }
-      // sparse one-off features (v1 survivors, now material-aware: labs/bridge stay clean)
-      if (mat === 'plate' || mat === 'tread' || mat === 'soft') {
-        if (n % 19 === 3 && mat !== 'soft') {
-          px(X + 2, Y + 2, T - 4, T - 4, sh(-0.25));                 // recessed vent hatch
-          for (let i = 0; i < 3; i++) px(X + 3, Y + 4 + i * 3, T - 6, 1, sh(-0.5));
-        } else if (n % 23 === 5) {
-          px(X + 2, Y + 2, T - 4, T - 4, sh(-0.12));                 // access panel
-          b.strokeStyle = sh(-0.4); b.lineWidth = 1; b.strokeRect(X + 2.5, Y + 2.5, T - 5, T - 5);
-          px(X + T / 2 - 2, Y + T / 2, 4, 1, sh(-0.5));
-        } else if (n % 31 === 7) {
-          b.fillStyle = 'rgba(0,0,0,' + (0.13 * fd).toFixed(3) + ')';                // old oil stain
-          b.beginPath(); b.ellipse(X + (n % 8), Y + (n % 6) + 3, 5, 3, 0, 0, 7); b.fill();
-        }
-      }
+      paintDeck(b, mat, base, x, y, X, Y, r.z, n, fd);
       // FLOOR WEAR — a lived-in deck: hash-keyed scuffs, drag marks, worn-pale patches and
       // grime films over the plates above. Same idiom (opaque-ish 1px marks, deterministic on
       // the tile hash); DEPTH.floorWear scales alpha, 0 = the pristine pre-wear floor exactly.
       const wear = Math.max(0, DEPTH.floorWear);
-      if (wear > 0.001 && mat !== 'tile') {
+      if (wear > 0.001 && !MAT_NO_WEAR[mat]) {
         const wa = a => (a * wear).toFixed(3);
         if (n % 9 === 1) px(X + (n % 6), Y + 3 + (n % 8), 4 + (n % 3), 1, 'rgba(0,0,0,' + wa(0.18) + ')');          // boot scuff streak
         else if (n % 11 === 6) px(X + 3 + (n % 8), Y + (n % 5), 1, 3 + (n % 3), 'rgba(0,0,0,' + wa(0.15) + ')');    // vertical scrape
@@ -1046,7 +1179,22 @@ const StationBake = (() => {
     else if (baked && baked.lightCv) ctx.drawImage(baked.lightCv, ox, oy);
   }
 
-  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, CHUNK_PX, LIGHT, WALL, DEPTH };
+  /* MATERIAL SAMPLE — paint a small patch of one deck material into any 2D context using the very
+     same per-tile painters the station bake uses. The REFIT palette draws its swatches through
+     this, so a preview can never drift from the deck it promises. `T` is per-bake module state,
+     so it's saved and restored around the sample (a palette redraw must not disturb a live bake). */
+  function sampleMaterial(ctx, matId, base, cols, rows, tile) {
+    const mat = MAT_PITCH[matId] ? matId : 'plate';
+    const fd = Math.max(0, DEPTH.floorDetail);
+    const prevT = T;
+    T = tile || 12;
+    try {
+      for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++)
+        paintDeck(ctx, mat, base, x, y, x * T, y * T, 'sample', h2(x, y, 'sample'), fd);
+    } finally { T = prevT; }
+  }
+
+  return { bake, bakeIncremental, dirtyChunks, visibleChunks, missingVisibleChunks, drawBase, drawLight, sampleMaterial, CHUNK_PX, LIGHT, WALL, DEPTH };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = StationBake;
