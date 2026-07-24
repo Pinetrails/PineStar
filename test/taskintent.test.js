@@ -69,6 +69,21 @@ A.eq(Policy.validateQuestion(material({ recommended: 'not listed' }), { question
   A.eq(Policy.matchOption(['ship it', 'do not ship it'], 'do not ship it.'), 'do not ship it', 'negation is never collapsed into its opposite');
   A.eq(Policy.matchOption(['A. keep it', 'B. drop it'], 'keep it'), 'A. keep it', 'an enumerator prefix still resolves uniquely');
 }
+
+// NEAR-DUPLICATE OPTIONS — "operators", "operators." and "the operators" are ONE choice offered three times.
+// Exact-string dedupe let them through as a fake trilemma; both producers now collapse them identically.
+{
+  const ask = (options) => Policy.validateQuestion(material({ options, recommended: options[0] }), { questions: [] });
+  A.eq(ask(['operators', 'operators.', 'the operators']).ok, false, 'three spellings of one choice is not a decision');
+  A.eq(ask(['PDF', 'PDF.']).ok, false, 'a punctuation-only difference is not a second option');
+  A.eq(ask(['yes', 'yes!', 'no']).question.options, ['yes', 'no'], 'a fake trilemma collapses to the honest dilemma');
+  A.eq(ask(['a report', 'the report', 'a dashboard']).question.options, ['a report', 'a dashboard'], 'article-only differences collapse but real alternatives survive');
+  A.eq(ask(['operators', 'executives', 'customers']).question.options, ['operators', 'executives', 'customers'], 'genuinely distinct options are untouched');
+  // the MARKER fallback used to have no dedupe at all, so it could land a worse question than brief_ask allows
+  A.eq(TaskIntent.parse('TASK_QUESTION: pick? || dark | Dark | dark.'), null, 'the marker path fails closed when every option is the same choice');
+  A.eq(TaskIntent.parse('TASK_QUESTION: pick? || dark | dark. | light').options, ['dark', 'light'], 'the marker path dedupes exactly like the host policy');
+  A.eq(TaskIntent.dedupeOptions(['x', '  ', '.', 'X']), ['x'], 'blank and punctuation-only entries are never offered as choices');
+}
 A.eq(Policy.validateQuestion(material({ dimension: 'vibes' }), { questions: [] }).ok, false, 'unknown decision dimensions fail closed');
 A.eq(Policy.validateQuestion(material({ newBlocker: false }), { questions: [{ answer: 'operators' }] }).ok, false, 'second question requires a newly exposed blocker');
 A.eq(Policy.validateQuestion(material({ newBlocker: true }), { questions: [{ answer: '' }] }).ok, false, 'second question cannot precede the first answer');

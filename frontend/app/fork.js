@@ -97,11 +97,29 @@
   const TASK_LINE = /^\s*TASK_QUESTION:\s*(.+?)\s*\|\|\s*(.+?)\s*$/mi;
   const TASK_Q_CHARS = 240, TASK_OPT_CHARS = 72, TASK_MAX_OPTS = 3;
   function taskClean(s, max) { return String(s == null ? '' : s).replace(/\s+/g, ' ').trim().slice(0, max); }
+  // ONE canonical loosening for comparing options to each other and to a recommendation, shared by this
+  // browser-side parse and the host policy (taskbrief-policy) so the two option producers can never drift on
+  // what counts as "the same option". Case, padding, quotes, trailing punctuation and a leading article are
+  // all noise: "operators", "operators." and "the operators" are one choice presented three times, and
+  // offering them as three chips makes the decision look richer than it is.
+  const TASK_QUOTES = /[‘’“”'"`]/g;
+  function taskLoosen(v) {
+    return String(v == null ? '' : v).toLowerCase().replace(TASK_QUOTES, '')
+      .replace(/[\s.,;:!?)\]]+$/, '').replace(/^[\s([]+/, '').replace(/^(?:a|an|the)\s+/, '')
+      .replace(/\s+/g, ' ').trim();
+  }
+  function taskDedupeOptions(list) {
+    return (Array.isArray(list) ? list : [])
+      .map(function (x) { return taskClean(x, TASK_OPT_CHARS); })
+      .filter(function (x) { return taskLoosen(x); })            // a punctuation-only "option" is not a choice
+      .filter(function (x, i, a) { return a.findIndex(function (y) { return taskLoosen(y) === taskLoosen(x); }) === i; })
+      .slice(0, TASK_MAX_OPTS);
+  }
   function taskParse(text) {
     const m = TASK_LINE.exec(String(text == null ? '' : text));
     if (!m) return null;
     const question = taskClean(m[1], TASK_Q_CHARS);
-    const options = m[2].split('|').map(x => taskClean(x, TASK_OPT_CHARS)).filter(Boolean).slice(0, TASK_MAX_OPTS);
+    const options = taskDedupeOptions(m[2].split('|'));
     return question && options.length >= 2 ? { question, options } : null;
   }
   function taskStrip(text) {
@@ -141,6 +159,7 @@
   }
   const TaskIntent = {
     parse: taskParse, strip: taskStrip, directive: taskDirective, answerMessage: taskAnswerMessage, routeReply: taskRouteReply,
+    loosen: taskLoosen, dedupeOptions: taskDedupeOptions,
     MAX_QUESTION: TASK_Q_CHARS, MAX_OPTION: TASK_OPT_CHARS, MAX_OPTIONS: TASK_MAX_OPTS
   };
 

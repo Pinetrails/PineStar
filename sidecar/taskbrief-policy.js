@@ -1,6 +1,7 @@
 /* Host-side policy for Task Brief decisions. This is the reliability boundary: models may
    propose a question or a settled brief, but only this module decides whether it is usable. */
 'use strict';
+const TaskIntent = require('../frontend/app/fork.js').TaskIntent;   // the shared decision-protocol module (index.js already speaks it)
 
 const DIMENSIONS = new Set(['objective', 'audience', 'deliverable', 'scope', 'constraints', 'sources', 'acceptance', 'safety']);
 const VAGUE = /\b(what does good look like|tell me more|can you elaborate|any preferences|what do you want|how should i proceed)\b/i;
@@ -17,12 +18,9 @@ function clean(v, n) { return String(v == null ? '' : v).replace(/\s+/g, ' ').tr
 // looked identical to "the agent had no opinion".
 // Match in widening tiers and always return the CANONICAL option text. The loose tiers count ONLY when they
 // resolve to exactly one option — an ambiguous rescue fails closed rather than risk marking the wrong chip.
-const QUOTES = /[‘’“”'"`]/g;
-function loosen(v) {
-  return String(v == null ? '' : v).toLowerCase().replace(QUOTES, '')
-    .replace(/[\s.,;:!?)\]]+$/, '').replace(/^[\s([]+/, '').replace(/^(?:a|an|the)\s+/, '')
-    .replace(/\s+/g, ' ').trim();
-}
+// `loosen` is the SHARED protocol normalizer from fork.js (the one module the browser parse and this host
+// policy both already speak), so the two option producers cannot drift on what counts as the same option.
+const loosen = TaskIntent.loosen;
 function matchOption(options, candidate) {
   const list = Array.isArray(options) ? options.filter(Boolean) : [];
   const c = clean(candidate, 72);
@@ -52,9 +50,10 @@ function validateQuestion(candidate, brief) {
   const c = candidate && typeof candidate === 'object' ? candidate : {};
   const dimension = clean(c.dimension, 24).toLowerCase();
   const question = clean(c.question || c.text, 240);
-  const options = Array.isArray(c.options)
-    ? c.options.map(x => clean(x, 72)).filter(Boolean).filter((x, i, a) => a.findIndex(y => y.toLowerCase() === x.toLowerCase()) === i).slice(0, 3)
-    : [];
+  // Dedupe on the LOOSENED form: exact-string dedupe let "operators" / "operators." / "the operators" through
+  // as three distinct chips, which is the same choice offered three times dressed as a real decision. Collapsing
+  // them means such a question now fails the >=2 check below instead of rendering a fake trilemma.
+  const options = TaskIntent.dedupeOptions(c.options);
   const recommended = clean(c.recommended || c.defaultOption, 72);
   const reason = clean(c.reason, 240);
   const prior = brief && Array.isArray(brief.questions) ? brief.questions : [];
