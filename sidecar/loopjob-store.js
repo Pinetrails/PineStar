@@ -32,7 +32,10 @@
        gate:'review'|'auto',                 // review = stack candidates for approval; auto = apply its own work
        queueCap, maxIterations, dryStopAfter,
        workdir, branch,                      // git loop: the blessed root + the loop's own branch (null = no-git)
-       enabled, state:'idle'|'running'|'waiting'|'paused'|'dormant'|'stopped',
+       checkCmd, checkTimeoutMs, checkPaths,  // S2: the HUMAN-authored, host-run check (never model-editable)
+       exitOn:'check-green'|'empty-digests'|'never',   // what ENDS this loop
+       redStopAfter, redStreak,              // ceiling on consecutive red checks
+       enabled, state:'idle'|'running'|'waiting'|'paused'|'dormant'|'stopped'|'done',
        stopReason,                           // ALWAYS set when quiet for a non-obvious reason (truthful telemetry)
        iterationCount, dryStreak, failStreak,
        iterations: Iteration[],              // the durable ledger — the whole point of the subsystem
@@ -43,9 +46,19 @@
 
    An Iteration:
      { n, runId, startedAt, endedAt,
-       outcome:'running'|'candidate'|'noop'|'failed'|'cancelled',
+       outcome:'running'|'candidate'|'noop'|'red'|'failed'|'cancelled',
        title, summary, commit, files:[{path,bytes}], usd, error,
+       check: { passed, summary, note, tampered, tamperedPaths, trusted, gitProven } | null,
        verdict:'approved'|'rejected'|'discarded'|null, verdictNote, verdictAt }
+
+   THE CHECK CHANGES THE STATE MACHINE (S2). A red check is NOT an error and NOT a review item: the run
+   succeeded, the work simply is not ready, so the iteration lands 'red' and its failure output is fed into the
+   next iteration's prompt (loopjob.digest). Only a check the loop can PROVE was not rewritten counts as green
+   — see loopcheck.js. Two consequences worth stating plainly:
+     · exitOn:'check-green' completes the loop ('done') on a TRUSTED green only. An unprovable or tampered
+       green stops for review and must never declare the objective met.
+     · gate:'auto' ("full access to merge") does NOT auto-approve an iteration whose check mustReview. Full
+       access is a convenience for honest work, never an override on evidence of tampering.
 
    THE STACKING LAW. In gate:'review' the loop keeps working while candidates queue up, so iteration N+1 is
    built on a tree containing un-approved N. That makes the queue strictly FIFO and makes rejection
@@ -65,6 +78,11 @@
   const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;      // one safe path component (matches the index.js agentId guard)
   const ITER_CAP = 200;                        // ledger retention; un-reviewed iterations are NEVER dropped
   const FAIL_STREAK_MAX = 3;                   // consecutive hard failures before the loop parks itself
+  // consecutive RED checks before the loop parks. Distinct from failStreak: a red check is the loop working as
+  // designed (the agent has not fixed it YET), so it must not be treated as an error — but without a ceiling a
+  // loop that can NEVER go green grinds until the budget dies. This is that ceiling.
+  const RED_STREAK_MAX = 10;
+  const EXIT_MODES = ['check-green', 'empty-digests', 'never'];
   const TEXT_CAP = 4000, TITLE_CAP = 140, SUM_CAP = 1200, NOTE_CAP = 800, FILE_CAP = 50;
 
   const iso = LJ._internals.iso;
@@ -72,7 +90,8 @@
 
   // fields a Commander may edit. id / timestamps / run-state / ledger are NOT patchable here.
   const EDITABLE = ['name', 'objective', 'agentId', 'model', 'provider', 'gate',
-    'queueCap', 'maxIterations', 'dryStopAfter', 'workdir', 'branch'];
+    'queueCap', 'maxIterations', 'dryStopAfter', 'workdir', 'branch',
+    'checkCmd', 'checkTimeoutMs', 'checkPaths', 'exitOn', 'redStopAfter'];
 
   function isValidId(id) { return typeof id === 'string' && ID_RE.test(id); }
   function getLoop(loops, id) { return (loops || []).find(l => l && l.id === id) || null; }
@@ -80,6 +99,9 @@
   function isNum(v) { return typeof v === 'number' && isFinite(v); }
   function str(v, cap) { const s = v == null ? '' : String(v); return cap && s.length > cap ? s.slice(0, cap) : s; }
   function normGate(v) { return v === 'auto' ? 'auto' : 'review'; }
+  // an unknown/corrupt exit mode falls back to 'never' — the loop keeps asking rather than silently declaring
+  // itself finished on a value nobody wrote.
+  function normExit(v) { return EXIT_MODES.indexOf(v) >= 0 ? v : 'never'; }
   function posNumOr(v, dflt) { const n = Number(v); return isFinite(n) && n >= 0 ? n : dflt; }
 
   function normFiles(files) {
@@ -127,6 +149,19 @@
       // this reducer only records what it was told (never trusts it as a path).
       workdir: spec.workdir != null ? str(spec.workdir, 600) : null,
       branch: spec.branch != null ? str(spec.branch, 200) : null,
+      /* ---- THE HOST-RUN CHECK (S2) — what turns "am I done?" from an opinion into an exit code ----
+         checkCmd is authored by the HUMAN at loop-creation time and is never editable by the model: it is not
+         in the iteration prompt, not a tool argument, and the agent has no route to change it. The agent's job
+         is to make the check pass; it has no say in what the check IS. That separation is the entire reason a
+         machine-checked exit condition can be trusted at all — see loopcheck.js for the other half (proving
+         the agent did not simply rewrite the tests). */
+      checkCmd: spec.checkCmd != null ? str(spec.checkCmd, 600) : null,
+      checkTimeoutMs: Math.max(1000, Math.min(600000, parseInt(spec.checkTimeoutMs, 10) || 120000)),
+      checkPaths: Array.isArray(spec.checkPaths) ? spec.checkPaths.slice(0, 20).map(p => str(p, 200)).filter(Boolean) : [],
+      // what ENDS this loop: a trusted green check, N empty digests, or nothing (runs until you stop it).
+      exitOn: normExit(spec.exitOn),
+      redStopAfter: Math.max(1, Math.min(50, parseInt(spec.redStopAfter, 10) || RED_STREAK_MAX)),
+      redStreak: 0,
       enabled: enabled,
       state: enabled ? 'idle' : 'paused',
       stopReason: null,
@@ -167,6 +202,9 @@
       const next = Object.assign({}, loop);
       for (const k of EDITABLE) if (Object.prototype.hasOwnProperty.call(patch, k)) next[k] = patch[k];
       if (Object.prototype.hasOwnProperty.call(patch, 'gate')) next.gate = normGate(patch.gate);
+      if (Object.prototype.hasOwnProperty.call(patch, 'exitOn')) next.exitOn = normExit(patch.exitOn);
+      if (Object.prototype.hasOwnProperty.call(patch, 'checkCmd')) next.checkCmd = patch.checkCmd == null ? null : str(patch.checkCmd, 600);
+      if (Object.prototype.hasOwnProperty.call(patch, 'checkPaths')) next.checkPaths = Array.isArray(patch.checkPaths) ? patch.checkPaths.slice(0, 20).map(x => str(x, 200)).filter(Boolean) : [];
       if (Object.prototype.hasOwnProperty.call(patch, 'queueCap')) next.queueCap = LJ.queueCapOf({ queueCap: patch.queueCap });
       if (Object.prototype.hasOwnProperty.call(patch, 'dryStopAfter')) next.dryStopAfter = LJ.dryStopOf({ dryStopAfter: patch.dryStopAfter });
       if (Object.prototype.hasOwnProperty.call(patch, 'maxIterations')) {
@@ -197,7 +235,7 @@
   function resumeLoop(loops, id, ctx) {
     const now = (ctx && ctx.now) || 0;
     return mapLoop(loops, id, (loop) => Object.assign({}, loop, {
-      enabled: true, state: 'idle', stopReason: null, dryStreak: 0, failStreak: 0, updatedAt: iso(now)
+      enabled: true, state: 'idle', stopReason: null, dryStreak: 0, failStreak: 0, redStreak: 0, updatedAt: iso(now)
     }));
   }
 
@@ -303,9 +341,14 @@
 
       const cancelled = result.cancelled === true;
       const ok = result.status === 'ok' && !cancelled;
+      const chk = (result.check && result.check.ran) ? result.check : null;
       let outcome;
       if (cancelled) outcome = 'cancelled';
       else if (!ok) outcome = 'failed';
+      // A RED CHECK IS NOT A REVIEW ITEM. The run succeeded, the work just is not ready — so it feeds forward
+      // into the next iteration (carrying the failure output) instead of asking the Commander to approve
+      // something the project's own tests reject. This is the difference between a feedback loop and a retry.
+      else if (chk && !chk.passed) outcome = 'red';
       else outcome = LJ.nextOutcomeFor(result.text);
 
       const usd = posNumOr(result.usd, 0);
@@ -317,10 +360,19 @@
         commit: result.commit != null ? str(result.commit, 80) : null,
         files: normFiles(result.files),
         usd: usd,
-        error: ok ? null : (result.error != null ? str(result.error, NOTE_CAP) : (cancelled ? 'cancelled' : 'error'))
+        error: ok ? null : (result.error != null ? str(result.error, NOTE_CAP) : (cancelled ? 'cancelled' : 'error')),
+        check: chk ? {
+          passed: !!chk.passed, summary: str(chk.summary, SUM_CAP), note: str(chk.note, NOTE_CAP),
+          tampered: !!chk.tampered, tamperedPaths: (chk.tamperedPaths || []).slice(0, FILE_CAP).map(p => str(p, 400)),
+          trusted: !!chk.trusted, gitProven: !!chk.gitProven
+        } : null
       });
-      // gate:'auto' applies its own work — stamp the verdict now so it never sits in a queue nobody reads.
-      if (outcome === 'candidate' && loop.gate === 'auto') {
+      /* gate:'auto' applies its own work — stamp the verdict now so it never sits in a queue nobody reads.
+         THE ONE EXCEPTION, and it is the whole point of the tamper guard: a check that `mustReview` NEVER
+         auto-approves, even on a full-access loop. If an iteration edited the tests and then went green, the
+         "you have full access to merge" setting must not be the thing that lets it merge unseen — that is
+         precisely the case a human has to look at. Full access is a convenience, not an override on evidence. */
+      if (outcome === 'candidate' && loop.gate === 'auto' && !(chk && chk.mustReview)) {
         settled.verdict = 'approved';
         settled.verdictNote = 'auto-applied (this loop has full access to merge)';
         settled.verdictAt = iso(now);
@@ -342,6 +394,35 @@
       });
 
       // ---- streaks + the next state -------------------------------------------------------------------
+      /* THE EXIT CONDITION. A loop set to exitOn:'check-green' is DONE when the project's own check passes and
+         the loop can prove the check was not rewritten to get there. `trusted` (not merely `passed`) is the
+         bar — an unprovable or tampered green stops for review but must never declare the objective complete.
+         'done' is deliberately its own state: "achieved what you asked" and "found nothing left to do" are
+         different outcomes and the panel has to be able to say which one happened. */
+      if (chk && loop.exitOn === 'check-green' && chk.trusted) {
+        next.redStreak = 0; next.dryStreak = 0; next.failStreak = 0;
+        next.state = 'done';
+        next.enabled = false;
+        next.stopReason = 'objective met — ' + (chk.summary || 'the check passes');
+        return next;
+      }
+
+      if (outcome === 'red') {
+        next.redStreak = (loop.redStreak || 0) + 1;
+        next.failStreak = 0; next.dryStreak = 0;
+        const redMax = Math.max(1, parseInt(loop.redStopAfter, 10) || RED_STREAK_MAX);
+        if (next.redStreak >= redMax) {
+          next.state = 'paused';
+          next.enabled = false;
+          next.stopReason = 'the check has been red for ' + next.redStreak + ' iterations — ' + (settled.check ? settled.check.summary : 'no progress');
+          return next;
+        }
+        // still red but under the ceiling: stay live so the next iteration gets the failure output.
+        next.state = 'idle'; next.stopReason = null;
+        return next;
+      }
+      if (chk && chk.passed) next.redStreak = 0;   // a green resets the red streak even when it is not trusted
+
       if (outcome === 'noop') {
         next.dryStreak = (loop.dryStreak || 0) + 1;
         next.failStreak = 0;
@@ -441,6 +522,13 @@
       .filter(l => l && typeof l === 'object' && isValidId(l.id))
       .map(l => Object.assign({}, l, {
         gate: normGate(l.gate),
+        // a corrupt/hand-edited exitOn can never load as 'check-green' — the store fails toward asking, never
+        // toward a loop that declares itself finished on a value nobody wrote.
+        exitOn: normExit(l.exitOn),
+        redStreak: isNum(l.redStreak) ? l.redStreak : 0,
+        redStopAfter: isNum(l.redStopAfter) ? l.redStopAfter : RED_STREAK_MAX,
+        checkCmd: l.checkCmd != null ? str(l.checkCmd, 600) : null,
+        checkPaths: Array.isArray(l.checkPaths) ? l.checkPaths.map(x => str(x, 200)).filter(Boolean) : [],
         iterations: Array.isArray(l.iterations) ? l.iterations.filter(it => it && isNum(it.n)) : [],
         iterationCount: isNum(l.iterationCount) ? l.iterationCount : 0,
         dryStreak: isNum(l.dryStreak) ? l.dryStreak : 0,
@@ -476,6 +564,8 @@
     isValidId: isValidId,
     ENVELOPE_VERSION: ENVELOPE_VERSION,
     ITER_CAP: ITER_CAP,
-    FAIL_STREAK_MAX: FAIL_STREAK_MAX
+    FAIL_STREAK_MAX: FAIL_STREAK_MAX,
+    RED_STREAK_MAX: RED_STREAK_MAX,
+    EXIT_MODES: EXIT_MODES
   };
 });

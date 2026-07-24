@@ -319,4 +319,86 @@ function cycle(loops, res, at) {
   A.ok(s.binding !== null || s.wouldFire === true, 'a quiet loop ALWAYS has a named binding (invariant 4)');
 }
 
+// ---- 17. THE HOST-RUN CHECK: a red check feeds forward, it is not a review item ------------------------
+{
+  const chk = (o) => Object.assign({ ran: true, passed: false, summary: '2 failing', note: 'check failed — 2 failing', tampered: false, tamperedPaths: [], trusted: false, gitProven: true, mustReview: false }, o);
+
+  let loops = mk({ exitOn: 'check-green', checkCmd: 'npm test', queueCap: 5 });
+  loops = cycle(loops, { runId: 'c1', status: 'ok', text: 'tried a fix', title: 'a fix', check: chk() }, T0);
+  const it1 = one(loops).iterations[0];
+  A.eq(it1.outcome, 'red', 'a failing check makes the iteration RED, not a candidate');
+  A.eq(LJ.pendingReviews(one(loops)).length, 0, 'a red iteration NEVER enters the review queue — you are not asked to approve broken work');
+  A.eq(one(loops).redStreak, 1, 'the red streak advances');
+  A.eq(one(loops).failStreak, 0, 'but a red check is NOT an error — the agent just has not fixed it yet');
+  A.eq(one(loops).state, 'idle', 'so the loop stays live and tries again');
+  A.eq(it1.check.summary, '2 failing', 'the check result is durable on the iteration');
+
+  // THE FEEDBACK LOOP: the failure output must reach the next iteration
+  const d = LJ.digest(one(loops), {});
+  A.ok(/FAILED THE PROJECT'S OWN CHECK/.test(d), 'the next iteration is told its work failed the check');
+  A.ok(/2 failing/.test(d), 'and is given the actual failure output — this is what makes it a loop, not a retry');
+  A.ok(/you cannot see/.test(d), 'and is told the check is not its to see or change');
+  A.ok(/does NOT count as passing/.test(d), 'editing the tests is explicitly ruled out in the prompt');
+}
+
+// ---- 18. exitOn:'check-green' — a TRUSTED green completes the objective --------------------------------
+{
+  const green = { ran: true, passed: true, summary: '42 passing', note: '42 passing', tampered: false, tamperedPaths: [], trusted: true, gitProven: true, mustReview: false };
+  let loops = mk({ exitOn: 'check-green', checkCmd: 'npm test' });
+  loops = cycle(loops, { runId: 'g1', status: 'ok', text: 'fixed it', title: 'fixed it', check: green }, T0);
+  A.eq(one(loops).state, 'done', 'a trusted green ENDS the loop — the objective is met');
+  A.ok(/objective met/.test(one(loops).stopReason), 'and says so, distinctly from "nothing left to do"');
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + DAY }).binding, 'done', 'a done loop is bound as done, not "disabled"');
+  A.eq(one(loops).redStreak, 0, 'and the streaks are cleared');
+
+  // an UNTRUSTED green must never complete the objective
+  const untrusted = Object.assign({}, green, { trusted: false, mustReview: true, tampered: true, tamperedPaths: ['package.json'] });
+  let sneaky = mk({ exitOn: 'check-green', checkCmd: 'npm test', queueCap: 5 });
+  sneaky = cycle(sneaky, { runId: 's1', status: 'ok', text: 'done!', title: 'done!', check: untrusted }, T0);
+  A.ok(one(sneaky).state !== 'done', 'a TAMPERED green does NOT complete the objective');
+  A.eq(LJ.pendingReviews(one(sneaky)).length, 1, 'it goes to a human instead');
+}
+
+// ---- 19. THE AUTO-GATE EXCEPTION: full access is not an override on evidence ---------------------------
+{
+  const tamperedGreen = { ran: true, passed: true, summary: '0 tests', note: 'changed the check itself (package.json)', tampered: true, tamperedPaths: ['package.json'], trusted: false, gitProven: true, mustReview: true };
+  const cleanGreen = { ran: true, passed: true, summary: '42 passing', note: '42 passing', tampered: false, tamperedPaths: [], trusted: true, gitProven: true, mustReview: false };
+
+  let auto = mk({ gate: 'auto', exitOn: 'never', queueCap: 5 });
+  auto = cycle(auto, { runId: 'a1', status: 'ok', text: 'w', title: 'honest work', check: cleanGreen }, T0);
+  A.eq(one(auto).iterations[0].verdict, 'approved', 'a full-access loop auto-approves an honest green');
+
+  auto = cycle(auto, { runId: 'a2', status: 'ok', text: 'w', title: 'rewrote the tests', check: tamperedGreen }, T0 + HOUR);
+  const sneaked = one(auto).iterations[1];
+  A.eq(sneaked.verdict, null, 'but it does NOT auto-approve an iteration that edited the check itself');
+  A.eq(LJ.pendingReviews(one(auto)).length, 1, 'that one is forced in front of a human');
+  A.eq(sneaked.check.tampered, true, 'with the tampering recorded');
+  A.eq(sneaked.check.tamperedPaths, ['package.json'], 'and the offending path named');
+  A.ok(/modified the check itself/.test(LJ.digest(one(auto), {})), 'and the model is told it was caught');
+}
+
+// ---- 20. the red ceiling: a loop that can never go green must stop -------------------------------------
+{
+  const red = { ran: true, passed: false, summary: 'still 2 failing', note: 'check failed', tampered: false, tamperedPaths: [], trusted: false, gitProven: true, mustReview: false };
+  let loops = mk({ exitOn: 'check-green', checkCmd: 'npm test', redStopAfter: 3 });
+  for (let i = 1; i <= 3; i++) loops = cycle(loops, { runId: 'r' + i, status: 'ok', text: 'attempt', title: 'attempt', check: red }, T0 + i * HOUR);
+  A.eq(one(loops).state, 'paused', '3 red iterations in a row park the loop');
+  A.ok(/red for 3 iterations/.test(one(loops).stopReason), 'and the reason names the real problem');
+  A.eq(LJ.decide(one(loops), {}, { now: T0 + DAY }).fire, false, 'so it stops spending on a fight it is losing');
+
+  // a green anywhere in the run resets the streak
+  let mixed = mk({ exitOn: 'never', checkCmd: 'npm test', redStopAfter: 3, queueCap: 9 });
+  mixed = cycle(mixed, { runId: 'm1', status: 'ok', text: 'w', title: 'w', check: red }, T0);
+  mixed = cycle(mixed, { runId: 'm2', status: 'ok', text: 'w', title: 'w', check: { ran: true, passed: true, trusted: true, summary: 'ok', tamperedPaths: [] } }, T0 + HOUR);
+  A.eq(one(mixed).redStreak, 0, 'a green resets the red streak');
+}
+
+// ---- 21. a corrupt exitOn can never load as check-green ------------------------------------------------
+{
+  A.eq(S.loadEnvelope({ loops: [{ id: 'x', exitOn: 'check-green' }] }).loops[0].exitOn, 'check-green', 'a real exit mode survives a round-trip');
+  A.eq(S.loadEnvelope({ loops: [{ id: 'x', exitOn: 'whatever' }] }).loops[0].exitOn, 'never',
+    'a corrupt exit mode falls back to never — a loop must not declare itself finished on a value nobody wrote');
+  A.eq(one(mk({ exitOn: 'nonsense' })).exitOn, 'never', 'and the same at creation');
+}
+
 A.report('loopjob (pure LOOP core)');

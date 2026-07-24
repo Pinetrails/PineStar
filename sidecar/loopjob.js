@@ -57,7 +57,7 @@
   // un-English so ordinary prose can never trip it.
   const NOTHING_MARK = /NOTHING-TO-DO/i;
 
-  const GATES = ['halted', 'disabled', 'stopped', 'dormant', 'paused', 'max-iterations',
+  const GATES = ['halted', 'done', 'disabled', 'stopped', 'dormant', 'paused', 'max-iterations',
     'budget', 'in-flight', 'queue-full', 'concurrency', 'precheck'];
 
   function iso(ms) { return new Date(ms).toISOString(); }
@@ -141,6 +141,7 @@
     // the SPECIFIC quiet states are checked before the generic `enabled` flag, because stop/dormant/pause all
     // clear `enabled` and "disabled" would tell the Commander nothing about WHY. A loop that converged reads
     // very differently from one the Commander stopped, and the UI must be able to say which.
+    if (loop.state === 'done') return out('done', loop.stopReason || 'objective met');
     if (loop.state === 'stopped') return out('stopped', loop.stopReason || null);
     if (loop.state === 'dormant') return out('dormant', loop.stopReason || 'nothing left to do');
     if (loop.state === 'paused') return out('paused', loop.stopReason || null);
@@ -220,6 +221,27 @@
     }
     if (noops) lines.push('', 'Passes that found nothing to do so far: ' + noops);
 
+    /* THE FEEDBACK LOOP. If the last iteration's work failed the project's own check, that failure output is
+       the single most useful thing the next iteration can be told — it is the difference between "try again"
+       (a retry storm) and "here is exactly what you broke" (progress). It leads the actionable section because
+       a red check outranks every other consideration: nothing else matters until it is green. */
+    const lastRed = its.slice().reverse().find(it => it.outcome === 'red' && it.check);
+    if (lastRed) {
+      const red = lastRed.check;
+      lines.push('', 'YOUR LAST CHANGE FAILED THE PROJECT\'S OWN CHECK (iteration #' + lastRed.n + '):');
+      lines.push('  ' + (red.summary || 'the check failed'));
+      lines.push('Fix THAT before anything else. The check is run by the station, not by you — you cannot see');
+      lines.push('or change the command, and editing the tests, their config, or the scripts that define them');
+      lines.push('does NOT count as passing: it is detected, it stops the loop, and it wastes the Commander\'s time.');
+    }
+    // a tampering flag is stated back plainly — a model that drifted there once must be told it was caught.
+    const tampered = its.slice().reverse().find(it => it.check && it.check.tampered);
+    if (tampered) {
+      lines.push('', 'NOTE: iteration #' + tampered.n + ' modified the check itself (' +
+        (tampered.check.tamperedPaths || []).slice(0, 3).join(', ') + '). That was flagged for human review.');
+      lines.push('Do not modify tests, test config, or build/script definitions to make the check pass.');
+    }
+
     lines.push('', 'If there is genuinely nothing meaningful left to do for this objective, reply with the exact');
     lines.push('token NOTHING-TO-DO and stop. Do NOT invent busywork to appear productive — an honest');
     lines.push('NOTHING-TO-DO is the correct and valued answer, and the loop will park itself.');
@@ -260,8 +282,15 @@
       // one. `error` is the real settled error string, never a generic "something went wrong".
       recent: its.slice(-5).map(it => ({
         n: it.n, outcome: it.outcome, title: it.title, error: it.error,
-        verdict: it.verdict, endedAt: it.endedAt, usd: it.usd
+        verdict: it.verdict, endedAt: it.endedAt, usd: it.usd, check: it.check || null
       })),
+      // the check surface the panel renders its stepper from. `checkCmd` is shown so the Commander can see
+      // exactly what is being run at their project root — it is their command, and it must never be a mystery.
+      checkCmd: loop.checkCmd || null,
+      exitOn: loop.exitOn || 'never',
+      redStreak: loop.redStreak || 0,
+      redStopAfter: loop.redStopAfter || 10,
+      lastCheck: (() => { const c = its.slice().reverse().find(it => it.check); return c ? Object.assign({ n: c.n }, c.check) : null; })(),
       lastError: (() => { const f = its.slice().reverse().find(it => it.outcome === 'failed'); return f ? f.error : null; })(),
       budget: loop.budget ? {
         perDayUsd: loop.budget.perDayUsd || 0,
