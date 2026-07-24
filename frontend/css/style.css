@@ -1073,6 +1073,34 @@ body.no-scan .crt-scan { display: none; }
 .ch-optin { display: block; margin: 2px 0 8px; }
 .ch-optin-t { }
 .ch-optin-d { display: block; margin-left: 22px; font-size: 12px; line-height: 1.25; }
+/* console-mode CHANNELS: a live status dot on each platform's rail tab (same st-* truth palette as .ch-state) */
+.ch-rail-dot { flex: 0 0 auto; margin-left: auto; font-size: 9px; line-height: 1; }
+.ch-rail-dot.st-up { color: var(--ok); text-shadow: 0 0 6px rgba(80,255,140,.5); }
+.ch-rail-dot.st-wait { color: var(--gold); }
+.ch-rail-dot.st-err { color: var(--bad); }
+.ch-rail-dot.st-off { color: var(--ph-dim); opacity: .55; }
+.con-rail-item.active .ch-rail-dot.st-off { color: var(--ink); }
+/* OVERVIEW pane: one clickable summary row per platform (coin + title + live state), jumps to that pane */
+.ch-sum { margin-top: 14px; }
+.ch-sum-row {
+  display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
+  font-family: inherit; color: var(--ph); background: var(--panel2);
+  border: 1px solid var(--ph-faint); border-radius: var(--r-sm); padding: 7px 9px; margin: 6px 0;
+  cursor: pointer; position: relative; overflow: hidden;
+  transition: transform .12s var(--ease-out, ease), border-color .12s ease, box-shadow .12s ease;
+}
+.ch-sum-row::before {   /* the same per-platform accent strip signature as the cards, turned sideways */
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 3px;
+  background: linear-gradient(180deg, var(--accent, var(--ph)), transparent 90%); opacity: .85;
+}
+.ch-sum-row:hover {
+  transform: translateY(-1px); border-color: var(--ph); color: var(--ph-bright);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, var(--ph)) 45%, transparent), 0 4px 14px rgba(0,0,0,.5);
+}
+.ch-sum-row .ch-coin { width: 24px; height: 24px; }
+.ch-sum-row .ch-glyph { font-size: 13px; }
+.ch-sum-t { letter-spacing: 2px; font-size: 13px; }
+.ch-sum-row .ch-state { margin-left: auto; }
 .ch-card {
   position: relative; border: 1px solid var(--ph-dim); background: var(--panel2); box-shadow: var(--raise);
   border-radius: var(--r-sm); padding: 10px 11px 9px; margin: 9px 0; overflow: hidden;

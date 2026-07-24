@@ -1,12 +1,13 @@
 /* STARNET — windows/messaging.js : the CHANNELS (messaging platforms) window (extracted verbatim from stationui.js).
    Loads AFTER stationui.js (see index.html) and registers itself via StationUI.registerWindow;
    the only stationui internals it touches are the enumerated StationUI.h helper surface
-   (sfx/notify/openTerm and the live present view). */
+   (sfx/notify/openTerm/mountConsole and the live present view). */
 'use strict';
 (() => {
   if (typeof StationUI === 'undefined' || !StationUI.registerWindow) return;
   const H = StationUI.h;
   const sfx = H.sfx, notify = H.notify, openTerm = H.openTerm;
+  const mountConsole = H.mountConsole;
 
   /* ============== MESSAGING — every messaging platform the agent can be reached on ==============
      One catalog drives the whole CHANNELS panel: each entry supplies the platform copy (setup guide, field
@@ -142,12 +143,16 @@
         okMsg: '✓ connected — message the agent on Signal' }
     ];
 
-    // ---- panel shell: intro + ONE shared autonomous-ping opt-in, then a card per catalog entry ----
+    // ---- console shell (the SETTINGS layout): left platform rail, one pane per platform ----
+    // OVERVIEW carries the intro copy, the ONE shared autonomous-ping opt-in, and a live per-platform summary
+    // (click a row → jump to that platform's pane). Each platform pane hosts the SAME catalog-generated card as
+    // the old single-scroll panel — every control id (tg-token, sl-bot-token, …) is unchanged, and mountConsole
+    // mounts ALL panes into `body` up-front, so the body.querySelector wiring + wire source-guards are untouched.
     // The "keeps working headless" promise is FULL-CONTRAST (a real capability, not fine print), lifted out of the
     // opacity-.55 intro. The opt-in label reads as a plain sentence with its description on its own line.
-    let html =
+    const overviewHtml =
       '<p class="set-about">Reach your agents from real messaging apps. A connected channel talks to the <b>same agent</b> you see here ' +
-        '(same memory, tools, and workspace) — and on Telegram you can give <b>each agent its own bot</b>, a separate contact that always answers as that agent (see AGENT BOTS below).</p>' +
+        '(same memory, tools, and workspace) — and on Telegram you can give <b>each agent its own bot</b>, a separate contact that always answers as that agent (see AGENT BOTS on the TELEGRAM pane).</p>' +
       // HONESTY (2026-07-15): closing the desktop app STOPS the sidecar (the shell reaps it on exit), so "works
       // with the app closed" was a false promise — and some channels deliberately discard the offline backlog on
       // reconnect (anti-stale-directive). Claim exactly what the harness proves: headless of THIS window, alive
@@ -155,10 +160,18 @@
       '<p class="ch-headless">It keeps working <b>headless</b> — a DM runs your agent even with this window closed, as long as the station app is running. Messages sent while the station is fully off are <b>not</b> processed — you get an honest "I was offline" note instead.</p>' +
       '<label class="set-row ch-optin"><input type="checkbox" id="ch-notify"> <span class="ch-optin-t">Message me on my connected channels when my agent finishes autonomous work</span>' +
         '<span class="ch-optin-d dim">A routine that runs on its own and produces something pings you on every channel you\'ve connected.</span></label>' +
-      '<div id="ch-notify-msg" class="msg"></div>';
-    for (const c of CHANNEL_CATALOG) {
-      html +=
-        '<div class="ch-card" id="ch-card-' + c.id + '" style="--accent:' + c.accent + '">' +
+      '<div id="ch-notify-msg" class="msg"></div>' +
+      // live platform summary — painted from the SAME proven bulk status as the cards (never a second truth).
+      '<div class="ch-sum"><div class="ch-bots-head">PLATFORMS <span class="dim">— pick one to set it up</span></div>' +
+        CHANNEL_CATALOG.map(c =>
+          '<button type="button" class="ch-sum-row" data-ch="' + c.id + '" style="--accent:' + c.accent + '">' +
+            '<span class="ch-coin"><span class="ch-glyph">' + c.glyph + '</span></span>' +
+            '<span class="ch-sum-t">' + c.title + (c.advanced ? ' <span class="ch-adv">ADVANCED</span>' : '') + '</span>' +
+            '<span class="ch-state st-off" id="' + c.pre + '-sum">checking…</span>' +
+          '</button>').join('') +
+      '</div>';
+    function cardHtml(c) {
+      return '<div class="ch-card" id="ch-card-' + c.id + '" style="--accent:' + c.accent + '">' +
           '<div class="ch-head">' +
             '<span class="ch-coin"><span class="ch-glyph">' + c.glyph + '</span></span>' +
             '<div class="ch-id">' +
@@ -182,7 +195,26 @@
           (c.extraHtml || '') +
         '</div>';
     }
-    body.innerHTML = html;
+    mountConsole(body, 'messaging', [
+      { id: 'overview', label: 'OVERVIEW', glyph: '⌂', build: (pane) => { pane.innerHTML = overviewHtml; } }
+    ].concat(CHANNEL_CATALOG.map(c => ({
+      id: c.id, label: c.title, glyph: c.glyph,
+      build: (pane) => { pane.innerHTML = cardHtml(c); }
+    }))));
+    // rail truth dots: one per platform tab, painted from the same proven status as its card (paintCard).
+    for (const c of CHANNEL_CATALOG) {
+      const tab = body.querySelector('#con-tab-messaging-' + c.id);
+      if (tab) {
+        const d = document.createElement('span');
+        d.className = 'ch-rail-dot st-off'; d.id = c.pre + '-dot'; d.textContent = '●';
+        tab.appendChild(d);
+      }
+    }
+    // overview rows jump to the platform pane by driving the REAL rail tab (active state/aria stay correct).
+    body.querySelectorAll('.ch-sum-row').forEach(row => row.addEventListener('click', () => {
+      const t = body.querySelector('#con-tab-messaging-' + row.dataset.ch);
+      if (t) { t.click(); sfx('click'); }
+    }));
 
     // per-card mutable UI state kept out of the DOM: are we mid-connect (finalize the msg from the PROVEN status,
     // not the POST), and the saved placeholders (restored when a card goes back to un-configured).
@@ -253,6 +285,15 @@
       // a standing backend warning (e.g. the owner binding failed to persist) rides EVERY state — real risk
       // the Commander must see, straight from channelStatusPayload (self-heals server-side once the disk agrees).
       if (st && st.warning) el.textContent += ' ⚠ ' + st.warning;
+      // rail dot + overview summary row ride the SAME proven status (one truth, three projections)
+      const dot = body.querySelector('#' + c.pre + '-dot');
+      if (dot) dot.className = 'ch-rail-dot ' + stateClass(conn, inFlight, state, configured);
+      const sum = body.querySelector('#' + c.pre + '-sum');
+      if (sum) {
+        sum.className = 'ch-state ' + stateClass(conn, inFlight, state, configured);
+        sum.textContent = conn ? '● connected' : inFlight ? '◐ connecting…'
+          : state === 'error' ? '✕ error' : configured ? '○ saved — offline' : '○ not connected';
+      }
       if (c.prefill) { try { c.prefill(body, st); } catch (_) {} }
       const card = body.querySelector('#ch-card-' + c.id);
       if (card) card.classList.toggle('on', conn);
@@ -326,6 +367,10 @@
         for (const c of CHANNEL_CATALOG) {
           const el = body.querySelector('#' + c.pre + '-status');
           if (el) { el.className = 'ch-state st-off'; el.textContent = '○ sidecar offline'; }
+          const dot = body.querySelector('#' + c.pre + '-dot');
+          if (dot) dot.className = 'ch-rail-dot st-off';
+          const sum = body.querySelector('#' + c.pre + '-sum');
+          if (sum) { sum.className = 'ch-state st-off'; sum.textContent = '○ sidecar offline'; }
           configuredById[c.id] = false;
         }
       }
@@ -578,5 +623,5 @@
     refreshAll();
   }
 
-  StationUI.registerWindow('messaging', 'CHANNELS', buildMessaging, { w: '520px' });   // dock label = window title (it's Telegram/external channels, not COMMS)
+  StationUI.registerWindow('messaging', 'CHANNELS', buildMessaging, { console: true });   // console mode = the wide SETTINGS-style two-pane window; dock label = window title (it's Telegram/external channels, not COMMS)
 })();
