@@ -91,6 +91,11 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
         SKYNET_CUSTOM_OPENAI_BASE_URL: '',
         // GROUND_UP_AUDIT P2: the packaged app injects its version via STARNET_APP_VERSION (src-tauri/ isn't a
         // bundled resource, so /api/version's conf lookup returns blank there). Set it so /api/version proves the
+        // Budget-legibility pass (2026-07-23): the SHIPPED defaults are now perRun $10 with every cross-run pool
+        // UNGOVERNED (0). This suite's budget assertions prove ENFORCEMENT mechanics (status pools, one-click
+        // resume), so pin the old governed caps via env — deterministic regardless of shipped defaults or a dev
+        // machine's ambient SKYNET_BUDGET_* values.
+        SKYNET_BUDGET_PER_RUN: '3', SKYNET_BUDGET_PER_AGENT: '5', SKYNET_BUDGET_PER_DAY: '40', SKYNET_BUDGET_GLOBAL: '100',
         // env-first fallback + honest appSource='env' below.
         STARNET_APP_VERSION: '9.9.9-http-test',
         // Clear any ambient build stamp so the DEFAULT boot deterministically exercises the harness git-describe

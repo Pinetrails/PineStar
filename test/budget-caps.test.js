@@ -11,7 +11,7 @@ const path = require('path');
 const A = require('./_assert.js');
 const bc = require('../sidecar/budgetcaps.js');
 
-const ENV = { perRun: 3, perAgent: 5, perDay: 40, global: 100 };   // the shipped BUDGET_CAPS env defaults
+const ENV = { perRun: 3, perAgent: 5, perDay: 40, global: 100 };   // a fully-governed caps baseline (resolveCaps is pure — shipped defaults since 2026-07-23 are perRun $10, pools 0/ungoverned)
 
 // ---------- 1. PURE resolve precedence ----------
 {

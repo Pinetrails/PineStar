@@ -56,7 +56,13 @@
       // ADDITIVE (optional, Lane 5): WHY the provider stopped when it was a truncation/policy cut. Present ONLY
       // for the non-clean stops so the frontend can render a "cut short" recap instead of a delivered crate; a
       // clean run omits it entirely (old payloads stay valid — not required, no additionalProperties:false).
-      finishReason: { enum: ['length', 'content_filter'] }
+      finishReason: { enum: ['length', 'content_filter'] },
+      // ADDITIVE (optional, 2026-07-23, budget-stop legibility, Andrew-approved): WHICH spend cap ended a
+      // 'budget' run — scope ('run' per-run hard cap / 'agent' lifetime / 'day' / 'global' pool) + the effective
+      // $ cap at the moment it fired — so the frontend can say "hit the $3 per-run spend cap → BUDGET settings"
+      // instead of an unexplained stop. Present ONLY when reason === 'budget'; old payloads stay valid.
+      budgetScope: { enum: ['run', 'agent', 'day', 'global'] },
+      budgetCapUsd: num
     }),
     'agent.run.error': obj(['agentId', 'runId', 'message', 'transient'], {
       agentId: str, runId: str, message: str, transient: bool

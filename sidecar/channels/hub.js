@@ -32,9 +32,20 @@
     + '(web search/read, files, memory) — use them and report what you actually found.';
 
   // why a stopped run ended, as a short human note appended to the reply (mirrors chat.js endReason handling).
-  function endNote(reason) {
+  // A 'budget' stop names WHICH spend cap fired (scope/cap ride the additive agent.run.end fields; absent on an
+  // old payload → the generic money line) so a channel user isn't sent hunting through runtime settings.
+  function budgetNote(scope, capUsd) {
+    const cap = (typeof capUsd === 'number' && isFinite(capUsd) && capUsd >= 0.01) ? '$' + capUsd.toFixed(2).replace(/\.00$/, '') + ' ' : '';   // sub-cent caps would read "$0.00"
+    const what = scope === 'run' ? 'hit the ' + cap + 'per-run spend cap'
+      : scope === 'agent' ? 'this agent hit its ' + cap + 'lifetime spend cap'
+      : scope === 'day' ? 'hit the ' + cap + 'daily spend cap'
+      : scope === 'global' ? 'hit the ' + cap + 'all-time spend cap'
+      : 'hit a spend cap';
+    return '\n\n(' + what + ' — raise or remove it in the app under MISSION CONTROL → BUDGET.)';
+  }
+  function endNote(reason, state) {
     if (reason === 'max_iters') return '\n\n(reached the step limit — message "continue" to keep going.)';
-    if (reason === 'budget') return '\n\n(reached this run\'s cost limit.)';
+    if (reason === 'budget') return budgetNote(state && state.budgetScope, state && state.budgetCapUsd);
     if (reason === 'cancelled') return '';
     if (reason === 'clarifying') return '';   // a Task Brief question IS the reply — never a "(stopped: …)" note
     if (reason === 'refusal') return '';
@@ -557,7 +568,7 @@
           else if (name === 'agent.token') state.buf += (p.delta || '');
           else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
           else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
-          else if (name === 'agent.run.end') state.reason = p.reason;
+          else if (name === 'agent.run.end') { state.reason = p.reason; state.budgetScope = p.budgetScope || null; state.budgetCapUsd = (typeof p.budgetCapUsd === 'number' && isFinite(p.budgetCapUsd)) ? p.budgetCapUsd : null; }
         };
 
         try {
@@ -625,7 +636,7 @@
           }
         }
         if (reply) { try { store.appendTurn(agentId, 'assistant', reply); } catch (_) {} }
-        if (state.reason && state.reason !== 'done') reply += endNote(state.reason);
+        if (state.reason && state.reason !== 'done') reply += endNote(state.reason, state);
       }
       await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), agentId);
     }

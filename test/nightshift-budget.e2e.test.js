@@ -81,11 +81,12 @@ async function armAndStatus(B) {
   // ===== 2. a cross-run BUDGET pool is exhausted → a pre-spend 'budget' stand-down that OUTRANKS 'no-provider' =====
   {
     const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-nsbudget-exhausted-'));
-    // seed the spend ledger with a finished run that blows every default cap (agent $5 / day $40 / global $100) and
-    // lands in the trailing-day window (ts ~ now), so budget.check reports the pool blocked at boot.
+    // seed the spend ledger with a finished run that blows the governed pools and lands in the trailing-day
+    // window (ts ~ now), so budget.check reports the pool blocked at boot. The shipped defaults are now
+    // UNGOVERNED (budget-legibility pass 2026-07-23), so the pools under test are pinned via env.
     const rec = { runId: 'seed-exhaust', agentId: 'agent', turns: 1, usd: 999, tokens: 1000, model: 'seed', ts: Date.now() };
     fs.writeFileSync(path.join(ws, 'ledger.jsonl'), JSON.stringify(rec) + '\n');
-    const env = { SKYNET_WORKSPACES: ws, SKYNET_DEV: '1', SKYNET_NIGHTSHIFT_AWAY_MS: '1' };
+    const env = { SKYNET_WORKSPACES: ws, SKYNET_DEV: '1', SKYNET_NIGHTSHIFT_AWAY_MS: '1', SKYNET_BUDGET_PER_AGENT: '5', SKYNET_BUDGET_PER_DAY: '40', SKYNET_BUDGET_GLOBAL: '100' };
     let { child, port } = await boot(8980 + (process.pid % 25), env, 20);
     const B = 'http://' + HOST + ':' + port;
     try {

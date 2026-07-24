@@ -313,11 +313,17 @@ const CAPS = { maxIters: resolveKnob('MAX_ITERS', 'maxIters', 40), maxCostUsd: 1
 // num() passes a parsed value through (including 0 -> UNGOVERNED via budget.js capOf, e.g. SKYNET_BUDGET_PER_DAY=0
 // disables the day pool); only an empty/missing/negative/non-numeric value falls back to the default.
 const num = (v, d) => { if (v == null || String(v).trim() === '') return d; const n = Number(v); return (typeof n === 'number' && !isNaN(n) && n >= 0) ? n : d; };
+// DEFAULTS (2026-07-23, Andrew-approved budget-legibility pass): ONE generous per-run seatbelt for metered
+// (real-$) runs; every cross-run pool defaults OFF. The old dev-era defaults ($3 run / $5 AGENT LIFETIME /
+// $40 day / $100 global) silently strangled normal heavy use — the per-agent lifetime cap especially stopped
+// every run of an agent forever after $5 of ordinary work. Users can still set any cap in SETTINGS → BUDGET
+// (0/blank = no cap), and env vars still override for locked-down deploys. Unmetered (OAuth-subscription)
+// runs skip the per-run cap entirely at admission — their $ figures are estimates against a flat subscription.
 const BUDGET_CAPS = {
-  perRun: num(ENV('BUDGET_PER_RUN'), 3),
-  perAgent: num(ENV('BUDGET_PER_AGENT'), 5),   // multi-agent fairness rail: one agent's cumulative spend (0 = ungoverned)
-  perDay: num(ENV('BUDGET_PER_DAY'), 40),
-  global: num(ENV('BUDGET_GLOBAL'), 100)
+  perRun: num(ENV('BUDGET_PER_RUN'), 10),
+  perAgent: num(ENV('BUDGET_PER_AGENT'), 0),   // multi-agent fairness rail: one agent's cumulative spend (0 = ungoverned; default OFF — a lifetime cap punishes engagement, not runaways)
+  perDay: num(ENV('BUDGET_PER_DAY'), 0),
+  global: num(ENV('BUDGET_GLOBAL'), 0)
 };
 // Multi-agent fan-out ceiling: the max number of DISTINCT agents that may have paid runs in flight at once
 // (hero + summoned crew). The day/global pools already cap aggregate $; this caps how many loops light up in
@@ -7854,8 +7860,12 @@ async function runOnce(o) {
   // model is called; unused headroom refunds at settle. Codex/unmetered runs never touch managed credit. When
   // credits aren't configured, credits.beginRun() is an inert byok pass-through — zero behaviour change.
   // The per-run cap the loop enforces (o.maxCostUsd override, else the Balanced perRun; 0/∞ => ungoverned).
+  // An UNMETERED (OAuth-subscription) run skips the default per-run $ cap: its "spend" is a token estimate
+  // against a flat subscription, so stopping it at $N stops it at an imaginary number (2026-07-23, Andrew-
+  // approved). An EXPLICIT caller cap (o.maxCostUsd — e.g. a delegated worker's perWorker) is still honored.
   const runCapUsd = (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd
-    : ((effectiveCaps.perRun > 0 && isFinite(effectiveCaps.perRun)) ? effectiveCaps.perRun : Infinity);
+    : (providerUnmetered ? Infinity
+    : ((effectiveCaps.perRun > 0 && isFinite(effectiveCaps.perRun)) ? effectiveCaps.perRun : Infinity));
   const managedRun = credits.configured() && !providerUnmetered;
   if (managedRun) {
     // a managed reservation needs a FINITE cap to hold; an ungoverned per-run can't be pre-authorized.
@@ -8284,7 +8294,9 @@ async function runOnce(o) {
   }
   // per-run adapter onto the shared cross-run budget: the loop calls check(spentThisRun) each turn; the budget
   // emits any threshold crossing down THIS run's bus and returns a block when a soft pool cap is hit.
-  const runBudget = { check: (spentThisRun) => budget.check(runId, agentId, spentThisRun, Date.now(), emit) };
+  // An unmetered (OAuth-subscription) run is exempt from the cross-run $ pools too — its estimates would
+  // otherwise block runs against caps that guard money it isn't spending (2026-07-23, with the perRun exemption).
+  const runBudget = providerUnmetered ? null : { check: (spentThisRun) => budget.check(runId, agentId, spentThisRun, Date.now(), emit) };
 
   // a task needs tool calls — refuse a model we KNOW can't call tools, up front, with an actionable message
   // (supportsTools returns null when the catalog is cold, so this never false-refuses a real model).

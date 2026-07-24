@@ -28,6 +28,9 @@ const cases = [
   // Lane 5 ADDITIVE finishReason: an optional enum ('length'|'content_filter') the frontend reads to render a
   // "cut short" recap. A clean run omits it (covered above — still valid); a bad enum value is rejected.
   ['agent.run.end', { agentId: 'a', runId: 'r', reason: 'done', turns: 2, usd: 0.2, finishReason: 'length' }, { agentId: 'a', runId: 'r', reason: 'done', turns: 2, usd: 0.2, finishReason: 'stop' }],
+  // ADDITIVE budget-stop legibility (2026-07-23): optional budgetScope/budgetCapUsd name WHICH spend cap ended a
+  // 'budget' run. A run without them stays valid (covered above); a bad scope value is rejected.
+  ['agent.run.end', { agentId: 'a', runId: 'r', reason: 'budget', turns: 2, usd: 3.01, budgetScope: 'run', budgetCapUsd: 3 }, { agentId: 'a', runId: 'r', reason: 'budget', turns: 2, usd: 3.01, budgetScope: 'weekly' }],
   ['provider.fallback', { agentId: 'a', runId: 'r', fromModel: 'm1', toModel: 'm2', reason: 'rate_limit', rotate: true }, { agentId: 'a', runId: 'r', fromModel: 'm1', toModel: 'm2' }],
   ['budget.threshold', { scope: 'run', usd: 1, cap: 5 }, { scope: 'weekly', usd: 1, cap: 5 }],
   ['permission.response', { promptId: 'p', decision: 'full' }, { promptId: 'p', decision: 'maybe' }],

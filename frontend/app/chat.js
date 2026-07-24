@@ -4101,6 +4101,30 @@ const Chat = (() => {
   function offerTryAgain() {
     choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast());
   }
+  // Budget-stop legibility (2026-07-23): a 'budget' stop names WHICH spend cap fired and how big it is, in money
+  // words — the old "reached this run's limit" read as a runtime setting and sent users hunting in the wrong
+  // panel. Scope/cap ride the additive agent.run.end fields; an old sidecar omits them and gets the generic line.
+  function budgetStopLine(scope, capUsd) {
+    // only show the $ figure when it renders honestly at cent precision (a sub-cent test cap would read "$0.00")
+    const cap = (typeof capUsd === 'number' && isFinite(capUsd) && capUsd >= 0.01) ? '$' + capUsd.toFixed(2).replace(/\.00$/, '') + ' ' : '';
+    const what = scope === 'run' ? 'hit the ' + cap + 'per-run spend cap'
+      : scope === 'agent' ? 'this agent hit its ' + cap + 'lifetime spend cap'
+      : scope === 'day' ? 'hit the ' + cap + 'daily spend cap'
+      : scope === 'global' ? 'hit the ' + cap + 'all-time spend cap'
+      : 'hit a spend cap';
+    return what + ' — raise or remove it in MISSION CONTROL → BUDGET';
+  }
+  // the budget stop's door: open SETTINGS straight on the BUDGET section (the same openTerm(key, section)
+  // mechanism friendlyerror's doors use), with retry alongside for after the user has raised the cap.
+  function offerBudgetDoor() {
+    choices([
+      { label: '$ OPEN BUDGET SETTINGS', value: 'budget' },
+      { label: '↻ Try again', value: 'retry', quiet: true }
+    ], it => {
+      if (it && it.value === 'retry') { retryLast(); return; }
+      try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings', 'budget'); } catch (_) {}
+    });
+  }
   // a one-tap recovery chip dropped under a failed turn (reuses the suggestion-pill row, which self-removes on
   // tap). CONTEXT-AWARE on the classified verdict: a retryable fault offers "↻ Try again"; an auth/billing
   // fault points at SETTINGS (fix the key) instead of a doomed retry; a capability denial points at SKILLS;
@@ -5322,7 +5346,7 @@ const Chat = (() => {
       if (chunk.trim()) { Voice.speakChunk(chunk, name); spokenIdx += cut; }
     };
     try {
-      const { text: reply, error, endReason, finishReason } = await Harness.chat({
+      const { text: reply, error, endReason, finishReason, budgetScope, budgetCapUsd } = await Harness.chat({
         system: sys, messages: historyWindow(ws), agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
         taskAction: taskAction || undefined,
         recipeId: recipeId || undefined,   // provenance spine: the launching recipe rides to the durable run row (undefined for non-recipe runs)
@@ -5440,11 +5464,13 @@ const Chat = (() => {
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
         if (endReason && endReason !== 'done' && endReason !== 'clarifying' && !taskQuestion) {
           if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
-            : endReason === 'budget' ? 'reached this run\'s limit'
+            : endReason === 'budget' ? budgetStopLine(budgetScope, budgetCapUsd)
             : endReason === 'cancelled' ? (interrupted.has(ws.id) ? 'stopped' : 'run cancelled')
             : 'stopped (' + endReason + ')'));
           markStoppedTurn(ws, replyText);
-          if (isActiveWs(ws)) offerTryAgain();
+          // a budget stop's honest door is the BUDGET settings section, not a doomed retry (the same cap fires
+          // again immediately); every other stop keeps the plain retry chip.
+          if (isActiveWs(ws)) { if (endReason === 'budget') offerBudgetDoor(); else offerTryAgain(); }
           if (typeof StationUI !== 'undefined') StationUI.notify('run stopped: ' + endReason, 'warn');
         } else if (cutShort) {
           // distinct honest "cut short" recap: the reply is truncated/filtered, not a clean delivery.
