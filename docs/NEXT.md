@@ -1475,6 +1475,19 @@ Four-surface grep audit (COMMS / sessions / global-desktop / harness). Each item
 verified MISSING or slash-only on trunk 626c017f before listing. Claim an item here before
 building it (same law as Atlas areas).
 
+_**CLAIMED 2026-07-24 — command-doors lane** (`claude/starnet-command-improvements-753256`):
+adds a `dispatch:'server'` directive type to the slash registry (sidecar/slash.js +
+sidecar/slash-actions.js) so a command's door is DECLARED in the registry and EXECUTED in the
+sidecar, returning one honest text line — instead of a hand-wired `fetch()` per command in
+chat.js. Ships three commands on that seam: `/routine` (cron CRUD — list/add/preview/run/
+pause/rm; partially pays GA-9's "engine without UI" debt from the chat side), `/away` (the
+away-workshop subsystem: 14 routes, today reachable only via the catalog-orphan `/build-away`),
+and `/loop` (in-session interval watcher — distinct from `/goal`'s judge-driven continuation
+and from a persisted routine). Also folds `/build-away` into the server catalog, fixing the
+drift where it existed ONLY in chat.js's fallback list. Does NOT touch: `localLine` restyle
+(parked for Andrew, line ~1771), per-chat `/model` semantics (DECISIONS.md:22), or
+shared/events.js._
+
 **T1 — chat core (COMMS), daily pain:**
 - GA-1 Attachments: ALREADY BUILT on `agent/comms-attach` d9f7d9c7 (unmerged) — MERGE, don't rebuild.
 - GA-2 Markdown/code-block rendering + per-code-block copy (renderProse = escape+linkify only; chat.js:314-333).
