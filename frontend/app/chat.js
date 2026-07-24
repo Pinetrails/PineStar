@@ -2945,22 +2945,43 @@ const Chat = (() => {
   }
   function briefReadCard(ws, p) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('tb-read');
+    // The label is its own small caption, NOT a prefix on the objective: "▸ my read: " used to eat the front of
+    // the one line that matters, so the objective started mid-sentence at caption size. Caption above, objective
+    // as the card's headline.
+    const cap = document.createElement('div'); cap.className = 'tb-read-cap';
+    cap.textContent = 'my read';
+    r.body.appendChild(cap);
     const head = document.createElement('div'); head.className = 'tb-read-head';
-    head.textContent = '▸ my read: ' + p.objective;
+    head.textContent = p.objective;
     r.body.appendChild(head);
+    // Key/value ROWS, not a ' · '-joined run-on: these three answer different questions (what comes out / who it's
+    // for / when it's done) and each value is a full clause, so a single wrapped line made them unscannable.
     const meta = [];
-    if (p.deliverable) meta.push('deliverable: ' + p.deliverable);
-    if (p.audience) meta.push('for: ' + p.audience);
-    if (p.success) meta.push('done when: ' + p.success);
-    if (meta.length) { const m = document.createElement('div'); m.className = 'tb-read-meta'; m.textContent = meta.join(' · '); r.body.appendChild(m); }
+    if (p.deliverable) meta.push(['deliverable', p.deliverable]);
+    if (p.audience) meta.push(['for', p.audience]);
+    if (p.success) meta.push(['done when', p.success]);
+    if (meta.length) {
+      const m = document.createElement('div'); m.className = 'tb-read-meta';
+      for (const [k, v] of meta) {
+        const mr = document.createElement('div'); mr.className = 'tb-read-mrow';
+        const mk = document.createElement('span'); mk.className = 'tb-read-mk'; mk.textContent = k + ' — ';   // separator lives in REAL text, not a ::after — #chat-log is a selectable transcript and generated content doesn't copy
+        const mv = document.createElement('span'); mv.className = 'tb-read-mv'; mv.textContent = v;
+        mr.appendChild(mk); mr.appendChild(mv); m.appendChild(mr);
+      }
+      r.body.appendChild(m);
+    }
     const line = document.createElement('div'); line.className = 'tb-read-fix';
     const input = document.createElement('input'); input.className = 'tb-read-in';
     input.placeholder = 'correct anything — it folds straight into the run';
     const asum = (Array.isArray(p.assumptions) ? p.assumptions : []).filter(Boolean);
     if (asum.length) {
+      // The chips carried no affordance copy — a dim '~ …' row reads as decoration, not as "tap this to argue".
+      const acap = document.createElement('div'); acap.className = 'tb-read-cap tb-read-cap2';
+      acap.textContent = 'assuming — tap to correct';
+      r.body.appendChild(acap);
       const wrap = document.createElement('div'); wrap.className = 'tb-read-assumps';
       for (const a of asum) {
-        const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'tb-read-assump'; chip.textContent = '~ ' + a;
+        const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'tb-read-assump'; chip.textContent = a;
         chip.onclick = () => { input.value = 'Not "' + a + '" — '; input.focus(); };   // tap = start the correction; the user's own words ARE the taste signal
         wrap.appendChild(chip);
       }

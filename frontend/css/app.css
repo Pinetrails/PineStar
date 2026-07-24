@@ -841,23 +841,51 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .tq-reason { font-size: 12px; color: var(--ph-dim); letter-spacing: 0.3px; margin-top: 3px; }
 
 /* TASTE EXTRACTION "my read" card (chat.js briefReadCard) — the mid-run announce-and-act read.
+   REGISTER (2026-07-24): this is a CARD, not a work-log micro-line. It states what the run believes it was
+   asked to do and carries the ONLY mid-run correction affordance, so it wears the in-log card language
+   .cmsg.consent/.cmsg.turnin already established (2px rail + inset wash + 15px) — but in PHOSPHOR, never
+   gold: gold in this log means "a decision is on you", and this card is explicitly non-blocking. It rides
+   .cmsg.tool for the beat plumbing (no copy button, no speaker header), and .cmsg.tool typesets 13.5px/dim
+   — every size + colour rule below is what lifts it back out of that whisper register.
    The assumption chips are CORRECTABLE guesses, so they wear the quiet dashed chip look (never the
    bright primary .choice — tapping one starts a correction, it doesn't accept anything). */
-.tb-read-head { font-size: 13px; letter-spacing: 0.4px; color: var(--ph-bright); text-shadow: 0 0 5px var(--ph-glow2); }
-.tb-read-meta { font-size: 12px; color: var(--ph-dim); letter-spacing: 0.3px; margin-top: 2px; }
-.tb-read-assumps { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; max-width: 100%; }
+.cmsg.tb-read {
+  font-size: 15px; margin: 7px 0; padding: 9px 12px 10px;
+  border-left: 2px solid var(--ph); border-radius: 0 5px 5px 0;
+  background: linear-gradient(180deg, rgba(var(--ph-rgb),.07), rgba(var(--ph-rgb),.02));
+  box-shadow: inset 0 1px 0 rgba(var(--ph-bright-rgb),.07), 0 0 10px var(--ph-glow2);
+}
+.tb-read-cap { font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--ph-dim); }
+.tb-read-cap2 { margin-top: 8px; }   /* the second caption ("assuming — …") opens a new block, so it needs air above */
+/* the objective is the headline — the one line the Commander must be able to disagree with at a glance */
+.tb-read-head {
+  font-size: 15px; line-height: 1.3; letter-spacing: 0.3px; margin-top: 2px;
+  color: var(--ph-bright); text-shadow: 0 0 5px var(--ph-glow2); overflow-wrap: anywhere;
+}
+/* meta = one ROW per field with the key as an INLINE prefix. A fixed key column looked tidier but at the
+   default 360px COMMS width it stole ~74px from values that are full clauses, costing more wrapped lines
+   than the column saved; inline keys keep the same scannable one-field-per-row read for 19px less height. */
+.tb-read-meta { margin-top: 5px; display: flex; flex-direction: column; gap: 2px; }
+.tb-read-mrow { font-size: 13px; line-height: 1.4; }
+.tb-read-mk { color: var(--ph-dim); letter-spacing: 0.5px; opacity: .85; }
+.tb-read-mv { color: var(--text); overflow-wrap: anywhere; }
+.tb-read-assumps { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 2px; max-width: 100%; }
 .tb-read-assump {
-  font: inherit; font-size: 12px; letter-spacing: 0.3px; cursor: pointer;
-  color: var(--ph-dim); background: transparent; text-shadow: none;
-  border: 1px dashed var(--ph-faint); border-radius: 4px; padding: 3px 8px;
+  font: inherit; font-size: 13px; letter-spacing: 0.3px; line-height: 1.25; cursor: pointer;
+  text-align: left; max-width: 100%; overflow-wrap: anywhere;
+  color: var(--ph); background: transparent; text-shadow: none;
+  border: 1px dashed var(--ph-dim); border-radius: 4px; padding: 4px 9px;
   transition: color .1s, border-color .1s, background-color .1s;
 }
 .tb-read-assump:hover, .tb-read-assump:focus-visible {
-  color: var(--ph-bright); border-color: var(--ph-dim); border-style: solid; background: var(--ph-faint); outline: none;
+  color: var(--ph-bright); border-color: var(--ph); border-style: solid; background: var(--ph-faint); outline: none;
 }
-.tb-read-fix { margin-top: 6px; }
-.tb-read-in { width: 100%; font-size: 13px; padding: 4px 8px; }
-.tb-read-ack { font-size: 12px; color: var(--ph); letter-spacing: 0.3px; }
+.tb-read-fix { margin-top: 7px; }
+/* SPECIFICITY, not preference: the base field rule is `input:not([type])` (0,1,1) and this input carries no
+   type attribute, so a bare `.tb-read-in` (0,1,0) LOSES — the correction box silently rendered at the 19px
+   form scale, making the emptiest element in the card its loudest. Scope to the card to win at (0,3,0). */
+.cmsg.tb-read .tb-read-in { width: 100%; box-sizing: border-box; font-size: 14px; padding: 6px 9px; }
+.tb-read-ack { font-size: 13px; line-height: 1.4; color: var(--ph); letter-spacing: 0.3px; }
 .tb-read-ack.err { color: var(--bad, #d66); }
 
 /* ===== THE DIALOGUE MODE (dialogue.js) — Fallout-style focused first-run conversation =====
