@@ -1144,25 +1144,51 @@ const StationBake = (() => {
       // a rounded corner belongs to the room it was cut from — take that room's wall palette so a
       // coloured room's corner arc doesn't revert to the old universal brown-grey.
       const cPal = wallPal(G.zoneGrid[G.idx(ccx, ccy)]);
-      b.save(); spandrelPath(b, kind, ax, ay, T); b.clip('evenodd');
-      b.fillStyle = hullC; b.fillRect(X - 1, Y - 1, T + 2, T + 2); b.restore();
-      b.lineWidth = 4.5; b.strokeStyle = wallDk; b.beginPath(); b.arc(ax, ay, T + 2.25, A.a0, A.a1); b.stroke();
-      b.lineWidth = 5; b.strokeStyle = cPal.face; b.beginPath(); b.arc(ax, ay, T - 2.5, A.a0, A.a1); b.stroke();
-      b.lineWidth = 1; b.strokeStyle = 'rgba(0,0,0,0.25)';
-      for (let k = 1; k <= 2; k++) {
-        const ang = A.a0 + (A.a1 - A.a0) * k / 3;
-        b.beginPath();
-        b.moveTo(ax + Math.cos(ang) * (T - 5), ay + Math.sin(ang) * (T - 5));
-        b.lineTo(ax + Math.cos(ang) * T, ay + Math.sin(ang) * T); b.stroke();
+      /* ONE INTEGER CURVE, SHARED BY EVERY LAYER (2026-07-24). This corner used to be six
+         anti-aliased arc() strokes at six different radii (T+2.25, T-2.5, T-5.5, HR-2, T-5..T)
+         plus a clip()+fill at radius T for the deck cut — so the deck ended on one curve, the wall
+         face sat on another and the crown on a third, and every one of them was AA'd against the
+         deck's hard 1px pixels. That is the ragged, unaligned corner.
+         Now: a single radius Rc is rasterized into exact per-ROW integer spans. A quarter circle
+         crosses each pixel row exactly once, so the spans are complete and gap-free, and the deck
+         cut, the wall face band and the outer dark band are all cut from that same edge — the deck
+         stops exactly where the wall starts. The face band TAPERS from the side wall's thickness at
+         the side end of the arc to the north wall's NFACE at the north end, so the corner flows
+         into whichever straight wall it meets instead of stepping. */
+      const Rc = T;                                  // THE chamfer radius — every layer uses this one
+      const sgnX = A.cx ? -1 : 1, sgnY = A.cy ? -1 : 1;
+      const fill = (x, y, w, h, c) => { if (w > 0 && h > 0) { b.fillStyle = c; b.fillRect(x, y, w, h); } };
+      const outerBand = U.shade(cPal.base, -0.62);   // the same contact-seam tone the straight walls use
+      for (let py = Y; py < Y + T; py++) {
+        const ady = Math.abs(py + 0.5 - ay);
+        // radial taper: 0 at the arc's side end (ady≈0) → 1 at its north/south end (ady≈Rc)
+        const tt = Math.min(1, ady / Rc);
+        const faceW = FACEW + 1 + (NFACE - FACEW - 1) * (sgnY < 0 ? tt : 0);
+        const rIn = Math.max(1, Rc - faceW);
+        const dxOut = ady >= Rc ? -1 : Math.sqrt(Rc * Rc - ady * ady);
+        const dxIn = ady >= rIn ? 0 : Math.sqrt(rIn * rIn - ady * ady);
+        if (dxOut < 0) { fill(X, py, T, 1, hullC); continue; }        // row lies wholly outside the curve
+        if (sgnX < 0) {
+          const edge = Math.round(ax - dxOut), inner = Math.round(ax - dxIn);
+          fill(X, py, edge - X, 1, hullC);                            // 1. cut the deck
+          fill(edge - 3, py, 3, 1, outerBand);                        // 2. dark band hugging the outside
+          fill(edge, py, Math.max(1, inner - edge), 1, cPal.face);    // 3. the interior wall face
+          fill(inner, py, 1, 1, outerBand);                           // 4. contact seam onto the deck
+        } else {
+          const edge = Math.round(ax + dxOut), inner = Math.round(ax + dxIn);
+          fill(edge + 1, py, X + T - edge - 1, 1, hullC);
+          fill(edge + 1, py, 3, 1, outerBand);
+          fill(Math.min(inner, edge), py, Math.max(1, edge - inner + 1), 1, cPal.face);
+          fill(inner, py, 1, 1, outerBand);
+        }
       }
-      b.lineWidth = 2; b.strokeStyle = '#28241b'; b.beginPath(); b.arc(ax, ay, HR - 2, A.a0, A.a1); b.stroke();
-      b.lineWidth = 1; b.strokeStyle = cPal.top; b.beginPath(); b.arc(ax, ay, T - 5.5, A.a0, A.a1); b.stroke();
+      b.lineWidth = 2; b.strokeStyle = '#28241b'; b.beginPath(); b.arc(ax, ay, HR - 2, A.a0, A.a1); b.stroke();   // HULL rim (its own, outer silhouette curve)
 
       // TALL WALL over a curved top corner: sweep the interior wall arc up-screen, easing from
       // full height at the north end down to zero at the side end (side walls carry no face),
       // so the raised north wall flows around the chamfer instead of stopping dead at it.
       if ((kind === 'tl' || kind === 'tr') && WALL.up > 0) {
-        const R = T - 0.5, up = Math.round(WALL.up), capH = Math.max(2, Math.round(WALL.capH));
+        const R = Rc, up = Math.round(WALL.up), capH = Math.max(2, Math.round(WALL.capH));   // Rc: the ONE chamfer curve
         const steps = Math.max(12, Math.ceil(R * 1.4));
         const pt = tt => {   // tt: 0 at the side end of the arc → 1 at the north end
           const ang = kind === 'tl' ? A.a0 + (A.a1 - A.a0) * tt : A.a1 - (A.a1 - A.a0) * tt;
