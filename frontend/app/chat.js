@@ -1776,6 +1776,10 @@ const Chat = (() => {
     // NS-5 conversational path trust: a file was referenced OUTSIDE the agent's workspace — "Always" blesses
     // the whole project folder for future reads (revocable in Permissions); argsSummary is the proposed root.
     if (t === 'path.trust') return 'work with files in ' + (ev.argsSummary || 'a project folder') + ' (reads; "Always" trusts it for later)';
+    // ATTENDED BROWSER LOGIN: two-phase takeover. Phase 1 asks to open a visible Chrome window the COMMANDER
+    // drives; phase 2 holds the run until they click Done. Password honesty is part of the card copy.
+    if (t === 'browser.login') return 'open a browser window so YOU can log in to ' + (ev.argsSummary || 'a website') + ' (you type your password in that window — the agent never sees it)';
+    if (t === 'browser.login.done') return 'wait while you log in to ' + (ev.argsSummary || 'the website') + ' in the browser window — click Done here when you\'ve finished';
     if (/write|append|edit/.test(t)) return 'write ' + (ev.argsSummary || 'a file');
     return t.replace(/_/g, '.') + (ev.argsSummary ? ' ' + ev.argsSummary : '');
   }
@@ -1818,10 +1822,20 @@ const Chat = (() => {
       b.onclick = () => decide(decision, doneLabel, isDeny);
       btns.appendChild(b); return b;
     };
-    mk('Approve once', 'once', '', '✓ approved once', false);
-    mk('Always', 'always', '', '✓ always allowed', false);
-    mk('Full access', 'full', 'danger', '✓ full access', false);
-    mk('Deny', 'deny', 'deny', '✕ denied', true);
+    // ATTENDED BROWSER LOGIN cards get purpose-built buttons: "Always"/"Full access" make no sense for a
+    // one-shot window open, and the done-wait card is a completion signal, not a permission grade.
+    if (p.tool === 'browser.login') {
+      mk('Open login window', 'once', '', '✓ window opened', false);
+      mk('Deny', 'deny', 'deny', '✕ denied', true);
+    } else if (p.tool === 'browser.login.done') {
+      mk('Done — I\'ve logged in', 'once', '', '✓ done', false);
+      mk('Cancel', 'deny', 'deny', '✕ cancelled', true);
+    } else {
+      mk('Approve once', 'once', '', '✓ approved once', false);
+      mk('Always', 'always', '', '✓ always allowed', false);
+      mk('Full access', 'full', 'danger', '✓ full access', false);
+      mk('Deny', 'deny', 'deny', '✕ denied', true);
+    }
     r.body.appendChild(btns);
     // a blocking, run-pausing prompt: make it keyboard-operable. Esc on the focused CONTAINER = Deny (the row,
     // not a button — so a reflexive Enter never lands on Approve and greenlights a write the user didn't read).
