@@ -593,6 +593,29 @@
     let driverHeaded = null;                    // the REAL driver's current mode (null = none yet)
     let version = 0, seq = 0, localMode = false, localOrigin = null;
     const refs = new Map();
+    // ATTENDED LOGIN (persistent profile): deps.persistentProfile = { dir, acquire(), release() } names the
+    // ONE durable station browser profile (cookies survive run end and sidecar restarts). acquire/release is
+    // an in-process single-owner lease supplied by the host — Chrome cannot share a user-data-dir between
+    // processes, and one-sidecar-per-save-dir is a hard invariant, so an in-process lease is sufficient.
+    // Every run TRIES the persistent profile first (so research runs browse with saved logins) and quietly
+    // falls back to the caller's ephemeral profile when another run holds the lease.
+    let leaseHeld = false;
+    function acquirePersistent() {
+      const pp = deps.persistentProfile;
+      if (!pp || !pp.dir || typeof pp.acquire !== 'function') return false;
+      if (leaseHeld) return true;
+      try { leaseHeld = pp.acquire() === true; } catch (_) { leaseHeld = false; }
+      return leaseHeld;
+    }
+    function profileDeps() {
+      // cleanupProfile:false is load-bearing — the durable profile must never ride the ephemeral rm on close.
+      return acquirePersistent() ? { profileDir: deps.persistentProfile.dir, cleanupProfile: false } : {};
+    }
+    function releasePersistent() {
+      const pp = deps.persistentProfile;
+      if (leaseHeld && pp && typeof pp.release === 'function') { try { pp.release(); } catch (_) {} }
+      leaseHeld = false;
+    }
     /* ensureDriver(wantVisible):
          undefined  -> reuse whatever is running (or start HEADLESS — the default posture).
          false/true -> if the running driver's mode differs, RELAUNCH in the requested mode on the same
@@ -607,8 +630,19 @@
         try { driver.close(); } catch (_) {}   // mode change -> relaunch (SIGKILL frees the CDP port)
         driver = null;
       }
-      driver = makeDriver(Object.assign({}, deps, { headed }));
+      driver = makeDriver(Object.assign({}, deps, profileDeps(), { headed }));
       driverHeaded = headed;
+      return driver;
+    }
+    // Tear down the current driver and relaunch with explicit overrides on the SAME persistent profile
+    // (cookies survive the swap). Injected test drivers never mode-switch — the flow still runs so the
+    // consent contract is testable, but the driver object stays the same.
+    function relaunch(overrides) {
+      if (injected) return driver;
+      if (driver) { try { driver.close(); } catch (_) {} driver = null; }
+      driver = makeDriver(Object.assign({}, deps, profileDeps(), overrides));
+      driverHeaded = !!overrides.headed;
+      version++;   // any element refs belong to the torn-down browser
       return driver;
     }
     function refFor(node) {
@@ -697,7 +731,62 @@
       // No vision provider wired — do NOT fake an answer. Report honestly.
       return { ok: false, bytes, reason: 'no vision route wired into this run — do not ask the user for an API key; report the screenshot as unavailable' };
     }
-    async function close() { if (driver && driver.close) await driver.close(); }
+    /* ATTENDED LOGIN TAKEOVER: the agent hit a login wall and asks the Commander to sign in THEMSELVES.
+       Two live consent asks bracket a headed relaunch on the persistent profile:
+         1. permission.prompt tool:'browser.login'      — "open a visible window so you can log in to <host>?"
+         2. permission.prompt tool:'browser.login.done' — blocks until the Commander clicks Done (or cancels).
+       While the window is up, synthetic-input shims are OFF (the human is driving real Chrome; SSO popups and
+       redirects must work) and the agent's driving tools are the ones paused — this function doesn't return
+       until the window is torn down and the browser is back to shimmed HEADLESS mode on the same profile.
+       Credentials are typed into real Chrome by the human; they never transit the agent or the sidecar.
+       Fail-closed inheritance: both asks ride the run's consent channel (auto-deny on timeout/disconnect),
+       and env-pinned headless (CI/soak) refuses before any window can appear. */
+    async function login(url) {
+      const attended = deps.attendedLogin;
+      if (!attended || typeof attended.prompt !== 'function') {
+        throw new Error('browser.login needs a watched COMMS session — an unattended run cannot open a login window for the Commander');
+      }
+      if (headlessRequested(deps.env) || deps.headless === true) {
+        throw new Error('browser.login unavailable: this host pins the browser headless (STARNET_BROWSER_HEADLESS)');
+      }
+      const u = assertSafeUrl(url);
+      const host = hostOf(u);
+      const approved = d => !!d && d !== 'deny';
+      if (!approved(await attended.prompt({ tool: 'browser.login', scope: 'execute', argsSummary: host }))) {
+        return { status: 'declined', host };
+      }
+      // The durable profile is what makes the login outlive this run. When a host wires one, contention is a
+      // hard stop (logging into a throwaway profile would silently lose the session at run end — dishonest);
+      // a host with NO persistent profile still gets a within-run login on its ephemeral profile.
+      if (deps.persistentProfile && !acquirePersistent()) {
+        throw new Error('the station browser profile is in use by another agent run — retry after it finishes');
+      }
+      // Headed + real input: forceHeadless is HOST authority for model-driven navigation; this relaunch is
+      // human-consented (the prompt above), so it may override it. syntheticInputOnly:false drops the popup
+      // block and input shims — SSO login flows need real popups and the human's real pointer.
+      const d = relaunch({ headed: true, forceHeadless: false, headless: false, syntheticInputOnly: false });
+      localMode = false; localOrigin = null;
+      let finalUrl = null;
+      try {
+        finalUrl = await d.navigate(u.href);
+        if (finalUrl) assertSafeUrl(finalUrl);
+        const vis = typeof d.visible === 'function' ? d.visible() : true;
+        if (!vis) throw new Error('no full Chrome found — only a headless-shell binary, so a visible login window is impossible; install Chrome or set STARNET_CHROME');
+      } catch (e) {
+        // restore the shimmed headless posture before surfacing the failure
+        relaunch({ headed: false });
+        throw e;
+      }
+      const done = approved(await attended.prompt({ tool: 'browser.login.done', scope: 'execute', argsSummary: host }));
+      // Done or cancelled, the window closes and research mode resumes on the SAME profile — any cookies the
+      // site set during the attempt are already durable.
+      relaunch({ headed: false });
+      return { status: done ? 'done' : 'unconfirmed', host, url: finalUrl || u.href };
+    }
+    async function close() {
+      try { if (driver && driver.close) await driver.close(); }
+      finally { releasePersistent(); }
+    }
     // Visibility of the controlled window, for truthful navigate reporting. Only meaningful
     // once a driver exists; an injected test driver may not expose it (default true = don't lie about headless).
     function visible() {
@@ -712,7 +801,7 @@
       const d = driver || null;
       return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
     }
-    return { navigate, snapshot, click, type, press, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, close, visible, headlessFallback, attachedPort, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin } };
+    return { navigate, snapshot, click, type, press, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, login, close, visible, headlessFallback, attachedPort, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
   }
 
   function makeBrowserTools(deps) {
@@ -794,6 +883,21 @@
         }),
       read('browser.get_text', 'Return visible page text, optionally scoped by CSS selector.', { type: 'object', properties: { selector: { type: 'string' } } },
         async a => ({ content: clamp(await session.getText(a.selector || ''), MAX_TEXT), summary: 'text' })),
+      // ATTENDED LOGIN: requiresConsent stays false because the flow runs its OWN two-phase live consent
+      // (open-window ask + done-wait) — the generic broker card would double-prompt. timeoutMs must outlive
+      // both consent waits (each fail-closes on its own CONSENT timer + rendered-ack extension), so the only
+      // job of this bound is to stop a wedged flow from pinning the run forever.
+      {
+        name: 'browser.login', capability: 'web', impact: 'synthetic-browser', scope: 'execute', requiresConsent: false, timeoutMs: 60 * 60 * 1000,
+        description: 'Ask the Commander to open a VISIBLE browser window and log in to a site THEMSELVES (their password is typed into real Chrome — it never passes through you; never ask for credentials in chat). Blocks until they finish, then returns to headless mode with the authenticated session. Cookies persist in the station browser profile, so future runs stay signed in. Use only when a site genuinely requires login; works only in a watched COMMS session.',
+        schema: { type: 'object', required: ['url'], properties: { url: { type: 'string' } } },
+        run: async a => {
+          const r = await session.login(a.url);
+          if (r.status === 'declined') return { content: 'Commander declined to open a login window for ' + r.host + '. Continue without authentication and say what is blocked.', summary: 'login declined' };
+          if (r.status === 'unconfirmed') return { content: 'Login window for ' + r.host + ' closed without a Done confirmation. Any cookies the site set were saved to the station profile; verify with browser.navigate whether you are signed in before relying on it.', summary: 'login unconfirmed' };
+          return { content: 'Commander finished logging in at ' + r.host + '. The browser is back in headless research mode with the authenticated session — continue with browser.navigate.', summary: 'login done' };
+        }
+      },
       read('browser.vision', 'Capture the current viewport and answer a question about what is on screen (vision rides the session\'s own model when no dedicated vision key exists — never ask the user for an API key). If no vision route is available this returns a clear "unavailable" result — it never fabricates a description.', { type: 'object', properties: { question: { type: 'string' } } },
         async a => {
           const r = await session.vision(a.question || '');

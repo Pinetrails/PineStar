@@ -66,8 +66,9 @@ function fakeDriver() {
   const names = B.tools.map(t => t.name).sort();
   A.eq(names, [
     'browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.get_text',
-    'browser.navigate', 'browser.press', 'browser.scroll', 'browser.snapshot', 'browser.test_input',
-    'browser.test_navigate', 'browser.test_snapshot', 'browser.test_state', 'browser.type', 'browser.vision'
+    'browser.login', 'browser.navigate', 'browser.press', 'browser.scroll', 'browser.snapshot',
+    'browser.test_input', 'browser.test_navigate', 'browser.test_snapshot', 'browser.test_state',
+    'browser.type', 'browser.vision'
   ], 'browser action surface is complete');
   A.eq(B.tools.find(t => t.name === 'browser.click').requiresConsent, true, 'click is consent-gated');
   A.eq(B.tools.find(t => t.name === 'browser.snapshot').requiresConsent, false, 'snapshot is read-only');
@@ -321,6 +322,153 @@ function fakeDriver() {
     A.eq(privatePort.attachedPort(), 45678, 'driver reports the privately owned attached port');
     await privatePort.close();
     fs.rmSync(privateProfile, { recursive: true, force: true });
+  }
+
+  // ---- ATTENDED BROWSER LOGIN (browser.login): human-driven headed takeover on the persistent
+  //      station profile, bracketed by two live consent asks; unattended runs refuse. ----
+  {
+    const mkLease = () => {
+      const l = { acquired: 0, released: 0, ok: true };
+      l.profile = { dir: '/station-profile', acquire: () => { if (!l.ok) return false; l.acquired++; return true; }, release: () => { l.released++; } };
+      return l;
+    };
+    const mkSeam = () => {
+      const made = [];
+      const makeDriver = (d) => {
+        const drv = fakeDriver();
+        drv.headed = !!d.headed; drv.profileDir = d.profileDir; drv.cleanupProfile = d.cleanupProfile;
+        drv.synthetic = d.syntheticInputOnly; drv.visible = () => !!d.headed; drv.close = () => { drv.closed = true; };
+        made.push(drv); return drv;
+      };
+      return { made, makeDriver };
+    };
+
+    // 1. UNATTENDED RUNS REFUSE: no attendedLogin dep (cron/hub/night-shift) -> honest error, no window.
+    {
+      const seam = mkSeam();
+      const B2 = makeBrowserTools({ makeDriver: seam.makeDriver });
+      await rejects(B2.tools.find(t => t.name === 'browser.login').run({ url: 'https://erank.com/login' }, {}),
+        /watched COMMS session|unattended/i, 'browser.login refuses without the attended channel');
+      A.eq(seam.made.length, 0, 'an unattended login attempt never launches any browser');
+    }
+
+    // 2. ENV-PINNED HEADLESS REFUSES before any consent ask or window.
+    {
+      const seam = mkSeam();
+      const B2 = makeBrowserTools({ makeDriver: seam.makeDriver, env: { STARNET_BROWSER_HEADLESS: '1' }, attendedLogin: { prompt: async () => 'once' } });
+      await rejects(B2.tools.find(t => t.name === 'browser.login').run({ url: 'https://erank.com' }, {}),
+        /pins the browser headless/i, 'env headless pin refuses a login window');
+      A.eq(seam.made.length, 0, 'env-pinned headless never launches a headed browser');
+    }
+
+    // 3. URL guard applies BEFORE any prompt: private hosts never reach the Commander.
+    {
+      let prompts = 0;
+      const seam = mkSeam();
+      const B2 = makeBrowserTools({ makeDriver: seam.makeDriver, attendedLogin: { prompt: async () => { prompts++; return 'once'; } } });
+      await rejects(B2.tools.find(t => t.name === 'browser.login').run({ url: 'http://192.168.0.5/router' }, {}),
+        /private\/loopback\/intranet/i, 'login URL rides the same SSRF guard as navigate');
+      A.eq(prompts, 0, 'a refused URL never generates a consent ask');
+    }
+
+    // 4. COMMANDER DECLINES: no window, honest content back to the model.
+    {
+      const seam = mkSeam();
+      const asked = [];
+      const B2 = makeBrowserTools({ makeDriver: seam.makeDriver, attendedLogin: { prompt: async f => { asked.push(f.tool); return 'deny'; } } });
+      const out = await B2.tools.find(t => t.name === 'browser.login').run({ url: 'https://erank.com/login' }, {});
+      A.eq(asked, ['browser.login'], 'a declined open ask never proceeds to the done-wait');
+      A.ok(/declined/i.test(out.content), 'declined login reports honestly');
+      A.eq(seam.made.length, 0, 'declined login never launches a browser');
+    }
+
+    // 5. FULL APPROVED FLOW: headed relaunch on the persistent profile with shims OFF, done-wait,
+    //    then headless restore with shims back ON — same profile, refs invalidated, lease held.
+    {
+      const seam = mkSeam();
+      const lease = mkLease();
+      const asked = [];
+      const B2 = makeBrowserTools({
+        makeDriver: seam.makeDriver, forceHeadless: true, syntheticInputOnly: true,
+        persistentProfile: lease.profile,
+        attendedLogin: { prompt: async f => { asked.push({ tool: f.tool, host: f.argsSummary }); return 'once'; } }
+      });
+      const out = await B2.tools.find(t => t.name === 'browser.login').run({ url: 'https://erank.com/login' }, {});
+      A.eq(asked.map(a => a.tool), ['browser.login', 'browser.login.done'], 'both consent phases ride the live channel in order');
+      A.eq(asked[0].host, 'erank.com', 'the consent ask names the host, not the full URL');
+      A.eq(seam.made.length, 2, 'login = one headed launch + one headless restore');
+      A.eq(seam.made[0].headed, true, 'the login window is headed');
+      A.eq(seam.made[0].synthetic, false, 'the human-driven window carries NO synthetic-input shims (SSO popups must work)');
+      A.eq(seam.made[0].profileDir, '/station-profile', 'the login window uses the persistent station profile');
+      A.eq(seam.made[0].cleanupProfile, false, 'the persistent profile is never marked for cleanup');
+      A.eq(seam.made[0].closed, true, 'the headed window is torn down after Done');
+      A.eq(seam.made[1].headed, false, 'after Done the browser is headless again');
+      A.eq(seam.made[1].profileDir, '/station-profile', 'the restored headless browser keeps the authenticated profile');
+      A.ok(/finished logging in/i.test(out.content), 'completed login reports honestly');
+      A.ok(lease.acquired >= 1 && lease.released === 0, 'the profile lease is held for the rest of the run');
+      await B2.session.close();
+      A.ok(lease.released >= 1, 'session close releases the profile lease');
+    }
+
+    // 6. LEASE CONTENTION: another run holds the profile -> honest error, no window.
+    {
+      const seam = mkSeam();
+      const lease = mkLease(); lease.ok = false;
+      const B2 = makeBrowserTools({ makeDriver: seam.makeDriver, persistentProfile: lease.profile, attendedLogin: { prompt: async () => 'once' } });
+      await rejects(B2.tools.find(t => t.name === 'browser.login').run({ url: 'https://erank.com' }, {}),
+        /in use by another agent run/i, 'a held profile lease refuses the login honestly');
+      A.eq(seam.made.length, 0, 'lease contention never opens a window');
+    }
+
+    // 7. HEADLESS-ONLY BINARY: window impossible -> restore headless posture, honest error.
+    {
+      const made = [];
+      const B2 = makeBrowserTools({
+        makeDriver: (d) => { const drv = fakeDriver(); drv.headed = !!d.headed; drv.visible = () => false; drv.close = () => {}; made.push(drv); return drv; },
+        attendedLogin: { prompt: async () => 'once' }
+      });
+      await rejects(B2.tools.find(t => t.name === 'browser.login').run({ url: 'https://erank.com' }, {}),
+        /visible login window is impossible/i, 'a headless-only binary reports the truth instead of pretending a window exists');
+      A.eq(made.length, 2 , 'the failed headed attempt is restored to headless');
+      A.eq(made[1].headed, false, 'restore after headless-only failure is headless');
+    }
+
+    // 8. DONE-WAIT CANCELLED: window closes, honest "unconfirmed" content (cookies may exist).
+    {
+      const seam = mkSeam();
+      let n = 0;
+      const B2 = makeBrowserTools({ makeDriver: seam.makeDriver, persistentProfile: mkLease().profile, attendedLogin: { prompt: async () => (++n === 1 ? 'once' : 'deny') } });
+      const out = await B2.tools.find(t => t.name === 'browser.login').run({ url: 'https://erank.com' }, {});
+      A.ok(/without a Done confirmation/i.test(out.content), 'a cancelled done-wait reports unconfirmed honestly');
+      A.eq(seam.made[seam.made.length - 1].headed, false, 'cancelled login still restores headless mode');
+    }
+
+    // 9. ORDINARY RESEARCH RUNS reuse the persistent profile when free (signed-in browsing), and
+    //    fall back to the ephemeral per-run profile when another run holds the lease.
+    {
+      const seam = mkSeam();
+      const lease = mkLease();
+      const B2 = makeBrowserTools({ makeDriver: seam.makeDriver, forceHeadless: true, profileDir: '/ephemeral', persistentProfile: lease.profile });
+      await B2.session.navigate('https://example.com');
+      A.eq(seam.made[0].profileDir, '/station-profile', 'a plain research run browses on the station profile (saved logins apply)');
+      A.eq(seam.made[0].headed, false, 'the persistent profile never changes the headless posture');
+      A.eq(seam.made[0].cleanupProfile, false, 'the persistent profile is not cleaned up by a research run');
+
+      const seam2 = mkSeam();
+      const held = mkLease(); held.ok = false;
+      const B3 = makeBrowserTools({ makeDriver: seam2.makeDriver, forceHeadless: true, profileDir: '/ephemeral', persistentProfile: held.profile });
+      await B3.session.navigate('https://example.com');
+      A.eq(seam2.made[0].profileDir, '/ephemeral', 'a held lease falls back to the ephemeral per-run profile');
+    }
+
+    // 10. browser.login carries a long tool timeout (it wraps two human-paced consent waits).
+    {
+      const B2 = makeBrowserTools({ driver: fakeDriver() });
+      const t = B2.tools.find(x => x.name === 'browser.login');
+      A.ok(t.timeoutMs >= 30 * 60 * 1000, 'login tool timeout outlives the fail-closed consent timers');
+      A.eq(t.requiresConsent, false, 'login runs its OWN two-phase consent (no double prompt)');
+      A.eq(t.capability, 'web', 'login rides the web capability (dish object), no new grant surface');
+    }
   }
 
   A.report('browser.test');

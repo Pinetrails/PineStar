@@ -274,6 +274,23 @@ const WORKSPACES = ENV('WORKSPACES') ? path.resolve(ENV('WORKSPACES')) : default
    PROTECTED sibling of the fs jail (runtime.knobs.json). Loaded with a tiny self-contained reader (this runs before
    loadResilient/num are defined); a torn/absent file → no overrides (fail-soft to env/default). */
 const RUNTIME_KNOBS_FILE = path.join(WORKSPACES, 'runtime.knobs.json');
+
+/* ---- ATTENDED BROWSER LOGIN: the ONE durable station Chrome profile. Cookies a Commander earns by logging
+   in through browser.login live here and survive run end + sidecar restarts, so later research runs browse
+   signed-in. Placed as a DOTTED sibling of the agent jails: fs-tool agentIds are sanitized to [A-Za-z0-9_-],
+   so no agent workspace can ever resolve into it (cookie jar stays out of model reach). Chrome cannot share
+   a user-data-dir across processes, so a single-owner in-process lease guards it — sufficient because one
+   sidecar per WORKSPACES dir is a hard invariant (see durable-store law). Runs that lose the race quietly
+   fall back to their ephemeral per-run profile (browsing works, just signed out). */
+const BROWSER_PROFILE_DIR = path.join(WORKSPACES, '.browser-profile');
+let browserProfileHolder = null;   // runId of the run whose browser currently owns the durable profile
+function browserProfileLeaseFor(runId) {
+  return {
+    dir: BROWSER_PROFILE_DIR,
+    acquire: () => { if (browserProfileHolder && browserProfileHolder !== runId) return false; browserProfileHolder = runId; return true; },
+    release: () => { if (browserProfileHolder === runId) browserProfileHolder = null; }
+  };
+}
 let runtimeKnobs = (function loadRuntimeKnobsAtBoot() {
   // saveResilient writes a <file>.bak last-known-good snapshot; if the main file is torn/corrupt at boot, fall
   // back to that .bak instead of silently dropping every saved knob to env/default. (Inline .bak recovery — this
@@ -7717,6 +7734,7 @@ async function handleRun(req, res) {
       key, model, system: projectLine ? (String(system || '') + projectLine) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive', internal,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
+      loginPrompt: askHuman,   // attended browser login: browser.login's two consent asks ride the same fail-closed permission.prompt channel
 
       streamId,        // M-mem.2b: scope this run's working memory + recall boost to the active workstream
       taskKey: streamId ? ('stream:' + streamId) : null,
@@ -7961,6 +7979,12 @@ async function runOnce(o) {
     cdpPort: 0,
     profileDir: path.join(os.tmpdir(), 'starnet-browser-' + process.pid + '-' + String(runId || crypto.randomUUID()).replace(/[^A-Za-z0-9_-]/g, '')),
     cleanupProfile: true,
+    // Durable signed-in browsing: every run TRIES the station profile (leased; ephemeral fallback above when
+    // held), and ONLY a watched COMMS run gets the attended-login channel — cron/hub/night-shift runs pass no
+    // loginPrompt, so browser.login refuses honestly there. The prompt rides the SAME fail-closed
+    // permission.prompt consent channel as file writes (auto-deny on timeout/disconnect).
+    persistentProfile: browserProfileLeaseFor(runId),
+    attendedLogin: (surface === 'interactive' && typeof o.loginPrompt === 'function') ? { prompt: o.loginPrompt } : null,
     requireOwnedServer: true,
     ownsLocalUrl: async ({ url, serverId, agentId: owner }) => {
       const st = shellBg.status(String(owner || agentId), String(serverId || ''));
