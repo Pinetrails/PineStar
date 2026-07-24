@@ -106,7 +106,7 @@
         '<b class="cc-lg-key">API key</b> you paste a key · <b class="cc-lg-oauth">OAUTH</b> a secure browser sign-in.</span></p>' +
       '<div id="cc-list" class="cc-list"><span class="loading pulse">loading catalog…</span></div>' +
       '<div id="cc-msg" class="msg"></div>' +
-      '<p class="set-about dim">Need something not listed? Add any MCP server by URL or local command in <b>MCP CONNECTORS</b>, or paste a bare API key for any platform in <b>KEYS</b>.</p>';
+      '<p class="set-about dim">Need something not listed? Add any remote MCP server by URL in <b>MCP CONNECTORS</b>, or paste a bare API key for any platform in <b>KEYS</b>.</p>';
     // ---- KEYS pane markup: every platform key the agents hold, in one place. Top = keyed CATALOG/MCP platforms
     //      currently connected (truth from /api/connectors — managed on their own tab, read-only here). Bottom =
     //      custom keys for UNLISTED platforms (POST /api/servicekeys): the sidecar exposes each as an env var in
@@ -123,6 +123,11 @@
         '<input id="ky-docs" class="key-input" placeholder="API docs URL (optional — helps agents use the service)" autocomplete="off" spellcheck="false">' +
         '<div class="mc-hint">Stored locally by the sidecar and shown as ····last4 only. Agents get it as an environment variable ' +
           '(e.g. <code>RESEND_API_KEY</code>) in their shell, so they can call the platform’s API directly.</div>' +
+        // TRUTHFUL TELEMETRY: the key alone is not enough. The shell it is handed to only exists when a WORKBENCH
+        // prop is placed (capability/office.js grants it nowhere by default), and workspace-process tools are not
+        // projected onto unattended surfaces at all (inputpolicy.js), so a saved key is inert until both hold.
+        '<div class="mc-hint">To actually use it, the agent needs a <b>workbench</b> placed in its bay — that is what gives it a terminal. ' +
+          'Keys are usable in watched sessions; scheduled and messaged runs cannot run shell commands.</div>' +
         '<div class="mc-acts"><button class="bb sm" id="ky-add">+ SAVE KEY</button></div>' +
       '</div>' +
       '<div id="ky-msg" class="msg"></div>';
