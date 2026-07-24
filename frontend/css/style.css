@@ -1073,14 +1073,17 @@ body.no-scan .crt-scan { display: none; }
 .ch-optin { display: block; margin: 2px 0 8px; }
 .ch-optin-t { }
 .ch-optin-d { display: block; margin-left: 22px; font-size: 12px; line-height: 1.25; }
-/* console-mode CHANNELS: a live status dot on each platform's rail tab (same st-* truth palette as .ch-state) */
+/* console-mode CHANNELS: no glyphs anywhere in this window — abstract marks read as wrong-logo noise next to
+   real platform names, so the rail's glyph slot is hidden and the tabs carry name + live status dot only. */
+.channels-console .con-rail-glyph { display: none; }
+/* a live status dot on each platform's rail tab (same st-* truth palette as .ch-state) */
 .ch-rail-dot { flex: 0 0 auto; margin-left: auto; font-size: 9px; line-height: 1; }
 .ch-rail-dot.st-up { color: var(--ok); text-shadow: 0 0 6px rgba(80,255,140,.5); }
 .ch-rail-dot.st-wait { color: var(--gold); }
 .ch-rail-dot.st-err { color: var(--bad); }
 .ch-rail-dot.st-off { color: var(--ph-dim); opacity: .55; }
 .con-rail-item.active .ch-rail-dot.st-off { color: var(--ink); }
-/* OVERVIEW pane: one clickable summary row per platform (coin + title + live state), jumps to that pane */
+/* OVERVIEW pane: one clickable summary row per platform (title + live state), jumps to that pane */
 .ch-sum { margin-top: 14px; }
 .ch-sum-row {
   display: flex; align-items: center; gap: 9px; width: 100%; text-align: left;
@@ -1097,8 +1100,6 @@ body.no-scan .crt-scan { display: none; }
   transform: translateY(-1px); border-color: var(--ph); color: var(--ph-bright);
   box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent, var(--ph)) 45%, transparent), 0 4px 14px rgba(0,0,0,.5);
 }
-.ch-sum-row .ch-coin { width: 24px; height: 24px; }
-.ch-sum-row .ch-glyph { font-size: 13px; }
 .ch-sum-t { letter-spacing: 2px; font-size: 13px; }
 .ch-sum-row .ch-state { margin-left: auto; }
 .ch-card {
@@ -1118,13 +1119,6 @@ body.no-scan .crt-scan { display: none; }
 .ch-card.on { border-color: var(--ok); box-shadow: var(--raise), inset 0 0 12px rgba(80, 255, 140, 0.10); }
 .ch-card.on::before { opacity: 1; background: linear-gradient(90deg, var(--ok), transparent 80%); }
 .ch-head { display: flex; align-items: center; gap: 9px; }
-.ch-coin {   /* small engraved plate holding the platform glyph, accent-tinted (echoes the recruit coin seals) */
-  flex: 0 0 auto; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
-  border-radius: 50%; background: radial-gradient(circle at 38% 32%, rgba(255,255,255,.06), rgba(0,0,0,.35));
-  border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 45%, var(--ph-dim));
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.06), inset 0 -3px 8px rgba(0,0,0,.6);
-}
-.ch-glyph { color: var(--accent, var(--ph-bright)); font-size: 16px; line-height: 1; text-shadow: 0 0 8px color-mix(in srgb, var(--accent, var(--ph)) 55%, transparent); }
 .ch-id { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .ch-title { margin: 0; letter-spacing: 2px; color: var(--ph); font-weight: normal; font-size: 15px; text-shadow: 0 1px 0 #000, 0 0 8px var(--ph-glow2); }
 .ch-adv { font-size: 10.5px; letter-spacing: 1px; color: var(--accent, var(--ph-dim)); border: 1px solid color-mix(in srgb, var(--accent, var(--ph)) 40%, transparent); border-radius: 3px; padding: 0 4px; vertical-align: middle; opacity: .9; }

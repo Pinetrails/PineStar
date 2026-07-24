@@ -21,7 +21,7 @@
     // an <ol> inside the setup <details>; `note` is the trailing dim caveat. Secret-input id + type order is
     // load-bearing (the wire source-guard pins e.g. id="sl-bot-token" type="password") — never reorder those.
     const CHANNEL_CATALOG = [
-      { id: 'telegram', title: 'TELEGRAM', pre: 'tg', glyph: '✈', accent: '#37aee2',
+      { id: 'telegram', title: 'TELEGRAM', pre: 'tg', accent: '#37aee2',
         tagline: 'DM your agent from Telegram.',
         verb: 'polling',
         steps: [
@@ -56,7 +56,7 @@
             '</details>' +
           '</div>' },
 
-      { id: 'discord', title: 'DISCORD', pre: 'dc', glyph: '◈', accent: '#7c83f5',
+      { id: 'discord', title: 'DISCORD', pre: 'dc', accent: '#7c83f5',
         // HONESTY: server/channel messages need a chat allowlist no production path supplies yet — DMs only today.
         tagline: 'Two-way chat on Discord — DM your bot and it replies. (DMs only for now — server channels aren\'t wired yet.)',
         verb: 'receiving',
@@ -74,7 +74,7 @@
         okMsg: '✓ connected — DM your bot on Discord',
         errHint: ' — check the bot token / MESSAGE CONTENT intent' },
 
-      { id: 'slack', title: 'SLACK', pre: 'sl', glyph: '⌗', accent: '#b98ec8',
+      { id: 'slack', title: 'SLACK', pre: 'sl', accent: '#b98ec8',
         // HONESTY: channel messages need a chat allowlist no production path supplies yet — DMs only today.
         // audit finding 5: Slack appears in BOTH panels — say which direction THIS one is.
         tagline: 'Your agent inside your Slack workspace — DM it and it replies. (DMs only for now — channels aren\'t wired yet. Want the agent to USE Slack as a tool instead? That\'s ⇄ TOOLSETS.)',
@@ -99,7 +99,7 @@
         emptyMsg: 'paste BOTH Slack tokens first (xoxb-… and xapp-…)',
         okMsg: '✓ connected — DM your Slack app' },
 
-      { id: 'matrix', title: 'MATRIX', pre: 'mx', glyph: '▣', accent: '#5bd18d',
+      { id: 'matrix', title: 'MATRIX', pre: 'mx', accent: '#5bd18d',
         tagline: 'Reach your agent from any Matrix client (Element, …) on any homeserver.',
         verb: 'syncing',
         steps: [
@@ -119,7 +119,7 @@
         emptyMsg: 'enter the homeserver URL and paste an access token first',
         okMsg: '✓ connected — message the agent\'s Matrix account' },
 
-      { id: 'signal', title: 'SIGNAL', pre: 'sg', glyph: '◉', accent: '#6aa0ff', advanced: true,
+      { id: 'signal', title: 'SIGNAL', pre: 'sg', accent: '#6aa0ff', advanced: true,
         tagline: 'Message your agent on Signal through a self-hosted signal-cli bridge.',
         verb: 'receiving',
         steps: [
@@ -165,7 +165,6 @@
       '<div class="ch-sum"><div class="ch-bots-head">PLATFORMS <span class="dim">— pick one to set it up</span></div>' +
         CHANNEL_CATALOG.map(c =>
           '<button type="button" class="ch-sum-row" data-ch="' + c.id + '" style="--accent:' + c.accent + '">' +
-            '<span class="ch-coin"><span class="ch-glyph">' + c.glyph + '</span></span>' +
             '<span class="ch-sum-t">' + c.title + (c.advanced ? ' <span class="ch-adv">ADVANCED</span>' : '') + '</span>' +
             '<span class="ch-state st-off" id="' + c.pre + '-sum">checking…</span>' +
           '</button>').join('') +
@@ -173,7 +172,6 @@
     function cardHtml(c) {
       return '<div class="ch-card" id="ch-card-' + c.id + '" style="--accent:' + c.accent + '">' +
           '<div class="ch-head">' +
-            '<span class="ch-coin"><span class="ch-glyph">' + c.glyph + '</span></span>' +
             '<div class="ch-id">' +
               '<h4 class="ch-title">' + c.title + (c.advanced ? ' <span class="ch-adv">ADVANCED · SELF-HOSTED</span>' : '') + '</h4>' +
               '<span class="ch-answers" id="' + c.pre + '-answers"></span>' +
@@ -195,10 +193,12 @@
           (c.extraHtml || '') +
         '</div>';
     }
+    // no per-platform glyphs anywhere in this window — abstract marks read as wrong-logo noise next to real
+    // platform names (Andrew, 2026-07-24). The rail glyph slot is hidden via the .channels-console class.
     mountConsole(body, 'messaging', [
-      { id: 'overview', label: 'OVERVIEW', glyph: '⌂', build: (pane) => { pane.innerHTML = overviewHtml; } }
+      { id: 'overview', label: 'OVERVIEW', build: (pane) => { pane.innerHTML = overviewHtml; } }
     ].concat(CHANNEL_CATALOG.map(c => ({
-      id: c.id, label: c.title, glyph: c.glyph,
+      id: c.id, label: c.title,
       build: (pane) => { pane.innerHTML = cardHtml(c); }
     }))));
     // rail truth dots: one per platform tab, painted from the same proven status as its card (paintCard).
@@ -623,5 +623,5 @@
     refreshAll();
   }
 
-  StationUI.registerWindow('messaging', 'CHANNELS', buildMessaging, { console: true });   // console mode = the wide SETTINGS-style two-pane window; dock label = window title (it's Telegram/external channels, not COMMS)
+  StationUI.registerWindow('messaging', 'CHANNELS', buildMessaging, { console: true, className: 'channels-console' });   // console mode = the wide SETTINGS-style two-pane window; the className scopes the no-glyph rail; dock label = window title (it's Telegram/external channels, not COMMS)
 })();
