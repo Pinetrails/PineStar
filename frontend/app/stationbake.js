@@ -105,17 +105,37 @@ const StationBake = (() => {
   let G, T, HR, W, H, VX, VY, CW, CH, lampPos, edges, chamferAt, extN;
   const h2 = (x, y, s) => U.hash(x + ',' + y + ',' + (s || ''));
 
-  function spandrelPath(g, kind, ax, ay, rad) {
+  /* ---------- THE ONE ROUNDED-CORNER RASTER ----------
+     Every curve in the station is a quarter circle at a tile corner, and they must all agree to the
+     pixel or the corner reads as misaligned. This is the single source: walk the corner's pixel
+     ROWS and hand back the integer x at which the curve crosses. A quarter circle crosses each row
+     exactly once, so the walk is complete and gap-free — no fractional rects, no stroked arcs, no
+     anti-aliasing against the deck's hard pixels. Sampling at the row's CENTRE (py + 0.5) and
+     rounding is the shared convention: the hull silhouette erase, the hull rim, the ambient-mask
+     cut and the room's interior curve all use it, so concentric curves stay concentric per-pixel.
+     Keyed on bake-pixel coords, so chunk↔monolithic parity holds. */
+  function eachCornerRow(kind, ax, ay, rad, fn) {
     const A = CORNER[kind];
-    const ox = A.cx ? ax - rad : ax, oy = A.cy ? ay - rad : ay;
-    g.beginPath(); g.rect(ox, oy, rad, rad); g.moveTo(ax, ay); g.arc(ax, ay, rad, A.a0, A.a1); g.closePath();
-    return { ox, oy };
+    const ox = Math.round(A.cx ? ax - rad : ax), oy = Math.round(A.cy ? ay - rad : ay);
+    const r = Math.round(rad);
+    for (let py = oy; py < oy + r; py++) {
+      const ady = Math.abs(py + 0.5 - ay);
+      const ex = ady >= r ? null : (A.cx ? Math.round(ax - Math.sqrt(r * r - ady * ady))
+                                        : Math.round(ax + Math.sqrt(r * r - ady * ady)));
+      fn(py, ex, ox, ox + r, A);
+    }
   }
+  /* cut the hull's rounded corner. Was a clip('evenodd') + fill, which anti-aliased the station's
+     whole silhouette — the soft outer fuzz that survived the interior-curve fix. */
   function eraseSpandrel(g, kind, ax, ay, rad) {
     g.save();
-    const o = spandrelPath(g, kind, ax, ay, rad);
-    g.clip('evenodd'); g.globalCompositeOperation = 'destination-out';
-    g.fillStyle = '#000'; g.fillRect(o.ox - 1, o.oy - 1, rad + 2, rad + 2);
+    g.globalCompositeOperation = 'destination-out';
+    g.fillStyle = '#000';
+    eachCornerRow(kind, ax, ay, rad, (py, ex, ox, oxEnd, A) => {
+      if (ex == null) { g.fillRect(ox, py, oxEnd - ox, 1); return; }        // row wholly outside the disc
+      if (A.cx) { if (ex > ox) g.fillRect(ox, py, ex - ox, 1); }
+      else if (ex + 1 < oxEnd) g.fillRect(ex + 1, py, oxEnd - ex - 1, 1);
+    });
     g.restore();
   }
   function canvas(w, h) {
@@ -1159,54 +1179,56 @@ const StationBake = (() => {
       const sgnX = A.cx ? -1 : 1, sgnY = A.cy ? -1 : 1;
       const fill = (x, y, w, h, c) => { if (w > 0 && h > 0) { b.fillStyle = c; b.fillRect(x, y, w, h); } };
       const outerBand = U.shade(cPal.base, -0.62);   // the same contact-seam tone the straight walls use
-      for (let py = Y; py < Y + T; py++) {
+      eachCornerRow(kind, ax, ay, Rc, (py, edge) => {
         const ady = Math.abs(py + 0.5 - ay);
+        if (edge == null) { fill(X, py, T, 1, hullC); return; }       // row lies wholly outside the curve
         // radial taper: 0 at the arc's side end (ady≈0) → 1 at its north/south end (ady≈Rc)
         const tt = Math.min(1, ady / Rc);
         const faceW = FACEW + 1 + (NFACE - FACEW - 1) * (sgnY < 0 ? tt : 0);
         const rIn = Math.max(1, Rc - faceW);
-        const dxOut = ady >= Rc ? -1 : Math.sqrt(Rc * Rc - ady * ady);
         const dxIn = ady >= rIn ? 0 : Math.sqrt(rIn * rIn - ady * ady);
-        if (dxOut < 0) { fill(X, py, T, 1, hullC); continue; }        // row lies wholly outside the curve
         if (sgnX < 0) {
-          const edge = Math.round(ax - dxOut), inner = Math.round(ax - dxIn);
+          const inner = Math.round(ax - dxIn);
           fill(X, py, edge - X, 1, hullC);                            // 1. cut the deck
           fill(edge - 3, py, 3, 1, outerBand);                        // 2. dark band hugging the outside
           fill(edge, py, Math.max(1, inner - edge), 1, cPal.face);    // 3. the interior wall face
           fill(inner, py, 1, 1, outerBand);                           // 4. contact seam onto the deck
         } else {
-          const edge = Math.round(ax + dxOut), inner = Math.round(ax + dxIn);
+          const inner = Math.round(ax + dxIn);
           fill(edge + 1, py, X + T - edge - 1, 1, hullC);
           fill(edge + 1, py, 3, 1, outerBand);
           fill(Math.min(inner, edge), py, Math.max(1, edge - inner + 1), 1, cPal.face);
           fill(inner, py, 1, 1, outerBand);
         }
-      }
-      b.lineWidth = 2; b.strokeStyle = '#28241b'; b.beginPath(); b.arc(ax, ay, HR - 2, A.a0, A.a1); b.stroke();   // HULL rim (its own, outer silhouette curve)
+      });
+      // HULL RIM — the outer silhouette's own curve (HR), concentric with the interior one and now
+      // rasterized off the SAME row walk, so the two curves stay a fixed pixel distance apart all
+      // the way round instead of one being a crisp staircase beside a soft anti-aliased stroke.
+      eachCornerRow(kind, ax, ay, HR, (py, ex) => {
+        if (ex == null) return;
+        fill(A.cx ? ex : ex - 1, py, 2, 1, '#28241b');
+      });
 
       // TALL WALL over a curved top corner: sweep the interior wall arc up-screen, easing from
       // full height at the north end down to zero at the side end (side walls carry no face),
       // so the raised north wall flows around the chamfer instead of stopping dead at it.
       if ((kind === 'tl' || kind === 'tr') && WALL.up > 0) {
         const R = Rc, up = Math.round(WALL.up), capH = Math.max(2, Math.round(WALL.capH));   // Rc: the ONE chamfer curve
-        const steps = Math.max(12, Math.ceil(R * 1.4));
-        const pt = tt => {   // tt: 0 at the side end of the arc → 1 at the north end
-          const ang = kind === 'tl' ? A.a0 + (A.a1 - A.a0) * tt : A.a1 - (A.a1 - A.a0) * tt;
-          const k = Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * up;
-          return [ax + Math.cos(ang) * R, ay + Math.sin(ang) * R, k];
-        };
-        // Rasterize the SAME arc+taper curve (same R, ang, k) into per-COLUMN integer fills —
-        // no fractional rects, no stroked polylines (those AA'd → blurry). Oversample the arc so
-        // every integer screen-x the curve passes through gets a column; per column keep the
-        // highest crown top the curve reaches there, then draw crisp pixel-stair fills.
+        /* The crown is the COLUMN dual of the row walk above: for each integer column, the base is
+           where the SAME circle crosses it, sampled at the column's centre and rounded by the same
+           convention. It used to be sampled by ANGLE and rounded in x, which put the crown on a
+           subtly different pixel staircase from the face band it is supposed to sit on — a 1px
+           mismatch that wandered around the arc. Deriving both from one circle is what makes the
+           crown, the face and the deck cut land on a single edge. */
         const cols = new Map();   // ix -> { top, base }  (top = lowest y the FACE top reaches; base = floor contact)
-        const fine = steps * 4;
-        for (let i = 0; i <= fine; i++) {
-          const [px, py, k] = pt(i / fine);
-          const ix = Math.round(px), top = Math.round(py - k), base = Math.round(py);
-          const c = cols.get(ix);
-          if (!c) cols.set(ix, { top, base });
-          else { if (top < c.top) c.top = top; if (base > c.base) c.base = base; }
+        const x0 = Math.round(A.cx ? ax - R : ax);
+        for (let ix = x0; ix < x0 + R; ix++) {
+          const adx = Math.abs(ix + 0.5 - ax);
+          if (adx >= R) continue;
+          const base = Math.round(ay - Math.sqrt(R * R - adx * adx));   // upper quadrant (tl/tr)
+          const tt = Math.max(0, Math.min(1, 1 - adx / R));             // 0 at the side end → 1 at the north end
+          const k = Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * up;
+          cols.set(ix, { top: Math.round(base - k), base });
         }
         for (const [ix, c] of cols) {
           const faceH = c.base - c.top; if (faceH <= 0) continue;
