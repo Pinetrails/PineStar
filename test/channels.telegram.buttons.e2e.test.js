@@ -306,11 +306,12 @@ const lastUserTurn = (req) => {
       : fs.readFileSync(path.join(ws, 'tg_4242', 'notes.md'), 'utf8');
     A.eq(wrote, 'hello', 'the approved write actually reached the agent workspace');
 
-    console.log('channels.telegram.buttons.e2e: OK');
   } finally {
     try { child.kill(); } catch (_) {}
     await new Promise(r => tg.close(r));
     await new Promise(r => llm.server.close(r));
     try { fs.rmSync(ws, { recursive: true, force: true }); } catch (_) {}
   }
-})().catch(e => { console.error(e); process.exit(1); });
+  // AFTER cleanup: report() exits the process, so it must not run before the child/servers are torn down.
+  A.report('channels.telegram.buttons.e2e.test');
+})().catch(e => { console.log('FAIL: channels.telegram.buttons.e2e.test threw - ' + (e && e.stack || e)); process.exit(1); });

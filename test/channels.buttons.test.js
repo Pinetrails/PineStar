@@ -410,6 +410,33 @@ async function run() {
     A.ok(sends.some(s => /already expired/.test(s.t)), 'a late tap is told the request expired and was denied — never a false "approved"');
   }
 
+  // ---- 5G. an UNDELIVERABLE keyboard denies AT ONCE instead of stalling out the consent timeout ----
+  // Asserted on TIMING, not on the decision: a regression here still ends in 'deny' (the fail-closed timer gets
+  // there eventually), so only the wait distinguishes correct from broken. The Commander was never asked, so
+  // making them sit through CONSENT_TIMEOUT_MS for a foregone answer would be worse than the autonomous floor.
+  {
+    const store = fakeStore({ 555: { agentId: 'tg_555', approvals: true } });
+    let decision = null;
+    const host = makeHostConsent(3000);   // long enough that waiting it out is unmistakable
+    const runOnce = async (o) => {
+      decision = await o.prompt({ name: 'fs.write', args: {} }, { scope: 'write' });
+      o.emit('agent.token', { delta: 'could not write' });
+      o.emit('agent.run.end', { reason: 'done' });
+    };
+    const hub = makeChannelHub({
+      runOnce, store, prompts: makePromptRegistry({ newId: idGen('tok') }),
+      // the keyboard send fails; ordinary replies still succeed
+      send: (c, t, opts) => Promise.resolve((opts && opts.reply_markup) ? { ok: false, error: 'chat not found' } : { ok: true, messageId: 'm1' }),
+      answerCallback: () => Promise.resolve({ ok: true }), editMessage: () => Promise.resolve({ ok: true }),
+      askConsent: host.ask, resolveConsent: host.resolve,
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen('run')
+    });
+    const settled = hub.onInbound(dm('write it')).then(() => 'finished');
+    const raced = await Promise.race([settled, new Promise(r => setTimeout(() => r('STALLED'), 800))]);
+    A.eq(raced, 'finished', 'an undeliverable consent keyboard resolves immediately — it does NOT wait out the fail-closed timer');
+    A.eq(decision, 'deny', 'and it resolves to deny (fail-closed), never a silent allow');
+  }
+
   // ---- 5F. a token from one chat cannot resolve another chat's prompt ----
   {
     const sends = [], acks = []; const store = fakeStore();
@@ -428,7 +455,7 @@ async function run() {
     A.ok(/no longer open/i.test(acks[0]), 'a token minted for chat 111 is refused when tapped from chat 222');
   }
 
-  console.log('channels.buttons: OK');
+  A.report('channels.buttons.test');
 }
 
-run().catch(e => { console.error(e); process.exit(1); });
+run().catch(e => { console.log('FAIL: run() threw — ' + (e && e.stack || e)); process.exit(1); });

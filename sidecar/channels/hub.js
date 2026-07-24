@@ -293,10 +293,15 @@
           + '\n\nIf you don\'t answer, this is denied and the run moves on.';
         entry.meta.text = body;
         const r = await deliver(chatId, body, runId, 'prompt', '', { reply_markup: keyboardFor(entry) });
-        // Only a message that actually LANDED can be edited when tapped; a failed send retires the token so no
-        // orphan sits in the registry claiming to be a live question.
-        if (r && r.ok && r.messageId) prompts.attach(entry.token, r.messageId);
-        else if (!r || !r.ok) prompts.take(entry.token);
+        // Only a message that actually LANDED can be edited when tapped.
+        if (r && r.ok) { if (r.messageId) prompts.attach(entry.token, r.messageId); return; }
+        // THE KEYBOARD NEVER LANDED. Retire the token, then DENY IMMEDIATELY instead of letting the host's
+        // fail-closed timer run its full course. The Commander was never actually asked, so making them wait out
+        // CONSENT_TIMEOUT_MS for the answer that is already certain would turn an undeliverable prompt into a
+        // two-minute stall — strictly worse than the autonomous floor this chat opted IN from. Same decision,
+        // no wait. (No apology message here: the send path is the thing that just failed.)
+        prompts.take(entry.token);
+        try { if (resolveConsent) resolveConsent(runId, promptId, 'deny'); } catch (_) {}
       })().catch(function () {});
     }
     const MAX_MEDIA_PER_MESSAGE = 10;                // a full Telegram album is 10 items; a merged album must fit
