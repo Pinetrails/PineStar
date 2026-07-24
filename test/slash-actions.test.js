@@ -135,6 +135,20 @@ const mk = (over) => { const d = deps(over); return { S: makeSlashActions(d), ca
     const r = await S.run('routine', 'preview 2020-01-01T00:00:00Z');
     A.ok(/no upcoming fires/.test(r.title), 'a schedule with no future fire says so in the header');
     A.ok(!/next 1/.test(r.title), 'the header never claims one upcoming fire when there are none');
+    // nextFireAt hands back a ONE-SHOT's time even when it has already passed, so the raw preview really does
+    // offer a 2020 timestamp under the word "next". A past fire must never be presented as upcoming.
+    const past = await mk({
+      now: () => Date.parse('2026-07-24T00:00:00Z'),
+      cron: { preview: () => ({ ok: true, display: 'once at 2020-01-01', next: ['2020-01-01T00:00:00.000Z'], localNext: ['Wed, Jan 1, 12:00 AM UTC'] }) }
+    }).S.run('routine', 'preview 2020-01-01T00:00:00Z');
+    A.ok(/no upcoming fires/.test(past.title), 'an already-passed one-shot reports no upcoming fires');
+    A.ok(/already passed/.test(past.lines[0]), 'it says the schedule has passed rather than printing a stale date as "next"');
+    // a FUTURE fire is still shown
+    const future = await mk({
+      now: () => Date.parse('2026-07-24T00:00:00Z'),
+      cron: { preview: () => ({ ok: true, display: 'cron 0 9 * * *', next: ['2026-07-25T13:00:00.000Z'], localNext: ['Sat, Jul 25, 9:00 AM EDT'] }) }
+    }).S.run('routine', 'preview 0 9 * * *');
+    A.ok(/next 1/.test(future.title) && /9:00 AM EDT/.test(future.lines[0]), 'a genuine upcoming fire is still previewed');
   }
 
   {

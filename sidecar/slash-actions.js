@@ -94,11 +94,20 @@ function makeSlashActions(deps) {
       if (typeof cron.preview !== 'function') return fail('Schedule preview is not wired on this station.');
       const p = cron.preview(rest);
       if (!p || p.ok === false) return fail(String((p && p.error) || 'Could not read that schedule.'));
-      const fires = (p.localNext || []).map((t, i) => (i + 1) + '. ' + t);
+      // nextFireAt returns a one-shot's time even when it has already passed, so a stale timestamp would be
+      // printed under the word "next". Drop anything already in the past — a fire that cannot happen is not a
+      // schedule preview, it is a wrong answer.
+      const t0 = now();
+      const upcoming = (p.localNext || []).filter((_, i) => {
+        const iso = (p.next || [])[i];
+        const at = iso ? Date.parse(iso) : NaN;
+        return isNaN(at) || at >= t0;
+      });
+      const fires = upcoming.map((t, i) => (i + 1) + '. ' + t);
       // count the REAL fire times, not the rows — a placeholder row must never inflate the header into
-      // claiming one upcoming fire when there are none (e.g. a one-shot whose time has already passed).
+      // claiming one upcoming fire when there are none.
       const title = (p.display || rest) + (fires.length ? ' — next ' + fires.length : ' — no upcoming fires');
-      return card(title, fires.length ? fires : ['(this schedule is valid but never comes due again)']);
+      return card(title, fires.length ? fires : ['(this schedule has already passed — it will never fire)']);
     }
 
     if (verb === 'add' || verb === 'new') {
