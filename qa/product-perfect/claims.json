@@ -1915,11 +1915,11 @@
     {
       "id": "local-first-no-account",
       "domain": "privacy",
-      "claim": "StarNet is local-first with no StarNet cloud account or data server.",
+      "claim": "StarNet is local-first: no StarNet account is required and no StarNet server holds user data, unless the user opts into managed credits.",
       "surfaceLocators": [
         {
           "path": "PRIVACY.md",
-          "needle": "no StarNet cloud, no StarNet"
+          "needle": "There is exactly one opt-in exception"
         }
       ],
       "authorityChecks": [
@@ -1937,7 +1937,7 @@
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
       "ownerWave": "W2",
-      "qualification": "The app server and stores are local; third-party provider/channel/update traffic remains qualified.",
+      "qualification": "The app server and stores are local; third-party provider/channel/update traffic remains qualified. Managed credits (optional, not yet launched) add a billing account and relay model calls through StarNet's gateway — PRIVACY.md states that carve-out explicitly.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
@@ -2195,11 +2195,11 @@
     {
       "id": "free-no-markup-budget-caps",
       "domain": "release",
-      "claim": "The app is free/no-markup and enforces configurable spend caps.",
+      "claim": "The app is free and takes no markup on the user's own keys; managed credits are a separate opt-in paid path. Configurable spend caps are enforced.",
       "surfaceLocators": [
         {
           "path": "TERMS.md",
-          "needle": "StarNet does not resell model access"
+          "needle": "adds no markup, and has no way to bill you"
         }
       ],
       "authorityChecks": [
@@ -2217,7 +2217,7 @@
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
       "ownerWave": "W6",
-      "qualification": "Budget enforcement exists; free/no-markup remains an owner business-policy claim.",
+      "qualification": "Budget enforcement exists; free/no-markup remains an owner business-policy claim, and is now scoped to the BYOK path — TERMS.md §2 states plainly that StarNet does resell model access on the optional credits path.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
