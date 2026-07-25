@@ -332,6 +332,106 @@ function fakeDriver() {
     fs.rmSync(privateProfile, { recursive: true, force: true });
   }
 
+  // ---- AUTO-WAIT: actions settle before they return ------------------------------------------
+  // THE SILENT CORRUPTER this replaces: the whole wait vocabulary was three fixed sleeps, and
+  // click/type/press returned with ZERO settle, so the next snapshot read the PRE-CLICK DOM and any
+  // SPA hydrating past the blind 900ms answered an empty page ("no interactive elements").
+  {
+    // A fake page whose settle probe reports a scripted hydration timeline.
+    function settleRig(script) {
+      const state = { probes: 0, sent: [], url: 'about:blank' };
+      class WS {
+        constructor() { this.handlers = {}; WS.last = this; setTimeout(() => this.fire('open', {}), 0); }
+        addEventListener(n, fn) { (this.handlers[n] = this.handlers[n] || []).push(fn); }
+        fire(n, v) { for (const fn of this.handlers[n] || []) fn(v); }
+        send(raw) {
+          const m = JSON.parse(raw); state.sent.push(m);
+          if (m.method === 'Page.navigate') state.url = m.params.url;
+          const expr = String((m.params && m.params.expression) || '');
+          let value = state.url;
+          if (/return \{ready:/.test(expr)) value = { ready: true, error: null };          // isolation attestation
+          else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) {  // the settle probe
+            value = script(state.probes++);
+          }
+          const result = m.method === 'Runtime.evaluate' ? { result: { value } } : {};
+          setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+        }
+        close() {}
+      }
+      const driver = T.makeCdpDriver({
+        chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9349,
+        settleQuietPolls: 2, settleNavBudgetMs: 400, settleActionBudgetMs: 400,
+        fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://settle' }] }),
+        WebSocketImpl: WS,
+        spawn: () => ({ pid: 51, on(ev, fn) { if (ev === 'close') this._c = fn; }, kill() { if (this._c) queueMicrotask(() => this._c(0)); } })
+      });
+      return { driver, state };
+    }
+
+    // The settle marker itself must observe the DOM and survive a page that has no <html> yet.
+    A.ok(/MutationObserver/.test(T.SETTLE_BOOTSTRAP), 'settle bootstrap observes DOM mutations');
+    A.ok(/documentElement \? observe\(\) :/.test(T.SETTLE_BOOTSTRAP) || /documentElement/.test(T.SETTLE_BOOTSTRAP), 'settle bootstrap defers until a document root exists');
+    A.ok(/document\.readyState/.test(T.SETTLE_PROBE) && /s\.n/.test(T.SETTLE_PROBE), 'settle probe reads readyState and the mutation counter');
+    A.ok(!/Date\.now|performance\.now/.test(T.SETTLE_BOOTSTRAP), 'settle marker counts mutations rather than reading a clock (determinism law)');
+    A.ok(/addScriptToEvaluateOnNewDocument/.test(T.makeCdpDriver.toString()), 'settle marker is reinstalled for every new document');
+
+    // A. a page that hydrates late: navigate must NOT return on the first look.
+    {
+      const rig = settleRig(i => i < 3 ? { ok: true, ready: 'loading', n: i } : { ok: true, ready: 'complete', n: 99 });
+      await rig.driver.navigate('http://127.0.0.1:5173/');
+      A.ok(rig.state.probes >= 4, 'navigate keeps polling a hydrating page instead of a blind fixed sleep (probes=' + rig.state.probes + ')');
+      await rig.driver.close();
+    }
+
+    // B. a static page settles on the FIRST quiet read — auto-wait is faster than the old 900ms sleep.
+    {
+      const t0 = Date.now();
+      const rig = settleRig(() => ({ ok: true, ready: 'complete', n: 7 }));
+      await rig.driver.navigate('http://127.0.0.1:5173/');
+      A.ok(Date.now() - t0 < 800, 'an already-quiet page returns well inside the old 900ms blind wait');
+      A.ok(rig.state.probes <= 4, 'a settled page costs only the quiet-confirmation polls (' + rig.state.probes + ')');
+      await rig.driver.close();
+    }
+
+    // C. THE REGRESSION: click/type/press must settle. Previously they issued Input.* and returned.
+    {
+      const rig = settleRig(() => ({ ok: true, ready: 'complete', n: 0 }));
+      await rig.driver.navigate('http://127.0.0.1:5173/');
+      const before = rig.state.probes;
+      await rig.driver.click({ x: 1, y: 1, w: 10, h: 10 });
+      A.ok(rig.state.probes > before, 'click settles before returning');
+      const afterClick = rig.state.probes;
+      await rig.driver.press('Enter');
+      A.ok(rig.state.probes > afterClick, 'press settles before returning');
+      const afterPress = rig.state.probes;
+      await rig.driver.scroll(0, 400);
+      A.ok(rig.state.probes > afterPress, 'scroll settles (lazy-load/infinite-scroll content lands before the next snapshot)');
+      await rig.driver.close();
+    }
+
+    // D. a page that NEVER goes quiet (a spinner, a poller) must still return at the budget.
+    {
+      let tick = 0;
+      const rig = settleRig(() => ({ ok: true, ready: 'complete', n: tick++ }));
+      const t0 = Date.now();
+      await rig.driver.navigate('http://127.0.0.1:5173/');
+      const ms = Date.now() - t0;
+      A.ok(ms >= 350, 'a never-quiet page spends its settle budget');
+      A.ok(ms < 3000, 'a never-quiet page still returns — auto-wait can never hang the run (' + ms + 'ms)');
+      await rig.driver.close();
+    }
+
+    // E. no settle marker (a page that blocked the bootstrap) falls back to the legacy blind sleep
+    // rather than skipping the wait entirely.
+    {
+      const rig = settleRig(() => 'http://127.0.0.1:5173/');   // a non-object answer = unmeasurable
+      const t0 = Date.now();
+      await rig.driver.navigate('http://127.0.0.1:5173/');
+      A.ok(Date.now() - t0 >= 850, 'an unmeasurable page still gets the legacy 900ms settle');
+      await rig.driver.close();
+    }
+  }
+
   // ---- ATTENDED BROWSER LOGIN (browser.login): human-driven headed takeover on the persistent
   //      station profile, bracketed by two live consent asks; unattended runs refuse. ----
   {

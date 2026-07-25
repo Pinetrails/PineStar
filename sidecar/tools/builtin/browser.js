@@ -21,6 +21,38 @@
   const NET = require('node:net');
 
   const MAX_TEXT = 12000;
+  /* AUTO-WAIT (2026-07-25). The whole wait vocabulary used to be three fixed sleeps — navigate 900ms,
+     back 500ms, connect-retry 250ms — and click/type/press returned with ZERO settle time. So the
+     snapshot after a click read the PRE-CLICK DOM, and any SPA that hydrated past 900ms answered an
+     empty page, which the agent reported as "no interactive elements". A fixed sleep is wrong in both
+     directions: too short for a slow app, wasted latency on a static one.
+     Instead the page tells us when it went quiet. A MutationObserver counts DOM changes; we poll that
+     counter and proceed as soon as readyState is complete AND the count has held still across
+     SETTLE_QUIET_POLLS polls, giving up at a budget. A static page now settles in ~1 poll (FASTER than
+     the old 900ms blind wait) and a slow SPA gets the time it actually needs.
+     The page keeps a mutation COUNTER, never a timestamp: the determinism law bans ambient time in
+     backend logic, and a counter is the better primitive anyway — the sidecar owns the notion of
+     "quiet" (counter unchanged across N consecutive polls) and the page just reports what happened. */
+  const SETTLE_POLL_MS = 40;
+  const SETTLE_QUIET_POLLS = 3;         // consecutive unchanged polls (~120ms) before we call it settled
+  const SETTLE_NAV_BUDGET_MS = 8000;    // ceiling for a navigation/history move
+  const SETTLE_ACTION_BUDGET_MS = 3000; // ceiling after click/type/press/scroll
+  const SETTLE_BOOTSTRAP = String.raw`(() => {
+    if (globalThis.__STARNET_SETTLE__) return;
+    const s = { n: 0 };
+    try { Object.defineProperty(globalThis, '__STARNET_SETTLE__', { value: s, configurable: false, writable: false }); } catch (e) { return; }
+    const bump = () => { s.n++; };
+    const observe = () => {
+      try { new MutationObserver(bump).observe(document.documentElement || document, { childList: true, subtree: true, attributes: true, characterData: true }); } catch (e) {}
+    };
+    // addScriptToEvaluateOnNewDocument runs before <html> exists, so defer until there is a root.
+    try { if (document.documentElement) observe(); else document.addEventListener('readystatechange', observe, { once: true }); } catch (e) {}
+    // A resource landing (or a history move) is a change even when it mutates no nodes.
+    try { addEventListener('load', bump); addEventListener('popstate', bump); } catch (e) {}
+  })()`;
+  // Cheap per-poll read: is the document done, and how many mutations has it seen so far?
+  const SETTLE_PROBE = `(() => { const s = globalThis.__STARNET_SETTLE__;
+    return { ok: !!s, ready: document.readyState, n: s ? s.n : -1 }; })()`;
   const DEFAULT_PORT = Number(process.env.STARNET_BROWSER_CDP || process.env.SKYNET_BROWSER_CDP || 9347);
   // Installed Chrome's "new" headless mode can still enter the platform pointer-lock path after
   // a CDP click. On Windows that path calls ClipCursor and moves the REAL cursor. Install this
@@ -343,6 +375,11 @@
     // Stale from a previous run on this profile; cleared so nothing can mistake it for live state.
     const activePortFile = P.join(profileDir, 'DevToolsActivePort');
     const timeoutMs = deps.timeoutMs || 15000;
+    // Auto-wait thresholds are injectable so a test can drive the real settle loop (including the
+    // budget-exhausted path) without burning the production ceilings in wall-clock time.
+    const settleQuietPolls = deps.settleQuietPolls == null ? SETTLE_QUIET_POLLS : Number(deps.settleQuietPolls);
+    const settleNavBudgetMs = deps.settleNavBudgetMs == null ? SETTLE_NAV_BUDGET_MS : Number(deps.settleNavBudgetMs);
+    const settleActionBudgetMs = deps.settleActionBudgetMs == null ? SETTLE_ACTION_BUDGET_MS : Number(deps.settleActionBudgetMs);
     if (!fetchImpl || !WebSocketImpl) throw new Error('browser unavailable: Node WebSocket/fetch is not available');
     if (!chromePath) throw new Error('browser unavailable: Chromium not found; set STARNET_CHROME');
     // We run headed only if requested AND the chosen binary can actually show a window.
@@ -434,6 +471,10 @@
               await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP });
               await cdp.send('Runtime.evaluate', { expression: SYNTHETIC_INPUT_BOOTSTRAP, awaitPromise: true });
             }
+            // The settle marker is measurement, not a security shim, so it installs UNCONDITIONALLY —
+            // auto-wait must still work on a rig that disabled the synthetic-input isolation.
+            await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP });
+            await cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP });
             cdp.on('Runtime.consoleAPICalled', p => {
               const text = (p.args || []).map(a => a.value != null ? a.value : (a.description || a.type || '')).join(' ');
               consoleLog.push({ type: p.type || 'log', text: clamp(text, 500) });
@@ -453,10 +494,44 @@
       if (r.exceptionDetails) throw new Error('page eval failed: ' + ((r.exceptionDetails.exception && r.exceptionDetails.exception.description) || r.exceptionDetails.text || 'exception'));
       return r.result && r.result.value;
     }
+    /* Wait for the page to go quiet. Returns true if it genuinely settled, false if the budget ran out
+       or the settle marker was unavailable (a page that blocked the bootstrap, or a bare CDP endpoint).
+       NEVER throws and NEVER waits past the budget: a wait helper that can hang would be worse than the
+       fixed sleeps it replaces. `fallbackMs` is the legacy blind sleep used only when we cannot measure. */
+    async function waitForSettle(c, opts) {
+      opts = opts || {};
+      const quietPolls = opts.quietPolls == null ? settleQuietPolls : opts.quietPolls;
+      const budgetMs = opts.budgetMs || settleActionBudgetMs;
+      // The budget is a TIMER, not a clock read — determinism law bans ambient time in backend logic,
+      // and a timer expresses "stop waiting" just as well.
+      let expired = false;
+      const timer = setTimeout(() => { expired = true; }, budgetMs);
+      try {
+        let lastN = null, stable = 0;
+        for (;;) {
+          let probe = null;
+          try {
+            const r = await c.send('Runtime.evaluate', { expression: SETTLE_PROBE, returnByValue: true });
+            probe = r && r.result && r.result.value;
+          } catch (_) { probe = null; }
+          // Marker absent (or a non-object answer from a stub endpoint): we cannot measure quiescence.
+          if (!probe || typeof probe !== 'object' || probe.ok !== true) {
+            const fb = Number(opts.fallbackMs || 0);
+            if (fb > 0) await sleep(fb);
+            return false;
+          }
+          stable = (lastN !== null && probe.n === lastN) ? stable + 1 : 0;
+          lastN = probe.n;
+          if (probe.ready === 'complete' && stable >= quietPolls) return true;
+          if (expired) return false;                  // spend the budget, then proceed with what we have
+          await sleep(SETTLE_POLL_MS);
+        }
+      } finally { clearTimeout(timer); }
+    }
     async function navigate(url) {
       const c = await connect();
       await c.send('Page.navigate', { url });
-      await sleep(900);
+      await waitForSettle(c, { budgetMs: settleNavBudgetMs, fallbackMs: 900 });
       const finalUrl = await evalJS('location.href');
       if (deps.syntheticInputOnly !== false) {
         const isolation = await evalJS(`(() => {
@@ -500,18 +575,23 @@
         });
       })()`);
     }
+    // Every mutating action settles before it returns, so the NEXT snapshot/get_text reads the DOM the
+    // action produced rather than the one it replaced. This is the fix for the silent corrupter: these
+    // three used to return with zero settle time.
     async function click(node) {
       const c = await connect();
       const x = node.x + Math.max(1, Math.floor(node.w / 2));
       const y = node.y + Math.max(1, Math.floor(node.h / 2));
       await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
       await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'clicked';
     }
     async function type(node, text) {
       await click(node);
       const c = await connect();
       await c.send('Input.insertText', { text: String(text || '') });
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'typed';
     }
     async function press(key) {
@@ -519,6 +599,8 @@
       key = String(key || 'Enter');
       await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key });
       await c.send('Input.dispatchKeyEvent', { type: 'keyUp', key });
+      // Enter/Escape routinely submit or dismiss, so a keypress gets a navigation-sized budget.
+      await waitForSettle(c, { budgetMs: settleNavBudgetMs });
       return 'pressed ' + key;
     }
     async function testInput(action) {
@@ -583,8 +665,18 @@
         return {url:location.href,title:document.title,syntheticReady:!!(s&&s.ready),popupBlocked:!!(s&&s.popupBlocked),pointerLockTag:document.pointerLockElement&&document.pointerLockElement.tagName||null,element};
       })()`);
     }
-    async function scroll(x, y) { await evalJS('window.scrollBy(' + (Number(x) || 0) + ',' + (Number(y) || 0) + ')'); return 'scrolled'; }
-    async function back() { await evalJS('history.back()'); await sleep(500); return evalJS('location.href'); }
+    // Scrolling is what triggers lazy-load / infinite-scroll, so it settles too — otherwise the very
+    // content the scroll was meant to reveal is missing from the next snapshot.
+    async function scroll(x, y) {
+      await evalJS('window.scrollBy(' + (Number(x) || 0) + ',' + (Number(y) || 0) + ')');
+      await waitForSettle(await connect(), { budgetMs: settleActionBudgetMs });
+      return 'scrolled';
+    }
+    async function back() {
+      await evalJS('history.back()');
+      await waitForSettle(await connect(), { budgetMs: settleNavBudgetMs, fallbackMs: 500 });
+      return evalJS('location.href');
+    }
     async function getText(selector) {
       const sel = selector ? JSON.stringify(String(selector)) : 'null';
       return evalJS(`(() => { const el = ${sel} ? document.querySelector(${sel}) : document.body; return (el && (el.innerText || el.textContent) || '').replace(/\\s+\\n/g, '\\n').trim(); })()`);
@@ -946,5 +1038,5 @@
     return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
   }
 
-  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
+  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, SETTLE_BOOTSTRAP, SETTLE_PROBE, SETTLE_QUIET_POLLS, CHROME_CANDIDATES } };
 });
