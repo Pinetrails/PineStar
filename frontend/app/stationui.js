@@ -2535,6 +2535,13 @@ const StationUI = (() => {
   // itself keeps micro-dollar precision; this is presentation only). No app-wide formatter exists to reuse.
   function fmtUsd(v) { return U.usd(v); }   // canonical spend formatter (util.js U.usd)
 
+  // The desktop shell's command bridge, or null in a plain browser (dev, tests, the website embed).
+  // Looked up per call rather than cached: the page can render before __TAURI__ is injected.
+  function tauriInvoke() {
+    try { return (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) || null; }
+    catch (_) { return null; }
+  }
+
   // open a URL in the user's real browser (Tauri shell when packaged, a new tab otherwise). Buying credits is
   // ALWAYS an external link — this app never renders a payment form or handles card data.
   function openExternal(url) {
@@ -2630,9 +2637,28 @@ const StationUI = (() => {
       sfx('click');
       if (typeof window !== 'undefined' && window.confirm && !window.confirm('Unlink this station from your StarNet account? You can relink anytime.')) return;
       unlink.disabled = true;
-      fetch('/api/credits/unlink', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+      // BOTH halves have to go: the sidecar owns the file, only the shell can reach the keychain.
+      // Clearing the keychain first means a failure there is visible before we report "unlinked" —
+      // leaving a money-spending credential behind while claiming it is gone would be the exact
+      // dishonesty delete_credential_honest exists to prevent.
+      const kcInvoke = tauriInvoke();
+      const forgetKeychain = kcInvoke
+        ? kcInvoke('harness_clear_credits_token').then(() => true).catch(() => false)
+        : Promise.resolve(true);
+      forgetKeychain
+        .then(() => fetch('/api/credits/unlink', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' }))
         .then(() => wireCredits(body)).catch(() => wireCredits(body));
     });
+  }
+
+  // Ask the desktop shell to move the device token from .secrets/credits.json into the OS keychain.
+  // Resolves to true only when the keychain genuinely holds it — a locked/absent credential store
+  // leaves the token in the file ON PURPOSE (better a token on disk than a token nobody has), and
+  // the sidecar keeps reporting tokenAtRest:'file' so the STORE never overstates the protection.
+  function adoptCreditsToken() {
+    const invoke = tauriInvoke();
+    if (!invoke) return Promise.resolve(false);
+    return invoke('harness_adopt_credits_token').then(ok => !!ok).catch(() => false);
   }
 
   // The UNLINKED-but-linkable state: a LINK STATION card. Clicking begins the pairing dance.
@@ -2679,7 +2705,17 @@ const StationUI = (() => {
       fetch('/api/credits/link/poll', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: j.code }) })
         .then(r => r.ok ? r.json() : {})
         .then(p => {
-          if (p && p.linked) { stopLinkPoll(); sfx('sale'); wireCredits(body); return; }
+          if (p && p.linked) {
+            stopLinkPoll(); sfx('sale');
+            // Hand the freshly minted device token to the OS keychain immediately. The token is a
+            // bearer credential that spends money and it is sitting in a plaintext file right now;
+            // this shrinks that window from "until the next app restart" to a couple of seconds.
+            // NOTE the token itself never passes through here — Rust reads the file, moves the
+            // secret, and rewrites it. We only say "a link just happened". Best-effort: with no
+            // desktop shell (browser/dev) there is no keychain, and the file path stays honest.
+            adoptCreditsToken().then(() => wireCredits(body));
+            return;
+          }
           if (p && (p.status === 'expired' || p.status === 'consumed' || p.status === 'unknown')) {
             stopLinkPoll(); renderCreditsLinkCard(body, host, 'That code is no longer valid — start again.');
           } else if (statusEl) { statusEl.textContent = 'Waiting for confirmation…'; }

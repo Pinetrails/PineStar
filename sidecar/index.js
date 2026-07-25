@@ -324,6 +324,11 @@ const CREDITS_PURCHASE_URL = String(ENV('CREDITS_PURCHASE_URL') || '').trim();
 // no restart). Empty => the feature is absent (honesty law): the /api/credits/link/* routes 404 and no LINK card
 // renders. Env CREDITS_* config still wins over a linked device (operator override / backward compat).
 const CLOUD_URL = String(ENV('CLOUD_URL') || '').trim();
+// The linked station's device token, injected by the DESKTOP from the OS keychain at spawn (keychain account
+// "credits:device"). It is a bearer credential that spends money, so the desktop adopts it out of
+// .secrets/credits.json and strips the file copy; this env var is how it gets back in. Unset in a bare/dev
+// sidecar, where the token simply stays in the file as before — see sidecar/credits-link.js header.
+const CREDITS_TOKEN = String(ENV('CREDITS_TOKEN') || '').trim();
 // a live permission.prompt left unanswered this long auto-denies (never hangs a run). P1-9: env
 // STARNET_CONSENT_TIMEOUT_MS > a UI-saved override > the 120s default; the frozen resolve keeps it constant per boot.
 const CONSENT_TIMEOUT_MS = resolveKnob('CONSENT_TIMEOUT_MS', 'consentTimeoutMs', 120000);
@@ -521,7 +526,7 @@ const budget = makeBudget({ caps: { agent: BUDGET_CAPS.perAgent, day: BUDGET_CAP
 // Inert unless STARNET_CLOUD_URL is set. The link flow writes the file; the credits adapter is (re)built from it.
 const creditsLink = makeCreditsLink({
   cloudUrl: CLOUD_URL, fetch: globalThis.fetch, fsp, fs, pathMod: path,
-  dir: path.join(WORKSPACES, '.secrets'), now: () => Date.now()
+  dir: path.join(WORKSPACES, '.secrets'), now: () => Date.now(), envToken: CREDITS_TOKEN
 });
 // Resolve the credits adapter config. PRECEDENCE (additive, never breaks an env deploy): env CREDITS_* wins
 // (operator override / backward compat); else a linked device from .secrets/credits.json (deviceToken = bearer);
@@ -4730,6 +4735,11 @@ async function handleCredits(req, res) {
     purchaseUrl: snap.purchaseUrl,           // external link the STORE opens; this app renders no payment form
     perRun: effectiveCaps.perRun,            // the reservation size a run will hold
     linked: !CREDITS_URL && creditsLink.hasSaved(),   // true when configured via a LINKED DEVICE (not env) -> STORE shows UNLINK
+    // Where the device token actually rests: 'keychain' (desktop, adopted), 'file' (bare sidecar, or a link
+    // the desktop has not adopted yet), 'none'. Reported so the STORE states the truth about a money-spending
+    // credential instead of implying a protection that is not there — the honesty law applied to secrets.
+    tokenAtRest: !CREDITS_URL ? creditsLink.tokenAtRest() : 'env',
+    keychainAvailable: DESKTOP_SHELL,
     history: Array.isArray(hist.entries) ? hist.entries : [],
     reachable: !hist.error
   }));

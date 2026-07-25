@@ -118,6 +118,80 @@ function fakeCloud(opts) {
     A.eq(cloud.calls.filter(c => c.url.indexOf('/v1/link/poll') >= 0).length, 0, 'no poll network call for an unknown code');
   }
 
+  // ---- KEYCHAIN ADOPTION: the desktop strips `deviceToken` from credits.json and injects it at spawn as
+  //      STARNET_CREDITS_TOKEN. The station must stay linked across that move, and the non-secret fields
+  //      (url/accountId/linkedAt) must survive it — they are NOT part of what gets adopted. ----
+  {
+    const kcDir = path.join(tmp, 'kc'); const kcFile = path.join(kcDir, 'credits.json');
+    fs.mkdirSync(kcDir, { recursive: true });
+    // exactly what Rust leaves behind after adoption: the record MINUS the token
+    fs.writeFileSync(kcFile, JSON.stringify({ url: 'https://cloud.example', accountId: 'acct_kc', linkedAt: 7 }));
+
+    const withoutEnv = makeCreditsLink({ cloudUrl: 'https://cloud.example', fetch: fakeCloud().fetch, fsp, fs, pathMod: path, dir: kcDir, now: () => 5000 });
+    A.eq(withoutEnv.hasSaved(), false, 'a stripped file alone is NOT a linked station (no token anywhere)');
+    A.eq(withoutEnv.tokenAtRest(), 'none', 'and it honestly reports no token at rest');
+
+    const withEnv = makeCreditsLink({
+      cloudUrl: 'https://cloud.example', fetch: fakeCloud().fetch, fsp, fs, pathMod: path, dir: kcDir,
+      now: () => 5000, envToken: 'snd_from_keychain'
+    });
+    const rec = withEnv.loadSavedSync();
+    A.ok(!!rec, 'stripped file + injected token = still linked (the whole point of adoption)');
+    A.eq(rec.deviceToken, 'snd_from_keychain', 'the token comes from the keychain injection');
+    A.eq(rec.accountId, 'acct_kc', 'accountId survives adoption (only deviceToken is removed)');
+    A.eq(rec.url, 'https://cloud.example', 'url survives adoption');
+    A.eq(rec.linkedAt, 7, 'linkedAt survives adoption');
+    A.eq(withEnv.tokenAtRest(), 'keychain', 'reports the token now rests in the keychain');
+  }
+
+  // ---- PRE-ADOPTION PRECEDENCE: between the link and the desktop's adopt call the token IS in the file.
+  //      The file copy must win, so a relink cannot be shadowed by a stale injected token. ----
+  {
+    const pDir = path.join(tmp, 'pre'); const pFile = path.join(pDir, 'credits.json');
+    fs.mkdirSync(pDir, { recursive: true });
+    fs.writeFileSync(pFile, JSON.stringify({ url: 'https://cloud.example', deviceToken: 'snd_fresh_from_link', accountId: 'acct_new', linkedAt: 9 }));
+    const link = makeCreditsLink({
+      cloudUrl: 'https://cloud.example', fetch: fakeCloud().fetch, fsp, fs, pathMod: path, dir: pDir,
+      now: () => 6000, envToken: 'snd_stale_from_last_launch'
+    });
+    A.eq(link.loadSavedSync().deviceToken, 'snd_fresh_from_link', 'the file token wins over a stale injected one');
+    A.eq(link.tokenAtRest(), 'file', 'and it reports the token is still on disk (not yet adopted)');
+  }
+
+  // ---- UNLINK BEATS THE INJECTED TOKEN: process.env still holds the token after the keychain entry is
+  //      deleted, so without an in-process latch the station would look linked until the next restart. ----
+  {
+    const uDir = path.join(tmp, 'unl'); const uFile = path.join(uDir, 'credits.json');
+    fs.mkdirSync(uDir, { recursive: true });
+    fs.writeFileSync(uFile, JSON.stringify({ url: 'https://cloud.example', accountId: 'acct_u', linkedAt: 1 }));
+    const link = makeCreditsLink({
+      cloudUrl: 'https://cloud.example', fetch: fakeCloud().fetch, fsp, fs, pathMod: path, dir: uDir,
+      now: () => 7000, envToken: 'snd_injected'
+    });
+    A.eq(link.hasSaved(), true, 'linked via the injected token');
+    await link.clearSaved();
+    A.eq(link.hasSaved(), false, 'UNLINK takes effect immediately, even though process.env still holds the token');
+    A.eq(link.tokenAtRest(), 'none', 'and nothing is reported at rest');
+  }
+
+  // ---- RELINK AFTER UNLINK: the latch must not permanently deafen a process that links again. ----
+  {
+    const rDir = path.join(tmp, 'relink');
+    fs.mkdirSync(rDir, { recursive: true });
+    const cloud = fakeCloud({ code: 'STAR-RE01' });
+    const link = makeCreditsLink({
+      cloudUrl: 'https://cloud.example', fetch: cloud.fetch, fsp, fs, pathMod: path, dir: rDir,
+      now: () => 8000, envToken: 'snd_injected'
+    });
+    await link.clearSaved();
+    A.eq(link.hasSaved(), false, 'unlinked');
+    await link.start('Station');
+    cloud.confirm();
+    const p = await link.poll('STAR-RE01');
+    A.eq(p.status, 'confirmed', 'relink confirms');
+    A.eq(link.hasSaved(), true, 'a fresh link clears the unlink latch');
+  }
+
   await flush();
   try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (_) {}
   A.report('credits-link.test');

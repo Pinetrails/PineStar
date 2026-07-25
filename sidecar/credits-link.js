@@ -13,10 +13,20 @@
 
      2. Durable link config at WORKSPACES/.secrets/credits.json (same posture as spotify.json — atomic
         tmp+rename, 0600) so a linked station survives a sidecar restart. The record is
-          { url, deviceToken, accountId, linkedAt }
+          { url, deviceToken?, accountId, linkedAt }
         and is read back at boot (loadSavedSync) to construct the live credits adapter. deviceToken is a
         re-issuable bearer credential (relinking mints a new one), so unlink deleting the file is safe
         under the secret-durability law.
+
+        WHERE THE TOKEN ACTUALLY LIVES (desktop vs bare):
+        The device token is a bearer credential that SPENDS MONEY, so on the desktop it belongs in the OS
+        keychain, not in a file. The desktop adopts it: Rust reads credits.json, stores the token under
+        keychain account "credits:device", strips `deviceToken` from the file, and injects it back at every
+        sidecar spawn as STARNET_CREDITS_TOKEN. So `deviceToken` in the file is TRANSIENT on desktop —
+        present between the link and the adoption moments later, absent afterwards.
+        Precedence in loadSavedSync: file token (fresh link, pre-adoption) -> injected env token (adopted).
+        A bare/dev sidecar has no keychain and no injector, so the file keeps the token exactly as before —
+        this is additive and never breaks a non-desktop deploy.
 
    HONESTY LAW: when STARNET_CLOUD_URL is unset, configured() is false — start() refuses, the /api/credits/*
    link routes 404, and the STORE shows no LINK card. Pure/injected IO (fetch, fs, fsp, path, clock) so the
@@ -36,11 +46,13 @@
        cloudUrl,                 // STARNET_CLOUD_URL (empty => inert, everything 404s)
        fetch, fsp, fs, pathMod,  // injected IO
        dir,                      // WORKSPACES/.secrets — where credits.json lives
-       now                       // () => ms wall clock
+       now,                      // () => ms wall clock
+       envToken                  // STARNET_CREDITS_TOKEN — desktop-injected from the OS keychain (see header)
      } */
   function makeCreditsLink(deps) {
     deps = deps || {};
     const cloudUrl = trimSlash(deps.cloudUrl);
+    const envToken = str(deps.envToken).trim();
     const doFetch = deps.fetch || (typeof fetch === 'function' ? fetch : null);
     const fsp = deps.fsp;
     const fs = deps.fs;
@@ -86,6 +98,7 @@
       if (status === 'confirmed' && j.deviceToken) {
         const rec = { url: cloudUrl, deviceToken: str(j.deviceToken), accountId: str(j.accountId), linkedAt: now() };
         await persist(rec);
+        unlinked = false;   // a fresh link overrides an earlier unlink in this process
         pending.delete(code);
         return { status: 'confirmed', accountId: rec.accountId, record: rec };
       }
@@ -103,15 +116,25 @@
       return rec;
     }
 
+    // Unlink within this process must win over a token the desktop injected at spawn: process.env still
+    // holds it after the keychain entry is deleted, so without this the station would look linked until
+    // the next restart. Set by clearSaved(), cleared by a fresh link.
+    let unlinked = false;
+
     // Synchronous read for boot-time credits construction (the credits adapter must be built at require-time,
     // before the event loop turns). Returns null when there is no valid linked record.
+    //
+    // The token comes from the file when it is there (a link that has not been adopted yet) and otherwise
+    // from the desktop's keychain injection. The non-secret fields ALWAYS come from the file — adoption only
+    // removes `deviceToken`, so url/accountId/linkedAt survive it.
     function loadSavedSync() {
-      if (!file || !fs) return null;
+      if (!file || !fs || unlinked) return null;
       try {
         const raw = fs.readFileSync(file, 'utf8');
         const j = JSON.parse(raw);
-        if (j && j.url && j.deviceToken) {
-          return { url: trimSlash(j.url), deviceToken: str(j.deviceToken), accountId: str(j.accountId), linkedAt: j.linkedAt || 0 };
+        const token = str(j && j.deviceToken).trim() || envToken;
+        if (j && j.url && token) {
+          return { url: trimSlash(j.url), deviceToken: token, accountId: str(j.accountId), linkedAt: j.linkedAt || 0 };
         }
       } catch (_) {}
       return null;
@@ -119,15 +142,34 @@
 
     function hasSaved() { return !!loadSavedSync(); }
 
+    // True once the token is out of the file and living in the keychain — what the desktop's adopt step
+    // achieves. Reported by /api/credits so the STORE can tell the truth about where the secret sits.
+    function tokenAtRest() {
+      if (!file || !fs) return 'none';
+      let onDisk = false;
+      try { onDisk = !!str(JSON.parse(fs.readFileSync(file, 'utf8')).deviceToken).trim(); } catch (_) { onDisk = false; }
+      if (onDisk) return 'file';
+      if (envToken && hasSaved()) return 'keychain';
+      return 'none';
+    }
+
     // Unlink: delete the persisted device token. Safe under the secret-durability law — the token is re-issuable
     // (relinking mints a new one). ENOENT is a success (already inert).
+    //
+    // Deletes the FILE half only. The keychain half is the desktop's to remove (harness_clear_credits_token),
+    // because only the shell can reach the OS credential store — so the UI must call BOTH. Marking `unlinked`
+    // here means the running sidecar stops honouring the injected token immediately either way.
     async function clearSaved() {
+      unlinked = true;
       if (!file) return { ok: true, removed: false };
       try { await fsp.unlink(file); return { ok: true, removed: true }; }
       catch (e) { if (e && e.code === 'ENOENT') return { ok: true, removed: false }; return { ok: false, error: (e && e.message) || String(e) }; }
     }
 
-    return { configured, cloudUrl: () => cloudUrl, start, poll, persist, loadSavedSync, hasSaved, clearSaved, _internals: { file, pending } };
+    return {
+      configured, cloudUrl: () => cloudUrl, start, poll, persist, loadSavedSync, hasSaved, tokenAtRest, clearSaved,
+      _internals: { file, pending }
+    };
   }
 
   return { makeCreditsLink };
