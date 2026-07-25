@@ -122,22 +122,24 @@ function makeRepo() {
     const headers = { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B };
     const mk = (body) => fetch(B + '/api/loops', { method: 'POST', headers, body: JSON.stringify(body) });
 
-    // ---- an UNBLESSED root: the check must be refused, not run ------------------------------------------
+    /* ---- an UNBLESSED root: the loop must stand down BEFORE it spends -----------------------------------
+       A dogfood run burned three passes and $0.33 against a folder whose grant did not match, because the
+       loop fired first and only discovered the problem inside the model call. Nothing a model can do fixes a
+       missing folder approval, so the refusal belongs in the precheck — where it is FREE and names the folder. */
     {
       const r = await mk({ name: 'unblessed', objective: 'make the check pass', workdir: repo, checkCmd: 'node check.js', exitOn: 'check-green' });
       A.eq(r.status, 200, 'the loop is created (the folder exists)');
       const id = (await r.json()).loop.id;
-      // wait for the iteration to SETTLE (a check verdict exists), not merely to start.
-      const st = await until(B, headers, s => (s.loops.find(l => l.id === id) || {}).lastCheck, 'the first settled iteration on an unblessed root');
+      const st = await until(B, headers, s => (s.loops.find(l => l.id === id) || {}).binding === 'precheck',
+        'the loop to stand down on an unblessed root');
       const l = st.loops.find(x => x.id === id);
-      A.ok(l.lastCheck, 'a check verdict was recorded');
-      A.eq(l.lastCheck.trusted, false, 'an unblessed root can NEVER produce a trusted green');
-      // the refusal must be legible in the SUMMARY too, not just the note — the summary is what the panel and
-      // the ledger render, and a refusal reading "check failed (exit 1)" sends everyone hunting a code defect
-      // that does not exist (a real dogfood run lost three passes to exactly that).
-      A.ok(/did NOT run/i.test(l.lastCheck.summary || ''), 'the SUMMARY says the check never ran: ' + l.lastCheck.summary);
-      A.ok(/not an approved project folder/i.test(l.lastCheck.note || ''), 'and the note says why: ' + l.lastCheck.note);
+      A.eq(l.iterationCount, 0, 'NOT ONE pass was spent on a folder the station has not approved');
+      A.eq(l.binding, 'precheck', 'and the gate names the reason');
+      A.ok(/not approved/i.test(l.bindingDetail || ''), 'in words that say what is wrong: ' + l.bindingDetail);
+      A.ok((l.bindingDetail || '').indexOf('dogfood') >= 0 || /re-approve/.test(l.bindingDetail || ''),
+        'and what to do about it');
       A.ok(l.state !== 'done', 'so it cannot complete the objective');
+      A.eq(l.lastCheck, null, 'and no check verdict is invented for a pass that never ran');
       await fetch(B + '/api/loops/remove', { method: 'POST', headers, body: JSON.stringify({ id }) });
     }
 

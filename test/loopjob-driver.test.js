@@ -49,6 +49,7 @@ function world(opts) {
     persona: 'STATION PERSONA',
     harvest: opts.harvest,
     projectLine: opts.projectLine,
+    context: opts.context,
     ledger: (e) => ledger.push(e),
     maxParallel: opts.maxParallel,
     maxRunMs: opts.maxRunMs
@@ -61,6 +62,8 @@ function world(opts) {
     loop: (id) => S.getLoop(loops, id || 'l1'),
     tick: (at) => { if (at != null) clock = at; return drv.applyTick(clock); },
     advance: (ms) => { clock += ms; },
+    // let the driver's pre-run context hop settle (only project-shaped loops take it)
+    flush: () => new Promise(r => setImmediate(() => setImmediate(r))),
     // resolve the oldest in-flight run, then let the settle microtasks drain
     finish: (res) => { const p = pending.shift(); p.resolve(res); return new Promise(r => setImmediate(r)); },
     fail: (err) => { const p = pending.shift(); p.reject(err); return new Promise(r => setImmediate(r)); },
@@ -294,6 +297,51 @@ function world(opts) {
     const w3 = world(); w3.seed({ workdir: 'C:/proj' });
     w3.tick(T0);
     A.eq(w3.calls[0].system, 'STATION PERSONA', 'the dep is optional');
+  }
+
+  /* ---- 13. THE PROJECT SNAPSHOT: anchor the agent, and NEVER converge on a project we could not read ------
+     THE DOGFOOD FAILURE THIS LOCKS: a sweep loop pointed at a real repo listed only its own empty jail,
+     honestly filed "DIGEST: 0 findings", and the loop counted that as CONVERGENCE — the system asserting
+     "nothing left to do" about a project it never opened. The agent was truthful; the conclusion was false. */
+  {
+    // (a) a readable project puts its snapshot in front of the agent, ahead of the ledger
+    const w = world({ context: () => Promise.resolve({ text: 'PROJECT SNAPSHOT — C:/proj\nsrc/cart.js\ntest/cart.test.js', reachable: true }) });
+    w.seed({ workdir: 'C:/proj', queueCap: 5 });
+    w.tick(T0);
+    await w.flush();
+    const prompt = w.calls[0].messages[0].content;
+    A.ok(/PROJECT SNAPSHOT/.test(prompt), 'the snapshot reaches the prompt');
+    A.ok(/src\/cart\.js/.test(prompt), 'carrying what is really in the folder');
+    A.ok(prompt.indexOf('find bugs') < prompt.indexOf('PROJECT SNAPSHOT'), 'the objective still leads');
+
+    // (b) AN UNREADABLE PROJECT SPENDS NOTHING AND CANNOT CONVERGE
+    const w2 = world({ context: () => Promise.resolve({ reachable: false, why: 'the project folder looks empty from here' }) });
+    w2.seed({ workdir: 'C:/gone', exitOn: 'empty-digests', dryStopAfter: 1, queueCap: 5 });
+    w2.tick(T0);
+    await w2.flush();
+    A.eq(w2.calls.length, 0, 'the model is NEVER called for a pass that cannot see the project — zero spend');
+    const it = w2.loop().iterations[0];
+    A.eq(it.outcome, 'failed', 'the pass is a FAILURE, not a finding-free success');
+    A.ok(/could not read the project folder/.test(it.error), 'and says exactly that: ' + it.error);
+    A.ok(/looks empty from here/.test(it.error), 'including the underlying reason');
+    A.eq(w2.loop().dryStreak, 0, 'it contributes NOTHING to the convergence counter');
+    A.ok(w2.loop().state !== 'dormant', 'so a blind loop can never declare "nothing left to do"');
+
+    // (c) a context that THROWS is the same class of refusal, never a silent success
+    const w3 = world({ context: () => { throw new Error('scan exploded'); } });
+    w3.seed({ workdir: 'C:/proj', queueCap: 5 });
+    w3.tick(T0);
+    await w3.flush();
+    A.eq(w3.calls.length, 0, 'a throwing scan also spends nothing');
+    A.eq(w3.loop().iterations[0].outcome, 'failed', 'and fails the pass honestly');
+    A.ok(/scan exploded/.test(w3.loop().iterations[0].error || ''), 'quoting the real error');
+
+    // (d) repeated blindness parks the loop rather than grinding
+    const w4 = world({ context: () => Promise.resolve({ reachable: false, why: 'not readable' }) });
+    w4.seed({ workdir: 'C:/gone', queueCap: 5 });
+    for (let i = 0; i < 3; i++) { w4.tick(T0 + i * MIN); await w4.flush(); }
+    A.eq(w4.loop().state, 'paused', 'three blind passes park the loop');
+    A.ok(/could not read the project folder/.test(w4.loop().stopReason || ''), 'with the real reason on the record');
   }
 
   A.report('loopjob-driver (LOOP tick driver)');

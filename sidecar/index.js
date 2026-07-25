@@ -4067,6 +4067,13 @@ function loopPrecheck(loop) {
   try {
     if (!loop || !loop.objective || !String(loop.objective).trim()) return { ok: false, reason: 'this loop has no objective' };
     if (loop.workdir && !fs.existsSync(loop.workdir)) return { ok: false, reason: 'the project folder is gone: ' + loop.workdir };
+    /* THE APPROVAL MUST HOLD BEFORE WE SPEND. A dogfood run burned three passes and $0.33 against a folder
+       whose grant did not match, because the loop fired first and discovered the problem inside the model
+       call. Nothing a model does can fix a missing folder approval, so it belongs here — where standing down
+       costs nothing and states the real reason. */
+    if (loop.workdir && !isBlessedRoot(loop.workdir)) {
+      return { ok: false, reason: 'the project folder is not approved for this station — re-approve "' + loop.workdir + '" and resume' };
+    }
     const provider = cronProviderFor(loop);
     if (!cronHasCredential(provider, cronKeyFor(provider))) {
       return { ok: false, reason: 'no credential for ' + (provider || 'the selected provider') + ' — add a key in the KEYS tab' };
@@ -4086,6 +4093,31 @@ function loopPrecheck(loop) {
    The agent's job is to make the check pass. It has no say in what the check IS. Everything about whether a
    pass can be BELIEVED lives in the pure loopcheck.js. ---- */
 const LOOP_CHECK_MAX_BYTES = 64000;
+
+/* loopProjectFiles — a bounded, absolute-path listing of what is actually in the project. Deliberately NOT
+   projectScan's job: that answers "what changed lately", this answers "what IS there", and a loop pointed at
+   a clean repo needs the second one to orient at all. Skips the usual noise, caps breadth and depth so a huge
+   monorepo cannot flood the prompt, and never throws. */
+function loopProjectFiles(root, cap) {
+  const SKIP = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'target', '.next', 'vendor', '__pycache__', '.venv', 'coverage']);
+  const MAX = cap || 60, MAX_DEPTH = 4;
+  const out = [];
+  let truncated = false;
+  (function walk(dir, depth) {
+    if (out.length >= MAX || depth > MAX_DEPTH) { if (out.length >= MAX) truncated = true; return; }
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+    for (const e of entries) {
+      if (out.length >= MAX) { truncated = true; return; }
+      if (e.name.startsWith('.') && e.name !== '.env.example') continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) { if (!SKIP.has(e.name)) walk(full, depth + 1); }
+      else out.push(full);
+    }
+  })(root, 0);
+  out.truncated = truncated;
+  return out;
+}
 
 // the changed-file list at a blessed root, and whether we could establish it at all. `gitProven:false` is not
 // an error — it is the honest "we cannot enumerate what changed here", which loopcheck treats as unsafe.
@@ -4187,6 +4219,34 @@ const loopDriver = makeLoopDriver({
   // Tell the agent WHERE the project is. Reuses the interactive path's own helper AND its live blessing
   // check, so a revoked grant injects nothing rather than asserting folder access we cannot prove.
   projectLine: (loop) => (loop && loop.workdir && isBlessedRoot(loop.workdir)) ? projectScopeLine(loop.workdir, true) : '',
+  /* THE PROJECT SNAPSHOT. Reuses sidecar/projectscan.js (already used by the night shift) to put the real
+     absolute root and what is actually in it in front of the agent. It does two jobs at once:
+       · ANCHOR — the agent stops guessing at relative paths inside its own jail;
+       · PROOF — a scan that returns nothing means the pass would run BLIND, and `reachable:false` stops the
+         iteration before a model call. Without this a soft loop could report "0 findings" having looked only
+         at its empty jail, and the loop would count that as CONVERGENCE — the system asserting "nothing left
+         to do" about a project it never opened. */
+  context: async (loop) => {
+    if (!loop || !loop.workdir) return { text: '', reachable: true };
+    try {
+      // THE FILE LISTING IS THE LOAD-BEARING PART. projectScan reports git status / recent commits / TODO
+      // markers, which on a CLEAN repo is almost nothing — a dogfood sweep read that, ran a jailed fs_list,
+      // saw its own empty workspace and concluded "nothing to sweep". The agent must be shown the actual
+      // files, with absolute paths, or it has no way to know the project is even there.
+      const files = loopProjectFiles(loop.workdir);
+      if (!files.length) return { text: '', reachable: false, why: 'no readable files were found in ' + loop.workdir };
+      let scanText = '';
+      try { const r = await projectScan.scan(loop.workdir, {}); if (r && r.ok) scanText = String(r.text || '').trim(); } catch (_) {}
+      const lines = ['<project_snapshot root="' + loop.workdir + '">',
+        'These files really exist right now. Read and edit them at these ABSOLUTE paths — a bare relative path',
+        'resolves inside your own scratch workspace, NOT this project.', ''];
+      for (const f of files) lines.push('  ' + f);
+      if (files.truncated) lines.push('  … (listing truncated)');
+      if (scanText) lines.push('', scanText);
+      lines.push('</project_snapshot>');
+      return { text: lines.join('\n'), reachable: true };
+    } catch (e) { return { text: '', reachable: false, why: 'project scan failed: ' + ((e && e.message) || e) }; }
+  },
   snapshot: (loop) => (loop && loop.workdir && loop.checkCmd) ? loopChangedFiles(loop.workdir) : Promise.resolve(null),
   check: (loop, ctx) => runLoopCheck(loop, ctx && ctx.before),
   ledger: (entry) => { try { autonomyLedger.record(entry); } catch (_) {} },

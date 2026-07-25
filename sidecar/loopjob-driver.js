@@ -129,6 +129,12 @@
        not inject this is asking the agent to edit files it cannot find. The interactive path has always sent
        this (handleRun -> projectScopeLine); the loop driver simply never did. */
     const projectLine = isFn(deps.projectLine) ? deps.projectLine : null;
+    /* context(loop) -> Promise<{ text, reachable, why }>. The PROJECT SNAPSHOT, and the proof the folder is
+       readable at all. `reachable:false` ends the pass BEFORE the model call: a pass that cannot see the
+       project can only produce a blind answer, and a blind "0 findings" would otherwise be counted as
+       CONVERGENCE — the loop declaring "nothing left to do" about a project it never opened. A real dogfood
+       run did exactly that. */
+    const context = isFn(deps.context) ? deps.context : null;
 
     // loopId -> { runId, abort, startedAt }. In-memory only; the DURABLE half is the fire-claim on the record,
     // which is what survives a restart. Both are consulted by the gate.
@@ -149,10 +155,14 @@
 
     /* buildMessages — the iteration prompt: the standing objective, then the LEDGER DIGEST. The digest is what
        makes this a loop rather than a retry storm; see loopjob.digest. */
-    function buildMessages(loop) {
+    function buildMessages(loop, snapshotText) {
       const digest = LJ.digest(loop, {});
-      const body = digest ? (loop.objective + '\n\n' + digest) : loop.objective;
-      return [{ role: 'user', content: body }];
+      const parts = [loop.objective];
+      // the snapshot goes BEFORE the ledger: what the project looks like RIGHT NOW outranks what happened in
+      // earlier passes, and it is the thing that stops the agent guessing at paths inside its own jail.
+      if (snapshotText) parts.push(snapshotText);
+      if (digest) parts.push(digest);
+      return [{ role: 'user', content: parts.join('\n\n') }];
     }
 
     /* settle — record an iteration's outcome durably. Wrapped so that EVERY exit path from a fired run
@@ -248,13 +258,41 @@
 
       note('fire', fresh, { runId: runId, reason: 'iteration-' + iterN, binding: 'verdict', detail: { iteration: iterN } });
 
+      /* RESOLVE THE PROJECT CONTEXT BEFORE SPENDING. The slot and the durable claim are already taken (so a
+         crash here still burns the iteration rather than replaying it), but the model call has not happened.
+         An unreachable project ends the pass right here: a blind pass can only produce a blind answer, and a
+         blind "0 findings" would be counted as convergence. */
+      // No context dep (or a loop with no folder) launches SYNCHRONOUSLY, exactly as before — the async hop
+      // exists only where there is something real to resolve first, so the common path keeps its old timing.
+      if (!context) return launch('');
+
+      const ctxP = Promise.resolve().then(() => context(fresh))
+        .catch(e => ({ reachable: false, why: 'project scan failed: ' + ((e && e.message) || e) }));
+
+      ctxP.then((ctx) => {
+        ctx = ctx || { text: '', reachable: true };
+        if (ctx.reachable === false) {
+          return settle(loop.id, runId, {
+            status: 'error',
+            error: 'could not read the project folder — ' + (ctx.why || 'nothing was readable there') +
+              '. The pass was stopped before spending anything.'
+          });
+        }
+        return launch(ctx.text || '');
+      }).catch((e) => {
+        try { leases.delete(loop.id); } catch (_) {}
+        note('decline', fresh, { runId: runId, reason: 'context-threw', binding: 'internal', detail: { err: String((e && e.message) || e).slice(0, 200) } });
+      });
+      return true;
+
+      function launch(snapshotText) {
       const opts = {
         key: key,
         model: fresh.model || ident.model || deps.defaultModel,
         provider: provider,
         // the persona, plus the project-folder anchor when this loop works in a real folder
         system: (ident.system || personaOf()) + (projectLine ? String(projectLine(fresh) || '') : ''),
-        messages: buildMessages(fresh),
+        messages: buildMessages(fresh, snapshotText),
         agentId: fresh.agentId,
         isTask: true,
         signal: ac.signal,
@@ -313,6 +351,7 @@
           note('decline', fresh, { runId: runId, reason: 'settle-threw', binding: 'internal', detail: { err: String((e && e.message) || e).slice(0, 200) } });
         });
       return true;
+      }
     }
 
     /* applyTick — one pass over every loop. */
