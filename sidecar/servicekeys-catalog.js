@@ -85,6 +85,11 @@
       note: 'Notion also has a one-click OAuth connector in CATALOG — that is usually the easier route.' },
 
     // ── Developer Tools ──
+    { id: 'jina', name: 'Jina', category: 'Developer Tools', envVar: 'JINA_API_KEY',
+      docsUrl: 'https://jina.ai/reader/', apiBase: 'https://r.jina.ai',
+      blurb: 'Cleaner page-text extraction for web_fetch — pages come back as readable text instead of raw HTML.',
+      note: 'Optional. StarNet uses this automatically for web_fetch when connected; without it pages still load, just with cruder text extraction. Jina\'s keyless tier no longer works.' },
+
     { id: 'github', name: 'GitHub', category: 'Developer Tools', envVar: 'GITHUB_API_KEY',
       docsUrl: 'https://docs.github.com/rest', apiBase: 'https://api.github.com',
       authHint: 'Authorization: Bearer ${GITHUB_API_KEY}',
