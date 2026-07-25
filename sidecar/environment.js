@@ -285,6 +285,23 @@
     const cfg = deps.config || {};
     const sessions = new Map();
     const containerRoot = String(cfg.dockerWorkspace || '/workspace').replace(/\/+$/, '') || '/workspace';
+    // Same contract as the local backend: resolved PER CALL, fail-open, never a boot-time snapshot.
+    const serviceEnvFn = typeof deps.serviceEnv === 'function' ? deps.serviceEnv : null;
+    function serviceEnvFor() {
+      if (!serviceEnvFn) return {};
+      try {
+        const raw = serviceEnvFn() || {};
+        const out = {};
+        for (const k of Object.keys(raw)) {
+          // a container env name must never be a host safety pin or an execution hook, and must be a legal
+          // env identifier — `-e` takes the name verbatim, so a malformed one would become a docker flag.
+          if (INTERNAL_ENV_NAME_RE.test(k) || EXECUTION_HOOK_ENV_RE.test(k)) continue;
+          if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(k)) continue;
+          if (raw[k] != null && raw[k] !== '') out[k] = String(raw[k]);
+        }
+        return out;
+      } catch (_) { return {}; }
+    }
 
     function workspaceRoot(agentId) {
       return P.join(ROOT, safeAgentId(agentId || 'agent'));
@@ -305,13 +322,16 @@
       if (cwd && posixInside(cwd, containerRoot)) sessions.set(aid, cwd);
       return getCwd(aid);
     }
-    // NOTE: the docker backend passes NO environment into the container, so KEYS-tab service keys do not
-    // reach a containerised shell (passing them would put secrets on the docker argv, visible to every
-    // process listing — it needs --env-file or stdin, a separate change). Docker is opt-in via
-    // STARNET_EXEC_BACKEND; the default local backend is the path service keys are wired for.
-    function dockerArgs(agentId, cmd, cwd) {
+    // Service keys reach the container WITHOUT ever appearing on the command line. `docker run -e NAME`
+    // with NO `=value` tells docker to read that variable from ITS OWN environment and forward it, so the
+    // argv carries only the NAME (safe in any `ps` listing) while the value travels in the docker client's
+    // env — which is why serviceEnvFor() is merged into spawnOptions.env below rather than interpolated
+    // here. This is the reason not to use `-e NAME=value` or a temp --env-file: no secret on argv, no
+    // secret on disk. Resolved per call, so a key added or revoked after boot takes effect on the next run.
+    function dockerArgs(agentId, cmd, cwd, envNames) {
       const hostRoot = workspaceRoot(agentId);
       const args = ['run', '--rm', '-i'];
+      for (const n of (envNames || [])) args.push('-e', n);
       if (cfg.dockerSecurity !== false) args.push('--cap-drop', 'ALL', '--security-opt', 'no-new-privileges', '--pids-limit', '256');
       if (cfg.dockerNetwork) args.push('--network', String(cfg.dockerNetwork));
       if (cfg.dockerCpus) args.push('--cpus', String(cfg.dockerCpus));
@@ -345,11 +365,17 @@
         opts = opts || {};
         const aid = safeAgentId(opts.agentId || 'agent');
         const cwd = opts.cwd || getCwd(aid);
+        // Names go on the argv (`-e NAME`), values go in the DOCKER CLIENT's env — so the secret is never
+        // in a command line, and a container only ever receives keys the Commander connected.
+        const svc = serviceEnvFor();
+        const names = Object.keys(svc);
         return runProcess({
           spawn: spawn,
           file: cfg.dockerBin || 'docker',
-          args: dockerArgs(aid, opts.cmd, cwd),
-          spawnOptions: { windowsHide: true },
+          args: dockerArgs(aid, opts.cmd, cwd, names),
+          spawnOptions: names.length
+            ? { windowsHide: true, env: mergeServiceEnv(sanitizeChildEnv(deps.env || (typeof process !== 'undefined' ? process.env : {})), svc) }
+            : { windowsHide: true },
           timeoutMs: opts.timeoutMs,
           maxTimeoutMs: opts.maxTimeoutMs,
           maxBytes: opts.maxBytes,

@@ -136,6 +136,73 @@ const redact = (s) => String(s).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.ok(h.every(r => r.content !== 'OLD history turn (already persisted last run)'), 'pre-boundary history is NOT re-appended (no duplication)');
 }
 
+// ---- K2. appendNew survives COMPACTION — the boundary a positional fromIndex cannot express.
+//      The real shape: a RESUMED session assembles a long prompt, the loop compacts mid-run (loop.js rebuilds
+//      the SAME array in place and far SHORTER), and the run-end drain must still record every turn the loop
+//      added. Under the old positional boundary this appended ZERO rows and said nothing — the whole run's
+//      dialogue vanished, worst on exactly the long sessions most likely to compact. ----
+{
+  const s = makeTranscriptStore({ io: memIo(), clock });
+  // 1) resumed session: a long reconstructed history is the prompt the loop starts from
+  const msgs = [];
+  for (let i = 0; i < 102; i++) msgs.push({ role: i % 2 ? 'assistant' : 'user', content: 'prior turn ' + i });
+  const boundary = msgs.length;                       // exactly what the old code captured as _txStart
+  A.eq(s.markPersisted(msgs), 102, 'the assembled prompt is marked already-recorded');
+
+  // 2) the loop adds this run's turns
+  msgs.push({ role: 'assistant', content: '', tool_calls: [{ id: 'tc1', function: { name: 'fs_read', arguments: '{}' } }] });
+  msgs.push({ role: 'tool', content: 'file contents', tool_call_id: 'tc1' });
+
+  // 3) COMPACTION: fold the older turns and rebuild the array IN PLACE — same object, much shorter
+  const kept = msgs.slice(-2);                        // keepTail
+  msgs.length = 0;
+  msgs.push({ role: 'system', content: '<conversation_summary>folded</conversation_summary>' });
+  for (const m of kept) msgs.push(m);
+  A.ok(boundary > msgs.length, 'the positional boundary now points PAST the end of the array (the bug)');
+  A.eq(s.appendTurns('s1', 'a', msgs, boundary), 0, 'REGRESSION WITNESS: the old positional path silently records nothing');
+
+  // 4) the loop finishes
+  msgs.push({ role: 'assistant', content: 'Here is the answer.' });
+
+  // 5) run-end drain: marker-keyed, so a fold cannot invalidate it
+  A.eq(s.appendNew('s1', 'a', msgs), 3, 'every turn the loop added is recorded despite the compaction');
+  const h = s.history('s1');
+  A.eq(h.map(r => r.role), ['assistant', 'tool', 'assistant'], 'exact roles, chronological');
+  A.ok(h[0].toolCalls && h[0].toolCalls.indexOf('fs_read') !== -1, 'the assistant tool_call survives verbatim');
+  A.eq(h[1].toolCallId, 'tc1', 'the tool result keeps its pairing id');
+  A.eq(h[2].content, 'Here is the answer.', 'the final answer reached the durable transcript');
+  A.ok(h.every(r => String(r.content).indexOf('prior turn') !== 0), 'already-recorded history is never re-appended');
+}
+
+// ---- K3. the mid-run drain is IDEMPOTENT: turns folded away are recorded once, at the fold, and the run-end
+//      drain adds only the remainder. This is what keeps the dialogue COMPLETE (not merely non-empty) when a
+//      long run compacts — the run-end pass can only ever see what survived the fold. ----
+{
+  const s = makeTranscriptStore({ io: memIo(), clock });
+  const msgs = [{ role: 'user', content: 'the directive' }];
+  s.markPersisted(msgs);                                   // the directive is recorded separately by the host
+  const t1 = { role: 'assistant', content: 'step one' };
+  const t2 = { role: 'assistant', content: 'step two' };
+  msgs.push(t1, t2);
+  // compaction is about to delete [t1]; index.js drains that slice inside summarize() before it is dropped
+  A.eq(s.appendNew('s1', 'a', [t1]), 1, 'the folded slice is drained before it is deleted');
+  msgs.length = 0;
+  msgs.push({ role: 'system', content: '<conversation_summary>folded</conversation_summary>' }, t2);
+  msgs.push({ role: 'assistant', content: 'final' });
+  A.eq(s.appendNew('s1', 'a', msgs), 2, 'run-end drain adds only what was not already recorded');
+  A.eq(s.history('s1').map(r => r.content), ['step one', 'step two', 'final'], 'complete dialogue, in order, no duplicates');
+}
+
+// ---- K4. the boundary marker is invisible: it never reaches disk and never rides out to a provider ----
+{
+  const s = makeTranscriptStore({ io: memIo(), clock });
+  const m = { role: 'user', content: 'hello' };
+  s.markPersisted([m]);
+  A.eq(JSON.stringify(m), '{"role":"user","content":"hello"}', 'marker is invisible to JSON.stringify (never sent on the wire)');
+  A.eq(Object.keys(m).join(','), 'role,content', 'marker adds no enumerable key');
+  A.eq(s.markPersisted([m]), 0, 'marking is idempotent');
+}
+
 // ---- L. (H1.2) reconstruct(): rebuild OpenAI-format messages incl. tool_calls/tool pairs for resume ----
 {
   const s = makeTranscriptStore({ io: memIo(), clock });

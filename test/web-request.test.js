@@ -167,5 +167,58 @@ const OK = [{ status: 200, headers: { 'content-type': 'application/json' }, body
     A.ok(/never see it/.test(t.description) || /never ask the user/.test(t.description), 'the description forbids asking the user for the key');
   }
 
+  // ---- J. the AUTH DESCRIPTOR: query-parameter APIs, without the model ever writing the secret ----
+  {
+    // query mode: the host attaches it at send time
+    const rec = recorder(OK);
+    const out = await tools('interactive', rec.impl).run(
+      { url: 'https://api.example.com/v1/items', auth: { key: 'PRINTIFY_API_KEY', in: 'query', name: 'api_key' } }, ctx());
+    A.ok(rec.sent[0].url.indexOf('api_key=' + SECRET) >= 0, 'the key IS on the wire as a query parameter');
+    A.ok(out.content.indexOf(SECRET) < 0, 'THE CORE PROPERTY: the secret is still absent from the tool result');
+    A.ok(out.content.indexOf('api_key') < 0 || !/api_key=/.test(out.content), 'the echoed label carries no query string');
+    A.ok(/authenticated with PRINTIFY_API_KEY/.test(out.content), 'the model is told which key was spent');
+
+    // header mode with a prefix, for symmetry
+    const rec2 = recorder(OK);
+    await tools('interactive', rec2.impl).run(
+      { url: 'https://api.example.com/v1', auth: { key: 'PRINTIFY_API_KEY', in: 'header', name: 'X-Api-Key', prefix: 'Token ' } }, ctx());
+    A.eq(rec2.sent[0].opts.headers['X-Api-Key'], 'Token ' + SECRET, 'header mode applies the prefix');
+
+    // the unattended grant governs this path too — it is the same resolver
+    const rec3 = recorder(OK);
+    let msg = '';
+    try {
+      await tools('autonomous', rec3.impl).run(
+        { url: 'https://api.example.com/v1', auth: { key: 'PRINTIFY_API_KEY', in: 'query', name: 'api_key' } }, ctx());
+    } catch (e) { msg = e.message; }
+    A.ok(/unattended/.test(msg), 'an ungranted key is refused in query mode too');
+    A.eq(rec3.sent.length, 0, 'and nothing was sent');
+
+    // a granted key works unattended
+    const rec4 = recorder(OK);
+    await tools('autonomous', rec4.impl).run(
+      { url: 'https://api.example.com/v1', auth: { key: 'NIGHTLY_API_KEY', in: 'query', name: 'api_key' } }, ctx());
+    A.ok(rec4.sent[0].url.indexOf('api_key=nightly-token') >= 0, 'an approved key IS spendable unattended in query mode');
+
+    // auth.key must be a NAME — a pasted literal value must be refused, or the model could smuggle a secret in
+    const rec5 = recorder(OK);
+    let m2 = '';
+    try {
+      await tools('interactive', rec5.impl).run(
+        { url: 'https://api.example.com/v1', auth: { key: 'sk-live-actual-secret', in: 'query', name: 'api_key' } }, ctx());
+    } catch (e) { m2 = e.message; }
+    A.ok(/never a key value/.test(m2), 'a literal value in auth.key is refused: ' + JSON.stringify(m2));
+    A.eq(rec5.sent.length, 0, 'and nothing was sent');
+
+    // a cross-host redirect must not carry the query credential onward
+    const rec6 = recorder([
+      { status: 302, headers: { location: 'https://evil.example.com/steal' } },
+      { status: 200, headers: { 'content-type': 'text/plain' }, body: 'ok' }
+    ]);
+    await tools('interactive', rec6.impl).run(
+      { url: 'https://api.example.com/v1', auth: { key: 'PRINTIFY_API_KEY', in: 'query', name: 'api_key' } }, ctx());
+    A.ok(rec6.sent[1].url.indexOf(SECRET) < 0, 'hop 2 (different host) carries no query credential');
+  }
+
   A.report('web-request.test.js');
 })().catch(e => { console.log('FAIL: web-request.test.js threw — ' + (e && e.stack || e)); process.exit(1); });

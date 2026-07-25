@@ -14,7 +14,7 @@ const Build = (() => {
   const TOOLS = [
     { id: 'room', key: '1', label: '▦ ROOM', hint: 'drag on the grid to place a room', cursor: 'crosshair' },
     { id: 'hall', key: '2', label: '═ HALLWAY', hint: 'drag along an axis to run a corridor — any length', cursor: 'crosshair' },
-    { id: 'paint', key: '3', label: '▧ PAINT', hint: 'drag to paint deck tiles · click a room to fill it', cursor: 'cell' },
+    { id: 'paint', key: '3', label: '▧ PAINT', hint: 'click a room to lay the selected deck · drag to paint single tiles in the colour', cursor: 'cell' },
     { id: 'move', key: '4', label: '✥ MOVE', hint: 'drag a room to relocate it', cursor: 'move' },
     { id: 'reclaim', key: '5', label: '⌫ RECLAIM', hint: 'click a room, prop, or belt to tear it down · drag across a belt to clear the whole run (UNDO restores it)', cursor: 'not-allowed' },
     { id: 'prop', key: '6', label: '⚇ PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
@@ -45,7 +45,10 @@ const Build = (() => {
   const MINZ = 0.4, MAXZ = 6;
 
   // interaction state
-  let tool = 'room', kind = 'hab', style = 'cobalt', hallWidth = 2, propType = 'desk', propCat = 'workstation', propTier = 'functional';
+  let tool = 'room', kind = 'hab', style = 'cobalt', mat = 'plate', hallWidth = 2, propType = 'desk', propCat = 'workstation', propTier = 'functional';
+  // PAINT targets one surface at a time — the deck or the walls — so the palette stays two rows
+  // instead of four. 'follow' wall colour = inherit the room's floor hue (the default).
+  let paintTarget = 'floor', wallMat = 'plating', wallStyle = 'follow';
   let drag = null, hoverRoomId = null, hoverPropId = null, hoverTile = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
   let dupe = null;   // DUPE tool clipboard: {type:'prop'|'room', rects (rel to top-left), …} — armed = ghost follows cursor, click stamps
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
@@ -285,16 +288,87 @@ const Build = (() => {
       pal.appendChild(grid);
       try { paintThumbs(performance.now()); } catch (e) {}   // first frame now, so the gallery isn't blank for a beat
     } else if (tool === 'paint') {
-      paletteLabel = 'DECK PAINT';
-      Object.keys(station.FLOOR_STYLES).forEach(sid => {
+      // TWO AXES, TWO ROWS: the MATERIAL (what the deck is made of) and the HUE (what colour it
+      // is). They compose — every material renders in whatever colour is selected — so the
+      // Commander picks a deck the same way you'd pick flooring: the stuff, then the shade.
+      const walls = paintTarget === 'walls';
+      paletteLabel = walls ? 'WALLS' : 'DECK';
+      const row = (caption) => {
+        const wrap = document.createElement('div'); wrap.className = 'refit-palrow refit-propcats';
+        const cap = document.createElement('div'); cap.className = 'refit-palcap'; cap.textContent = caption;
+        wrap.appendChild(cap);
+        pal.appendChild(wrap);
+        return wrap;
+      };
+      // TARGET — deck or walls. Two surfaces, one palette; reuses the tier-toggle idiom.
+      const tgt = document.createElement('div'); tgt.className = 'refit-tiers';
+      tgt.setAttribute('aria-label', 'Paint target');
+      [['floor', '▧ DECK'], ['walls', '▤ WALLS']].forEach(([id, label]) => {
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = 'refit-swatch' + (sid === style ? ' active' : '');
-        b.setAttribute('aria-pressed', sid === style ? 'true' : 'false');
+        b.className = 'bb sm refit-tier refit-painttarget' + (paintTarget === id ? ' active' : '');
+        b.dataset.target = id;
+        b.setAttribute('aria-pressed', paintTarget === id ? 'true' : 'false');
+        b.textContent = label;
+        b.onclick = () => { paintTarget = id; renderPalette(); setHint(); sfx('click'); };
+        tgt.appendChild(b);
+      });
+      pal.appendChild(tgt);
+
+      const matRow = row('MATERIAL');
+      const catalog = walls ? (station.WALL_MATERIALS || {}) : (station.FLOOR_MATERIALS || {});
+      const order = walls ? (station.WALL_ORDER || Object.keys(catalog)) : (station.MAT_ORDER || Object.keys(catalog));
+      order.forEach(mid => {
+        const def = catalog[mid];
+        if (!def) return;
+        const active = walls ? (mid === wallMat) : (mid === mat);
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'refit-swatch refit-matswatch' + (active ? ' active' : '');
+        b.dataset.mat = mid;
+        b.dataset.surface = walls ? 'wall' : 'floor';
+        b.setAttribute('aria-pressed', active ? 'true' : 'false');
+        b.appendChild(walls ? wallSwatchCanvas(mid, wallBaseFor(mid)) : matSwatchCanvas(mid, styleBaseFor(mid)));
+        const nm = document.createElement('span'); nm.className = 'refit-matname'; nm.textContent = def.label;
+        b.appendChild(nm);
+        b.title = def.label + (walls ? ' walls' : ' deck');
+        // picking a material also moves the hue to the one it was drawn for (wood wants a wood
+        // tone) — visibly, in the row below, so the Commander can still override it right after.
+        b.onclick = () => {
+          if (walls) { wallMat = mid; if (def.suggest && station.FLOOR_STYLES[def.suggest]) wallStyle = def.suggest; }
+          else { mat = mid; if (def.suggest && station.FLOOR_STYLES[def.suggest]) style = def.suggest; }
+          renderPalette(); setHint(); sfx('click');
+        };
+        matRow.appendChild(b);
+      });
+
+      const hueRow = row('COLOUR');
+      if (walls) {
+        // AUTO — walls inherit the room's deck hue. This is the default and the one most people
+        // want, so it leads the row rather than hiding at the end.
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'refit-swatch refit-matswatch' + (wallStyle === 'follow' ? ' active' : '');
+        b.dataset.hue = 'follow';
+        b.setAttribute('aria-pressed', wallStyle === 'follow' ? 'true' : 'false');
+        b.appendChild(wallSwatchCanvas(wallMat, null));
+        const nm = document.createElement('span'); nm.className = 'refit-matname'; nm.textContent = 'AUTO';
+        b.appendChild(nm);
+        b.title = 'match the room’s deck colour';
+        b.onclick = () => { wallStyle = 'follow'; renderPalette(); sfx('click'); };
+        hueRow.appendChild(b);
+      }
+      Object.keys(station.FLOOR_STYLES).forEach(sid => {
+        const cur = walls ? wallStyle : style;
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'refit-swatch' + (sid === cur ? ' active' : '');
+        b.dataset.hue = sid;
+        b.setAttribute('aria-pressed', sid === cur ? 'true' : 'false');
         b.appendChild(swatchCanvas(station.FLOOR_STYLES[sid].base));
         b.title = station.FLOOR_STYLES[sid].label;
-        b.onclick = () => { style = sid; renderPalette(); sfx('click'); };
-        pal.appendChild(b);
+        b.onclick = () => { if (walls) wallStyle = sid; else style = sid; renderPalette(); sfx('click'); };
+        hueRow.appendChild(b);
       });
     }
     if (label) label.textContent = paletteLabel || 'OPTIONS';
@@ -381,6 +455,44 @@ const Build = (() => {
     return c;
   }
 
+  // the hue a material's swatch previews in: its own suggested tone if it has one (wood in a wood
+  // colour), otherwise whatever hue is currently selected — so the chip shows what you'd get.
+  function styleBaseFor(mid) {
+    const def = station.FLOOR_MATERIALS && station.FLOOR_MATERIALS[mid];
+    const sid = (def && def.suggest && station.FLOOR_STYLES[def.suggest]) ? def.suggest : style;
+    return (station.FLOOR_STYLES[sid] || station.FLOOR_STYLES.hull).base;
+  }
+  /* the material chip is rendered by the REAL bake (StationBake.sampleMaterial paints through the
+     same per-tile painters the station uses), so a deck preview can never promise a look the
+     station won't deliver. Falls back to the flat colour chip if the bake module isn't loaded. */
+  function matSwatchCanvas(mid, base) {
+    const c = document.createElement('canvas'); c.width = 40; c.height = 24;
+    const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+    x.fillStyle = base; x.fillRect(0, 0, 40, 24);
+    try { if (typeof StationBake !== 'undefined' && StationBake.sampleMaterial) StationBake.sampleMaterial(x, mid, base, 4, 2, 12); }
+    catch (e) { /* a swatch must never break the palette */ }
+    return c;
+  }
+
+  // the hue a WALL swatch previews in. AUTO has no hue of its own, so it borrows the currently
+  // selected deck colour — which is exactly what "match the deck" will produce.
+  function wallBaseFor(mid) {
+    const def = station.WALL_MATERIALS && station.WALL_MATERIALS[mid];
+    if (wallStyle !== 'follow' && station.FLOOR_STYLES[wallStyle]) return station.FLOOR_STYLES[wallStyle].base;
+    const sid = (def && def.suggest && station.FLOOR_STYLES[def.suggest]) ? def.suggest : style;
+    return (station.FLOOR_STYLES[sid] || station.FLOOR_STYLES.hull).base;
+  }
+  // same contract as matSwatchCanvas: painted by the REAL wall recipes, never a hand-drawn mock
+  function wallSwatchCanvas(mid, base) {
+    const c = document.createElement('canvas'); c.width = 40; c.height = 26;
+    const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
+    const b = base || wallBaseFor(mid);
+    x.fillStyle = b; x.fillRect(0, 0, 40, 26);
+    try { if (typeof StationBake !== 'undefined' && StationBake.sampleWall) StationBake.sampleWall(x, mid, b, 4, 26, 12); }
+    catch (e) { /* a swatch must never break the palette */ }
+    return c;
+  }
+
   function selectTool(id) {
     tool = id; drag = null; connectFrom = null; dupe = null; hideTip(); hidePropCard();
     root.querySelectorAll('.refit-tool').forEach(b => {
@@ -394,7 +506,12 @@ const Build = (() => {
   function setHint(msg) {
     if (!hintEl) return;
     const t = TOOLS.find(x => x.id === tool);
-    hintEl.textContent = msg || (t ? t.hint : '') + '  ·  wheel = zoom · space-drag = pan';
+    // PAINT means two different gestures depending on which surface is targeted — say which
+    let base = t ? t.hint : '';
+    if (tool === 'paint') base = paintTarget === 'walls'
+      ? 'click a room to clad its walls'
+      : 'click a room to lay the selected deck · drag to paint single tiles in the colour';
+    hintEl.textContent = msg || base + '  ·  wheel = zoom · space-drag = pan';
   }
   function setCursor() {
     if (!cv) return;
@@ -1052,11 +1169,19 @@ const Build = (() => {
     feedback(station.moveProp(d.propId, dx, dy), ev, 'relocated');
   }
   function commitPaint(d, ev) {
+    // WALLS are a whole-room surface — there's no per-tile wall, so a drag means the same thing
+    // as a click here rather than silently doing nothing.
+    if (paintTarget === 'walls') {
+      feedback(station.setWalls(d.roomId, { style: wallStyle, mat: wallMat }), ev, 'walls clad');
+      return;
+    }
     if (d.moved) {
       const tiles = [...d.cells].map(k => { const p = k.split(','); return [+p[0], +p[1]]; });
       feedback(station.paintTiles(d.roomId, tiles, style), ev, 'painted');
     } else {
-      feedback(station.setFloor(d.roomId, style), ev, 'deck repainted');   // a plain click fills the room
+      // a plain click LAYS THE WHOLE DECK — material and hue together, in one undo slot, so
+      // "undo" reverses the deck the Commander just saw laid rather than half of it.
+      feedback(station.setDeck(d.roomId, { style, mat }), ev, 'deck laid');
     }
   }
   function commitReclaim(d, ev) {   // RECLAIM
@@ -1277,8 +1402,9 @@ const Build = (() => {
     const t = T();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.imageSmoothingEnabled = false;
-    // THE VOID backdrop, shared with the live world (SpaceBG) so entering/exiting REFIT doesn't jump the sky
-    if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now);
+    // The backdrop, shared with the live world (SpaceBG) so entering/exiting REFIT doesn't jump the sky —
+    // same selection, same camera contract (REFIT's zoom is the world's `scale`), so the parallax matches too.
+    if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now, { panX, panY, scale: zoom });
     else { ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height); }
 
     ctx.setTransform(zoom, 0, 0, zoom, panX, panY);

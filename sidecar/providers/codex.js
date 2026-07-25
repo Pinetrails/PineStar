@@ -197,6 +197,7 @@
       const argsLen = new Map();       // output_index -> chars of tool-args already emitted (de-dupe across arg shapes)
       let nextToolIndex = 0;
       let sawToolCall = false;
+      let doneEmitted = false;         // exactly one terminal event per stream (see STREAM-END TRUTH below)
 
       // parse ONE raw SSE line -> a control signal or a JSON event payload. Responses SSE puts the event
       // name on both an `event:` line AND inside `data.type`; we switch on `data.type`.
@@ -257,14 +258,18 @@
           case 'response.completed': {
             const r = ev.response || {};
             if (r.usage) yield { type: 'usage', usage: normalizeUsage(r.usage) };
-            yield { type: 'done', finishReason: finishFor(r) };
+            doneEmitted = true;
+            yield { type: 'done', finishReason: finishFor(r), truncated: false };
             return;
           }
           case 'response.incomplete': {
             const r = ev.response || {};
             if (r.usage) yield { type: 'usage', usage: normalizeUsage(r.usage) };
             const reason = (r.incomplete_details && r.incomplete_details.reason) || '';
-            yield { type: 'done', finishReason: /max_output_tokens|length/.test(reason) ? 'length' : normalizeFinish('stop') };
+            doneEmitted = true;
+            // an explicit `response.incomplete` is the SERVER stating it stopped early — a known, reported stop
+            // (surfaced as finishReason 'length'), not a stream that died in transit.
+            yield { type: 'done', finishReason: /max_output_tokens|length/.test(reason) ? 'length' : normalizeFinish('stop'), truncated: false };
             return;
           }
           case 'response.failed': {
@@ -287,7 +292,8 @@
       }
 
       try {
-        while (true) {
+        let sawSentinel = false;                     // the `data: [DONE]` end-of-stream marker
+        while (!sawSentinel) {
           const { value, done } = await reader.read();
           if (done) break;
           buf += dec.decode(value, { stream: true });
@@ -296,12 +302,24 @@
             const lineStr = buf.slice(0, nl); buf = buf.slice(nl + 1);
             const p = parseLine(lineStr);
             if (!p) continue;
-            if (p.done) return;
+            if (p.done) { sawSentinel = true; break; }
             yield* emitFrom(p.json);
           }
         }
-        buf += dec.decode();
-        if (buf.trim()) { const p = parseLine(buf); if (p && !p.done && p.json) yield* emitFrom(p.json); }
+        if (!sawSentinel) {
+          buf += dec.decode();
+          if (buf.trim()) {
+            const p = parseLine(buf);
+            if (p && p.done) sawSentinel = true;
+            else if (p && p.json) yield* emitFrom(p.json);
+          }
+        }
+        // STREAM-END TRUTH (truthful-telemetry law): always emit exactly ONE terminal event, and say honestly
+        // whether the stream really ENDED or merely stopped arriving. A finished Responses stream carries
+        // `response.completed`/`response.incomplete` (both set doneEmitted) and/or the `[DONE]` sentinel; a
+        // clean mid-generation FIN carries NEITHER, and the loop cannot otherwise tell it apart from a
+        // finished answer — so it shipped the fragment as a completed, $0 delivery.
+        if (!doneEmitted) yield { type: 'done', finishReason: null, truncated: !sawSentinel };
       } catch (e) {
         if (isAbort(e, req.signal)) return;
         throw e;

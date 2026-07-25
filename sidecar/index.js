@@ -96,7 +96,8 @@ const { makeFolderPick } = require('./folderpick.js');          // Projects rail
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeTelegramTransport } = require('./channels/telegram.transport.js');   // multi-bot connect: getMe token probe
 const { makeChannelStore } = require('./channels/store.js');
-const { makeChannelHub } = require('./channels/hub.js');
+const { makeChannelHub, menuCommands } = require('./channels/hub.js');
+const { makePromptRegistry } = require('./channels/prompts.js');   // C6: the bounded token→meaning map behind inline keyboards
 const { makeOpenAiCompat } = require('./openai-compat.js');   // /v1/* OpenAI-compatible surface (external harness ingress)
 const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
 const { parseSlackTokens } = require('./channels/slack.js');                       // slack stores its two tokens as ONE secret string
@@ -352,6 +353,10 @@ const MAX_CONCURRENT_AGENTS = resolveKnob('MAX_CONCURRENT_AGENTS', 'maxConcurren
 // Stage 2: per-WORKER USD ceiling for a delegated sub-run, so the lead fanning out to a crew can't let one
 // runaway worker blow the lead's own per-run cap. 0 = ungoverned (the cross-run pools still apply).
 const ORCH_PER_WORKER = num(ENV('BUDGET_PER_WORKER'), 1);
+// Stage 2 companion to ORCH_PER_WORKER: per-WORKER tool-turn ceiling. A delegated worker doing one
+// scoped subtask has no business burning the lead's whole 40-turn budget. runOnce clamps this DOWN
+// only (see runMaxIters) so a caller can never widen past the station's own CAPS.maxIters.
+const ORCH_WORKER_MAX_ITERS = num(ENV('WORKER_MAX_ITERS'), 10);
 // ---- MANAGED CREDITS (opt-in, config-gated). The whole managed-credit path is INERT unless STARNET_CREDITS_URL
 // points at a credits backend: no payment client is built, admission stays pure BYOK, no STORE UI renders, and
 // /api/credits 404s (the honesty law — a control that does nothing is a bug). When wired, a managed account can
@@ -2012,6 +2017,53 @@ function blanketSetFor(agentId) {
 }
 const pendingByRun = new Map();            // runId -> Map(promptId -> resolve(decision)); the live consent prompts
 const pendingSummonByRun = new Map();      // runId -> Map(requestId -> resolve(newAgentId|null)); live team.summon requests awaiting the browser
+
+/* ---- CHANNEL CONSENT (C6): the pause/resolve behind a messaging approve/deny keyboard ---------------------
+   A chat that opted into `/approvals` runs surface:'interactive', so the broker await-pauses on a prompt just
+   like a browser run does. The TIMING is the browser's, byte-for-byte: the same unit-tested makeConsentWait,
+   the same CONSENT_TIMEOUT_MS fail-closed floor, the same instant deny on abort. The hub owns only the
+   keyboard render and the button→decision hop; nothing about pausing a run lives out there.
+
+   Deliberately a SEPARATE map from pendingByRun: the browser's consent card resolves a prompt with the runId
+   it learned from its OWN NDJSON stream, which it never has for a channel run. Putting these in pendingByRun
+   would surface prompts through GET /api/state/snapshot that the app is structurally unable to answer — a card
+   that lies about being actionable. A Telegram prompt is answered on Telegram (or it fail-closes). */
+const channelPendingByRun = new Map();     // runId -> Map(promptId -> finish(decision)); live CHANNEL consent prompts
+function channelAskConsent(o) {
+  const runId = String((o && o.runId) || '');
+  let pend = channelPendingByRun.get(runId);
+  if (!pend) { pend = new Map(); channelPendingByRun.set(runId, pend); }
+  // the exact fields the browser's consent card renders, so both surfaces describe one ask identically.
+  const fields = {
+    tool: (o.call && o.call.name) || 'tool',
+    scope: (o.tool && o.tool.scope) || 'write',
+    argsSummary: consentSummary(o.call)
+  };
+  return makeConsentWait({
+    pending: pend, signal: o.signal, timeoutMs: CONSENT_TIMEOUT_MS, extendMs: CONSENT_ACK_EXTEND_MS,
+    uuid: () => crypto.randomUUID(),
+    // onPrompt is the hub's cue to render the keyboard. It is called synchronously while the deny timer is
+    // already armed, so a throw from the renderer must never escape into the waiter (it would leave the run
+    // paused with no timer owner) — hence the guard.
+    emitPrompt: (promptId) => { try { if (typeof o.onPrompt === 'function') o.onPrompt(promptId, fields); } catch (_) {} }
+  }).ask().then((decision) => {
+    // makeConsentWait removes its own promptId; drop the run's bucket once the last prompt settles so a long
+    // -lived channel can't accumulate one empty Map per run forever.
+    if (pend.size === 0) channelPendingByRun.delete(runId);
+    return decision;
+  });
+}
+// Resolve one prompt BY ITS OWN ID. (The reference harness resolves the session's queue head instead, so with
+// two concurrent prompts a tap on the second answers the first — keying by promptId makes that unrepresentable.)
+// Returns false when the host already settled it: timed out, aborted by a superseding message, or E-STOPped.
+function channelResolveConsent(runId, promptId, decision) {
+  const d = (decision === 'once' || decision === 'session' || decision === 'always' || decision === 'full') ? decision : 'deny';
+  const pend = channelPendingByRun.get(String(runId == null ? '' : runId));
+  const finish = pend && pend.get(String(promptId == null ? '' : promptId));
+  if (!finish) return false;
+  finish(d);
+  return true;
+}
 // unconditional hardline floor: protected files no flag (not even Full Access) can write. The authoritative
 // resolved-abs-path floor belongs in dispatch AFTER resolveInside; this catches the reachable relative cases.
 function hardlineFloor(call) {
@@ -2026,7 +2078,10 @@ function hardlineFloor(call) {
    the bus, never returned by /status) so polling survives a restart with no browser open. The adapter is the
    lone ambient-I/O edge (injected globalThis.fetch); the hub drives the SAME runOnce host with
    surface:'autonomous' (a headless chat has no browser to answer a consent prompt — ungranted writes
-   default-deny and the run continues). Opt-in: nothing starts unless the Commander connects (or env is set). */
+   default-deny and the run continues) — unless a chat opted into approve/deny buttons with `/approvals on`,
+   which flips THAT chat to surface:'interactive' and answers the prompt over an inline keyboard (C6; the
+   pause/resolve stays here in channelAskConsent/channelResolveConsent, the hub only renders and routes the
+   tap). Opt-in: nothing starts unless the Commander connects (or env is set). */
 const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the STARNET station, reachable over Telegram. '
   + 'Address the user as "Commander", keep a spark of personality, and keep replies concise and chat-friendly. '
   + 'When the Commander gives you a task you have REAL tools (web search/read, files, memory) — use them and '
@@ -4198,7 +4253,11 @@ function armQuestRefresh() {
    never breaks a run); the restore route is always available. The pure index/rollback math is checkpoint.js;
    the git/fs is here, the one ambient-I/O edge. ---- */
 const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CHECKPOINTS') || '').trim());
-const mutatesWorkspace = (name) => /^fs\.(write|append|edit)$/.test(name) || /^(shell|verify)\./.test(name);
+// fs.patch belongs here with the other writers: it is the WIDEST-blast-radius fs tool (multi-hunk, multi-file,
+// and the one the system prompt actively recommends over fs.edit for real edits), so leaving it out meant the
+// single most destructive tool ran with NO workspace lease and NO checkpoint snapshot — the exact combination
+// the net exists to prevent. Keep this pattern in sync with the fs writers in tools/builtin/fs.js.
+const mutatesWorkspace = (name) => /^fs\.(write|append|edit|patch)$/.test(name) || /^(shell|verify)\./.test(name);
 // WORKSPACE LEASE (concurrent-sessions lane): same-agent runs are now admitted concurrently; the ONE thing
 // they can't share — the workspace dir + shadow-git checkpoint repo — is guarded here instead, at the first
 // workspace-MUTATING tool call. Held from first touch until run end (checkpoint chain stays contiguous per
@@ -4287,6 +4346,13 @@ function startTelegram(token, key, model, agentCfg) {
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
     chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    // INLINE KEYBOARDS (C6): multiple-choice answers and — for chats that ran /approvals on — approve/deny.
+    // The registry is per-BOT (its tokens address this bot's messages only). askConsent/resolveConsent keep the
+    // pause/resolve in the host; the hub only renders the keyboard and routes the tap back.
+    prompts: makePromptRegistry({ newId: () => crypto.randomUUID() }),
+    answerCallback: (cbId, text) => adapterRef ? adapterRef.answerCallback(cbId, text) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    askConsent: channelAskConsent, resolveConsent: channelResolveConsent,
     secrets: () => {
       const t = (channelSecrets && channelSecrets.telegram) || {};
       const provider = normalizeProvider(t.provider);
@@ -4393,8 +4459,20 @@ function startTelegram(token, key, model, agentCfg) {
   // first getUpdates round-trip succeeds, or to 'error' if the token is bad. The panel derives CONNECTED from this.
   telegramStatus = { connected: false, state: 'connecting', detail: '' };
   adapter.connect();
+  publishCommandMenu(adapter, 'telegram');
   console.log('  · telegram channel connecting…');
   return { secretsPersisted };
+}
+
+// Publish the bot's "/" menu from the hub's OWN command table, so Telegram can never offer a command the hub
+// doesn't implement (or hide one it does). Fire-and-forget and non-blocking: an empty menu is cosmetic, and a
+// slow setMyCommands must never delay or fail a connect (a lesson the reference harness learned the hard way —
+// it had to move this off the connect path entirely after slow calls blew its connect timeout).
+function publishCommandMenu(adapter, label) {
+  if (!adapter || typeof adapter.setCommands !== 'function') return;
+  Promise.resolve(adapter.setCommands(menuCommands()))
+    .then((r) => { if (r && r.ok === false) console.warn('[' + label + '] command menu not published: ' + (r.error || 'unknown')); })
+    .catch(() => {});
 }
 function stopTelegram() {
   if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
@@ -4472,7 +4550,13 @@ function startTelegramBot(botId) {
     resolveStation: (agentId) => router.stationFor(agentId),
     fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
     saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
-    expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId)
+    expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId),
+    // INLINE KEYBOARDS (C6) — same wiring as the station bot, with its OWN registry so tokens minted for this
+    // bot's messages can never address another bot's chat. /approvals is per-chat here too.
+    prompts: makePromptRegistry({ newId: () => crypto.randomUUID() }),
+    answerCallback: (cbId, text) => adapterRef ? adapterRef.answerCallback(cbId, text) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    askConsent: channelAskConsent, resolveConsent: channelResolveConsent
   });
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
@@ -4494,6 +4578,7 @@ function startTelegramBot(botId) {
   entry.adapter = adapter; entry.hub = hub;
   telegramBots.set(botId, entry);
   adapter.connect();
+  publishCommandMenu(adapter, 'telegram:' + botId);
   console.log('  · telegram bot ' + (rec.username ? '@' + rec.username : botId) + ' connecting…');
 }
 function stopTelegramBot(botId) {
@@ -8181,6 +8266,12 @@ async function runOnce(o) {
   const runCapUsd = (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd
     : (providerUnmetered ? Infinity
     : ((effectiveCaps.perRun > 0 && isFinite(effectiveCaps.perRun)) ? effectiveCaps.perRun : Infinity));
+  // Same rule as o.maxCostUsd for the TURN budget: an explicit caller cap (o.maxIters -- e.g. a delegated
+  // worker's ORCH_WORKER_MAX_ITERS) is honored, but may only LOWER the ceiling. Without this the value
+  // orchestration.js has always passed was silently dropped and every worker ran the lead's full budget.
+  const runMaxIters = (o.maxIters > 0 && isFinite(o.maxIters))
+    ? Math.max(1, Math.min(Math.floor(o.maxIters), CAPS.maxIters))
+    : CAPS.maxIters;
   const managedRun = credits.configured() && !providerUnmetered;
   if (managedRun) {
     // a managed reservation needs a FINITE cap to hold; an ungoverned per-run can't be pre-authorized.
@@ -8355,7 +8446,7 @@ async function runOnce(o) {
     classes: SPECIALIST_CLASSES,   // Class Loadouts S1: the summon-tool class list, composed from the shared catalog (no hardcoded prose)
     selfSystem: system,   // team.spawn clones the LEAD's OWN base identity into each ephemeral subagent (Meeseeks)
     taskContext: taskContextBlock,   // workers inherit settled task decisions without re-questioning the Commander
-    perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID(),
+    perWorker: ORCH_PER_WORKER, workerMaxIters: ORCH_WORKER_MAX_ITERS, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS,   // minutes, not the 30s fast-tool cap (see constant)
     // Cross-provider dispatch: resolve a WORKER's own roster provider to the station's server-held credential
     // (BYOK keys / codex OAuth). null when the station holds none -> orchestration falls back to the lead's
@@ -8603,6 +8694,13 @@ async function runOnce(o) {
   // reads agent.cost.tokensIn as "current prompt size") is not transiently corrupted by the summarizer's small
   // prompt. The loop owns the accounting; this emit is for the cost stream only.
   async function summarize(older, prevSummary) {
+    // TRANSCRIPT DRAIN (before the fold): `older` is the exact slice compaction is about to delete from the live
+    // messages array. Turns THIS run produced that land in the fold would otherwise never reach the durable
+    // transcript at all — the run-end append can only see what SURVIVED the fold. Draining here keeps the durable
+    // dialogue complete for precisely the long runs that compact (and whose history recall_conversation searches).
+    // Marker-keyed and idempotent, so draining here and again at run end writes each turn exactly once, and a
+    // summarizer that fails (leaving history unfolded) still leaves the transcript correct. Fail-open.
+    try { transcriptStore.appendNew(o.streamId, agentId, older); } catch (_) { /* never block a compaction */ }
     const transcript = older.map(mm => {
       const c = (mm && typeof mm.content === 'string') ? mm.content : JSON.stringify((mm && mm.content) || '');
       return (mm && mm.role ? mm.role : 'msg') + ': ' + c;
@@ -8994,11 +9092,22 @@ async function runOnce(o) {
   } catch (_) {}
 
   let result;
-  const _txStart = msgs.length;   // H1.1: boundary — turns the loop appends to msgs after this ARE this run's new dialogue
+  // H1.1 boundary: mark the assembled prompt as already-recorded, so the run-end drain appends exactly the turns
+  // the LOOP adds. This used to be a positional `msgs.length`, which a compaction silently invalidated — it
+  // rebuilds the same array in place and SHORTER, leaving the index past the end and dropping the entire run's
+  // dialogue with no error. See the PERSISTED marker in transcriptstore.js.
+  transcriptStore.markPersisted(msgs);
   let bufferedTaskEnd = null;
   // Hold a successful user-facing Task Brief end until the final text is known; a question maps to the
   // contract's additive `clarifying` terminal (neither product nor slag — every success path keys on 'done').
   const loopEmit = (name, payload) => {
+    // TOOL-OUTPUT BUDGET RESET: the per-run budget exists so a few big reads/fetches can't blow the context
+    // window. A compaction has just FOLDED those tool results out of the prompt — the bytes are no longer in
+    // context, so charging them against the budget for the rest of the run blinds the agent while the loop
+    // keeps paying for turns (every tool comes back "[tool output omitted]" with ~30 iterations still to go).
+    // Freeing the budget at the moment the context is freed keeps the two in sync; erring generous here is the
+    // right direction, since the alternative is a run that can still call tools but can no longer SEE any.
+    if (name === 'agent.compact') toolBytes = 0;
     if (taskBrief && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
       bufferedTaskEnd = payload; return;
     }
@@ -9015,7 +9124,7 @@ async function runOnce(o) {
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
-      limits: { maxIters: CAPS.maxIters, maxCostUsd: runCapUsd },   // runCapUsd computed once at admission (also the managed reservation)
+      limits: { maxIters: runMaxIters, maxCostUsd: runCapUsd },   // both computed once at admission (runCapUsd is also the managed reservation)
       budget: runBudget, context: ctxMgr, summarize, fallbacks,
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
@@ -9089,7 +9198,7 @@ async function runOnce(o) {
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
       if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
-      if (result && Array.isArray(result.messages)) transcriptStore.appendTurns(o.streamId, agentId, result.messages, _txStart);
+      if (result && Array.isArray(result.messages)) transcriptStore.appendNew(o.streamId, agentId, result.messages);
     } catch (_) {}
     // QUEST V2 §A — the run-lifecycle sweeps at the settle point: a run ending 'done' completes every OPEN quest
     // whose run-contract is bound to this runId (bound at the injection seam / the quest.update progress tick);

@@ -151,4 +151,7 @@ const ID_RE = /^[A-Za-z0-9_-]{1,40}$/;
   for (const id of ['google-workspace', 'atlassian']) A.ok(!!(C.get(id) || {}).via, id + ' points at its aggregator route (via)');
 }
 
-console.log('ok - mcp.catalog');
+// report() LAST — it is what calls process.exit(fail?1:0). This file used to end in a bare
+// console.log, so every assertion failure printed FAIL and STILL exited 0: the fast gate scored
+// it green no matter what broke. Never end an _assert.js test any other way.
+A.report('mcp.catalog.test');

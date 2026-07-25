@@ -32,8 +32,10 @@ test/verify.test.js
 test/provider.replay.test.js
 test/provider.openrouter.test.js
 test/provider.openai-compatible.test.js
+test/transcript.compaction.e2e.test.js
 test/provider.anthropic.test.js
 test/provider.gemini.test.js
+test/provider.prices.test.js
 test/provider.timeouts.test.js
 test/provider.registry.test.js
 test/provider.codex-auth.test.js
@@ -317,6 +319,7 @@ test/recruit-identity-ui.test.js
 test/subagents.test.js
 test/subagentsprites.test.js
 test/orchestration.test.js
+test/worker-iteration-cap.test.js
 test/channels.test.js
 test/comms-presence.test.js
 test/comms-busy-age.test.js
@@ -360,6 +363,7 @@ test/channels.secrets.test.js
 test/channels.hub.test.js
 test/channels.outbox.test.js
 test/channels.commands.test.js
+test/channels.buttons.test.js
 test/channels.sse.test.js
 test/mcp.client.test.js
 test/mcp.transport.test.js
@@ -381,5 +385,6 @@ test/release-cut.test.js
 test/opensource-readiness.test.js
 test/release-train-provenance.test.js
 test/website-app-sync.test.js
+test/lint-gate-can-fail.js
 test/lint-emits.js
 test/lint-determinism.js

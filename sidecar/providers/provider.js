@@ -10,7 +10,14 @@
          | { type:'tool_done',  index }
          | { type:'usage',      usage }          // prompt_tokens, completion_tokens, total_tokens,
          |                                       //   prompt_tokens_details.cached_tokens, reasoning_tokens, cost
-         | { type:'done',       finishReason }   // normalized via normalizeFinish()
+         | { type:'done',       finishReason, truncated? }   // finishReason normalized via normalizeFinish()
+         |     Adapters emit EXACTLY ONE 'done' per stream, and it is REQUIRED even when the upstream never
+         |     stated a finish reason (finishReason: null) — the loop cannot distinguish a finished answer from
+         |     a body that died in transit without it. `truncated: true` means the stream ended with NO terminal
+         |     signal of any kind (no end-of-stream sentinel AND no finish reason), i.e. a clean mid-generation
+         |     FIN; the loop retries such a turn and then fails it rather than shipping a fragment as a
+         |     completed, $0 delivery. Omitted/false = the stream genuinely ended. An adapter that cannot tell
+         |     must report false (never guess true) — a false positive costs a full re-generation.
      listModels()     -> [{ id, context_length, max_completion_tokens, pricing, supportsTools }]
      contextLimit(id) -> number
      priceOf(id)      -> { in, out } | null      // per-million USD

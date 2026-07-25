@@ -47,4 +47,7 @@ const { normSupport, SUPPORT_PLACEHOLDER } = Diag._internals;
   if (dest) A.ok(dest !== SUPPORT_PLACEHOLDER && /^[^@\s]+@[^@\s]+$/.test(dest), 'a configured support address is a real email, never the placeholder');
 }
 
-console.log('diagnostics-support-email: OK');
+// report() LAST — it is what calls process.exit(fail?1:0). This file used to end in a bare
+// console.log, so every assertion failure printed FAIL and STILL exited 0: the fast gate scored
+// it green no matter what broke. Never end an _assert.js test any other way.
+A.report('diagnostics-support-email.test');

@@ -113,5 +113,65 @@ const timeoutErr = () => { const e = new Error('provider stream idle timed out a
     A.eq(res.finishReason, undefined, 'a clean stop attaches no finishReason field');
   }
 
+  // (4) TRUNCATED STREAM — a clean mid-generation FIN, which throws NO error. The adapter reports
+  //     truncated:true (it observed neither its end-of-stream sentinel nor a finish_reason). The loop must not
+  //     accept the fragment as a delivery: it re-runs the turn, and a good retry completes the run normally.
+  {
+    const { seq, emit } = setup();
+    let attempt = 0;
+    const provider = scriptedProvider(async function* () {
+      attempt++;
+      if (attempt === 1) {
+        yield { type: 'text', delta: 'half a sen' };
+        yield { type: 'done', finishReason: null, truncated: true };   // the body died in transit
+        return;
+      }
+      yield { type: 'text', delta: 'the whole answer' };
+      yield { type: 'usage', usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } };
+      yield { type: 'done', finishReason: 'stop' };
+    });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    A.eq(attempt, 2, 'the truncated stream triggered exactly one retry');
+    A.eq(res.reason, 'done', 'the retried turn completed the run');
+    A.ok(res.messages.some(m => m.role === 'assistant' && String(m.content).indexOf('the whole answer') >= 0), 'the COMPLETE answer is what landed in the transcript');
+    A.ok(!res.messages.some(m => String(m.content).indexOf('half a sen') >= 0), 'the truncated fragment was discarded, never delivered');
+    A.eq(seq.filter(e => e.name === 'agent.run.error').length, 0, 'a recovered truncation emits no run.error');
+  }
+
+  // (4-bound) a PERSISTENTLY truncated stream terminates as the provider failure it is — never as a completed,
+  //           $0 delivery — and the tokens the provider WILL bill are reconciled on the way out.
+  {
+    const { seq, emit } = setup();
+    let attempt = 0;
+    const provider = scriptedProvider(async function* () {
+      attempt++;
+      yield { type: 'text', delta: 'half a sen' };
+      yield { type: 'usage', usage: { prompt_tokens: 1000, completion_tokens: 500, total_tokens: 1500 } };
+      yield { type: 'done', finishReason: null, truncated: true };
+    });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    A.eq(attempt, 2, 'bounded: 1 initial + 1 truncation retry, then give up');
+    A.eq(res.reason, 'error', 'a persistently truncated stream is NOT reported as a completed run');
+    const err = seq.find(e => e.name === 'agent.run.error');
+    A.eq(err.payload.transient, true, 'a truncation is transient');
+    A.ok(/truncated in transit/.test(err.payload.message), 'the error names the truncation plainly');
+    A.ok(Math.abs(res.usd - 0.002) < 1e-9, 'the billed tokens are recorded — a truncated turn is never free');
+  }
+
+  // (4-inert) BACKWARD COMPATIBILITY: a provider that never sets `truncated` — or never emits a done event at
+  //           all — behaves exactly as before. The flag is opt-in, so an adapter that cannot tell is untouched.
+  {
+    const { emit } = setup();
+    let attempt = 0;
+    const provider = scriptedProvider(async function* () {
+      attempt++;
+      yield { type: 'text', delta: 'answer with no done event at all' };
+      yield { type: 'usage', usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } };
+    });
+    const res = await runAgentLoop({ messages: [{ role: 'user', content: 'x' }], provider, emit, cost: cost(), model: 'm', agentId: 'a', runId: 'r' });
+    A.eq(attempt, 1, 'no done event -> no retry (unchanged behavior)');
+    A.eq(res.reason, 'done', 'a provider that never reports termination still ends done');
+  }
+
   A.report('loop.provider-recovery.test');
 })();

@@ -2647,6 +2647,21 @@ body.crew-rail-off #screen-game.active {
 .refit-swatch:hover { border-color: var(--ph); }
 .refit-swatch.active { border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow); }
 
+/* PAINT palette rows: DECK MATERIAL (the recipe) above DECK PAINT (the hue) — two axes, two
+   rows. The material swatch is wider because a material only reads across a few tiles. */
+.refit-palcap {
+  width: 100%; font-size: 11px; letter-spacing: 1px; opacity: .62;
+  color: var(--ph); margin: 2px 0 1px;
+}
+.refit-palrow:first-child .refit-palcap { margin-top: 0; }
+/* material swatches carry their NAME: a hue is self-evident from a colour chip, a recipe is not */
+.refit-matswatch { width: 46px; height: auto; padding: 2px 0 3px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.refit-matswatch canvas { image-rendering: pixelated; }
+.refit-matswatch .refit-matname {
+  font-size: 9px; letter-spacing: .5px; line-height: 1; opacity: .72; color: var(--ph-bright);
+}
+.refit-matswatch.active .refit-matname { opacity: 1; }
+
 .refit-tip {
   position: fixed; z-index: 3; display: none; pointer-events: none;
   font-size: 13px; letter-spacing: 1px; padding: 2px 8px;
