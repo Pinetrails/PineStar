@@ -38,6 +38,11 @@ const ROUTES = {
   // CROSS-ORIGIN frame: the child is served from localhost while the parent is on 127.0.0.1, which
   // Chrome treats as a different origin and gives its own out-of-process target.
   '/crossframe': (base) => ({ status: 200, body: PAGE('<p>Outer page</p><iframe src="' + base.replace('127.0.0.1', 'localhost') + '/inner" style="position:absolute;left:120px;top:160px;width:300px;height:200px;border:0"></iframe>') }),
+  // One OK fetch, one 404, one to a port nothing listens on: the three outcomes the log must tell apart.
+  '/netpage': () => ({ status: 200, body: PAGE('<p>net</p>',
+    '<script>fetch("/api/ok");fetch("/api/missing");fetch("http://127.0.0.1:1/dead").catch(function(){});</script>') }),
+  '/api/ok': () => ({ status: 200, body: 'ok' }),
+  '/api/missing': () => ({ status: 404, body: 'nope' }),
   '/blank': () => ({ status: 200, body: PAGE('<a id=open href="/second" target="_blank">Open receipt</a>') }),
   '/second': () => ({ status: 200, body: PAGE('<h1>Receipt</h1><button id=print>Print receipt</button>', '<title>Receipt</title>') }),
   '/click': () => ({ status: 200, body: PAGE('<button id=go>Load</button><div id=out></div>',
@@ -91,6 +96,25 @@ const ROUTES = {
     {
       await driver.navigate(base + '/form');
       A.eq(driver.lastResponse().status, 200, 'status does not leak from the previous 404 navigation');
+    }
+
+    /* 2a. NETWORK REQUEST LOG — what the page DID, not just what it said.
+       browser.console already showed the page's own messages; without the request log "the button
+       did nothing" is unfalsifiable — a 401, a request that failed outright, and a request that was
+       never made all look identical. /netpage issues one OK fetch, one 404 and one to a dead port. */
+    {
+      await driver.navigate(base + '/netpage');
+      await new Promise(r => setTimeout(r, 900));   // let the three sub-requests settle
+      const rows = driver.networkLog();
+      A.ok(rows.length >= 3, 'sub-resource requests are recorded, not just the document (' + rows.length + ')');
+      A.ok(rows.some(r => /\/api\/ok/.test(r.url) && r.status === 200), 'a successful fetch is logged with its 200');
+      A.ok(rows.some(r => /\/api\/missing/.test(r.url) && r.status === 404), 'a 404 sub-request is logged with its real status');
+      A.ok(rows.some(r => /127\.0\.0\.1:1/.test(r.url) && r.failure), 'a request that never connected is logged as a FAILURE, distinct from an HTTP status');
+      A.ok(rows.some(r => r.method === 'GET'), 'the method is recorded');
+      A.ok(rows.every(r => !('headers' in r)), 'headers are deliberately NOT captured (Authorization/Cookie live there)');
+      // The log describes THIS page: navigating away must not leave the previous page's traffic behind.
+      await driver.navigate(base + '/form');
+      A.ok(!driver.networkLog().some(r => /\/api\/ok/.test(r.url)), 'the request log resets per navigation');
     }
 
     /* 2b. CROSS-ORIGIN IFRAME — the regression that mattered most.

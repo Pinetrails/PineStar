@@ -421,6 +421,24 @@
        an in-flight request count that makes auto-wait aware of XHR that has not landed yet. */
     let mainFrameId = null, lastResponse = null;
     const inflight = new Set();
+    /* REQUEST LOG. `browser.console` already lets the agent see what the page SAID; this is what the
+       page DID. Without it "the button did nothing" is unfalsifiable — you cannot tell a 401 from a
+       CORS refusal from a request that was never made. Bounded like consoleLog, and deliberately
+       header-free: Authorization/Cookie live in headers, and the agent does not need them to debug. */
+    const NETLOG_MAX = 200;
+    let netLog = [];
+    const netById = new Map();
+    function netRecord(requestId, patch) {
+      let row = netById.get(requestId);
+      if (!row) {
+        row = { id: requestId, method: '', url: '', type: '', status: 0, bytes: 0, failure: null, done: false };
+        netById.set(requestId, row);
+        netLog.push(row);
+        if (netLog.length > NETLOG_MAX) { const drop = netLog.shift(); netById.delete(drop.id); }
+      }
+      Object.assign(row, patch);
+      return row;
+    }
     const frameSessions = new Map();   // CDP sessionId -> frameId, for every adopted (out-of-process) iframe
     /* TABS. pageSessions holds every adopted extra page target in the order it appeared. activeSession
        is the CDP session every page-scoped command targets: null means the ORIGINAL tab, so the default
@@ -593,17 +611,28 @@
               try { await cdp.send('Browser.setDownloadBehavior', Object.assign({ eventsEnabled: true }, behavior)); }
               catch (_) { try { await cdp.send('Page.setDownloadBehavior', behavior); } catch (_) {} }
             }
-            cdp.on('Network.requestWillBeSent', p => { if (p && p.requestId) inflight.add(p.requestId); });
-            cdp.on('Network.loadingFinished', p => { if (p && p.requestId) inflight.delete(p.requestId); });
+            cdp.on('Network.requestWillBeSent', p => {
+              if (!p || !p.requestId) return;
+              inflight.add(p.requestId);
+              const req = p.request || {};
+              netRecord(p.requestId, { method: req.method || 'GET', url: req.url || '', type: p.type || '' });
+            });
+            cdp.on('Network.loadingFinished', p => {
+              if (!p || !p.requestId) return;
+              inflight.delete(p.requestId);
+              netRecord(p.requestId, { bytes: Math.max(0, Math.round(Number(p.encodedDataLength) || 0)), done: true });
+            });
             cdp.on('Network.responseReceived', p => {
-              if (!p || p.type !== 'Document') return;
-              if (mainFrameId && p.frameId && p.frameId !== mainFrameId) return;
+              if (!p) return;
               const r = p.response || {};
+              if (p.requestId) netRecord(p.requestId, { status: Number(r.status) || 0, url: r.url || '', type: p.type || '' });
+              if (p.type !== 'Document') return;
+              if (mainFrameId && p.frameId && p.frameId !== mainFrameId) return;
               lastResponse = { status: Number(r.status) || 0, statusText: r.statusText || '', url: r.url || '', mimeType: r.mimeType || '', failure: null };
             });
             cdp.on('Network.loadingFailed', p => {
               if (!p) return;
-              if (p.requestId) inflight.delete(p.requestId);
+              if (p.requestId) { inflight.delete(p.requestId); netRecord(p.requestId, { failure: p.errorText || 'request failed', done: true }); }
               // A transport-level failure (DNS, refused, cert) never produces a response at all.
               if (p.type === 'Document') lastResponse = { status: 0, statusText: '', url: '', mimeType: '', failure: p.errorText || 'request failed' };
             });
@@ -684,6 +713,7 @@
     async function navigate(url) {
       const c = await page();
       lastResponse = null;   // this navigation's status, never the previous page's
+      netLog = []; netById.clear();   // the log describes THIS page, not whatever came before
       await c.send('Page.navigate', { url });
       await waitForSettle(c, { budgetMs: settleNavBudgetMs, fallbackMs: 900 });
       const finalUrl = await evalJS('location.href');
@@ -1105,7 +1135,7 @@
     // actually on the user's screen. Headless mode, or a headless-only binary fallback in
     // a headed request, both read as not visible.
     function visible() { return headed; }
-    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
+    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), networkLog: () => netLog.map(r => Object.assign({}, r)), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
   }
 
   function makeBrowserSession(deps) {
@@ -1266,6 +1296,12 @@
     async function scroll(x, y) { return ensureDriver().scroll(x, y); }
     async function back() { version++; return ensureDriver().back(); }
     async function getText(selector) { return ensureDriver().getText(selector); }
+    // A driver without network visibility reports an empty log rather than pretending.
+    function networkLog(limit) {
+      const d = driver;
+      const rows = (d && typeof d.networkLog === 'function') ? d.networkLog() : [];
+      return rows.slice(-(limit || 60));
+    }
     async function consoleLog(limit) {
       const list = ensureDriver().consoleLog ? ensureDriver().consoleLog() : [];
       return list.slice(-(limit || 40));
@@ -1354,7 +1390,7 @@
       const d = driver || null;
       return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
     }
-    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, tabs, selectTab, closeTab, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
+    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, tabs, selectTab, closeTab, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, networkLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
   }
 
   function makeBrowserTools(deps) {
@@ -1504,6 +1540,18 @@
         async a => {
           const rows = await session.consoleLog(a.limit || 40);
           return { content: rows.map(r => '[' + r.type + '] ' + r.text).join('\n') || 'No console messages.', summary: rows.length + ' console row(s)' };
+        }),
+      read('browser.network', 'List the network requests the CURRENT page made — method, URL, type, HTTP status, size, and any transport failure. Use this when a page "did nothing": it separates a 401/403, a request that failed outright, and a request that was never made. "filter" matches the URL; "failedOnly" shows just errors and non-2xx.', { type: 'object', properties: { limit: { type: 'number' }, filter: { type: 'string' }, failedOnly: { type: 'boolean' } } },
+        async a => {
+          let rows = session.networkLog(a.limit || 60);
+          if (a.filter) { const f = String(a.filter).toLowerCase(); rows = rows.filter(r => String(r.url).toLowerCase().indexOf(f) >= 0); }
+          if (a.failedOnly === true) rows = rows.filter(r => r.failure || (r.status && (r.status < 200 || r.status >= 300)));
+          if (!rows.length) return { content: 'No matching network requests were recorded for this page.', summary: '0 requests' };
+          const line = r => (r.method || 'GET') + ' ' + (r.status ? r.status : (r.failure ? 'FAILED' : 'pending')) +
+            ' ' + clamp(r.url, 200) + (r.type ? ' [' + r.type + ']' : '') +
+            (r.bytes ? ' ' + r.bytes + 'B' : '') + (r.failure ? ' — ' + r.failure : '');
+          const bad = rows.filter(r => r.failure || (r.status && (r.status < 200 || r.status >= 300))).length;
+          return { content: rows.map(line).join('\n'), summary: rows.length + ' request(s)' + (bad ? ', ' + bad + ' failed' : '') };
         }),
       exec('browser.dialog', 'Accept or dismiss the current JavaScript dialog.', { type: 'object', properties: { action: { type: 'string' }, promptText: { type: 'string' } } },
         async a => {

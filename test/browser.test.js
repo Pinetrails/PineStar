@@ -72,6 +72,7 @@ function fakeDriver() {
   A.eq(names, [
     'browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.drag',
     'browser.forward', 'browser.get_text', 'browser.hover', 'browser.login', 'browser.navigate',
+    'browser.network',
     'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot',
     'browser.tab_close', 'browser.tab_select', 'browser.tabs',
     'browser.test_input', 'browser.test_navigate', 'browser.test_snapshot', 'browser.test_state',
