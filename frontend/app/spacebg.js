@@ -347,172 +347,186 @@ const SpaceBG = (() => {
   };
 
   /* --------------------------------------------------------- BACKDROP: THE NURSERY ---- */
-  /* Inside a molecular cloud, not looking at one from outside.
+  /* A structured emission nebula in a deep, dense starfield.
 
-     WHAT THIS REPLACES, AND WHY (2026-07-24, Andrew: "its just the void with planets that dont
-     look good, a galaxy that looks terrible... i want a completely different space backround").
-     The old DEEP FIELD deserved that. It was built by reusing THE VOID's own nebula/dust/twinkle
-     recipe and bolting on the galaxy + ringed world recovered from the 2026-07-14 revert, so "the
-     void with things added" was a literally accurate description of its construction. It also
-     rested on an assumption that was never tested: that when those bodies were cut from the void
-     the ART had been fine and only the placement was wrong. It was not.
+     THIS IS THE THIRD ATTEMPT AT A SECOND SPACE BACKDROP AND THE FIRST TWO FAILED DIFFERENTLY.
+     v1 (DEEP FIELD) reused THE VOID's recipe and bolted on a galaxy and planets — "just the void
+     with planets", because that is what it was. v2 over-corrected into a rule: INVERT the void's
+     signature. THE VOID is sparse points on black, so v2 filled the frame with gas and cut the
+     stars to nine. Andrew, correctly: "it just looks so smudgy... its like purple camo if
+     anything. it doesnt look like space."
 
-     A NEW BACKDROP HAS TO INVERT THE OLD ONE'S SIGNATURE, not decorate it. THE VOID is sparse
-     bright points on black — measured, 79% of its pixels are near-black. So this is the opposite:
-     gas is the substance, it fills the frame, and DARKNESS IS THE STRUCTURE — cold dust lanes
-     and globules bitten out of the glow. Nothing discrete is drawn at all. No planets, no rings,
-     no galaxy: those are exactly the objects that failed, and a cloud needs none of them.
+     He was right on all three counts, and the third is the important one:
+       - CAMO is literally what quantized organic noise at a uniform mid-tone looks like. Flat
+         bands over a narrow violet palette do not read as gas, they read as fatigues.
+       - SMUDGY was the banding. Pixel art renders gradients with DITHER, not flat steps; an
+         ordered Bayer threshold gives fine pixel-scale texture where bands give mush.
+       - DOES NOT LOOK LIKE SPACE was self-inflicted. Stars are what make space read as space,
+         and v2 deleted them to satisfy an abstract rule about being different from the void.
 
-     Built with the three things this lane has already had to learn the hard way:
-       - a CONTINUOUS field through ImageData, never sparse marks (the OCEAN starfield bug)
-       - QUANTIZED into flat bands, because smooth noise renders as blur (the FOREST blur bug)
-       - real VALUE SEPARATION between the gas and the lanes (the FOREST outline bug)
-     Domain-warped noise is what makes it filamentary rather than blobby — sampling the density
-     field at coordinates that have themselves been pushed around by another noise field is the
-     difference between "gas" and "lava lamp". */
+     So the differentiator is NOT the absence of stars or the presence of wall-to-wall gas. It is
+     that the nebula is a dramatic, structured SUBJECT with real internal contrast — bright cores,
+     hard dark lanes, wispy falloff to black — sitting in a deep starfield, where THE VOID's
+     nebulas are faint distant wisps. Black space and stars are part of the look, not the enemy.
+
+     Quality rules this is built on:
+       1. STARS FIRST, dense, and gas composites OVER them with per-pixel alpha, so stars shine
+          through thin gas and are occluded by dense lanes. That occlusion is a real depth cue.
+       2. DITHER, never flat bands (Bayer 4x4 against the quantization step).
+       3. WIDE value range — the frame must contain near-black AND near-white, or it is camo.
+       4. The gas must NOT cover everything. Falloff to nothing is what gives it a shape. */
 
   const NURSERY_BG = {
     label: 'THE NURSERY',
-    blurb: 'Inside the cloud. Cold dust, hot young stars, no horizon.',
-    base: '#05040a',
-    D: { gas: 0.018, lane: 0.042, mote: 0.085 },
-    LEVELS: 9,                             // flat bands; enough for soft gas, few enough to stay crisp
+    blurb: 'A star factory. Hot cores, cold lanes, and a deep field behind it.',
+    base: '#04040a',
+    D: { star: 0.012, gas: 0.03, mote: 0.075 },
 
-    /* One block, one place to tune. The cloud must still sit UNDER the station: backdrop/station
-       luma ~0.5-0.65, the law OCEAN established by shipping at 1.25 and inverting the frame.
-       A nebula is the easiest backdrop in this file to blow that budget on, so the density curve
-       is deliberately biased low — most of the frame is faint outer gas and hot cores are rare. */
+    // Bayer 4x4 — the ordered threshold that turns a smooth ramp into pixel-art texture
+    BAYER: [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5],
+    LEVELS: 12,
+
     LIGHT: {
-      EMPTY: [15, 11, 27],                 // between the filaments — NOT black; inside a cloud even
-                                           // the gaps glow. At [6,5,12] this measured DARKER than
-                                           // THE VOID (11.6 vs 12.7 luma, 68% of pixels near-black),
-                                           // which is the exact opposite of the point.
-      GAS1: [40, 21, 60],                  // faint outer violet
-      GAS2: [62, 22, 64],                  // mid magenta
-      GAS3: [104, 44, 76],                 // dense
-      CORE: [156, 104, 116],               // hot, and rare
-      TEAL: [22, 62, 74],                  // oxygen-region accent, mixed by its own field
-      LANE: [4, 3, 8],                     // cold dust: what the lanes multiply toward
-      STAR: [230, 226, 255],
+      // an emission palette with real COLOUR contrast, not one hue at nine brightnesses
+      OUT: [16, 10, 34],                   // outermost haze, barely there
+      MID: [72, 20, 74],                   // magenta body
+      HOT: [150, 46, 82],                  // H-alpha, dense
+      CORE: [242, 214, 226],               // ionized core, nearly white — the top of the range
+      TEAL: [28, 96, 116],                 // O-III, a genuinely different hue for contrast
+      LANE: [3, 2, 7],                     // cold dust, effectively black
     },
 
     build(w, h, rnd) {
-      /* half resolution, blitted back up — same reasoning as the OCEAN deck: the per-pixel pass
-         is 4x cheaper on a rebuild that must not stall a resize, and the 2x upscale gives the gas
-         chunkier pixels that sit better beside the station art than a fine smooth field. */
       const SW = Math.max(1, Math.ceil(w / 2)), SH = Math.max(1, Math.ceil(h / 2));
-      const LT = NURSERY_BG.LIGHT, LV = NURSERY_BG.LEVELS;
+      const LT = NURSERY_BG.LIGHT, LV = NURSERY_BG.LEVELS, BY = NURSERY_BG.BAYER;
       const gasCv = mkCv(SW, SH), gc = gasCv.getContext('2d');
 
-      // density octaves + the two fields that warp them, all wrapping
-      const d1 = wrapNoise(3, rnd), d2 = wrapNoise(6, rnd), d3 = wrapNoise(12, rnd), d4 = wrapNoise(24, rnd);
-      const wxF = wrapNoise(4, rnd), wyF = wrapNoise(4, rnd);
-      const lane1 = wrapNoise(5, rnd), lane2 = wrapNoise(11, rnd);
-      const tealF = wrapNoise(4, rnd);
+      /* ---- 1. THE DEEP FIELD, on its own FULL-RESOLUTION plate ----
+         The gas is built at half res because it is soft and the per-pixel pass is expensive, but
+         STARS MUST BE FULL RES. Built at half and upscaled, every star becomes a 2x2 blob instead
+         of a crisp point — measurably so: the star detector found ZERO isolated points in a field
+         of 5200 stars, because each one had a neighbour of identical value. Soft things can be
+         cheap; points of light cannot. */
+      const starCv = mkCv(w, h), stc = starCv.getContext('2d');
+      stc.fillStyle = '#04040a'; stc.fillRect(0, 0, w, h);
+      const starN = Math.min(9000, Math.round((w * h) / 165));
+      for (let i = 0; i < starN; i++) {
+        const x = (rnd() * w) | 0, y = (rnd() * h) | 0;
+        const b = rnd();
+        if (b < 0.72) {                                   // the faint many
+          stc.fillStyle = pickTint(rnd()) + (0.18 + 0.30 * rnd()).toFixed(3) + ')';
+          stc.fillRect(x, y, 1, 1);
+        } else if (b < 0.965) {                           // the visible few
+          stc.fillStyle = pickTint(rnd()) + (0.55 + 0.40 * rnd()).toFixed(3) + ')';
+          stc.fillRect(x, y, 1, 1);
+        } else {                                          // the bright handful, with spikes
+          const a = 0.88 + 0.12 * rnd();
+          stc.fillStyle = 'rgba(238,242,255,' + a.toFixed(3) + ')';
+          stc.fillRect(x, y, 1, 1);
+          stc.fillStyle = 'rgba(238,242,255,' + (a * 0.34).toFixed(3) + ')';
+          stc.fillRect(x - 3, y, 7, 1); stc.fillRect(x, y - 3, 1, 7);
+        }
+      }
+      gc.clearRect(0, 0, SW, SH);                         // the gas plate carries alpha, not a fill
 
-      const img = gc.createImageData(SW, SH), D = img.data;
+      /* ---- 2. THE NEBULA, composited OVER the stars with per-pixel alpha ----
+         Built into its own buffer so it can blend: putImageData replaces pixels and would
+         erase the field, so the gas goes onto a scratch canvas and is drawn over. Thin gas
+         is translucent (stars shine through), dense gas and lanes are opaque (stars occluded). */
+      const d1 = wrapNoise(3, rnd), d2 = wrapNoise(6, rnd), d3 = wrapNoise(13, rnd), d4 = wrapNoise(26, rnd);
+      const wxF = wrapNoise(4, rnd), wyF = wrapNoise(4, rnd);
+      const shape = wrapNoise(2, rnd);                    // the big envelope: where the cloud IS
+      const lane1 = wrapNoise(5, rnd), lane2 = wrapNoise(12, rnd);
+      const tealF = wrapNoise(3, rnd);
+
+      const scratch = mkCv(SW, SH), sc2 = scratch.getContext('2d');
+      const img = sc2.createImageData(SW, SH), D = img.data;
       let p = 0;
       for (let y = 0; y < SH; y++) {
-        const v0 = y / SH;
+        const v0 = y / SH, brow = (y & 3) * 4;
         for (let x = 0; x < SW; x++) {
           const u0 = x / SW;
-          // DOMAIN WARP — sample the cloud at a point another field has dragged around. Without
-          // this the octaves stack into round blobs; with it they smear into filaments.
-          const u = u0 + (wxF(u0, v0) - 0.5) * 0.22;
-          const v = v0 + (wyF(u0, v0) - 0.5) * 0.22;
+          const u = u0 + (wxF(u0, v0) - 0.5) * 0.26;      // domain warp -> filaments, not blobs
+          const v = v0 + (wyF(u0, v0) - 0.5) * 0.26;
 
-          const dens = d1(u, v) * 0.50 + d2(u, v) * 0.27 + d3(u, v) * 0.15 + d4(u, v) * 0.08;
-          /* The density curve IS the luma budget, and it is the easiest thing in this file to get
-             wrong in both directions. Squaring t crushed almost the whole field to nothing and the
-             cloud stopped filling the frame; leaving it linear would blow past the station. This
-             lifts the floor so gas is everywhere, while still keeping hot cores rare. */
-          let t = Math.max(0, Math.min(1, (dens - 0.24) * 1.85));
-          t = t * (0.55 + 0.45 * t);
-          t = Math.round(t * LV) / LV;                    // flat bands, not a smooth ramp
+          // ENVELOPE: the cloud has a shape and falls off to nothing. Rule 4 — gas that covers
+          // everything is camo; gas with an edge is a subject.
+          const env = Math.max(0, Math.min(1, (shape(u0, v0) - 0.34) * 2.6));
+          if (env <= 0.001) { D[p + 3] = 0; p += 4; continue; }
 
-          // colour ramp through the gas, with a teal oxygen region mixed in by its own field
+          const dens = d1(u, v) * 0.46 + d2(u, v) * 0.28 + d3(u, v) * 0.17 + d4(u, v) * 0.09;
+          let t = Math.max(0, Math.min(1, (dens - 0.34) * 2.3)) * env;
+
+          // DITHER instead of banding (rule 2). The Bayer threshold decides which side of the
+          // quantization step each pixel falls on, so a ramp becomes a fine checker rather than
+          // a flat plateau — which is exactly the difference between pixel art and camo.
+          const bay = (BY[brow + (x & 3)] + 0.5) / 16 - 0.5;
+          t = Math.max(0, Math.min(1, Math.round((t + bay / LV) * LV) / LV));
+          if (t <= 0) { D[p + 3] = 0; p += 4; continue; }
+
+          // COLOUR: a wide ramp ending near white (rule 3), plus a teal region for hue contrast
           let col;
-          if (t < 0.34) col = mix3(LT.EMPTY, LT.GAS1, t / 0.34);
-          else if (t < 0.62) col = mix3(LT.GAS1, LT.GAS2, (t - 0.34) / 0.28);
-          else if (t < 0.86) col = mix3(LT.GAS2, LT.GAS3, (t - 0.62) / 0.24);
-          else col = mix3(LT.GAS3, LT.CORE, (t - 0.86) / 0.14);
-          const teal = Math.max(0, (tealF(u * 1.3, v * 1.3) - 0.58)) * 1.7;
-          if (teal > 0) col = mix3(col, LT.TEAL, Math.min(0.65, teal) * t);
+          if (t < 0.40) col = mix3(LT.OUT, LT.MID, t / 0.40);
+          else if (t < 0.78) col = mix3(LT.MID, LT.HOT, (t - 0.40) / 0.38);
+          else col = mix3(LT.HOT, LT.CORE, (t - 0.78) / 0.22);
+          const teal = Math.max(0, tealF(u * 1.2, v * 1.2) - 0.54) * 2.0;
+          if (teal > 0) col = mix3(col, LT.TEAL, Math.min(0.7, teal) * (1 - t * 0.5));
 
-          /* THE LANES — cold dust in front of the glow. This is the STRUCTURE: without it the
-             cloud is a smear; with it the frame has shapes. Quantized too, so a lane has a
-             border rather than a fade. */
-          const ln = lane1(u0 * 1.1, v0 * 1.1) * 0.65 + lane2(u0, v0) * 0.35;
-          let dark = Math.max(0, Math.min(1, (ln - 0.52) * 2.6));
-          dark = Math.round(dark * 5) / 5;
-          if (dark > 0) col = mix3(col, LT.LANE, dark * 0.92);
+          // DUST LANES: hard, near-black, and they bite INTO the cloud. This is the structure.
+          const ln = lane1(u0 * 1.15, v0 * 1.15) * 0.62 + lane2(u0, v0) * 0.38;
+          const dark = Math.max(0, Math.min(1, (ln - 0.54) * 3.0));
+          let alpha = 0.10 + 0.90 * t;                    // thin gas lets the field through
+          if (dark > 0) { col = mix3(col, LT.LANE, dark); alpha = Math.min(1, alpha + dark * 0.55); }
 
-          D[p] = col[0]; D[p + 1] = col[1]; D[p + 2] = col[2]; D[p + 3] = 255;
+          D[p] = col[0]; D[p + 1] = col[1]; D[p + 2] = col[2];
+          D[p + 3] = Math.round(255 * Math.min(1, alpha));
           p += 4;
         }
       }
-      gc.putImageData(img, 0, 0);
+      sc2.putImageData(img, 0, 0);
+      gc.drawImage(scratch, 0, 0);
 
-      /* EMBEDDED STARS — hot young ones inside the cloud, each lighting the gas around it. Drawn
-         additively so the halo blooms through the gas instead of sitting on top as a grey disc.
-         These belong to the cloud, so they live in the tile, not in a twinkling layer. */
+      /* ---- 3. HOT KNOTS — small, very bright, additive. Young stars still inside their gas.
+              These carry the top of the value range and give the eye somewhere to land. */
       gc.globalCompositeOperation = 'lighter';
-      const embN = 10 + Math.floor(rnd() * 8);
-      const embs = [];
-      for (let i = 0; i < embN; i++) {
+      for (let i = 0, n = 5 + Math.floor(rnd() * 5); i < n; i++) {
         const sx = rnd() * SW, sy = rnd() * SH;
-        embs.push([sx, sy]);
-        const R = Math.min(SW, SH) * (0.05 + 0.09 * rnd());
-        const warm = rnd() < 0.4;
-        puff9(gc, SW, SH, sx, sy, R, warm ? [150, 96, 120] : [90, 110, 190], 0.13 + 0.10 * rnd());
-        puff9(gc, SW, SH, sx, sy, R * 0.34, LT.STAR, 0.16);
-      }
-      gc.globalCompositeOperation = 'source-over';
-      for (const [sx, sy] of embs) {                   // the star points themselves, hard pixels
-        gc.fillStyle = rgba(LT.STAR, 0.75 + 0.25 * rnd());
+        if (shape(sx / SW, sy / SH) < 0.46) continue;     // only where the cloud actually is
+        const R = Math.min(SW, SH) * (0.03 + 0.055 * rnd());
+        puff9(gc, SW, SH, sx, sy, R, rnd() < 0.5 ? [190, 110, 130] : [120, 150, 220], 0.16 + 0.10 * rnd());
+        puff9(gc, SW, SH, sx, sy, R * 0.28, [255, 246, 250], 0.22);
+        gc.fillStyle = 'rgba(255,250,255,0.95)';
         gc.fillRect(sx | 0, sy | 0, 1, 1);
       }
+      gc.globalCompositeOperation = 'source-over';
 
-      /* DUST MOTES — a nearer, DARKER layer. Bright specks would rebuild the starfield this
-         backdrop exists to get away from; cold motes read as being inside something instead. */
+      /* ---- 4. foreground motes: cold, near, and dark — depth without more bright points ---- */
       const moteCv = mkCv(w, h), mc = moteCv.getContext('2d');
-      const moteN = Math.min(2600, Math.round((w * h) / 2600));
+      const moteN = Math.min(1800, Math.round((w * h) / 4200));
       for (let i = 0; i < moteN; i++) {
-        mc.fillStyle = 'rgba(3,2,7,' + (0.20 + 0.45 * rnd()).toFixed(3) + ')';
+        mc.fillStyle = 'rgba(2,2,6,' + (0.22 + 0.42 * rnd()).toFixed(3) + ')';
         mc.fillRect((rnd() * w) | 0, (rnd() * h) | 0, rnd() < 0.8 ? 1 : 2, 1);
       }
 
-      /* a FEW foreground stars — enough that the frame is alive, far too few to read as a
-         starfield. THE VOID owns that look and this backdrop is defined by not being it. */
-      const near = [];
-      const nearN = Math.min(46, Math.round((w * h) / 46000));
-      for (let i = 0; i < nearN; i++) near.push({ x: rnd(), y: rnd(), ph: rnd() * 10, r: px1() });
-
-      return { gasCv, moteCv, near };
+      return { starCv, gasCv, moteCv };
     },
 
     draw(ctx, w, h, now, cam, st) {
       const D = NURSERY_BG.D, t = now / 1000;
-      // the cloud itself: a very slow drift, and the smallest parallax in the file. Gas this
-      // close would still be light-years off; anything faster reads as cardboard scenery.
-      tile2(ctx, st.gasCv, w, h, parX(cam, D.gas) + t * 0.8, parY(cam, D.gas) + t * 0.25);
-
-      // cold motes nearer the camera — the depth cue that says you are INSIDE the cloud
-      ctx.globalAlpha = 0.85;
-      tile2(ctx, st.moteCv, w, h, parX(cam, D.mote) + t * 4.5, parY(cam, D.mote) + t * 1.4);
+      /* field first, cloud over it at the SAME offset — they are at the same distance and must
+         not slide apart. The gas plate carries alpha, so thin gas lets the field through and
+         dense gas and dust lanes occlude it, which is the depth cue that sells the cloud. */
+      const ox = parX(cam, D.gas) + t * 1.1, oy = parY(cam, D.gas) + t * 0.3;
+      tile2(ctx, st.starCv, w, h, ox, oy);
+      tile2(ctx, st.gasCv, w, h, ox, oy);
+      ctx.globalAlpha = 0.8;
+      tile2(ctx, st.moteCv, w, h, parX(cam, D.mote) + t * 5, parY(cam, D.mote) + t * 1.5);
       ctx.globalAlpha = 1;
-
-      for (const s of st.near) {
-        const tw = 0.30 + 0.55 * Math.abs(Math.sin(now / (1100 + s.ph * 340) + s.ph));
-        ctx.fillStyle = 'rgba(214,210,240,' + tw.toFixed(3) + ')';
-        ctx.fillRect(((s.x * w + parX(cam, D.lane)) % w + w) % w,
-                     ((s.y * h + parY(cam, D.lane)) % h + h) % h, s.r, s.r);
-      }
-
       drawMeteor(ctx, w, h, now);
       drawBolide(ctx, w, h, now);
     },
   };
+
 
 
   /* ------------------------------------------------------- shared: SURFACE backdrops ---- */
