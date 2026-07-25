@@ -139,6 +139,14 @@ cannot spend any key you have not ticked.</p>
           route 2 with a key.</td></tr>
   <tr><td>&ldquo;refusing private/loopback/intranet host&rdquo;</td>
       <td>Working as intended: agents cannot reach your local network or cloud metadata endpoints.</td></tr>
+  <tr><td>&ldquo;the page did not finish loading within 30s&rdquo; (browser)</td>
+      <td>The site stalled the agent's browser — often a slow origin or a bot challenge. The load is
+          cancelled so the browser stays usable; try <code>browser.get_text</code> to see what did load. For a
+          platform you have a key for, its API via <code>web_request</code> is the more reliable route than
+          reading its web pages.</td></tr>
+  <tr><td>A public page returns 403 to the agent</td>
+      <td>Some sites (Etsy among them) refuse automated browsers and direct fetches outright. StarNet does not
+          disguise its requests to get around that. Use the platform's API instead.</td></tr>
 </table>
 
 <h2>What StarNet will not do</h2>

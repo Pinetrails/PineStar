@@ -479,5 +479,70 @@ function fakeDriver() {
     }
   }
 
+  /* ---- a STALLED navigation must not poison the session (2026-07-25, from a real user report) ----
+     Page.navigate does not resolve until the navigation commits, so a slow or challenge-walled origin blew
+     the 15s command budget and threw "CDP timeout: Page.navigate". Nothing cancelled the load, so the
+     renderer stayed busy and the NEXT tool call (browser.snapshot's Runtime.evaluate) queued behind it and
+     timed out too — the user saw both fail and read it as "the browser is broken". */
+  {
+    // The CDP client unrefs its timeout timers, so while awaiting a deliberately-stalled navigation there
+    // is nothing left holding the event loop open and node would EXIT mid-test with code 0 — scoring green
+    // having verified nothing. (_assert.js now catches that, but the cure is to hold the loop open.)
+    const keepAlive = setInterval(() => {}, 50);
+    const sent = [];
+    let currentUrl = 'about:blank';
+    let stall = true;
+    class StallWS {
+      constructor() { this.h = {}; setTimeout(() => this.fire('open', {}), 0); }
+      addEventListener(n, f) { (this.h[n] = this.h[n] || []).push(f); }
+      fire(n, v) { for (const f of this.h[n] || []) f(v); }
+      send(raw) {
+        const m = JSON.parse(raw); sent.push(m);
+        if (m.method === 'Page.navigate') { currentUrl = m.params.url; if (stall) return; }   // never answers
+        const value = m.method === 'Runtime.evaluate' ? currentUrl : undefined;
+        const result = m.method === 'Runtime.evaluate' ? { result: { value } } : {};
+        setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+      }
+      close() {}
+    }
+    const d = T.makeCdpDriver({
+      chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: false,
+      timeoutMs: 400, navTimeoutMs: 800, cdpPort: 9361,
+      fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://stall' }] }),
+      WebSocketImpl: StallWS,
+      // kill() must actually signal 'close', or session.close() rightly refuses to believe Chromium exited.
+      spawn: () => { let onClose = null; return { pid: 7, on(ev, fn) { if (ev === 'close') onClose = fn; }, kill() { if (onClose) queueMicrotask(() => onClose(0)); } }; }
+    });
+
+    let navErr = null;
+    try { await d.navigate('https://slow.example.com/listing/1'); } catch (e) { navErr = e; }
+    A.ok(!!navErr, 'a stalled navigation still fails rather than hanging forever');
+    A.ok(!/CDP timeout/.test(navErr.message), 'the raw "CDP timeout: Page.navigate" no longer reaches the agent');
+    A.ok(/did not finish loading/.test(navErr.message), 'the error says what actually happened');
+    A.ok(/slow\.example\.com/.test(navErr.message), 'the error names the host that stalled');
+    A.ok(/web_request|get_text/.test(navErr.message), 'the error offers a next move');
+    A.ok(sent.some(m => m.method === 'Page.stopLoading'), 'THE FIX: the stalled load is cancelled so the renderer is freed');
+
+    // the session must be usable immediately afterwards — this is the half the user actually lost
+    const after = await d.snapshot(5);
+    A.ok(after !== undefined, 'the NEXT call succeeds instead of inheriting the wedge');
+    stall = false;
+    A.eq(await d.navigate('https://example.com/'), 'https://example.com/', 'a later healthy navigation still works');
+    await d.close();
+    clearInterval(keepAlive);
+  }
+
+  /* The driver's navigation budget must stay UNDER browser.navigate's tool budget. If the outer tool
+     timeout fired first it would abort run() mid-flight and the stopLoading recovery above would never
+     happen — re-creating the exact wedge. Locked here because the two numbers live in different places. */
+  {
+    const navTool = makeBrowserTools({ existsSync: () => false, WebSocketImpl: null }).tools
+      .find(t => t.name === 'browser.navigate');
+    A.ok(navTool.timeoutMs >= 45000, 'browser.navigate gets a larger tool budget than other browser tools');
+    const others = makeBrowserTools({ existsSync: () => false, WebSocketImpl: null }).tools
+      .filter(t => t.name !== 'browser.navigate' && t.name !== 'browser.login');
+    A.ok(others.every(t => t.timeoutMs < navTool.timeoutMs), 'and it is the longest of the ordinary browser tools');
+  }
+
   A.report('browser.test');
 })();

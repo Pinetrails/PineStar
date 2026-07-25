@@ -55,7 +55,12 @@ for (const rel of steps) {
   const code = stripComments(src);
   if (!/\b[A-Za-z_$][\w$]*\.(?:ok|eq|throws|notThrows)\s*\(/.test(code)) continue;   // imports it but asserts nothing
   checked++;
-  const settles = /\.report\s*\(/.test(code) || /process\.exit\s*\(/.test(code) || /\.fails\s*\(\s*\)/.test(code);
+  /* A bare `process.exit(` is NOT evidence that the assertion counter is honoured. continuation-guard
+     ended in `.catch(e => { console.error(e); process.exit(1) })`, which only fires on a THROWN error —
+     all 16 of its assertions could fail and it still exited 0. The static lint passed it for months; the
+     runtime guard in _assert.js is what caught it. So only two things count as settling: report(), or
+     reading the counter yourself via fails(). */
+  const settles = /\.report\s*\(/.test(code) || /\.fails\s*\(\s*\)/.test(code);
   if (!settles) offenders.push(rel);
 }
 
