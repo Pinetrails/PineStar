@@ -366,7 +366,7 @@ function fakeDriver() {
       }
       const driver = T.makeCdpDriver({
         chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9349,
-        settleQuietPolls: 2, settleNavBudgetMs: 400, settleActionBudgetMs: 400,
+        settleQuietPolls: 2, settleNavBudgetMs: 400, settleActionBudgetMs: 400, settleMinObserveMs: 0, settleEmptyGraceMs: 0,
         fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://settle' }] }),
         WebSocketImpl: WS,
         spawn: () => ({ pid: 51, on(ev, fn) { if (ev === 'close') this._c = fn; }, kill() { if (this._c) queueMicrotask(() => this._c(0)); } })
@@ -425,6 +425,41 @@ function fakeDriver() {
       A.ok(ms >= 350, 'a never-quiet page spends its settle budget');
       A.ok(ms < 3000, 'a never-quiet page still returns — auto-wait can never hang the run (' + ms + 'ms)');
       await rig.driver.close();
+    }
+
+    // D2. MINIMUM OBSERVATION WINDOW. Quiescence cannot see the future: a click handler that renders
+    // from a setTimeout leaves the page genuinely still in the meantime. Watching for a minimum span
+    // catches that, while staying adaptive - a slow page still waits far past the window.
+    {
+      const state = { probes: 0 };
+      class WS2 {
+        constructor() { this.handlers = {}; WS2.last = this; setTimeout(() => this.fire('open', {}), 0); }
+        addEventListener(n, fn) { (this.handlers[n] = this.handlers[n] || []).push(fn); }
+        fire(n, v) { for (const fn of this.handlers[n] || []) fn(v); }
+        send(raw) {
+          const m = JSON.parse(raw);
+          const expr = String((m.params && m.params.expression) || '');
+          let value = 'about:blank';
+          if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
+          else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) { state.probes++; value = { ok: true, ready: 'complete', n: 0 }; }
+          const result = m.method === 'Runtime.evaluate' ? { result: { value } } : {};
+          setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+        }
+        close() {}
+      }
+      const drv = T.makeCdpDriver({
+        chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9352,
+        settleQuietPolls: 1, settleNavBudgetMs: 5000, settleActionBudgetMs: 5000, settleMinObserveMs: 300, settleEmptyGraceMs: 0,
+        fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://min' }] }),
+        WebSocketImpl: WS2,
+        spawn: () => ({ pid: 81, on(ev, fn) { if (ev === 'close') this._c = fn; }, kill() { if (this._c) queueMicrotask(() => this._c(0)); } })
+      });
+      const t0 = Date.now();
+      await drv.navigate('http://127.0.0.1:5173/');
+      const ms = Date.now() - t0;
+      A.ok(ms >= 280, 'a page that is quiet from the first poll is still observed for the minimum window (' + ms + 'ms)');
+      A.ok(ms < 2000, 'and the minimum window does not become a long fixed sleep');
+      await drv.close();
     }
 
     // E. no settle marker (a page that blocked the bootstrap) falls back to the legacy blind sleep
@@ -502,12 +537,13 @@ function fakeDriver() {
           let value = 'about:blank';
           if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
           else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
-          else if (/querySelectorAll/.test(expr)) {
+          else if (/const pick = doc/.test(expr)) value = m.sessionId ? 'Enter your card' : 'Top page';
+          else if (/role="button"/.test(expr)) {
             // The TOP document answers one button; the iframe session answers a different one.
             value = m.sessionId
               ? [{ index: 0, role: 'textbox', text: 'Card number', x: 5, y: 10, w: 200, h: 30 }]
               : [{ index: 0, role: 'button', text: 'Checkout', x: 10, y: 20, w: 80, h: 30 }];
-          } else if (/innerText/.test(expr)) value = m.sessionId ? 'Enter your card' : 'Top page';
+          }
           result = { result: { value } };
         }
         setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
@@ -667,7 +703,7 @@ function fakeDriver() {
       }
       const driver = T.makeCdpDriver({
         chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9350,
-        settleQuietPolls: 1, settleNavBudgetMs: 300, settleActionBudgetMs: 300,
+        settleQuietPolls: 1, settleNavBudgetMs: 300, settleActionBudgetMs: 300, settleMinObserveMs: 0, settleEmptyGraceMs: 0,
         fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://net' }] }),
         WebSocketImpl: WS,
         spawn: () => ({ pid: 61, on(ev, fn) { if (ev === 'close') this._c = fn; }, kill() { if (this._c) queueMicrotask(() => this._c(0)); } })

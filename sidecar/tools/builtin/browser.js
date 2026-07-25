@@ -37,6 +37,14 @@
   const SETTLE_QUIET_POLLS = 3;         // consecutive unchanged polls (~120ms) before we call it settled
   const SETTLE_NAV_BUDGET_MS = 8000;    // ceiling for a navigation/history move
   const SETTLE_ACTION_BUDGET_MS = 3000; // ceiling after click/type/press/scroll
+  // Paid ONLY when a snapshot came back empty — see the re-read note in snapshot().
+  const SETTLE_EMPTY_GRACE_MS = 1500;
+  /* A MINIMUM observation window before quiescence may be declared. DOM quiescence cannot see the
+     future: a click handler that renders from a setTimeout leaves the page genuinely still in the
+     meantime, so a pure quiet check returns before the work lands. Watching for at least this long
+     catches the ordinary handler/animation-frame delay while still being adaptive - a slow page
+     keeps waiting well past it, unlike the fixed sleeps this replaced. */
+  const SETTLE_MIN_OBSERVE_MS = 400;
   const SETTLE_BOOTSTRAP = String.raw`(() => {
     if (globalThis.__STARNET_SETTLE__) return;
     const s = { n: 0 };
@@ -399,6 +407,8 @@
     const settleQuietPolls = deps.settleQuietPolls == null ? SETTLE_QUIET_POLLS : Number(deps.settleQuietPolls);
     const settleNavBudgetMs = deps.settleNavBudgetMs == null ? SETTLE_NAV_BUDGET_MS : Number(deps.settleNavBudgetMs);
     const settleActionBudgetMs = deps.settleActionBudgetMs == null ? SETTLE_ACTION_BUDGET_MS : Number(deps.settleActionBudgetMs);
+    const settleEmptyGraceMs = deps.settleEmptyGraceMs == null ? SETTLE_EMPTY_GRACE_MS : Number(deps.settleEmptyGraceMs);
+    const settleMinObserveMs = deps.settleMinObserveMs == null ? SETTLE_MIN_OBSERVE_MS : Number(deps.settleMinObserveMs);
     if (!fetchImpl || !WebSocketImpl) throw new Error('browser unavailable: Node WebSocket/fetch is not available');
     if (!chromePath) throw new Error('browser unavailable: Chromium not found; set STARNET_CHROME');
     // We run headed only if requested AND the chosen binary can actually show a window.
@@ -570,8 +580,9 @@
       const budgetMs = opts.budgetMs || settleActionBudgetMs;
       // The budget is a TIMER, not a clock read — determinism law bans ambient time in backend logic,
       // and a timer expresses "stop waiting" just as well.
-      let expired = false;
+      let expired = false, observed = settleMinObserveMs <= 0;
       const timer = setTimeout(() => { expired = true; }, budgetMs);
+      const minTimer = observed ? null : setTimeout(() => { observed = true; }, settleMinObserveMs);
       try {
         let lastN = null, stable = 0;
         for (;;) {
@@ -592,11 +603,11 @@
           // rendered yet. Wait for the network too — but a long-poll/SSE/websocket connection never
           // finishes, so a much longer run of DOM stillness releases us regardless.
           const netIdle = inflight.size === 0;
-          if (probe.ready === 'complete' && stable >= quietPolls && (netIdle || stable >= quietPolls * 3)) return true;
+          if (observed && probe.ready === 'complete' && stable >= quietPolls && (netIdle || stable >= quietPolls * 3)) return true;
           if (expired) return false;                  // spend the budget, then proceed with what we have
           await sleep(SETTLE_POLL_MS);
         }
-      } finally { clearTimeout(timer); }
+      } finally { clearTimeout(timer); if (minTimer) clearTimeout(minTimer); }
     }
     async function navigate(url) {
       const c = await connect();
@@ -655,6 +666,20 @@
     async function snapshot(limit) {
       const c = await connect();
       const cap = Math.max(1, Math.min(200, Number(limit || 80)));
+      let out = await collectNodes(c, cap);
+      /* AUTO-WAIT + RE-READ. DOM quiescence cannot see the future: a page whose framework renders from
+         a setTimeout is genuinely STILL at load time, goes quiet, and only then paints. That is exactly
+         the reported symptom — an empty snapshot the agent reports as "no interactive elements".
+         An empty page is already a dead end, so it is the one case worth paying for: wait a bounded
+         grace and look once more. A page that HAS content pays nothing. */
+      if (!out.length && settleEmptyGraceMs > 0) {
+        await sleep(settleEmptyGraceMs);
+        await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+        out = await collectNodes(c, cap);
+      }
+      return out.map((n, i) => Object.assign({}, n, { index: i }));
+    }
+    async function collectNodes(c, cap) {
       const expr = snapshotExpr(cap);
       const out = (await evalIn(c, expr)) || [];
       let frameNo = 0;
@@ -669,21 +694,42 @@
           out.push(Object.assign({}, n, { x: n.x + off.x, y: n.y + off.y, frame: frameNo }));
         }
       }
-      return out.map((n, i) => Object.assign({}, n, { index: i }));
+      return out;
     }
+    /* Walks SAME-ORIGIN iframes as well as the top document. An out-of-process (cross-origin) frame
+       gets its own CDP session and is handled by frameSessions; a same-origin frame does NOT — it
+       shares this execution context, and document.querySelectorAll simply does not descend into it.
+       Without this walk a same-origin embedded form is invisible for the same reason a cross-origin
+       one was. Offsets accumulate down the tree so every coordinate is in TOP-page space. */
     function snapshotExpr(cap) {
       return `(() => {
         const q = 'a,button,input,textarea,select,[role="button"],[onclick],summary,label';
-        return Array.from(document.querySelectorAll(q)).filter(el => {
-          const r = el.getBoundingClientRect();
-          return r.width > 1 && r.height > 1 && r.bottom >= 0 && r.right >= 0 && r.top <= innerHeight && r.left <= innerWidth;
-        }).slice(0, ${cap}).map((el, i) => {
-          const r = el.getBoundingClientRect();
-          const tag = el.tagName.toLowerCase();
-          const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'input' || tag === 'textarea' ? 'textbox' : tag);
-          const text = (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('title') || '').replace(/\\s+/g, ' ').trim().slice(0, 160);
-          return { index: i, role, text, x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
-        });
+        const out = [];
+        const visit = (doc, dx, dy, frame, depth) => {
+          if (!doc || depth > 4 || out.length >= ${cap}) return;
+          for (const el of doc.querySelectorAll(q)) {
+            if (out.length >= ${cap}) return;
+            const r = el.getBoundingClientRect();
+            const x = r.left + dx, y = r.top + dy;
+            if (!(r.width > 1 && r.height > 1 && y + r.height >= 0 && x + r.width >= 0 && y <= innerHeight && x <= innerWidth)) continue;
+            const tag = el.tagName.toLowerCase();
+            const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'input' || tag === 'textarea' ? 'textbox' : tag);
+            const text = (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('title') || '').replace(/\\s+/g, ' ').trim().slice(0, 160);
+            const node = { index: out.length, role, text, x: Math.round(x), y: Math.round(y), w: Math.round(r.width), h: Math.round(r.height) };
+            if (frame) node.frame = frame;
+            out.push(node);
+          }
+          let n = frame;
+          for (const f of doc.querySelectorAll('iframe,frame')) {
+            let sub = null;
+            try { sub = f.contentDocument; } catch (e) { sub = null; }   // cross-origin: handled via its own CDP session
+            if (!sub) continue;
+            const fr = f.getBoundingClientRect();
+            visit(sub, dx + fr.left, dy + fr.top, (n = (n || 0) + 1), depth + 1);
+          }
+        };
+        visit(document, 0, 0, 0, 0);
+        return out;
       })()`;
     }
     // Every mutating action settles before it returns, so the NEXT snapshot/get_text reads the DOM the
@@ -886,7 +932,21 @@
     }
     async function getText(selector) {
       const sel = selector ? jsLiteral(String(selector)) : 'null';
-      const expr = `(() => { const el = ${sel} ? document.querySelector(${sel}) : document.body; return (el && (el.innerText || el.textContent) || '').replace(/\\s+\\n/g, '\\n').trim(); })()`;
+      // Same-origin frames are appended for the same reason snapshot walks them: their content is
+      // invisible to a top-document read even though the agent can see it on screen.
+      const expr = `(() => {
+        const pick = doc => { const el = ${sel} ? doc.querySelector(${sel}) : doc.body; return (el && (el.innerText || el.textContent) || '').replace(/\\s+\\n/g, '\\n').trim(); };
+        const parts = [pick(document)];
+        let n = 0;
+        for (const f of document.querySelectorAll('iframe,frame')) {
+          let sub = null;
+          try { sub = f.contentDocument; } catch (e) { sub = null; }
+          if (!sub) continue;
+          const t = pick(sub);
+          if (t) parts.push('\\n--- frame ' + (++n) + ' ---\\n' + t);
+        }
+        return parts.join('').trim();
+      })()`;
       const c = await connect();
       const parts = [String((await evalIn(c, expr)) || '')];
       // Read adopted iframes too. A consent wall, a payment form or an SSO login is routinely the
