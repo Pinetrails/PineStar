@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "9972dbd9ba228624f34b8645bf391c4624684bd2",
+    "sourceCommit": "1ef945a966412cd63d0aad611a292072a4c0f8cc",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -123,8 +123,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 107253,
-        "sha256": "89ee641c04aa5d15a6d8c5fd956d0695bdd48b3f349d6dd2a96aebda21e286f4"
+        "bytes": 107393,
+        "sha256": "0d044b02b9f50731938d83bfc189d6ed2b0b7a1cd4818cbf11656e08031cf609"
       },
       {
         "path": "frontend/app/channels.js",
@@ -603,8 +603,8 @@
       },
       {
         "path": "frontend/app/spacebg.js",
-        "bytes": 14108,
-        "sha256": "42061ec652cafbc5db9e184e66d5028addf8f714f804057fc54427b76ec5d7c5"
+        "bytes": 63728,
+        "sha256": "7a8d2b808c0fdaba1f107a52f2d5e795fbd955a00a240b4b6729185c618ecc4a"
       },
       {
         "path": "frontend/app/specialties.js",
@@ -633,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 413433,
-        "sha256": "c1be366ee9c34f5d500b5e1ec510561b5f2cc504980b49c9b27c721f21f17883"
+        "bytes": 416564,
+        "sha256": "1f2a740d62d86e2ce22d46de6f63d42f4772258e742af67b9a3fc003b3176a26"
       },
       {
         "path": "frontend/app/study.js",
@@ -813,8 +813,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 459600,
-        "sha256": "c0f33b09cf0f870f1acc3246feef8cdd24a616fe6d99971ac2ec4b0341fa4197"
+        "bytes": 460692,
+        "sha256": "703ee5b29c5086decc896b157296429bd91f611fe195703dc8bba5174a674fd0"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -873,8 +873,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 88551,
-        "sha256": "2e6cfabd7c9749963bd252c0e4ca93d38a2ab3cb7f4b9926d580099e16e31499"
+        "bytes": 89813,
+        "sha256": "c40475b87a46e6563677d81b2a6bef2e8dc879384623f7971162d5079bdc991b"
       },
       {
         "path": "frontend/css/titlebar.css",
