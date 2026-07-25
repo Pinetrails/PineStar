@@ -135,6 +135,12 @@
        CONVERGENCE — the loop declaring "nothing left to do" about a project it never opened. A real dogfood
        run did exactly that. */
     const context = isFn(deps.context) ? deps.context : null;
+    /* onStopped(loop, prevState) — fired the moment a loop stops being able to continue ON ITS OWN and starts
+       needing the Commander: the review queue filled, it converged, it met its objective, or it parked itself.
+       This is the honest trigger for a notification — not "a candidate appeared", which happens while the loop
+       is still working and would be pure noise. Edge-triggered on the state TRANSITION, so a poll or a restart
+       can never re-announce the same stop. */
+    const onStopped = isFn(deps.onStopped) ? deps.onStopped : null;
     /* trackRun / untrackRun — register a live iteration in the host's run registry, exactly as the cron,
        night-shift, workshop and interactive paths do. This is what makes an agent STAY LIT at its desk:
        GET /api/state/snapshot is built from that registry, and the world's reconnect reconcile clears any
@@ -177,6 +183,8 @@
        zombie ceiling and stall the loop for maxRunMs. */
     function settle(loopId, runId, result) {
       const at = now();
+      const prev = store.getLoop(getLoops(), loopId);
+      const prevState = prev && prev.state;
       const next = store.settleIteration(getLoops(), loopId, Object.assign({ runId: runId }, result), { now: at });
       setLoops(next);
       leases.delete(loopId);
@@ -189,6 +197,16 @@
         binding: loop ? loop.state : null,
         detail: { iteration: it ? it.n : 0, usd: (it && it.usd) || 0, converged: !!(it && it.outcome === 'noop') }
       });
+      /* NEEDS-YOU EDGE. A loop that fills its review queue, converges, meets its objective or parks itself has
+         stopped being able to continue on its own. Fire ONCE on that transition — a level-triggered check would
+         re-announce on every poll, and announcing each candidate would be noise while the loop is still working.
+         The host decides what to do with it (a channel ping is opt-in and default OFF).
+      */
+      try {
+        const NEEDS_YOU = { waiting: 1, done: 1, dormant: 1, paused: 1 };
+        const after = store.getLoop(next, loopId);
+        if (onStopped && after && NEEDS_YOU[after.state] && after.state !== prevState) onStopped(after, prevState || null);
+      } catch (_) { /* a notification must never break a settlement */ }
       return next;
     }
 

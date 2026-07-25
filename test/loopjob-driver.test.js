@@ -50,6 +50,8 @@ function world(opts) {
     harvest: opts.harvest,
     projectLine: opts.projectLine,
     context: opts.context,
+    check: opts.check,
+    onStopped: opts.onStopped,
     trackRun: opts.trackRun,
     untrackRun: opts.untrackRun,
     ledger: (e) => ledger.push(e),
@@ -380,6 +382,42 @@ function world(opts) {
     // the deps are optional — an older host without them still runs
     const w4 = world(); w4.seed({});
     A.eq(w4.tick(T0).fired, 1, 'tracking is optional; the driver works without it');
+  }
+
+  /* ---- 15. THE NEEDS-YOU EDGE: announced once, on the transition, and never while still working -------
+     A loop that stops for a human is the one moment worth interrupting them for. Announcing every candidate
+     would be noise while the loop is still working; re-announcing on every poll would be spam. */
+  {
+    const stops = [];
+    const w = world({ onStopped: (l, prev) => stops.push({ state: l.state, prev: prev, pending: LJ.pendingReviews(l).length }) });
+    w.seed({ queueCap: 2 });
+
+    w.tick(T0); await w.finish({ text: "one", title: "one" });
+    A.eq(stops.length, 0, "a candidate while the loop can still work announces NOTHING");
+
+    w.tick(T0 + MIN); await w.finish({ text: "two", title: "two" });
+    A.eq(stops.length, 1, "filling the review queue announces exactly once");
+    A.eq(stops[0].state, "waiting", "and reports the state it stopped in");
+    A.eq(stops[0].pending, 2, "with how much is waiting");
+
+    w.tick(T0 + 2 * MIN);
+    A.eq(stops.length, 1, "ticking a parked loop never re-announces — it is edge-triggered, not level");
+  }
+
+  // convergence and completion are announced too, with their own true reason
+  {
+    const stops = [];
+    const w = world({ onStopped: (l) => stops.push(l.state) });
+    w.seed({ exitOn: "empty-digests", dryStopAfter: 1, queueCap: 5 });
+    w.tick(T0); await w.finish({ text: "DIGEST: 0 findings — nothing new" });
+    A.eq(stops, ["dormant"], "converging announces as dormant, not as work waiting");
+
+    const stops2 = [];
+    const w2 = world({ onStopped: (l) => stops2.push(l.state), check: () => Promise.resolve({ ran: true, passed: true, trusted: true, tampered: false, tamperedPaths: [], gitProven: true, mustReview: false, summary: "7 passing" }) });
+    w2.seed({ exitOn: "check-green", checkCmd: "npm test", workdir: "C:/p", queueCap: 5 });
+    // a checked loop settles through the async check chain, so let it drain before asserting the announcement
+    w2.tick(T0); await w2.flush(); await w2.finish({ text: "fixed" }); await w2.flush();
+    A.eq(stops2, ["done"], "meeting the objective announces as done");
   }
 
   A.report('loopjob-driver (LOOP tick driver)');

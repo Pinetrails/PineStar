@@ -4319,6 +4319,38 @@ const loopDriver = makeLoopDriver({
   },
   snapshot: (loop) => (loop && loop.workdir) ? loopChangedFiles(loop.workdir) : Promise.resolve(null),
   check: (loop, ctx) => runLoopCheck(loop, ctx && ctx.before),
+  /* A LOOP THAT NEEDS YOU SAYS SO — on the channel you already use. The dock badge and toast only exist while
+     the app is open, which is exactly the case that does NOT matter for a loop that runs while you are away.
+     Reuses the SAME opt-in gate and chat map as cron notifications (channelSecrets.notifyAutonomous, default
+     OFF — the anti-spam law), so nobody is messaged who did not ask to be. Fire-and-forget: a dead ping must
+     never touch the loop pipeline, and it is edge-triggered in the driver so it cannot repeat.
+  */
+  onStopped: (loop, prevState) => {
+    try {
+      if (!(channelSecrets && channelSecrets.notifyAutonomous)) return;
+      const map = channelStore.loadChatMap();
+      const chats = Object.keys((map && map.chats) || {})
+        .filter(cid => map.chats[cid] && map.chats[cid].agentId === loop.agentId)
+        .map(cid => ({ chatId: (map.chats[cid] && map.chats[cid].chatId) || cid, channel: (map.chats[cid] && map.chats[cid].channel) || 'telegram' }));
+      if (!chats.length) return;
+      const name = loop.name || 'a loop';
+      const pend = loopjob.pendingReviews(loop).length;
+      // say the TRUE reason it stopped; never imply work is waiting when the loop simply finished or converged.
+      const line = loop.state === 'waiting' ? (name + ' has ' + pend + ' result' + (pend === 1 ? '' : 's') + ' waiting for your review.')
+        : loop.state === 'done' ? (name + ' finished — ' + (loop.stopReason || 'objective met') + '.')
+        : loop.state === 'dormant' ? (name + ' stopped — ' + (loop.stopReason || 'nothing left to do') + '.')
+        : (name + ' paused — ' + (loop.stopReason || 'needs your attention') + '.');
+      for (const c of chats) {
+        const ch = (c.channel === 'discord') ? discord
+          : (typeof c.channel === 'string' && c.channel.indexOf('telegram:') === 0) ? telegramBots.get(c.channel.slice('telegram:'.length))
+          : (!c.channel || c.channel === 'telegram') ? telegram : genericChannels[c.channel];
+        if (!(ch && ch.adapter)) continue;
+        Promise.resolve(ch.adapter.send(c.chatId, redact(line)))
+          .then(r => { if (r && r.ok === false) console.warn('[loops] notify failed:', r.error); })
+          .catch(e => console.warn('[loops] notify failed:', (e && e.message) || e));
+      }
+    } catch (e) { console.warn('[loops] notify error:', (e && e.message) || e); }
+  },
   ledger: (entry) => { try { autonomyLedger.record(entry); } catch (_) {} },
   // VISIBILITY: forward each iteration's run events to the floor through the SAME redacted egress the routed
   // and scheduled lanes use (runTeeView: tool_call name-only, tool_result outcome-only, metadata whole,

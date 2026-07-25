@@ -187,6 +187,52 @@
         '</div></div>';
     }
 
+    /* askLine — the loop's own objective, trimmed to one readable line, plus the folder it works in. A loop
+       can sit for days; nobody remembers exactly how they worded it, and a panel that shows STATE without
+       PURPOSE forces you to open the record just to recall what the thing is for. */
+    function askLine(l) {
+      const obj = String(l.objective || '').split('\n').map(s => s.trim()).filter(Boolean);
+      // the objective's first meaningful line is the goal; the template preamble that follows is boilerplate.
+      const goal = obj.find(s => /^(GOAL|HUNTING|QUESTION):/i.test(s)) || obj[0] || '';
+      const text = goal.replace(/^(GOAL|HUNTING|QUESTION):\s*/i, '');
+      if (!text) return '';
+      const where = l.workdir ? String(l.workdir).split(/[\\/]/).filter(Boolean).pop() : '';
+      return '<div class="lp-ask">' + esc(text.slice(0, 160)) + (text.length > 160 ? '…' : '') +
+        (where ? ' <span class="dim">in ' + esc(where) + '</span>' : '') + '</div>';
+    }
+
+    /* historyFold — what this loop has actually DONE. Approving a candidate used to make it vanish: the row
+       kept a count and nothing else, so there was no way to see what you had accepted, what you rejected, or
+       WHY. `recent` has carried all of it (including your own rejection note) since the projection was
+       written — the panel simply never rendered it. Folded, because the live queue outranks the archive. */
+    function historyFold(l) {
+      const past = (l.recent || []).filter(r => r.outcome !== 'running' && !(r.outcome === 'candidate' && !r.verdict));
+      if (!past.length) return '';
+      const mark = {
+        approved:  ['✓', 'var(--gold)'],
+        rejected:  ['✕', 'var(--bad)'],
+        discarded: ['⌫', 'var(--ph-dim)']
+      };
+      const rowOf = (r) => {
+        const m = r.verdict ? (mark[r.verdict] || ['·', 'var(--ph-dim)']) : null;
+        const what = r.outcome === 'noop' ? 'found nothing'
+          : r.outcome === 'red' ? 'check failed'
+          : r.outcome === 'failed' ? ('failed — ' + String(r.error || '').slice(0, 60))
+          : r.outcome === 'cancelled' ? 'stopped'
+          : (r.title || 'untitled');
+        return '<div class="lp-hist-r">' +
+          '<span class="lp-hist-n">#' + r.n + '</span>' +
+          (m ? '<span class="lp-hist-v" style="color:' + m[1] + '">' + m[0] + '</span>' : '<span class="lp-hist-v dim">·</span>') +
+          '<span class="lp-hist-t">' + esc(what) + '</span>' +
+          '</div>' +
+          // the Commander's own words are the most valuable line in the archive — never drop them.
+          (r.verdictNote && r.verdict === 'rejected'
+            ? '<div class="lp-hist-why">“' + esc(String(r.verdictNote).slice(0, 180)) + '”</div>' : '');
+      };
+      return '<details class="lp-hist"><summary>' + past.length + ' earlier pass' + (past.length === 1 ? '' : 'es') +
+        '</summary>' + past.slice().reverse().map(rowOf).join('') + '</details>';
+    }
+
     function row(l) {
       const t = T() && T().get((l.meta && l.meta.templateId) || '');
       // a loop created from a shape defaults its NAME to that shape's name, so printing both reads
@@ -200,11 +246,15 @@
         : (bg.perDayUsd ? ' · $' + Number(bg.perDayUsd).toFixed(2) + '/day cap' : '');
       return '<div class="mc-row" data-id="' + esc(l.id) + '">' +
         '<div class="mc-top"><b>' + esc(l.name || '(unnamed)') + '</b> <span class="dim">' + esc(shapeName) + '</span> ' + bindingLine(l) + '</div>' +
+        /* WHAT YOU ASKED FOR. A loop can sit for days; nobody remembers the exact wording, and a panel that
+           shows a loop's state without its purpose makes you open the record to find out what it is doing. */
+        askLine(l) +
         stepper(l) +
         '<div class="mc-url dim">pass ' + (l.iterationCount || 0) +
           (l.maxIterations ? '/' + l.maxIterations : '') +
           ' · ' + (l.approvedCount || 0) + ' approved · ' + (l.rejectedCount || 0) + ' rejected' + esc(spent) + '</div>' +
         checkLine(l) +
+        historyFold(l) +
         (l.lastError ? '<div class="mc-detail" style="color:var(--bad)">' + esc(l.lastError) + '</div>' : '') +
         (pending.length ? '<div class="lp-pends">' + pending.map((p, i) => pendingCard(l, p, i, pending)).join('') + '</div>' : '') +
         '<div class="mc-acts">' +
