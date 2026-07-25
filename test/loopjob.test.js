@@ -316,6 +316,10 @@ function cycle(loops, res, at) {
   A.eq(s.budget.spentTodayUsd, 0.25, 'spend is real, not estimated');
   A.eq(s.budget.leftTodayUsd, 1.75, 'and headroom is derived from it');
   A.eq(s.wouldFire, false, 'wouldFire agrees with the binding');
+  // provenance must survive into the projection — without it every template-born loop renders as "custom"
+  // and the panel falls back to a generic cycle instead of that shape's own steps.
+  A.eq(LJ.summarize(one(mk({ meta: { templateId: 'research' } })), { now: T0 }).meta, { templateId: 'research' },
+    'meta rides the projection so the panel can name the shape and draw its cycle');
   A.ok(s.binding !== null || s.wouldFire === true, 'a quiet loop ALWAYS has a named binding (invariant 4)');
 }
 

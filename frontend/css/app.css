@@ -3132,3 +3132,46 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
 /* dim helper copy inside windows — NOT .mc-detail (that's the CONNECTORS error-detail class, alarm-red) */
 .win-note { font-size: 12px; color: var(--ph-dim); line-height: 1.45; }
 .ob-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 12px; }
+
+
+/* ---- LOOPS window (windows/loops.js) — shape picker, live stepper, review cards -------------------------
+   The stepper is the "presentation" the loop system was missing: a loop must READ as a cycle you can see
+   yourself in, not as a spinner with a status word. Only the stage the server can prove lights up. */
+.lp-shapes { display: grid; grid-template-columns: 1fr; gap: 6px; margin: 4px 0 10px; }
+.lp-shape {
+  display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto auto; gap: 1px 10px;
+  align-items: center; text-align: left; padding: 9px 11px; cursor: pointer;
+  background: var(--panel-2, rgba(0,0,0,.25)); border: 1px solid var(--ph-faint); border-left: 3px solid transparent;
+  color: var(--ph-dim); font-family: inherit; font-size: 12px; transition: border-color .12s, background .12s;
+}
+.lp-shape:hover { border-color: var(--ph); background: var(--ph-faint); }
+.lp-shape.on { border-color: var(--ph); border-left-color: var(--gold); background: var(--ph-faint); color: var(--ph-bright); }
+.lp-shape-e { grid-row: 1 / span 3; font-size: 20px; color: var(--gold); opacity: .9; }
+.lp-shape-n { font-weight: 700; letter-spacing: .04em; color: var(--ph-bright); }
+.lp-shape-t { font-size: 11.5px; color: var(--ph-dim); }
+/* RIGOR BADGE — a hard exit condition and a self-reported one must not look alike. */
+.lp-shape-r { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; opacity: .95; }
+.lp-shape-r.hard { color: var(--gold); }
+.lp-shape-r.soft { color: var(--ph-dim); }
+
+.lp-cycle { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 2px 0 6px; font-size: 11px; }
+.lp-step { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 5px 0 3px; }
+.lp-step-i {
+  font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px;
+  border: 1px solid var(--ph-faint); color: var(--ph-dim); background: rgba(0,0,0,.2);
+}
+.lp-step-i.on { border-color: var(--gold); color: var(--gold); background: var(--gold-faint, rgba(255,200,80,.08)); }
+.lp-step-sep { color: var(--ph-faint); font-size: 11px; }
+
+/* a candidate awaiting a verdict — the review gate, and the whole point of the panel */
+.lp-pends { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
+.lp-pend { padding: 8px 10px; border: 1px solid var(--ph-faint); border-left: 3px solid var(--gold); background: rgba(0,0,0,.22); }
+.lp-pend-h { font-size: 12px; color: var(--ph-bright); }
+.lp-pend-b { font-size: 11.5px; color: var(--ph-dim); margin-top: 4px; line-height: 1.45; white-space: pre-wrap; }
+
+.mc-lbl { display: block; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--ph-dim); margin: 6px 0 2px; }
+.mc-lbl .key-input, .mc-lbl textarea { margin-top: 3px; text-transform: none; letter-spacing: normal; }
+.lp-dir { display: flex; gap: 6px; align-items: center; }
+.lp-dir .key-input { flex: 1 1 auto; }
+.lp-agent-pick { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 4px; }
+@media (min-width: 560px) { .lp-shapes { grid-template-columns: 1fr 1fr; } }

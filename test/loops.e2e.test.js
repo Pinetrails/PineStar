@@ -162,7 +162,9 @@ async function until(B, headers, pred, label, ms) {
     });
     A.eq(approve.status, 200, 'the verdict was accepted');
     A.eq((await approve.json()).cascaded.length, 0, 'an approval cascades to nothing');
-    st = await until(B, headers, s => s.loops[0].iterationCount >= 3, 'the verdict to start the next iteration');
+    // Wait on the OBSERVABLE consequence — a new loop model-call — rather than on an iteration counter a
+    // pre-park iteration could already have satisfied. That proxy made this assertion flaky under load.
+    st = await until(B, headers, () => loopCalls() > callsAtPark, 'the verdict to start the next iteration');
     A.ok(loopCalls() > callsAtPark, 'the Commander\'s click is what spent the next dollar');
 
     // ---- a double verdict on the same iteration is refused -----------------------------------------------

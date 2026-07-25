@@ -1,0 +1,347 @@
+/* STARNET — windows/loops.js : the LOOPS window (standing objectives).
+
+   Loads AFTER stationui.js (see index.html) and registers itself via StationUI.registerWindow; the only
+   stationui internals it touches are the enumerated StationUI.h helper surface.
+
+   ROUTINES answer WHEN. LOOPS answer UNTIL. A loop keeps working at one standing objective and stops for the
+   Commander's verdict — the verdict is what starts the next pass, not a clock. This panel is a thin polling
+   client over /api/loops (the sidecar owns the record, the ledger and the gate), exactly as windows/routines.js
+   is over /api/cron.
+
+   THE PROBLEM THIS WINDOW EXISTS TO SOLVE is that loops are confusing to set up and nothing shows you how to
+   do one properly. So START A LOOP does not offer a blank objective box — it offers SHAPES (loop-templates.js),
+   each of which already knows its cycle, its stopping condition and its guard rails. Two fields and go.
+
+   TRUTHFUL TELEMETRY, the three places it bites here:
+     · a loop that is quiet always says WHY (the server's `binding` — never a spinner over an unknown);
+     · a template's rigor is shown, because "runs until the tests pass" and "runs until it stops finding
+       things" are different promises and the second is a convention, not a proof;
+     · REJECT states what it will destroy BEFORE the click, because rejecting a stacked candidate discards
+       everything built on top of it. */
+'use strict';
+(() => {
+  if (typeof StationUI === 'undefined' || !StationUI.registerWindow) return;
+  const H = StationUI.h;
+  const esc = H.esc, sfx = H.sfx, notify = H.notify, fmtRel = H.fmtRel;
+  const mountConsole = H.mountConsole, consoleSection = H.consoleSection;
+
+  let pickedId = 'build-test-verify';   // window-local: which shape the START pane is showing
+  let loopAgentId = 'agent';
+  let pickedDir = '';                   // the blessed project root for a project-shaped loop
+
+  const T = () => (typeof LoopTemplates !== 'undefined' ? LoopTemplates : null);
+
+  function buildLoops(body) {
+    const roster = H.present.length ? H.present : [{ id: 'agent', name: 'Agent', color: 'var(--ph)' }];
+    if (!roster.some(a => a && a.id === loopAgentId)) loopAgentId = (H.present[H.sel] && H.present[H.sel].id) || roster[0].id || 'agent';
+
+    const secActive =
+      '<div id="lp-gate" class="set-about"></div>' +
+      '<div id="lp-list" class="mc-list"><span class="loading pulse">loading…</span></div>';
+    const secStart =
+      '<div class="brief-block"><div class="brief-k">WHAT A LOOP IS</div>' +
+        '<div class="brief-v">A <b>routine</b> runs on a clock. A <b>loop</b> keeps working at one objective and ' +
+        'stops for you — and <b>your verdict is what starts the next pass</b>. It spends nothing while it waits. ' +
+        '<span class="dim">Pick a shape below; it already knows its cycle and when to stop.</span></div></div>' +
+      '<div id="lp-shapes" class="lp-shapes"></div>' +
+      '<div id="lp-form" class="mc-form"></div>' +
+      '<div id="lp-msg" class="msg"></div>';
+    const frag = h => (el => { el.innerHTML = h; });
+    mountConsole(body, 'loops', [
+      { id: 'active', label: 'ACTIVE LOOPS', glyph: '∞', desc: 'Standing objectives, what each is waiting on, and the work queued for your verdict.', build: frag(secActive) },
+      { id: 'start', label: 'START A LOOP', glyph: '✦', desc: 'Pick a shape — build/test/verify, sweep & fix, or research — fill two blanks, and it goes.', build: frag(secStart) }
+    ], { search: false });
+
+    const listEl = body.querySelector('#lp-list'), gateEl = body.querySelector('#lp-gate');
+    const shapesEl = body.querySelector('#lp-shapes'), formEl = body.querySelector('#lp-form'), msgEl = body.querySelector('#lp-msg');
+    const post = (path, payload) => fetch(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+
+    /* ---------- the live stepper: which stage of its cycle a loop is in RIGHT NOW ----------
+       Derived only from server state. `running` means an iteration is genuinely in flight; a pending candidate
+       means it is on the Commander; anything else is the honest resting state named by `binding`. */
+    function stepper(l) {
+      const t = T() && T().get((l.meta && l.meta.templateId) || '');
+      const shape = (t && t.shape) || ['WORK', 'CHECK', 'REVIEW'];
+      let at = -1;
+      if (l.state === 'running') at = 0;
+      else if (l.lastCheck && l.state !== 'waiting') at = 1;
+      if (l.pendingCount > 0) at = shape.length - 1;
+      return '<div class="lp-step">' + shape.map((s, i) =>
+        '<span class="lp-step-i' + (i === at ? ' on' : '') + '">' + esc(s) + '</span>'
+      ).join('<span class="lp-step-sep">›</span>') + '</div>';
+    }
+
+    // the honest one-line answer to "why isn't it doing anything?" — always from the server's binding.
+    function bindingLine(l) {
+      if (l.state === 'running') return '<span style="color:var(--gold)">● working</span>';
+      const b = l.binding, d = l.bindingDetail || l.stopReason || '';
+      if (!b) return '<span style="color:var(--gold)">● ready</span>';
+      const map = {
+        'queue-full': ['◆', 'waiting on your review'],
+        'done': ['✓', 'objective met'],
+        'dormant': ['◌', 'nothing left to do'],
+        'paused': ['⏸', 'paused'],
+        'stopped': ['■', 'stopped'],
+        'budget': ['$', 'daily budget spent'],
+        'halted': ['✕', 'E-STOP engaged'],
+        'precheck': ['!', 'not ready'],
+        'concurrency': ['…', 'agent busy'],
+        'in-flight': ['●', 'working'],
+        'max-iterations': ['#', 'iteration limit reached'],
+        'disabled': ['○', 'disabled']
+      };
+      const m = map[b] || ['○', b];
+      const bad = (b === 'halted' || b === 'precheck');
+      // Prefer the server's own detail when it already SAYS the generic label ("3 waiting on your review"
+      // contains "waiting on your review") — otherwise the line reads as a stutter.
+      const generic = m[1];
+      const text = (d && d.toLowerCase().indexOf(generic.toLowerCase()) >= 0) ? d
+        : (d ? generic + ' — ' + d : generic);
+      return '<span' + (bad ? ' style="color:var(--bad)"' : ' class="dim"') + '>' + m[0] + ' ' + esc(text) + '</span>';
+    }
+
+    // the last check result, stated by the exit code — never a bare summary that could flatter a red run.
+    function checkLine(l) {
+      const c = l.lastCheck;
+      if (!c) return '';
+      if (c.tampered) {
+        return '<div class="mc-detail" style="color:var(--bad)">⚠ this pass changed the check itself (' +
+          esc((c.tamperedPaths || []).slice(0, 3).join(', ')) + ') — a pass here proves nothing until you look</div>';
+      }
+      if (!c.passed) return '<div class="mc-detail" style="color:var(--bad)">✕ check failed — ' + esc(c.summary || '') + '</div>';
+      if (!c.trusted) return '<div class="mc-detail">✓ check passed <span class="dim">— but unverifiable: ' + esc(c.note || '') + '</span></div>';
+      return '<div class="mc-detail"><span class="pos">✓ check passed</span> <span class="dim">' + esc(c.summary || '') + '</span></div>';
+    }
+
+    /* a pending candidate — the review gate. The REJECT button carries its true cost in the label, because a
+       stacked queue means rejecting #3 also discards #4 and #5 (they were built on top of it). */
+    function pendingCard(l, p, idx, pending) {
+      const stacked = pending.length - 1 - idx;   // un-approved candidates ABOVE this one
+      const rejectLabel = stacked > 0 ? '✕ REJECT (+' + stacked + ' built on it)' : '✕ REJECT';
+      return '<div class="lp-pend" data-n="' + p.n + '">' +
+        '<div class="lp-pend-h"><b>#' + p.n + ' ' + esc(p.title || 'untitled') + '</b>' +
+          (p.usd ? ' <span class="dim">$' + esc(String(p.usd.toFixed ? p.usd.toFixed(3) : p.usd)) + '</span>' : '') +
+          ' <span class="dim">' + esc(fmtRel(p.endedAt)) + '</span></div>' +
+        (p.summary ? '<div class="lp-pend-b">' + esc(String(p.summary).slice(0, 400)) + '</div>' : '') +
+        (p.commit ? '<div class="mc-detail dim">commit ' + esc(String(p.commit).slice(0, 8)) + '</div>' : '') +
+        '<div class="mc-acts">' +
+          '<button class="bb xs" data-vact="approve" data-n="' + p.n + '">✓ APPROVE</button>' +
+          '<button class="bb xs danger" data-vact="reject" data-n="' + p.n + '" data-stacked="' + stacked + '">' + rejectLabel + '</button>' +
+        '</div></div>';
+    }
+
+    function row(l) {
+      const t = T() && T().get((l.meta && l.meta.templateId) || '');
+      // a loop created from a shape defaults its NAME to that shape's name, so printing both reads
+      // "Research Loop ◈ Research Loop". Show the shape only when it adds something.
+      const shapeName = !t ? 'custom' : (t.name === (l.name || '') ? t.emoji : (t.emoji + ' ' + t.name));
+      const pending = l.pending || [];
+      const spent = l.budget && l.budget.spentTodayUsd ? ' · $' + l.budget.spentTodayUsd.toFixed(2) + ' today' : '';
+      return '<div class="mc-row" data-id="' + esc(l.id) + '">' +
+        '<div class="mc-top"><b>' + esc(l.name || '(unnamed)') + '</b> <span class="dim">' + esc(shapeName) + '</span> ' + bindingLine(l) + '</div>' +
+        stepper(l) +
+        '<div class="mc-url dim">pass ' + (l.iterationCount || 0) +
+          (l.maxIterations ? '/' + l.maxIterations : '') +
+          ' · ' + (l.approvedCount || 0) + ' approved · ' + (l.rejectedCount || 0) + ' rejected' + esc(spent) + '</div>' +
+        checkLine(l) +
+        (l.lastError ? '<div class="mc-detail" style="color:var(--bad)">' + esc(l.lastError) + '</div>' : '') +
+        (pending.length ? '<div class="lp-pends">' + pending.map((p, i) => pendingCard(l, p, i, pending)).join('') + '</div>' : '') +
+        '<div class="mc-acts">' +
+          (l.state === 'paused' || l.state === 'dormant' || l.state === 'done'
+            ? '<button class="bb xs" data-act="resume">▶ RESUME</button>'
+            : '<button class="bb xs" data-act="pause">⏸ PAUSE</button>') +
+          '<button class="bb xs danger" data-act="remove">✕ DELETE</button>' +
+        '</div></div>';
+    }
+
+    async function refresh() {
+      try {
+        const j = await Harness.api.get('/api/loops');
+        const loops = (j && j.loops) || [];
+        // HONEST ARM STATE. `armed` is whether a timer is genuinely running — not whether loops exist. A halted
+        // station must say so loudly, with the one-click lift, rather than showing loops that will never advance.
+        if (j && j.halted) {
+          gateEl.innerHTML = '<div class="brief-block" style="border-left-color:var(--bad);margin-bottom:8px">' +
+            '<div class="brief-k" style="color:var(--bad)">✕ LOOPS ARE STOPPED (E-STOP)</div>' +
+            '<div class="brief-v">Your loops are saved but <b>will not run</b> — an emergency stop is engaged and it survives a restart.' +
+            '<div style="margin-top:8px"><button class="bb xs" id="lp-unhalt">▶ RESUME LOOPS</button></div></div></div>';
+          const ub = gateEl.querySelector('#lp-unhalt');
+          if (ub) ub.addEventListener('click', async () => {
+            ub.disabled = true; sfx('click');
+            try { await post('/api/loops/control', { action: 'unhalt' }); notify('loops resumed', 'good'); } catch (_) { notify('could not reach the station', 'warn'); }
+            refresh();
+          });
+        } else if (loops.length) {
+          gateEl.innerHTML = j.armed
+            ? '<span style="color:var(--gold)">● loops running</span> <span class="dim">— they advance when you rule on their work' +
+              (j.inFlight ? ', ' + j.inFlight + ' working now' : '') + '.</span>'
+            : '<span class="dim">○ nothing to advance right now — every loop is waiting, paused or finished.</span>';
+        } else gateEl.innerHTML = '';
+
+        if (loops.length) listEl.innerHTML = loops.map((l, i) => row(l).replace('<div class="mc-row"', '<div class="mc-row" style="--ci:' + i + '"')).join('');
+        else {
+          listEl.innerHTML = '<div class="empty-state"><span class="es-glyph">∞</span>' +
+            '<b>NO LOOPS YET</b><span>A loop keeps working at one objective and stops for your verdict. Pick a shape and it sets itself up.</span>' +
+            '<button class="es-cta" id="lp-empty-cta" type="button">✦ START A LOOP</button></div>';
+          const cta = listEl.querySelector('#lp-empty-cta');
+          if (cta) cta.addEventListener('click', () => {
+            sfx('click');
+            consoleSection['loops'] = 'start';
+            const tab = body.querySelector('#con-tab-loops-start'); if (tab) tab.click();
+          });
+        }
+      } catch (_) { listEl.innerHTML = '<div class="mc-detail">station offline — start it to manage loops.</div>'; }
+    }
+
+    // ---------- row + verdict actions ----------
+    listEl.addEventListener('click', async ev => {
+      const vb = ev.target.closest('button[data-vact]');
+      const rowEl = ev.target.closest('.mc-row');
+      const id = rowEl && rowEl.dataset.id; if (!id) return;
+
+      if (vb) {
+        const n = parseInt(vb.dataset.n, 10);
+        const verdict = vb.dataset.vact === 'approve' ? 'approved' : 'rejected';
+        if (verdict === 'rejected') {
+          // STATE THE COST BEFORE THE CLICK. A stacked queue means rejecting this one discards everything
+          // built on top of it — the UI must never destroy work the Commander could still see without saying so.
+          const stacked = parseInt(vb.dataset.stacked, 10) || 0;
+          if (!vb.dataset.armed) {
+            vb.dataset.armed = '1';
+            vb.textContent = stacked > 0 ? '✕ CONFIRM — also discards ' + stacked : '✕ CONFIRM';
+            sfx('bad');
+            setTimeout(() => { if (vb.isConnected) { delete vb.dataset.armed; refresh(); } }, 6000);
+            return;
+          }
+        }
+        vb.disabled = true; sfx('click');
+        // a rejection is worth a reason — it is the single most valuable thing the next pass can be told.
+        let note;
+        if (verdict === 'rejected') { note = window.prompt('Why? (the loop is told this, so it does not repeat the mistake)') || ''; }
+        try {
+          const r = await (await post('/api/loops/verdict', { id, n, verdict, note })).json();
+          if (r && r.error) { notify(r.error, 'warn'); sfx('bad'); }
+          else {
+            const cas = (r && r.cascaded && r.cascaded.length) || 0;
+            notify(verdict === 'approved' ? 'approved #' + n + ' — the loop continues'
+              : 'rejected #' + n + (cas ? ' (+' + cas + ' discarded)' : '') + ' — the loop will try again', verdict === 'approved' ? 'good' : 'warn');
+          }
+        } catch (_) { notify('could not reach the station', 'warn'); sfx('bad'); }
+        refresh(); return;
+      }
+
+      const btn = ev.target.closest('button[data-act]'); if (!btn) return;
+      const act = btn.dataset.act;
+      if (act === 'remove') {
+        if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = '✕ CONFIRM'; sfx('bad'); setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '✕ DELETE'; } }, 5000); return; }
+        sfx('bad'); try { await post('/api/loops/remove', { id }); notify('loop deleted'); } catch (_) {} refresh(); return;
+      }
+      if (act === 'pause' || act === 'resume') {
+        sfx('click');
+        try { await post('/api/loops/control', { id, action: act }); } catch (_) {}
+        refresh(); return;
+      }
+    });
+
+    // ---------- START A LOOP: pick a shape, fill two blanks ----------
+    function shapeCards() {
+      const tpl = T(); if (!tpl) { shapesEl.innerHTML = '<div class="mc-detail">loop shapes unavailable</div>'; return; }
+      shapesEl.innerHTML = tpl.list().map(t =>
+        '<button type="button" class="lp-shape' + (t.id === pickedId ? ' on' : '') + '" data-tpl="' + esc(t.id) + '">' +
+          '<span class="lp-shape-e">' + esc(t.emoji) + '</span>' +
+          '<span class="lp-shape-n">' + esc(t.name) + '</span>' +
+          '<span class="lp-shape-t">' + esc(t.tagline) + '</span>' +
+          // rigor is shown on the CARD, not buried — it is the difference between a proof and a convention.
+          '<span class="lp-shape-r ' + (t.rigor === 'hard' ? 'hard' : 'soft') + '">' +
+            (t.rigor === 'hard' ? '✓ ends on a real check' : '~ ends on its own report') + '</span>' +
+        '</button>').join('');
+      shapesEl.querySelectorAll('.lp-shape').forEach(b => b.addEventListener('click', () => {
+        pickedId = b.dataset.tpl; sfx('click'); shapeCards(); renderForm();
+      }));
+    }
+
+    function renderForm() {
+      const tpl = T(); if (!tpl) return;
+      const t = tpl.get(pickedId); if (!t) return;
+      const fields = t.params.map(p =>
+        '<label class="mc-lbl">' + esc(p.label) + (p.required ? ' <span style="color:var(--bad)">*</span>' : ' <span class="dim">(optional)</span>') +
+        '<textarea class="key-input lp-p" data-key="' + esc(p.key) + '" rows="2" placeholder="' + esc(p.placeholder || '') + '" style="resize:vertical">' + esc(p.default && !p.required ? '' : (p.default || '')) + '</textarea></label>'
+      ).join('');
+      const projectRow = t.needsProject
+        ? '<label class="mc-lbl">Project folder <span style="color:var(--bad)">*</span>' +
+          '<div class="lp-dir"><input id="lp-dir" class="key-input" placeholder="the folder this loop works in" value="' + esc(pickedDir) + '" autocomplete="off">' +
+          '<button class="bb xs" id="lp-pick" type="button">📁 PICK</button></div></label>'
+        : '';
+      formEl.innerHTML =
+        '<div class="lp-cycle"><span class="dim">each pass:</span> ' + t.shape.map(s => '<span class="lp-step-i">' + esc(s) + '</span>').join('<span class="lp-step-sep">›</span>') + '</div>' +
+        '<div class="brief-v" style="margin:2px 0 8px">' + esc(t.blurb) + '</div>' +
+        '<div class="mc-detail ' + (t.rigor === 'hard' ? '' : 'dim') + '" style="margin-bottom:8px">' + esc(tpl.rigorNote(t)) + '</div>' +
+        projectRow + fields +
+        '<div class="lp-agent-pick" role="group" aria-label="Loop agent">' +
+          roster.map(a => '<button type="button" class="rt-agent-btn' + (a.id === loopAgentId ? ' active' : '') + '" data-agent="' + esc(a.id) + '" style="--rt-agent-color:' + esc(a.color || 'var(--ph)') + '">' +
+            '<span class="rt-agent-dot"></span><span class="rt-agent-name">' + esc(a.name || a.id) + '</span></button>').join('') +
+        '</div>' +
+        '<button class="bb sm" id="lp-create">✦ START THIS LOOP</button>';
+
+      formEl.querySelectorAll('.rt-agent-btn').forEach(b => b.addEventListener('click', () => {
+        loopAgentId = b.dataset.agent || 'agent'; sfx('click'); renderForm();
+      }));
+      const pick = formEl.querySelector('#lp-pick');
+      if (pick) pick.addEventListener('click', async () => {
+        sfx('click');
+        try {
+          const r = await (await post('/api/folderpick', {})).json();
+          if (r && r.path) { pickedDir = r.path; formEl.querySelector('#lp-dir').value = r.path; }
+        } catch (_) { notify('could not open the folder picker — type the path instead', 'warn'); }
+      });
+      formEl.querySelector('#lp-create').addEventListener('click', createLoop);
+    }
+
+    async function createLoop() {
+      const tpl = T(); const t = tpl && tpl.get(pickedId); if (!t) return;
+      const values = {};
+      formEl.querySelectorAll('.lp-p').forEach(el => { values[el.dataset.key] = el.value; });
+      const missing = tpl.requiredMissing(t, values);
+      if (missing.length) {
+        sfx('bad');
+        const el = formEl.querySelector('.lp-p[data-key="' + missing[0] + '"]');
+        if (el) { el.classList.add('mkt-bad'); el.focus(); }
+        msgEl.innerHTML = '<span style="color:var(--bad)">fill in: ' + esc(missing.join(', ')) + '</span>';
+        return;
+      }
+      const dirEl = formEl.querySelector('#lp-dir');
+      const workdir = dirEl ? (dirEl.value || '').trim() : '';
+      if (t.needsProject && !workdir) { sfx('bad'); msgEl.innerHTML = '<span style="color:var(--bad)">this shape needs a project folder</span>'; if (dirEl) dirEl.focus(); return; }
+      pickedDir = workdir;
+
+      msgEl.textContent = 'starting…';
+      // A project-shaped loop must be BLESSED before the station will run its check there. Do it here so the
+      // Commander never meets a loop that silently refuses to verify anything.
+      if (workdir) {
+        try {
+          const b = await (await post('/api/projects/bless', { path: workdir, surface: 'interactive' })).json();
+          if (!b || !b.ok) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((b && b.reason) || 'that folder could not be approved') + '</span>'; sfx('bad'); return; }
+        } catch (_) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ could not reach the station</span>'; sfx('bad'); return; }
+      }
+      const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;
+      const spec = tpl.buildSpec(t, values, { workdir: workdir || undefined, agentId: loopAgentId, provider });
+      try {
+        const r = await (await post('/api/loops', spec)).json();
+        if (r && r.error) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); return; }
+        msgEl.textContent = '';
+        notify('loop started — it runs until ' + (t.rigor === 'hard' ? 'your check passes' : 'it stops finding things'), 'good');
+        sfx('click');
+        formEl.querySelectorAll('.lp-p').forEach(el => { el.value = ''; });
+        consoleSection['loops'] = 'active';
+        const tab = body.querySelector('#con-tab-loops-active'); if (tab) tab.click();
+        refresh();
+      } catch (e) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'could not reach the station') + '</span>'; sfx('bad'); }
+    }
+
+    shapeCards(); renderForm(); refresh();
+    // poll while the window is open — a loop advances on its own tick, so the panel must not go stale.
+    const poll = setInterval(() => { if (body.isConnected) refresh(); else clearInterval(poll); }, 4000);
+  }
+
+  StationUI.registerWindow('loops', 'LOOPS', buildLoops, { console: true });
+})();

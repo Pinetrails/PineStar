@@ -300,6 +300,10 @@
       } : null,
       workdir: loop.workdir || null,
       branch: loop.branch || null,
+      // PROVENANCE. `meta.templateId` is what lets the panel name the shape ("◈ Research Loop") and draw that
+      // shape's own cycle in the stepper instead of a generic WORK/CHECK/REVIEW. Omitting it made every
+      // template-born loop render as "custom" — the record knew, the projection just never said.
+      meta: loop.meta || null,
       lastRunAt: loop.lastRunAt || null,
       lastRunId: loop.lastRunId || null,
       createdAt: loop.createdAt,

@@ -164,11 +164,16 @@ function makeRepo() {
     A.ok(L(st).state !== 'done', 'and the objective is not met');
 
     // ---- the REAL failure output reaches the NEXT prompt (the feedback loop) ------------------------------
-    await until(B, headers, s => L(s).iterationCount >= 2, 'a second iteration');
     // read the LOOP's own prompts only — the sidecar makes internal model calls (session titling, quest
     // refresh) against the same mock, and one of those would otherwise be mistaken for the iteration.
     const OBJ = 'make the project check pass';
-    const lastPrompt = mock.prompts.filter(p => p.indexOf(OBJ) >= 0).pop() || '';
+    const loopPrompts = () => mock.prompts.filter(p => p.indexOf(OBJ) >= 0);
+    // Wait for a prompt that actually CARRIES the red-check block, not merely for a second iteration to
+    // start. Pass 2 can be dispatched before pass 1's check verdict lands in the ledger, so the digest would
+    // not have the failure in it yet — that race made this flaky. Wait on the thing being asserted.
+    await until(B, headers, () => loopPrompts().some(p => /FAILED THE PROJECT'S OWN CHECK/.test(p)),
+      'a prompt carrying the red-check feedback');
+    const lastPrompt = loopPrompts().filter(p => /FAILED THE PROJECT'S OWN CHECK/.test(p)).pop() || '';
     A.ok(/FAILED THE PROJECT'S OWN CHECK/.test(lastPrompt), 'the next iteration is told its work failed the check');
     A.ok(/1 failing/.test(lastPrompt), 'and is handed the REAL failure output, not a generic retry');
     A.ok(/does NOT count as passing/.test(lastPrompt), 'and is told editing the tests will not work');
