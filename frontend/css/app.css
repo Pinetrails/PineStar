@@ -896,7 +896,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 /* SPECIFICITY, not preference: the base field rule is `input:not([type])` (0,1,1) and this input carries no
    type attribute, so a bare `.tb-read-in` (0,1,0) LOSES — the correction box silently rendered at the 19px
    form scale, making the emptiest element in the card its loudest. Scope to the card to win at (0,3,0). */
-.cmsg.tb-read .tb-read-in { width: 100%; box-sizing: border-box; font-size: 14px; padding: 6px 9px; }
+.cmsg.tb-read .tb-read-in { width: 100%; font-size: 14px; padding: 6px 9px; }   /* box-sizing is global (style.css `* {}`) */
 .tb-read-ack { font-size: 13px; line-height: 1.4; color: var(--ph); letter-spacing: 0.3px; }
 .tb-read-ack.err { color: var(--bad, #d66); }
 

@@ -82,7 +82,7 @@ const WorldModel = (() => {
     connector_portal: 'connector',                                                                                           // a connector portal = an MCP server's live tools (per-instance, bound to a connectorId)
     workbench: 'workbench',                                                                                                   // a workbench = shell.exec + verify.run (real code execution, consent-gated)
     studio: 'studio',                                                                                                         // a media studio = image_generate / image_analyze (G1b: image tools finally have a placeable body)
-    jukebox: 'jukebox'                                                                                                        // a jukebox = Spotify tools (search/now-playing/play/pause/queue); INERT until Spotify is connected in Settings
+    jukebox: 'jukebox'                                                                                                        // a jukebox = Spotify tools (search/now-playing/play/pause/queue); INERT until Spotify is connected in TOOLSETS
   };
 
   /* the plain-English POWER each capability grants — one OWNED source of truth so the palette tile, the

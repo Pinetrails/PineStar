@@ -96,6 +96,9 @@ const App = (() => {
   let unhingedConfirmed = false;       // set true once the Commander confirms the UNHINGED voice chip (it swears for real;
                                        //   two-press arm like the delete buttons — one-time per create screen)
   let codexConnected = false;          // last-known /api/auth/codex/status — gates waking on the Codex provider
+  // The OTHER keyless device-code OAuth providers on the genesis screen (grok/kimi) — same gate, per provider.
+  // Codex keeps its own literal variable above (source-locks pin it); refreshCodexStatus mirrors into this map.
+  const oauthConnected = { codex: false, grok: false, kimi: false };
   let station = null;         // the canonical WorldModel station (the builder's source of truth)
   let pendingStationDoc = null; // a saved station doc awaiting enterGame()
   let pendingStationStats = null; // a saved station-growth rollup (XP/level/confidence) awaiting enterGame()
@@ -407,6 +410,19 @@ const App = (() => {
       .catch(() => { a.workshop = !on; pushRoster(); persist(); return false; });
   }
 
+  // Per-agent APPROVAL posture from the dossier — the genesis ASK/FULL picker's live-app twin (until this,
+  // the only post-create path was the /yolo slash command; a creation-time control with no live equivalent is
+  // the same escape class as the genesis-only codex sign-in). No dedicated endpoint exists or is needed:
+  // approvalMode rides pushRoster (the sidecar roster persists it and runOnce reads it per run) + persist.
+  function setAgentApproval(agentId, mode) {
+    const a = agents.get(String(agentId || '')) || (agent && agent.id === agentId ? agent : null);
+    if (!a) return false;
+    a.approvalMode = mode === 'full' ? 'full' : 'ask';
+    pushRoster();
+    persist();
+    return true;
+  }
+
   // Rename an agent from its dossier. The name is DISPLAY identity only — the agentId (the `agents` Map key, the
   // sidecar roster key, the workstream binding) never changes, so a rename cannot break any lookup. We recompose
   // the system prompt (the default identity embeds the name), retarget the live COMMS labels when this is the
@@ -557,6 +573,8 @@ const App = (() => {
     provider = normalizeProviderId(provider);
     const map = {
       codex: 'GPT',
+      grok: 'GROK',
+      kimi: 'KIMI',
       openrouter: 'OPENROUTER',
       openai: 'OPENAI',
       anthropic: 'ANTHROPIC',
@@ -580,7 +598,11 @@ const App = (() => {
     if (p === 'openai' || p === 'openai-api') return 'openai';
     if (p === 'anthropic' || p === 'claude') return 'anthropic';
     if (p === 'gemini' || p === 'google' || p === 'google-ai' || p === 'google-gemini') return 'gemini';
-    if (p === 'xai' || p === 'x-ai' || p === 'grok') return 'xai';
+    // grok/kimi are their OWN keyless OAuth (subscription) providers — never aliases for the API-key ones
+    // (mirrors harness.js + modeldock.js normalize; 'xai' stays the API-key Grok).
+    if (p === 'grok' || p === 'grok-oauth' || p === 'supergrok' || p === 'xai-oauth') return 'grok';
+    if (p === 'kimi' || p === 'moonshot' || p === 'kimi-code' || p === 'kimi-for-coding' || p === 'kimi-oauth') return 'kimi';
+    if (p === 'xai' || p === 'x-ai') return 'xai';
     if (p === 'groq') return 'groq';
     if (p === 'mistral' || p === 'mistralai') return 'mistral';
     if (p === 'deepseek') return 'deepseek';
@@ -594,11 +616,11 @@ const App = (() => {
   }
   function providerNeedsKey(provider) {
     const p = normalizeProviderId(provider);
-    return p !== 'codex' && p !== 'ollama' && p !== 'custom';
+    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom';
   }
   function providerUsesKeyBox(provider) {
     const p = normalizeProviderId(provider);
-    return p !== 'codex' && p !== 'ollama';
+    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama';
   }
   function providerNeedsBaseUrl(provider) {
     return normalizeProviderId(provider) === 'custom';
@@ -1196,6 +1218,10 @@ const App = (() => {
 
   /* ---------- connect screen ---------- */
   const FALLBACK_MODELS = Object.freeze({
+    // grok/kimi mirror the sidecar registry's staticModels (the OAuth catalogs are account-discovered live;
+    // these are only the offline/not-signed-in fallback so the field is never stranded empty).
+    grok: ['grok-4', 'grok-3', 'grok-code-fast-1'],
+    kimi: ['kimi-for-coding', 'kimi-for-coding-highspeed', 'k3'],
     openai: ['gpt-5.5', 'gpt-5.4', 'gpt-4.1'],
     anthropic: ['claude-sonnet-4-5', 'claude-opus-4-1', 'claude-3-5-haiku-latest'],
     gemini: ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash'],
@@ -1379,7 +1405,7 @@ const App = (() => {
   function buildModelPicks() {
     const wrap = el('model-picks'); if (!wrap) return;
     wrap.innerHTML = '';
-    if (pickedProvider === 'codex') return;   // discovered live; no static menu
+    if (isOAuthProviderId(pickedProvider)) return;   // discovered live per account; no static menu
     (MODEL_PICKS[pickedProvider] || []).forEach(m => {
       const b = document.createElement('button'); b.type = 'button';
       b.className = 'mp-chip'; b.dataset.id = m.id; b.title = m.id;
@@ -1514,7 +1540,7 @@ const App = (() => {
   function updateHint() {
     const id = el('in-model').value.trim(), hint = el('model-hint');
     syncModelPicks();   // keep the recommended-chip highlight in lockstep with whatever's in the field
-    if (pickedProvider === 'codex') { hint.textContent = 'included in your ChatGPT subscription'; return; }
+    if (isOAuthProviderId(pickedProvider)) { hint.textContent = 'included in your ' + OAUTH_GENESIS[pickedProvider].sub.replace(/ subscription$/, '') + ' subscription'; return; }
     if (!id) { hint.textContent = 'pick or type a model slug'; return; }
     const limit = Harness.contextLimitOf ? Harness.contextLimitOf(id) : 0;
     const price = Harness.priceOf ? Harness.priceOf(id) : null;
@@ -1539,6 +1565,16 @@ const App = (() => {
   // 400-rejected by the backend, so we never hardcode the menu when we can discover it.
   const CODEX_MODELS = ['gpt-5.5', 'gpt-5.4', 'gpt-5.4-mini', 'gpt-5.3-codex-spark'];
 
+  // The genesis screen's keyless device-code OAuth providers. Codex keeps its literal path below (source-locks
+  // pin refreshCodexStatus/startCodexSignIn); grok/kimi ride ONE generic path parameterized by this copy table —
+  // the same split stationui.js uses (codex literal + OAUTH_EXTRA shared), so the two surfaces stay twins.
+  const OAUTH_GENESIS = Object.freeze({
+    codex: Object.freeze({ name: 'ChatGPT', sub: 'ChatGPT subscription' }),
+    grok:  Object.freeze({ name: 'Grok',    sub: 'SuperGrok / X Premium+ subscription' }),
+    kimi:  Object.freeze({ name: 'Kimi',    sub: 'Kimi subscription' })
+  });
+  function isOAuthProviderId(p) { return !!OAUTH_GENESIS[normalizeProviderId(p)]; }
+
   // fold/unfold the provider row's long tail. Expanding never hides the active pick; collapsing while a
   // tail provider is selected is refused (the selected chip must stay visible — no phantom selection).
   function setProviderRowExpanded(expand) {
@@ -1560,7 +1596,7 @@ const App = (() => {
     document.querySelectorAll('.provider-row .prov').forEach(b => { const on = b.dataset.prov === pickedProvider; b.classList.toggle('sel', on); b.setAttribute('aria-pressed', String(on)); });
     // a saved/selected tail provider must never be invisibly selected behind the fold
     { const sb = document.querySelector('.provider-row .prov.sel'); if (sb && sb.classList.contains('tail')) setProviderRowExpanded(true); }
-    const isCodex = pickedProvider === 'codex';
+    const isOAuth = isOAuthProviderId(pickedProvider);
     const keyBlock = el('key-block'), keyInput = el('in-key');
     const baseBlock = el('base-url-block'), baseInput = el('in-base-url');
     const configured = !!(Harness.configured && Harness.configured(pickedProvider));
@@ -1578,16 +1614,24 @@ const App = (() => {
       };
       baseInput.onkeydown = e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); onWake(); } };
     }
-    el('codex-block').classList.toggle('hidden', !isCodex);
+    el('codex-block').classList.toggle('hidden', !isOAuth);
     // the BYOK note talks about your key on 127.0.0.1 / the OS keychain — irrelevant and contradictory on the
-    // ChatGPT-sub path (no key at all), so hide the whole disclosure there. On BYOK it stays collapsed behind
-    // its toggle (progressive disclosure) — the note's own .hidden is owned by #byok-toggle, not this switch.
-    { const bd = el('byok-disclose'); if (bd) bd.classList.toggle('hidden', isCodex); }
-    if (isCodex) {
-      loadCodexModels();      // live per-account discovery (falls back to CODEX_MODELS when not connected)
-      refreshCodexStatus();
+    // keyless subscription paths (no key at all), so hide the whole disclosure there. On BYOK it stays collapsed
+    // behind its toggle (progressive disclosure) — the note's own .hidden is owned by #byok-toggle, not this switch.
+    { const bd = el('byok-disclose'); if (bd) bd.classList.toggle('hidden', isOAuth); }
+    // Switching providers must drop any OTHER provider's in-flight device-code poll — a code minted for the
+    // previous pick has no business connecting the new one's block. The active pick's own poll survives a re-click.
+    cancelOAuthPolls(pickedProvider);
+    if (isOAuth) {
+      applyOAuthBlockCopy(pickedProvider);   // the shared #codex-block speaks the picked provider's language
+      if (pickedProvider === 'codex') {
+        loadCodexModels();      // live per-account discovery (falls back to CODEX_MODELS when not connected)
+        refreshCodexStatus();
+      } else {
+        loadOAuthModels(pickedProvider);
+        refreshOAuthGenesisStatus(pickedProvider);
+      }
     } else {
-      stopCodexPoll();
       loadModels(pickedProvider);
     }
     buildModelPicks();        // recommended chips (OpenRouter only; clears itself on the codex path)
@@ -1622,6 +1666,7 @@ const App = (() => {
     let j = { connected: false };
     try { const r = await fetch('/api/auth/codex/status'); j = await r.json(); } catch (_) {}
     codexConnected = !!j.connected;
+    oauthConnected.codex = codexConnected;   // the generic wake gate reads the map; codex keeps its literal too
     // keep Harness.configured('codex') truthful the moment sign-in state is known (codex is NOT a keychain
     // provider, so nothing else ever flips this on desktop — the bug that killed every live awakening beat
     // for ChatGPT-sign-in installs; see harness.js init's codex probe for the boot-time half).
@@ -1686,13 +1731,132 @@ const App = (() => {
       onConnected: () => { codeEl.classList.add('hidden'); openBtn.classList.add('hidden'); SFX.open(); refreshCodexStatus(); loadCodexModels(); }
     });
   }
-  function stopCodexPoll() { CodexSignIn.cancel(); }
+  function stopCodexPoll() { cancelOAuthPolls(); }
+  // drop every genesis device-code poll except (optionally) one provider's — leaving the screen kills all.
+  function cancelOAuthPolls(exceptPid) {
+    Object.keys(OAUTH_GENESIS).forEach(pid => {
+      if (pid === exceptPid) return;
+      if (pid === 'codex') { CodexSignIn.cancel(); return; }
+      if (typeof OAuthSignIn !== 'undefined') OAuthSignIn.for(pid).cancel();
+    });
+  }
 
   async function codexLogout() {
     SFX.click();
     el('codex-code').classList.add('hidden'); el('btn-codex-open').classList.add('hidden');
     await CodexSignIn.logout();   // also cancels any in-flight device-code poll
     refreshCodexStatus();
+  }
+
+  /* ---------- the OTHER keyless device-code providers on the genesis screen (grok/kimi) ----------
+     One generic path parameterized by provider id, sharing the SAME #codex-block DOM the codex path paints —
+     only one provider is ever picked at a time, so the block is a single shared surface whose copy
+     (applyOAuthBlockCopy) and state (refreshOAuthGenesisStatus) follow the pick. Engine = OAuthSignIn.for(pid),
+     the exact driver Settings→PROVIDERS uses, hitting /api/auth/<pid>/{start,poll,status,models,logout}. */
+  function applyOAuthBlockCopy(pid) {
+    const c = OAUTH_GENESIS[pid]; if (!c) return;
+    const signinBtn = el('btn-codex-signin'), hint = el('codex-hint');
+    if (signinBtn) signinBtn.textContent = '⏼ SIGN IN WITH ' + c.name.toUpperCase() + ' ▸';
+    if (hint) {
+      hint.textContent = (pid === 'codex')
+        ? 'Uses the ChatGPT Plus/Pro account you already have — no API key, no billing setup. Prefer a key? Switch to OPENROUTER (or any provider) above.'
+        : 'Uses the ' + c.sub + ' you already have — no API key, no billing setup. Prefer a key? Switch to OPENROUTER (or any provider) above.';
+    }
+    // a stale code/status from the previously picked provider must never dress this one's block
+    const codeEl = el('codex-code'), openBtn = el('btn-codex-open');
+    if (codeEl) codeEl.classList.add('hidden');
+    if (openBtn) openBtn.classList.add('hidden');
+    const statusEl = el('codex-status');
+    if (statusEl) { statusEl.textContent = 'checking…'; statusEl.className = 'codex-status'; }
+  }
+
+  // GET /api/auth/<pid>/status → paint the shared sign-in block for THIS provider (mirrors refreshCodexStatus,
+  // which stays literal for codex — source-locked). Also feeds Harness.setDesktopConfigured so brainReady() and
+  // the awakening see a live brain the moment sign-in state is known (same law as the codex fix, 2026-07-19).
+  async function refreshOAuthGenesisStatus(pid) {
+    const c = OAUTH_GENESIS[pid]; if (!c || pid === 'codex') return refreshCodexStatus();
+    let j = { connected: false };
+    try { const r = await fetch('/api/auth/' + pid + '/status'); j = await r.json(); } catch (_) {}
+    oauthConnected[pid] = !!j.connected;
+    if (typeof Harness !== 'undefined' && Harness.setDesktopConfigured) Harness.setDesktopConfigured(pid, oauthConnected[pid]);
+    if (pickedProvider !== pid) return;   // the pick moved on while we awaited — never paint another provider's block
+    const statusEl = el('codex-status'), signinBtn = el('btn-codex-signin'), logoutBtn = el('btn-codex-logout');
+    if (!statusEl || !signinBtn || !logoutBtn) return;
+    if (oauthConnected[pid]) {
+      if (j.persistError) {
+        statusEl.innerHTML = '<span class="conn-dot"></span>connected to ' + esc(c.name) + ' — but the sign-in could not be saved to disk; you may need to re-sign in after a restart';
+        statusEl.className = 'codex-status warn';
+      } else {
+        statusEl.innerHTML = '<span class="conn-dot"></span>connected to ' + esc(c.name) + ' — your agents can run on your subscription';
+        statusEl.className = 'codex-status ok';
+      }
+      signinBtn.textContent = '↻ RE-SIGN IN';
+      logoutBtn.classList.remove('hidden');
+    } else if (j.expired) {
+      statusEl.textContent = '⚠ your ' + c.name + ' sign-in expired — ' + (j.reason || 'sign in again to reconnect');
+      statusEl.className = 'codex-status bad';
+      signinBtn.textContent = '⏼ RE-SIGN IN WITH ' + c.name.toUpperCase() + ' ▸';
+      logoutBtn.classList.remove('hidden');
+    } else {
+      statusEl.textContent = 'not connected — sign in to use your ' + c.sub;
+      statusEl.className = 'codex-status';
+      signinBtn.textContent = '⏼ SIGN IN WITH ' + c.name.toUpperCase() + ' ▸';
+      logoutBtn.classList.add('hidden');
+    }
+  }
+
+  // GET /api/auth/<pid>/models — the account's real catalog when signed in, else the registry's static roster
+  // (same endpoint answers both, flagging errors); mirrors loadCodexModels for the shared model popover.
+  async function loadOAuthModels(pid) {
+    const c = OAUTH_GENESIS[pid]; if (!c || pid === 'codex') return loadCodexModels();
+    const fallback = FALLBACK_MODELS[pid] || [];
+    let models = fallback.map(id => ({ id: id })), def = fallback[0];
+    try {
+      const r = await fetch('/api/auth/' + pid + '/models'); const j = await r.json();
+      if (Array.isArray(j.models) && j.models.length) {
+        models = j.models.map(m => (typeof m === 'string' ? { id: m } : m)).filter(m => m && m.id);
+        def = j.default || (models[0] && models[0].id);
+      }
+    } catch (_) {}
+    if (pickedProvider !== pid) return;   // pick moved on — don't clobber the current provider's catalog
+    genesisModels = models.map(m => ({ id: m.id, name: m.displayName || m.name || m.id }));
+    genesisOffline = false;
+    el('model-count').textContent = '(' + c.sub + ')';
+    const mi = el('in-model');
+    if (!models.some(m => m.id === mi.value)) mi.value = def || '';
+    if (def) mi.placeholder = 'search models — e.g. ' + def;
+    if (el('model-pop') && !el('model-pop').hidden) renderModelPop();
+    updateHint();
+  }
+
+  // device-code sign-in for grok/kimi through the SAME shared engine Settings uses (OAuthSignIn.for), painting
+  // the shared block — the literal codex twin is startCodexSignIn above.
+  function startOAuthSignIn(pid) {
+    const c = OAUTH_GENESIS[pid]; if (!c || pid === 'codex') return startCodexSignIn();
+    if (typeof OAuthSignIn === 'undefined') return;
+    SFX.click();
+    const statusEl = el('codex-status'), codeEl = el('codex-code'), openBtn = el('btn-codex-open');
+    OAuthSignIn.for(pid).start({
+      onRequesting: () => { statusEl.textContent = 'requesting a sign-in code…'; statusEl.className = 'codex-status'; },
+      onError: msg => { statusEl.textContent = msg; statusEl.className = 'codex-status bad'; },
+      onCode: cc => {
+        codeEl.textContent = cc.user_code; codeEl.classList.remove('hidden');
+        openBtn.classList.remove('hidden');
+        openBtn.onclick = () => openExternalUrl(cc.verification_uri);
+        statusEl.innerHTML = 'enter this code at <b>' + esc(cc.verification_uri) + '</b> (opening it now)…';
+        openExternalUrl(cc.verification_uri);
+      },
+      onTimeout: () => { statusEl.textContent = 'sign-in timed out — start again'; statusEl.className = 'codex-status bad'; },
+      onConnected: () => { codeEl.classList.add('hidden'); openBtn.classList.add('hidden'); SFX.open(); refreshOAuthGenesisStatus(pid); loadOAuthModels(pid); }
+    });
+  }
+
+  async function oauthGenesisLogout(pid) {
+    if (pid === 'codex' || !OAUTH_GENESIS[pid]) return codexLogout();
+    SFX.click();
+    el('codex-code').classList.add('hidden'); el('btn-codex-open').classList.add('hidden');
+    if (typeof OAuthSignIn !== 'undefined') await OAuthSignIn.for(pid).logout();   // also cancels any in-flight poll
+    refreshOAuthGenesisStatus(pid);
   }
 
   // the SKIN picker: choose which sprite set (teddy bear, pepe, …) the new agent wears. The chosen
@@ -1781,9 +1945,10 @@ const App = (() => {
   // pickedCustomVoice remain as state so RESUMED agents keep the voiceTraits/customVoice they already
   // carry — Personas.compose still honors them; a fresh create simply never sets them.
 
-  // a live preview: how the picked voice sounds. (The fine-tune UI is gone from this screen — the
-  // "tuned:" readout survives ONLY for resumed agents that still carry voiceTraits; a fresh create
-  // just names the archetype, no tuning-era "untuned" copy.)
+  // The sample-reply quote is GONE from personality selection (Andrew, 2026-07-20): the chip's name +
+  // vibe tooltip are the whole pitch. This block now renders ONLY the legacy "tuned:" readout for
+  // resumed agents that still carry voiceTraits (fine-tune UI removed 2026-07-09); a fresh create
+  // renders nothing here.
   function renderVoicePreview() {
     const pv = el('voice-preview'); if (!pv || typeof Personas === 'undefined') return;
     const p = Personas.get(pickedPersona);
@@ -1794,10 +1959,10 @@ const App = (() => {
     });
     if (Personas.TOGGLES) Personas.TOGGLES.forEach(g => { if (pickedTraits[g.key]) tweaks.push(g.label.toLowerCase()); });
     pv.innerHTML = '';
-    const q = document.createElement('div'); q.className = 'vp-quote'; q.textContent = '“' + p.sampleVoiceReply + '”';
+    if (!tweaks.length) return;
     const m = document.createElement('div'); m.className = 'vp-meta';
-    m.textContent = p.name + (tweaks.length ? ' · tuned: ' + tweaks.join(', ') : '');
-    pv.appendChild(q); pv.appendChild(m);
+    m.textContent = p.name + ' · tuned: ' + tweaks.join(', ');
+    pv.appendChild(m);
   }
 
   // initConnect(prefillName, isRecovery, savedAgent)
@@ -1867,8 +2032,9 @@ const App = (() => {
       setProviderRowExpanded(false);   // collapse the tail + COMPUTE the "＋ N MORE" label from the live tail count (never hardcoded)
       provMore.onclick = () => { SFX.click(); setProviderRowExpanded(provRow.classList.contains('collapsed')); };
     }
-    el('btn-codex-signin').onclick = startCodexSignIn;
-    el('btn-codex-logout').onclick = codexLogout;
+    // the sign-in block is SHARED by every keyless OAuth provider — dispatch on the current pick
+    el('btn-codex-signin').onclick = () => (pickedProvider === 'codex' ? startCodexSignIn() : startOAuthSignIn(pickedProvider));
+    el('btn-codex-logout').onclick = () => (pickedProvider === 'codex' ? codexLogout() : oauthGenesisLogout(pickedProvider));
     // BYOK key-safety note: collapsed by default, expanded by its own disclosure toggle (progressive disclosure).
     { const bt = el('byok-toggle'), bn = el('byok-note');
       if (bt && bn) {
@@ -1884,7 +2050,7 @@ const App = (() => {
     setTimeout(() => {
       try {
         if (!recovery) { const n = el('in-name'); if (n) n.focus(); }
-        else if (pickedProvider === 'codex') { const c = el('btn-codex-signin'); if (c) c.focus(); }
+        else if (isOAuthProviderId(pickedProvider)) { const c = el('btn-codex-signin'); if (c) c.focus(); }
         else { const k = el('in-key'); if (k && el('key-block') && !el('key-block').classList.contains('hidden')) k.focus(); else { const c = el('btn-codex-signin'); if (c) c.focus(); } }
       } catch (_) {}
     }, 0);
@@ -2038,9 +2204,9 @@ const App = (() => {
       }
       return false;
     }
-    if (pickedProvider === 'codex') {
-      if (!codexConnected) { msg.textContent = 'sign in with ChatGPT first, or switch to OpenRouter.'; return false; }
-      Harness.setModel(model); Harness.setProv('codex');
+    if (isOAuthProviderId(pickedProvider)) {
+      if (!oauthConnected[pickedProvider]) { msg.textContent = 'sign in with ' + OAUTH_GENESIS[pickedProvider].name + ' first, or switch to OpenRouter.'; return false; }
+      Harness.setModel(model); Harness.setProv(pickedProvider);
     } else {
       const key = el('in-key').value.trim();
       if (providerNeedsBaseUrl(pickedProvider)) {
@@ -2235,7 +2401,7 @@ const App = (() => {
         totals: () => Harness.totals(),
         context: () => Harness.contextState(agent ? agent.id : 'agent'),
         activity: () => (World.getActivity ? World.getActivity() : 'idle'),
-        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setPersona: setAgentPersona, setName: setAgentName, setWorkshop: setAgentWorkshop, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setPersona swaps the personality voice from the dossier; setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
+        config: { apply: applyAgentConfig, setModel: setAgentModelPin, setPersona: setAgentPersona, setName: setAgentName, setWorkshop: setAgentWorkshop, setApproval: setAgentApproval, setSkin: setAgentSkin, deleteAgent: deleteAgent, crewCount: () => agents.size },   // dossier edits re-shape the live prompt; setModel pins per-agent model/provider/effort (P1-6); setPersona swaps the personality voice from the dossier; setName renames the agent; setWorkshop flips the away-build grant (W3); setSkin repoints the sprite (genesis catalog); deleteAgent archives+removes a specialist; crewCount gates the last-agent delete guard
         comms: { openWorkstream: openWorkstream }   // the while-you're-away card's "review" jumps straight to a deliverable's session (2026-07-15)
       });
       // Presence is already proven by the live roster, link indicator, and COMMS state. Do not
@@ -3048,9 +3214,9 @@ const App = (() => {
   }
   function toggleArchived() { railShowArchived = !railShowArchived; SFX.click(); renderRail(); }
 
-  /* ---------- PROJECTS rail view (NS-5c → Hermes-parity drill-in): SESSIONS ↔ PROJECTS toggle ----------
+  /* ---------- PROJECTS rail view (NS-5c → ref-parity drill-in): SESSIONS ↔ PROJECTS toggle ----------
      The same rail, a second face — and its OWN organizational space, never a launcher that bounces you back to
-     SESSIONS. Two levels, mirroring Hermes' project scope:
+     SESSIONS. Two levels, mirroring the reference harness's project scope:
        · OVERVIEW (projScope null): every blessed project root (GET /api/projects joined against the live grant),
          each with a session-count chip + compact preview sub-rows. Clicking a project ENTERS it — no session
          opens, no tab flips.
@@ -3060,7 +3226,7 @@ const App = (() => {
          the rail right here. A blessed:false row still renders as REVOKED, never hidden (truthful telemetry).
      ADD (overview) blesses a typed/picked folder through the SAME machinery as conversational trust. */
   let railView = 'sessions';   // 'sessions' | 'projects'
-  // the entered-project scope (null = overview). Persisted like Hermes' projectScope, so a reload lands back
+  // the entered-project scope (null = overview). Persisted like the reference harness's projectScope, so a reload lands back
   // inside the project you were organizing — pure view state, deliberately outside the world save.
   let projScope = null;
   try { projScope = localStorage.getItem('starnet.projscope') || null; } catch (_) {}
@@ -3070,7 +3236,7 @@ const App = (() => {
     updateProjHeadAction();
   }
   // the projects-view head action is contextual: overview blesses a folder (+ ADD), an entered project starts
-  // a session in it (+ NEW) — one slot, two labelled truths, same as Hermes' scoped "+".
+  // a session in it (+ NEW) — one slot, two labelled truths, same as the reference harness's scoped "+".
   function updateProjHeadAction() {
     const b = el('ws-addproject'); if (!b) return;
     if (projScope) { b.textContent = '+ NEW'; b.title = 'start a new session in this project'; }

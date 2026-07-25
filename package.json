@@ -87,6 +87,7 @@
     "replacement:sweep": "node scripts/replacement-sweep.mjs",
     "replacement:sweep:dry": "node scripts/replacement-sweep.mjs --dry-run",
     "lint:evidence-secrets": "node scripts/lint-evidence-secrets.mjs",
+    "sync:website": "node scripts/sync-website-app.mjs",
     "qa:ledger": "node scripts/qa/ledger.mjs",
     "qa:model": "node scripts/qa/model-conformance.mjs",
     "qa:beginner": "node scripts/qa/beginner-run.mjs",

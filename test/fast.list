@@ -374,5 +374,6 @@ test/release-bump.test.js
 test/release-cut.test.js
 test/opensource-readiness.test.js
 test/release-train-provenance.test.js
+test/website-app-sync.test.js
 test/lint-emits.js
 test/lint-determinism.js

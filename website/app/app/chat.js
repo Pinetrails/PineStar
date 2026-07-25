@@ -635,12 +635,71 @@ const Chat = (() => {
       row.addEventListener('drop', e => { e.preventDefault(); row.classList.remove('attach-dragover'); if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length) handleFiles(e.dataTransfer.files); });
     }
   }
+  const ATTACH_VIDEO_EXT = { mp4: 1, mov: 1, webm: 1, m4v: 1, mkv: 1, avi: 1, ogv: 1 };
+  function isVideoFile(f) {
+    if (/^video\//.test(String(f && f.type || ''))) return true;
+    return !!ATTACH_VIDEO_EXT[String(f && f.name || '').split('.').pop().toLowerCase()];
+  }
+  // VIDEO SIGHT: the model can't watch a video, but it CAN see stills. Decode the clip right here in the
+  // browser (a <video> + canvas — no server dependency, no extra key) and pull a few spread-out frames as
+  // JPEG images that ride along as ordinary image attachments. Resolves [] on any decode failure (codec the
+  // browser can't play, corrupt file) — the video file itself still attaches, nothing breaks.
+  function extractVideoFrames(file, frameCount) {
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(file);
+      const v = document.createElement('video');
+      const done = frames => { try { URL.revokeObjectURL(url); } catch (_) {} v.removeAttribute('src'); resolve(frames); };
+      const bail = () => done([]);
+      const timer = setTimeout(bail, 15000);   // a codec the browser can't decode must not hang the composer
+      v.muted = true; v.preload = 'auto'; v.src = url;
+      v.onerror = () => { clearTimeout(timer); bail(); };
+      v.onloadedmetadata = async () => {
+        try {
+          let dur = Number(v.duration);
+          // Chrome reports duration=Infinity for streamed/recorded webm (no duration header). The standard fix:
+          // seek far past the end, wait for the clamp, and read the REAL duration back.
+          if (!isFinite(dur)) {
+            await new Promise((res) => { const t2 = setTimeout(res, 3000); v.onseeked = () => { clearTimeout(t2); res(); }; v.currentTime = 1e9; });
+            dur = Number(v.duration);
+          }
+          if (!isFinite(dur) || dur <= 0 || !v.videoWidth || !v.videoHeight) { clearTimeout(timer); return bail(); }
+          const n = Math.max(1, Math.min(frameCount || 3, 4));
+          // spread through the clip, skipping the very edges (black lead-ins / end cards)
+          const times = n === 1 ? [dur / 2] : Array.from({ length: n }, (_, i) => dur * (0.1 + 0.8 * i / (n - 1)));
+          const scale = Math.min(1, 960 / Math.max(v.videoWidth, v.videoHeight));   // cap frame size; vision needs no 4K
+          const c = document.createElement('canvas');
+          c.width = Math.max(1, Math.round(v.videoWidth * scale));
+          c.height = Math.max(1, Math.round(v.videoHeight * scale));
+          const ctx = c.getContext('2d');
+          const base = String(file.name || 'video').replace(/\.[a-z0-9]+$/i, '');
+          const frames = [];
+          for (let i = 0; i < times.length; i++) {
+            await new Promise((res, rej) => { v.onseeked = res; v.onerror = rej; v.currentTime = times[i]; });
+            ctx.drawImage(v, 0, 0, c.width, c.height);
+            const blob = await new Promise(res => c.toBlob(res, 'image/jpeg', 0.8));
+            if (blob && blob.size) frames.push(new File([blob], base + '-frame-' + (i + 1) + '.jpg', { type: 'image/jpeg' }));
+          }
+          clearTimeout(timer); done(frames);
+        } catch (_) { clearTimeout(timer); bail(); }
+      };
+    });
+  }
   function handleFiles(fileList) {
     const files = Array.from(fileList || []);
     for (const f of files) {
       if (!f) continue;
-      if (f.size > ATTACH_MAX_FILE_BYTES) { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('“' + f.name + '” is too large to attach (max 8MB)', 'warn'); continue; }
-      stageFile(f);
+      const oversized = f.size > ATTACH_MAX_FILE_BYTES;
+      if (oversized && !isVideoFile(f)) { if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('“' + f.name + '” is too large to attach (max 8MB)', 'warn'); continue; }
+      if (!oversized) stageFile(f);
+      if (isVideoFile(f)) {
+        // even an over-limit video still contributes SIGHT: its frames are small JPEGs and attach fine
+        if (oversized && typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('“' + f.name + '” is over 8MB — attaching still frames only', 'warn');
+        extractVideoFrames(f, 3).then(frames => {
+          if (!frames.length && oversized && typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify('could not decode “' + f.name + '” for frames', 'warn');
+          for (const fr of frames) stageFile(fr);
+          if (frames.length) renderAttachStrip();
+        });
+      }
     }
     renderAttachStrip();
   }
@@ -883,7 +942,7 @@ const Chat = (() => {
       if (!activeWs || activeWs.id !== id || isBusy()) return;
       const b = j && Array.isArray(j.briefs) && j.briefs[0];
       const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
-      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options, recommended: q.recommended || '', reason: q.reason || '' });
+      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options, recommended: q.recommended || '', reason: q.reason || '', grounded: (j && j.grounded) || null });
     } catch (_) { /* a missing/offline sidecar leaves history readable; the next load retries */ }
   }
 
@@ -1717,6 +1776,10 @@ const Chat = (() => {
     // NS-5 conversational path trust: a file was referenced OUTSIDE the agent's workspace — "Always" blesses
     // the whole project folder for future reads (revocable in Permissions); argsSummary is the proposed root.
     if (t === 'path.trust') return 'work with files in ' + (ev.argsSummary || 'a project folder') + ' (reads; "Always" trusts it for later)';
+    // ATTENDED BROWSER LOGIN: two-phase takeover. Phase 1 asks to open a visible Chrome window the COMMANDER
+    // drives; phase 2 holds the run until they click Done. Password honesty is part of the card copy.
+    if (t === 'browser.login') return 'open a browser window so YOU can log in to ' + (ev.argsSummary || 'a website') + ' (you type your password in that window — the agent never sees it)';
+    if (t === 'browser.login.done') return 'wait while you log in to ' + (ev.argsSummary || 'the website') + ' in the browser window — click Done here when you\'ve finished';
     if (/write|append|edit/.test(t)) return 'write ' + (ev.argsSummary || 'a file');
     return t.replace(/_/g, '.') + (ev.argsSummary ? ' ' + ev.argsSummary : '');
   }
@@ -1759,10 +1822,20 @@ const Chat = (() => {
       b.onclick = () => decide(decision, doneLabel, isDeny);
       btns.appendChild(b); return b;
     };
-    mk('Approve once', 'once', '', '✓ approved once', false);
-    mk('Always', 'always', '', '✓ always allowed', false);
-    mk('Full access', 'full', 'danger', '✓ full access', false);
-    mk('Deny', 'deny', 'deny', '✕ denied', true);
+    // ATTENDED BROWSER LOGIN cards get purpose-built buttons: "Always"/"Full access" make no sense for a
+    // one-shot window open, and the done-wait card is a completion signal, not a permission grade.
+    if (p.tool === 'browser.login') {
+      mk('Open login window', 'once', '', '✓ window opened', false);
+      mk('Deny', 'deny', 'deny', '✕ denied', true);
+    } else if (p.tool === 'browser.login.done') {
+      mk('Done — I\'ve logged in', 'once', '', '✓ done', false);
+      mk('Cancel', 'deny', 'deny', '✕ cancelled', true);
+    } else {
+      mk('Approve once', 'once', '', '✓ approved once', false);
+      mk('Always', 'always', '', '✓ always allowed', false);
+      mk('Full access', 'full', 'danger', '✓ full access', false);
+      mk('Deny', 'deny', 'deny', '✕ denied', true);
+    }
     r.body.appendChild(btns);
     // a blocking, run-pausing prompt: make it keyboard-operable. Esc on the focused CONTAINER = Deny (the row,
     // not a button — so a reflexive Enter never lands on Approve and greenlights a write the user didn't read).
@@ -2828,9 +2901,19 @@ const Chat = (() => {
     clearNudge();   // the question CLAIMS the moment: a live gentle nudge leaves whole (prompt + chips) — its chip
                     // row would be wiped by choices() below anyway, and a stuck activeNudge would mute beats forever
     pendingTaskQuestion = Object.assign({}, tq, { streamId: activeWs && activeWs.id });
-    // The host-validated recommended default (brief_ask path) gets the gold suggested chip + a one-line why.
-    // A marker-path question stores no recommendation, so rec resolves empty and this renders plain chips.
-    const rec = String(tq.recommended || '').trim().toLowerCase();
+    // TWO KINDS of suggestion, and they must never be confused. GROUNDED comes from the Commander's own
+    // answered history (taskBriefStore.groundedFor: same question, same option, >=2 times, no tie) — provable,
+    // so it outranks the model's assertion and states its count. The model's brief_ask recommendation is a
+    // guess with a rationale; it stands only when nothing was actually observed.
+    // NOTE: a marker-path question stores no `recommended`, but it CAN still carry a grounded suggestion —
+    // that one is derived from the Commander's answers, not from the unvalidated question, so it stays honest.
+    // Only the model's own guess is gated on the validated path.
+    const g = (tq.grounded && tq.grounded.option && Number(tq.grounded.count) >= 2) ? tq.grounded : null;
+    const has = v => !!v && tq.options.some(o => o.toLowerCase() === String(v).trim().toLowerCase());
+    // Fall back to the model's guess if the grounded option is not among the rendered choices (stale history,
+    // edited options) — otherwise a mismatch would silently cost BOTH the chip and the model's rationale.
+    const rec = String((has(g && g.option) ? g.option : tq.recommended) || '').trim().toLowerCase();
+    const useGrounded = !!(g && has(g.option));
     const items = tq.options.map(o => {
       const suggested = !!(rec && o.toLowerCase() === rec);
       return { label: suggested ? '★ ' + o : o, value: o, suggested };
@@ -2838,11 +2921,24 @@ const Chat = (() => {
     items.push({ label: 'use your judgment', value: '', skip: true });
     const q = row('agent'); q.d.classList.add('nudge');
     q.body.textContent = '⌖ ' + tq.question;
-    if (rec && items.some(it => it.suggested) && String(tq.reason || '').trim()) {
-      const why = document.createElement('div'); why.className = 'tq-reason';
-      why.textContent = '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim();
-      q.body.appendChild(why);
+    const marked = items.some(it => it.suggested);
+    const why = (rec && marked) ? (useGrounded
+      ? '★ suggested: ' + g.option + ' — you chose this ' + g.count + ' times before'
+      : (String(tq.reason || '').trim() ? '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim() : '')) : '';
+    if (why) {
+      const el = document.createElement('div'); el.className = 'tq-reason' + (useGrounded ? ' grounded' : '');
+      el.textContent = why;
+      q.body.appendChild(el);
     }
+    // The chips read as "pick exactly one", but a TYPED reply has always been a first-class answer here: while
+    // a question is pending, free text routes through TaskIntent.routeReply and is stored verbatim as the
+    // answer. So "both operators and executives" already worked — nothing said so. This is the same escape
+    // hatch the channels spell out in text, and it covers "more than one" and "none of these" alike.
+    // Worded without a direction: this line sits ABOVE the chip row (choices() appends that to the log after
+    // this body), so "below" would have pointed at the composer past the very options it is an alternative to.
+    const hint = document.createElement('div'); hint.className = 'tq-hint';
+    hint.textContent = 'or ignore these and type your own answer — more than one is fine';
+    q.body.appendChild(hint);
     autoscroll();
     choices(items, item => {
       vanish(q.d);
@@ -2872,31 +2968,59 @@ const Chat = (() => {
   }
   function briefReadCard(ws, p) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('tb-read');
+    // The label is its own small caption, NOT a prefix on the objective: "▸ my read: " used to eat the front of
+    // the one line that matters, so the objective started mid-sentence at caption size. Caption above, objective
+    // as the card's headline.
+    const cap = document.createElement('div'); cap.className = 'tb-read-cap';
+    cap.textContent = 'my read';
+    r.body.appendChild(cap);
     const head = document.createElement('div'); head.className = 'tb-read-head';
-    head.textContent = '▸ my read: ' + p.objective;
+    head.textContent = p.objective;
     r.body.appendChild(head);
+    // Key/value ROWS, not a ' · '-joined run-on: these three answer different questions (what comes out / who it's
+    // for / when it's done) and each value is a full clause, so a single wrapped line made them unscannable.
     const meta = [];
-    if (p.deliverable) meta.push('deliverable: ' + p.deliverable);
-    if (p.audience) meta.push('for: ' + p.audience);
-    if (p.success) meta.push('done when: ' + p.success);
-    if (meta.length) { const m = document.createElement('div'); m.className = 'tb-read-meta'; m.textContent = meta.join(' · '); r.body.appendChild(m); }
+    if (p.deliverable) meta.push(['deliverable', p.deliverable]);
+    if (p.audience) meta.push(['for', p.audience]);
+    if (p.success) meta.push(['done when', p.success]);
+    if (meta.length) {
+      const m = document.createElement('div'); m.className = 'tb-read-meta';
+      for (const [k, v] of meta) {
+        const mr = document.createElement('div'); mr.className = 'tb-read-mrow';
+        const mk = document.createElement('span'); mk.className = 'tb-read-mk'; mk.textContent = k + ' — ';   // separator lives in REAL text, not a ::after — #chat-log is a selectable transcript and generated content doesn't copy
+        const mv = document.createElement('span'); mv.className = 'tb-read-mv'; mv.textContent = v;
+        mr.appendChild(mk); mr.appendChild(mv); m.appendChild(mr);
+      }
+      r.body.appendChild(m);
+    }
     const line = document.createElement('div'); line.className = 'tb-read-fix';
     const input = document.createElement('input'); input.className = 'tb-read-in';
     input.placeholder = 'correct anything — it folds straight into the run';
+    const chips = [];
     const asum = (Array.isArray(p.assumptions) ? p.assumptions : []).filter(Boolean);
     if (asum.length) {
+      // The chips carried no affordance copy — a dim '~ …' row reads as decoration, not as "tap this to argue".
+      const acap = document.createElement('div'); acap.className = 'tb-read-cap tb-read-cap2';
+      acap.textContent = 'assuming — tap to correct';
+      r.body.appendChild(acap);
       const wrap = document.createElement('div'); wrap.className = 'tb-read-assumps';
       for (const a of asum) {
-        const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'tb-read-assump'; chip.textContent = '~ ' + a;
+        const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'tb-read-assump'; chip.textContent = a;
         chip.onclick = () => { input.value = 'Not "' + a + '" — '; input.focus(); };   // tap = start the correction; the user's own words ARE the taste signal
         wrap.appendChild(chip);
+        chips.push(chip);
       }
       r.body.appendChild(wrap);
     }
+    // Once the card can no longer steer, the chips must stop LOOKING like they can. They live on r.body while
+    // the input lives on `line`, so replacing the line's contents used to detach the input and leave every chip
+    // still lit — tapping one then wrote into a detached node and focused nothing, a promise the copy made
+    // ("tap to correct") and the card silently broke.
+    const retire = () => { for (const c of chips) { c.disabled = true; c.title = 'this read is closed — say it in chat instead'; } };
     const send = () => {
       const text = input.value.trim(); if (!text) return;
       const rid = (typeof Channels !== 'undefined' && Channels.runIdOf) ? Channels.runIdOf(ws.id) : null;
-      if (!rid) { input.value = ''; input.placeholder = 'run already finished — say it in chat instead'; return; }
+      if (!rid) { input.value = ''; input.placeholder = 'run already finished — say it in chat instead'; retire(); return; }
       fetch('/api/run/steer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId: rid, text: text }) })
         .then(res => res.ok ? res.json() : null)
         .then(d => {
@@ -2905,6 +3029,7 @@ const Chat = (() => {
           const tag = document.createElement('span'); tag.className = 'tb-read-ack' + (ok ? '' : ' err');
           tag.textContent = ok ? '✔ folded into the run — ' + text : '✕ the run already ended — say it in chat instead';
           line.appendChild(tag);
+          retire();
         })
         .catch(() => { input.placeholder = 'could not reach the run — say it in chat'; });
     };
@@ -2917,20 +3042,25 @@ const Chat = (() => {
   // TASK BRIEF v2: enrich a run-end marker question with the durable brief's host-validated recommendation
   // before rendering the chips. Safe ordering: the sidecar persists the question BEFORE it emits the buffered
   // task run-end, so one fetch here always sees the stored row. Fail-open on every path — offline sidecar,
-  // mismatched text, or a marker-path question (no recommendation stored) renders exactly the plain chips.
+  // mismatched text, or a marker-path question (no MODEL recommendation stored) renders exactly the plain
+  // chips — though a marker question may still carry a grounded suggestion, which comes from the Commander's
+  // own answered history rather than from the unvalidated question.
   async function presentTaskQuestion(ws, tq) {
-    let recommended = '', reason = '';
+    let recommended = '', reason = '', grounded = null;
     try {
       const r = await fetch('/api/task-briefs?key=' + encodeURIComponent('stream:' + ws.id) + '&status=clarifying&limit=1', { cache: 'no-store' });
       if (r.ok) {
         const j = await r.json();
         const b = j && Array.isArray(j.briefs) && j.briefs[0];
         const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
-        if (q && !q.answer && q.text === tq.question) { recommended = q.recommended || ''; reason = q.reason || ''; }
+        if (q && !q.answer && q.text === tq.question) {
+          recommended = q.recommended || ''; reason = q.reason || '';
+          grounded = j.grounded || null;   // this response always carried it; the client used to drop it
+        }
       }
     } catch (_) { /* enrichment only — the question itself never depends on this fetch */ }
     if (!isActiveWs(ws)) return;   // the Commander switched away mid-fetch; restoreTaskQuestion re-presents on return
-    offerTaskQuestion(Object.assign({}, tq, { recommended, reason }));
+    offerTaskQuestion(Object.assign({}, tq, { recommended, reason, grounded }));
   }
 
   // R4 PAYOFF RECEIPT: one provable line at the exact moment an answer/observation lands in the dossier, so
@@ -4042,6 +4172,30 @@ const Chat = (() => {
   function offerTryAgain() {
     choices([{ label: '↻ Try again', value: 'retry' }], () => retryLast());
   }
+  // Budget-stop legibility (2026-07-23): a 'budget' stop names WHICH spend cap fired and how big it is, in money
+  // words — the old "reached this run's limit" read as a runtime setting and sent users hunting in the wrong
+  // panel. Scope/cap ride the additive agent.run.end fields; an old sidecar omits them and gets the generic line.
+  function budgetStopLine(scope, capUsd) {
+    // only show the $ figure when it renders honestly at cent precision (a sub-cent test cap would read "$0.00")
+    const cap = (typeof capUsd === 'number' && isFinite(capUsd) && capUsd >= 0.01) ? '$' + capUsd.toFixed(2).replace(/\.00$/, '') + ' ' : '';
+    const what = scope === 'run' ? 'hit the ' + cap + 'per-run spend cap'
+      : scope === 'agent' ? 'this agent hit its ' + cap + 'lifetime spend cap'
+      : scope === 'day' ? 'hit the ' + cap + 'daily spend cap'
+      : scope === 'global' ? 'hit the ' + cap + 'all-time spend cap'
+      : 'hit a spend cap';
+    return what + ' — raise or remove it in MISSION CONTROL → BUDGET';
+  }
+  // the budget stop's door: open SETTINGS straight on the BUDGET section (the same openTerm(key, section)
+  // mechanism friendlyerror's doors use), with retry alongside for after the user has raised the cap.
+  function offerBudgetDoor() {
+    choices([
+      { label: '$ OPEN BUDGET SETTINGS', value: 'budget' },
+      { label: '↻ Try again', value: 'retry', quiet: true }
+    ], it => {
+      if (it && it.value === 'retry') { retryLast(); return; }
+      try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('settings', 'budget'); } catch (_) {}
+    });
+  }
   // a one-tap recovery chip dropped under a failed turn (reuses the suggestion-pill row, which self-removes on
   // tap). CONTEXT-AWARE on the classified verdict: a retryable fault offers "↻ Try again"; an auth/billing
   // fault points at SETTINGS (fix the key) instead of a doomed retry; a capability denial points at SKILLS;
@@ -4701,14 +4855,14 @@ const Chat = (() => {
     const have = {}; placed.forEach(t => { have[t] = true; });
     const active = toolRows().filter(r => r.cap == null || have[r.cap]);
     const missing = toolRows().filter(r => r.cap && !have[r.cap]).map(r => r.label);
-    // JUKEBOX is a two-step unlock: place the prop (grants the tools) AND connect Spotify in Settings (the tools
+    // JUKEBOX is a two-step unlock: place the prop (grants the tools) AND connect Spotify in TOOLSETS (the tools
     // are inert until the OAuth session exists). If it's placed but Spotify isn't connected, say so honestly
     // rather than listing spotify as fully live — the truthful-telemetry law applies to /tools too.
     let jukeNote = '';
     if (have.jukebox) {
       let connected = false;
       try { const j = await (await fetch('/api/spotify/status', { cache: 'no-store' })).json(); connected = !!(j && j.connected); } catch (_) {}
-      if (!connected) jukeNote = ' Spotify not connected — connect it in Settings to use the JUKEBOX.';
+      if (!connected) jukeNote = ' Spotify not connected — connect it in TOOLSETS (the JUKEBOX row) to use it.';
     }
     localLine('Tools: ' + active.map(r => r.label + ' (' + r.tools + ')').join('; ')
       + (missing.length ? '. Locked until placed: ' + missing.join(', ') + '.' : '.')
@@ -5263,7 +5417,7 @@ const Chat = (() => {
       if (chunk.trim()) { Voice.speakChunk(chunk, name); spokenIdx += cut; }
     };
     try {
-      const { text: reply, error, endReason, finishReason } = await Harness.chat({
+      const { text: reply, error, endReason, finishReason, budgetScope, budgetCapUsd } = await Harness.chat({
         system: sys, messages: historyWindow(ws), agentId: ws.agentId || 'agent', isTask, recurring, signal: ac.signal, streamId: ws.id,
         taskAction: taskAction || undefined,
         recipeId: recipeId || undefined,   // provenance spine: the launching recipe rides to the durable run row (undefined for non-recipe runs)
@@ -5381,11 +5535,13 @@ const Chat = (() => {
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
         if (endReason && endReason !== 'done' && endReason !== 'clarifying' && !taskQuestion) {
           if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
-            : endReason === 'budget' ? 'reached this run\'s limit'
+            : endReason === 'budget' ? budgetStopLine(budgetScope, budgetCapUsd)
             : endReason === 'cancelled' ? (interrupted.has(ws.id) ? 'stopped' : 'run cancelled')
             : 'stopped (' + endReason + ')'));
           markStoppedTurn(ws, replyText);
-          if (isActiveWs(ws)) offerTryAgain();
+          // a budget stop's honest door is the BUDGET settings section, not a doomed retry (the same cap fires
+          // again immediately); every other stop keeps the plain retry chip.
+          if (isActiveWs(ws)) { if (endReason === 'budget') offerBudgetDoor(); else offerTryAgain(); }
           if (typeof StationUI !== 'undefined') StationUI.notify('run stopped: ' + endReason, 'warn');
         } else if (cutShort) {
           // distinct honest "cut short" recap: the reply is truncated/filtered, not a clean delivery.

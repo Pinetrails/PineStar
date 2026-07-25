@@ -24,7 +24,7 @@ correction to a wrong guess, in the user's own words, is the richest taste signa
   from tool telemetry; this event is the PRODUCT surface of the settle).
 - fork.js taskDirective: brief_proceed assumptions must state the model's TASTE read
   (style/tone/aesthetic) as explicit, correctable assumptions.
-- chat.js: on taskbrief.settled for the active stream → READ card: "▸ my read" +
+- chat.js: on taskbrief.settled for the active stream → READ card: a "MY READ" caption +
   objective, assumption chips, inline correction input → POST /api/run/steer → "✔ folded
   into the run". Non-blocking; the run never pauses.
 - Locked separations unchanged: task answers never auto-enter the dossier; steering is

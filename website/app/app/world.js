@@ -848,7 +848,10 @@ const World = (() => {
     kindleArmed = false; kindleP = 0; kindleHolding = false; kindlePeak = 0;
     awakeFrozen = true; wakeDark = 0.92; wakeDarkTarget = 0.92; camAnim = null; if (agent) agent.dir = 'north';   // newborn faces AWAY until the Turn
   }
-  function setWakeProgress(p) { p = p < 0 ? 0 : p > 1 ? 1 : p; wakeDarkTarget = 0.92 * (1 - p); }
+  // setWakeProgress LIFTS the awakening veil — it must never CREATE darkness in a lit room. The deferred
+  // interview replays the meeting beats (bumpTruth) during ordinary play, so outside the ceremony
+  // (awakeFrozen false) this is a no-op — the veil only moves while a birth/re-wake actually owns the room.
+  function setWakeProgress(p) { if (!awakeFrozen) return; p = p < 0 ? 0 : p > 1 ? 1 : p; wakeDarkTarget = 0.92 * (1 - p); }
   function igniteSpark() { sparkAt = performance.now(); bornAt = performance.now(); wakeDark = 0.985; wakeDarkTarget = 0.985; kindleArmed = false; kindleP = 0; }   // the mind catches fire — snap to near-total dark so the spark is the ONLY light (and end any kindle)
   /* THE KINDLING — the pre-ignition beat: one dim, almost-dead ember sits where the mind will be, and the
      user must HOLD to bring it to life. Sustained attention fills kindleP; releasing lets it ebb. When it
@@ -860,7 +863,7 @@ const World = (() => {
   }
   function kindleHold(down) { if (kindleArmed) kindleHolding = !!down; }
   function camPushIn() { if (!cache || !agent || agent.unplaced) return; const [s, x, y] = camCenterOn(agent.px, agent.py - 4, 3.2); camTweenTo(s, x, y, 2600); }
-  function camCreep() { if (!cache || !agent || agent.unplaced || camAnim) return; const [s, x, y] = camCenterOn(agent.px, agent.py - 4, scale * 1.035); camTweenTo(s, x, y, 600); }   // a hair closer with each truth
+  function camCreep() { if (!cache || !agent || agent.unplaced || camAnim || !awakeFrozen) return; const [s, x, y] = camCenterOn(agent.px, agent.py - 4, scale * 1.035); camTweenTo(s, x, y, 600); }   // a hair closer with each truth — ceremony-only (the deferred interview must never steal the live camera)
   function camPunch() { if (!agent || agent.unplaced || camAnim) return; const b = scale; const [s1, x1, y1] = camCenterOn(agent.px, agent.py - 4, b * 1.06); const [s0, x0, y0] = camCenterOn(agent.px, agent.py - 4, b); camTweenTo(s1, x1, y1, 150, t => t, () => camTweenTo(s0, x0, y0, 240)); }   // eyes finding yours
   function camPullBack() { if (!cache) return; const W = cache.W, H = cache.H; const s = clampz(Math.min(cv.width / W, cv.height / H), MINZ, MAXZ); camTweenTo(s, (cv.width - W * s) / 2, (cv.height - H * s) / 2, 1700); }   // recompute fit at fire time -> no jump on release
   // the Turn: the newborn finds the Commander — head leads, then the body pivots north -> side -> south and holds your gaze
@@ -5541,7 +5544,8 @@ const World = (() => {
     U.bus.on('channel.inbound', p => {
       const dish = capPropFor('dish', p && p.agentId);
       if (dish && PropSprites.pulseProp) PropSprites.pulseProp(dish.id, 'dish');
-      hudNote('📡 message received — ' + String((p && p.channel) || 'channel').toUpperCase(), 'good');
+      // channel may be an instance id ('telegram:<botId>' — multi-bot); the HUD names the PLATFORM, not internals.
+      hudNote('📡 message received — ' + String((p && p.channel) || 'channel').split(':')[0].toUpperCase(), 'good');
     });
     // G0.6 CHANNEL REPLY MADE VISIBLE: the outbound side of the same on-ramp. hub.js emits channel.delivery
     // { channel, chatId, runId, ok, chunks, reason, agentId? } on every reply-send. Mirror the inbound copy
@@ -5566,7 +5570,7 @@ const World = (() => {
         dish = capPropFor('dish', null);   // legacy/command send (no attribution): any dish, single-agent floor
       }
       if (dish && PropSprites.pulseProp) PropSprites.pulseProp(dish.id, 'dish');
-      hudNote('📤 reply sent · ' + String(p.channel || 'channel').toLowerCase(), 'good');
+      hudNote('📤 reply sent · ' + String(p.channel || 'channel').split(':')[0].toLowerCase(), 'good');   // instance ids ('telegram:<botId>') stay internal
     });
     // EL-11 #11 CHANNEL TROUBLE MADE VISIBLE: transport health (channel.connect) used to be seen ONLY inside the open
     // CHANNELS panel. A drop/fatal-token that happens while you're anywhere else in the station now surfaces a single
@@ -5576,7 +5580,9 @@ const World = (() => {
       if (!p || !p.channel) return;
       const state = String(p.state || '').toLowerCase();
       if (state !== 'down' && state !== 'error') return;   // healthy reconnects are not alarms
-      const name = String(p.channel).toUpperCase();
+      // 'telegram:<botId>' (an agent-bound bot instance) reads as 'TELEGRAM BOT' — platform truth without leaking ids.
+      const raw = String(p.channel);
+      const name = raw.indexOf(':') >= 0 ? (raw.split(':')[0].toUpperCase() + ' BOT') : raw.toUpperCase();
       const why = p.detail ? ' — ' + String(p.detail) : '';
       hudNote((state === 'error' ? '⚠ ' + name + ' sign-in/token error' : '⚠ ' + name + ' connection down') + why, 'bad');
     });
@@ -5647,7 +5653,7 @@ const World = (() => {
     }
     connPollFn = pollConnectors; pollConnectors(); connPollTimer = setInterval(pollConnectors, 5000);
     // JUKEBOX dead-vs-live: poll Spotify's OAuth connected state so a placed jukebox reads DEAD (unplugged)
-    // until the user connects Spotify in Settings, then comes alive. Same keep-last-known-on-failure contract.
+    // until the user connects Spotify in TOOLSETS, then comes alive. Same keep-last-known-on-failure contract.
     function pollSpotify() {
       if (typeof fetch === 'undefined' || typeof PropSprites === 'undefined' || !PropSprites.setSpotifyConnected) return;
       fetch(apiUrl('/api/spotify/status')).then(r => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })

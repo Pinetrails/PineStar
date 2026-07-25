@@ -2935,7 +2935,7 @@ const PropSprites = (() => {
 
   F.jukebox = (x, y, w, h, f) => {   // TALL 3/4 jukebox: rounded dome, bubble chase, spinning record
     // OBJECT=CAPABILITY TRUTH: a placed jukebox GRANTS the Spotify tools, but they are INERT until the user
-    // connects Spotify in Settings. So the sprite runs DEAD when unconnected — the machine is unplugged: no
+    // connects Spotify in TOOLSETS. So the sprite runs DEAD when unconnected — the machine is unplugged: no
     // bubble chase, no spinning disc, no lamps, no floor glow, everything dimmed to a cold grey — and only
     // comes alive (bubbles rise, disc spins, lamps blink, gold floor glow) when f.live (=Spotify connected).
     const live = !!(f && f.live);
@@ -5337,7 +5337,7 @@ const PropSprites = (() => {
   }
 
   /* live JUKEBOX state (drives the jukebox sprite's dead-vs-live glow). Object=capability law: a placed
-     jukebox grants the Spotify tools, but they're INERT until the user connects Spotify in Settings — so
+     jukebox grants the Spotify tools, but they're INERT until the user connects Spotify in TOOLSETS — so
      the sprite must read DEAD (dark, no bubble chase / no spinning disc / no lamps) when unconnected and
      only come alive (animated + gold floor glow) once /api/spotify/status reports connected:true. The
      world layer polls that endpoint and pushes the boolean here; the draw stays a pure function of it. */
@@ -5391,7 +5391,7 @@ const PropSprites = (() => {
       o.fired = connectorFired(cid);
     }
     if (f.t === 'workbench') { const wf = workbenchFiredFor(f.id); o.fired = wf.fired; o.bad = wf.bad; }   // shell/verify pulse (room-scoped by propId)
-    if (f.t === 'jukebox') o.live = jukeConnected;   // dead until Spotify is connected in Settings (object=capability truth)
+    if (f.t === 'jukebox') o.live = jukeConnected;   // dead until Spotify is connected in TOOLSETS (object=capability truth)
     if (f.t === 'outbox') o.crates = outboxCrates;   // G2.3: uncollected while-away runs stack as crates
     if (f.t === 'missionboard') { o.pins = missionPins; o.hot = missionHot; o.jam = missionJam; o.proposals = missionProposals; }   // G1b/G1c: open quests pinned + the station-gap beacon + the routine-JAM amber stub; G4: pending autojob PROPOSAL cards
     if (f.t === 'trophycase') o.trophies = trophyCount;   // G3b: earned trophies stand behind glass (real completions only)
