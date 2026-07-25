@@ -4528,6 +4528,58 @@ function handleLoopsControl(req, res) {
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
 
+/* POST /api/loops/testcheck — run the Commander's check ONCE, now, and report what really happened.
+   body: { path, cmd } -> { ok, passed, summary, alreadyGreen }
+
+   WHY THIS EXISTS. The check command is the scariest field in the form and the only one with no feedback, so
+   people either guess or paste something that does not do what they think. Three failures it turns from
+   expensive into instant:
+     · a command that cannot run (typo, wrong folder, missing dep) — otherwise ~10 red passes before the
+       redStopAfter ceiling parks the loop;
+     · a command that ALREADY PASSES — otherwise the loop spends one pass, gets a trusted green and declares
+       "objective met" having done nothing. That is the app claiming a success that never happened, which
+       matters more than the wasted dollar;
+     · a command that always passes regardless (`echo ok`) — the same false victory, now visible up front.
+
+   Same trust boundary as the loop's own check: a blessed root only, human-typed command, host-executed. */
+function handleLoopsTestCheck(req, res) {
+  const json = loopJson(res);
+  readBody(req, 4096).then(async raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const root = body.path != null ? path.resolve(String(body.path)) : '';
+    const cmd = String(body.cmd || '').trim();
+    if (!root || !cmd) return json(400, { error: 'a folder and a command are both required' });
+    try { if (!fs.statSync(root).isDirectory()) return json(400, { error: 'not a folder: ' + root }); }
+    catch (e) { return json(400, { error: 'that folder does not exist: ' + root }); }
+    // the host only ever executes at a root the Commander has approved — the same law the loop check obeys.
+    if (!isBlessedRoot(root)) return json(403, { error: 'that folder is not approved yet — pick it again to approve it' });
+    try {
+      const r = await shellRunCommand({
+        spawn: childSpawn, cmd: cmd, cwd: root, timeoutMs: 120000, maxBytes: LOOP_CHECK_MAX_BYTES,
+        clock: { now: () => Date.now() }, isWin: process.platform === 'win32'
+      });
+      // loopjob-check wraps verify.interpret and is already required here; we only read passed/summary, so the
+      // trust fields (which need a git changed-file list) are irrelevant to a pre-flight.
+      const v = loopcheck.verdict({ result: r });
+      /* THREE OUTCOMES, NOT TWO. A non-zero exit from genuinely failing tests and a non-zero exit from a
+         command that could not run are the same number but opposite meanings — the first is a good target,
+         the second is a typo. Reporting both as "it fails, great" sends someone off to start a loop against
+         a command that will never work. Detected from the shell's own vocabulary, and only ever used to
+         soften the wording: we never claim it IS broken, only that it looks like it. */
+      const out = String(r.out || '');
+      const couldNotRun = r.exitCode === 127 ||
+        /command not found|is not recognized|no such file or directory|Missing script|ENOENT/i.test(out);
+      json(200, {
+        ok: true, passed: v.passed, summary: v.summary,
+        exitCode: r.exitCode, timedOut: !!r.timedOut,
+        couldNotRun: !v.passed && couldNotRun,
+        // the loop would finish instantly on an already-green check — the most important case to surface.
+        alreadyGreen: v.passed
+      });
+    } catch (e) { json(200, { ok: false, error: 'could not run it — ' + ((e && e.message) || e) }); }
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
 // POST /api/loops/detect — what check command suits this folder? body: { path } -> { cmd, why, files }
 // Read-only and path-guarded: it only ever reports on a folder that exists; it never blesses or runs anything.
 function handleLoopsDetect(req, res) {
@@ -5586,6 +5638,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/loops/control', h: handleLoopsControl },
   { m: 'POST', exact: '/api/loops/remove', h: handleLoopsRemove },
   { m: 'POST', exact: '/api/loops/detect', h: handleLoopsDetect },
+  { m: 'POST', exact: '/api/loops/testcheck', h: handleLoopsTestCheck },
   // ---- away workshop (W1/W2): grant toggle, backlog queue, pending deliverables, decide, force-fire a shift ----
   { m: 'POST', exact: '/api/workshop/grant', h: handleWorkshopGrant },
   { m: 'POST', exact: '/api/workshop/queue', h: handleWorkshopQueue },

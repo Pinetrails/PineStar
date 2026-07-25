@@ -62,8 +62,11 @@
       rigor: 'hard',
       needsProject: true,
       params: [
-        { key: 'goal', label: 'What should it get working?', placeholder: 'e.g. make the failing auth tests pass without changing the API', required: true },
-        { key: 'check', label: 'Your check command', placeholder: 'npm test', required: true, default: 'npm test' }
+        { key: 'goal', label: 'What should it get working?', placeholder: 'make the failing auth tests pass without changing the API', required: true,
+          examples: ['make the failing auth tests pass without changing the API',
+                     'get the build back to green',
+                     'fix the 3 failing checkout tests'] },
+        { key: 'check', label: 'The command you run to check it', placeholder: 'npm test', required: true, default: 'npm test' }
       ],
       objective:
         'Work in this project until its check passes.\n\nGOAL: {goal}\n\n' +
@@ -88,8 +91,12 @@
       rigor: 'soft',
       needsProject: true,
       params: [
-        { key: 'hunting', label: 'What is it hunting?', placeholder: 'e.g. unhandled promise rejections, missing error messages, dead code', required: true },
-        { key: 'where', label: 'Where should it look?', placeholder: 'e.g. the src/ folder — leave the vendor folder alone', required: false, default: 'the whole project' }
+        { key: 'hunting', label: 'What is it hunting?', placeholder: 'unhandled promise rejections', required: true,
+          examples: ['unhandled promise rejections',
+                     'API calls with no error handling',
+                     'debug logging left in production code'] },
+        { key: 'where', label: 'Where should it look?', placeholder: 'the src/ folder', required: false, default: 'the whole project',
+          examples: ['the src/ folder', 'everything except vendor/', 'the whole project'] }
       ],
       objective:
         'Sweep this project for one specific class of problem and fix them one at a time.\n\n' +
@@ -114,8 +121,12 @@
       rigor: 'soft',
       needsProject: false,
       params: [
-        { key: 'question', label: 'What are you trying to find out?', placeholder: 'e.g. how are competitors pricing AI agent products in 2026?', required: true },
-        { key: 'angle', label: 'Anything to focus on or avoid?', placeholder: 'e.g. focus on self-serve pricing; skip enterprise sales', required: false, default: 'no particular constraint' }
+        { key: 'question', label: 'What are you trying to find out?', placeholder: 'how are competitors pricing AI agent products?', required: true,
+          examples: ['how are competitors pricing AI agent products?',
+                     'what do reviewers complain about most in this category?',
+                     'which channels are similar products launching on?'] },
+        { key: 'angle', label: 'Anything to focus on or avoid?', placeholder: 'focus on self-serve pricing; skip enterprise', required: false, default: 'no particular constraint',
+          examples: ['focus on self-serve pricing; skip enterprise', 'only sources from the last 12 months'] }
       ],
       objective:
         'Research one question, going deeper each pass.\n\nQUESTION: {question}\nFOCUS: {angle}\n\n' +
@@ -131,7 +142,8 @@
   ];
 
   const FROZEN = CATALOG.map(t => Object.freeze(Object.assign({}, t, {
-    params: Object.freeze((t.params || []).map(p => Object.freeze(Object.assign({ required: true, default: '' }, p)))),
+    params: Object.freeze((t.params || []).map(p => Object.freeze(Object.assign({ required: true, default: '', examples: [] }, p,
+      { examples: Object.freeze((p.examples || []).slice()) })))),
     shape: Object.freeze((t.shape || []).slice())
   })));
 
@@ -201,5 +213,34 @@
     return spec;
   }
 
-  return { list, get, fillTokens, requiredMissing, buildSpec, rigorNote, DIGEST_RULE };
+  /* readySummary — what this loop will actually do, in plain English, for the final confirm step. Built from
+     the SAME spec that gets posted, so it can never describe a loop different from the one created. Answers
+     the three things a first-time user is anxious about: what it works on, when it stops, and what it costs. */
+  function readySummary(id, values, extra) {
+    const t = typeof id === 'string' ? get(id) : id;
+    if (!t) return [];
+    extra = extra || {};
+    const spec = buildSpec(t, values, extra);
+    if (!spec) return [];
+    const lines = [];
+    const where = extra.workdir ? ('in ' + String(extra.workdir).split(/[\/]/).pop()) : 'for you';
+    if (t.id === 'build-test-verify') {
+      lines.push({ k: 'What it does', v: 'Works ' + where + ', one change at a time, and after every pass the station runs ' + (spec.checkCmd || 'your check') + ' itself.' });
+      lines.push({ k: 'When it stops', v: 'When that check genuinely passes — and it will not accept a pass that was reached by editing the tests.' });
+    } else if (t.id === 'sweep-and-fix') {
+      lines.push({ k: 'What it does', v: 'Hunts ' + where + ' for one thing at a time, fixes it, and reports what it found.' });
+      lines.push({ k: 'When it stops', v: 'After ' + (spec.dryStopAfter || 3) + ' passes in a row that turn up nothing new. That is its own report, not a proof — read what it produced.' });
+    } else {
+      lines.push({ k: 'What it does', v: 'Digs into your question a bit further each pass, skipping anything it already covered.' });
+      lines.push({ k: 'When it stops', v: 'After ' + (spec.dryStopAfter || 3) + ' passes that turn up nothing new. That is its own report, not a proof.' });
+    }
+    lines.push({ k: 'Your part', v: spec.gate === 'auto'
+      ? 'Nothing — you gave this loop full access, so it applies its own work. It still stops if it catches itself changing the check.'
+      : 'It stops after each pass and waits for you to approve or reject. Your verdict is what starts the next one, and it spends nothing while it waits.' });
+    lines.push({ k: 'What it costs', v: (extra.perDayUsd ? ('At most $' + Number(extra.perDayUsd).toFixed(2) + ' a day. ') : 'No daily limit set. ') +
+      'You can stop it at any time.' });
+    return lines;
+  }
+
+  return { list, get, fillTokens, requiredMissing, buildSpec, rigorNote, readySummary, DIGEST_RULE };
 });

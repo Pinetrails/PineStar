@@ -39,13 +39,25 @@
     const secActive =
       '<div id="lp-gate" class="set-about"></div>' +
       '<div id="lp-list" class="mc-list"><span class="loading pulse">loading…</span></div>';
+    /* THE STEPPED CREATE FLOW. The old pane put eight controls on screen at once, with the scariest field
+       (the check command) as a bare textbox and no way to know if any of it was right. Now: one decision at a
+       time, revealed as the previous one is answered, ending in a plain-English confirmation that says what
+       will happen, when it stops, and what it costs. No step is ever HIDDEN as a gate — later steps simply
+       have nothing to show until they do (this is a sandbox product; nothing is locked). */
     const secStart =
-      '<div class="brief-block"><div class="brief-k">WHAT A LOOP IS</div>' +
-        '<div class="brief-v">A <b>routine</b> runs on a clock. A <b>loop</b> keeps working at one objective and ' +
-        'stops for you — and <b>your verdict is what starts the next pass</b>. It spends nothing while it waits. ' +
-        '<span class="dim">Pick a shape below; it already knows its cycle and when to stop.</span></div></div>' +
-      '<div id="lp-shapes" class="lp-shapes"></div>' +
-      '<div id="lp-form" class="mc-form"></div>' +
+      '<div class="lp-wiz">' +
+        '<div class="lp-step-h"><span class="lp-num">1</span> WHAT KIND OF LOOP?</div>' +
+        '<div id="lp-shapes" class="lp-shapes"></div>' +
+        '<div id="lp-s2" class="lp-stage" hidden>' +
+          '<div class="lp-step-h"><span class="lp-num">2</span> WHAT SHOULD IT WORK ON?</div>' +
+          '<div id="lp-form" class="mc-form"></div>' +
+        '</div>' +
+        '<div id="lp-s3" class="lp-stage" hidden>' +
+          '<div class="lp-step-h"><span class="lp-num">3</span> READY</div>' +
+          '<div id="lp-ready" class="lp-ready"></div>' +
+          '<button class="bb sm lp-go" id="lp-create">✦ START THIS LOOP</button>' +
+        '</div>' +
+      '</div>' +
       '<div id="lp-msg" class="msg"></div>';
     const frag = h => (el => { el.innerHTML = h; });
     mountConsole(body, 'loops', [
@@ -297,6 +309,7 @@
     });
 
     // ---------- START A LOOP: pick a shape, fill two blanks ----------
+    // ---------- STEP 1: pick a shape ----------
     function shapeCards() {
       const tpl = T(); if (!tpl) { shapesEl.innerHTML = '<div class="mc-detail">loop shapes unavailable</div>'; return; }
       shapesEl.innerHTML = tpl.list().map(t =>
@@ -304,7 +317,7 @@
           '<span class="lp-shape-e">' + esc(t.emoji) + '</span>' +
           '<span class="lp-shape-n">' + esc(t.name) + '</span>' +
           '<span class="lp-shape-t">' + esc(t.tagline) + '</span>' +
-          // rigor is shown on the CARD, not buried — it is the difference between a proof and a convention.
+          // rigor is on the CARD, not buried — it is the difference between a proof and a convention.
           '<span class="lp-shape-r ' + (t.rigor === 'hard' ? 'hard' : 'soft') + '">' +
             (t.rigor === 'hard' ? '✓ ends on a real check' : '~ ends on its own report') + '</span>' +
         '</button>').join('');
@@ -313,93 +326,169 @@
       }));
     }
 
+    // ---------- STEP 2: describe it ----------
+    // one field per row, each with clickable worked examples — a placeholder is passive, an example teaches.
+    function fieldRow(pm) {
+      const ex = (pm.examples || []).slice(0, 3);
+      return '<label class="mc-lbl">' + esc(pm.label) +
+        (pm.required ? ' <span style="color:var(--bad)">*</span>' : ' <span class="dim">(optional)</span>') +
+        '<textarea class="key-input lp-p" data-key="' + esc(pm.key) + '" rows="2" placeholder="' + esc(pm.placeholder || '') + '" style="resize:vertical"></textarea>' +
+        (ex.length
+          ? '<div class="lp-ex"><span class="dim">try:</span> ' +
+            ex.map(e => '<button type="button" class="lp-ex-b" data-for="' + esc(pm.key) + '" data-val="' + esc(e) + '">' + esc(e) + '</button>').join('') +
+            '</div>'
+          : '') +
+        '</label>';
+    }
+
     function renderForm() {
       const tpl = T(); if (!tpl) return;
       const t = tpl.get(pickedId); if (!t) return;
-      const fields = t.params.map(p =>
-        '<label class="mc-lbl">' + esc(p.label) + (p.required ? ' <span style="color:var(--bad)">*</span>' : ' <span class="dim">(optional)</span>') +
-        '<textarea class="key-input lp-p" data-key="' + esc(p.key) + '" rows="2" placeholder="' + esc(p.placeholder || '') + '" style="resize:vertical">' + esc(p.default && !p.required ? '' : (p.default || '')) + '</textarea></label>'
-      ).join('');
+      body.querySelector('#lp-s2').hidden = false;
+
       const projectRow = t.needsProject
-        ? '<label class="mc-lbl">Project folder <span style="color:var(--bad)">*</span>' +
+        ? '<label class="mc-lbl">Which project? <span style="color:var(--bad)">*</span>' +
           '<div class="lp-dir"><input id="lp-dir" class="key-input" placeholder="the folder this loop works in" value="' + esc(pickedDir) + '" autocomplete="off">' +
           '<button class="bb xs" id="lp-pick" type="button">📁 PICK</button></div></label>'
         : '';
-      formEl.innerHTML =
-        '<div class="lp-cycle"><span class="dim">each pass:</span> ' + t.shape.map(s => '<span class="lp-step-i">' + esc(s) + '</span>').join('<span class="lp-step-sep">›</span>') + '</div>' +
-        '<div class="brief-v" style="margin:2px 0 8px">' + esc(t.blurb) + '</div>' +
-        '<div class="mc-detail ' + (t.rigor === 'hard' ? '' : 'dim') + '" style="margin-bottom:8px">' + esc(tpl.rigorNote(t)) + '</div>' +
-        projectRow + fields +
-        /* THE SPEND CAP. Pre-filled, not blank: a beginner starting their first unattended loop should not
-           have to know to set one. 0 means ungoverned (budgetcaps.js semantics) and is an explicit choice. */
-        '<label class="mc-lbl">Stop for the day after <span class="dim">(0 = no limit)</span>' +
-          '<div class="lp-dir"><span class="dim">$</span><input id="lp-cap" class="key-input" type="number" min="0" step="0.5" value="' + esc(String(dailyCap)) + '" autocomplete="off"></div></label>' +
-        '<div class="lp-agent-pick" role="group" aria-label="Loop agent">' +
-          roster.map(a => '<button type="button" class="rt-agent-btn' + (a.id === loopAgentId ? ' active' : '') + '" data-agent="' + esc(a.id) + '" style="--rt-agent-color:' + esc(a.color || 'var(--ph)') + '">' +
-            '<span class="rt-agent-dot"></span><span class="rt-agent-name">' + esc(a.name || a.id) + '</span></button>').join('') +
-        '</div>' +
-        /* WHAT IT WILL ACTUALLY BE TOLD. Routines preview their next fire time; a loop had no equivalent, so a
-           beginner could not tell whether their two blanks produced a sane instruction. Folded shut by default
-           so it informs without shouting. */
-        '<details class="lp-preview"><summary>what the agent will be told</summary><pre id="lp-prev"></pre></details>' +
-        '<button class="bb sm" id="lp-create">✦ START THIS LOOP</button>';
+      const checkRow = t.check
+        ? '<label class="mc-lbl">The command you run to check it <span style="color:var(--bad)">*</span>' +
+          '<div class="lp-dir"><input id="lp-check" class="key-input lp-p" data-key="check" placeholder="npm test" autocomplete="off">' +
+          '<button class="bb xs" id="lp-test" type="button">▶ TEST</button></div>' +
+          '<div id="lp-testout" class="lp-testout dim">the station runs this itself after every pass — test it here first</div></label>'
+        : '';
 
+      formEl.innerHTML =
+        '<div class="lp-cycle"><span class="dim">each pass:</span> ' +
+          t.shape.map(s => '<span class="lp-step-i">' + esc(s) + '</span>').join('<span class="lp-step-sep">›</span>') + '</div>' +
+        '<div class="mc-detail ' + (t.rigor === 'hard' ? '' : 'dim') + '" style="margin-bottom:8px">' + esc(tpl.rigorNote(t)) + '</div>' +
+        projectRow +
+        t.params.filter(pm => pm.key !== 'check').map(fieldRow).join('') +
+        checkRow +
+        '<details class="lp-adv"><summary>more options</summary>' +
+          '<label class="mc-lbl">Stop for the day after <span class="dim">(0 = no limit)</span>' +
+            '<div class="lp-dir"><span class="dim">$</span><input id="lp-cap" class="key-input" type="number" min="0" step="0.5" value="' + esc(String(dailyCap)) + '"></div></label>' +
+          '<label class="mc-lbl">Which agent runs it' +
+            '<div class="lp-agent-pick" role="group" aria-label="Loop agent">' +
+              roster.map(a => '<button type="button" class="rt-agent-btn' + (a.id === loopAgentId ? ' active' : '') + '" data-agent="' + esc(a.id) + '" style="--rt-agent-color:' + esc(a.color || 'var(--ph)') + '">' +
+                '<span class="rt-agent-dot"></span><span class="rt-agent-name">' + esc(a.name || a.id) + '</span></button>').join('') +
+            '</div></label>' +
+          '<details class="lp-preview"><summary>what the agent will be told</summary><pre id="lp-prev"></pre></details>' +
+        '</details>';
+
+      // an example chip fills its field — the fastest way to learn what belongs there.
+      formEl.querySelectorAll('.lp-ex-b').forEach(btn => btn.addEventListener('click', () => {
+        const el = formEl.querySelector('.lp-p[data-key="' + btn.dataset.for + '"]');
+        if (el) { el.value = btn.dataset.val; el.dispatchEvent(new Event('input', { bubbles: true })); el.focus(); }
+        sfx('click');
+      }));
       formEl.querySelectorAll('.rt-agent-btn').forEach(b => b.addEventListener('click', () => {
         loopAgentId = b.dataset.agent || 'agent'; sfx('click'); renderForm();
       }));
-      const pick = formEl.querySelector('#lp-pick');
-      if (pick) pick.addEventListener('click', async () => {
-        sfx('click');
-        try {
-          const r = await (await post('/api/folderpick', {})).json();
-          if (r && r.path) {
-            pickedDir = r.path;
-            const di = formEl.querySelector('#lp-dir');
-            di.value = r.path;
-            di.dispatchEvent(new Event('change'));   // detect the check command for the folder just chosen
+
+      const dirEl = formEl.querySelector('#lp-dir');
+      const checkEl = formEl.querySelector('#lp-check');
+      const testOut = formEl.querySelector('#lp-testout');
+      const capEl = formEl.querySelector('#lp-cap');
+
+      if (dirEl) {
+        const detect = async () => {
+          const val = (dirEl.value || '').trim();
+          if (val && checkEl) {
+            try {
+              const r = await (await post('/api/loops/detect', { path: val })).json();
+              if (r && r.ok && r.cmd) { checkEl.value = r.cmd; testOut.textContent = 'suggested "' + r.cmd + '" — ' + r.why + '. Test it to be sure.'; }
+              else if (r && r.ok) testOut.textContent = r.why || 'type the command you run yourself';
+            } catch (_) { /* detection is a convenience; never block the form on it */ }
           }
-        } catch (_) { notify('could not open the folder picker — type the path instead', 'warn'); }
+          gate();
+        };
+        dirEl.addEventListener('change', detect);
+        dirEl.addEventListener('input', gate);
+        const pick = formEl.querySelector('#lp-pick');
+        if (pick) pick.addEventListener('click', async () => {
+          sfx('click');
+          try {
+            const r = await (await post('/api/folderpick', {})).json();
+            if (r && r.path) { pickedDir = r.path; dirEl.value = r.path; dirEl.dispatchEvent(new Event('change')); }
+          } catch (_) { notify('could not open the folder picker — type the path instead', 'warn'); }
+        });
+      }
+
+      /* TEST IT. The check command was the one field with no feedback, so people guessed. Running it once,
+         now, turns three expensive failures into instant ones — and the important one is a check that
+         ALREADY PASSES: without this the loop spends a pass, gets a trusted green and declares "objective
+         met" having done nothing, which is the app claiming a success that never happened. */
+      const testBtn = formEl.querySelector('#lp-test');
+      if (testBtn) testBtn.addEventListener('click', async () => {
+        const dir = dirEl ? (dirEl.value || '').trim() : '';
+        const cmd = (checkEl.value || '').trim();
+        if (!dir || !cmd) { testOut.innerHTML = '<span style="color:var(--bad)">pick a project and type a command first</span>'; sfx('bad'); return; }
+        testBtn.disabled = true; testOut.textContent = 'running it…';
+        try {
+          // approving the folder is what lets the station run anything there — the same gate the loop uses.
+          const b = await (await post('/api/projects/bless', { path: dir, surface: 'interactive' })).json();
+          if (!b || !b.ok) { testOut.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((b && b.reason) || 'that folder could not be approved') + '</span>'; sfx('bad'); }
+          else {
+            const r = await (await post('/api/loops/testcheck', { path: dir, cmd: cmd })).json();
+            if (r && r.error) { testOut.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); }
+            else if (r && r.alreadyGreen) {
+              testOut.innerHTML = '<span style="color:var(--gold)">⚠ this check ALREADY passes</span> <span class="dim">— ' + esc(r.summary || '') +
+                '. A loop would finish immediately with nothing to do. Point it at a check that is currently failing.</span>';
+              sfx('bad');
+            } else if (r && r.couldNotRun) {
+              // never call a typo a good target — but do not assert it IS broken either; show it and say what it looks like.
+              testOut.innerHTML = '<span style="color:var(--bad)">✕ that command could not run</span> <span class="dim">— ' + esc((r.summary || '').slice(0, 120)) + '. Check the command and the folder.</span>';
+              sfx('bad');
+            } else {
+              testOut.innerHTML = '<span class="pos">✓ ran it — it fails right now</span> <span class="dim">— ' + esc((r.summary || '').slice(0, 120)) + '. If that is a real test failure, it is a good target; if it looks like an error in the command itself, fix the command.</span>';
+              sfx('click');
+            }
+          }
+        } catch (_) { testOut.innerHTML = '<span style="color:var(--bad)">✕ could not reach the station</span>'; sfx('bad'); }
+        testBtn.disabled = false; gate();
       });
-      formEl.querySelector('#lp-create').addEventListener('click', createLoop);
 
-      // keep the preview honest: rebuild it from the REAL buildSpec, never a hand-written approximation.
-      const prevEl = formEl.querySelector('#lp-prev');
-      const repaintPreview = () => {
-        const values = {};
-        formEl.querySelectorAll('.lp-p').forEach(el => { values[el.dataset.key] = el.value; });
-        const dirNow = formEl.querySelector('#lp-dir');
-        const spec = tpl.buildSpec(t, values, { workdir: dirNow ? dirNow.value.trim() : '' });
-        prevEl.textContent = spec ? spec.objective : '';
-      };
-      formEl.querySelectorAll('.lp-p').forEach(el => el.addEventListener('input', repaintPreview));
-      repaintPreview();
+      formEl.querySelectorAll('.lp-p').forEach(el => el.addEventListener('input', gate));
+      if (capEl) capEl.addEventListener('input', gate);
+      gate();
+    }
 
-      /* DETECT THE CHECK COMMAND. Defaulting every project to `npm test` is wrong the moment someone points a
-         loop at a python or rust repo — and wrong on their first try, on the hero template. Ask the station
-         what this folder actually uses, and say WHY, so the suggestion is auditable rather than magic. */
-      const dirEl2 = formEl.querySelector('#lp-dir');
-      const checkEl = formEl.querySelector('.lp-p[data-key="check"]');
-      const detect = async () => {
-        if (!dirEl2 || !checkEl) return;
-        const val = (dirEl2.value || '').trim();
-        if (!val) return;
-        try {
-          const r = await (await post('/api/loops/detect', { path: val })).json();
-          if (r && r.ok && r.cmd) {
-            checkEl.value = r.cmd;
-            msgEl.innerHTML = '<span class="dim">check command: <b>' + esc(r.cmd) + '</b> — ' + esc(r.why) + '</span>';
-          } else if (r && r.ok) {
-            msgEl.innerHTML = '<span class="dim">' + esc(r.why || 'type the command you run yourself') + '</span>';
-          }
-        } catch (_) { /* detection is a convenience; never block the form on it */ }
+    // ---------- STEP 3: the plain-English confirmation ----------
+    function currentValues() {
+      const values = {};
+      formEl.querySelectorAll('.lp-p').forEach(el => { values[el.dataset.key] = el.value; });
+      return values;
+    }
+    function currentExtra() {
+      const dirEl = formEl.querySelector('#lp-dir');
+      const capEl = formEl.querySelector('#lp-cap');
+      return {
+        workdir: dirEl ? (dirEl.value || '').trim() : '',
+        agentId: loopAgentId,
+        perDayUsd: capEl ? Math.max(0, parseFloat(capEl.value) || 0) : 0
       };
-      if (dirEl2) dirEl2.addEventListener('change', detect);
+    }
+    /* gate — reveal step 3 once the loop is actually describable, and keep the summary + prompt preview in
+       sync. Nothing is DISABLED here: a missing field simply means there is not yet a loop to summarise,
+       which is a statement of fact rather than a permission wall. */
+    function gate() {
+      const tpl = T(); const t = tpl && tpl.get(pickedId); if (!t) return;
+      const values = currentValues(), extra = currentExtra();
+      const missing = tpl.requiredMissing(t, values);
+      const needDir = t.needsProject && !extra.workdir;
+      const s3 = body.querySelector('#lp-s3');
+      const prev = formEl.querySelector('#lp-prev');
+      if (prev) { const sp = tpl.buildSpec(t, values, extra); prev.textContent = sp ? sp.objective : ''; }
+      if (missing.length || needDir) { s3.hidden = true; return; }
+      s3.hidden = false;
+      body.querySelector('#lp-ready').innerHTML = tpl.readySummary(t, values, extra)
+        .map(r => '<div class="lp-ready-r"><b>' + esc(r.k) + '</b><span>' + esc(r.v) + '</span></div>').join('');
     }
 
     async function createLoop() {
       const tpl = T(); const t = tpl && tpl.get(pickedId); if (!t) return;
-      const values = {};
-      formEl.querySelectorAll('.lp-p').forEach(el => { values[el.dataset.key] = el.value; });
+      const values = currentValues(), extra = currentExtra();
       const missing = tpl.requiredMissing(t, values);
       if (missing.length) {
         sfx('bad');
@@ -408,25 +497,18 @@
         msgEl.innerHTML = '<span style="color:var(--bad)">fill in: ' + esc(missing.join(', ')) + '</span>';
         return;
       }
-      const dirEl = formEl.querySelector('#lp-dir');
-      const workdir = dirEl ? (dirEl.value || '').trim() : '';
-      if (t.needsProject && !workdir) { sfx('bad'); msgEl.innerHTML = '<span style="color:var(--bad)">this shape needs a project folder</span>'; if (dirEl) dirEl.focus(); return; }
-      pickedDir = workdir;
+      if (t.needsProject && !extra.workdir) { sfx('bad'); msgEl.innerHTML = '<span style="color:var(--bad)">this shape needs a project folder</span>'; return; }
+      pickedDir = extra.workdir; dailyCap = extra.perDayUsd;
 
       msgEl.textContent = 'starting…';
-      // A project-shaped loop must be BLESSED before the station will run its check there. Do it here so the
-      // Commander never meets a loop that silently refuses to verify anything.
-      if (workdir) {
+      if (extra.workdir) {
         try {
-          const b = await (await post('/api/projects/bless', { path: workdir, surface: 'interactive' })).json();
+          const b = await (await post('/api/projects/bless', { path: extra.workdir, surface: 'interactive' })).json();
           if (!b || !b.ok) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((b && b.reason) || 'that folder could not be approved') + '</span>'; sfx('bad'); return; }
         } catch (_) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ could not reach the station</span>'; sfx('bad'); return; }
       }
-      const capEl = formEl.querySelector('#lp-cap');
-      const cap = capEl ? Math.max(0, parseFloat(capEl.value) || 0) : 0;
-      dailyCap = cap;
       const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;
-      const spec = tpl.buildSpec(t, values, { workdir: workdir || undefined, agentId: loopAgentId, provider, perDayUsd: cap });
+      const spec = tpl.buildSpec(t, values, Object.assign({}, extra, { provider: provider, workdir: extra.workdir || undefined }));
       try {
         const r = await (await post('/api/loops', spec)).json();
         if (r && r.error) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); return; }
@@ -434,12 +516,13 @@
         notify('loop started — it runs until ' + (t.rigor === 'hard' ? 'your check passes' : 'it stops finding things'), 'good');
         sfx('click');
         formEl.querySelectorAll('.lp-p').forEach(el => { el.value = ''; });
+        body.querySelector('#lp-s3').hidden = true;
         consoleSection['loops'] = 'active';
         const tab = body.querySelector('#con-tab-loops-active'); if (tab) tab.click();
         refresh();
       } catch (e) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'could not reach the station') + '</span>'; sfx('bad'); }
     }
-
+    body.querySelector('#lp-create').addEventListener('click', createLoop);
     shapeCards(); renderForm(); refresh();
     // poll while the window is open — a loop advances on its own tick, so the panel must not go stale.
     const poll = setInterval(() => { if (body.isConnected) refresh(); else clearInterval(poll); }, 4000);
