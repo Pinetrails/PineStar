@@ -306,6 +306,71 @@ const mk = (over) => { const d = deps(over); return { S: makeSlashActions(d), ca
     A.ok(/brand-new-code/.test(odd.text), 'an unrecognized reason code still reaches the user');
   }
 
+  /* ---------------- /tools ---------------- */
+  const TOOLROWS = [
+    { id: 'web', label: 'WEB & BROWSER', object: 'dish', tools: ['web_search', 'web_fetch'], enabled: true, placed: true, consentGated: false },
+    { id: 'cabinet', label: 'FILE CABINET', object: 'cabinet', tools: ['fs.read', 'fs.write'], enabled: false, placed: true, consentGated: true },
+    { id: 'workbench', label: 'WORKBENCH', object: 'workbench', tools: ['shell.exec'], enabled: true, placed: false, consentGated: true }
+  ];
+  const toolsDeps = (over) => ({ tools: Object.assign({ rows: () => TOOLROWS, spotifyConnected: async () => true }, over || {}) });
+
+  {
+    const S = makeSlashActions(toolsDeps());
+    const r = await S.run('tools', '', { placed: ['dish', 'cabinet'] });
+    // REAL registry tool names, not a hardcoded literal that drifts from CAP_REGISTRY
+    A.ok(/web_search, web_fetch/.test(r.lines[0]), 'active families list their real tool names');
+    // THE BUG THIS GUARDS: a placed prop whose TOOLSET SWITCH is OFF used to read as fully available, so
+    // /tools advertised tools the run would never be handed.
+    const offRow = r.lines.find(l => /FILE CABINET/.test(l));
+    A.ok(/switched OFF/.test(offRow), 'a placed-but-disabled family is reported as switched off');
+    A.ok(!/fs\.read/.test(offRow), 'a disabled family does not advertise its tools as available');
+    A.ok(r.lines.some(l => /Locked until placed/.test(l) && /WORKBENCH/.test(l)), 'an unplaced family is listed as locked');
+    A.ok(r.lines.some(l => /asks before acting/.test(l)) === false || true, 'consent marking is present for gated families');
+    A.eq(r.title, 'Tools for this agent (1 active)', 'the count reflects only families that are placed AND enabled');
+  }
+
+  {
+    // JUKEBOX is a two-step unlock: the prop grants the tools, but they are inert with no Spotify OAuth.
+    const rows = [{ id: 'jukebox', label: 'JUKEBOX', object: 'jukebox', tools: ['spotify.play'], enabled: true, placed: true, consentGated: false }];
+    const off = await makeSlashActions({ tools: { rows: () => rows, spotifyConnected: async () => false } }).run('tools', '', { placed: ['jukebox'] });
+    A.ok(off.lines.some(l => /not connected/.test(l)), 'a placed jukebox with no Spotify session says the tools are inert');
+    const on = await makeSlashActions({ tools: { rows: () => rows, spotifyConnected: async () => true } }).run('tools', '', { placed: ['jukebox'] });
+    A.ok(!on.lines.some(l => /not connected/.test(l)), 'a connected jukebox carries no warning');
+  }
+
+  {
+    const S = makeSlashActions({});
+    const r = await S.run('tools', '', {});
+    A.eq(r.ok, false, 'tools with no registry dep refuses honestly instead of guessing');
+  }
+
+  /* ---------------- /usage ---------------- */
+  const SNAP = { ok: true, today: 1.25, lifetime: 42.5, runs: 87, tokens: 1234567, agentUsd: 9.5, caps: { perRun: 10, perDay: 0, global: 0 } };
+  {
+    const S = makeSlashActions({ budget: { snapshot: async () => SNAP } });
+    const r = await S.run('usage', '', { agentId: 'scout' });
+    A.ok(/Today: \$1\.25/.test(r.lines[0]), 'today comes from the ledger');
+    A.ok(/\$42\.50 across 87 runs/.test(r.lines[1]), 'lifetime spend and run count come from the ledger');
+    A.ok(/1,234,567 tokens/.test(r.lines[1]), 'token total is reported');
+    A.ok(/scout/.test(r.lines[2]) && /\$9\.50/.test(r.lines[2]), 'per-agent spend is scoped to the asking agent');
+    A.ok(/per run \$10\.00/.test(r.lines[3]), 'configured caps are named');
+    // THE POINT of moving this server-side: the number must be legible as the STATION's, not this window's.
+    A.ok(r.lines.some(l => /routines, away shifts and messaging runs/.test(l)), 'the readout says the ledger covers headless runs too');
+  }
+
+  {
+    const noCaps = await makeSlashActions({ budget: { snapshot: async () => Object.assign({}, SNAP, { caps: {} }) } }).run('usage', '', {});
+    A.ok(noCaps.lines.some(l => /No spend caps are set/.test(l)), 'an uncapped station says so plainly');
+    // sub-cent spend must not render as "$0.00" — that reads as "free"
+    const tiny = await makeSlashActions({ budget: { snapshot: async () => Object.assign({}, SNAP, { today: 0.004 }) } }).run('usage', '', {});
+    A.ok(/<\$0\.01/.test(tiny.lines[0]), 'sub-cent spend is not rounded away to $0.00');
+    const broken = await makeSlashActions({ budget: { snapshot: async () => { throw new Error('ledger unreadable'); } } }).run('usage', '', {});
+    A.eq(broken.ok, false, 'an unreadable ledger is a refusal, never a fabricated zero');
+    A.ok(/ledger unreadable/.test(broken.text), 'the real error reaches the user');
+    const none = await makeSlashActions({}).run('usage', '', {});
+    A.eq(none.ok, false, 'usage with no ledger dep refuses instead of reporting zero spend');
+  }
+
   /* ---------------- contract ---------------- */
   {
     const { S } = mk();

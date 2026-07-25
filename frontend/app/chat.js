@@ -942,7 +942,7 @@ const Chat = (() => {
       if (!activeWs || activeWs.id !== id || isBusy()) return;
       const b = j && Array.isArray(j.briefs) && j.briefs[0];
       const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
-      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options, recommended: q.recommended || '', reason: q.reason || '' });
+      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options, recommended: q.recommended || '', reason: q.reason || '', grounded: (j && j.grounded) || null });
     } catch (_) { /* a missing/offline sidecar leaves history readable; the next load retries */ }
   }
 
@@ -2901,9 +2901,19 @@ const Chat = (() => {
     clearNudge();   // the question CLAIMS the moment: a live gentle nudge leaves whole (prompt + chips) — its chip
                     // row would be wiped by choices() below anyway, and a stuck activeNudge would mute beats forever
     pendingTaskQuestion = Object.assign({}, tq, { streamId: activeWs && activeWs.id });
-    // The host-validated recommended default (brief_ask path) gets the gold suggested chip + a one-line why.
-    // A marker-path question stores no recommendation, so rec resolves empty and this renders plain chips.
-    const rec = String(tq.recommended || '').trim().toLowerCase();
+    // TWO KINDS of suggestion, and they must never be confused. GROUNDED comes from the Commander's own
+    // answered history (taskBriefStore.groundedFor: same question, same option, >=2 times, no tie) — provable,
+    // so it outranks the model's assertion and states its count. The model's brief_ask recommendation is a
+    // guess with a rationale; it stands only when nothing was actually observed.
+    // NOTE: a marker-path question stores no `recommended`, but it CAN still carry a grounded suggestion —
+    // that one is derived from the Commander's answers, not from the unvalidated question, so it stays honest.
+    // Only the model's own guess is gated on the validated path.
+    const g = (tq.grounded && tq.grounded.option && Number(tq.grounded.count) >= 2) ? tq.grounded : null;
+    const has = v => !!v && tq.options.some(o => o.toLowerCase() === String(v).trim().toLowerCase());
+    // Fall back to the model's guess if the grounded option is not among the rendered choices (stale history,
+    // edited options) — otherwise a mismatch would silently cost BOTH the chip and the model's rationale.
+    const rec = String((has(g && g.option) ? g.option : tq.recommended) || '').trim().toLowerCase();
+    const useGrounded = !!(g && has(g.option));
     const items = tq.options.map(o => {
       const suggested = !!(rec && o.toLowerCase() === rec);
       return { label: suggested ? '★ ' + o : o, value: o, suggested };
@@ -2911,11 +2921,24 @@ const Chat = (() => {
     items.push({ label: 'use your judgment', value: '', skip: true });
     const q = row('agent'); q.d.classList.add('nudge');
     q.body.textContent = '⌖ ' + tq.question;
-    if (rec && items.some(it => it.suggested) && String(tq.reason || '').trim()) {
-      const why = document.createElement('div'); why.className = 'tq-reason';
-      why.textContent = '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim();
-      q.body.appendChild(why);
+    const marked = items.some(it => it.suggested);
+    const why = (rec && marked) ? (useGrounded
+      ? '★ suggested: ' + g.option + ' — you chose this ' + g.count + ' times before'
+      : (String(tq.reason || '').trim() ? '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim() : '')) : '';
+    if (why) {
+      const el = document.createElement('div'); el.className = 'tq-reason' + (useGrounded ? ' grounded' : '');
+      el.textContent = why;
+      q.body.appendChild(el);
     }
+    // The chips read as "pick exactly one", but a TYPED reply has always been a first-class answer here: while
+    // a question is pending, free text routes through TaskIntent.routeReply and is stored verbatim as the
+    // answer. So "both operators and executives" already worked — nothing said so. This is the same escape
+    // hatch the channels spell out in text, and it covers "more than one" and "none of these" alike.
+    // Worded without a direction: this line sits ABOVE the chip row (choices() appends that to the log after
+    // this body), so "below" would have pointed at the composer past the very options it is an alternative to.
+    const hint = document.createElement('div'); hint.className = 'tq-hint';
+    hint.textContent = 'or ignore these and type your own answer — more than one is fine';
+    q.body.appendChild(hint);
     autoscroll();
     choices(items, item => {
       vanish(q.d);
@@ -2945,31 +2968,59 @@ const Chat = (() => {
   }
   function briefReadCard(ws, p) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('tb-read');
+    // The label is its own small caption, NOT a prefix on the objective: "▸ my read: " used to eat the front of
+    // the one line that matters, so the objective started mid-sentence at caption size. Caption above, objective
+    // as the card's headline.
+    const cap = document.createElement('div'); cap.className = 'tb-read-cap';
+    cap.textContent = 'my read';
+    r.body.appendChild(cap);
     const head = document.createElement('div'); head.className = 'tb-read-head';
-    head.textContent = '▸ my read: ' + p.objective;
+    head.textContent = p.objective;
     r.body.appendChild(head);
+    // Key/value ROWS, not a ' · '-joined run-on: these three answer different questions (what comes out / who it's
+    // for / when it's done) and each value is a full clause, so a single wrapped line made them unscannable.
     const meta = [];
-    if (p.deliverable) meta.push('deliverable: ' + p.deliverable);
-    if (p.audience) meta.push('for: ' + p.audience);
-    if (p.success) meta.push('done when: ' + p.success);
-    if (meta.length) { const m = document.createElement('div'); m.className = 'tb-read-meta'; m.textContent = meta.join(' · '); r.body.appendChild(m); }
+    if (p.deliverable) meta.push(['deliverable', p.deliverable]);
+    if (p.audience) meta.push(['for', p.audience]);
+    if (p.success) meta.push(['done when', p.success]);
+    if (meta.length) {
+      const m = document.createElement('div'); m.className = 'tb-read-meta';
+      for (const [k, v] of meta) {
+        const mr = document.createElement('div'); mr.className = 'tb-read-mrow';
+        const mk = document.createElement('span'); mk.className = 'tb-read-mk'; mk.textContent = k + ' — ';   // separator lives in REAL text, not a ::after — #chat-log is a selectable transcript and generated content doesn't copy
+        const mv = document.createElement('span'); mv.className = 'tb-read-mv'; mv.textContent = v;
+        mr.appendChild(mk); mr.appendChild(mv); m.appendChild(mr);
+      }
+      r.body.appendChild(m);
+    }
     const line = document.createElement('div'); line.className = 'tb-read-fix';
     const input = document.createElement('input'); input.className = 'tb-read-in';
     input.placeholder = 'correct anything — it folds straight into the run';
+    const chips = [];
     const asum = (Array.isArray(p.assumptions) ? p.assumptions : []).filter(Boolean);
     if (asum.length) {
+      // The chips carried no affordance copy — a dim '~ …' row reads as decoration, not as "tap this to argue".
+      const acap = document.createElement('div'); acap.className = 'tb-read-cap tb-read-cap2';
+      acap.textContent = 'assuming — tap to correct';
+      r.body.appendChild(acap);
       const wrap = document.createElement('div'); wrap.className = 'tb-read-assumps';
       for (const a of asum) {
-        const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'tb-read-assump'; chip.textContent = '~ ' + a;
+        const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'tb-read-assump'; chip.textContent = a;
         chip.onclick = () => { input.value = 'Not "' + a + '" — '; input.focus(); };   // tap = start the correction; the user's own words ARE the taste signal
         wrap.appendChild(chip);
+        chips.push(chip);
       }
       r.body.appendChild(wrap);
     }
+    // Once the card can no longer steer, the chips must stop LOOKING like they can. They live on r.body while
+    // the input lives on `line`, so replacing the line's contents used to detach the input and leave every chip
+    // still lit — tapping one then wrote into a detached node and focused nothing, a promise the copy made
+    // ("tap to correct") and the card silently broke.
+    const retire = () => { for (const c of chips) { c.disabled = true; c.title = 'this read is closed — say it in chat instead'; } };
     const send = () => {
       const text = input.value.trim(); if (!text) return;
       const rid = (typeof Channels !== 'undefined' && Channels.runIdOf) ? Channels.runIdOf(ws.id) : null;
-      if (!rid) { input.value = ''; input.placeholder = 'run already finished — say it in chat instead'; return; }
+      if (!rid) { input.value = ''; input.placeholder = 'run already finished — say it in chat instead'; retire(); return; }
       fetch('/api/run/steer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId: rid, text: text }) })
         .then(res => res.ok ? res.json() : null)
         .then(d => {
@@ -2978,6 +3029,7 @@ const Chat = (() => {
           const tag = document.createElement('span'); tag.className = 'tb-read-ack' + (ok ? '' : ' err');
           tag.textContent = ok ? '✔ folded into the run — ' + text : '✕ the run already ended — say it in chat instead';
           line.appendChild(tag);
+          retire();
         })
         .catch(() => { input.placeholder = 'could not reach the run — say it in chat'; });
     };
@@ -2990,20 +3042,25 @@ const Chat = (() => {
   // TASK BRIEF v2: enrich a run-end marker question with the durable brief's host-validated recommendation
   // before rendering the chips. Safe ordering: the sidecar persists the question BEFORE it emits the buffered
   // task run-end, so one fetch here always sees the stored row. Fail-open on every path — offline sidecar,
-  // mismatched text, or a marker-path question (no recommendation stored) renders exactly the plain chips.
+  // mismatched text, or a marker-path question (no MODEL recommendation stored) renders exactly the plain
+  // chips — though a marker question may still carry a grounded suggestion, which comes from the Commander's
+  // own answered history rather than from the unvalidated question.
   async function presentTaskQuestion(ws, tq) {
-    let recommended = '', reason = '';
+    let recommended = '', reason = '', grounded = null;
     try {
       const r = await fetch('/api/task-briefs?key=' + encodeURIComponent('stream:' + ws.id) + '&status=clarifying&limit=1', { cache: 'no-store' });
       if (r.ok) {
         const j = await r.json();
         const b = j && Array.isArray(j.briefs) && j.briefs[0];
         const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
-        if (q && !q.answer && q.text === tq.question) { recommended = q.recommended || ''; reason = q.reason || ''; }
+        if (q && !q.answer && q.text === tq.question) {
+          recommended = q.recommended || ''; reason = q.reason || '';
+          grounded = j.grounded || null;   // this response always carried it; the client used to drop it
+        }
       }
     } catch (_) { /* enrichment only — the question itself never depends on this fetch */ }
     if (!isActiveWs(ws)) return;   // the Commander switched away mid-fetch; restoreTaskQuestion re-presents on return
-    offerTaskQuestion(Object.assign({}, tq, { recommended, reason }));
+    offerTaskQuestion(Object.assign({}, tq, { recommended, reason, grounded }));
   }
 
   // R4 PAYOFF RECEIPT: one provable line at the exact moment an answer/observation lands in the dossier, so
@@ -4040,8 +4097,13 @@ const Chat = (() => {
     // want. Checked BEFORE the isBusy() guard on purpose — a loop is usually WAITING between ticks when you
     // reach for Stop, and an idle-but-armed loop must still be stoppable. Worded "you stopped it" rather than
     // "you stopped the run", because there may well be no run in flight to stop.
-    if (activeWs) loopStop(activeWs.id, 'you stopped it');
-    if (!activeWs || !isBusy()) return;
+    const endedLoop = activeWs ? loopStop(activeWs.id, 'you stopped it') : false;
+    if (!activeWs || !isBusy()) {
+      // Nothing was running and no loop was armed: Stop did nothing, so SAY nothing-happened rather than
+      // returning in silence, which reads as a dead button / broken command.
+      if (!endedLoop) localLine('Nothing is running to stop.');
+      return;
+    }
     const id = activeWs.id;
     interrupted.add(id);
     queued.delete(id);
@@ -4106,12 +4168,15 @@ const Chat = (() => {
   // RETRY — re-run the last turn after an outage / connection drop / in-band error. Discard the trailing failed
   // reply, re-render the thread (dropping the ⚠ row), then resend the last user message WITHOUT echoing it again.
   function retryLast() {
-    if (!activeWs || isBusy()) return;
+    // A command that returns in silence is indistinguishable from a broken app — say why nothing happened.
+    // (Both guards below are reachable from the /retry command AND the error-recovery "try again" chip.)
+    if (!activeWs) return localLine('No active workstream to retry in.');
+    if (isBusy()) return localLine('This stream is still running — stop it first, then /retry.');
     const h = activeWs.history;
     if (h.length && h[h.length - 1].role === 'assistant' && (h[h.length - 1].error || h[h.length - 1].stopped)) h.pop();   // drop the failed/stopped partial reply
     let text = null;
     for (let i = h.length - 1; i >= 0; i--) { if (h[i].role === 'user') { text = h[i].content; break; } }
-    if (text == null) return;
+    if (text == null) return localLine('Nothing to retry yet — send a message first.');
     load(activeWs);                 // re-render the thread cleanly (the popped ⚠ row is gone)
     send(text, { retry: true });    // re-run it; the user turn is already present, so don't echo it
   }
@@ -4224,45 +4289,47 @@ const Chat = (() => {
     Object.freeze({ name: 'stop', desc: 'interrupt the running turn', action: 'stop' }),
     Object.freeze({ name: 'copy', desc: "copy the agent's last reply", action: 'copy' }),
     Object.freeze({ name: 'help', desc: 'list available commands', action: 'help' }),
-    Object.freeze({ name: 'new', aliases: ['reset'], desc: 'start a fresh workstream', action: 'new' }),
-    Object.freeze({ name: 'clear', aliases: ['cls'], desc: 'clear COMMS and start a fresh workstream', action: 'clear' }),
-    Object.freeze({ name: 'history', aliases: ['hist'], desc: 'show recent turns of this workstream', action: 'history' }),
+    Object.freeze({ name: 'new', aliases: ['reset'], desc: 'start a fresh workstream', argsHint: '[title]', action: 'new' }),
+    Object.freeze({ name: 'clear', aliases: ['cls'], desc: 'clear COMMS and start a fresh workstream', argsHint: '[title]', action: 'clear' }),
+    Object.freeze({ name: 'history', aliases: ['hist'], desc: 'show recent turns of this workstream', argsHint: '[n]', action: 'history' }),
     Object.freeze({ name: 'whoami', desc: 'show the current agent identity', action: 'whoami' }),
     Object.freeze({ name: 'insights', desc: 'usage rollup from the run history', action: 'insights' }),
-    Object.freeze({ name: 'branch', aliases: ['fork'], desc: 'fork this conversation into a new workstream', action: 'branch' }),
+    Object.freeze({ name: 'branch', aliases: ['fork'], desc: 'fork this conversation into a new workstream', argsHint: '[title]', action: 'branch' }),
     Object.freeze({ name: 'status', desc: 'show current stream and run state', action: 'status' }),
-    Object.freeze({ name: 'usage', desc: 'show token and spend totals', action: 'usage' }),
-    Object.freeze({ name: 'queue', aliases: ['q'], desc: 'show or add queued follow-up text', action: 'queue' }),
-    Object.freeze({ name: 'steer', desc: 'queue steering guidance for the current task', action: 'steer' }),
+    // no local action by design — the sidecar owns the spend ledger (dispatch:'server')
+    Object.freeze({ name: 'usage', desc: 'show real spend from the station ledger', action: 'usage' }),
+    Object.freeze({ name: 'queue', aliases: ['q'], desc: 'show or add queued follow-up text', argsHint: '[message]', action: 'queue' }),
+    Object.freeze({ name: 'steer', desc: 'steer the running turn (nothing to steer when idle)', argsHint: '<guidance>', action: 'steer' }),
     Object.freeze({ name: 'undo', desc: 'remove the last local exchange', action: 'undo' }),
     Object.freeze({ name: 'compress', desc: 'show context compaction status', action: 'compress' }),
-    Object.freeze({ name: 'title', desc: 'show or rename the current workstream', action: 'title' }),
-    Object.freeze({ name: 'resume', aliases: ['sessions', 'switch'], desc: 'list or switch workstreams', action: 'resume' }),
+    Object.freeze({ name: 'title', desc: 'show or rename the current workstream', argsHint: '[name]', action: 'title' }),
+    Object.freeze({ name: 'resume', aliases: ['sessions', 'switch'], desc: 'list or switch workstreams', argsHint: '[name|number]', action: 'resume' }),
     Object.freeze({ name: 'save', desc: 'save the current station state', action: 'save' }),
     Object.freeze({ name: 'agents', aliases: ['tasks'], desc: 'show active agents and running streams', action: 'agents' }),
-    Object.freeze({ name: 'background', aliases: ['bg', 'btw'], desc: 'run a prompt in a new background workstream', action: 'background' }),
+    Object.freeze({ name: 'background', aliases: ['bg', 'btw'], desc: 'run a prompt in a new background workstream', argsHint: '<prompt>', action: 'background' }),
     // /away and /routine are dispatch:'server' commands — the sidecar executes them and returns the text. They
     // are listed here so the palette knows them before the catalog fetch lands; with no sidecar they honestly
     // refuse (runSlash) rather than silently doing nothing.
     Object.freeze({ name: 'away', aliases: ['build-away', 'buildaway'], desc: 'queue work for this agent to build on its own away shift', argsHint: '[<what to build> | list | on | off | now]', action: 'away' }),
-    Object.freeze({ name: 'routine', aliases: ['routines'], desc: 'list, create, preview, pause or delete a scheduled routine', argsHint: '[list | add <schedule> | <task> | preview <schedule> | pause N | rm N]', action: 'routine' }),
+    Object.freeze({ name: 'routine', aliases: ['routines'], desc: 'list, create, preview, pause or delete a scheduled routine', argsHint: '[list | add <schedule> | <task> | preview <schedule> | pause N | resume N | rm N]', action: 'routine' }),
     Object.freeze({ name: 'loop', desc: 'repeat a prompt on an interval in this workstream', argsHint: '<interval> <prompt> | status | off', action: 'loop' }),
-    Object.freeze({ name: 'goal', desc: 'set an autonomous standing goal (status/pause/resume/clear)', action: 'goal' }),
-    Object.freeze({ name: 'subgoal', desc: 'add a criterion the goal loop must also satisfy', action: 'subgoal' }),
-    Object.freeze({ name: 'model', desc: 'show or set the active model', action: 'model' }),
-    Object.freeze({ name: 'personality', desc: 'show or set the active personality', action: 'personality' }),
-    Object.freeze({ name: 'yolo', desc: 'toggle full-access approval mode', action: 'yolo' }),
-    Object.freeze({ name: 'reasoning', desc: 'show reasoning-mode support status', action: 'reasoning' }),
-    Object.freeze({ name: 'fast', desc: 'show fast-mode support status', action: 'fast' }),
-    Object.freeze({ name: 'voice', desc: 'show or toggle spoken replies', action: 'voice' }),
-    Object.freeze({ name: 'tools', desc: 'show tools granted by the workstation', action: 'tools' }),
+    Object.freeze({ name: 'goal', desc: 'set an autonomous standing goal (status/pause/resume/clear)', argsHint: '[text|status|pause|resume|clear]', action: 'goal' }),
+    Object.freeze({ name: 'subgoal', desc: 'add a criterion the goal loop must also satisfy', argsHint: '[text|remove N|clear]', action: 'subgoal' }),
+    Object.freeze({ name: 'model', desc: 'show or set the active model', argsHint: '[model-id]', action: 'model' }),
+    Object.freeze({ name: 'personality', desc: 'show or set the active personality', argsHint: '[personality]', action: 'personality' }),
+    Object.freeze({ name: 'yolo', desc: 'toggle full-access approval mode', argsHint: '[on|off]', action: 'yolo' }),
+    Object.freeze({ name: 'reasoning', desc: 'show or set how hard the model thinks before answering', argsHint: '[none|minimal|low|medium|high|xhigh]', action: 'reasoning' }),
+    Object.freeze({ name: 'fast', desc: 'drop reasoning effort to minimal for quicker, cheaper replies', action: 'fast' }),
+    Object.freeze({ name: 'voice', desc: 'show or toggle spoken replies', argsHint: '[on|off|handsfree|status]', action: 'voice' }),
+    // no local action by design — the sidecar owns CAP_REGISTRY + the toolset switches (dispatch:'server')
+    Object.freeze({ name: 'tools', desc: 'show the tools this agent can actually call', action: 'tools' }),
     Object.freeze({ name: 'skills', desc: 'show installed skill recipes', action: 'skills' }),
-    Object.freeze({ name: 'memory', desc: 'show the active agent memory records', action: 'memory' }),
+    Object.freeze({ name: 'memory', desc: 'show the active agent memory records', argsHint: '[query]', action: 'memory' }),
     Object.freeze({ name: 'bundles', desc: 'list recipe and skill slash bundles', action: 'bundles' }),
-    Object.freeze({ name: 'cron', desc: 'show or arm scheduled routines', action: 'cron' }),
-    Object.freeze({ name: 'suggestions', aliases: ['suggest'], desc: 'review recurring-task recipe suggestions', action: 'suggestions' }),
-    Object.freeze({ name: 'blueprint', aliases: ['bp'], desc: 'load a recipe blueprint into the composer', action: 'blueprint' }),
-    Object.freeze({ name: 'reload-mcp', aliases: ['reload_mcp'], desc: 'refresh configured MCP connectors', action: 'reload-mcp' }),
+    Object.freeze({ name: 'cron', desc: 'show or arm scheduled routines', argsHint: '[on|off|status]', action: 'cron' }),
+    Object.freeze({ name: 'suggestions', aliases: ['suggest'], desc: 'review recurring-task recipe suggestions', argsHint: '[accept N|dismiss N|clear]', action: 'suggestions' }),
+    Object.freeze({ name: 'blueprint', aliases: ['bp'], desc: 'load a recipe blueprint into the composer', argsHint: '[recipe]', action: 'blueprint' }),
+    Object.freeze({ name: 'reload-mcp', aliases: ['reload_mcp'], desc: 'refresh configured MCP connectors', argsHint: '[connector-id]', action: 'reload-mcp' }),
     Object.freeze({ name: 'reload-skills', aliases: ['reload_skills'], desc: 'refresh the slash skill catalog', action: 'reload-skills' }),
     Object.freeze({ name: 'debug', desc: 'show chat and slash debug state', action: 'debug' }),
     Object.freeze({ name: 'version', aliases: ['v'], desc: 'show StarNet version information', action: 'version' })
@@ -4524,12 +4591,10 @@ const Chat = (() => {
       + (model ? '; model ' + model + (provider ? ' via ' + provider : '') : '') + '.'
       + (g && g.status !== 'cleared' ? (' ' + GoalLoop.statusLine(g)) : ''));
   }
-  function usageCommand() {
-    const t = (typeof Harness !== 'undefined' && Harness.totals) ? Harness.totals() : { tokens: 0, cost: 0, calls: 0 };
-    const c = (activeWs && typeof Workstreams !== 'undefined' && Workstreams.costOf) ? Workstreams.costOf(activeWs.id) : { tokens: 0, usd: 0, calls: 0 };
-    localLine('Usage: lifetime ' + (t.tokens || 0) + ' tokens (≈¾ word each), ' + U.usd(t.cost || 0) + ' spent, ' + (t.calls || 0)
-      + ' model calls. This stream: ' + (c.tokens || 0) + ' tokens, ' + U.usd(c.usd || 0) + ', ' + (c.calls || 0) + ' calls.');
-  }
+  // NOTE: /usage moved to the sidecar (dispatch:'server'). It read Harness.totals(), which only accumulates runs
+  // THIS BROWSER watched — every routine, away shift, night-shift beat and Telegram run spends real money and
+  // never touched it, so the figure it labelled "lifetime" structurally under-reported and disagreed with the
+  // ledger the budget caps enforce against. The ledger is the authority; see sidecar/slash-actions.js.
   function queueCommand(args) {
     if (!activeWs) return localLine('No active workstream.');
     const text = String(args || '').trim();
@@ -4844,24 +4909,81 @@ const Chat = (() => {
     const a = activeAgent();
     if (!a) return localLine('Approval mode is not available yet.');
     const raw = String(args || '').trim().toLowerCase();
+    const was = a.approvalMode === 'full' ? 'full access' : 'ask first';
     const want = raw ? /^(1|true|yes|on|full|yolo)$/i.test(raw) : a.approvalMode !== 'full';
     if (applyAgentPatch({ approvalMode: want ? 'full' : 'ask' })) {
-      localLine('Approval mode: ' + (want ? 'full access. The agent will not pause for approval prompts.' : 'ask first. The agent will pause before gated actions.') );
+      // State the TRANSITION, not just the resulting state. A bare /yolo TOGGLES, so the old wording
+      // ("Approval mode: full access…") read like a status report when it had in fact just switched the
+      // approval gate off — the one setting where mistaking a change for a readout actually matters.
+      const now = want ? 'full access' : 'ask first';
+      localLine(was === now
+        ? ('Approval mode unchanged: ' + now + '.')
+        : ('Approval mode: ' + was + ' → ' + now + '. ' + (want
+          ? 'The agent will NOT pause for approval prompts — /yolo off to restore them.'
+          : 'The agent will pause before gated actions.')));
     } else localLine('Could not change approval mode.');
   }
-  function reasoningCommand(args) {
-    const raw = String(args || '').trim();
-    const cs = (typeof Harness !== 'undefined' && Harness.contextState) ? Harness.contextState((activeWs && activeWs.agentId) || 'agent') : null;
-    const model = (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '';
-    if (raw && raw.toLowerCase() !== 'status') return localLine('Reasoning effort is not a separate StarNet toggle yet. Pick a reasoning-capable model with /model; usage events still track reasoning tokens when the provider reports them.');
-    localLine('Reasoning: controlled by the selected model' + (model ? ' (' + model + ')' : '') + '. '
-      + (cs && cs.limit ? 'Context window ' + (cs.used || 0) + '/' + cs.limit + ' tokens.' : 'Context window is still calibrating.'));
+  /* ---- reasoning effort — a REAL dial, not a status readout.
+     The old handler answered "Reasoning effort is not a separate StarNet toggle yet", which was simply false:
+     Harness stores it per PROVIDER, persists it, the model dock sets it alongside model+provider, and every run
+     payload carries it (harness.js chat()). The command just never reached any of that. */
+  const REASONING_LEVELS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'];
+  // normalizeReasoningEffort maps ANY unknown token to 'medium'. These are the inputs that legitimately mean
+  // medium, so a typo can be told apart from a real request instead of silently applying a level nobody asked for.
+  const MEDIUM_ALIASES = ['med', 'mid', 'medium'];
+  function reasoningLevelOf(raw) {
+    if (typeof Harness === 'undefined' || !Harness.normalizeReasoningEffort) return null;
+    const n = Harness.normalizeReasoningEffort(raw);
+    if (n === 'medium' && MEDIUM_ALIASES.indexOf(raw) === -1) return null;   // hit the silent default => unknown token
+    return n;
   }
-  function fastCommand(args) {
-    const raw = String(args || '').trim();
-    const model = (typeof Harness !== 'undefined' && Harness.getModel) ? Harness.getModel() : '';
-    if (raw && raw.toLowerCase() !== 'status') return localLine('Fast mode is not a separate runtime toggle yet. Use /model <fast-model-id> to switch to a cheaper or lower-latency model.');
-    localLine('Fast mode: no global toggle is active. Current model: ' + (model || 'not selected') + '.');
+  // WARN-not-block (same precedent as /model against the warmed catalog): if the selected model has no reasoning
+  // dial, setting one is a no-op — say so rather than letting the confirmation imply an effect it won't have.
+  function reasoningModelNote() {
+    try {
+      if (typeof ModelDock === 'undefined' || !ModelDock._internals || !ModelDock._internals.supportsReasoning) return '';
+      const model = (Harness.getModel && Harness.getModel()) || '';
+      if (!model) return '';
+      const ok = ModelDock._internals.supportsReasoning({ id: model, provider: (Harness.getProv && Harness.getProv()) || '' });
+      return ok ? '' : ' Note: ' + model + " doesn't appear to expose a reasoning dial, so this may have no effect until you pick a model that does.";
+    } catch (_) { return ''; }
+  }
+  function reasoningCommand(args) {
+    if (typeof Harness === 'undefined' || !Harness.getReasoningEffort) return localLine('Reasoning controls are not available in this surface.');
+    const raw = String(args || '').trim().toLowerCase();
+    const prov = (Harness.getProv && Harness.getProv()) || '';
+    const cur = Harness.getReasoningEffort(prov);
+    if (!raw || raw === 'status') {
+      return localLine('Reasoning effort: ' + cur + (prov ? ' (for ' + prov + ')' : '') + '. Set it with /reasoning '
+        + REASONING_LEVELS.join('|') + ' — lower answers faster and cheaper, higher thinks longer first.' + reasoningModelNote());
+    }
+    const want = reasoningLevelOf(raw);
+    if (!want) return localLine('"' + raw + '" is not a reasoning level. Pick one of: ' + REASONING_LEVELS.join(', ') + '.');
+    if (want === cur) return localLine('Reasoning effort is already ' + cur + '.' + reasoningModelNote());
+    if (typeof App === 'undefined' || !App.applyConfig) return localLine('Reasoning effort could not be changed on this surface.');
+    App.applyConfig({ reasoningEffort: want });
+    // READ BACK before claiming it: only the store's own answer proves the write landed (truthful telemetry).
+    const now = Harness.getReasoningEffort((Harness.getProv && Harness.getProv()) || prov);
+    if (now !== want) return localLine('Could not set reasoning effort to ' + want + ' — it is still ' + now + '.');
+    localLine('Reasoning effort: ' + cur + ' → ' + want + (prov ? ' (for ' + prov + ')' : '')
+      + '. Takes effect on your next message.' + reasoningModelNote());
+  }
+  /* ---- /fast — a shortcut onto that SAME dial.
+     StarNet has no separate "fast mode", and inventing one would be a lie — the old handler admitted as much and
+     then did nothing at all. Minimal reasoning effort IS what makes replies come back quickly and cheaply, so
+     /fast drives the real control instead of pretending to be its own switch. */
+  function fastCommand() {
+    if (typeof Harness === 'undefined' || !Harness.getReasoningEffort) return localLine('Reasoning controls are not available in this surface.');
+    const prov = (Harness.getProv && Harness.getProv()) || '';
+    const cur = Harness.getReasoningEffort(prov);
+    if (cur === 'minimal' || cur === 'none') {
+      return localLine('Already as fast as it gets — reasoning effort is ' + cur + '. /reasoning medium to let it think longer.');
+    }
+    if (typeof App === 'undefined' || !App.applyConfig) return localLine('Reasoning effort could not be changed on this surface.');
+    App.applyConfig({ reasoningEffort: 'minimal' });
+    const now = Harness.getReasoningEffort((Harness.getProv && Harness.getProv()) || prov);
+    if (now !== 'minimal') return localLine('Could not switch to minimal reasoning — effort is still ' + now + '.');
+    localLine('Reasoning effort: ' + cur + ' → minimal — quicker, cheaper replies. /reasoning ' + cur + ' to put it back.' + reasoningModelNote());
   }
   function voiceCommand(args) {
     if (typeof Voice === 'undefined') return localLine('Voice controls are not available in this surface.');
@@ -4887,35 +5009,9 @@ const Chat = (() => {
     }
     localLine('Usage: /voice [on|off|status|handsfree]');
   }
-  function toolRows() {
-    return [
-      { cap: null, label: 'compute', tools: 'model.chat' },
-      { cap: 'dish', label: 'web', tools: 'web_search, web_fetch, web_request' },
-      { cap: 'cabinet', label: 'files', tools: 'fs.read, fs.list, fs.write/edit' },
-      { cap: 'notebook', label: 'memory', tools: 'notebook.read, notebook.write' },
-      { cap: 'workbench', label: 'terminal', tools: 'shell.exec, verify.run' },
-      { cap: 'studio', label: 'image', tools: 'image.generate, image.analyze' },
-      { cap: 'jukebox', label: 'spotify', tools: 'spotify controls' }
-    ];
-  }
-  async function toolsCommand() {
-    const placed = slashPlacedTypes();
-    const have = {}; placed.forEach(t => { have[t] = true; });
-    const active = toolRows().filter(r => r.cap == null || have[r.cap]);
-    const missing = toolRows().filter(r => r.cap && !have[r.cap]).map(r => r.label);
-    // JUKEBOX is a two-step unlock: place the prop (grants the tools) AND connect Spotify in TOOLSETS (the tools
-    // are inert until the OAuth session exists). If it's placed but Spotify isn't connected, say so honestly
-    // rather than listing spotify as fully live — the truthful-telemetry law applies to /tools too.
-    let jukeNote = '';
-    if (have.jukebox) {
-      let connected = false;
-      try { const j = await (await fetch('/api/spotify/status', { cache: 'no-store' })).json(); connected = !!(j && j.connected); } catch (_) {}
-      if (!connected) jukeNote = ' Spotify not connected — connect it in TOOLSETS (the JUKEBOX row) to use it.';
-    }
-    localLine('Tools: ' + active.map(r => r.label + ' (' + r.tools + ')').join('; ')
-      + (missing.length ? '. Locked until placed: ' + missing.join(', ') + '.' : '.')
-      + jukeNote);
-  }
+  // /tools and /usage are dispatch:'server' — the sidecar owns CAP_REGISTRY and the spend ledger, so it answers
+  // them (see sidecar/slash-actions.js). The browser versions were removed rather than kept as a fallback: a
+  // hardcoded tool list and a browser-only spend counter are exactly the two things that were lying.
   async function skillsCommand() {
     try {
       const key = slashCatalogKey();
@@ -5076,14 +5172,14 @@ const Chat = (() => {
     return {
       retry: retryLast, stop: stopActive, copy: copyLastReply, help: showHelp,
       new: newWorkstreamCommand, branch: branchWorkstreamCommand, status: statusCommand,
-      usage: usageCommand, queue: queueCommand, steer: steerCommand, undo: undoCommand,
+      queue: queueCommand, steer: steerCommand, undo: undoCommand,
       compress: compressCommand, title: titleCommand, resume: resumeCommand,
       save: saveCommand, agents: agentsCommand, background: backgroundCommand,
       goal: goalCommand, subgoal: subgoalCommand, loop: loopCommand,
       clear: clearCommand, history: historyCommand, whoami: whoamiCommand, insights: insightsCommand,
       model: modelCommand, personality: personalityCommand, yolo: yoloCommand,
       reasoning: reasoningCommand, fast: fastCommand, voice: voiceCommand,
-      tools: toolsCommand, skills: skillsCommand, memory: memoryCommand,
+      skills: skillsCommand, memory: memoryCommand,
       bundles: bundlesCommand, cron: cronCommand, suggestions: suggestionsCommand,
       blueprint: blueprintCommand, 'reload-mcp': reloadMcpCommand,
       'reload-skills': reloadSkillsCommand, debug: debugCommand, version: versionCommand

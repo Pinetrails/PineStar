@@ -1,12 +1,13 @@
 /* STARNET — windows/messaging.js : the CHANNELS (messaging platforms) window (extracted verbatim from stationui.js).
    Loads AFTER stationui.js (see index.html) and registers itself via StationUI.registerWindow;
    the only stationui internals it touches are the enumerated StationUI.h helper surface
-   (sfx/notify/openTerm and the live present view). */
+   (sfx/notify/openTerm/mountConsole and the live present view). */
 'use strict';
 (() => {
   if (typeof StationUI === 'undefined' || !StationUI.registerWindow) return;
   const H = StationUI.h;
   const sfx = H.sfx, notify = H.notify, openTerm = H.openTerm;
+  const mountConsole = H.mountConsole;
 
   /* ============== MESSAGING — every messaging platform the agent can be reached on ==============
      One catalog drives the whole CHANNELS panel: each entry supplies the platform copy (setup guide, field
@@ -20,7 +21,7 @@
     // an <ol> inside the setup <details>; `note` is the trailing dim caveat. Secret-input id + type order is
     // load-bearing (the wire source-guard pins e.g. id="sl-bot-token" type="password") — never reorder those.
     const CHANNEL_CATALOG = [
-      { id: 'telegram', title: 'TELEGRAM', pre: 'tg', glyph: '✈', accent: '#37aee2',
+      { id: 'telegram', title: 'TELEGRAM', pre: 'tg', accent: '#37aee2',
         tagline: 'DM your agent from Telegram.',
         verb: 'polling',
         steps: [
@@ -33,9 +34,29 @@
         read: (b) => ({ token: (b.querySelector('#tg-token').value || '').trim() }),
         clear: (b) => { b.querySelector('#tg-token').value = ''; },
         emptyMsg: 'paste your @BotFather token first',
-        okMsg: '✓ connected — open Telegram and DM your bot' },
+        okMsg: '✓ connected — open Telegram and DM your bot',
+        // multi-bot: each additional bot is a SEPARATE Telegram contact hard-bound to one agent. The list paints
+        // exclusively from the status payload's bots[] (truthful per-instance transport state); the add flow is
+        // token + agent — the sidecar validates the token with getMe before anything persists.
+        extraHtml:
+          '<div class="ch-bots" id="tg-bots">' +
+            '<div class="ch-bots-head">AGENT BOTS <span class="dim">— a separate Telegram contact per agent</span></div>' +
+            '<div id="tg-bots-list"></div>' +
+            '<details class="ch-setup" id="tg-bot-addbox"><summary>ADD A BOT</summary>' +
+              '<ol class="ch-steps">' +
+                '<li>In Telegram open <b>@BotFather</b> → <code>/newbot</code> → name it after your agent → copy the token.</li>' +
+                '<li>Paste it below and pick which agent answers it. That bot <b>is</b> that agent — DM it directly, no /talk needed.</li>' +
+              '</ol>' +
+              '<label class="ch-lbl" for="tg-bot-token">BOT TOKEN <span class="dim">— from @BotFather</span></label>' +
+              '<input id="tg-bot-token" type="password" class="key-input" placeholder="123456789:ABCdef..." autocomplete="off" spellcheck="false">' +
+              '<label class="ch-lbl" for="tg-bot-agent">RUNS AS</label>' +
+              '<select id="tg-bot-agent" class="key-input"></select>' +
+              '<div class="set-save"><button class="bb sm" id="tg-bot-add">+ ADD AGENT BOT</button></div>' +
+              '<div id="tg-bots-msg" class="msg"></div>' +
+            '</details>' +
+          '</div>' },
 
-      { id: 'discord', title: 'DISCORD', pre: 'dc', glyph: '◈', accent: '#7c83f5',
+      { id: 'discord', title: 'DISCORD', pre: 'dc', accent: '#7c83f5',
         // HONESTY: server/channel messages need a chat allowlist no production path supplies yet — DMs only today.
         tagline: 'Two-way chat on Discord — DM your bot and it replies. (DMs only for now — server channels aren\'t wired yet.)',
         verb: 'receiving',
@@ -53,7 +74,7 @@
         okMsg: '✓ connected — DM your bot on Discord',
         errHint: ' — check the bot token / MESSAGE CONTENT intent' },
 
-      { id: 'slack', title: 'SLACK', pre: 'sl', glyph: '⌗', accent: '#b98ec8',
+      { id: 'slack', title: 'SLACK', pre: 'sl', accent: '#b98ec8',
         // HONESTY: channel messages need a chat allowlist no production path supplies yet — DMs only today.
         // audit finding 5: Slack appears in BOTH panels — say which direction THIS one is.
         tagline: 'Your agent inside your Slack workspace — DM it and it replies. (DMs only for now — channels aren\'t wired yet. Want the agent to USE Slack as a tool instead? That\'s ⇄ TOOLSETS.)',
@@ -78,7 +99,7 @@
         emptyMsg: 'paste BOTH Slack tokens first (xoxb-… and xapp-…)',
         okMsg: '✓ connected — DM your Slack app' },
 
-      { id: 'matrix', title: 'MATRIX', pre: 'mx', glyph: '▣', accent: '#5bd18d',
+      { id: 'matrix', title: 'MATRIX', pre: 'mx', accent: '#5bd18d',
         tagline: 'Reach your agent from any Matrix client (Element, …) on any homeserver.',
         verb: 'syncing',
         steps: [
@@ -98,7 +119,7 @@
         emptyMsg: 'enter the homeserver URL and paste an access token first',
         okMsg: '✓ connected — message the agent\'s Matrix account' },
 
-      { id: 'signal', title: 'SIGNAL', pre: 'sg', glyph: '◉', accent: '#6aa0ff', advanced: true,
+      { id: 'signal', title: 'SIGNAL', pre: 'sg', accent: '#6aa0ff', advanced: true,
         tagline: 'Message your agent on Signal through a self-hosted signal-cli bridge.',
         verb: 'receiving',
         steps: [
@@ -122,12 +143,16 @@
         okMsg: '✓ connected — message the agent on Signal' }
     ];
 
-    // ---- panel shell: intro + ONE shared autonomous-ping opt-in, then a card per catalog entry ----
+    // ---- console shell (the SETTINGS layout): left platform rail, one pane per platform ----
+    // OVERVIEW carries the intro copy, the ONE shared autonomous-ping opt-in, and a live per-platform summary
+    // (click a row → jump to that platform's pane). Each platform pane hosts the SAME catalog-generated card as
+    // the old single-scroll panel — every control id (tg-token, sl-bot-token, …) is unchanged, and mountConsole
+    // mounts ALL panes into `body` up-front, so the body.querySelector wiring + wire source-guards are untouched.
     // The "keeps working headless" promise is FULL-CONTRAST (a real capability, not fine print), lifted out of the
     // opacity-.55 intro. The opt-in label reads as a plain sentence with its description on its own line.
-    let html =
-      '<p class="set-about">Reach your agent from real messaging apps. Every connected channel talks to the <b>same agent</b> ' +
-        '(same memory, tools, and workspace) using this app\'s current provider + model.</p>' +
+    const overviewHtml =
+      '<p class="set-about">Reach your agents from real messaging apps. A connected channel talks to the <b>same agent</b> you see here ' +
+        '(same memory, tools, and workspace) — and on Telegram you can give <b>each agent its own bot</b>, a separate contact that always answers as that agent (see AGENT BOTS on the TELEGRAM pane).</p>' +
       // HONESTY (2026-07-15): closing the desktop app STOPS the sidecar (the shell reaps it on exit), so "works
       // with the app closed" was a false promise — and some channels deliberately discard the offline backlog on
       // reconnect (anti-stale-directive). Claim exactly what the harness proves: headless of THIS window, alive
@@ -135,12 +160,18 @@
       '<p class="ch-headless">It keeps working <b>headless</b> — a DM runs your agent even with this window closed, as long as the station app is running. Messages sent while the station is fully off are <b>not</b> processed — you get an honest "I was offline" note instead.</p>' +
       '<label class="set-row ch-optin"><input type="checkbox" id="ch-notify"> <span class="ch-optin-t">Message me on my connected channels when my agent finishes autonomous work</span>' +
         '<span class="ch-optin-d dim">A routine that runs on its own and produces something pings you on every channel you\'ve connected.</span></label>' +
-      '<div id="ch-notify-msg" class="msg"></div>';
-    for (const c of CHANNEL_CATALOG) {
-      html +=
-        '<div class="ch-card" id="ch-card-' + c.id + '" style="--accent:' + c.accent + '">' +
+      '<div id="ch-notify-msg" class="msg"></div>' +
+      // live platform summary — painted from the SAME proven bulk status as the cards (never a second truth).
+      '<div class="ch-sum"><div class="ch-bots-head">PLATFORMS <span class="dim">— pick one to set it up</span></div>' +
+        CHANNEL_CATALOG.map(c =>
+          '<button type="button" class="ch-sum-row" data-ch="' + c.id + '" style="--accent:' + c.accent + '">' +
+            '<span class="ch-sum-t">' + c.title + (c.advanced ? ' <span class="ch-adv">ADVANCED</span>' : '') + '</span>' +
+            '<span class="ch-state st-off" id="' + c.pre + '-sum">checking…</span>' +
+          '</button>').join('') +
+      '</div>';
+    function cardHtml(c) {
+      return '<div class="ch-card" id="ch-card-' + c.id + '" style="--accent:' + c.accent + '">' +
           '<div class="ch-head">' +
-            '<span class="ch-coin"><span class="ch-glyph">' + c.glyph + '</span></span>' +
             '<div class="ch-id">' +
               '<h4 class="ch-title">' + c.title + (c.advanced ? ' <span class="ch-adv">ADVANCED · SELF-HOSTED</span>' : '') + '</h4>' +
               '<span class="ch-answers" id="' + c.pre + '-answers"></span>' +
@@ -159,9 +190,31 @@
             '<button class="bb xs danger" id="' + c.pre + '-forget" style="display:none" title="' + (c.id === 'signal' ? 'removes the saved bridge URL and registered number from this machine' : 'permanently deletes the saved token from this machine (record + OS keychain) — you’d have to set it up again') + '">' + (c.id === 'signal' ? '✕ REMOVE CONFIGURATION' : '⌫ FORGET') + '</button>' +
           '</div>' +
           '<div id="' + c.pre + '-msg" class="msg"></div>' +
+          (c.extraHtml || '') +
         '</div>';
     }
-    body.innerHTML = html;
+    // no per-platform glyphs anywhere in this window — abstract marks read as wrong-logo noise next to real
+    // platform names (Andrew, 2026-07-24). The rail glyph slot is hidden via the .channels-console class.
+    mountConsole(body, 'messaging', [
+      { id: 'overview', label: 'OVERVIEW', build: (pane) => { pane.innerHTML = overviewHtml; } }
+    ].concat(CHANNEL_CATALOG.map(c => ({
+      id: c.id, label: c.title,
+      build: (pane) => { pane.innerHTML = cardHtml(c); }
+    }))));
+    // rail truth dots: one per platform tab, painted from the same proven status as its card (paintCard).
+    for (const c of CHANNEL_CATALOG) {
+      const tab = body.querySelector('#con-tab-messaging-' + c.id);
+      if (tab) {
+        const d = document.createElement('span');
+        d.className = 'ch-rail-dot st-off'; d.id = c.pre + '-dot'; d.textContent = '●';
+        tab.appendChild(d);
+      }
+    }
+    // overview rows jump to the platform pane by driving the REAL rail tab (active state/aria stay correct).
+    body.querySelectorAll('.ch-sum-row').forEach(row => row.addEventListener('click', () => {
+      const t = body.querySelector('#con-tab-messaging-' + row.dataset.ch);
+      if (t) { t.click(); sfx('click'); }
+    }));
 
     // per-card mutable UI state kept out of the DOM: are we mid-connect (finalize the msg from the PROVEN status,
     // not the POST), and the saved placeholders (restored when a card goes back to un-configured).
@@ -182,6 +235,39 @@
       el.textContent = text || '';
     }
 
+    // ---- multi-bot telegram: paint the AGENT BOTS list from status.bots (per-instance transport truth) ----
+    function paintTelegramBots(bots) {
+      const list = body.querySelector('#tg-bots-list');
+      if (!list) return;
+      list.textContent = '';
+      for (const bItem of (Array.isArray(bots) ? bots : [])) {
+        const row = document.createElement('div');
+        row.className = 'tg-bot-row' + (bItem.connected ? ' on' : '');
+        row.dataset.bot = String(bItem.botId || '');
+        const name = document.createElement('span');
+        name.className = 'tg-bot-name';
+        name.textContent = (bItem.username ? '@' + bItem.username : 'bot ' + bItem.botId) + ' → ' + (bItem.agentName || bItem.agentId || '?');
+        const state = document.createElement('span');
+        const inFlight = !bItem.connected && (bItem.state === 'connecting' || bItem.state === 'reconnecting');
+        state.className = 'ch-state ' + stateClass(bItem.connected, inFlight, bItem.state, bItem.configured);
+        state.textContent = bItem.connected ? '● connected' : inFlight ? '◐ connecting…'
+          : bItem.state === 'error' ? ('✕ ' + (bItem.detail || 'error')) : (bItem.enabled === false ? '○ off' : '○ offline');
+        if (bItem.ownerLocked) state.title = 'owner-locked';
+        row.appendChild(name); row.appendChild(state);
+        const btn = (label, act, danger) => {
+          const b = document.createElement('button');
+          b.className = 'bb xs' + (danger ? ' danger' : ''); b.textContent = label; b.dataset.act = act; b.dataset.bot = String(bItem.botId || '');
+          row.appendChild(b); return b;
+        };
+        if (!bItem.connected && bItem.configured) btn('⏵', 'resume', false).title = 'reconnect this bot';
+        if (bItem.connected || bItem.enabled !== false) btn('⏏', 'off', false).title = 'disconnect (token kept)';
+        btn('⌫', 'forget', true).title = 'forget this bot — removes its saved token';
+        list.appendChild(row);
+      }
+      const wrap = body.querySelector('#tg-bots');
+      if (wrap) wrap.classList.toggle('empty', !(Array.isArray(bots) && bots.length));
+    }
+
     function paintCard(c, st) {
       const el = body.querySelector('#' + c.pre + '-status');
       if (!el) return;
@@ -199,6 +285,15 @@
       // a standing backend warning (e.g. the owner binding failed to persist) rides EVERY state — real risk
       // the Commander must see, straight from channelStatusPayload (self-heals server-side once the disk agrees).
       if (st && st.warning) el.textContent += ' ⚠ ' + st.warning;
+      // rail dot + overview summary row ride the SAME proven status (one truth, three projections)
+      const dot = body.querySelector('#' + c.pre + '-dot');
+      if (dot) dot.className = 'ch-rail-dot ' + stateClass(conn, inFlight, state, configured);
+      const sum = body.querySelector('#' + c.pre + '-sum');
+      if (sum) {
+        sum.className = 'ch-state ' + stateClass(conn, inFlight, state, configured);
+        sum.textContent = conn ? '● connected' : inFlight ? '◐ connecting…'
+          : state === 'error' ? '✕ error' : configured ? '○ saved — offline' : '○ not connected';
+      }
       if (c.prefill) { try { c.prefill(body, st); } catch (_) {} }
       const card = body.querySelector('#ch-card-' + c.id);
       if (card) card.classList.toggle('on', conn);
@@ -231,6 +326,8 @@
         if (savedPlaceholder[inp.id] == null) savedPlaceholder[inp.id] = inp.getAttribute('placeholder') || '';
         inp.placeholder = (configured && !inp.value) ? '•••• saved — paste to replace' : savedPlaceholder[inp.id];
       });
+
+      if (c.id === 'telegram') { try { paintTelegramBots(st && st.bots); } catch (_) {} }
 
       // finalize a pending connect's MESSAGE from the proven status (not the optimistic POST body).
       if (pendingConnect[c.id]) {
@@ -270,6 +367,10 @@
         for (const c of CHANNEL_CATALOG) {
           const el = body.querySelector('#' + c.pre + '-status');
           if (el) { el.className = 'ch-state st-off'; el.textContent = '○ sidecar offline'; }
+          const dot = body.querySelector('#' + c.pre + '-dot');
+          if (dot) dot.className = 'ch-rail-dot st-off';
+          const sum = body.querySelector('#' + c.pre + '-sum');
+          if (sum) { sum.className = 'ch-state st-off'; sum.textContent = '○ sidecar offline'; }
           configuredById[c.id] = false;
         }
       }
@@ -438,6 +539,76 @@
       });
     }
 
+    // ---- multi-bot telegram wiring: add / resume / disconnect / forget --------------------------------------
+    (function wireTelegramBots() {
+      const msgEl = body.querySelector('#tg-bots-msg');
+      const sel = body.querySelector('#tg-bot-agent');
+      if (!sel) return;
+      function fillAgents() {
+        const cur = sel.value;
+        sel.textContent = '';
+        for (const a of (H.present || [])) {
+          if (!a || !a.id) continue;
+          const o = document.createElement('option');
+          o.value = a.id; o.textContent = a.name || a.id;
+          sel.appendChild(o);
+        }
+        if (cur) sel.value = cur;
+      }
+      fillAgents();
+      const addBox = body.querySelector('#tg-bot-addbox');
+      if (addBox) addBox.addEventListener('toggle', fillAgents);   // roster may have changed since build
+      body.querySelector('#tg-bot-add').addEventListener('click', async () => {
+        const tokInp = body.querySelector('#tg-bot-token');
+        const token = (tokInp.value || '').trim();
+        const agentId = sel.value;
+        if (!token) { sfx('bad'); setMsg(msgEl, 'paste a @BotFather token for the new bot first', ''); return; }
+        if (!agentId) { sfx('bad'); setMsg(msgEl, 'pick which agent this bot should be', ''); return; }
+        const ag = (H.present || []).find(a => a && a.id === agentId) || null;
+        const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
+        const usingCodex = provider === 'codex' || provider === 'openai-codex';
+        const key = (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey(provider) || '') : '';
+        const baseUrl = (typeof Harness !== 'undefined' && Harness.getBaseUrl) ? (Harness.getBaseUrl(provider) || '') : '';
+        const hasStoredKey = !!(typeof Harness !== 'undefined' && Harness.configured && Harness.configured(provider));
+        const model = (typeof Harness !== 'undefined' && Harness.getModel()) || '';
+        if (!model || (!usingCodex && !key && !hasStoredKey)) { sfx('bad'); setMsg(msgEl, '✕ connect your agent\'s provider + model in SETTINGS first', ''); return; }
+        setMsg(msgEl, 'checking the token with Telegram…', 'info');
+        try {
+          const r = await Harness.api.post('/api/channels/telegram/bots/connect', {
+            token, agentId, key, model, provider, baseUrl,
+            system: (ag && ag.systemPrompt) || '', agentName: (ag && ag.name) || ''
+          });
+          const j = r.j || {};
+          if (!r.ok || j.error) { sfx('bad'); setMsg(msgEl, '✕ ' + (j.error || ('HTTP ' + r.status)), ''); }
+          else {
+            sfx('click'); tokInp.value = '';
+            // the CONNECTED claim stays with the list row (painted from proven per-instance status) — this line
+            // only asserts what getMe proved: the token is real and the bot is bound.
+            setMsg(msgEl, '✓ @' + (j.username || 'bot') + (j.rebound ? ' re-bound' : ' added') + ' — connecting; DM it on Telegram once the row shows ●', 'ok');
+          }
+        } catch (e) { sfx('bad'); setMsg(msgEl, '✕ ' + ((e && e.message) || 'failed to reach the sidecar'), ''); }
+        refreshAll();
+      });
+      // row actions by delegation (rows re-render on every status paint)
+      body.querySelector('#tg-bots-list').addEventListener('click', (ev) => {
+        const b = ev.target && ev.target.closest ? ev.target.closest('button[data-act]') : null;
+        if (!b) return;
+        const botId = b.dataset.bot, act = b.dataset.act;
+        if (!botId) return;
+        const doPost = async (path, payload, okText) => {
+          try { const r = await Harness.api.post(path, payload || {}); const j = r.j || {};
+            if (!r.ok || j.error) { sfx('bad'); setMsg(msgEl, '✕ ' + (j.error || ('HTTP ' + r.status)), ''); }
+            else { sfx('click'); if (okText) setMsg(msgEl, okText, 'info'); } }
+          catch (_) { sfx('bad'); setMsg(msgEl, '✕ could not reach the sidecar', ''); }
+          refreshAll();
+        };
+        if (act === 'resume') doPost('/api/channels/telegram/bots/' + botId + '/connect', {}, null);
+        else if (act === 'off') doPost('/api/channels/telegram/bots/' + botId + '/disconnect', {}, 'bot disconnected — token kept; ⏵ to reconnect');
+        else if (act === 'forget') armed('tg-bot-forget-' + botId, b, '⌫', '⌫ SURE?', () =>
+          doPost('/api/channels/telegram/bots/' + botId + '/disconnect', { purge: true }, 'bot forgotten — its token was removed'));
+      });
+    })();
+
     // ---- the ONE global "ping me when I work on my own" opt-in (persisted server-side; cron reads it) ----
     const notifyBox = body.querySelector('#ch-notify');
     const notifyMsg = body.querySelector('#ch-notify-msg');
@@ -452,5 +623,5 @@
     refreshAll();
   }
 
-  StationUI.registerWindow('messaging', 'CHANNELS', buildMessaging, { w: '520px' });   // dock label = window title (it's Telegram/external channels, not COMMS)
+  StationUI.registerWindow('messaging', 'CHANNELS', buildMessaging, { console: true, className: 'channels-console' });   // console mode = the wide SETTINGS-style two-pane window; the className scopes the no-glyph rail; dock label = window title (it's Telegram/external channels, not COMMS)
 })();

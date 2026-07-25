@@ -4296,6 +4296,7 @@ function startTelegram(token, key, model, agentCfg) {
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: the fallback line carries the stored recommendation
+    groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
     newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
@@ -4462,6 +4463,7 @@ function startTelegramBot(botId) {
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),
+    groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
     newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
     // HARD-LOCK: this bot IS its bound agent — resolveAgent (top of the hub's resolution order) always answers
     // it, so /talk bindings and floor routing can never quietly change who @ThisBot is. No roster/setModel
@@ -4623,6 +4625,7 @@ function getDevHub() {
     secrets: devHubSecrets,
     persona: DEV_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: same recommendation line on the dev channel
+    groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
@@ -7763,6 +7766,38 @@ const slashActions = slashActionsMod.makeSlashActions({
       catch (e) { return { ok: false, error: (e && e.message) || 'the shift threw' }; }
       return Object.assign({ ok: true }, r || {});
     }
+  },
+  // The SAME rows handleToolsetsList serves the TOOLSETS console: families derived from CAP_REGISTRY, with the
+  // persisted enable-state and the live floor layered on. /tools reads this instead of a hardcoded literal, so
+  // it can never name a tool the registry does not grant, nor advertise a family whose switch is OFF.
+  tools: {
+    rows: (placedTypes) => {
+      const placedSet = {}; for (const t of (placedTypes || [])) placedSet[t] = true;
+      return toolsetRows(CAP_REGISTRY).map(r => ({
+        id: r.id, label: r.label, object: r.object, tools: r.tools,
+        enabled: toolsetDisabled[r.id] !== false,
+        placed: !!(r.object && placedSet[r.object]),
+        consentGated: r.consentGated
+      }));
+    },
+    spotifyConnected: async () => { try { const st = await spotifyStore.status(); return !!(st && st.connected); } catch (_) { return null; } }
+  },
+  // The durable spend ledger — the same one the budget caps enforce against, and the same reads
+  // handleBudgetStatus serves. It counts EVERY run (cron, away, night shift, channels), which is exactly what
+  // the browser-side counter could not see.
+  budget: {
+    snapshot: async (agentId) => {
+      const t = Date.now();
+      return {
+        ok: true,
+        today: ledger.usdForDay(t),
+        lifetime: ledger.totalUsd(),
+        runs: ledger.count(),
+        tokens: ledger.all().reduce((s, r) => s + (Number(r && r.tokens) || 0), 0),
+        agentUsd: ledger.usdForAgent(agentId),
+        caps: { perRun: effectiveCaps.perRun, perAgent: effectiveCaps.perAgent, perDay: effectiveCaps.perDay, global: effectiveCaps.global }
+      };
+    }
   }
 });
 
@@ -7773,9 +7808,15 @@ async function handleSlashDispatch(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad json' }); }
   const input = body.input != null ? body.input : ('/' + String(body.command || ''));
-  const out = slash.dispatch(input, slashOptions(placedTypesFrom(body.placed)));
+  const placed = placedTypesFrom(body.placed);
+  const out = slash.dispatch(input, slashOptions(placed));
   if (out.ok && out.directive && out.directive.type === 'server') {
-    const ctx = { agentId: /^[A-Za-z0-9_-]{1,40}$/.test(String(body.agentId || '')) ? String(body.agentId) : 'agent' };
+    // `placed` rides the ctx too: /tools answers "what can THIS agent call", which depends on the props on its
+    // floor — the browser is the only one that knows the live floor, so it must travel with the dispatch.
+    const ctx = {
+      agentId: /^[A-Za-z0-9_-]{1,40}$/.test(String(body.agentId || '')) ? String(body.agentId) : 'agent',
+      placed: placed
+    };
     const r = await slashActions.run(out.directive.action, out.directive.args, ctx);
     // A refusal is still a 200: the command RAN and produced an honest answer ("no such routine"). Only an
     // unknown action is a 404 — the browser must be able to tell "it said no" from "it never executed".
@@ -8187,12 +8228,13 @@ async function runOnce(o) {
   } else if (taskBrief) {
     let goal = null; try { goal = commanderGoals.get() || null; } catch (_) {}
     let patterns = []; try { patterns = taskBriefStore.patterns(5); } catch (_) {}
+    let deferredDimensions = []; try { deferredDimensions = taskBriefStore.deferredDimensions(); } catch (_) {}
     // TASK BRIEF v2: a recipe-launched run carries its recipe's declared material decisions (normalized by
     // recipes.js — the same data the launch chips rendered), so a mid-run question arrives pre-aimed.
     let recipeIntake = [];
     try { const rr = o.recipeId ? Recipes.get(String(o.recipeId)) : null; if (rr && Array.isArray(rr.intake)) recipeIntake = rr.intake; } catch (_) {}
     taskContextBlock = CommanderContext.compose({
-      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, recipeIntake, existingSystem: system || ''
+      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, deferredDimensions, recipeIntake, existingSystem: system || ''
     });
   }
 
@@ -11459,8 +11501,16 @@ function serveTaskBriefs(req, res) {
     const status = String(u.searchParams.get('status') || '').slice(0, 24);
     const limit = Math.max(1, Math.min(100, Number(u.searchParams.get('limit')) || 20));
     const briefs = taskBriefStore.list({ key: key || undefined, status: status || undefined, limit });
-    json(200, { briefs, patterns: taskBriefStore.patterns(5) });
-  } catch (_) { json(200, { briefs: [], patterns: [] }); }
+    // `grounded` is the OBSERVED-behaviour suggestion for the newest brief's open question (see
+    // taskBriefStore.groundedFor): provable from answered history, so the client can mark a chip with a real
+    // count instead of only the model's assertion. Null whenever nothing was observed twice — never a guess.
+    const pats = taskBriefStore.patterns(50);
+    const b0 = briefs[0];
+    const q0 = b0 && Array.isArray(b0.questions) ? b0.questions[b0.questions.length - 1] : null;
+    let grounded = null;
+    try { grounded = q0 ? taskBriefStore.groundedFor(q0, pats) : null; } catch (_) { grounded = null; }
+    json(200, { briefs, patterns: pats.slice(0, 5), grounded });
+  } catch (_) { json(200, { briefs: [], patterns: [], grounded: null }); }
 }
 
 // GET /api/threads/proposals?agent=<id>&run=<id> — NS-6: the pending MINED thread candidates for a run (with the

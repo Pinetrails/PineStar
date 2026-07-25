@@ -91,12 +91,13 @@
     timeout:       { retryable: true,  action: null,       msg: 'That took too long and timed out — try again.' },
     user_abort:    { retryable: false, action: null,       msg: 'Stopped.' },
     context_overflow: { retryable: false, action: null,    msg: 'This conversation got too long for the model — start a fresh chat or shorten it.' },
-    model_not_found:  { retryable: false, action: 'settings', msg: "That model isn't available — pick a different one in Settings." },
+    model_not_found:  { retryable: false, action: 'settings', msg: "That model isn't available — pick a different one from the model dock in COMMS." },
     content_policy_blocked: { retryable: false, action: null, msg: 'The model declined that request on safety grounds — try rephrasing it.' },
     // JUKEBOX is placed (the Spotify tools ARE granted) but Spotify's OAuth session isn't connected yet — the
-    // real second half of the unlock chain. The door is SETTINGS (connect Spotify), NOT REFIT (the gear is
-    // already on station), so this is distinct from `capdenied` which fires when no JUKEBOX is placed at all.
-    spotify_not_connected: { retryable: false, action: 'settings', msg: 'The JUKEBOX is on station, but Spotify isn’t connected yet — connect it in Settings, then try again.' },
+    // real second half of the unlock chain. The door is TOOLSETS (its JUKEBOX row carries ▶ CONNECT SPOTIFY —
+    // Settings has NO spotify surface; the old 'settings' door landed on PROVIDERS with no connect control),
+    // NOT REFIT (the gear is already on station) — distinct from `capdenied` which fires when no JUKEBOX exists.
+    spotify_not_connected: { retryable: false, action: 'toolsets', msg: 'The JUKEBOX is on station, but Spotify isn’t connected yet — connect it in TOOLSETS, then try again.' },
     // the one-run-at-a-time mutex: the SIDECAR message names the holder (age/source) + the doors (ROUTINES,
     // E-STOP) — friendlyError passes it through verbatim instead of flattening to `unknown` (2026-07-07 escape:
     // the user got "Something went wrong" in a loop while the real answer was one sentence away).
@@ -225,7 +226,12 @@
     // dead refresh token. The action BUTTON tailors the door per provider (RECONNECT GROK / RECONNECT KIMI).
     if (/\b(grok|kimi)[_ -]?(not[_ -]?connected|auth[_ -]?error|auth\b|token[_ -]?refresh|refresh[_ -]?token|relogin|reconnect)/.test(raw.toLowerCase())
         || /(grok|kimi).*(sign[- ]?in|not signed in|not connected|expired|sign in again)/.test(raw.toLowerCase())
-        || /sign[- ]?in.*(grok|kimi)/.test(raw.toLowerCase())) {
+        || /sign[- ]?in.*(grok|kimi)/.test(raw.toLowerCase())
+        // mid-run token death: the provider adapter now labels HTTP failures with the provider name
+        // ("Grok (xAI) http 401 - …", "Kimi For Coding http 401 - …"). An auth-status failure on a keyless
+        // subscription sign-in is a RECONNECT case, never a key-field case. (grok+403 never reaches here —
+        // grok_oauth_unavailable above catches it first, by design.)
+        || /(grok|kimi).*http 40[13]/.test(raw.toLowerCase())) {
       kind = 'oauth';
     } else
     // Harness pre-flight misconfig ("no API key set" / "no model selected") is UI-level — catch before delegating
@@ -236,8 +242,9 @@
       kind = 'oauth';
     } else if (/no api key set|no model selected/.test(raw.toLowerCase())) {
       kind = 'auth';
-    } else if (/spotify is not connected|spotify.*not connected|connect (it in settings|spotify)/.test(raw.toLowerCase())) {
-      // the JUKEBOX is placed but Spotify's OAuth isn't linked — a settings step, not a REFIT one.
+    } else if (/spotify is not connected|spotify.*not connected|connect (it in settings|it in toolsets|spotify)|spotify session expired|spotify auth failed/.test(raw.toLowerCase())) {
+      // the JUKEBOX is placed but Spotify's OAuth isn't linked (or its session died) — every flavor gets the
+      // TOOLSETS door: the JUKEBOX row there is the only surface with a connect/reconnect control.
       kind = 'spotify_not_connected';
     } else if (/\bcapdenied\b/.test(raw.toLowerCase()) || /^no\s+\w+\s+—/.test(raw.toLowerCase()) || /needs a capability/.test(raw.toLowerCase())) {
       // a capability denial is UI-level (the sidecar classifier doesn't model it) — catch it before delegating.
@@ -320,6 +327,10 @@
     switch (verdict.action) {
       case 'refit':
         return { label: '⚒ Open REFIT', run: () => { try { if (typeof Build !== 'undefined' && Build.open) Build.open(); else if (typeof Build !== 'undefined' && Build.toggle && !(Build.isOpen && Build.isOpen())) Build.toggle(); } catch (_) {} } };
+      case 'toolsets':
+        // spotify_not_connected: the connect flow lives on the TOOLSETS window's JUKEBOX row (setupSpotify) —
+        // the only surface with a ▶ CONNECT SPOTIFY control. Same registerWindow key as the ⇄ TOOLSETS dock button.
+        return { label: '⇄ OPEN TOOLSETS', run: () => { try { if (typeof StationUI !== 'undefined' && StationUI.openTerm) StationUI.openTerm('connectors'); } catch (_) {} } };
       case 'settings':
         // Grok's OAuth sign-in is 403-allowlisted off for this account — the honest door is the xAI (API KEY)
         // provider, not a doomed reconnect. Lands on the PROVIDERS section where the xAI key row lives.
@@ -341,7 +352,17 @@
           return { label: '⏼ RECONNECT CHATGPT', run: () => openSettings('providers') };
         if (verdict.kind === 'auth')
           return { label: '＋ Add a key', run: () => openSettings('providers') };
-        return { label: '⚙ Open Settings', run: () => openSettings(verdict.kind === 'model_not_found' ? 'models' : 'providers') };
+        // model_not_found: the fix is repointing the PRIMARY model, which lives in the COMMS model dock —
+        // NOT Settings→MODELS (that section is the fallback chain + class tiers and cannot change the primary;
+        // sending users there was a door onto a room without the lever). Fall back to Settings only when the
+        // dock isn't mounted (headless/tests).
+        if (verdict.kind === 'model_not_found') {
+          return { label: '▸ PICK A MODEL', run: () => {
+            try { if (typeof ModelDock !== 'undefined' && ModelDock.open) { ModelDock.open(); return; } } catch (_) {}
+            openSettings('models');
+          } };
+        }
+        return { label: '⚙ Open Settings', run: () => openSettings('providers') };
       case 'reload':
         // stale_session: the page holds a dead boot token — a reload is the ONE honest reconnect (the token is
         // injected at serve time; there is no in-page re-fetch handshake). Degrades quietly outside a browser.

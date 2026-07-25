@@ -36,6 +36,7 @@ const BUILTIN_COMMANDS = Object.freeze([
     aliases: ['reset'],
     category: 'Session',
     desc: 'start a fresh workstream',
+    argsHint: '[title]',
     action: 'new'
   }),
   Object.freeze({
@@ -43,6 +44,7 @@ const BUILTIN_COMMANDS = Object.freeze([
     aliases: ['fork'],
     category: 'Session',
     desc: 'fork this conversation into a new workstream',
+    argsHint: '[title]',
     action: 'branch'
   }),
   Object.freeze({
@@ -54,8 +56,9 @@ const BUILTIN_COMMANDS = Object.freeze([
   Object.freeze({
     name: 'usage',
     category: 'Info',
-    desc: 'show token and spend totals',
-    action: 'usage'
+    desc: 'show real spend from the station ledger',
+    action: 'usage',
+    dispatch: 'server'
   }),
   Object.freeze({
     name: 'queue',
@@ -68,7 +71,7 @@ const BUILTIN_COMMANDS = Object.freeze([
   Object.freeze({
     name: 'steer',
     category: 'Session',
-    desc: 'steer the live run (or queue guidance when idle)',
+    desc: 'steer the running turn (nothing to steer when idle)',
     argsHint: '<guidance>',
     action: 'steer'
   }),
@@ -140,6 +143,7 @@ const BUILTIN_COMMANDS = Object.freeze([
     aliases: ['cls'],
     category: 'Session',
     desc: 'clear COMMS and start a fresh workstream',
+    argsHint: '[title]',
     action: 'clear'
   }),
   Object.freeze({
@@ -186,29 +190,30 @@ const BUILTIN_COMMANDS = Object.freeze([
   Object.freeze({
     name: 'reasoning',
     category: 'Configuration',
-    desc: 'show reasoning-mode support status',
-    argsHint: '[status]',
+    desc: 'show or set how hard the model thinks before answering',
+    argsHint: '[none|minimal|low|medium|high|xhigh]',
     action: 'reasoning'
   }),
   Object.freeze({
     name: 'fast',
     category: 'Configuration',
-    desc: 'show fast-mode support status',
-    argsHint: '[status]',
+    desc: 'drop reasoning effort to minimal for quicker, cheaper replies',
+    argsHint: '',
     action: 'fast'
   }),
   Object.freeze({
     name: 'voice',
     category: 'Configuration',
     desc: 'show or toggle spoken replies',
-    argsHint: '[on|off|status]',
+    argsHint: '[on|off|handsfree|status]',
     action: 'voice'
   }),
   Object.freeze({
     name: 'tools',
     category: 'Tools',
-    desc: 'show tools granted by the workstation',
-    action: 'tools'
+    desc: 'show the tools this agent can actually call',
+    action: 'tools',
+    dispatch: 'server'
   }),
   Object.freeze({
     name: 'skills',
@@ -266,7 +271,7 @@ const BUILTIN_COMMANDS = Object.freeze([
     aliases: ['suggest'],
     category: 'Tools',
     desc: 'review recurring-task recipe suggestions',
-    argsHint: '[accept|dismiss N|clear]',
+    argsHint: '[accept N|dismiss N|clear]',
     action: 'suggestions'
   }),
   Object.freeze({

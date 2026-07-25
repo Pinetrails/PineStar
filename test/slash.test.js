@@ -19,7 +19,7 @@ const S = require('../sidecar/slash.js');
   // dispatch is now a two-valued contract: 'client' (browser performs it) or 'server' (the sidecar executes it
   // and returns a say directive). Anything else would reach a surface that has no way to run it.
   A.ok(cat.commands.every(c => c.dispatch === 'client' || c.dispatch === 'server'), 'catalog commands declare a known dispatch');
-  A.eq(cat.commands.filter(c => c.dispatch === 'server').map(c => c.name).sort(), ['away', 'routine'], 'server-dispatched commands are exactly the sidecar-executed ones');
+  A.eq(cat.commands.filter(c => c.dispatch === 'server').map(c => c.name).sort(), ['away', 'routine', 'tools', 'usage'], 'server-dispatched commands are exactly the sidecar-executed ones');
   A.ok(cat.commands.find(c => c.name === 'away').aliases.indexOf('build-away') >= 0, 'away keeps the original /build-away name as an alias');
   A.ok(cat.commands.find(c => c.name === 'routine').argsHint.indexOf('add') >= 0, 'routine publishes its argument shape');
   A.ok(cat.commands.find(c => c.name === 'new').aliases.indexOf('reset') >= 0, 'new exposes /reset alias');
