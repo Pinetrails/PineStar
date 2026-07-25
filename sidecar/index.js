@@ -353,6 +353,10 @@ const MAX_CONCURRENT_AGENTS = resolveKnob('MAX_CONCURRENT_AGENTS', 'maxConcurren
 // Stage 2: per-WORKER USD ceiling for a delegated sub-run, so the lead fanning out to a crew can't let one
 // runaway worker blow the lead's own per-run cap. 0 = ungoverned (the cross-run pools still apply).
 const ORCH_PER_WORKER = num(ENV('BUDGET_PER_WORKER'), 1);
+// Stage 2 companion to ORCH_PER_WORKER: per-WORKER tool-turn ceiling. A delegated worker doing one
+// scoped subtask has no business burning the lead's whole 40-turn budget. runOnce clamps this DOWN
+// only (see runMaxIters) so a caller can never widen past the station's own CAPS.maxIters.
+const ORCH_WORKER_MAX_ITERS = num(ENV('WORKER_MAX_ITERS'), 10);
 // ---- MANAGED CREDITS (opt-in, config-gated). The whole managed-credit path is INERT unless STARNET_CREDITS_URL
 // points at a credits backend: no payment client is built, admission stays pure BYOK, no STORE UI renders, and
 // /api/credits 404s (the honesty law — a control that does nothing is a bug). When wired, a managed account can
@@ -8258,6 +8262,12 @@ async function runOnce(o) {
   const runCapUsd = (o.maxCostUsd > 0 && isFinite(o.maxCostUsd)) ? o.maxCostUsd
     : (providerUnmetered ? Infinity
     : ((effectiveCaps.perRun > 0 && isFinite(effectiveCaps.perRun)) ? effectiveCaps.perRun : Infinity));
+  // Same rule as o.maxCostUsd for the TURN budget: an explicit caller cap (o.maxIters -- e.g. a delegated
+  // worker's ORCH_WORKER_MAX_ITERS) is honored, but may only LOWER the ceiling. Without this the value
+  // orchestration.js has always passed was silently dropped and every worker ran the lead's full budget.
+  const runMaxIters = (o.maxIters > 0 && isFinite(o.maxIters))
+    ? Math.max(1, Math.min(Math.floor(o.maxIters), CAPS.maxIters))
+    : CAPS.maxIters;
   const managedRun = credits.configured() && !providerUnmetered;
   if (managedRun) {
     // a managed reservation needs a FINITE cap to hold; an ungoverned per-run can't be pre-authorized.
@@ -8432,7 +8442,7 @@ async function runOnce(o) {
     classes: SPECIALIST_CLASSES,   // Class Loadouts S1: the summon-tool class list, composed from the shared catalog (no hardcoded prose)
     selfSystem: system,   // team.spawn clones the LEAD's OWN base identity into each ephemeral subagent (Meeseeks)
     taskContext: taskContextBlock,   // workers inherit settled task decisions without re-questioning the Commander
-    perWorker: ORCH_PER_WORKER, newId: () => crypto.randomUUID(),
+    perWorker: ORCH_PER_WORKER, workerMaxIters: ORCH_WORKER_MAX_ITERS, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS,   // minutes, not the 30s fast-tool cap (see constant)
     // Cross-provider dispatch: resolve a WORKER's own roster provider to the station's server-held credential
     // (BYOK keys / codex OAuth). null when the station holds none -> orchestration falls back to the lead's
@@ -9092,7 +9102,7 @@ async function runOnce(o) {
       // per-RUN hard ceiling = the Balanced perRun cap; the soft day/global pools ride on `budget`. A perRun of
       // 0/Infinity means UNGOVERNED per-run (Infinity), NOT "block every run" — the loop reads maxCostUsd that way.
       // Stage 2: a delegated worker passes o.maxCostUsd (the per-worker cap) which overrides the lead's perRun.
-      limits: { maxIters: CAPS.maxIters, maxCostUsd: runCapUsd },   // runCapUsd computed once at admission (also the managed reservation)
+      limits: { maxIters: runMaxIters, maxCostUsd: runCapUsd },   // both computed once at admission (runCapUsd is also the managed reservation)
       budget: runBudget, context: ctxMgr, summarize, fallbacks,
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
