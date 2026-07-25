@@ -52,6 +52,10 @@ the machine* — kill a runaway run, check what a routine spent — was the one 
   are **byte-identical** to `/api/slash/dispatch`; `/usage` differs only by the agent id, which is the
   per-agent scoping working. `/routine add` from the channel minted a real cron job bound to the channel
   agent; `/new` cleared a real 3-turn transcript and left `{"version":1,"messages":[]}` on disk.
+- ** LIVE-PROVEN 2026-07-25** at the provider socket: with a mock OpenRouter streaming one token
+  per 500ms, a real channel run was opened (`/status` → "Working — 6s so far."), `/stop` replied "Stopped the
+  run in progress.", and the mock recorded the upstream stream ABORTED after 11 tokens while `/status` went
+  back to Idle. The abort reaches the model socket, not just the hub bookkeeping.
 - **NOT wire-verified:** `setMyCommands` now publishes **12** entries (was 5). Telegram rejects that call
   *wholesale* if any single name/description is malformed. `test/channels.parity.test.js` enforces the
   documented grammar (`^[a-z0-9_]{1,32}$`, non-empty description ≤256) but only a real bot token proves the
