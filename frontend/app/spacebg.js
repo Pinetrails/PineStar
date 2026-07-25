@@ -393,7 +393,7 @@ const SpaceBG = (() => {
   const NURSERY_BG = {
     label: 'THE NURSERY',
     blurb: 'A star factory. Hot cores, cold lanes, and a deep field behind it.',
-    base: '#04040a',
+    base: '#030308',                       // empty space must read BLACK, not faintly violet
     D: { star: 0.012, gas: 0.03, mote: 0.075 },
 
     LEVELS: 12,
@@ -413,16 +413,16 @@ const SpaceBG = (() => {
 
     LIGHT: {
       // an emission palette with real COLOUR contrast, not one hue at nine brightnesses
-      OUT: [10, 7, 22],                   // outermost haze, barely there
-      MID: [47, 13, 49],                   // magenta body
-      HOT: [98, 30, 54],                  // H-alpha, dense
+      OUT: [13, 9, 27],                   // outermost haze, barely there
+      MID: [60, 17, 62],                   // magenta body
+      HOT: [125, 38, 69],                  // H-alpha, dense
       /* The top of the GAS ramp is deliberately NOT white. It was [242,214,226] over a band
          starting at t>0.78, and when a density peak covered a wide area the result was a large
          blown-out white patch with the CRT scanlines striping through it. True white belongs only
          to the hot knots and the stars — small, local things. Gas is allowed to be bright; it is
          not allowed to clip. */
-      CORE: [128, 96, 109],               // dense ionized core: bright, and still short of white
-      TEAL: [18, 63, 76],                 // O-III, a genuinely different hue for contrast
+      CORE: [164, 123, 139],               // dense ionized core: bright, and still short of white
+      TEAL: [23, 80, 97],                 // O-III, a genuinely different hue for contrast
       LANE: [3, 2, 7],                     // cold dust, effectively black
     },
 
@@ -438,7 +438,7 @@ const SpaceBG = (() => {
          of 5200 stars, because each one had a neighbour of identical value. Soft things can be
          cheap; points of light cannot. */
       const starCv = mkCv(w, h), stc = starCv.getContext('2d');
-      stc.fillStyle = '#04040a'; stc.fillRect(0, 0, w, h);
+      stc.fillStyle = '#030308'; stc.fillRect(0, 0, w, h);
       const starN = Math.min(9000, Math.round((w * h) / 165));
       for (let i = 0; i < starN; i++) {
         const x = (rnd() * w) | 0, y = (rnd() * h) | 0;
@@ -495,10 +495,10 @@ const SpaceBG = (() => {
           const v = v0 + (wyF(u0, v0) - 0.5) * 0.26;
           // ENVELOPE: the cloud has a shape and falls off to nothing. Gas that covers everything
           // is camo; gas with an edge is a subject.
-          const env = Math.max(0, Math.min(1, (shape(u0, v0) - 0.34) * 2.6));
+          const env = Math.max(0, Math.min(1, (shape(u0, v0) - 0.54) * 2.4));
           if (env <= 0.001) continue;                     // fT/fL/fC stay 0 here
           const dens = d1(u, v) * 0.46 + d2(u, v) * 0.28 + d3(u, v) * 0.17 + d4(u, v) * 0.09;
-          fT[i] = Math.max(0, Math.min(1, (dens - 0.34) * 2.3)) * env;
+          fT[i] = Math.max(0, Math.min(1, (dens - 0.44) * 2.6)) * env;
           fC[i] = Math.max(0, tealF(u * 1.2, v * 1.2) - 0.54) * 2.0;
           fL[i] = Math.max(0, Math.min(1, (lane1(u0 * 1.15, v0 * 1.15) * 0.62 + lane2(u0, v0) * 0.38 - 0.54) * 3.0));
         }
@@ -527,7 +527,7 @@ const SpaceBG = (() => {
         for (let x = 0; x < w; x++) {
           const fx = x * 0.5;
           let t = samp(fT, fx, fy);
-          if (t <= 0.002) { D[p + 3] = 0; p += 4; continue; }
+          if (t <= 0.035) { D[p + 3] = 0; p += 4; continue; }   // thin gas is NOTHING, not a veil
           t = Math.max(0, Math.min(1, Math.round((t + dith(x, y) / LV) * LV) / LV));
           if (t <= 0) { D[p + 3] = 0; p += 4; continue; }
 
@@ -543,7 +543,10 @@ const SpaceBG = (() => {
 
           // DUST LANES: hard, near-black, and they bite INTO the cloud. This is the structure.
           const dark = samp(fL, fx, fy);
-          let alpha = 0.10 + 0.90 * t;                    // thin gas lets the field through
+          /* NO ALPHA FLOOR. It used to be 0.10 + 0.90*t, so every pixel inside the envelope got
+             a 10% violet wash whatever its density — 62% of the frame was faint tinted haze and
+             the starfield never got any clean black back. Gas now fades to actual nothing. */
+          let alpha = t < 0.85 ? t * 1.05 : 0.89 + (t - 0.85) * 0.73;
           if (dark > 0) { col = mix3(col, LT.LANE, dark); alpha = Math.min(1, alpha + dark * 0.55); }
 
           D[p] = col[0]; D[p + 1] = col[1]; D[p + 2] = col[2];
