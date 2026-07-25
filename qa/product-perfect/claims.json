@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "c803c49551a5190428246e3d5ed0b4f27a55a42d",
+    "sourceCommit": "ba57a477ad14c167c3d9d1ef7f09298e6df0291c",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 432130,
-        "sha256": "a18ed0e93ce594423da74ff9c83570ba2312426bc2058c517729380187793148"
+        "bytes": 432143,
+        "sha256": "07dd71a95afc78f877248677183962c951550efb3c12f5317df0b828cbd9d37a"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -633,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 413328,
-        "sha256": "a394f7e575a267a0145f9a3556e9367e8cd3085f2dbbb1301adad2987e3f2c1b"
+        "bytes": 413433,
+        "sha256": "c1be366ee9c34f5d500b5e1ec510561b5f2cc504980b49c9b27c721f21f17883"
       },
       {
         "path": "frontend/app/study.js",
@@ -673,8 +673,8 @@
       },
       {
         "path": "frontend/app/toolprops.js",
-        "bytes": 3223,
-        "sha256": "b1010918bc148547f1eecf207f8b88a0a1a6d181907a07d060fccff582c37c21"
+        "bytes": 3336,
+        "sha256": "49deacb84530b8c40859f94ccd65078ec6d6282c812d71e6f071c9362f3c63b1"
       },
       {
         "path": "frontend/app/topbar.js",
@@ -748,8 +748,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 55697,
-        "sha256": "5e0fa78ec41deea6d2aafbb9731489979bed31d9792974a3be9fdd24d4171754"
+        "bytes": 56666,
+        "sha256": "20040c97ce66e76bb71044627c7e82847e626ea2d04f55476917e9c6bc20496b"
       },
       {
         "path": "frontend/app/windows/logbook.js",
