@@ -245,6 +245,13 @@
     });
   }
   function clamp(s, n) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n).trimEnd() + ' ...' : s; }
+  /* Embed an agent-supplied VALUE in a fixed page expression as a string literal. JSON.stringify covers
+     quotes/backslashes/control chars; U+2028 and U+2029 are legal in JSON but were line terminators in
+     JS before ES2019, so they are escaped explicitly rather than trusted to the engine's edition. */
+  function jsLiteral(v) {
+    var LS = String.fromCharCode(0x2028), PS = String.fromCharCode(0x2029);
+    return JSON.stringify(String(v == null ? '' : v)).split(LS).join('\\u2028').split(PS).join('\\u2029');
+  }
   /* Render the main document's real HTTP outcome for the agent. A non-2xx is NOT an error the tool
      throws on — the page may still be worth reading — but the agent must be told, or it will report an
      error page's contents as the answer. A driver that cannot observe the network says nothing. */
@@ -622,6 +629,9 @@
     // Every mutating action settles before it returns, so the NEXT snapshot/get_text reads the DOM the
     // action produced rather than the one it replaced. This is the fix for the silent corrupter: these
     // three used to return with zero settle time.
+    function center(node) {
+      return { x: node.x + Math.max(1, Math.floor(node.w / 2)), y: node.y + Math.max(1, Math.floor(node.h / 2)) };
+    }
     async function click(node) {
       const c = await connect();
       const x = node.x + Math.max(1, Math.floor(node.w / 2));
@@ -646,6 +656,74 @@
       // Enter/Escape routinely submit or dismiss, so a keypress gets a navigation-sized budget.
       await waitForSettle(c, { budgetMs: settleNavBudgetMs });
       return 'pressed ' + key;
+    }
+    /* Hover is not a nicety: menus, tooltips and disclosure widgets render their real targets only on
+       mouseover, so without it whole navigations are unreachable from a snapshot. */
+    async function hover(node) {
+      const c = await connect();
+      const p = center(node);
+      await c.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: 'none' });
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+      return 'hovered';
+    }
+    /* HTML5 drag-and-drop needs intermediate move events — a press/release pair at two points is
+       ignored by every library that listens for dragover. */
+    async function drag(from, to) {
+      const c = await connect();
+      const a = center(from), b = center(to);
+      await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: a.x, y: a.y, button: 'left', clickCount: 1 });
+      const steps = 6;
+      for (let i = 1; i <= steps; i++) {
+        await c.send('Input.dispatchMouseEvent', {
+          type: 'mouseMoved', button: 'left',
+          x: Math.round(a.x + (b.x - a.x) * i / steps),
+          y: Math.round(a.y + (b.y - a.y) * i / steps)
+        });
+      }
+      await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: b.x, y: b.y, button: 'left', clickCount: 1 });
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+      return 'dragged';
+    }
+    /* A <select> cannot be driven by synthetic clicks — the popup is native chrome, outside the page.
+       Set the value and fire the events a framework listens for. The agent supplies only a VALUE, never
+       code: it is embedded as a JS string literal, so no page script can be composed from tool input. */
+    async function selectOption(node, value) {
+      const p = center(node);
+      const lit = jsLiteral(value);
+      const r = await evalJS(`(() => {
+        const el = document.elementFromPoint(${p.x}, ${p.y});
+        const sel = el && (el.tagName === 'SELECT' ? el : el.closest && el.closest('select'));
+        if (!sel) return { ok: false, reason: 'no <select> at this ref' };
+        const want = ${lit};
+        const opts = Array.from(sel.options || []);
+        const hit = opts.find(o => o.value === want) || opts.find(o => (o.label || o.text || '').trim() === want);
+        if (!hit) return { ok: false, reason: 'no option matching ' + JSON.stringify(want), options: opts.slice(0, 40).map(o => o.value) };
+        sel.value = hit.value;
+        sel.dispatchEvent(new Event('input', { bubbles: true }));
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        return { ok: true, value: hit.value, label: (hit.label || hit.text || '').trim() };
+      })()`);
+      await waitForSettle(await connect(), { budgetMs: settleActionBudgetMs });
+      return r;
+    }
+    /* The viewport was pinned to the launch flag --window-size=1440,900, so mobile layouts and
+       responsive breakpoints were simply unreachable. */
+    async function viewport(width, height, opts) {
+      opts = opts || {};
+      const c = await connect();
+      await c.send('Emulation.setDeviceMetricsOverride', {
+        width: Math.max(1, Math.round(Number(width) || 0)),
+        height: Math.max(1, Math.round(Number(height) || 0)),
+        deviceScaleFactor: Number(opts.scale) > 0 ? Number(opts.scale) : 1,
+        mobile: opts.mobile === true
+      });
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+      return Math.round(Number(width) || 0) + 'x' + Math.round(Number(height) || 0);
+    }
+    async function forward() {
+      await evalJS('history.forward()');
+      await waitForSettle(await connect(), { budgetMs: settleNavBudgetMs, fallbackMs: 500 });
+      return evalJS('location.href');
     }
     async function testInput(action) {
       const a = Object.assign({}, action || {});
@@ -753,7 +831,7 @@
     // actually on the user's screen. Headless mode, or a headless-only binary fallback in
     // a headed request, both read as not visible.
     function visible() { return headed; }
-    return { navigate, snapshot, click, type, press, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
+    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
   }
 
   function makeBrowserSession(deps) {
@@ -863,6 +941,22 @@
     async function click(ref) { return ensureDriver().click(requireRef(ref)); }
     async function type(ref, text) { return ensureDriver().type(requireRef(ref), text); }
     async function press(key) { return ensureDriver().press(key); }
+    // A driver that predates one of these (an injected fake) says so plainly instead of throwing a
+    // TypeError the agent cannot interpret.
+    function driverFn(d, name) {
+      if (typeof d[name] !== 'function') throw new Error('browser.' + name + ' is unavailable in this driver');
+      return d[name].bind(d);
+    }
+    async function hover(ref) { const d = ensureDriver(); return driverFn(d, 'hover')(requireRef(ref)); }
+    async function drag(fromRef, toRef) { const d = ensureDriver(); return driverFn(d, 'drag')(requireRef(fromRef), requireRef(toRef)); }
+    async function selectOption(ref, value) { const d = ensureDriver(); return driverFn(d, 'selectOption')(requireRef(ref), value); }
+    async function viewport(width, height, opts) {
+      const d = ensureDriver();
+      const out = await driverFn(d, 'viewport')(width, height, opts || {});
+      version++;   // a resize relays the page: every ref from the previous layout is now meaningless
+      return out;
+    }
+    async function forward() { const d = ensureDriver(); version++; return driverFn(d, 'forward')(); }
     async function requireLocalDriver() {
       if (!localMode) throw new Error('browser.test_input requires browser.test_navigate to a loopback URL first');
       const d = ensureDriver(false);
@@ -980,7 +1074,7 @@
       const d = driver || null;
       return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
     }
-    return { navigate, snapshot, click, type, press, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
+    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
   }
 
   function makeBrowserTools(deps) {
@@ -1077,6 +1171,21 @@
         async a => ({ content: await session.type(a.ref, a.text), summary: 'typed' })),
       exec('browser.scroll', 'Scroll the page by x/y CSS pixels.', { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } } },
         async a => ({ content: await session.scroll(a.x || 0, a.y || 0), summary: 'scrolled' }), false),
+      exec('browser.hover', 'Move the pointer over an element by ref from the latest browser.snapshot. Menus, tooltips and disclosure widgets only render their real targets on hover — take a fresh snapshot afterwards to see what appeared.', { type: 'object', required: ['ref'], properties: { ref: { type: 'string' } } },
+        async a => ({ content: await session.hover(a.ref), summary: 'hovered' }), false),
+      exec('browser.select', 'Choose an option in a <select> dropdown by ref. Pass the option value OR its visible label. A native dropdown cannot be driven by clicking — its popup is browser chrome, not part of the page.', { type: 'object', required: ['ref', 'value'], properties: { ref: { type: 'string' }, value: { type: 'string' } } },
+        async a => {
+          const r = await session.select(a.ref, a.value);
+          if (r && r.ok) return { content: 'Selected "' + (r.label || r.value) + '".', summary: 'selected' };
+          const opts = r && r.options && r.options.length ? ' Available values: ' + r.options.join(', ') : '';
+          return { content: 'Could not select: ' + ((r && r.reason) || 'unknown') + '.' + opts, summary: 'not selected' };
+        }),
+      exec('browser.drag', 'Drag one element onto another (both refs from the latest browser.snapshot). Sends the intermediate move events HTML5 drag-and-drop listeners require.', { type: 'object', required: ['from', 'to'], properties: { from: { type: 'string' }, to: { type: 'string' } } },
+        async a => ({ content: await session.drag(a.from, a.to), summary: 'dragged' })),
+      exec('browser.viewport', 'Resize the page viewport, e.g. to check a mobile layout (375x812) or a wide desktop one. Element refs from earlier snapshots stop being valid — take a fresh browser.snapshot after resizing.', { type: 'object', required: ['width', 'height'], properties: { width: { type: 'number' }, height: { type: 'number' }, mobile: { type: 'boolean' }, scale: { type: 'number' } } },
+        async a => ({ content: 'Viewport is now ' + await session.viewport(a.width, a.height, { mobile: a.mobile === true, scale: a.scale }) + ' — take a fresh browser.snapshot.', summary: 'viewport' }), false),
+      exec('browser.forward', 'Go forward in browser history (the counterpart of browser.back).', { type: 'object', properties: {} },
+        async () => ({ content: 'Browser moved forward to ' + await session.forward(), summary: 'forward' }), false),
       exec('browser.back', 'Go back in browser history.', { type: 'object', properties: {} },
         async () => ({ content: 'Browser went back to ' + await session.back(), summary: 'back' }), false),
       exec('browser.press', 'Press a keyboard key in the browser.', { type: 'object', required: ['key'], properties: { key: { type: 'string' } } },
@@ -1140,5 +1249,5 @@
     return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
   }
 
-  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, SETTLE_BOOTSTRAP, SETTLE_PROBE, SETTLE_QUIET_POLLS, describeResponse, CHROME_CANDIDATES } };
+  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, SETTLE_BOOTSTRAP, SETTLE_PROBE, SETTLE_QUIET_POLLS, describeResponse, jsLiteral, CHROME_CANDIDATES } };
 });

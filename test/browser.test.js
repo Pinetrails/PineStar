@@ -18,7 +18,7 @@ async function rejects(p, re, msg) {
 }
 
 function fakeDriver() {
-  const log = { clicked: [], typed: [], pressed: [], scrolled: [], navigated: [], testInput: [], evaluated: [], states: [] };
+  const log = { clicked: [], typed: [], pressed: [], scrolled: [], navigated: [], testInput: [], evaluated: [], states: [], hovered: [], dragged: [], selected: [], viewports: [] };
   let pageText = 'Example page text';
   return {
     log,
@@ -34,6 +34,11 @@ function fakeDriver() {
     click: async node => { log.clicked.push(node.text); return 'clicked ' + node.text; },
     type: async (node, text) => { log.typed.push([node.text, text]); pageText += ' ' + text; return 'typed ' + text; },
     press: async key => { log.pressed.push(key); return 'pressed ' + key; },
+    hover: async node => { log.hovered.push(node.text); return 'hovered'; },
+    drag: async (a, b) => { log.dragged.push([a.text, b.text]); return 'dragged'; },
+    selectOption: async (node, value) => { log.selected.push([node.text, value]); return value === 'nope' ? { ok: false, reason: 'no option matching "nope"', options: ['a', 'b'] } : { ok: true, value, label: value.toUpperCase() }; },
+    viewport: async (w, h, o) => { log.viewports.push([w, h, o && o.mobile === true]); return w + 'x' + h; },
+    forward: async () => 'https://example.com/fwd',
     scroll: async (x, y) => { log.scrolled.push([x, y]); return 'scrolled ' + y; },
     back: async () => 'https://example.com/back',
     getText: async () => pageText,
@@ -65,10 +70,11 @@ function fakeDriver() {
   const B = makeBrowserTools({ driver, vision: async ({ question }) => 'vision answer: ' + question });
   const names = B.tools.map(t => t.name).sort();
   A.eq(names, [
-    'browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.get_text',
-    'browser.login', 'browser.navigate', 'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.snapshot',
+    'browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.drag',
+    'browser.forward', 'browser.get_text', 'browser.hover', 'browser.login', 'browser.navigate',
+    'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot',
     'browser.test_input', 'browser.test_navigate', 'browser.test_snapshot', 'browser.test_state',
-    'browser.type', 'browser.vision'
+    'browser.type', 'browser.viewport', 'browser.vision'
   ], 'browser action surface is complete');
   A.eq(B.tools.find(t => t.name === 'browser.click').requiresConsent, true, 'click is consent-gated');
   A.eq(B.tools.find(t => t.name === 'browser.snapshot').requiresConsent, false, 'snapshot is read-only');
@@ -430,6 +436,64 @@ function fakeDriver() {
       A.ok(Date.now() - t0 >= 850, 'an unmeasurable page still gets the legacy 900ms settle');
       await rig.driver.close();
     }
+  }
+
+  // ---- THE REST OF THE TABLE-STAKES ACTION SET -----------------------------------------------
+  // hover/select/drag/viewport/forward were all missing outright: menus that only open on hover were
+  // unreachable, a native <select> cannot be driven by clicking (its popup is browser chrome, not
+  // page content), and the viewport was pinned to the --window-size launch flag.
+  {
+    const d = fakeDriver();
+    const X = makeBrowserTools({ driver: d });
+    const tool = n => X.tools.find(t => t.name === n);
+    const snap = await X.session.snapshot();
+    const [btn, box] = snap;
+
+    await tool('browser.hover').run({ ref: btn.ref }, {});
+    A.eq(d.log.hovered, ['Search'], 'hover reaches the element by ref');
+
+    await tool('browser.drag').run({ from: btn.ref, to: box.ref }, {});
+    A.eq(d.log.dragged, [['Search', 'Query']], 'drag carries both endpoints');
+
+    const sel = await tool('browser.select').run({ ref: box.ref, value: 'uk' }, {});
+    A.ok(/Selected "UK"/.test(sel.content), 'select reports the chosen option by its label');
+    const bad = await tool('browser.select').run({ ref: box.ref, value: 'nope' }, {});
+    A.ok(/Could not select/.test(bad.content), 'a missing option is reported, not silently ignored');
+    A.ok(/Available values: a, b/.test(bad.content), 'and the real options are offered back');
+
+    const vp = await tool('browser.viewport').run({ width: 375, height: 812, mobile: true }, {});
+    A.eq(d.log.viewports, [[375, 812, true]], 'viewport passes width/height/mobile to the driver');
+    A.ok(/fresh browser\.snapshot/.test(vp.content), 'resizing tells the agent its refs are now stale');
+    // A resize relays the page, so every earlier ref must be dead rather than silently mis-aimed.
+    await rejects(X.session.click(btn.ref), /stale browser ref/, 'refs from before a resize are invalidated');
+
+    const fwd = await tool('browser.forward').run({}, {});
+    A.ok(/example\.com\/fwd/.test(fwd.content), 'forward completes the history pair with back');
+
+    // Consent posture: reading/looking is free, mutating the page is gated.
+    A.eq(tool('browser.hover').requiresConsent, false, 'hover is not consent-gated (it mutates nothing)');
+    A.eq(tool('browser.viewport').requiresConsent, false, 'resizing the viewport is not consent-gated');
+    A.eq(tool('browser.select').requiresConsent, true, 'select changes form state, so it is consent-gated');
+    A.eq(tool('browser.drag').requiresConsent, true, 'drag is consent-gated');
+
+    // A driver that predates these says so plainly rather than throwing a raw TypeError.
+    const old = fakeDriver(); delete old.hover;
+    await rejects(makeBrowserTools({ driver: old }).session.hover('b1'), /unknown browser ref|unavailable in this driver/, 'a driver without hover reports it honestly');
+  }
+
+  // AGENT INPUT NEVER BECOMES PAGE CODE: browser.select embeds the requested value as a string
+  // literal in a fixed expression, so a crafted value cannot compose script.
+  {
+    A.eq(T.jsLiteral('plain'), '"plain"', 'a plain value is a plain literal');
+    A.eq(T.jsLiteral('a"b'), '"a\\"b"', 'quotes are escaped');
+    // The property that matters: whatever the agent supplies, evaluating the literal yields the SAME
+    // STRING BACK — it is data, never code. eval here is the point of the assertion.
+    for (const evil of ['"}); alert(1); (() => ({a: "', '\\"; globalThis.pwned = 1; //', '</script>', '\n\r\t']) {
+      A.eq(eval(T.jsLiteral(evil)), evil, 'break-out attempt round-trips as data: ' + JSON.stringify(evil));
+    }
+    const ls = T.jsLiteral('x' + String.fromCharCode(0x2028) + 'y');
+    A.ok(ls.indexOf('\\u2028') > 0, 'U+2028 is escaped (legal in JSON, a line terminator in older JS)');
+    A.ok(ls.indexOf(String.fromCharCode(0x2028)) < 0, 'and the raw separator never reaches the page expression');
   }
 
   // ---- SCREENSHOTS ARE NO LONGER WRITE-ONLY --------------------------------------------------
