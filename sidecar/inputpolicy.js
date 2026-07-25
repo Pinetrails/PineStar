@@ -16,6 +16,14 @@ const IMPACTS = Object.freeze({
   WORKSPACE_PROCESS: 'workspace-process',
   MEDIA_CONTROL: 'media-control',
   EXTERNAL_SERVICE: 'external-service',
+  // A network call that SPENDS one of the Commander's stored credentials (web_request). Deliberately its
+  // own class, between external-service and external-unknown: unlike web_fetch it can act as the user on a
+  // third-party account, but unlike shell.exec it grants NO host-process capability — no spawn, no
+  // filesystem, no arbitrary binary. That is why it may run unattended where a shell may not; the blast
+  // radius is exactly "one HTTPS request to a host, using a key the Commander explicitly approved for
+  // unattended use". The per-key grant is enforced at the tool (servicekeys.resolveForRequest), which is
+  // the only layer that knows WHICH key a given call spends.
+  EXTERNAL_CREDENTIALED: 'external-credentialed',
   EXTERNAL_UNKNOWN: 'external-unknown',
   VISIBLE_DESKTOP: 'visible-desktop',
   PHYSICAL_INPUT: 'physical-input'

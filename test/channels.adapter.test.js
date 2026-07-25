@@ -166,8 +166,68 @@ async function run() {
     A.eq(inbox.length, 0, 'backlog is discarded, not dispatched');
     const byChat = {}; for (const s of t.sends) byChat[s.chatId] = s.text;
     A.eq(Object.keys(byChat).sort(), ['c', 'g'], 'notice goes to the owner DM + whitelisted group only (stranger DM skipped)');
-    A.ok(/I was offline — 2 messages arrived/.test(byChat['c']), 'owner DM notice carries the real count (2, plural)');
-    A.ok(/I was offline — 1 message arrived/.test(byChat['g']), 'group notice carries the real count (1, singular)');
+    // The notice states NO count on purpose. In production getUpdates({offset:-1}) returns only the LAST
+    // pending update, yet advancing past it discards every earlier one too — so any tally would under-report
+    // what was actually dropped. It asks for a resend instead, which is true whatever the real number was.
+    A.ok(/I was offline/.test(byChat['c']) && /resend/i.test(byChat['c']), 'owner DM notice says it was offline and asks for a resend');
+    A.ok(/I was offline/.test(byChat['g']) && /resend/i.test(byChat['g']), 'group notice says the same');
+    A.ok(!/\d+ messages? arrived/.test(byChat['c']), 'and claims NO count it cannot actually prove');
+    await a.disconnect();
+  }
+
+  // ---- B4c. FIRST-RUN SILENCE: backlog discarded while the owner was still UNCLAIMED ----
+  // Ownership must never be claimed from stale backlog, and a stranger who found a discoverable bot must never
+  // get a reply — so the apology cannot be sent at connect. It is DEFERRED until that chat proves it is the
+  // owner by sending a live message. Before this, a first-time user who messaged a stopped bot got pure
+  // silence, which is indistinguishable from a broken bot (hit twice during the 2026-07-24 live walk).
+  {
+    // (i) nobody has proven ownership yet -> the apology is WITHHELD, not sent into the dark.
+    // The queue is exhausted after the prime batch, so the poll parks and no message can ever be admitted.
+    const t = fakeTransport([
+      [{ id: 400, chat: 'c', type: 'dm', user: 'u', text: 'sent while it was down', mid: '1' }]
+    ]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', dropPendingOnConnect: true,
+      onInbound: () => {}, clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 8; i++) await tick();
+    A.eq(t.sends.length, 0, 'NOTHING is sent at connect — no chat has proven it is the owner');
+    await a.disconnect();
+  }
+  {
+    // (ii) the same chat then sends a LIVE message, which claims ownership -> the apology is paid, exactly once.
+    const inbox = [];
+    const t = fakeTransport([
+      [{ id: 400, chat: 'c', type: 'dm', user: 'u', text: 'sent while it was down', mid: '1' }],
+      [{ id: 401, chat: 'c', type: 'dm', user: 'u', text: 'live one', mid: '2' }],
+      [{ id: 402, chat: 'c', type: 'dm', user: 'u', text: 'live two', mid: '3' }]
+    ]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', dropPendingOnConnect: true,
+      onInbound: m => inbox.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 12 && inbox.length < 2; i++) await tick();
+    A.eq(inbox.map(m => m.text), ['live one', 'live two'], 'both live messages are admitted (the first claims ownership)');
+    for (let i = 0; i < 8 && !t.sends.length; i++) await tick();
+    A.eq(t.sends.length, 1, 'the deferred apology fires ONCE, on the message that proved ownership — not per message');
+    A.eq(t.sends[0].chatId, 'c', 'and goes to that chat');
+    A.ok(/I was offline/.test(t.sends[0].text) && /resend/i.test(t.sends[0].text), 'carrying the offline notice');
+    await a.disconnect();
+  }
+
+  // ---- B4d. a STRANGER whose backlog was dropped is never answered, even after someone else claims ----
+  {
+    const inbox = [];
+    const t = fakeTransport([
+      [{ id: 500, chat: 'evil', type: 'dm', user: 'stranger', text: 'stale', mid: '1' }],
+      [{ id: 501, chat: 'c', type: 'dm', user: 'u', text: 'owner here', mid: '2' }],
+      []
+    ]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', dropPendingOnConnect: true,
+      onInbound: m => inbox.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    for (let i = 0; i < 10 && !inbox.length; i++) await tick();
+    A.eq(inbox.map(m => m.text), ['owner here'], 'the owner claims the bot');
+    for (let i = 0; i < 6; i++) await tick();
+    A.eq(t.sends.filter(s => s.chatId === 'evil').length, 0, 'the stranger is NEVER answered — owner-only silence holds');
     await a.disconnect();
   }
   {

@@ -1610,6 +1610,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       CONFIG_FILES.map(f => fileCard(a, f)).join('') +
       personaCard(a) +
       modelCard(a) +
+      approvalCard(a) +
       workshopCard(a) +
       agCommand(a);   // SKIN swap + DANGER delete — lives at the END of CONFIG, off the BRIEF landing tab
   }
@@ -1634,6 +1635,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     '</div>';
   }
 
+  // Per-agent APPROVAL posture (dossier CONFIG card): the same ASK / FULL ACCESS choice as the create screen,
+  // changeable any time — until now the ONLY post-create path was the /yolo slash command in COMMS, which most
+  // Commanders never find (a creation-time picker with no live-app twin — the codex-sign-in escape class).
+  // Applies via access.config.setApproval → pushRoster, so the sidecar's per-run consent gate flips with it.
+  function approvalCard(a) {
+    const full = !!(a && a.approvalMode === 'full');
+    const chip = (id, label, desc, sel) =>
+      '<button type="button" class="ov-vchip' + (sel ? ' sel' : '') + '" data-approval="' + id + '" data-name="' + esc(label) + '" title="' + esc(desc) + '" aria-pressed="' + (sel ? 'true' : 'false') + '">' + esc(label) + '</button>';
+    return '<div class="cf-card">' +
+      '<div class="cf-head"><span class="cf-file">✋ approval</span><span class="cf-badge">PER-AGENT</span></div>' +
+      '<div class="cf-desc">Whether this agent stops to check with you before it writes, runs, or reaches out — the same choice you made at its creation. Change it any time (<code>/yolo</code> in COMMS is the shortcut).</div>' +
+      '<div class="ov-vchips" id="ag-approval-chips">' +
+        chip('ask', 'ASK FOR APPROVAL', 'stops to check with you before it writes, runs, or reaches out', !full) +
+        chip('full', 'FULL ACCESS', 'runs everything itself — no approval prompts', full) +
+      '</div>' +
+      '<div id="ag-approval-msg" class="msg"></div>' +
+    '</div>';
+  }
+
   // Per-agent PERSONALITY (dossier CONFIG card): the same archetype chips as the create screen, changeable any
   // time — until now the ONLY post-create path was /personality in COMMS, which most Commanders never find.
   // Chips reuse the genesis .ov-vchip vocabulary; the pick applies via access.config.setPersona (App recomposes
@@ -1650,7 +1670,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="cf-head"><span class="cf-file">◉ personality</span><span class="cf-badge">PER-AGENT</span></div>' +
       '<div class="cf-desc">How this agent talks — in chat, delivered work, and its ambient lines on the floor. Changes the delivery only, never the work (or the station voice). Pick one to apply it immediately.</div>' +
       '<div class="ov-vchips" id="ag-persona-chips">' + chips + '</div>' +
-      (p ? '<div class="ov-vpreview"><div class="vp-quote">“' + esc(p.sampleVoiceReply || p.cardLine || '') + '”</div><div class="vp-meta">' + esc(p.name) + '</div></div>' : '') +
+      // sample-reply preview REMOVED (Andrew, 2026-07-20) — the sel chip + vibe tooltip carry the choice.
       '<div id="ag-persona-msg" class="msg"></div>' +
     '</div>';
   }
@@ -1764,6 +1784,34 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const ok = access.config.setPersona(a && a.id, id);
         if (ok === false) { setPMsg('could not change personality', false); sfx('bad'); return; }
         notify('personality → ' + (chip.dataset.name || id).toUpperCase() + (id === 'unhinged' ? ' — it swears, for real' : ''), 'good');
+        sfx('click'); rerender('agents');
+      }));
+    }
+    // APPROVAL chips — apply via access.config.setApproval, then rerender so the sel chip reflects recorded
+    // truth. FULL ACCESS is the dangerous pick, so it keeps the house two-press confirm (the personality
+    // UNHINGED pattern): press one names what it means (warn tint), press two applies; anything else disarms.
+    const apWrap = body.querySelector('#ag-approval-chips');
+    if (apWrap) {
+      const apMsg = body.querySelector('#ag-approval-msg');
+      const setApMsg = (t, ok) => { if (apMsg) { apMsg.textContent = t || ''; apMsg.className = 'msg' + (ok ? ' ok' : ''); } };
+      let apArmed = null;
+      const apDisarm = () => { if (apArmed) { apArmed.textContent = apArmed.dataset.name; apArmed.classList.remove('arm'); apArmed = null; } };
+      const curMode = (a && a.approvalMode === 'full') ? 'full' : 'ask';
+      apWrap.querySelectorAll('.ov-vchip').forEach(chip => chip.addEventListener('click', () => {
+        const id = chip.dataset.approval;
+        if (!id || id === curMode) { apDisarm(); return; }
+        if (id === 'full' && apArmed !== chip) {
+          apDisarm(); apArmed = chip;
+          chip.classList.add('arm');
+          chip.textContent = 'FULL ACCESS — SURE? no approval prompts';
+          sfx('click');
+          return;
+        }
+        apDisarm();
+        if (!(access.config && access.config.setApproval)) { setApMsg('approval change unavailable', false); sfx('bad'); return; }
+        const ok = access.config.setApproval(a && a.id, id);
+        if (ok === false) { setApMsg('could not change approval', false); sfx('bad'); return; }
+        notify(id === 'full' ? '⚡ ' + ((a && a.name) || 'agent') + ' now runs with FULL ACCESS — no approval prompts' : '✋ ' + ((a && a.name) || 'agent') + ' will ask before risky moves again', id === 'full' ? 'warn' : 'good');
         sfx('click'); rerender('agents');
       }));
     }
@@ -2105,6 +2153,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     { icon: '▣', name: 'COMPUTE',     tools: 'model.chat',               cap: null },
     { icon: '⌕', name: 'WEB SEARCH',  tools: 'web_search',               cap: 'dish' },
     { icon: '⇩', name: 'WEB FETCH',   tools: 'web_fetch',                cap: 'dish' },
+    { icon: '⇄', name: 'CALL AN API', tools: 'web_request',              cap: 'dish', consent: true },
     { icon: '▤', name: 'READ FILES',  tools: 'fs.read · fs.list',        cap: 'cabinet' },
     { icon: '✎', name: 'WRITE FILES', tools: 'fs.write · append · edit', cap: 'cabinet', consent: true },
     { icon: '◉', name: 'MEMORY',      tools: 'notebook.read · write',    cap: 'notebook' },
@@ -2785,7 +2834,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // hasStoredCredential is the honest getter; fall back to the older signals if an old harness lacks it.
       const set = h.hasStoredCredential ? h.hasStoredCredential(provider)
         : ((h.configured && h.configured(provider)) || !!(h.getKey && h.getKey(provider)));
-      if (set) out.push({ provider, key: h.getKey ? h.getKey(provider) : '', baseUrl: h.getBaseUrl ? h.getBaseUrl(provider) : '', model: (h.getModel && h.getModel()) || '', local: provider === 'ollama' });
+      // A KEYLESS custom endpoint (vLLM / LM Studio / any no-auth OpenAI-compatible server) still earns its row:
+      // the ✎ STATION LINK editor lives ONLY on this row, so gating it on a stored key froze the endpoint at
+      // whatever onboarding stored — and REMOVE-ing the last custom key stranded a still-active endpoint with no
+      // editor. hasStoredCredential('custom') stays false for it (an endpoint is configuration, not a credential).
+      const keylessEp = provider === 'custom' && !!(h.getBaseUrl && h.getBaseUrl('custom'));
+      if (set || keylessEp) out.push({ provider, key: h.getKey ? h.getKey(provider) : '', baseUrl: h.getBaseUrl ? h.getBaseUrl(provider) : '', model: (h.getModel && h.getModel()) || '', local: provider === 'ollama' });
     }
     addProvider(active);
     if (active !== 'openrouter') addProvider('openrouter');
@@ -2843,10 +2897,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // NO-KEY cards that accept a key get an inline, collapsible paste-and-save row so the user never has to hunt
       // for where keys live. It reuses the SAME save path (Harness.setKey) as the key list below — no duplicate logic.
       const wantsInline = p.live && !credentialSaved && providerAcceptsKey(p.id);
-      // A never-signed-in device-code provider (grok/kimi) gets its FIRST sign-in right on the card — these have
-      // no connect-screen block (codex does), so without this button the ⏼ RE-SIGN-IN row below is unreachable:
-      // that row only exists once a live or known-dead sign-in exists. Same shared engine, card-local inline box.
-      const wantsOAuthSignin = p.live && OAUTH_EXTRA.indexOf(p.id) !== -1 && !credentialSaved && !codexDead;
+      // A never-signed-in device-code provider (codex/grok/kimi) gets its FIRST sign-in right on the card.
+      // Codex is NOT exempt: its connect-screen block only exists on the overseer/brain screen, so after a
+      // ✕ DISCONNECT (or on a machine that never signed in there) this button is the ONLY reachable sign-in —
+      // without it the row reads NOT SIGNED IN with zero recovery (the 2026-07-21 user-reported escape).
+      // The ⏼ RE-SIGN-IN row below can't cover it: that row only exists once a live/known-dead sign-in exists.
+      const wantsOAuthSignin = p.live && isOAuthProvider(p.id) && !credentialSaved && !codexDead;
       return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
         '<span class="conn-dot"></span>' +
         '<div class="prov-main">' +
@@ -3041,6 +3097,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             onConnected: () => {
               // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
               codexStatusKnown = { connected: true, expired: false, reason: '' };
+              if (typeof Harness !== 'undefined' && Harness.setDesktopConfigured) Harness.setDesktopConfigured('codex', true);   // desktop map learns mid-session (genesis feeds it; Settings must too)
               notify('✓ reconnected ChatGPT — your agents can run on your subscription again', 'good');
               if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
               if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
@@ -3055,6 +3112,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const drop = (typeof CodexSignIn !== 'undefined') ? CodexSignIn.logout() : Harness.api.post('/api/auth/codex/logout').catch(() => {});
           Promise.resolve(drop).then(() => {
             codexStatusKnown = { connected: false, expired: false, reason: '' };   // the sidecar just confirmed the drop
+            if (typeof Harness !== 'undefined' && Harness.setDesktopConfigured) Harness.setDesktopConfigured('codex', false);
             notify('disconnected ChatGPT — sign in again anytime from PROVIDERS', 'warn');
             sfx('bad');
             if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
@@ -3089,6 +3147,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               onConnected: () => {
                 // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
                 oauthStatus[pid] = { connected: true, expired: false, reason: '' };
+                if (typeof Harness !== 'undefined' && Harness.setDesktopConfigured) Harness.setDesktopConfigured(pid, true);   // desktop map learns mid-session (genesis feeds it; Settings must too)
                 notify('✓ reconnected ' + provName(pid) + ' — your agents can run on your subscription again', 'good');
                 if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
                 if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
@@ -3103,6 +3162,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const drop = engine ? engine.logout() : Harness.api.post('/api/auth/' + pid + '/logout').catch(() => {});
           Promise.resolve(drop).then(() => {
             oauthStatus[pid] = { connected: false, expired: false, reason: '' };   // the sidecar just confirmed the drop
+            if (typeof Harness !== 'undefined' && Harness.setDesktopConfigured) Harness.setDesktopConfigured(pid, false);
             notify('disconnected ' + provName(pid) + ' — sign in again anytime from PROVIDERS', 'warn');
             sfx('bad');
             if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
@@ -3117,12 +3177,20 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
           const provider = b.dataset.provider || activeProv();
-          if (h.setKey) h.setKey(v, provider);
-          invalidateProviderHealth(provider);
-          notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
-          if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // clear the dock's no-key warning the instant a key lands
-          if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();             // …and the world's keyless-brain banner
-          rerender('settings');
+          // success UI waits for the PROVEN store: on desktop setKey resolves only after the keychain write lands
+          // (browser localStorage resolves immediately). The old fire-and-forget toasted "✓ stored in your OS
+          // keychain" over a rejected write — a keyless station that claimed connected with no re-entry hint.
+          Promise.resolve(h.setKey ? h.setKey(v, provider) : null).then(() => {
+            invalidateProviderHealth(provider);
+            notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
+            if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // clear the dock's no-key warning the instant a key lands
+            if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();             // …and the world's keyless-brain banner
+            rerender('settings');
+          }).catch(() => {
+            notify('✕ could not store the ' + provName(provider) + ' key in your OS keychain — unlock it and try again', 'bad');
+            sfx('bad');
+            rerender('settings');
+          });
           return;
         }
         const i = +b.dataset.i, row = connectedKeys()[i];
@@ -3162,14 +3230,27 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           const inp = body.querySelector('#key-in-' + i);
           const v = inp ? inp.value.trim() : '';
           if (!v) { sfx('bad'); return; }
-          if (h.setKey) h.setKey(v, row.provider);
-          invalidateProviderHealth(row.provider);
-          notify('✓ updated ' + provName(row.provider) + ' API key — ' + keyStoreClause(), 'good');
-          if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // keep the dock's no-key warning honest after an edit
-          if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
-          rerender('settings');
+          // same proven-store contract as the add path: no success toast over a rejected keychain write.
+          Promise.resolve(h.setKey ? h.setKey(v, row.provider) : null).then(() => {
+            invalidateProviderHealth(row.provider);
+            notify('✓ updated ' + provName(row.provider) + ' API key — ' + keyStoreClause(), 'good');
+            if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();   // keep the dock's no-key warning honest after an edit
+            if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+            rerender('settings');
+          }).catch(() => {
+            notify('✕ could not store the ' + provName(row.provider) + ' key in your OS keychain — unlock it and try again', 'bad');
+            sfx('bad');
+            rerender('settings');
+          });
         } else if (act === 'rm') {
-          if (b.dataset.armed) { if (h.setKey) h.setKey('', row.provider); invalidateProviderHealth(row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect(); if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh(); sfx('bad'); rerender('settings'); return; }
+          // a KEYLESS custom row has no key to clear — its REMOVE disconnects the endpoint itself (setBaseUrl('')),
+          // otherwise the armed confirm would "remove" nothing and the row would immortally re-render.
+          const keylessCustomRm = row.provider === 'custom' && !row.key && !!row.baseUrl;
+          if (b.dataset.armed) {
+            if (keylessCustomRm && h.setBaseUrl) { h.setBaseUrl('', 'custom'); notify('removed the custom endpoint — add it again anytime from the CUSTOM card', 'warn'); }
+            else { if (h.setKey) h.setKey('', row.provider); notify('removed ' + provName(row.provider) + ' key — paste a new one here to reconnect', 'warn'); }
+            invalidateProviderHealth(row.provider); if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect(); if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh(); sfx('bad'); rerender('settings'); return;
+          }
           // Arm: make the destructive state impossible to miss — filled --bad button + pulse, red hairline on the row,
           // and an inline "click again to confirm" hint. Disarms after 5s, restoring the calm state.
           const rowEl = b.closest('.key-row');
@@ -3200,13 +3281,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const v = inp ? inp.value.trim() : '';
       if (!v) { sfx('bad'); if (inp) inp.focus(); return; }
       if (!h || !h.setKey) { sfx('bad'); return; }
-      h.setKey(v, provider);
-      invalidateProviderHealth(provider);
-      notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
-      if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
-      if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
-      sfx('click');
-      rerender('settings');
+      // same proven-store contract as the key-list paths: success UI only after setKey resolves.
+      Promise.resolve(h.setKey(v, provider)).then(() => {
+        invalidateProviderHealth(provider);
+        notify('✓ connected ' + provName(provider) + ' API key — ' + keyStoreClause(), 'good');
+        if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+        if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
+        sfx('click');
+        rerender('settings');
+      }).catch(() => {
+        notify('✕ could not store the ' + provName(provider) + ' key in your OS keychain — unlock it and try again', 'bad');
+        sfx('bad');
+        rerender('settings');
+      });
     };
     body.querySelectorAll('.prov-card[data-provider]').forEach(card => {
       const activate = () => {
@@ -3214,6 +3301,26 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const p = card.dataset.provider;
         if (!h || !p || !h.setProv) return;
         h.setProv(p);
+        // MODEL RECONCILE (subscription providers): the model slug is GLOBAL, so switching to codex/grok/kimi
+        // with the previous provider's model (e.g. anthropic/claude-…) streams a foreign id to the new endpoint
+        // and bounces the first run while the card reads SIGNED IN. Genesis default-fills from the provider's
+        // catalog (loadOAuthModels); this is that same reconcile for the in-station switch. Keyed providers are
+        // untouched tonight (their catalogs come from provider probes, not /api/auth/<pid>/models).
+        if (isOAuthProvider(p) && typeof fetch === 'function') {
+          fetch('/api/auth/' + p + '/models', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(j => {
+            const list = (j && Array.isArray(j.models)) ? j.models : [];
+            const ids = list.map(m => String((m && m.id) || m || '')).filter(Boolean);
+            const cur = (h.getModel && h.getModel()) || '';
+            if (!ids.length || ids.indexOf(cur) !== -1) return;     // no catalog truth, or already valid — leave it
+            if ((h.getProv && h.getProv()) !== p) return;           // pick moved on — don't clobber
+            const def = (j && j.default) || ids[0];
+            if (!def || !h.setModel) return;
+            h.setModel(def);
+            notify('model → ' + def + ' (from the ' + provName(p) + ' catalog — your old model belongs to another provider)', 'good');
+            if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
+            rerender('settings');
+          }).catch(() => {});
+        }
         notify('selected ' + provName(p) + ' provider', 'good');
         sfx('click');
         rerender('settings');
@@ -3244,11 +3351,17 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           },
           onConnected: () => {
             // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
-            oauthStatus[pid] = { connected: true, expired: false, reason: '' };
-            notify('✓ signed in to ' + provName(pid) + ' — your agents can run on your subscription', 'good');
+            // codex keeps its own literal status state (source-lock pinned); grok/kimi live in the shared cache.
+            if (pid === 'codex') { codexStatusKnown = { connected: true, expired: false, reason: '' }; refreshCodexConnectionStatus(); }
+            else { oauthStatus[pid] = { connected: true, expired: false, reason: '' }; refreshOAuthStatus(pid); }
+            if (typeof Harness !== 'undefined' && Harness.setDesktopConfigured) Harness.setDesktopConfigured(pid, true);   // desktop map learns mid-session (genesis feeds it; Settings must too)
+            // honest claim: runs ride the ACTIVE provider. A sign-in on a non-active card must say the extra
+            // step, not promise "your agents can run on your subscription" while runs continue elsewhere.
+            notify(activeProv() === pid
+              ? '✓ signed in to ' + provName(pid) + ' — your agents can run on your subscription'
+              : '✓ signed in to ' + provName(pid) + ' — click its card to make it your active brain', 'good');
             if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
             if (typeof KeyCTA !== 'undefined' && KeyCTA.refresh) KeyCTA.refresh();
-            refreshOAuthStatus(pid);   // re-read the durable status (persistError etc.) behind the repaint
             rerender('settings');
           }
         });

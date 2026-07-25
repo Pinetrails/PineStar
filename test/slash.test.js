@@ -8,15 +8,20 @@ const S = require('../sidecar/slash.js');
   const cat = S.catalog();
   const names = cat.commands.map(c => c.name).sort();
   const required = [
-    'agents', 'background', 'blueprint', 'branch', 'bundles', 'clear', 'compress', 'copy', 'cron',
-    'debug', 'fast', 'goal', 'help', 'history', 'insights', 'memory', 'model', 'new', 'personality', 'queue',
-    'reasoning', 'reload-mcp', 'reload-skills', 'resume', 'retry', 'save', 'skills',
+    'agents', 'away', 'background', 'blueprint', 'branch', 'bundles', 'clear', 'compress', 'copy', 'cron',
+    'debug', 'fast', 'goal', 'help', 'history', 'insights', 'loop', 'memory', 'model', 'new', 'personality', 'queue',
+    'reasoning', 'reload-mcp', 'reload-skills', 'resume', 'retry', 'routine', 'save', 'skills',
     'status', 'steer', 'stop', 'subgoal', 'suggestions', 'title', 'tools', 'undo',
     'usage', 'version', 'voice', 'whoami', 'yolo'
   ];
   A.eq(names, required.slice().sort(), 'catalog exposes the built-in workflow commands');
   A.ok(cat.commands.every(c => c.source === 'builtin'), 'catalog marks built-ins');
-  A.ok(cat.commands.every(c => c.dispatch === 'client'), 'catalog commands dispatch to client directives');
+  // dispatch is now a two-valued contract: 'client' (browser performs it) or 'server' (the sidecar executes it
+  // and returns a say directive). Anything else would reach a surface that has no way to run it.
+  A.ok(cat.commands.every(c => c.dispatch === 'client' || c.dispatch === 'server'), 'catalog commands declare a known dispatch');
+  A.eq(cat.commands.filter(c => c.dispatch === 'server').map(c => c.name).sort(), ['away', 'routine', 'tools', 'usage'], 'server-dispatched commands are exactly the sidecar-executed ones');
+  A.ok(cat.commands.find(c => c.name === 'away').aliases.indexOf('build-away') >= 0, 'away keeps the original /build-away name as an alias');
+  A.ok(cat.commands.find(c => c.name === 'routine').argsHint.indexOf('add') >= 0, 'routine publishes its argument shape');
   A.ok(cat.commands.find(c => c.name === 'new').aliases.indexOf('reset') >= 0, 'new exposes /reset alias');
   A.ok(cat.commands.find(c => c.name === 'branch').aliases.indexOf('fork') >= 0, 'branch exposes /fork alias');
   A.ok(cat.commands.find(c => c.name === 'queue').aliases.indexOf('q') >= 0, 'queue exposes /q alias');
@@ -87,6 +92,20 @@ const S = require('../sidecar/slash.js');
   const r = S.dispatch('/nope');
   A.eq(r.ok, false, 'unknown command is not ok');
   A.eq(r.status, 404, 'unknown command asks endpoint to return 404');
+}
+
+{
+  // SERVER DISPATCH: a dispatch:'server' command resolves to a { type:'server' } directive naming its action,
+  // with args intact. The endpoint (not the registry) executes it — slash.js stays pure metadata + resolution.
+  const r = S.dispatch('/routine add every 30m | check the build');
+  A.ok(r.ok, 'dispatch resolves /routine');
+  A.eq(r.directive, { type: 'server', action: 'routine', args: 'add every 30m | check the build' }, 'routine returns a server directive carrying its raw args');
+  const away = S.dispatch('/build-away a small dashboard');
+  A.eq(away.command.name, 'away', 'build-away alias canonicalizes to away');
+  A.eq(away.directive.type, 'server', 'away dispatches server-side');
+  A.eq(away.directive.args, 'a small dashboard', 'away preserves the build request verbatim');
+  // /loop is deliberately CLIENT-side: it drives sends in the browser's own workstream.
+  A.eq(S.dispatch('/loop 5m check the deploy').directive, { type: 'client', action: 'loop', args: '5m check the deploy' }, 'loop stays a client directive');
 }
 
 {

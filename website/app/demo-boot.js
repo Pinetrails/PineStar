@@ -1,4 +1,8 @@
-/* demo-boot.js — WEBSITE EMBED ONLY (website/app is a verbatim copy of the app frontend).
+/* demo-boot.js — WEBSITE EMBED ONLY.
+   website/app is GENERATED from frontend/ by scripts/sync-website-app.mjs (`npm run sync:website`)
+   and verified by test/website-app-sync.test.js in the fast gate — so never hand-edit anything in
+   website/app; the next sync overwrites it. Fix the real file under frontend/ and re-sync. THIS
+   file and demo.css are the two exceptions: they are embed-only and the sync preserves them.
    Runs before every app script: seeds a captured genesis save (the real starter room + NOVA)
    and the DEV "server holds the key" seam so boot auto-resumes onto the live floor with no
    sidecar. Nothing here changes engine behavior — it is the same simulation, pre-seeded. */

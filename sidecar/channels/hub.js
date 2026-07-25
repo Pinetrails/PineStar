@@ -11,7 +11,9 @@
    Per inbound it: (1) maps chatId -> a per-chat agentId (`tg_<chatId>`, isolated notebook/workspace/history);
    (2) loads the durable transcript, appends the user turn; (3) runs `runOnce` with surface:'autonomous' (a
    headless chat has no browser to answer a permission.prompt, so an ungranted mutation default-denies and the
-   run continues — never stalls); (4) assembles the reply by concatenating agent.token deltas (the SAME contract
+   run continues — never stalls) UNLESS this chat opted into approve/deny buttons via `/approvals on`, in which
+   case it runs 'interactive' and an ungranted mutation asks on the channel and fail-closes on silence (C6);
+   (4) assembles the reply by concatenating agent.token deltas (the SAME contract
    harness.js uses in the browser — there is no agent.message event); (5) delivers it chunked to the platform's
    message-length limit; (6) emits channel.inbound / channel.delivery telemetry. One run per chat: a new message
    ABORTS the in-flight run for that chat and serves the latest (natural chat behavior). The existing per-run
@@ -84,12 +86,48 @@
     return out;
   }
 
+  // Map a TYPED reply onto a live choice keyboard: "2" / "2." / "2)" pick by position, and an exact
+  // (case-insensitive) option text picks itself. Everything else returns null and passes straight through as a
+  // new instruction — a Commander who changes their mind mid-question must never have that silently re-read as
+  // an answer to it. Typing and tapping therefore produce the IDENTICAL canonical option text downstream.
+  function coerceChoice(options, raw) {
+    const s = String(raw == null ? '' : raw).trim();
+    if (!s) return null;
+    const list = Array.isArray(options) ? options : [];
+    const n = /^([1-9][0-9]?)[.)]?$/.exec(s);
+    if (n) { const o = list[Number(n[1]) - 1]; return o ? o.value : null; }
+    const low = s.toLowerCase();
+    for (const o of list) if (String(o.value).toLowerCase() === low) return o.value;
+    return null;
+  }
+
   // ---- in-messenger control commands (pure, channel-agnostic) --------------------------------------------
   // Parse a leading slash-command out of an inbound text. Returns { cmd, arg } (cmd lowercased, no slash) or
   // null when the text is NOT a command (a normal message that should start a run). Only the FIRST token is the
   // command; the remainder (trimmed) is the argument. A bare '/' or unknown token still parses so we can reply
   // with help rather than silently spending a run. Telegram-style '/cmd@botname' is tolerated (strip the @suffix).
-  const KNOWN_CMDS = { agents: 1, talk: 1, model: 1, whoami: 1, help: 1 };
+  // ONE command table — the single source of truth for (a) what parseCommand accepts, (b) what /help prints, and
+  // (c) what setMyCommands publishes into Telegram's blue "/" menu. They drifted apart the moment they were three
+  // separate lists, so they are now derived from this one array: adding a command here lights it up everywhere.
+  // `menu:false` keeps a command working but off the published menu (help is redundant next to Telegram's menu).
+  // Names must satisfy Telegram's command grammar (lowercase a-z0-9_, 1-32) — asserted by the unit test.
+  const COMMANDS = [
+    { command: 'agents', description: 'List agents (→ marks the one you are talking to)' },
+    { command: 'talk', description: 'Switch this chat to another agent', usage: '/talk <name>' },
+    { command: 'model', description: 'Show or change the current agent\'s model', usage: '/model [id]' },
+    { command: 'approvals', description: 'Approve/deny buttons for this chat (on or off)', usage: '/approvals [on|off]' },
+    { command: 'whoami', description: 'Show which agent this chat is talking to' },
+    { command: 'help', description: 'List these commands', menu: false }
+  ];
+  const KNOWN_CMDS = COMMANDS.reduce((m, c) => { m[c.command] = 1; return m; }, {});
+  // the setMyCommands payload (name + one-line description only — Telegram renders no usage strings).
+  function menuCommands() {
+    return COMMANDS.filter(c => c.menu !== false).map(c => ({ command: c.command, description: c.description }));
+  }
+  // the /help body, rendered from the SAME table so it can never claim a command the parser doesn't accept.
+  function helpText() {
+    return 'Commands:\n' + COMMANDS.map(c => (c.usage || '/' + c.command) + ' — ' + c.description).join('\n');
+  }
   function parseCommand(text) {
     const s = String(text == null ? '' : text).trim();
     if (s[0] !== '/') return null;
@@ -139,6 +177,7 @@
     // TASK BRIEF v2 (additive dep): read the durable brief so the channel fallback can carry the host-validated
     // recommendation. Optional — a hub built without it renders the plain numbered choices exactly as before.
     const briefFor = typeof o.briefFor === 'function' ? o.briefFor : null;
+    const groundedFor = typeof o.groundedFor === 'function' ? o.groundedFor : null;
     const newId = typeof o.newId === 'function' ? o.newId : (() => { let n = 0; return () => channel + '-run-' + (++n); })();
     // INJECTED wall-clock — no ambient fallback (this module is pure/deterministic; the determinism gate bans a bare
     // Date.now here). The composition root passes now:()=>Date.now(); a hub built without one (unit tests) stamps a
@@ -191,6 +230,81 @@
     // typingRefreshMs (default 4s: safely inside the 5s window at half the API traffic of the reference's 2s).
     const chatAction = typeof o.chatAction === 'function' ? o.chatAction : null;
     const typingRefreshMs = Number.isFinite(o.typingRefreshMs) ? Math.max(250, o.typingRefreshMs) : 4000;
+    // ---- INLINE KEYBOARDS (C6) ---------------------------------------------------------------------------
+    // All four are optional and travel together: a hub missing ANY of them renders questions as the numbered
+    // text list it always did and never offers approve/deny buttons. That is what keeps every other channel
+    // (Discord/Slack/Matrix/Signal) byte-identical while Telegram gains buttons.
+    //   prompts        -> the bounded token→meaning registry (channels/prompts.js); the callback_data codec
+    //   answerCallback(callbackId, text)            -> ack a tap (kills Telegram's button spinner)
+    //   editMessage(chatId, messageId, text, opts)  -> stamp the decision + strip the spent keyboard
+    //   askConsent({ agentId, runId, signal, call, tool, onPrompt }) -> Promise<decision>
+    //     The HOST owns the pause/resolve (it registers the prompt in the same pendingByRun map the browser's
+    //     POST /api/consent answers, so a Telegram prompt is ALSO answerable from the app). The hub owns only
+    //     the display and the button→decision hop. onPrompt(promptId, fields) fires synchronously at register
+    //     time — that is the hub's cue to render the keyboard.
+    //   resolveConsent(runId, promptId, decision)   -> bool (the host's finisher lookup)
+    const prompts = o.prompts && typeof o.prompts.create === 'function' ? o.prompts : null;
+    const answerCallback = typeof o.answerCallback === 'function' ? o.answerCallback : null;
+    const editMessage = typeof o.editMessage === 'function' ? o.editMessage : null;
+    const askConsent = typeof o.askConsent === 'function' ? o.askConsent : null;
+    const resolveConsent = typeof o.resolveConsent === 'function' ? o.resolveConsent : null;
+    const buttonsOk = !!(prompts && answerCallback);   // the minimum to render a tappable keyboard at all
+    // Telegram truncates long inline-button labels on narrow phones, so the FULL option text always stays in the
+    // message body and the button carries a short, numbered echo of it (reference-harness lesson). 30 chars fits
+    // comfortably on a small screen; the leading "N." ties every button to its line in the body list.
+    const BTN_LABEL_MAX = 30;
+    function btnLabel(n, text) {
+      const s = String(text == null ? '' : text).replace(/\s+/g, ' ').trim();
+      const head = n + '. ';
+      return s.length + head.length <= BTN_LABEL_MAX ? head + s : head + s.slice(0, Math.max(1, BTN_LABEL_MAX - head.length - 1)) + '…';
+    }
+    // Build the Bot API reply_markup for a registered prompt: one button per row (a vertical list stays readable
+    // on a phone, and option text is far too long for side-by-side buttons).
+    function keyboardFor(entry) {
+      return { inline_keyboard: entry.options.map((opt, i) => [{ text: opt.label, callback_data: prompts.data(entry.token, i) }]) };
+    }
+
+    // Render ONE live permission ask as an inline keyboard. The four decisions are exactly the broker's own
+    // vocabulary (once/session/always/deny) so a tap here means precisely what the same word means on the
+    // browser's consent card — this is a second display of one mechanism, not a parallel one.
+    //
+    // FIRE-AND-FORGET BY CONTRACT: the host calls onPrompt synchronously while registering the prompt, and its
+    // fail-closed deny timer is ALREADY running. So this must never throw back into that path and never be
+    // awaited by it. If the keyboard fails to send, the prompt simply goes unanswered and the host denies it on
+    // schedule — the safe direction, and the same outcome as a Commander who never looks at their phone.
+    function sendConsentPrompt(chatId, runId, promptId, fields) {
+      (async () => {
+        const f = fields || {};
+        const entry = prompts.create({
+          kind: 'consent',
+          chatId: chatId,
+          options: [
+            { label: '✅ Allow once', value: 'once' },
+            { label: '✅ Allow for this session', value: 'session' },
+            { label: '♾️ Always allow', value: 'always' },
+            { label: '❌ Deny', value: 'deny' }
+          ],
+          meta: { runId: runId, promptId: promptId }
+        });
+        if (!entry) return;
+        const args = String(f.argsSummary || '').trim();
+        const body = '🔐 Permission needed\n\n' + String(f.tool || 'a tool')
+          + (f.scope ? '  (' + f.scope + ')' : '')
+          + (args ? '\n' + args.slice(0, 600) : '')
+          + '\n\nIf you don\'t answer, this is denied and the run moves on.';
+        entry.meta.text = body;
+        const r = await deliver(chatId, body, runId, 'prompt', '', { reply_markup: keyboardFor(entry) });
+        // Only a message that actually LANDED can be edited when tapped.
+        if (r && r.ok) { if (r.messageId) prompts.attach(entry.token, r.messageId); return; }
+        // THE KEYBOARD NEVER LANDED. Retire the token, then DENY IMMEDIATELY instead of letting the host's
+        // fail-closed timer run its full course. The Commander was never actually asked, so making them wait out
+        // CONSENT_TIMEOUT_MS for the answer that is already certain would turn an undeliverable prompt into a
+        // two-minute stall — strictly worse than the autonomous floor this chat opted IN from. Same decision,
+        // no wait. (No apology message here: the send path is the thing that just failed.)
+        prompts.take(entry.token);
+        try { if (resolveConsent) resolveConsent(runId, promptId, 'deny'); } catch (_) {}
+      })().catch(function () {});
+    }
     const MAX_MEDIA_PER_MESSAGE = 10;                // a full Telegram album is 10 items; a merged album must fit
     const MAX_MEDIA_BYTES = 8 * 1024 * 1024;         // mirrors attachments.js MAX_BYTES (saveAttachment re-enforces)
     if (typeof runOnce !== 'function') throw new Error('makeChannelHub: runOnce is required');
@@ -244,13 +358,18 @@
     // agentId (optional, last arg) names WHICH roster agent produced this reply, so the floor can pulse the RIGHT
     // agent's dish on a multi-agent station. Passed only for a real RUN reply (onInbound); administrative command
     // replies (/agents, /model…) omit it — no agent "produced" them, so the floor should not attribute a dish.
-    async function deliver(chatId, text, runId, reason, agentId) {
+    // sendOpts (optional) rides ONLY on the FINAL chunk — a keyboard must land under the last thing the user
+    // reads, and Telegram would otherwise render one set of buttons per chunk of a long reply. Returns the final
+    // chunk's messageId too, which is what a keyboard needs in order to be edited/stripped once it is tapped.
+    async function deliver(chatId, text, runId, reason, agentId, sendOpts) {
       const chunks = chunkText(text, maxMessageLength);
-      let ok = true, failedAt = -1;
+      let ok = true, failedAt = -1, messageId = '';
       for (let i = 0; i < chunks.length; i++) {
+        const last = i === chunks.length - 1;
         let r;
-        try { r = await send(chatId, chunks[i]); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
+        try { r = await send(chatId, chunks[i], (last && sendOpts) ? sendOpts : undefined); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
         if (!r || r.ok === false) { ok = false; failedAt = i; break; }
+        if (last && r.messageId) messageId = String(r.messageId);
       }
       // DURABLE OUTBOX: a reply that failed to send used to be recorded (channel.delivery ok:false) and then
       // LOST — the agent did the work and the Commander never saw the result. Queue the undelivered remainder
@@ -258,7 +377,10 @@
       // transport is proven healthy again (next successful delivery, or the adapter's next 'up' status). Command
       // replies (/help, /agents…) are ephemeral and stay fire-and-forget — a stale command menu hours later is
       // noise, not a lost result. Guarded on pushOutbox so hubs built over older/test stores behave as before.
-      if (!ok && reason !== 'command' && typeof store.pushOutbox === 'function') {
+      // 'prompt' joins 'command' as ephemeral: a permission ask whose keyboard failed to send is answered by the
+      // host's fail-closed timer within seconds — redelivering that dead question hours later would invite a tap
+      // on a run that ended long ago.
+      if (!ok && reason !== 'command' && reason !== 'prompt' && typeof store.pushOutbox === 'function') {
         try {
           const remainder = '⌛ delayed reply — the channel was unreachable when this was first sent:\n' + chunks.slice(failedAt).join('');
           store.pushOutbox({ channel: channel, chatId: String(chatId), text: remainder, runId: runId || '', agentId: agentId ? String(agentId) : '', reason: reason || '' });
@@ -268,7 +390,9 @@
       if (agentId) ev.agentId = String(agentId);   // additive/optional — attribute the dish to the acting agent
       try { emit('channel.delivery', ev); } catch (_) {}
       if (ok) { try { const p = flushOutbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {} }   // a proven-healthy send is the cue to drain any backlog
-      return ok;
+      // `text` is the FINAL chunk's text — the one a keyboard was attached to, and therefore the exact string a
+      // later editMessage must rebuild on top of when it stamps the chosen answer in place.
+      return { ok: ok, messageId: messageId, text: chunks.length ? chunks[chunks.length - 1] : '' };
     }
 
     // ---- durable-outbox flush: redeliver queued replies once the transport is healthy ----------------------
@@ -321,7 +445,8 @@
 
     // Handle a parsed control command. Every reply states what ACTUALLY happened (truthful telemetry): a rebind
     // only claims success after saveChatRecord returns; a model change only confirms after setModel reports ok.
-    async function handleCommand(chatId, parsed, boundAgentId, sec) {
+    // boundRec is this chat's persisted record (or null) — /approvals reads its opt-in flag and writes it back.
+    async function handleCommand(chatId, parsed, boundAgentId, sec, boundRec) {
       const cmd = parsed.cmd, arg = parsed.arg;
       // rosterFn is an INJECTED callback (Discord/other wire-ups pass it straight through); a throwing roster must
       // degrade to a logged error + polite reply, never an unhandled rejection that swallows the whole inbound.
@@ -334,11 +459,36 @@
       // downstream binding/roster writes are observable in the chatmap + roster files. See report.
 
       if (cmd === 'help') {
-        await deliver(chatId,
-          'Commands:\n/agents — list agents (→ marks the one you\'re talking to)\n'
-          + '/talk <name> — switch this chat to another agent\n'
-          + '/model [id] — show or change the current agent\'s model\n/whoami — show the current agent',
-          '', 'command');
+        await deliver(chatId, helpText(), '', 'command');
+        return;
+      }
+
+      // /approvals [on|off] — the per-chat opt-in for approve/deny buttons. DEFAULT OFF: with it off this chat
+      // runs surface:'autonomous' exactly as before (an ungranted write default-denies and the run continues,
+      // never stalling). Turning it ON switches the chat to surface:'interactive', so an ungranted write pauses
+      // and asks you here — which also means an UNANSWERED prompt holds that run until the host's fail-closed
+      // consent timeout denies it. Both halves of that trade are stated to the user, never just the upside.
+      if (cmd === 'approvals') {
+        const canPrompt = buttonsOk && !!askConsent && !!resolveConsent;
+        const on = !!(boundRec && boundRec.approvals);
+        if (!arg) {
+          await deliver(chatId, canPrompt
+            ? ('Approve/deny buttons are ' + (on ? 'ON' : 'OFF') + ' for this chat.\n'
+               + (on ? 'When I need permission to write a file or run a tool, I\'ll ask you here with buttons.\nSend /approvals off to go back to silently skipping those actions.'
+                     : 'Right now I silently skip any action that needs permission and carry on.\nSend /approvals on to be asked here instead.'))
+            : '⚠ Approve/deny buttons are not available on this channel.', '', 'command');
+          return;
+        }
+        const want = /^(on|yes|enable|enabled|true|1)$/i.test(arg) ? true : (/^(off|no|disable|disabled|false|0)$/i.test(arg) ? false : null);
+        if (want === null) { await deliver(chatId, 'Usage: /approvals on  ·  /approvals off', '', 'command'); return; }
+        if (want && !canPrompt) { await deliver(chatId, '⚠ Approve/deny buttons are not available on this channel — leaving them off.', '', 'command'); return; }
+        // truthful telemetry: only claim the setting changed once the durable write actually returned.
+        let saved = false;
+        try { if (typeof store.saveChatRecord === 'function') { store.saveChatRecord(chatId, { approvals: want }); saved = true; } } catch (_) { saved = false; }
+        if (!saved) { await deliver(chatId, '⚠ Could not save that — approve/deny buttons are still ' + (on ? 'ON' : 'OFF') + ' for this chat.', '', 'command'); return; }
+        await deliver(chatId, want
+          ? 'Approve/deny buttons are ON. I\'ll ask here before any action that needs permission — if you don\'t answer, that action is denied and the run moves on.'
+          : 'Approve/deny buttons are OFF. I\'ll silently skip actions that need permission and carry on.', '', 'command');
         return;
       }
 
@@ -480,12 +630,31 @@
       let boundRec = null;
       try { if (typeof store.getChatRecord === 'function') boundRec = store.getChatRecord(chatId); } catch (_) {}
       const boundAgentId = (boundRec && boundRec.agentId && AID_RE.test(String(boundRec.agentId))) ? String(boundRec.agentId) : null;
+      // Per-chat opt-in for approve/deny buttons (/approvals; default OFF). Requires BOTH the user's opt-in AND a
+      // channel that can actually render and resolve a keyboard — a chat that opted in but is now running over a
+      // transport without buttons must fall back to the safe autonomous floor, never stall on a prompt that
+      // physically cannot be answered.
+      const wantApprovals = !!(boundRec && boundRec.approvals) && buttonsOk && !!askConsent && !!resolveConsent;
 
       // Control commands are intercepted BEFORE any run starts — they must never spawn an LLM run. Replies go out
       // through the SAME deliver() path so chunking/limits apply. Channel-agnostic: this lives in the hub, so
       // Telegram/Discord/any future adapter get identical behavior.
       const parsed = parseCommand(msg.text);
-      if (parsed) { await handleCommand(chatId, parsed, boundAgentId, sec); return; }
+      if (parsed) { await handleCommand(chatId, parsed, boundAgentId, sec, boundRec); return; }
+
+      // ---- a TYPED answer to a live choice keyboard ---------------------------------------------------------
+      // Resolve it to the canonical option text BEFORE anything reads msg.text (routing, the classifier and the
+      // stored turn all must see the real answer, not a bare "2"). Then retire this chat's keyboards either way:
+      // if that was the answer it is spent, and if it was NOT, the conversation has moved past the question and
+      // a late tap must not reopen it. The buttons stay visible but now answer honestly that they're closed.
+      if (prompts) {
+        const live = prompts.peekChat(chatId, 'choice');
+        if (live) {
+          const picked = coerceChoice(live.options, msg.text);
+          if (picked) msg = Object.assign({}, msg, { text: picked });
+        }
+        prompts.dropChat(chatId, 'choice');
+      }
 
       // Phase B routing: the placed floor (a posted RoutingPlan) decides WHICH agent runs. resolveAgent
       // returns the bay-bound agentId, or null -> fall through to today's resolution so real work NEVER stalls.
@@ -534,6 +703,7 @@
       let state = null;          // the LAST attempt's assembled state (buf/errMsg/reason/transient)
       let lastRunId = '';        // the runId actually delivered under (the last attempt's)
       let reply;
+      let choiceEntry = null;    // the registered choice keyboard for a TASK_QUESTION reply (null = plain text)
       try {
 
       // MEDIA: download + store what the user actually sent (photos/videos/voice/files) BEFORE the turn is built,
@@ -611,10 +781,25 @@
           else if (name === 'agent.run.end') { state.reason = p.reason; state.budgetScope = p.budgetScope || null; state.budgetCapUsd = (typeof p.budgetCapUsd === 'number' && isFinite(p.budgetCapUsd)) ? p.budgetCapUsd : null; }
         };
 
+        // CONSENT SURFACE (per-chat, default OFF — see /approvals). With it off nothing changes: the run stays
+        // 'autonomous' and the broker default-denies an ungranted mutation without ever stalling. With it ON the
+        // run becomes 'interactive' and `prompt` is the live channel the broker pauses on — the host owns that
+        // pause/resolve (askConsent registers it in the SAME pendingByRun the browser answers), while the hub
+        // only renders the keyboard and routes the tap back. Built per ATTEMPT so it closes over this attempt's
+        // runId + AbortController; a superseded attempt's prompts die with its signal.
+        const consentPrompt = wantApprovals ? function (call, tool) {
+          return askConsent({
+            agentId: agentId, runId: runId, signal: ac.signal, call: call, tool: tool,
+            onPrompt: function (promptId, fields) { sendConsentPrompt(chatId, runId, promptId, fields); }
+          });
+        } : undefined;
+
         try {
           await runOnce({
             key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
-            emit: sink, signal: ac.signal, runId, trigger: 'event', surface: 'autonomous',
+            emit: sink, signal: ac.signal, runId, trigger: 'event',
+            surface: wantApprovals ? 'interactive' : 'autonomous',
+            prompt: consentPrompt,
             broadcast: true,   // P1: mirror this routed run's lifecycle to the station floor over SSE — it has no browser-local stream
             station: bayStation || undefined,
             taskKey: 'channel:' + channel + ':' + chatId,
@@ -662,16 +847,37 @@
             const pre = taskIntent.strip(reply);
             // Carry the durable brief's REAL recommendation (brief_ask path) into the channel text. Marker-path
             // questions store no recommendation, so this line simply doesn't render — never fabricated here.
+            // A GROUNDED suggestion (the Commander's own answered history, with a count) is provable, so it
+            // outranks the model's guess here exactly as it does in COMMS — the surfaces must not disagree.
             let suggested = '';
             try {
               const b = briefFor ? briefFor('channel:' + channel + ':' + chatId) : null;
               const q = b && b.status === 'clarifying' && Array.isArray(b.questions) ? b.questions[b.questions.length - 1] : null;
-              if (q && !q.answer && q.text === tq.question && q.recommended) suggested = '\nsuggested: ' + q.recommended + (q.reason ? ' — ' + q.reason : '');
+              if (q && !q.answer && q.text === tq.question) {
+                const g = groundedFor ? groundedFor(q) : null;
+                if (g && g.option) suggested = '\nsuggested: ' + g.option + ' — you chose this ' + g.count + ' times before';
+                else if (q.recommended) suggested = '\nsuggested: ' + q.recommended + (q.reason ? ' — ' + q.reason : '');
+              }
             } catch (_) { /* enrichment only; the question always renders */ }
+            // Register the tappable version FIRST — if the registry refuses (bounded/duplicate token), we simply
+            // fall through to the numbered text below, which is a complete answer path on its own.
+            if (buttonsOk) {
+              choiceEntry = prompts.create({
+                kind: 'choice', chatId: chatId, chatType: msg.chatType,
+                // label = short numbered echo (Telegram truncates long labels on a phone); value/display = the
+                // FULL option text, which is what re-enters the conversation when tapped.
+                options: tq.options.map((x, i) => ({ label: btnLabel(i + 1, x), value: String(x), display: String(x) })),
+                meta: { question: tq.question }
+              });
+            }
+            // The numbered list stays in the body even when buttons render: it is what makes a long option
+            // readable (the button label had to be truncated), and it is the whole answer path on a channel
+            // without keyboards. The closing line only promises typing when that is the ONLY way to answer.
             reply = (pre ? pre + '\n\n' : '') + tq.question + '\n'
               + tq.options.map((x, i) => (i + 1) + '. ' + x).join('\n')
               + suggested
-              + '\nReply with a choice, or say "use your judgment."';
+              + (choiceEntry ? '\nTap a choice below — or reply in your own words.'
+                             : '\nReply with a choice, or say "use your judgment."');
           }
         }
         if (reply) { try { store.appendTurn(agentId, 'assistant', reply); } catch (_) {} }
@@ -679,11 +885,77 @@
       }
 
       } finally { stopTyping(); }   // cease refreshes BEFORE deliver — the bubble must die with the reply, not after
-      await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), agentId);
+      const dr = await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), agentId,
+        choiceEntry ? { reply_markup: keyboardFor(choiceEntry) } : undefined);
+      // Stitch the delivered message onto the keyboard's registry entry so a tap can edit THAT message in place.
+      // A send that failed retires the token immediately: leaving it would let a phantom keyboard (buttons the
+      // user can see from a partially-sent reply) resolve against a question they never fully received.
+      if (choiceEntry) {
+        if (dr && dr.ok && dr.messageId) { prompts.attach(choiceEntry.token, dr.messageId); choiceEntry.meta.text = dr.text || reply; }
+        else if (!dr || !dr.ok) prompts.take(choiceEntry.token);
+      }
     }
 
-    // inline-keyboard taps (consent buttons) — wired in C6; a noop under the autonomous MVP.
-    function onCallback(_cb) { /* C6: route { chatId, data, callbackId } to the pending consent finisher */ }
+    // ---- inline-keyboard taps (C6) -------------------------------------------------------------------------
+    // One tap = { chatId, userId, data, callbackId, messageId }. The adapter has ALREADY owner-gated this (a
+    // non-owner's tap never reaches here), so this is the display/decision hop only. Order matters and mirrors
+    // the reference harness: resolve the token (single-use) → ACK the tap → stamp the message → act.
+    //
+    // The ack is not optional politeness: until answerCallbackQuery lands, Telegram spins a loader on the button
+    // and eventually shows the user a client-side error, so an unacked tap reads as a broken bot even when the
+    // decision was recorded perfectly. It therefore happens BEFORE the (slower, failure-prone) edit and action.
+    async function onCallback(cb) {
+      if (!cb || !prompts || !answerCallback) return;
+      const chatId = String(cb.chatId == null ? '' : cb.chatId);
+      const ack = async (text) => { try { await answerCallback(cb.callbackId, text); } catch (_) {} };
+
+      const hit = prompts.parse(cb.data);
+      if (!hit) { await ack(); return; }   // a stale keyboard from an older build — ack so the spinner stops
+
+      // SINGLE-USE. A double-tap, a tap on a question the conversation already moved past, and a tap that lost
+      // the race with a typed answer all land here. Say so plainly rather than silently doing nothing — and
+      // never re-run a decision. The chatId re-check makes a token from one chat unusable in another.
+      const entry = prompts.take(hit.token);
+      if (!entry || entry.chatId !== chatId) { await ack('That question is no longer open.'); return; }
+      const opt = entry.options[hit.idx];
+      if (!opt) { await ack('That option is no longer available.'); return; }
+
+      // Only add the tick when the label doesn't already open with its own marker — a consent button reads
+      // "✅ Allow for this session", and prefixing that produced a doubled "✓ ✅" in the live toast.
+      const shown = String(opt.display || opt.label).trim().slice(0, 60);
+      await ack((/^[\p{L}\p{N}]/u.test(shown) ? '✓ ' : '') + shown);
+
+      // Stamp the decision into the original message and strip the spent buttons. Cosmetic ONLY: the decision
+      // below is recorded whether or not this edit lands (Telegram 400s a no-op edit, and the message may have
+      // been deleted by the user), which is why it is fired inside its own guard and its result is not read.
+      if (editMessage && entry.messageId) {
+        try { await editMessage(chatId, entry.messageId, String(entry.meta.text || '') + '\n\n▸ ' + String(opt.display || opt.value), {}); } catch (_) {}
+      }
+
+      if (entry.kind === 'consent') {
+        let done = false;
+        try { done = !!resolveConsent(entry.meta.runId, entry.meta.promptId, opt.value); } catch (_) { done = false; }
+        // The host had already settled it — the fail-closed timer fired, the run was superseded, or E-STOP hit.
+        // Telling the user their tap landed would be a lie about what the harness actually did.
+        if (!done) { try { await deliver(chatId, '⚠ That permission request had already expired — the action was denied and the run moved on.', entry.meta.runId || '', 'prompt'); } catch (_) {} }
+        return;
+      }
+
+      // A CHOICE tap re-enters the NORMAL inbound path carrying the option's own text — byte-identical to the
+      // Commander having typed that option. So history, agent routing, Task Brief continuity and the run itself
+      // are all exactly the typed-answer path; there is no second, divergent "button answer" code path to keep
+      // in sync. (processInbound is fire-and-forget from the adapter's perspective; a throw here must not escape
+      // into the poll loop, hence the guard.)
+      try {
+        await processInbound({
+          channel: channel, chatId: chatId, chatType: entry.chatType,
+          userId: cb.userId == null ? '' : String(cb.userId), userName: '',
+          text: opt.value, messageId: '', ts: now ? now() : 0
+        });
+      } catch (e) {
+        try { console.error('[' + channel + '] choice tap failed for chat ' + chatId + ':', (e && e.message) || e); } catch (_) {}
+      }
+    }
 
     // adapter transport health -> channel.connect telemetry (poll up / network down / fatal token error).
     // An 'up' is also the durable-outbox recovery cue: the transport just PROVED a round-trip, so any reply
@@ -695,9 +967,9 @@
 
     return {
       onInbound, onCallback, onStatus,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA }
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk }
     };
   }
 
-  return { makeChannelHub, chunkText, endNote, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal, _internals: { TASK_SUFFIX, DEFAULT_PERSONA, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal } };
+  return { makeChannelHub, chunkText, endNote, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal, coerceChoice, menuCommands, helpText, COMMANDS, _internals: { TASK_SUFFIX, DEFAULT_PERSONA, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal, coerceChoice, menuCommands, helpText, COMMANDS } };
 });

@@ -94,6 +94,10 @@ test/replacement-sweep.test.js
 test/lint-evidence-secrets.test.js
 scripts/lint-evidence-secrets.mjs
 test/environment.test.js
+test/servicekeys.test.js
+test/servicekeys.env.test.js
+test/web-request.test.js
+test/servicekeys-catalog.test.js
 test/tools.test.js
 test/capgate.test.js
 test/capdrift.test.js
@@ -126,6 +130,8 @@ test/notebook.test.js
 test/skills.test.js
 test/skills.library.test.js
 test/slash.test.js
+test/slash-actions.test.js
+test/slash.parity.test.js
 test/slash.palette.test.js
 test/slash.config.test.js
 test/voice.button.test.js
@@ -354,6 +360,7 @@ test/channels.secrets.test.js
 test/channels.hub.test.js
 test/channels.outbox.test.js
 test/channels.commands.test.js
+test/channels.buttons.test.js
 test/channels.sse.test.js
 test/mcp.client.test.js
 test/mcp.transport.test.js
@@ -374,5 +381,7 @@ test/release-bump.test.js
 test/release-cut.test.js
 test/opensource-readiness.test.js
 test/release-train-provenance.test.js
+test/website-app-sync.test.js
+test/lint-gate-can-fail.js
 test/lint-emits.js
 test/lint-determinism.js

@@ -54,7 +54,7 @@ const StationQuestStore = (() => {
   // catalog entry whose type maps to this cap (e.g. dish→"DISH", studio→"STUDIO"). Never hardcoded, so a
   // renamed/added prop can't drift. Returns NULL when no catalogued prop grants this cap — the honesty
   // guard: a quest completed by PLACEMENT must never be minted for a cap placement can't grant (e.g.
-  // jukebox/Spotify, whose real unlock is OAuth in Settings, not a prop — a prop quest there could
+  // jukebox/Spotify, whose real unlock is OAuth in TOOLSETS, not a prop — a prop quest there could
   // literally never complete).
   function propLabelFor(cap) {
     const cat = (typeof PropSprites !== 'undefined' && PropSprites.CATALOG) ? PropSprites.CATALOG : [];

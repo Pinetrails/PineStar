@@ -125,16 +125,29 @@
       b.tabIndex = -1;
       const ic = doc.createElement('span');
       ic.className = 'sn-ic ' + iconClass;
-      // MAX/RESTORE are inline SVG, not pseudo-element bar art: CSS bars land on
-      // fractional device pixels under Windows display scaling / TEXT SIZE zoom and
-      // shred the restore glyph into fragments (2026-07-20 report, twice). Vector
-      // strokes rescale like the native Fluent glyphs do. CSS shows one at a time.
-      if (iconClass === 'sn-ic-max') {
+      // ALL glyphs are inline SVG on one shared spec — 2px strokes on INTEGER
+      // geometry, so every axis-aligned edge covers whole device pixels at 100%
+      // scale (a 2px stroke centered on an integer coordinate spans exactly
+      // c-1..c+1) and rescales cleanly under display scaling / TEXT SIZE zoom.
+      // History: CSS pseudo-element bars shredded on fractional device pixels
+      // (2026-07-20, twice), then a lone 1.7px-stroke restore SVG read thinner
+      // and dimmer than its 2px CSS siblings the moment the window maximized
+      // (third report, same day). One weight, one medium — states now match.
+      // CSS shows MAX or RESTORE one at a time via .is-max.
+      if (iconClass === 'sn-ic-min') {
+        ic.innerHTML =
+          '<svg class="sn-g" viewBox="0 0 12 12" aria-hidden="true">' +
+            '<path d="M2 7 H10"/></svg>';
+      } else if (iconClass === 'sn-ic-max') {
         ic.innerHTML =
           '<svg class="sn-g sn-g-max" viewBox="0 0 12 12" aria-hidden="true">' +
             '<rect x="2" y="2" width="8" height="8"/></svg>' +
           '<svg class="sn-g sn-g-restore" viewBox="0 0 12 12" aria-hidden="true">' +
-            '<path d="M4.2 2 H10 V7.8"/><rect x="2" y="4.2" width="5.8" height="5.8"/></svg>';
+            '<path d="M5 1 H11 V7"/><rect x="2" y="4" width="6" height="6"/></svg>';
+      } else if (iconClass === 'sn-ic-close') {
+        ic.innerHTML =
+          '<svg class="sn-g" viewBox="0 0 12 12" aria-hidden="true">' +
+            '<path d="M2 2 L10 10 M10 2 L2 10"/></svg>';
       }
       b.appendChild(ic);
       controls.appendChild(b);
