@@ -212,8 +212,14 @@ const Onboarding = (() => {
       // THE KINDLING — the user HOLDS to bring the dormant mind to life; ignition fires when the spark catches.
       setTimeout(() => World.armKindle(() => ignite(true)), 700);   // a brief held dark, then the "hold to wake it" prompt
       kindleTimer = setTimeout(() => ignite(true), 30000);          // failsafe: never hard-stall if they never hold
+    } else if (!opts.wake) {
+      // THE RE-WAKE (2026-07-20): wake:false IS the replay — resumeInto re-enters the ceremony only when a
+      // prior session closed mid-awakening (onboarded never flipped; see app.js resumeInto). The birth already
+      // happened in front of this Commander once — replaying the full monologue reads as amnesia, and an agent
+      // that forgets being born breaks the fiction. Short re-greeting, then straight back to the questions.
+      setTimeout(() => reignite(), 500);
     } else {
-      setTimeout(() => ignite(!!opts.wake), opts.wake ? 1200 : 500);   // ~1.1s wide dark hold first
+      setTimeout(() => ignite(true), 1200);   // ~1.1s wide dark hold first (wake without a kindle affordance)
     }
   }
 
@@ -257,6 +263,27 @@ const Onboarding = (() => {
         }, 500);
       });
     }), 150);
+  }
+
+  // THE RE-WAKE — the replay entry (a refresh/relaunch mid-awakening). No second birth: the mind has already
+  // caught fire, met the Commander, and heard its own first words once. It comes back UP mid-thought — light
+  // already part-risen, heartbeat already steadier than a newborn's, the turn immediate (it knows where you
+  // are) — says so in three dry lines, and goes straight back to the unfinished briefing (startQuestions).
+  // The flood, first contact, and mandate never replay; the QUESTIONS do (skipped answers wrote nothing).
+  function reignite() {
+    if (ignited) return; ignited = true;
+    sfx('boot'); AU.start(); AU.steady(0.35);                       // the heart already knows its rhythm
+    if (World.igniteSpark) World.igniteSpark();
+    if (World.setWakeProgress) World.setWakeProgress(0.15);         // not the pitch dark of a first birth
+    if (World.awakenTurn) World.awakenTurn();                       // it already knows where you are
+    type([
+      seg('…and we’re back.', 38, 550),
+      seg('  i remember this part — i caught fire, met you, and the lights went out mid-briefing.', 42, 550),
+      seg('  no need to be born twice. where were we.', 42, 420)
+    ], () => {
+      World.say('right — where were we.');
+      setTimeout(startQuestions, 600);
+    });
   }
 
   // the cascade is seeded with REAL fragments — the agent's own forming prompt, its true harness

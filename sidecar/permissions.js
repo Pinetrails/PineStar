@@ -71,6 +71,7 @@
     // index.js (workshopOf), NOT a self-approval — the exec lockout below is UNTOUCHED, so an away run still can
     // never run a command. Pure: like hardline/networkOf, all state comes from the injected function. Default: none.
     const workshop = typeof opts.workshop === 'function' ? opts.workshop : null;
+    const credentialed = typeof opts.credentialed === 'function' ? opts.credentialed : null;
     // the jail-scoped capabilities the workshop grant may unlock a WRITE for (never execute, never a non-jail tool).
     // The plan calls these "cabinet | notebook"; in the live tool registry the FILE capability is `cabinet`
     // (sidecar/tools/builtin/fs.js — fs.write/append/edit/patch, realpath-jailed to workspaces/<agentId>/) and the
@@ -86,6 +87,23 @@
       const cap = tool && tool.capability;
       if (!JAIL_WRITE_CAPS[cap]) return false;                  // must be a jail-scoped capability (files/memory)
       try { return workshop(call, tool) === true; } catch (_) { return false; }
+    }
+
+    /* UNATTENDED CREDENTIAL GRANT — an autonomous network call (web_request) that spends a platform key the
+       Commander explicitly approved for unattended use in TOOLSETS & CONNECTORS → KEYS. Same shape as the
+       workshop tier above: a recorded, revocable, per-key approval IS consent, so this is not the "silence"
+       the default-deny protects against. Deliberately narrow:
+         • autonomous only (interactive already asks a live human)
+         • NEVER scope 'execute', so it can never reach shell — it sits below the exec lockout by construction
+         • only impact 'external-credentialed' (no host-process capability exists on this path)
+         • the injected predicate must confirm EVERY key the call references carries the grant
+       No grant on the specific key -> falls through to the default deny, unchanged. */
+    function credentialedAutonomy(call, tool) {
+      if (!credentialed) return false;
+      if (surface !== 'autonomous') return false;
+      if (scopeOf(tool) === 'execute') return false;
+      if (!tool || tool.impact !== 'external-credentialed') return false;
+      try { return credentialed(call, tool) === true; } catch (_) { return false; }
     }
 
     function sessionSet(create) {
@@ -119,6 +137,7 @@
       // workspaces/<agentId>/) is the real boundary; this only clears the "silence is not consent" default-deny
       // for exactly cabinet:write / notebook:write on a granted agent. No grant → the tiers below run unchanged.
       if (workshopWritable(call, tool)) return { allow: true, scope: scope, reason: 'workshop grant — build things while away' };
+      if (credentialedAutonomy(call, tool)) return { allow: true, scope: scope, reason: 'unattended grant on this platform key' };
       // 3. CACHE — a prior session/permanent grant for this danger class.
       if (granted(dangerKey(tool))) return { allow: true, scope: scope, reason: 'previously granted' };
       // 4. RESOLVE.

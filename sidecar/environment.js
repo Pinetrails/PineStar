@@ -72,6 +72,25 @@
     if (src.SystemRoot) out.ComSpec = String(src.SystemRoot).replace(/[\\/]+$/, '') + '\\System32\\cmd.exe';
     return out;
   }
+  /* Service keys (the KEYS tab) are the ONE class of secret the Commander pasted expressly SO an agent's
+     shell can spend it — "use it to call that service's API directly (curl etc.)" is what the system prompt
+     promises. sanitizeChildEnv's blanket scrub strips every one of them (servicekeys.deriveEnvVar always
+     ends in _API_KEY), which silently severed the entire feature. They are merged back in per call, but
+     stay subordinate to host authority: a pasted var may never become a reserved safety pin
+     (STARNET_/SKYNET_*) or an execution hook (NODE_OPTIONS/COMSPEC/…), so a KEYS row can't re-enable
+     physical input or hijack the shell. Callers supply only provider-key-filtered maps (servicekeys.runEnv). */
+  function mergeServiceEnv(base, extra) {
+    if (!extra) return base;
+    const names = Object.keys(extra);
+    if (!names.length) return base;
+    const out = Object.assign({}, base);
+    for (const k of names) {
+      if (INTERNAL_ENV_NAME_RE.test(k) || EXECUTION_HOOK_ENV_RE.test(k)) continue;
+      const v = extra[k];
+      if (v != null && v !== '') out[k] = String(v);
+    }
+    return out;
+  }
   function backendFromEnv(env) {
     return firstEnv(env, ['STARNET_EXEC_BACKEND', 'SKYNET_EXEC_BACKEND'], 'local').trim().toLowerCase();
   }
@@ -181,6 +200,13 @@
     const platform = deps.platform || (WIN ? 'win32' : 'posix');
     const isWin = platform === 'win32';
     const childEnv = sanitizeChildEnv(deps.env || (typeof process !== 'undefined' ? process.env : {}));
+    // Resolved PER CALL, never snapshotted: a key pasted after boot must be live on the very next run,
+    // and a disabled one gone on the very next run. Fail-open — a broken provider never breaks a shell.
+    const serviceEnvFn = typeof deps.serviceEnv === 'function' ? deps.serviceEnv : null;
+    function spawnEnv() {
+      if (!serviceEnvFn) return childEnv;
+      try { return mergeServiceEnv(childEnv, serviceEnvFn()); } catch (_) { return childEnv; }
+    }
     const sessions = new Map();
 
     function workspaceRoot(agentId) {
@@ -227,7 +253,7 @@
           spawn: spawn,
           file: String(opts.cmd || ''),
           args: null,
-          spawnOptions: { cwd: opts.cwd || getCwd(aid), shell: true, windowsHide: true, env: childEnv },
+          spawnOptions: { cwd: opts.cwd || getCwd(aid), shell: true, windowsHide: true, env: spawnEnv() },
           timeoutMs: opts.timeoutMs,
           maxTimeoutMs: opts.maxTimeoutMs,
           maxBytes: opts.maxBytes,
@@ -239,7 +265,7 @@
       startBackground: function (opts) {
         if (!bg || typeof bg.start !== 'function') return { ok: false, error: 'background processes are not available for the local backend' };
         const aid = safeAgentId((opts && opts.agentId) || 'agent');
-        return bg.start({ agentId: aid, cmd: opts.cmd, cwd: opts.cwd || getCwd(aid), isWin: isWin, env: childEnv });
+        return bg.start({ agentId: aid, cmd: opts.cmd, cwd: opts.cwd || getCwd(aid), isWin: isWin, env: spawnEnv() });
       },
       statusBackground: function (agentId, bgId) {
         return bg && typeof bg.status === 'function' ? bg.status(safeAgentId(agentId || 'agent'), bgId) : (bgId ? null : []);
@@ -279,6 +305,10 @@
       if (cwd && posixInside(cwd, containerRoot)) sessions.set(aid, cwd);
       return getCwd(aid);
     }
+    // NOTE: the docker backend passes NO environment into the container, so KEYS-tab service keys do not
+    // reach a containerised shell (passing them would put secrets on the docker argv, visible to every
+    // process listing — it needs --env-file or stdin, a separate change). Docker is opt-in via
+    // STARNET_EXEC_BACKEND; the default local backend is the path service keys are wired for.
     function dockerArgs(agentId, cmd, cwd) {
       const hostRoot = workspaceRoot(agentId);
       const args = ['run', '--rm', '-i'];
@@ -362,7 +392,7 @@
       killBackground: backend.killBackground,
       killAllBackground: backend.killAllBackground,
       _backend: backend,
-      _internals: { safeAgentId: safeAgentId, makeConfig: makeConfig, sanitizeChildEnv: sanitizeChildEnv, runProcess: runProcess, hostInside: hostInside, posixInside: posixInside }
+      _internals: { safeAgentId: safeAgentId, makeConfig: makeConfig, sanitizeChildEnv: sanitizeChildEnv, mergeServiceEnv: mergeServiceEnv, runProcess: runProcess, hostInside: hostInside, posixInside: posixInside }
     };
   }
 

@@ -1,6 +1,6 @@
 {
   "area": "commands",
-  "updatedAt": "2026-07-18T01:12:00.000Z",
+  "updatedAt": "2026-07-24T00:00:00.000Z",
   "entries": [
     {
       "id": "command/agents",
@@ -37,6 +37,44 @@
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false
+    },
+    {
+      "id": "command/away",
+      "kind": "command",
+      "area": "commands",
+      "name": "/away — queue work for this agent to build on its own away shift",
+      "purpose": "Put a door on the away-workshop subsystem (grant, backlog, shift) which previously had only the catalog-orphan /build-away in the browser fallback list.",
+      "promise": "Typing /away <text> queues onto the REAL per-agent workshop backlog and states the grant state in the same breath; /away on|off writes the grant; /away list marks a row as waiting in OUTBOX only when its manifest still validates on disk (the same proof the count uses), and says so plainly when the files are gone; /away now reports a shift that RAN but produced nothing as a failure, never as delivered work.",
+      "wiring": {
+        "files": [
+          "sidecar/slash.js",
+          "sidecar/slash-actions.js",
+          "sidecar/index.js",
+          "frontend/app/chat.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/slash.test.js (build-away alias canonicalizes to away)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/slash-actions.test.js (queue/grant/list + grant-off honesty + reserved-word boundary)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/slash-actions.test.js (fired:true + no-manifest is a failure; parked items say they will not be retried)"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-24T00:00:00.000Z",
+      "lastSeen": "2026-07-24T00:00:00.000Z",
+      "missing": false,
+      "notes": "Replaces the old /build-away, which existed ONLY in chat.js FALLBACK_SLASH_COMMANDS and was absent from this atlas, sidecar/slash.js and /api/slash/catalog. build-away is kept as an alias."
     },
     {
       "id": "command/background",
@@ -367,37 +405,36 @@
       "id": "command/fast",
       "kind": "command",
       "area": "commands",
-      "name": "/fast — show fast-mode support status",
-      "purpose": "Honestly report that there is no separate fast-mode runtime toggle and point the Commander to /model to switch to a cheaper/faster model.",
-      "promise": "Typing /fast prints the honest status ('no global toggle is active', current model), and any arg other than 'status' returns the guidance to use /model — it never claims a fast mode that does not exist.",
+      "name": "/fast — drop reasoning effort to minimal for quicker, cheaper replies",
+      "purpose": "One-word shortcut to the fastest, cheapest setting, for users who will never think in terms of a reasoning dial.",
+      "promise": "Typing /fast drops reasoning effort to minimal through the SAME real dial /reasoning writes, confirms the before -> after levels, and names the command to restore the previous one. If effort is already minimal or none it says so and changes nothing. It never claims a \"fast mode\" as an independent switch, because StarNet has none.",
       "wiring": {
         "files": [
           "sidecar/slash.js",
-          "sidecar/index.js",
-          "frontend/app/chat.js"
+          "frontend/app/chat.js",
+          "frontend/app/app.js",
+          "frontend/app/harness.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/slash.test.js (fast in catalog; dispatch resolves)"
+          "ref": "test/slash.config.test.js (/fast writes reasoningEffort minimal via applyConfig; the dead placeholder string cannot return)"
         },
         {
-          "kind": "test",
-          "ref": "test/slash.palette.test.js (fastCommand mapped)"
+          "kind": "audit",
+          "ref": "live 2026-07-24 :9400 — /fast moved high -> minimal and the next /api/run body carried reasoningEffort \"minimal\"; a second /fast correctly reported already-fastest and wrote nothing"
         }
       ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "3d0ebc1d1732a2e0ae86a8d8fa772031ee8d3386",
-        "date": "2026-07-18T01:12:00.000Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). /fast → 'Fast mode: no global toggle is active. Current model: anthropic/claude-haiku-4.5.' — honest, never claims a fast mode that does not exist."
+      "notes": "Was a DEAD door: it advertised argsHint [status] and any other arg answered \"Fast mode is not a separate runtime toggle yet\". Grep confirmed no fast-mode toggle exists anywhere (\"fast\" appears only as a model TIER tag in specialty resolution), so rather than keep a command that could only ever say no, it now drives the reasoning dial that genuinely governs reply latency and cost. Re-audit owed: dropped from perfected because the implementation changed."
     },
     {
       "id": "command/goal",
@@ -410,7 +447,8 @@
         "files": [
           "sidecar/slash.js",
           "sidecar/index.js",
-          "frontend/app/chat.js"
+          "frontend/app/chat.js",
+          "frontend/app/goalloop.js"
         ],
         "events": []
       },
@@ -542,6 +580,43 @@
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
       "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). /insights → 'Insights (lifetime run history for agent): 0 runs, $0.00, 0 tokens.' — read from /api/insights, honest zeros."
+    },
+    {
+      "id": "command/loop",
+      "kind": "command",
+      "area": "commands",
+      "name": "/loop — repeat a prompt on an interval in this workstream",
+      "purpose": "The in-session watcher shape: keep re-asking the same question on a clock while you watch, distinct from /goal (judge-driven) and /routine (persisted, headless).",
+      "promise": "Typing /loop <interval> <prompt> re-sends that prompt into THIS workstream every interval, visible in COMMS, capped at 20 runs and refusing sub-minute cadence; it skips a tick while the stream is busy or unfocused rather than firing into the wrong conversation; /stop and /loop off end it; the status line states it does not survive closing StarNet.",
+      "wiring": {
+        "files": [
+          "sidecar/slash.js",
+          "frontend/app/chat.js",
+          "sidecar/index.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/slash.test.js (registry: stays a client directive, args preserved)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/slash.palette.test.js (SOURCE-GREP only — pins handler wiring, goalBlocked guard, budget constants; proves no runtime behavior)"
+        },
+        {
+          "kind": "audit",
+          "ref": "live 2026-07-24 :9400 — fired 1/20 in its own stream, 2 ticks skipped while another stream was focused, 0 cross-stream turns, /stop ended an armed idle loop"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-24T00:00:00.000Z",
+      "lastSeen": "2026-07-24T00:00:00.000Z",
+      "missing": false,
+      "notes": "dispatch:client — it drives send() in the browser. Deliberately in-memory: a loop that resurrected after a restart would spend real money unasked. Live-walked 2026-07-24: cross-stream canary proved a tick never enters another workstream. No harness test drives a real tick — the behavioral evidence is the live walk, not the greps."
     },
     {
       "id": "command/memory",
@@ -735,37 +810,36 @@
       "id": "command/reasoning",
       "kind": "command",
       "area": "commands",
-      "name": "/reasoning — show reasoning-mode support status",
-      "purpose": "Honestly report that reasoning effort is controlled by the selected model (not a separate StarNet toggle) and show the context window.",
-      "promise": "Typing /reasoning prints that reasoning is controlled by the current model plus the context used/limit; a non-status arg returns the honest guidance to pick a reasoning-capable model — it never claims a toggle that does not exist.",
+      "name": "/reasoning — show or set how hard the model thinks before answering",
+      "purpose": "Let the Commander set how hard the model thinks before answering — the real per-provider reasoning dial the run payload already carried.",
+      "promise": "Typing /reasoning shows the current effort for the active provider; /reasoning <none|minimal|low|medium|high|xhigh> WRITES it through App.applyConfig, and the confirmation is printed only after the harness store reads the new value back. An unknown token is refused rather than silently normalized to medium. A model with no reasoning dial gets a warn-not-block note. The chosen level rides the next /api/run payload and persists across reload.",
       "wiring": {
         "files": [
           "sidecar/slash.js",
-          "sidecar/index.js",
-          "frontend/app/chat.js"
+          "frontend/app/chat.js",
+          "frontend/app/app.js",
+          "frontend/app/harness.js",
+          "sidecar/index.js"
         ],
         "events": []
       },
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/slash.test.js (reasoning in catalog; dispatch resolves)"
+          "ref": "test/slash.config.test.js (applyConfig effort branch; read-back-before-claiming; unknown level refused; the old false claim cannot return)"
         },
         {
-          "kind": "test",
-          "ref": "test/slash.palette.test.js (reasoningCommand mapped)"
+          "kind": "audit",
+          "ref": "live 2026-07-24 :9400 — /reasoning high then /fast; captured /api/run bodies carried reasoningEffort \"xhigh\" then \"minimal\"; survived a full page reload on both the harness store and the agent"
         }
       ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "3d0ebc1d1732a2e0ae86a8d8fa772031ee8d3386",
-        "date": "2026-07-18T01:12:00.000Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). /reasoning → 'Reasoning: controlled by the selected model (anthropic/claude-haiku-4.5). Context window is still calibrating.' — honest, no fake toggle."
+      "notes": "Was a NOTE-ONLY placeholder: any non-status arg answered \"Reasoning effort is not a separate StarNet toggle yet\", which was false — Harness.get/setReasoningEffort, the model dock and the run payload all carried the dial already; the command simply never reached it. applyAgentConfig gained a reasoningEffort branch (it handled model/persona/approval but not effort). Re-audit owed: dropped from perfected because the implementation changed."
     },
     {
       "id": "command/reload-mcp",
@@ -809,7 +883,7 @@
       "area": "commands",
       "name": "/reload-skills — refresh the slash skill catalog",
       "purpose": "Invalidate and re-fetch the slash skill + command catalog for the active workstation so newly-authored skills appear.",
-      "promise": "Typing /reload-skills clears the cached catalog and re-warms it from /api/slash/catalog + /api/skills, confirming the refresh; the palette then reflects the current skills.",
+      "promise": "Typing /reload-skills clears the cached catalog and re-warms it from /api/slash/catalog (whose payload the sidecar composes from the skill library, so skills refresh with it), confirming the refresh; the palette then reflects the current skills.",
       "wiring": {
         "files": [
           "sidecar/slash.js",
@@ -910,6 +984,40 @@
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false
+    },
+    {
+      "id": "command/routine",
+      "kind": "command",
+      "area": "commands",
+      "name": "/routine — list, create, preview, pause or delete a scheduled routine",
+      "purpose": "Give the chat surface the cron CRUD the ROUTINES panel already had, so a Commander can schedule recurring work without leaving COMMS.",
+      "promise": "Typing /routine lists the REAL cron jobs with their stored cadence and next-fire time; /routine add <schedule> | <task> mints one through the same validation + mint gate as POST /api/cron; every reply naming a routine that cannot fire — including the mint-gate duplicate — says the scheduler is disarmed. The routine is bound to the agent the workstream is talking to, and rows owned by another agent are labelled.",
+      "wiring": {
+        "files": [
+          "sidecar/slash.js",
+          "sidecar/slash-actions.js",
+          "sidecar/index.js",
+          "frontend/app/chat.js"
+        ],
+        "events": []
+      },
+      "coverage": [
+        {
+          "kind": "test",
+          "ref": "test/slash.test.js (server directive + argsHint)"
+        },
+        {
+          "kind": "test",
+          "ref": "test/slash-actions.test.js (create/pause/rm/preview + disarmed-scheduler honesty)"
+        }
+      ],
+      "status": "mapped",
+      "auditedAt": null,
+      "findings": [],
+      "firstSeen": "2026-07-24T00:00:00.000Z",
+      "lastSeen": "2026-07-24T00:00:00.000Z",
+      "missing": false,
+      "notes": "dispatch:server — the sidecar executes it and returns a say directive. No run-now verb: firing streams NDJSON through handleCronRun and stays in the ROUTINES panel."
     },
     {
       "id": "command/save",
@@ -1019,9 +1127,9 @@
       "id": "command/steer",
       "kind": "command",
       "area": "commands",
-      "name": "/steer — steer the live run (or queue guidance when idle)",
+      "name": "/steer — steer the running turn (nothing to steer when idle)",
       "purpose": "Inject mid-run guidance into the live turn (folded in before the next model call) or queue it to run next when idle — so a steer is never silently dropped.",
-      "promise": "Typing /steer <guidance> during a run POSTs /api/run/steer for the live runId (the loop folds it in before its next step); with no live runId or a failed POST it falls back to queueing the note; when idle it sends the note as the next turn.",
+      "promise": "Typing /steer <guidance> while a run is live POSTs it to /api/run/steer so the loop folds it in at its next step; if the run cannot be addressed (no runId, or the POST fails) the note is queued to run next instead of being dropped; when NOTHING is running it refuses outright and points at /queue — it never mints a full model run out of a steering note.",
       "wiring": {
         "files": [
           "sidecar/slash.js",
@@ -1036,16 +1144,13 @@
           "ref": "test/slash.test.js (steer in catalog; dispatch carries args)"
         }
       ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "3d0ebc1d1732a2e0ae86a8d8fa772031ee8d3386",
-        "date": "2026-07-18T01:12:00.000Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). bare /steer → 'Usage: /steer <guidance>' live; arg form resolves {action:steer,args:'focus tests'} with NO run fired. RUN-BOUNDARY: a live-run steer POSTs /api/run/steer (or idle sends a turn) — proven to the ack/resolution only."
+      "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). bare /steer → 'Usage: /steer <guidance>' live; arg form resolves {action:steer,args:'focus tests'} with NO run fired. RUN-BOUNDARY: a live-run steer POSTs /api/run/steer (or idle sends a turn) — proven to the ack/resolution only. CORRECTED 2026-07-24: the promise still described the pre-F3 fallthrough (\"when idle it sends the note as the next turn\"), which f488ed11 removed precisely because it silently minted a paid run; the entry had been blessed perfected after that change. Dropped to mapped for re-audit."
     },
     {
       "id": "command/stop",
@@ -1094,7 +1199,8 @@
         "files": [
           "sidecar/slash.js",
           "sidecar/index.js",
-          "frontend/app/chat.js"
+          "frontend/app/chat.js",
+          "frontend/app/goalloop.js"
         ],
         "events": []
       },
@@ -1130,7 +1236,8 @@
         "files": [
           "sidecar/slash.js",
           "sidecar/index.js",
-          "frontend/app/chat.js"
+          "frontend/app/chat.js",
+          "frontend/app/mintstore.js"
         ],
         "events": []
       },
@@ -1195,12 +1302,13 @@
       "id": "command/tools",
       "kind": "command",
       "area": "commands",
-      "name": "/tools — show tools granted by the workstation",
-      "purpose": "Show which tool families the active agent actually has, derived from the capabilities placed on its floor — and honestly mark the ones still locked.",
-      "promise": "Typing /tools lists the live tool families (always compute; web/files/memory/terminal/image/spotify only when the matching prop is placed) and names the locked ones; a placed-but-unconnected Jukebox is called out honestly rather than listed as live.",
+      "name": "/tools — show the tools this agent can actually call",
+      "purpose": "Answer \"what can this agent actually call right now\" from the real capability registry, not from a list typed into the UI.",
+      "promise": "Typing /tools lists each toolset family with the REAL tool names CAP_REGISTRY grants it, split three ways: active (prop placed AND the TOOLSETS switch on), placed-but-switched-OFF (named explicitly, tools NOT advertised), and locked-until-placed (naming the objectType required). A placed Jukebox with no Spotify session is called out as inert. compute is described as a grant, never listed as a callable tool.",
       "wiring": {
         "files": [
           "sidecar/slash.js",
+          "sidecar/slash-actions.js",
           "sidecar/index.js",
           "frontend/app/chat.js"
         ],
@@ -1209,20 +1317,21 @@
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/slash.test.js (tools in catalog; dispatch resolves)"
+          "ref": "test/slash.test.js (registry: dispatch:server)"
         },
         {
           "kind": "test",
-          "ref": "test/slash.palette.test.js (toolsCommand mapped)"
+          "ref": "test/slash-actions.test.js (real tool names; placed-but-disabled family withholds its tools; unplaced listed as locked; jukebox inert note)"
+        },
+        {
+          "kind": "audit",
+          "ref": "live 2026-07-24 :9400 — toggling the cabinet toolset OFF moved FILE CABINET from active to \"switched OFF\" and dropped the count 4->3, verified against POST /api/toolsets/cabinet"
         }
       ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "3d0ebc1d1732a2e0ae86a8d8fa772031ee8d3386",
-        "date": "2026-07-18T01:12:00.000Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
-      "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). /tools → 'Tools: compute (model.chat). Locked until placed: web, files, memory, terminal, image, spotify.' — truthful capability gating on the seeded bare-floor agent.",
+      "notes": "Was dispatch:client reading a HARDCODED literal (chat.js toolRows) that understated the real surface ~3x (web claimed 2 tools, CAP_REGISTRY grants 14) and ignored the TOOLSETS switch entirely, so a disabled family still read as available. Now dispatch:server off toolsetRows(CAP_REGISTRY) + the persisted enable-state. Re-audit owed: status dropped from perfected because the implementation changed.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false
@@ -1267,12 +1376,13 @@
       "id": "command/usage",
       "kind": "command",
       "area": "commands",
-      "name": "/usage — show token and spend totals",
-      "purpose": "Show lifetime and this-stream token/spend/call totals so the Commander can see real cost.",
-      "promise": "Typing /usage prints lifetime tokens/$/calls (Harness.totals) and this-stream tokens/$/calls (Workstreams.costOf) — real accumulated numbers, zero when nothing has run.",
+      "name": "/usage — show real spend from the station ledger",
+      "purpose": "Tell the Commander what the station has actually SPENT, from the same ledger the budget caps enforce against.",
+      "promise": "Typing /usage prints today's spend (against the daily cap when one is set), all-time spend with run count and token total, and this agent's share — every figure read from the sidecar spend ledger, so it includes headless runs (routines, away shifts, night shift, messaging) the browser never observed. Sub-cent spend renders as </usr/bin/bash.01, never /usr/bin/bash.00. An unreadable ledger refuses rather than reporting zero.",
       "wiring": {
         "files": [
           "sidecar/slash.js",
+          "sidecar/slash-actions.js",
           "sidecar/index.js",
           "frontend/app/chat.js"
         ],
@@ -1281,20 +1391,21 @@
       "coverage": [
         {
           "kind": "test",
-          "ref": "test/slash.test.js (usage in catalog; dispatch resolves)"
+          "ref": "test/slash.test.js (registry: dispatch:server)"
         },
         {
           "kind": "test",
-          "ref": "test/slash.palette.test.js (usageCommand mapped)"
+          "ref": "test/slash-actions.test.js (ledger-sourced today/lifetime/tokens/per-agent + caps; sub-cent; unreadable ledger refuses)"
+        },
+        {
+          "kind": "audit",
+          "ref": "live 2026-07-24 :9400 — ledger seeded with 3 HEADLESS runs (.504); /usage reported .50 / 3 runs / 43,900 tokens and per-agent /usr/bin/bash.42 vs .08, matching GET /api/budget/status"
         }
       ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "3d0ebc1d1732a2e0ae86a8d8fa772031ee8d3386",
-        "date": "2026-07-18T01:12:00.000Z"
-      },
+      "status": "mapped",
+      "auditedAt": null,
       "findings": [],
-      "notes": "Live-proven @ seed :8965 / CDP :9365 (evidence .uiatlas/commands-live.json + commands-boundary.json). /usage → 'Usage: lifetime 0 tokens (≈¾ word each), $0.00 spent, 0 model calls. This stream: 0 tokens, $0.00, 0 calls.' — honest zeros, no fabricated spend.",
+      "notes": "Was dispatch:client reading Harness.totals(), a counter that only accumulates runs THIS BROWSER watched — it labelled that \"lifetime\" while every cron/away/night-shift/Telegram run spent real money it never saw, structurally disagreeing with the ledger the caps enforce against. Reads effectiveCaps directly rather than GET /api/budget/status, whose caps key is clobbered by budget.status() (pre-existing; the Budget panel compensates with its own precedence chain). Re-audit owed: status dropped from perfected because the implementation changed.",
       "firstSeen": "2026-07-07T08:09:25.408Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false

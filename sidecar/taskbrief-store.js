@@ -48,6 +48,13 @@ function normalize(raw) {
   return { briefs: Array.isArray(x.briefs) ? x.briefs.map(normalizeBrief).filter(b => b.id && b.key).slice(-CAP) : [] };
 }
 
+// The literal deferral the UI sends when the Commander taps "use your judgment" (fork.js taskAnswerMessage),
+// and what a channel user types when they take the same escape hatch ('Reply with a choice, or say "use your
+// judgment."'). It must match ONLY a pure deferral: "Use your judgment, but keep it under 3 pages" hands over
+// the choice yet still states a real constraint, so counting it as a skip would suppress a dimension the
+// Commander is actively steering. Anchored at both ends, with the canned tail optional.
+const SKIP_ANSWER = /^\s*use your judgment\b[\s.!,;:—-]*(?:choose the most sensible reversible default and continue the original task\.?)?\s*$/i;
+
 function fingerprintQuestion(text) {
   return String(text || '').toLowerCase().split(/[^a-z0-9]+/).filter(t => t.length >= 3)
     .filter(t => !/^(this|that|with|from|what|which|should|would|could|your|their|about)$/.test(t))
@@ -174,7 +181,88 @@ function makeTaskBriefStore(deps) {
     return Object.values(bins).filter(x => x.count >= 2).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, Number.isFinite(limit) ? limit : 5);
   }
 
-  return { read, list, active, prepare, ask, proceed, complete, patterns, fingerprintQuestion, _durable: durable };
+  // GROUNDED RECOMMENDATION (2026-07-24). patterns() already knows which answer the Commander keeps choosing
+  // for a given question — that is the one suggestion on this surface that is PROVABLE rather than a model
+  // guess, and until now it was only whispered into the prompt as weak prose while the UI threw it away.
+  // Same question (fingerprint) + an answer that resolves to one of THIS question's options + chosen >= 2
+  // times => a suggestion we can defend with a count. Returns canonical option text, or null. Never a guess:
+  // if nothing was observed twice, this returns null and the model's own recommendation stands.
+  function groundedFor(question, pool) {
+    const q = question && typeof question === 'object' ? question : null;
+    if (!q || q.answer || !Array.isArray(q.options) || q.options.length < 2) return null;
+    const fpText = fingerprintQuestion(q.text);
+    if (!fpText) return null;
+    const tally = {};
+    for (const p of (Array.isArray(pool) ? pool : patterns(50))) {
+      if (fingerprintQuestion(p.question) !== fpText) continue;
+      // A DEFERRAL is not a choice. "Use your judgment…" is a stored answer like any other, and letting it
+      // through produced "you chose this N times before" about an option the Commander declined to pick.
+      if (SKIP_ANSWER.test(p.answer)) continue;
+      // EQUALITY ONLY — never the rescue matcher. This resolves the COMMANDER'S OWN free text, where a loose
+      // match does not merely mis-suggest, it misquotes them: substring matching turned "not operators" into
+      // a gold "you chose operators" claim. If their words are not one of these options, there is nothing
+      // provable to say.
+      const option = Policy.matchOption(q.options, p.answer);
+      if (!option) continue;
+      // Fold counts across spellings of the SAME option, so history split over "operators"/"operators." is
+      // not understated (patterns() bins on the raw answer string; the canonical option is the real key).
+      const t = tally[option] || (tally[option] = { option, count: 0, lastAt: 0 });
+      t.count += Number(p.count) || 0;
+      t.lastAt = Math.max(t.lastAt, Number(p.updatedAt) || 0);
+    }
+    const ranked = Object.values(tally).sort((a, b) => b.count - a.count || b.lastAt - a.lastAt);
+    const top = ranked[0];
+    if (!top || top.count < 2) return null;
+    // A DEAD HEAT IS NOT A PREFERENCE. 2x "operators" against 2x "executives" is the Commander having no
+    // settled habit; presenting either as "you chose this 2 times before" would dress a coin flip as proof.
+    if (ranked[1] && ranked[1].count === top.count) return null;
+    return top;
+  }
+
+  // ASK-WORTHINESS (2026-07-24). Every "use your judgment" tap is ALREADY persisted as a real answer string
+  // (fork.js taskAnswerMessage), so the Commander's own "stop asking me this" signal has been sitting on disk
+  // all along, uninterpreted. A dimension they habitually defer is one the agent should decide itself — and
+  // then state as a correctable assumption in the read card — rather than burn one of its two questions on.
+  // Deliberately CONSERVATIVE: suppressing a question is more consequential than merely suggesting a default,
+  // because a false suppression silently guesses at something the Commander cared about. So it needs real
+  // repetition (>=3) AND deferrals to be at least half of what they did with that dimension. Marker-path
+  // questions carry no dimension and are attributed to none.
+  function dimensionDeferrals() {
+    const tally = {};
+    const done = list({ limit: 200 }).filter(b => b.status === 'done');   // list() sorts newest-first
+    done.forEach((b, age) => {                                            // age 0 = most recent completed task
+      for (const q of b.questions) {
+        const dim = bounded(q.dimension, 24);
+        if (!dim || !q.answer) continue;
+        const t = tally[dim] || (tally[dim] = { dimension: dim, deferred: 0, answered: 0, lastAskedAge: age, lastAt: -1, lastWasDeferral: false });
+        const deferral = SKIP_ANSWER.test(q.answer);
+        t.answered++;
+        t.lastAskedAge = Math.min(t.lastAskedAge, age);
+        if (deferral) t.deferred++;
+        const at = Number(q.answeredAt) || Number(q.askedAt) || 0;
+        if (at >= t.lastAt) { t.lastAt = at; t.lastWasDeferral = deferral; }
+      }
+    });
+    return Object.values(tally);
+  }
+  // How many completed tasks may pass before a suppressed dimension is allowed ONE question again.
+  const PROBE_GAP = 8;
+  function deferredDimensions() {
+    return dimensionDeferrals()
+      .filter(t => t.deferred >= 3 && t.deferred * 2 >= t.answered)
+      // RECOVERY, and it is not optional. Suppression blocks brief_ask, which is the only path that records a
+      // dimension at all (marker questions carry none) — so without a way out the latch is permanent BY
+      // CONSTRUCTION: no question -> no new answer -> the ratio can never change, and there is no reset route,
+      // setting, or UI. A Commander who deferred during two busy tasks would be locked out forever. Two ways
+      // back, so recovery never depends on out-waiting a 200-brief history window:
+      //   1. a probe: after PROBE_GAP completed tasks with no question here, let one through;
+      //   2. the LATEST signal wins: the moment they actually answer one, stop suppressing. Ratio alone would
+      //      need four more real answers to outvote three old deferrals — i.e. ~32 tasks at one probe per 8.
+      .filter(t => t.lastAskedAge < PROBE_GAP && t.lastWasDeferral)
+      .map(t => t.dimension);
+  }
+
+  return { read, list, active, prepare, ask, proceed, complete, patterns, groundedFor, dimensionDeferrals, deferredDimensions, fingerprintQuestion, _durable: durable };
 }
 
 module.exports = { makeTaskBriefStore, normalize, normalizeBrief, normalizeQuestion, fingerprintQuestion };

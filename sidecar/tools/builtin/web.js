@@ -234,6 +234,15 @@
     const or = deps.openrouter || null;
     // DNS-rebinding guard resolver: default to real Node DNS; pass deps.lookup:null to disable (tests).
     const doLookup = ('lookup' in deps) ? deps.lookup : nodeLookup;
+    // web_request needs the RUN's surface (host authority — never taken from tool args) and a resolver for
+    // the Commander's stored keys. Default: no keys and the strict surface, so an unwired caller can only
+    // make UNAUTHENTICATED requests rather than silently gaining credentials it was never handed.
+    const surface = deps.surface === 'interactive' ? 'interactive' : 'autonomous';
+    const serviceKeys = {
+      resolve: (name, sfc) => (typeof deps.resolveServiceKey === 'function'
+        ? deps.resolveServiceKey(name, sfc)
+        : { ok: false, reason: 'unknown' })
+    };
 
     function searchHeaders(extra) {
       return Object.assign({
@@ -407,11 +416,113 @@
       }
     };
 
+    /* ---------- web_request: call a third-party REST API with the Commander's key ----------
+       WHY THIS EXISTS: before it, nothing in StarNet could send a custom header. web_fetch's whole schema
+       is {url}, so ANY authenticated API meant handing the agent a full shell (shell.exec + curl), which
+       needs a placed workbench and is a far larger grant than "make one HTTPS call". This tool is the
+       narrow capability that job actually needs.
+
+       THE SECRET NEVER ENTERS MODEL CONTEXT. The model writes a PLACEHOLDER — Authorization:
+       "Bearer ${PRINTIFY_API_KEY}" — and the host substitutes the value at send time from the KEYS store.
+       The model can therefore use a key it has never seen, and a transcript/log leak cannot spend it.
+       Placeholders resolve in HEADERS ONLY: putting a secret in a URL would leak it into history, proxy
+       logs, and Referer headers, so a placeholder in the url is refused rather than silently sent. */
+    const SECRET_REF_RE = /\$\{([A-Z][A-Z0-9_]*)\}/g;
+    const SECRET_REF_TEST = /\$\{[A-Z][A-Z0-9_]*\}/;   // non-global twin: .test() on a /g regex is stateful
+    const REQUEST_MAX_CHARS = 8000;
+    const SAFE_METHODS = new Set(['GET', 'HEAD']);
+    const ALL_METHODS = new Set(['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE']);
+
+    function resolveSecretRefs(value, surface, used) {
+      let failure = null;
+      const out = String(value).replace(SECRET_REF_RE, (whole, name) => {
+        const r = serviceKeys.resolve(name, surface);
+        if (r.ok) { used.push(name); return r.value; }
+        failure = failure || (r.reason === 'unattended'
+          ? 'this run is unattended and "' + r.name + '" is not approved for unattended use — approve it in TOOLSETS & CONNECTORS → KEYS, or run this while watching'
+          : 'no enabled service key provides ' + name + ' — add it in TOOLSETS & CONNECTORS → KEYS');
+        return whole;
+      });
+      return { out, failure };
+    }
+
+    const requestTool = {
+      // scope 'write', NOT 'execute': in this codebase 'execute' means running a host process (shell.exec,
+      // verify.run) and carries the autonomous exec lockout. This mutates a THIRD-PARTY resource over HTTPS
+      // and spawns nothing, so it is a write — which is also what keeps it under the exec lockout by design.
+      name: 'web_request', capability: 'web', scope: 'write', impact: 'external-credentialed',
+      requiresConsent: true, network: true, timeoutMs: FETCH_TIMEOUT_MS + 20000,
+      description:
+        'Call a third-party REST API (Printify, Etsy, Stripe, any service with an HTTP API) and return the response. ' +
+        'To authenticate, reference a stored key by its environment-variable NAME inside a header value using ${NAME} — ' +
+        'e.g. headers {"Authorization": "Bearer ${PRINTIFY_API_KEY}"}. The host substitutes the real value at send time; ' +
+        'you never see it and must never ask the user for it. Placeholders work in headers only, never in the url.',
+      schema: {
+        type: 'object', required: ['url'],
+        properties: {
+          url: { type: 'string', description: 'Full https URL of the API endpoint.' },
+          method: { type: 'string', description: 'GET (default), HEAD, POST, PUT, PATCH or DELETE.' },
+          headers: { type: 'object', description: 'Request headers. Use ${KEY_NAME} to reference a stored key.' },
+          body: { type: 'string', description: 'Request body for POST/PUT/PATCH (send JSON as a string).' }
+        }
+      },
+      run: async (args, ctx) => {
+        const method = String((args && args.method) || 'GET').toUpperCase();
+        if (!ALL_METHODS.has(method)) throw new Error('unsupported method: ' + method);
+        const rawUrl = String((args && args.url) || '');
+        if (SECRET_REF_TEST.test(rawUrl)) {
+          throw new Error('a ${KEY} placeholder cannot go in the url — secrets in URLs leak into logs and history. Put it in a header instead.');
+        }
+        const u = assertSafeUrl(rawUrl);
+        await assertResolvedSafe(u, doLookup);
+
+        const used = [];
+        const headers = { 'User-Agent': UA, 'Accept': 'application/json, text/plain;q=0.9, */*;q=0.8' };
+        const src = (args && args.headers && typeof args.headers === 'object') ? args.headers : {};
+        for (const k of Object.keys(src)) {
+          if (/[\r\n]/.test(k) || /[\r\n]/.test(String(src[k]))) throw new Error('header contains a newline: ' + k);
+          const r = resolveSecretRefs(src[k], surface, used);
+          if (r.failure) throw new Error(r.failure);
+          headers[k] = r.out;
+        }
+        const hasBody = method !== 'GET' && method !== 'HEAD' && args && args.body != null;
+        if (hasBody && !Object.keys(headers).some(k => k.toLowerCase() === 'content-type')) headers['Content-Type'] = 'application/json';
+
+        // Redirects are followed manually so every hop is re-validated against the SSRF guard. Credentials
+        // are dropped the moment the host changes — an open redirect must never forward the user's key.
+        let target = u, res = null;
+        for (let hop = 0; hop < 5; hop++) {
+          const sendHeaders = hop === 0 || hostOf(target) === hostOf(u)
+            ? headers
+            : Object.keys(headers).reduce((o, k) => (/^(authorization|cookie|x-api-key)$/i.test(k) ? o : (o[k] = headers[k], o)), {});
+          res = await withTimeout(signal => doFetch(target.href, {
+            method, headers: sendHeaders, body: hasBody ? String(args.body) : undefined, redirect: 'manual', signal
+          }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await r.text() })), FETCH_TIMEOUT_MS, ctx && ctx.signal);
+          if (res.status >= 300 && res.status < 400 && res.loc) {
+            const next = assertSafeUrl(new URL(res.loc, target.href).href);
+            await assertResolvedSafe(next, doLookup);
+            target = next; continue;
+          }
+          break;
+        }
+
+        // The response is UNTRUSTED third-party data — fenced like every other external content path so a
+        // hostile API body cannot issue instructions. redact() strips any secret that echoed back.
+        const scrub = typeof deps.redact === 'function' ? deps.redact : (s => s);
+        const bodyText = clamp(scrub(String(res.body || '')), REQUEST_MAX_CHARS);
+        const label = method + ' ' + u.origin + u.pathname + ' -> HTTP ' + res.status + (used.length ? ' (authenticated with ' + used.join(', ') + ')' : '');
+        return {
+          content: fenceExternal(bodyText || '(empty response body)', label),
+          summary: method + ' ' + hostOf(u) + ' ' + res.status
+        };
+      }
+    };
+
     return {
-      searchTool, fetchTool, webSearch, webFetch,
+      searchTool, fetchTool, requestTool, webSearch, webFetch,
       // exported for unit tests
       _internals: { parseDDGHtml, parseDDGLite, parseMojeek, unwrapDDG, isDDGBlocked, htmlToText, assertSafeUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, fenceExternal },
-      register(reg) { reg.register(searchTool); reg.register(fetchTool); return reg; }
+      register(reg) { reg.register(searchTool); reg.register(fetchTool); reg.register(requestTool); return reg; }
     };
   }
 
