@@ -4025,8 +4025,8 @@
       "kind": "ui",
       "area": "build",
       "name": "+ ADD & CONNECT",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/headers/token/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and the HTTP tab shows its inputs while the STDIO tab explains why a local server cannot run on this host.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -4063,54 +4063,12 @@
       "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
-      "id": "ui/build/mc-args",
-      "kind": "ui",
-      "area": "build",
-      "name": "input",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "sidecar/mcp/catalog.js",
-          "sidecar/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
-        },
-        {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
-        "date": "2026-07-18T00:00:00.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false,
-      "selector": "#mc-args",
-      "state": "build-connectors",
-      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
-    },
-    {
       "id": "ui/build/mc-cancel",
       "kind": "ui",
       "area": "build",
       "name": "CANCEL EDIT",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/headers/token/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and the HTTP tab shows its inputs while the STDIO tab explains why a local server cannot run on this host.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -4147,96 +4105,12 @@
       "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
-      "id": "ui/build/mc-command",
-      "kind": "ui",
-      "area": "build",
-      "name": "input",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "sidecar/mcp/catalog.js",
-          "sidecar/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
-        },
-        {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
-        "date": "2026-07-18T00:00:00.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false,
-      "selector": "#mc-command",
-      "state": "build-connectors",
-      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
-    },
-    {
-      "id": "ui/build/mc-cwd",
-      "kind": "ui",
-      "area": "build",
-      "name": "input",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "sidecar/mcp/catalog.js",
-          "sidecar/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
-        },
-        {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
-        "date": "2026-07-18T00:00:00.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false,
-      "selector": "#mc-cwd",
-      "state": "build-connectors",
-      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
-    },
-    {
       "id": "ui/build/mc-empty-cta",
       "kind": "ui",
       "area": "build",
       "name": "+ ADD A CONNECTOR",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/headers/token/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and the HTTP tab shows its inputs while the STDIO tab explains why a local server cannot run on this host.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -4273,54 +4147,12 @@
       "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
     },
     {
-      "id": "ui/build/mc-env",
-      "kind": "ui",
-      "area": "build",
-      "name": "textarea",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
-      "wiring": {
-        "files": [
-          "frontend/app/stationui.js",
-          "sidecar/mcp/catalog.js",
-          "sidecar/index.js"
-        ],
-        "events": []
-      },
-      "coverage": [
-        {
-          "kind": "test",
-          "ref": "test/connectors-ui.test.js (asserts each mc-* id present)"
-        },
-        {
-          "kind": "test",
-          "ref": "test/e2e.mcp-connector.test.js (upsert round-trip)"
-        },
-        {
-          "kind": "test",
-          "ref": "test/mcp.catalog.test.js"
-        }
-      ],
-      "status": "perfected",
-      "auditedAt": {
-        "sha": "43936bd277c1a83067be494130ff8063e5563e6e",
-        "date": "2026-07-18T00:00:00.000Z"
-      },
-      "findings": [],
-      "firstSeen": "2026-07-07T08:11:07.410Z",
-      "lastSeen": "2026-07-18T00:54:02.711Z",
-      "missing": false,
-      "selector": "#mc-env",
-      "state": "build-connectors",
-      "notes": "Renderer-judged; representative=mc-id. Live (MCP tab): mc-id/label/url/command/args/env/headers/token/cwd/timeout inputs + mc-add/mc-cancel buttons all present; transport HTTP/STDIO toggle present. [live-proof this session @ HEAD 43936bd2 (port 8966/CDP 9366)]"
-    },
-    {
       "id": "ui/build/mc-headers",
       "kind": "ui",
       "area": "build",
       "name": "textarea",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/headers/token/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and the HTTP tab shows its inputs while the STDIO tab explains why a local server cannot run on this host.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -4361,8 +4193,8 @@
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/headers/token/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and the HTTP tab shows its inputs while the STDIO tab explains why a local server cannot run on this host.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -4403,8 +4235,8 @@
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/headers/token/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and the HTTP tab shows its inputs while the STDIO tab explains why a local server cannot run on this host.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -4445,8 +4277,8 @@
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/headers/token/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and the HTTP tab shows its inputs while the STDIO tab explains why a local server cannot run on this host.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -4487,8 +4319,8 @@
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/headers/token/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and the HTTP tab shows its inputs while the STDIO tab explains why a local server cannot run on this host.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -4529,8 +4361,8 @@
       "kind": "ui",
       "area": "build",
       "name": "input",
-      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/command/args/env/headers/token/cwd/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
-      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and its transport (http/stdio) shows the matching inputs.",
+      "purpose": "A field/control of the manual MCP-connector add form (id/label/url/headers/token/timeout + ADD/CANCEL) — the authoritative typed inputs POST /api/connectors accepts.",
+      "promise": "Filling the form + '+ ADD & CONNECT' upserts a connector; every field id the handler reads is present and the HTTP tab shows its inputs while the STDIO tab explains why a local server cannot run on this host.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -7844,8 +7676,8 @@
       "kind": "ui",
       "area": "build",
       "name": "HTTP",
-      "purpose": "Switch the manual MCP form between HTTP and STDIO (local) transport, revealing the fields that transport needs.",
-      "promise": "Selecting HTTP vs STDIO swaps the visible field set (url/headers vs command/args/env/cwd); both options render.",
+      "purpose": "Switch the manual MCP form between HTTP and STDIO (local). HTTP reveals its fields; STDIO reveals an explanation, because a local child MCP server cannot run on the desktop host.",
+      "promise": "Selecting HTTP shows url/token/headers with ADD enabled; selecting STDIO shows why a local server cannot run here, renders NO inputs, and disables ADD. Both options render.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",
@@ -7878,8 +7710,8 @@
       "kind": "ui",
       "area": "build",
       "name": "STDIO (local)",
-      "purpose": "Switch the manual MCP form between HTTP and STDIO (local) transport, revealing the fields that transport needs.",
-      "promise": "Selecting HTTP vs STDIO swaps the visible field set (url/headers vs command/args/env/cwd); both options render.",
+      "purpose": "Switch the manual MCP form between HTTP and STDIO (local). HTTP reveals its fields; STDIO reveals an explanation, because a local child MCP server cannot run on the desktop host.",
+      "promise": "Selecting HTTP shows url/token/headers with ADD enabled; selecting STDIO shows why a local server cannot run here, renders NO inputs, and disables ADD. Both options render.",
       "wiring": {
         "files": [
           "frontend/app/stationui.js",

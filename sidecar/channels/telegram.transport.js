@@ -134,6 +134,61 @@
         }
       },
 
+      // answerCallbackQuery — MANDATORY after every inline-keyboard tap. Telegram spins a loading indicator on the
+      // button until this lands (and gives up after ~15s showing a client-side error), so an unanswered tap reads
+      // as "the bot is broken" even when the decision was recorded fine. `text` (optional) pops a small toast.
+      // NEVER throws — a failed ack is cosmetic and must not abort the decision it is acknowledging.
+      async answerCallback(callbackId, text) {
+        try {
+          const payload = { callback_query_id: String(callbackId) };
+          if (text) payload.text = String(text).slice(0, 200);   // Bot API caps the toast at 200 chars
+          const { data, res } = await call('answerCallbackQuery', payload);
+          if (data && data.ok) return { ok: true };
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          return { ok: false, error: (data && data.description) || ('http ' + code) };
+        } catch (e) {
+          return { ok: false, error: (e && e.message) || 'network error' };
+        }
+      },
+
+      // editMessageText — rewrite a message we already sent, and (by omitting reply_markup) STRIP its keyboard.
+      // This is how a resolved prompt stops being tappable: the buttons are replaced by the decision they made,
+      // in place, so the transcript reads as a record instead of a dead control. NEVER throws.
+      // Telegram answers 400 "message is not modified" when the text is byte-identical — harmless and reported
+      // as-is; callers treat any failure as cosmetic (the decision is already recorded server-side).
+      async editMessage(chatId, messageId, text, editOpts) {
+        const o2 = editOpts || {};
+        const payload = { chat_id: chatId, message_id: messageId, text: text };
+        for (const k in o2) if (k !== 'signal' && Object.prototype.hasOwnProperty.call(o2, k)) payload[k] = o2[k];
+        try {
+          const { data, res } = await call('editMessageText', payload, o2.signal);
+          if (data && data.ok) return { ok: true };
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          return { ok: false, error: (data && data.description) || ('http ' + code) };
+        } catch (e) {
+          return { ok: false, error: (e && e.message) || 'network error' };
+        }
+      },
+
+      // setMyCommands — publish the bot's command list so Telegram's blue "/" menu offers the SAME commands the
+      // hub actually implements. Called once per connect from the hub's own command table (one source of truth),
+      // so the menu can never drift from what `/help` claims or what parseCommand accepts. NEVER throws — an
+      // empty menu is a cosmetic loss, never a reason to fail a connect.
+      async setCommands(list) {
+        try {
+          const commands = (Array.isArray(list) ? list : [])
+            .filter(c => c && c.command)
+            .map(c => ({ command: String(c.command).toLowerCase().slice(0, 32), description: String(c.description || '').slice(0, 256) }))
+            .slice(0, 100);   // Bot API hard cap
+          const { data, res } = await call('setMyCommands', { commands: commands });
+          if (data && data.ok) return { ok: true, count: commands.length };
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          return { ok: false, error: (data && data.description) || ('http ' + code) };
+        } catch (e) {
+          return { ok: false, error: (e && e.message) || 'network error' };
+        }
+      },
+
       // never throws: a network/abort/HTTP error becomes a SendResult so the adapter's bounded resend can run.
       async send(chatId, text, sendOpts) {
         const o2 = sendOpts || {};

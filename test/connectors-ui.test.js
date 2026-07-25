@@ -111,10 +111,20 @@ function fakeStack(tools) {
   A.ok(/setupSpotify\(body\)/.test(station), 'Spotify card is still wired (not regressed)');
   A.ok(/id="sp-connect"/.test(station), 'Spotify connect control preserved');
 
-  // transport choice: HTTP vs STDIO
+  // transport choice: HTTP, plus an HONEST stdio dead-end.
+  // A local stdio MCP server can never connect on the desktop host — the installed app pins
+  // STARNET_MCP_STDIO=0 (src-tauri/src/main.rs) and makeStdioTransport refuses without a broker-proven
+  // isolated cell (sidecar/mcp/transport.stdio.js; `userControlIsolated` is set NOWHERE in production).
+  // This pane used to render command/args/cwd/env inputs anyway: the config saved, the connect threw, and
+  // the row stayed red forever. These assertions previously PINNED that lie in place — inverted 2026-07-24.
   A.ok(/id="mc-transport"/.test(station) && /data-tp="stdio"/.test(station) && /data-tp="http"/.test(station), 'transport toggle (http/stdio) present');
-  A.ok(/id="mc-command"/.test(station) && /id="mc-args"/.test(station), 'stdio command + args inputs present');
-  A.ok(/id="mc-env"/.test(station) && /id="mc-cwd"/.test(station), 'stdio env + cwd inputs present');
+  A.ok(!/id="mc-command"/.test(station) && !/id="mc-args"/.test(station), 'NO stdio command/args inputs — the host can never spawn one');
+  A.ok(!/id="mc-cwd"/.test(station) && !/id="mc-env"/.test(station), 'NO stdio cwd/env inputs — the host can never spawn one');
+  A.ok(/can’t run here|cannot run on this host/.test(station), 'the stdio tab explains WHY it is unavailable');
+  A.ok(/addBtn\.disabled = dead/.test(station), 'ADD is disabled while the stdio tab is selected');
+  // the web build ships the same panel — a fix that lands in only one copy is a fix half the users never get
+  const webStation = fs.readFileSync(path.join(__dirname, '..', 'website', 'app', 'app', 'windows', 'connectors.js'), 'utf8');
+  A.ok(!/id="mc-command"/.test(webStation) && !/id="mc-env"/.test(webStation), 'web build carries the same stdio withdrawal');
   A.ok(/id="mc-headers"/.test(station), 'http custom-headers input present');
   A.ok(/id="mc-timeout"/.test(station), 'per-connector timeout input present');
 

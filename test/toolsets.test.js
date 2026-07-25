@@ -98,7 +98,9 @@ function stationWith(types) {
   A.ok(/function buildConnectors/.test(station), 'buildConnectors builder preserved');
   A.ok(/setupSpotify\(body\)/.test(station), 'Spotify wiring preserved');
   A.ok(/id="sp-connect"/.test(station) && /id="sp-status"/.test(station) && /id="sp-disconnect"/.test(station), 'Spotify ids preserved');
-  A.ok(/id="mc-transport"/.test(station) && /id="mc-command"/.test(station) && /id="mc-timeout"/.test(station), 'MCP form ids preserved');
+  // mc-command/mc-args/mc-cwd/mc-env were withdrawn 2026-07-24 (stdio can never connect on this host —
+  // see connectors-ui.test.js); this guard is about the form surviving a retitle/reorg, so it pins mc-url.
+  A.ok(/id="mc-transport"/.test(station) && /id="mc-url"/.test(station) && /id="mc-timeout"/.test(station), 'MCP form ids preserved');
   A.ok(/function startEdit/.test(station) && /data-act="edit"/.test(station) && /data-act="reload"/.test(station), 'MCP per-row actions preserved');
   A.ok(/function badge/.test(station) && /parseKV/.test(station) && /never round-trip the token/.test(station), 'MCP helpers + token-safety preserved');
 

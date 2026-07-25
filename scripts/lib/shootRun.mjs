@@ -65,7 +65,22 @@ export async function runShoot({ port, cdpPort, outDir, win = '1440,900', only =
         // A BUILD STATION close emits "Station layout saved"; depending on capture speed it used
         // to overlap a later panel and poison the blessed signature. Remove only the ephemeral DOM
         // stack immediately before capture; persistent notification records remain untouched.
-        try { await evalJS(cdp, `(() => { const s = document.getElementById('toast-stack'); if (s) s.remove(); return 'toasts-cleared'; })()`); } catch {}
+        // Also FINISH any still-running CSS animation before the frame is read. The card family
+        // (motion.css `cardIn`) enters with a per-index stagger of up to ~540ms, and a panel that
+        // opens slowly can leave cards mid-entrance when the fixed wait expires — so the capture
+        // lands at a random point on the animation curve. That made build-skills nondeterministic
+        // across three consecutive runs at ONE commit (diff 2.37 / 0.05 / 1.52 against a 1.5
+        // threshold): the visual gate failed at random and trained everyone to ignore it. Snapping
+        // animations to their end state is the fix — widening the threshold past 2.4 would have
+        // blinded the gate to real regressions, which start around 2.0.
+        try {
+          await evalJS(cdp, `(() => {
+            const s = document.getElementById('toast-stack'); if (s) s.remove();
+            let n = 0;
+            try { for (const a of document.getAnimations()) { try { a.finish(); n++; } catch (_) {} } } catch (_) {}
+            return 'toasts-cleared, animations-finished:' + n;
+          })()`);
+        } catch {}
         const { kb } = await capture(cdp, outDir, st.name);
         const bad = /^(NOTFOUND|CLICK_ERR|DRIVE_ERR)/.test(String(driveResult));
         if (bad) exitCode = 3;

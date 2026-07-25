@@ -33,6 +33,7 @@
     <a href="agents.html">AGENTS & TEAMS</a>
     <a href="autonomy.html">AUTONOMY & NIGHT SHIFT</a>
     <a href="skills.html">SKILLS, RECIPES, ROUTINES</a>
+    <a href="connect-a-platform.html">CONNECT A PLATFORM</a>
     <a href="connectors.html" class="active">CONNECTORS & INTEROP</a>
     <a href="migrating.html">FROM OPENCLAW / HERMES</a>
     <a href="troubleshooting.html">TROUBLESHOOTING</a>
@@ -50,8 +51,14 @@ tool families, every one gated by the station's capability model
 <h2>MCP connectors</h2>
 <p>StarNet speaks <b>Model Context Protocol</b>. A curated connector catalog covers popular
 services with one-click setup; connectors that need auth use <b>OAuth 2.1 dynamic client
-registration</b> or a pasted key. Any third-party MCP server you run can be added — your agents'
-reach grows with the ecosystem, not with our release schedule.</p>
+registration</b> or a pasted key. Any third-party <b>remote http(s)</b> MCP server can be added by
+URL — your agents' reach grows with the ecosystem, not with our release schedule.</p>
+<p>Local <code>stdio</code> servers (<code>npx …</code>, <code>uvx …</code>) are <b>not</b> supported:
+StarNet will not spawn unsandboxed child processes on your machine. A service that ships only a local
+server is reached the other way — paste its API key and let the agent call the REST API directly.</p>
+<div class="callout"><b>Connecting a specific service?</b> <a href="connect-a-platform.html">CONNECT A
+PLATFORM</a> walks the whole decision end to end — which of the two routes applies, how a key is stored
+and substituted without the model ever seeing it, unattended use, and what each failure message means.</div>
 
 <h2>Messaging channels</h2>
 <p>Connect <b>Telegram</b> or <b>Discord</b> and your agents can report to you — and take

@@ -94,6 +94,7 @@
       envVar: String(r.envVar || ''),
       docsUrl: String(r.docsUrl || ''),
       enabled: r.enabled !== false,
+      autonomous: r.autonomous === true,   // shown so the panel can state the unattended grant honestly
       addedAt: (typeof r.addedAt === 'number') ? r.addedAt : 0,
       last4: mask(r.key)
     };
@@ -133,6 +134,11 @@
       id: id, name: name, envVar: envVar, key: key,
       docsUrl: input.docsUrl ? String(input.docsUrl).trim() : (prev ? String(prev.docsUrl || '') : ''),
       enabled: prev ? (prev.enabled !== false) : true,
+      // UNATTENDED GRANT — default OFF, and never inferred. `enabled` means "an agent may spend this key
+      // while you are watching"; `autonomous` additionally means "...and while you are not". A scheduled,
+      // Night-Shift, or messaged run can only spend a key carrying this flag, so adding a key never
+      // silently widens what happens overnight. Preserved across edits; only setAutonomous flips it.
+      autonomous: prev ? (prev.autonomous === true) : false,
       addedAt: prev ? (prev.addedAt || 0) : (typeof now === 'number' ? now : 0)
     };
     return { list: src.filter(r => r.id !== id).concat([record]), record: record };
@@ -144,6 +150,32 @@
     if (!prev) return { error: 'no such service key' };
     const record = Object.assign({}, prev, { enabled: !!enabled });
     return { list: src.map(r => (r.id === prev.id ? record : r)), record: record };
+  }
+
+  // Flip the unattended grant. Turning a key OFF entirely also revokes it for unattended use implicitly
+  // (resolveForRequest requires enabled AND autonomous), so there is no "granted but disabled" hole.
+  function setAutonomous(list, id, autonomous) {
+    const src = cleanList(list);
+    const prev = src.find(r => r.id === String(id || ''));
+    if (!prev) return { error: 'no such service key' };
+    const record = Object.assign({}, prev, { autonomous: !!autonomous });
+    return { list: src.map(r => (r.id === prev.id ? record : r)), record: record };
+  }
+
+  /* Resolve a `${ENV_VAR}` placeholder for an outbound request. Returns a discriminated result rather
+     than throwing, so the caller can turn each refusal into an actionable tool error:
+       { ok:true, value }                      — spend it
+       { ok:false, reason:'unknown' }          — no such key (or it is disabled)
+       { ok:false, reason:'unattended', name } — real key, but not granted for unattended runs
+     `surface` is the RUN's surface, not the user's intent: an autonomous run can never talk itself
+     into a grant, because the flag lives on the stored record and nothing in the run can write it. */
+  function resolveForRequest(list, envVar, surface) {
+    const want = String(envVar || '').trim();
+    if (!want) return { ok: false, reason: 'unknown' };
+    const row = cleanList(list).find(r => r.envVar === want && r.enabled !== false && r.key);
+    if (!row) return { ok: false, reason: 'unknown' };
+    if (surface !== 'interactive' && row.autonomous !== true) return { ok: false, reason: 'unattended', name: row.name };
+    return { ok: true, value: String(row.key), name: row.name };
   }
 
   function remove(list, id) {
@@ -180,24 +212,57 @@
     return nextOwned;
   }
 
+  /* The env map a shell run must actually RECEIVE. Names of the ENABLED keys, resolved from the HOST
+     env that applyEnv already populated — so the ambient-wins ownership rule is honoured for free, a
+     key pasted after boot is live on the very next run, and a disabled/removed one disappears (applyEnv
+     scrubs what it owns). Pure: reads `hostEnv`, never writes it.
+     WHY THIS EXISTS: spawn does NOT inherit process.env here. environment.js hands every shell child a
+     sanitizeChildEnv() snapshot that strips any name matching _KEY/_TOKEN/_SECRET/… — and deriveEnvVar
+     always ends in _API_KEY, so 100% of KEYS-tab entries were stripped while promptBlock still told the
+     model the variable was there (the model expanded empty and got a 401). This map is merged back into
+     the child env per call; the VALUE still never enters the prompt. */
+  function runEnv(list, hostEnv, opts) {
+    const src = hostEnv || {};
+    const reserved = reservedSet(opts);
+    const out = {};
+    for (const r of cleanList(list)) {
+      if (r.enabled === false) continue;
+      if (!r.envVar || reserved.has(r.envVar)) continue;   // never let a paste shadow a provider/billing key
+      const v = src[r.envVar];
+      if (v != null && v !== '') out[r.envVar] = String(v);
+    }
+    return out;
+  }
+
   /* The system-prompt block. NAMES only — the value never enters the prompt (the model uses the env
      var from its shell). '' when nothing is enabled, so the assembly seam stays byte-identical for a
      user with no service keys. The caller gates this on shell.exec being in the run's resolved tools:
      advertising an env var the run can't read would be the exact truthful-telemetry violation the
      quest block comments warn about. */
-  function promptBlock(list) {
+  function promptBlock(list, opts) {
     const rows = cleanList(list).filter(r => r.enabled !== false && r.envVar && r.key);
     if (!rows.length) return '';
+    // WHICH WAY can this run actually spend a key? The block must describe only the routes the run HAS,
+    // or it teaches a tool the model wasn't given (the truthful-telemetry violation this block's own
+    // history is about). Default to both when unspecified so an un-updated caller stays informative.
+    const canShell = !opts || opts.shell !== false;
+    const canRequest = !opts || opts.request !== false;
     const lines = rows
       .slice().sort((a, b) => String(a.name).localeCompare(String(b.name)))
-      .map(r => '- ' + r.name + ': environment variable ' + r.envVar + (r.docsUrl ? ' (API docs: ' + r.docsUrl + ')' : ''));
+      .map(r => '- ' + r.name + ': ' + r.envVar
+        + (r.autonomous === true ? '' : ' [watched sessions only]')
+        + (r.docsUrl ? ' (API docs: ' + r.docsUrl + ')' : ''));
+    const how = [];
+    if (canRequest) how.push('with web_request, by writing the NAME as a placeholder in a header — e.g. '
+      + 'headers {"Authorization": "Bearer ${' + rows[0].envVar + '}"} — which the host substitutes at send time');
+    if (canShell) how.push('in your shell, where each name is an environment variable (curl etc.)');
     return '<service_keys>\n'
-      + 'The Commander has connected API keys for these services. Each key is available to your shell '
-      + 'commands as an environment variable — use it to call that service\'s API directly (curl etc.). '
-      + 'NEVER print, echo, or write the key\'s value anywhere; reference it only as the variable.\n'
+      + 'The Commander has connected API keys for these services. You can use them ' + how.join('; and ') + '.\n'
+      + 'You will never see a key\'s value and must never ask the Commander for one. NEVER print, echo, or '
+      + 'write a value anywhere; reference it only by name.\n'
       + lines.join('\n')
       + '\n</service_keys>';
   }
 
-  return { NAME_MAX, KEY_MAX, LIST_MAX, slug, deriveEnvVar, validate, mask, toPublic, upsert, setEnabled, remove, applyEnv, promptBlock };
+  return { NAME_MAX, KEY_MAX, LIST_MAX, slug, deriveEnvVar, validate, mask, toPublic, upsert, setEnabled, setAutonomous, remove, applyEnv, runEnv, resolveForRequest, promptBlock };
 });

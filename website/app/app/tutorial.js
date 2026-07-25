@@ -56,14 +56,31 @@ const Tutorial = (() => {
   }
   function sfx(n) { try { if (typeof SFX !== 'undefined' && SFX[n]) SFX[n](); } catch (_) {} }
 
+  /* ---- overlay coordinate law: anchor rects are VISUAL px; our overlays (spot/ring/bubble/brief) are
+     fixed body children whose style px may or may not be re-scaled by body.style.zoom (TEXT SIZE) —
+     engines disagree (Chromium re-multiplies fixed children by the zoom, WebKit renders them 1:1).
+     Trusting the zoom VALUE therefore misaims on one engine or the other (the "ring on the wrong
+     button" report). So MEASURE the live behavior instead: a hidden fixed probe of style-width 100
+     reports its rendered width, and visual/style is exactly the divisor every overlay needs. */
+  let scaleProbe = null;
+  function overlayScale() {
+    if (!scaleProbe || !document.body.contains(scaleProbe)) {
+      scaleProbe = document.createElement('div');
+      scaleProbe.style.cssText = 'position:fixed;left:0;top:0;width:100px;height:0;visibility:hidden;pointer-events:none;';
+      document.body.appendChild(scaleProbe);
+    }
+    const w = scaleProbe.getBoundingClientRect().width;
+    return w > 0 ? w / 100 : 1;
+  }
+
   /* ---- spotlight: a soft scrim with a cut-out hole over the surface being discussed ----
      The hole is a positioned div whose huge box-shadow IS the scrim; pointer-events:none so the
      highlighted control stays fully clickable underneath (chips, the consent buttons, etc.). */
   let spot = null, spotEl = null;
   function place(r) {
-    const pad = 6;
-    spot.style.left = (r.left - pad) + 'px'; spot.style.top = (r.top - pad) + 'px';
-    spot.style.width = (r.width + pad * 2) + 'px'; spot.style.height = (r.height + pad * 2) + 'px';
+    const pad = 6, z = overlayScale();
+    spot.style.left = (r.left / z - pad) + 'px'; spot.style.top = (r.top / z - pad) + 'px';
+    spot.style.width = (r.width / z + pad * 2) + 'px'; spot.style.height = (r.height / z + pad * 2) + 'px';
   }
   function reposition() { if (spot && spotEl) place(spotEl.getBoundingClientRect()); }
   function spotlight(sel) {
@@ -623,8 +640,9 @@ const Tutorial = (() => {
   function placeCoach() {
     if (!coach) return;
     const a = coach.anchor, b = coach.bubble;
-    // anchor rects/viewport are visual px; ring+bubble style px are body-zoomed (TEXT SIZE) — /z once.
-    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+    // anchor rects/viewport are visual px; ring+bubble style px convert by the MEASURED overlay scale
+    // (not the raw zoom value — engines disagree on whether fixed children re-scale under body zoom).
+    const z = overlayScale();
     // kit-out coaches are CSS-pinned to a safe zone (.tut-coach.kit); only the ring tracks the live target, and a
     // momentarily-missing target (palette re-render) just hides the ring rather than tearing down the bubble.
     if (coach.kit) {
@@ -753,8 +771,8 @@ const Tutorial = (() => {
   // covering the rail's controls. Recomputed on resize. Falls back to a fixed inset if the rail is absent.
   function placeBrief() {
     if (!briefEl) return;
-    // rects/innerWidth are visual px; the brief's style px are body-zoomed (TEXT SIZE) — /z once.
-    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+    // rects/innerWidth are visual px; the brief's style px convert by the MEASURED overlay scale.
+    const z = overlayScale();
     const rail = document.getElementById('left');
     const railRight = rail && rail.getBoundingClientRect ? rail.getBoundingClientRect().right / z : 0;
     const comms = document.getElementById('chat-panel');
