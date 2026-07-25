@@ -75,4 +75,7 @@ const A = require('./_assert.js');
   }
 
   console.log('model-conformance.test: OK');
+  // report() settles the assertion counter — the .catch below only fires on a THROWN error, so
+  // without this a failed assertion still exits 0 and the gate scores it green.
+  A.report('model-conformance.test');
 })().catch(e => { console.error(e); process.exit(1); });

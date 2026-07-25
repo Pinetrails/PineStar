@@ -145,6 +145,7 @@ test/schema-stamp.test.js
 test/rename-migrate.test.js
 test/update-state-parity.test.js
 test/roster-clause.test.js
+test/agent-config-target.test.js
 test/notebookrestore.test.js
 test/runstore.test.js
 test/autonomy-ledger.test.js
@@ -309,6 +310,8 @@ test/cron.durability.test.js
 test/cron.lock.test.js
 test/cron.oneshot.test.js
 test/cron.run-now.test.js
+test/tool-withheld-message.test.js
+test/cron-guard.test.js
 test/routine-tools.test.js
 test/workstreams.test.js
 test/session-power-tools.test.js

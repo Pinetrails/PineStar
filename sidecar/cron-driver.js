@@ -65,6 +65,10 @@
   const runTeeView = (typeof require === 'function')
     ? require('./channels/sse.js').runTeeView
     : ((root.SK && root.SK.channels && root.SK.channels.sse && root.SK.channels.sse.runTeeView) || function (n, p) { return p; });
+  // INJECTION TRIPWIRE (2026-07-25) — pure, no ambient deps, so requiring it keeps this file determinism-clean.
+  const cronGuard = (typeof require === 'function')
+    ? require('./cron-guard.js')
+    : ((root.SK && root.SK.cronGuard) || { scanAssembled: function () { return { ok: true }; } });
 
   function makeCronDriver(deps) {
     const d = deps || {};
@@ -194,6 +198,27 @@
         try { emit('cron.skipped', { jobId: job.id, reason: 'no-capability' }); } catch (_) {}
         return false;
       }
+      /* INJECTION TRIPWIRE at FIRE time. Runs BEFORE the capability/credential gate so a payload never reaches
+         the model or spends a cent. A block is recorded as a real FAILED result (markRun + cron.result) rather
+         than a silent skip: the Commander must be able to see WHY a routine stopped producing, and the reason
+         lands in job.lastError, which the ROUTINES row already renders. cron.result's `reason` is a free string
+         in the owned event contract, so this needs no schema change. */
+      {
+        const scan = cronGuard.scanAssembled(job.prompt, {
+          hasSkills: !!(job.skills && job.skills.length),
+          hasInjectedData: !!(job.contextFrom && job.contextFrom.length)
+        });
+        if (!scan.ok) {
+          const blockedRunId = newId();
+          try {
+            setJobs(cronStore.markRun(getJobs(), job.id, {
+              runId: blockedRunId, status: 'error', reason: 'blocked', error: scan.error, transient: false
+            }, { now: nowMs }));
+          } catch (_) { /* a persist hiccup must not let the fire proceed */ }
+          try { emit('cron.result', { jobId: job.id, runId: blockedRunId, outcome: 'failed', reason: 'blocked: ' + scan.patternId }); } catch (_) {}
+          return false;
+        }
+      }
       const ident = identityForAgent(job.agentId, job) || {};
       const model = (job.model && String(job.model).trim()) || (ident.model && String(ident.model).trim()) || defaultModel;
       const provider = providerForJob(job, ident) || 'openrouter';
@@ -251,6 +276,10 @@
           // reconstructs a stream when messages<=1), so cron behavior is byte-identical — the frontend
           // autosessions module reads GET /api/transcript?stream=cron-<runId> to surface the output as a session.
           runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider,
+          // UNATTENDED CAPABILITY GRANT (2026-07-25): the terminal/verify approval the Commander recorded on THIS
+          // routine, read straight off the durable job record. Empty on every routine that was not granted, so an
+          // ungranted fire is byte-identical to the pre-grant behavior. Never sourced from the prompt.
+          unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : [],
           // provenance spine (R3 meta bag → durable run row): a routine minted from a recipe carries its recipeId,
           // so scheduled recipe runs are attributable exactly like hand-launched ones. undefined for plain routines.
           recipeId: (job.meta && job.meta.recipeId) || undefined,

@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 284495,
-        "sha256": "26767695b0f1b02034fd51205287ada8bbcef0f69c02d5bd8631ae26ae2b1c82"
+        "bytes": 286573,
+        "sha256": "30779fca313e68a488ba6aafacc396d7fb8d5800382d7d1f5d34e0b89f707c18"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 440678,
-        "sha256": "eee144b39764c84ab89b49a349cd103e66d48dd7cb17c0d536ed619c5ace8cec"
+        "bytes": 446825,
+        "sha256": "4542ab4ae80768f9523c80869b90c561f8dcbcf4750d562b405a81be612fe08f"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -438,8 +438,8 @@
       },
       {
         "path": "frontend/app/propanchor.js",
-        "bytes": 3246,
-        "sha256": "225462acc5305e430aa6cfc58913d893effa09560771d135a3ab4463c831010d"
+        "bytes": 4107,
+        "sha256": "bcd9a97f5727b45fda78aadb1cbf82fb7b040aedef5720b3471d36559ef0de40"
       },
       {
         "path": "frontend/app/propsprites.js",
@@ -633,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 416564,
-        "sha256": "1f2a740d62d86e2ce22d46de6f63d42f4772258e742af67b9a3fc003b3176a26"
+        "bytes": 416872,
+        "sha256": "565ff097b2d752ea95ee8f6f7bbf3bdfa2869311ee531358919e90107fc92ffc"
       },
       {
         "path": "frontend/app/study.js",
@@ -773,8 +773,8 @@
       },
       {
         "path": "frontend/app/windows/routines.js",
-        "bytes": 24533,
-        "sha256": "1e43a49ff74df394982c0fd9ee0d2232e782c482898977862e5d40d63804a8a7"
+        "bytes": 29055,
+        "sha256": "a04000d0c3cee86f5e3244f5f10900b9dd15e5b680caca0de349e0a536c3c037"
       },
       {
         "path": "frontend/app/windows/trophies.js",
@@ -813,8 +813,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 460692,
-        "sha256": "703ee5b29c5086decc896b157296429bd91f611fe195703dc8bba5174a674fd0"
+        "bytes": 461917,
+        "sha256": "cd2fad695de41f1cc0d42846c3a0236cb2661f7d8641462a5b6360e91aff4d49"
       },
       {
         "path": "frontend/app/worldmodel.js",

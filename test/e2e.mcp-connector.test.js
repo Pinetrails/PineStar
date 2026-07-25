@@ -339,6 +339,33 @@ async function readNdjson(res) {
     A.ok(llm.requests.every(r => !(r.tools || []).some(t => t.function && t.function.name === 'mcp__demo__lookup')), 'autonomous model request does not expose the unknown MCP tool');
 
     await sse.waitFor(events => events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'mcp-agent'), 5000, 'SSE run end');
+
+    /* UNATTENDED CONNECTOR GRANT (2026-07-25) — the SAME routine shape, but the Commander ticked "let this
+       routine use your connected tools". Everything above proves the ungranted default is unchanged; this
+       proves the grant actually reaches the real MCP server, end to end, with nobody watching. */
+    const mcpCallsBefore = mcp.calls.filter(c => c.msg && c.msg.method === 'tools/call').length;
+    const grantedCreate = await fetch(B + '/api/cron', {
+      method: 'POST', headers,
+      body: JSON.stringify({ name: 'MCP granted', prompt: 'use the demo connector lookup for alpha', schedule: 'every 1h', agentId: 'mcp-agent', model: 'test/model', provider: 'openrouter', unattendedGrants: ['connectors'] })
+    });
+    A.eq(grantedCreate.status, 200, 'created a connector-granted routine');
+    const grantedJob = (await grantedCreate.json()).job;
+    A.ok(grantedJob.unattendedGrants.indexOf('connectors') >= 0, 'the connector grant persisted on the job');
+
+    const grantedRun = await fetch(B + '/api/cron/run', { method: 'POST', headers, body: JSON.stringify({ id: grantedJob.id }) });
+    A.eq(grantedRun.status, 200, 'granted Run Now returns a stream');
+    const grantedPanel = await readNdjson(grantedRun);
+    const grantedCall = grantedPanel.find(e => e.name === 'agent.tool_call' && e.payload && e.payload.name === 'mcp__demo__lookup');
+    A.ok(grantedCall, 'a GRANTED unattended run calls the MCP tool');
+    const grantedResult = grantedPanel.find(e => e.name === 'agent.tool_result' && e.payload && e.payload.callId === (grantedCall && grantedCall.payload.callId));
+    A.ok(grantedResult && grantedResult.payload.ok === true, 'the MCP call SUCCEEDS (not withheld, not consent-denied)');
+    A.ok(mcp.calls.filter(c => c.msg && c.msg.method === 'tools/call').length > mcpCallsBefore, 'the granted run genuinely reached the MCP server tool endpoint');
+    A.ok(grantedPanel.filter(e => e.name === 'agent.token').map(e => e.payload.delta).join('').indexOf('MCP answer delivered') >= 0, 'the granted run completes using the MCP answer');
+    // the grant is per-ROUTINE: the earlier ungranted job must still be refused if fired again.
+    const reRun = await fetch(B + '/api/cron/run', { method: 'POST', headers, body: JSON.stringify({ id: job.id }) });
+    const rePanel = await readNdjson(reRun);
+    A.ok(!rePanel.some(e => e.name === 'agent.tool_call' && e.payload && e.payload.name === 'mcp__demo__lookup'),
+      'the UNGRANTED routine is still refused after a granted one ran (the grant never leaks between routines)');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}

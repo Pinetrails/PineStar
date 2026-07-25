@@ -132,4 +132,7 @@ const REDIRECT = 'http://127.0.0.1:8787/api/connectors/oauth/callback';
 }
 
 console.log('ok - mcp.oauth');
+  // report() settles the assertion counter — the .catch below only fires on a THROWN error, so
+  // without this a failed assertion still exits 0 and the gate scores it green.
+  A.report('mcp.oauth.test');
 })().catch(e => { console.log('FAIL: mcp.oauth threw - ' + (e && e.stack || e)); process.exit(1); });

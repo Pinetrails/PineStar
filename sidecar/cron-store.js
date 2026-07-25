@@ -57,7 +57,28 @@
   const iso = cron._internals.iso;            // ms(arg) -> ISO; deterministic (no zero-arg new Date)
 
   // fields a user may edit via updateJob. `id`, timestamps, run-state and counters are NOT editable here.
-  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'provider', 'deliver', 'skills', 'script', 'workdir', 'contextFrom', 'misfire'];
+  const EDITABLE = ['name', 'prompt', 'agentId', 'model', 'provider', 'deliver', 'skills', 'script', 'workdir', 'contextFrom', 'misfire', 'unattendedGrants'];
+
+  /* UNATTENDED CAPABILITY GRANT (2026-07-25) — the capability families the Commander explicitly approved for
+     THIS routine to use with nobody watching. Default EMPTY: a routine grants nothing extra unless the user
+     ticked it, so every pre-existing job loads with no new power. 'workbench' = terminal (shell.exec) +
+     verify.run. 'connectors' = the Commander's connected MCP servers (capability 'mcp:<connectorId>'); a
+     connector the Commander switched OFF still contributes no tools, so this can never re-enable one.
+
+     This list is STORAGE, not authority. sidecar/inputpolicy.js owns the authoritative whitelist
+     (GRANTABLE_UNATTENDED) and re-filters it at the gate on every run, so a hand-edited or migrated
+     cron.jobs.json can never widen a run past what the host models — the two filters are deliberately
+     independent (defense in depth), which is also why this module needs no cross-require of the policy. */
+  const GRANTABLE = ['workbench', 'connectors'];
+  function normGrants(v) {
+    if (!Array.isArray(v)) return [];
+    const out = [];
+    for (const g of v) {
+      const name = String(g == null ? '' : g).trim();
+      if (name && GRANTABLE.indexOf(name) >= 0 && out.indexOf(name) < 0) out.push(name);
+    }
+    return out;
+  }
 
   // MISFIRE POLICY (2026-07-15 reliability audit): what planTick does with a recurring fire noticed past its
   // grace window — 'fire_once' (run the missed occurrence exactly once) or 'skip' (fast-forward, drop it).
@@ -134,6 +155,8 @@
       // null on a fresh job; cleared alongside fireClaim on EVERY settlement. Additive — old jobs load as null.
       heartbeatAt: null,
       // ---- record-the-field, defer-the-consumer (no v1 runtime consumer; stored so a later commit wires it) ----
+      // UNATTENDED CAPABILITY GRANT (see normGrants): [] on every existing job, so this is purely additive.
+      unattendedGrants: normGrants(spec.unattendedGrants),
       skills: Array.isArray(spec.skills) ? spec.skills.slice() : [],
       script: spec.script != null ? String(spec.script) : null,
       workdir: spec.workdir != null ? String(spec.workdir) : null,
@@ -171,6 +194,9 @@
       const next = Object.assign({}, job);
       for (const k of EDITABLE) if (Object.prototype.hasOwnProperty.call(patch, k)) next[k] = patch[k];
       if (Object.prototype.hasOwnProperty.call(patch, 'misfire')) next.misfire = normMisfire(patch.misfire);
+      // re-normalize through the whitelist: the EDITABLE loop above copies the RAW patch value, so without this
+      // a patch could persist an ungrantable capability name (same trap misfire guards against).
+      if (Object.prototype.hasOwnProperty.call(patch, 'unattendedGrants')) next.unattendedGrants = normGrants(patch.unattendedGrants);
       if (patch.repeat && patch.repeat.times !== undefined) {
         const t = patch.repeat.times;
         next.repeat = Object.assign({}, job.repeat, { times: t == null ? null : Math.max(1, parseInt(t, 10) || 1) });

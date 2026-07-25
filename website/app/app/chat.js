@@ -536,6 +536,19 @@ const Chat = (() => {
       if (isSlashOpen()) {
         if (e.key === 'ArrowDown') { e.preventDefault(); moveSlash(1); return; }
         if (e.key === 'ArrowUp') { e.preventDefault(); moveSlash(-1); return; }
+        // TAB completes an argument VALUE when the palette is offering values; otherwise it runs the
+        // highlighted command exactly as before.
+        if (e.key === 'Tab' && slashValueMode) { e.preventDefault(); completeSlashValue(slashItems[slashSel]); return; }
+        // ENTER ALWAYS DISPATCHES THE COMMAND — never a value. In value mode the highlighted row is an
+        // argument, not something runnable, so resolve the command off the typed line instead. Keeping Enter
+        // on this contract is what stops "/personality direct" being fired at the model as chat (2026-07-05).
+        if (e.key === 'Enter' && slashValueMode) {
+          e.preventDefault();
+          const cmd = commandFromLine(input.value);
+          closeSlash();
+          if (cmd) runSlash(cmd); else submitComposer();
+          return;
+        }
         if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); runSlash(slashItems[slashSel]); return; }
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeSlash(); return; }
         // any other key falls through to normal typing → the 'input' listener re-filters the palette
@@ -5299,15 +5312,103 @@ const Chat = (() => {
     }
     return pref.concat(sub).slice(0, 8);
   }
+  /* ---- ARGUMENT-VALUE COMPLETION -------------------------------------------------------------------
+     The palette completed command NAMES but never argument VALUES, so `/model ` offered nothing of the 345
+     warmed ids and `/personality ` never named the seven options — you had to run the bare command, read the
+     list, then retype.
+
+     The derivation trick is taken from the reference harness (© 2025 Nous Research, MIT — see NOTICE.md):
+     it builds a static completion list straight out of each command's args_hint by pulling the
+     pipe-separated pattern out of it, so a command declaring "[on|off|status]" gets completion for free with
+     no per-command wiring. We do the same against our own `argsHint`, then layer live providers over the top
+     for the sets only a running station knows (models, personalities, workstreams, recipes).
+
+     ENTER STILL DISPATCHES THE COMMAND. Completion is bound to TAB only. The palette's Enter contract is
+     load-bearing — a regressed Enter is exactly what fired "/personality direct" at the model as chat
+     (2026-07-05), and test/slash.palette.test.js + the J7 journey guard it. */
+  const PIPE_VALUES_RE = /[a-z][a-z0-9-]*(?:\|[a-z][a-z0-9-]*)+/;
+  let slashValueMode = null;      // { name } while completing an ARGUMENT; null while matching command names
+  let slashModelIds = null;       // warmed model ids, fetched once per session for /model completion
+
+  function staticValuesFor(cmd) {
+    const m = PIPE_VALUES_RE.exec((cmd && cmd.argsHint) || '');
+    return m ? m[0].split('|') : [];
+  }
+  function warmModelValues() {
+    if (slashModelIds || typeof Harness === 'undefined' || !Harness.listModels) return;
+    slashModelIds = [];   // claim the slot so a slow catalog can't fire a fetch per keystroke
+    Harness.listModels().then(list => {
+      slashModelIds = (Array.isArray(list) ? list : []).map(m => (m && m.id) || '').filter(Boolean);
+      if (input && input.value && input.value[0] === '/') openSlash(input.value.slice(1));
+    }).catch(() => { slashModelIds = []; });
+  }
+  // Live value sets. Each returns [{value, hint}] and NEVER throws — a missing module just means no
+  // completion for that command, never a broken palette.
+  function liveValuesFor(name) {
+    try {
+      if (name === 'personality' && typeof Personas !== 'undefined' && Personas.list)
+        return Personas.list().map(p => ({ value: p.id, hint: p.name || '' }));
+      if (name === 'blueprint' && typeof Recipes !== 'undefined' && Recipes.list)
+        return Recipes.list().map(r => ({ value: r.id, hint: r.name || '' }));
+      if (name === 'resume' && typeof Workstreams !== 'undefined' && Workstreams.list)
+        return Workstreams.list().map(w => ({ value: w.title || w.id, hint: ((w.history || []).length) + ' turns' }));
+      if (name === 'model') { warmModelValues(); return (slashModelIds || []).map(id => ({ value: id, hint: '' })); }
+    } catch (_) {}
+    return [];
+  }
+  function valueSuggestions(cmd, partial) {
+    const live = liveValuesFor(cmd.name);
+    const all = live.length ? live : staticValuesFor(cmd).map(v => ({ value: v, hint: '' }));
+    const q = String(partial || '').toLowerCase();
+    const pre = [], sub = [];
+    for (const o of all) {
+      const v = String(o.value).toLowerCase();
+      if (!q) pre.push(o);
+      else if (v.indexOf(q) === 0) pre.push(o);
+      else if (v.indexOf(q) >= 0 || String(o.hint || '').toLowerCase().indexOf(q) >= 0) sub.push(o);
+    }
+    return pre.concat(sub).slice(0, 8);
+  }
+  // Put the highlighted value into the composer, keeping "/name " intact, then re-open so the list narrows.
+  function completeSlashValue(item) {
+    if (!item || !input) return false;
+    const raw = String(input.value || '');
+    const sp = raw.search(/\s/);
+    if (sp < 0) return false;
+    input.value = raw.slice(0, sp + 1) + item.name;
+    input.focus();
+    autoGrowInput();
+    openSlash(input.value.replace(/^\//, ''));
+    return true;
+  }
+
   function openSlash(query) {
     const pop = el('chat-slash'); if (!pop) return;
     warmSlashCatalog();
+    const raw = String(query || '');
+    const sp = raw.search(/\s/);
+    slashValueMode = null;
+    if (sp > 0) {
+      // An argument is being typed — offer VALUES for this command rather than re-listing its name.
+      const token = raw.slice(0, sp).toLowerCase();
+      const cmd = buildCommands().find(c => c.name.toLowerCase() === token
+        || (c.aliases || []).some(a => String(a || '').toLowerCase() === token));
+      if (cmd) {
+        const vals = valueSuggestions(cmd, raw.slice(sp + 1));
+        if (vals.length) {
+          slashValueMode = { name: cmd.name };
+          slashItems = vals.map(v => ({ name: String(v.value), desc: String(v.hint || ''), isValue: true }));
+          if (slashSel >= slashItems.length) slashSel = 0;
+          renderSlash(); pop.hidden = false; return;
+        }
+      }
+    }
     // Match on the command NAME only (the first token). Once the user types a space into the arguments
     // ("/personality direct"), the full string stops prefix-matching any command name and the palette used
     // to CLOSE — which dropped Enter through to send(), firing the whole "/cmd args" line at the agent as a
     // chat message instead of running the command. Matching the first token keeps the command shown so Enter
     // dispatches it (with its args parsed off input.value in runSlash).
-    slashItems = matchCommands(String(query || '').split(/\s+/)[0]);
+    slashItems = matchCommands(raw.split(/\s+/)[0]);
     if (!slashItems.length) { closeSlash(); return; }
     if (slashSel >= slashItems.length) slashSel = 0;
     renderSlash(); pop.hidden = false;
@@ -5322,7 +5423,7 @@ const Chat = (() => {
     return buildCommands().find(c => c.name.toLowerCase() === name || (c.aliases || []).some(a => String(a || '').toLowerCase() === name)) || null;
   }
   function closeSlash() {
-    const pop = el('chat-slash'); if (pop) pop.hidden = true; slashItems = []; slashSel = 0;
+    const pop = el('chat-slash'); if (pop) pop.hidden = true; slashItems = []; slashSel = 0; slashValueMode = null;
     if (input) { input.removeAttribute('aria-activedescendant'); input.setAttribute('aria-expanded', 'false'); }
   }
   function moveSlash(d) { if (!slashItems.length) return; slashSel = (slashSel + d + slashItems.length) % slashItems.length; renderSlash(); }
@@ -5330,7 +5431,10 @@ const Chat = (() => {
   function renderSlash() {
     const pop = el('chat-slash'); if (!pop) return;
     pop.innerHTML = '';
-    const head = document.createElement('div'); head.className = 'slash-head'; head.textContent = '/ COMMANDS';
+    const head = document.createElement('div'); head.className = 'slash-head';
+    // name the mode: completing an argument is a different act from picking a command, and TAB (not Enter)
+    // is what accepts a value — say so rather than leaving the user to guess.
+    head.textContent = slashValueMode ? ('/' + slashValueMode.name + ' — TAB to fill') : '/ COMMANDS';
     pop.appendChild(head);
     slashItems.forEach((c, i) => {
       const it = document.createElement('div'); it.className = 'slash-item' + (i === slashSel ? ' sel' : ''); it.setAttribute('role', 'option');
@@ -5338,14 +5442,16 @@ const Chat = (() => {
       // show the ARGUMENT SHAPE next to the name ("/loop <interval> <prompt>") — without it the palette reads
       // as if every command were arg-less, which is exactly how arg-taking commands went unused.
       const nm = document.createElement('span'); nm.className = 'slash-name';
-      nm.textContent = '/' + c.name + (c.argsHint ? ' ' + c.argsHint : '');
+      // a VALUE row is an argument, not a command — no leading slash, no argsHint
+      nm.textContent = c.isValue ? c.name : ('/' + c.name + (c.argsHint ? ' ' + c.argsHint : ''));
       const ds = document.createElement('span'); ds.className = 'slash-desc'; ds.textContent = c.desc || '';
       it.appendChild(nm); it.appendChild(ds);
       // reveal the command SURFACE: a dim category tag (the existing `category` field) so the palette groups
       // legibly by area without reordering the relevance-ranked matches.
       if (c.category && c.category !== 'General') { const tag = document.createElement('span'); tag.className = 'slash-cat'; tag.textContent = c.category; it.appendChild(tag); }
       it.onmouseenter = () => { slashSel = i; renderSlash(); };
-      it.onmousedown = e => { e.preventDefault(); runSlash(c); };   // mousedown keeps input focus
+      // mousedown keeps input focus. A VALUE row fills the argument (it is not runnable); a command row runs.
+      it.onmousedown = e => { e.preventDefault(); if (c.isValue) completeSlashValue(c); else runSlash(c); };
       pop.appendChild(it);
     });
     // AT: point the focused composer at the active option (the listbox is separate, so activedescendant lives on

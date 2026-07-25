@@ -37,6 +37,20 @@ const PropAnchor = (() => {
 
   const ORDER = ['south', 'north', 'east', 'west'];   // south = the visible/usable front, tried first
 
+  /* CENTRE-OUT ordering of one edge's tiles. deriveAnchor used to take sideTiles' first walkable tile,
+     which is always the WEST-most one — so on a 2-wide workstation the chair (and the body sitting in
+     it) parked at the desk's far-left corner while the monitor and keyboard sit right of centre. An
+     agent should approach the MIDDLE of a desk/couch/bar and fan outward only if the middle is blocked.
+     Ties on an even-width prop break toward the higher index, so the pick sits just right of the centre
+     line; world.js then nudges the render onto the true centre for even widths. */
+  function centreOut(tiles) {
+    const mid = (tiles.length - 1) / 2;
+    return tiles
+      .map((t, i) => ({ t: t, i: i }))
+      .sort((a, b) => (Math.abs(a.i - mid) - Math.abs(b.i - mid)) || (b.i - a.i))
+      .map(o => o.t);
+  }
+
   /* deriveAnchor(prop, geo, opts) -> {tx,ty,face,sit} | null
        prop : { x, y, w, h } in the geo's LOCAL tile frame (a geo.props entry)
        geo  : { walkable(lx,ly,extra) }
@@ -50,7 +64,7 @@ const PropAnchor = (() => {
       ? ORDER.slice()
       : [approach].concat(ORDER.filter(s => s !== approach));
     for (const side of sides) {
-      for (const t of sideTiles(prop, side)) {
+      for (const t of centreOut(sideTiles(prop, side))) {
         if (geo.walkable(t.tx, t.ty, extra)) {
           return { tx: t.tx, ty: t.ty, face: facingToward(t.tx, t.ty, prop), sit };
         }
@@ -59,7 +73,7 @@ const PropAnchor = (() => {
     return null;
   }
 
-  return { deriveAnchor, facingToward, sideTiles };
+  return { deriveAnchor, facingToward, sideTiles, centreOut };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = PropAnchor;

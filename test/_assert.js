@@ -40,9 +40,29 @@ function collectBus(bus, names) {
   return log;
 }
 
+let reported = false;
+
 function report(title) {
+  reported = true;
   console.log((title || 'tests') + ': ' + (fail ? (fail + ' problem(s), ' + pass + ' ok') : ('OK (' + pass + ' assertions)')));
   process.exit(fail ? 1 : 0);
 }
+
+/* SILENT-EARLY-EXIT GUARD (2026-07-25). Calling report() is necessary but not sufficient: a file can EXIT
+   BEFORE reaching it and still leave exit code 0, so the runner scores it green having verified nothing.
+   That is not hypothetical — it happened while adding a browser test here. Node's event loop can drain
+   mid-await when the only thing outstanding is an unref'd timer (the CDP client unrefs its timeout timers),
+   and an un-awaited async IIFE has the same effect. Both look identical to the runner: no output, exit 0.
+   So: if any assertion ran and the process leaves with a success code without report() having been called,
+   turn it red and say why. A test whose asserts never finished is a failing test, not a passing one. */
+process.on('exit', (code) => {
+  if (reported || code !== 0) return;
+  if (pass === 0 && fail === 0) return;   // a file that asserted nothing is some other lint's problem
+  console.log('FAIL: the test process exited before report() was reached — ' + pass + ' assertion(s) had run.');
+  console.log('      Exit code 0 here would be scored GREEN having verified nothing. Usual causes: an');
+  console.log('      un-awaited async block, or the event loop draining while only unref\'d timers remain');
+  console.log('      (hold it open with a setInterval for the duration of the wait).');
+  process.exitCode = 1;
+});
 
 module.exports = { ok, eq, throws, notThrows, makeBus, collectBus, report, fails: () => fail };

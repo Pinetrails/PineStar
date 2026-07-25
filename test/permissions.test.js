@@ -163,6 +163,44 @@ const hardline = (call) => (call && call.args && /(^|\/)(\.env|permissions\.allo
     // the lockout is EXEC-ONLY: a pre-blessed WRITE still works autonomously (cron's file deliverables depend on it).
     const w = makeConsentBroker({ surface: 'autonomous', grantsPermanent: new Set(['files:write']) });
     A.ok(w(writeCall, WRITE).allow === true, 'a pre-blessed WRITE is unaffected — the lockout never touches non-exec classes');
+
+    /* UNATTENDED TERMINAL GRANT (2026-07-25) — the ONE key that opens the exec lockout unattended: the
+       Commander's recorded per-ROUTINE approval, injected by the host from the durable cron job. It is
+       deliberately NOT reachable by a cached 'always' grant (proved above) or by prompt text. */
+    const granted = makeConsentBroker({ surface: 'autonomous', terminalGrant: () => true });
+    A.ok(granted(execCall, EXEC).allow === true, 'a granted routine may execute shell unattended');
+    A.ok(/per-routine unattended terminal grant/.test(granted(execCall, EXEC).reason), 'the allow names the grant that authorized it');
+
+    // ordering is load-bearing: the grant tier must sit ABOVE the exec lockout or it would be dead code.
+    const ungranted = makeConsentBroker({ surface: 'autonomous', terminalGrant: () => false });
+    A.ok(!ungranted(execCall, EXEC).allow, 'a predicate that says no leaves the lockout standing');
+
+    // the grant is capability-SCOPED: it must never generalize past the workbench family.
+    const OTHER_EXEC = { name: 'team.dispatch', capability: 'orchestrator', scope: 'execute', requiresConsent: true };
+    A.ok(!granted({ name: 'team.dispatch', args: {} }, OTHER_EXEC).allow, 'a terminal grant does NOT unlock other execute-scope tools');
+
+    // and it is surface-scoped: on the watched surface the ordinary ladder still runs. consent() returns a
+    // PROMISE only when it reached the ask-the-human branch, so a thenable here proves the grant did not
+    // short-circuit into an immediate allow (asserted synchronously — this suite is not async).
+    const grantedInteractive = makeConsentBroker({ surface: 'interactive', terminalGrant: () => true, prompt: () => 'deny' });
+    const interactiveDecision = grantedInteractive(execCall, EXEC);
+    A.ok(interactiveDecision && typeof interactiveDecision.then === 'function', 'interactive still asks the human — the grant never pre-approves a watched run');
+
+    /* UNATTENDED CONNECTOR GRANT — same tier shape for the Commander's MCP servers. A non-read MCP tool is
+       scope 'execute', so this too must sit above the exec lockout. Capability is matched by the 'mcp:' PREFIX
+       so ONE grant covers every connected server while refusing everything else. */
+    const MCP = { name: 'mcp__demo__lookup', capability: 'mcp:demo', scope: 'execute', requiresConsent: true, network: true };
+    const mcpCall = { name: 'mcp__demo__lookup', args: { query: 'x' } };
+    const connOn = makeConsentBroker({ surface: 'autonomous', connectorGrant: () => true });
+    A.ok(connOn(mcpCall, MCP).allow === true, 'a granted routine may call an MCP connector unattended');
+    A.ok(/per-routine unattended connector grant/.test(connOn(mcpCall, MCP).reason), 'the allow names the connector grant');
+    const connOff = makeConsentBroker({ surface: 'autonomous' });
+    A.ok(!connOff(mcpCall, MCP).allow, 'without the grant an MCP connector stays denied unattended');
+    // the two grants are independent — neither implies the other
+    A.ok(!connOn(execCall, EXEC).allow, 'a connector grant does NOT unlock shell');
+    A.ok(!granted(mcpCall, MCP).allow, 'a terminal grant does NOT unlock connectors');
+    // and the connector grant is capability-scoped, not a blanket autonomous allow
+    A.ok(!connOn(writeCall, WRITE).allow, 'a connector grant does NOT unlock ordinary writes');
   }
 
   A.report('permissions.test');
