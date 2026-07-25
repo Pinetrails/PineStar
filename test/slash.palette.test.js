@@ -67,4 +67,14 @@ A.ok(/goalBlocked\(activeWs\)/.test(src.slice(src.indexOf('function loopTick'), 
 A.ok(src.indexOf('LOOP_MAX_SKIPS') >= 0 && src.indexOf('loopEnded') >= 0, 'a loop that dies unattended is bounded and can still explain itself');
 A.ok(src.indexOf('needsServer && await dispatchSlash') >= 0, 'a command with no local action still asks the sidecar before refusing');
 
+// --- NO SILENT COMMANDS. A handler that returns without printing is indistinguishable from a broken app;
+// /stop and /retry both used to no-op in silence on their most common empty state. ---
+A.ok(src.indexOf('Nothing is running to stop.') >= 0, '/stop says so when there is nothing to stop');
+A.ok(src.indexOf('Nothing to retry yet') >= 0, '/retry says so when there is nothing to retry');
+A.ok(src.indexOf('This stream is still running — stop it first') >= 0, '/retry explains a busy stream rather than no-opping');
+// /yolo TOGGLES on a bare call — the reply must read as a change, never as a status report, because the
+// setting it flips is the approval gate.
+A.ok(src.indexOf("'Approval mode: ' + was + ' → ' + now") >= 0, '/yolo states the approval transition, not just the resulting state');
+A.ok(src.indexOf('Approval mode unchanged: ') >= 0, '/yolo reports an explicit no-op instead of implying a change');
+
 A.report('slash.palette.test');

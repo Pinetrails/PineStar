@@ -4040,8 +4040,13 @@ const Chat = (() => {
     // want. Checked BEFORE the isBusy() guard on purpose — a loop is usually WAITING between ticks when you
     // reach for Stop, and an idle-but-armed loop must still be stoppable. Worded "you stopped it" rather than
     // "you stopped the run", because there may well be no run in flight to stop.
-    if (activeWs) loopStop(activeWs.id, 'you stopped it');
-    if (!activeWs || !isBusy()) return;
+    const endedLoop = activeWs ? loopStop(activeWs.id, 'you stopped it') : false;
+    if (!activeWs || !isBusy()) {
+      // Nothing was running and no loop was armed: Stop did nothing, so SAY nothing-happened rather than
+      // returning in silence, which reads as a dead button / broken command.
+      if (!endedLoop) localLine('Nothing is running to stop.');
+      return;
+    }
     const id = activeWs.id;
     interrupted.add(id);
     queued.delete(id);
@@ -4106,12 +4111,15 @@ const Chat = (() => {
   // RETRY — re-run the last turn after an outage / connection drop / in-band error. Discard the trailing failed
   // reply, re-render the thread (dropping the ⚠ row), then resend the last user message WITHOUT echoing it again.
   function retryLast() {
-    if (!activeWs || isBusy()) return;
+    // A command that returns in silence is indistinguishable from a broken app — say why nothing happened.
+    // (Both guards below are reachable from the /retry command AND the error-recovery "try again" chip.)
+    if (!activeWs) return localLine('No active workstream to retry in.');
+    if (isBusy()) return localLine('This stream is still running — stop it first, then /retry.');
     const h = activeWs.history;
     if (h.length && h[h.length - 1].role === 'assistant' && (h[h.length - 1].error || h[h.length - 1].stopped)) h.pop();   // drop the failed/stopped partial reply
     let text = null;
     for (let i = h.length - 1; i >= 0; i--) { if (h[i].role === 'user') { text = h[i].content; break; } }
-    if (text == null) return;
+    if (text == null) return localLine('Nothing to retry yet — send a message first.');
     load(activeWs);                 // re-render the thread cleanly (the popped ⚠ row is gone)
     send(text, { retry: true });    // re-run it; the user turn is already present, so don't echo it
   }
@@ -4224,47 +4232,47 @@ const Chat = (() => {
     Object.freeze({ name: 'stop', desc: 'interrupt the running turn', action: 'stop' }),
     Object.freeze({ name: 'copy', desc: "copy the agent's last reply", action: 'copy' }),
     Object.freeze({ name: 'help', desc: 'list available commands', action: 'help' }),
-    Object.freeze({ name: 'new', aliases: ['reset'], desc: 'start a fresh workstream', action: 'new' }),
-    Object.freeze({ name: 'clear', aliases: ['cls'], desc: 'clear COMMS and start a fresh workstream', action: 'clear' }),
-    Object.freeze({ name: 'history', aliases: ['hist'], desc: 'show recent turns of this workstream', action: 'history' }),
+    Object.freeze({ name: 'new', aliases: ['reset'], desc: 'start a fresh workstream', argsHint: '[title]', action: 'new' }),
+    Object.freeze({ name: 'clear', aliases: ['cls'], desc: 'clear COMMS and start a fresh workstream', argsHint: '[title]', action: 'clear' }),
+    Object.freeze({ name: 'history', aliases: ['hist'], desc: 'show recent turns of this workstream', argsHint: '[n]', action: 'history' }),
     Object.freeze({ name: 'whoami', desc: 'show the current agent identity', action: 'whoami' }),
     Object.freeze({ name: 'insights', desc: 'usage rollup from the run history', action: 'insights' }),
-    Object.freeze({ name: 'branch', aliases: ['fork'], desc: 'fork this conversation into a new workstream', action: 'branch' }),
+    Object.freeze({ name: 'branch', aliases: ['fork'], desc: 'fork this conversation into a new workstream', argsHint: '[title]', action: 'branch' }),
     Object.freeze({ name: 'status', desc: 'show current stream and run state', action: 'status' }),
     // no local action by design — the sidecar owns the spend ledger (dispatch:'server')
     Object.freeze({ name: 'usage', desc: 'show real spend from the station ledger', action: 'usage' }),
-    Object.freeze({ name: 'queue', aliases: ['q'], desc: 'show or add queued follow-up text', action: 'queue' }),
-    Object.freeze({ name: 'steer', desc: 'queue steering guidance for the current task', action: 'steer' }),
+    Object.freeze({ name: 'queue', aliases: ['q'], desc: 'show or add queued follow-up text', argsHint: '[message]', action: 'queue' }),
+    Object.freeze({ name: 'steer', desc: 'steer the running turn (nothing to steer when idle)', argsHint: '<guidance>', action: 'steer' }),
     Object.freeze({ name: 'undo', desc: 'remove the last local exchange', action: 'undo' }),
     Object.freeze({ name: 'compress', desc: 'show context compaction status', action: 'compress' }),
-    Object.freeze({ name: 'title', desc: 'show or rename the current workstream', action: 'title' }),
-    Object.freeze({ name: 'resume', aliases: ['sessions', 'switch'], desc: 'list or switch workstreams', action: 'resume' }),
+    Object.freeze({ name: 'title', desc: 'show or rename the current workstream', argsHint: '[name]', action: 'title' }),
+    Object.freeze({ name: 'resume', aliases: ['sessions', 'switch'], desc: 'list or switch workstreams', argsHint: '[name|number]', action: 'resume' }),
     Object.freeze({ name: 'save', desc: 'save the current station state', action: 'save' }),
     Object.freeze({ name: 'agents', aliases: ['tasks'], desc: 'show active agents and running streams', action: 'agents' }),
-    Object.freeze({ name: 'background', aliases: ['bg', 'btw'], desc: 'run a prompt in a new background workstream', action: 'background' }),
+    Object.freeze({ name: 'background', aliases: ['bg', 'btw'], desc: 'run a prompt in a new background workstream', argsHint: '<prompt>', action: 'background' }),
     // /away and /routine are dispatch:'server' commands — the sidecar executes them and returns the text. They
     // are listed here so the palette knows them before the catalog fetch lands; with no sidecar they honestly
     // refuse (runSlash) rather than silently doing nothing.
     Object.freeze({ name: 'away', aliases: ['build-away', 'buildaway'], desc: 'queue work for this agent to build on its own away shift', argsHint: '[<what to build> | list | on | off | now]', action: 'away' }),
-    Object.freeze({ name: 'routine', aliases: ['routines'], desc: 'list, create, preview, pause or delete a scheduled routine', argsHint: '[list | add <schedule> | <task> | preview <schedule> | pause N | rm N]', action: 'routine' }),
+    Object.freeze({ name: 'routine', aliases: ['routines'], desc: 'list, create, preview, pause or delete a scheduled routine', argsHint: '[list | add <schedule> | <task> | preview <schedule> | pause N | resume N | rm N]', action: 'routine' }),
     Object.freeze({ name: 'loop', desc: 'repeat a prompt on an interval in this workstream', argsHint: '<interval> <prompt> | status | off', action: 'loop' }),
-    Object.freeze({ name: 'goal', desc: 'set an autonomous standing goal (status/pause/resume/clear)', action: 'goal' }),
-    Object.freeze({ name: 'subgoal', desc: 'add a criterion the goal loop must also satisfy', action: 'subgoal' }),
-    Object.freeze({ name: 'model', desc: 'show or set the active model', action: 'model' }),
-    Object.freeze({ name: 'personality', desc: 'show or set the active personality', action: 'personality' }),
-    Object.freeze({ name: 'yolo', desc: 'toggle full-access approval mode', action: 'yolo' }),
+    Object.freeze({ name: 'goal', desc: 'set an autonomous standing goal (status/pause/resume/clear)', argsHint: '[text|status|pause|resume|clear]', action: 'goal' }),
+    Object.freeze({ name: 'subgoal', desc: 'add a criterion the goal loop must also satisfy', argsHint: '[text|remove N|clear]', action: 'subgoal' }),
+    Object.freeze({ name: 'model', desc: 'show or set the active model', argsHint: '[model-id]', action: 'model' }),
+    Object.freeze({ name: 'personality', desc: 'show or set the active personality', argsHint: '[personality]', action: 'personality' }),
+    Object.freeze({ name: 'yolo', desc: 'toggle full-access approval mode', argsHint: '[on|off]', action: 'yolo' }),
     Object.freeze({ name: 'reasoning', desc: 'show or set how hard the model thinks before answering', argsHint: '[none|minimal|low|medium|high|xhigh]', action: 'reasoning' }),
     Object.freeze({ name: 'fast', desc: 'drop reasoning effort to minimal for quicker, cheaper replies', action: 'fast' }),
-    Object.freeze({ name: 'voice', desc: 'show or toggle spoken replies', action: 'voice' }),
+    Object.freeze({ name: 'voice', desc: 'show or toggle spoken replies', argsHint: '[on|off|handsfree|status]', action: 'voice' }),
     // no local action by design — the sidecar owns CAP_REGISTRY + the toolset switches (dispatch:'server')
     Object.freeze({ name: 'tools', desc: 'show the tools this agent can actually call', action: 'tools' }),
     Object.freeze({ name: 'skills', desc: 'show installed skill recipes', action: 'skills' }),
-    Object.freeze({ name: 'memory', desc: 'show the active agent memory records', action: 'memory' }),
+    Object.freeze({ name: 'memory', desc: 'show the active agent memory records', argsHint: '[query]', action: 'memory' }),
     Object.freeze({ name: 'bundles', desc: 'list recipe and skill slash bundles', action: 'bundles' }),
-    Object.freeze({ name: 'cron', desc: 'show or arm scheduled routines', action: 'cron' }),
-    Object.freeze({ name: 'suggestions', aliases: ['suggest'], desc: 'review recurring-task recipe suggestions', action: 'suggestions' }),
-    Object.freeze({ name: 'blueprint', aliases: ['bp'], desc: 'load a recipe blueprint into the composer', action: 'blueprint' }),
-    Object.freeze({ name: 'reload-mcp', aliases: ['reload_mcp'], desc: 'refresh configured MCP connectors', action: 'reload-mcp' }),
+    Object.freeze({ name: 'cron', desc: 'show or arm scheduled routines', argsHint: '[on|off|status]', action: 'cron' }),
+    Object.freeze({ name: 'suggestions', aliases: ['suggest'], desc: 'review recurring-task recipe suggestions', argsHint: '[accept N|dismiss N|clear]', action: 'suggestions' }),
+    Object.freeze({ name: 'blueprint', aliases: ['bp'], desc: 'load a recipe blueprint into the composer', argsHint: '[recipe]', action: 'blueprint' }),
+    Object.freeze({ name: 'reload-mcp', aliases: ['reload_mcp'], desc: 'refresh configured MCP connectors', argsHint: '[connector-id]', action: 'reload-mcp' }),
     Object.freeze({ name: 'reload-skills', aliases: ['reload_skills'], desc: 'refresh the slash skill catalog', action: 'reload-skills' }),
     Object.freeze({ name: 'debug', desc: 'show chat and slash debug state', action: 'debug' }),
     Object.freeze({ name: 'version', aliases: ['v'], desc: 'show StarNet version information', action: 'version' })
@@ -4844,9 +4852,18 @@ const Chat = (() => {
     const a = activeAgent();
     if (!a) return localLine('Approval mode is not available yet.');
     const raw = String(args || '').trim().toLowerCase();
+    const was = a.approvalMode === 'full' ? 'full access' : 'ask first';
     const want = raw ? /^(1|true|yes|on|full|yolo)$/i.test(raw) : a.approvalMode !== 'full';
     if (applyAgentPatch({ approvalMode: want ? 'full' : 'ask' })) {
-      localLine('Approval mode: ' + (want ? 'full access. The agent will not pause for approval prompts.' : 'ask first. The agent will pause before gated actions.') );
+      // State the TRANSITION, not just the resulting state. A bare /yolo TOGGLES, so the old wording
+      // ("Approval mode: full access…") read like a status report when it had in fact just switched the
+      // approval gate off — the one setting where mistaking a change for a readout actually matters.
+      const now = want ? 'full access' : 'ask first';
+      localLine(was === now
+        ? ('Approval mode unchanged: ' + now + '.')
+        : ('Approval mode: ' + was + ' → ' + now + '. ' + (want
+          ? 'The agent will NOT pause for approval prompts — /yolo off to restore them.'
+          : 'The agent will pause before gated actions.')));
     } else localLine('Could not change approval mode.');
   }
   /* ---- reasoning effort — a REAL dial, not a status readout.

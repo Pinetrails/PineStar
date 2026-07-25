@@ -36,6 +36,7 @@ const BUILTIN_COMMANDS = Object.freeze([
     aliases: ['reset'],
     category: 'Session',
     desc: 'start a fresh workstream',
+    argsHint: '[title]',
     action: 'new'
   }),
   Object.freeze({
@@ -43,6 +44,7 @@ const BUILTIN_COMMANDS = Object.freeze([
     aliases: ['fork'],
     category: 'Session',
     desc: 'fork this conversation into a new workstream',
+    argsHint: '[title]',
     action: 'branch'
   }),
   Object.freeze({
@@ -69,7 +71,7 @@ const BUILTIN_COMMANDS = Object.freeze([
   Object.freeze({
     name: 'steer',
     category: 'Session',
-    desc: 'steer the live run (or queue guidance when idle)',
+    desc: 'steer the running turn (nothing to steer when idle)',
     argsHint: '<guidance>',
     action: 'steer'
   }),
@@ -141,6 +143,7 @@ const BUILTIN_COMMANDS = Object.freeze([
     aliases: ['cls'],
     category: 'Session',
     desc: 'clear COMMS and start a fresh workstream',
+    argsHint: '[title]',
     action: 'clear'
   }),
   Object.freeze({
@@ -202,7 +205,7 @@ const BUILTIN_COMMANDS = Object.freeze([
     name: 'voice',
     category: 'Configuration',
     desc: 'show or toggle spoken replies',
-    argsHint: '[on|off|status]',
+    argsHint: '[on|off|handsfree|status]',
     action: 'voice'
   }),
   Object.freeze({
@@ -268,7 +271,7 @@ const BUILTIN_COMMANDS = Object.freeze([
     aliases: ['suggest'],
     category: 'Tools',
     desc: 'review recurring-task recipe suggestions',
-    argsHint: '[accept|dismiss N|clear]',
+    argsHint: '[accept N|dismiss N|clear]',
     action: 'suggestions'
   }),
   Object.freeze({
