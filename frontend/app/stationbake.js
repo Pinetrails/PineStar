@@ -90,7 +90,16 @@ const StationBake = (() => {
        floorDetail= amplitude of the V2 floor-material pass (deck plates, seams, rivets,
                     per-kind recipes, perimeter trim). Scales every U.shade delta the floor
                     draws, so 0 = a flat unadorned deck, 1 = shipped, >1 = overdriven. */
-  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, wallDetail: 1 };   // dither 0.15 = Andrew's dialed value (2026-07-13 crtlab COPY VALUES)
+  /*   deckSeam   = how hard the JOINT between deck plates/boards reads. The v3 grout was a -0.30
+                    step with a +0.07 catch-light immediately beside it, repeated at every plate
+                    boundary — a high-contrast 2px edge on a 24px pitch, which reads as a GRID OF
+                    SEPARATION LINES cutting the deck into blocks instead of a quiet laid surface
+                    (Andrew 2026-07-24: "there seems to be this separation line, can we remove that
+                    so it blends?"). The joint still has to exist or a plate deck is a flat field,
+                    so it gets its own knob rather than being deleted. Scales ONLY the seam/bevel
+                    steps — per-plate tone, material dressing and wear are untouched.
+                    0 = a genuinely seamless deck · 1 = the old hard v3 grid. */
+  const DEPTH = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, wallDetail: 1, deckSeam: 0.38 };   // dither 0.15 = Andrew's dialed value (2026-07-13 crtlab COPY VALUES)
 
   const CORNER = {
     tl: { cx: 1, cy: 1, a0: Math.PI, a1: 1.5 * Math.PI },
@@ -243,10 +252,13 @@ const StationBake = (() => {
     const body = ((pn % 5) - 2) * 0.014 + checker;
     const step = PH > 1 ? (ly === 0 ? 0.016 : -0.012) : 0;   // slab body: light upper course → dark lower
     px(X, Y, T, T, sh(body + step));
-    if (lx === 0) { px(X, Y, 1, T, sh(-0.30)); px(X + 1, Y, 1, T, sh(body + 0.07)); }   // grout + lit west bevel
-    if (ly === 0) { px(X, Y, T, 1, sh(-0.30)); px(X, Y + 1, T, 1, sh(body + 0.07)); }   // grout + lit north bevel
-    if (lx === PW - 1) px(X + T - 1, Y, 1, T, sh(body - 0.14));                          // shaded east bevel
-    if (ly === PH - 1) px(X, Y + T - 1, T, 1, sh(body - 0.14));                          // shaded south bevel
+    // the plate JOINT rides DEPTH.deckSeam — see the knob's note. The body tone above is NOT scaled
+    // by it, so softening the seam blends the plates together without flattening the deck.
+    const sk = Math.max(0, DEPTH.deckSeam);
+    if (lx === 0) { px(X, Y, 1, T, sh(-0.30 * sk)); px(X + 1, Y, 1, T, sh(body + 0.07 * sk)); }   // grout + lit west bevel
+    if (ly === 0) { px(X, Y, T, 1, sh(-0.30 * sk)); px(X, Y + 1, T, 1, sh(body + 0.07 * sk)); }   // grout + lit north bevel
+    if (lx === PW - 1) px(X + T - 1, Y, 1, T, sh(body - 0.14 * sk));                              // shaded east bevel
+    if (ly === PH - 1) px(X, Y + T - 1, T, 1, sh(body - 0.14 * sk));                              // shaded south bevel
     // material dressing — rivets on alternating plate joints only
     if ((mat === 'plate' || mat === 'tread') && lx === 0 && ly === 0 && (pxc + pyc) % 2 === 0) {
       px(X + 2, Y + 2, 2, 2, sh(0.16)); px(X + 3, Y + 3, 1, 1, sh(-0.22));
@@ -332,12 +344,13 @@ const StationBake = (() => {
     const rel = ((x - stagger) % PWp + PWp) % PWp;              // safe mod: x-stagger can go negative
     const pn = h2(Math.floor((x - stagger) / PWp), y, z + ':pk');
     const body = ((pn % 7) - 3) * 0.018;                         // per-BOARD tone (whole board, not per tile)
+    const sk = Math.max(0, DEPTH.deckSeam);                      // board joints ride the same knob
     px(X, Y, T, T, base);
     px(X, Y, T, T, sh(body));
-    px(X, Y, T, 1, sh(body + 0.10));                             // lit top edge of the board
-    px(X, Y + T - 2, T, 1, sh(body - 0.10));                     // shadow into the gap
-    px(X, Y + T - 1, T, 1, sh(body - 0.30));                     // the gap between boards
-    if (rel === 0) { px(X, Y, 1, T, sh(body - 0.32)); px(X + 1, Y, 1, T, sh(body + 0.06)); }   // butt-end seam
+    px(X, Y, T, 1, sh(body + 0.10 * sk));                        // lit top edge of the board
+    px(X, Y + T - 2, T, 1, sh(body - 0.10 * sk));                // shadow into the gap
+    px(X, Y + T - 1, T, 1, sh(body - 0.30 * sk));                // the gap between boards
+    if (rel === 0) { px(X, Y, 1, T, sh(body - 0.32 * sk)); px(X + 1, Y, 1, T, sh(body + 0.06 * sk)); }   // butt-end seam
     px(X, Y + 3 + (n % 3), T, 1, sh(body - 0.07));               // grain hairlines running with the board
     px(X, Y + 7 + (n % 3), T, 1, sh(body - 0.05));
     if (n % 3 === 0) px(X, Y + 5, T, 1, sh(body + 0.05));
@@ -438,10 +451,13 @@ const StationBake = (() => {
       const sh = d => U.shade(base, d * fd);
       px(X, Y, T, T, base);
       px(X, Y, T, T, sh(((n % 4) - 1.5) * 0.013));   // per-tile tread-plate tone (hard, one of 4)
-      // slab tread: seam, lit lip under it, shaded base — each corridor row reads as a step
-      px(X, Y, T, 1, sh(-0.34));
-      px(X, Y + 1, T, 1, sh(0.05));
-      px(X, Y + T - 1, T, 1, sh(-0.12));
+      // slab tread: seam, lit lip under it, shaded base — each corridor row reads as a step.
+      // Rides DEPTH.deckSeam like the room decks, so a corridor doesn't keep hard rungs after the
+      // rooms have been blended.
+      const sk = Math.max(0, DEPTH.deckSeam);
+      px(X, Y, T, 1, sh(-0.34 * sk));
+      px(X, Y + 1, T, 1, sh(0.05 * sk));
+      px(X, Y + T - 1, T, 1, sh(-0.12 * sk));
       if (n % 23 === 5) { px(X + 2, Y + 2, T - 4, T - 4, sh(-0.16)); b.strokeStyle = sh(-0.4); b.lineWidth = 1; b.strokeRect(X + 2.5, Y + 2.5, T - 5, T - 5); }
       // corridor wear ticks (see the room-floor wear block for the idiom)
       if (DEPTH.floorWear > 0.001 && n % 7 === 2) px(X + (n % 6), Y + 2 + (n % 7), 3 + (n % 3), 1, 'rgba(0,0,0,' + (0.16 * DEPTH.floorWear).toFixed(3) + ')');
