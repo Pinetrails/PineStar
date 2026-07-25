@@ -51,6 +51,13 @@ function build(over) {
       A.ok(c.description.length > 0 && c.description.length <= 256, '/' + c.command + ' has a publishable description');
     }
     A.ok(menuCommands().every(c => c.command !== 'help'), '/help stays off the published menu (redundant beside it)');
+    // Telegram authenticates BEFORE it validates the body — probed 2026-07-25: a correct payload and a
+    // deliberately malformed one both return an identical 401 on a fake token. So the wire can NEVER tell us
+    // the payload is good without a real bot token, and these local guards are the only standing proof there is.
+    const menu = menuCommands();
+    A.ok(menu.length <= 100, 'the published menu is within the Bot API 100-command cap (' + menu.length + ')');
+    A.eq(new Set(menu.map(c => c.command)).size, menu.length, 'no duplicate command names reach setMyCommands');
+    A.notThrows(() => JSON.parse(JSON.stringify(menu)), 'the menu payload round-trips as JSON');
   }
 
   /* ---- server-answerable commands go through the SHARED registry ---- */
