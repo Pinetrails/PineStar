@@ -398,8 +398,8 @@ const SpaceBG = (() => {
 
     build(w, h, rnd) {
       const SW = Math.max(1, Math.ceil(w / 2)), SH = Math.max(1, Math.ceil(h / 2));
-      const LT = NURSERY_BG.LIGHT, LV = NURSERY_BG.LEVELS, BY = NURSERY_BG.BAYER;
-      const gasCv = mkCv(SW, SH), gc = gasCv.getContext('2d');
+      const LT = NURSERY_BG.LIGHT, LV = NURSERY_BG.LEVELS;
+      const gasCv = mkCv(w, h), gc = gasCv.getContext('2d');
 
       /* ---- 1. THE DEEP FIELD, on its own FULL-RESOLUTION plate ----
          The gas is built at half res because it is soft and the per-pixel pass is expensive, but
@@ -427,7 +427,7 @@ const SpaceBG = (() => {
           stc.fillRect(x - 3, y, 7, 1); stc.fillRect(x, y - 3, 1, 7);
         }
       }
-      gc.clearRect(0, 0, SW, SH);                         // the gas plate carries alpha, not a fill
+      gc.clearRect(0, 0, w, h);                         // the gas plate carries alpha, not a fill
 
       /* ---- 2. THE NEBULA, composited OVER the stars with per-pixel alpha ----
          Built into its own buffer so it can blend: putImageData replaces pixels and would
@@ -439,42 +439,78 @@ const SpaceBG = (() => {
       const lane1 = wrapNoise(5, rnd), lane2 = wrapNoise(12, rnd);
       const tealF = wrapNoise(3, rnd);
 
-      const scratch = mkCv(SW, SH), sc2 = scratch.getContext('2d');
-      const img = sc2.createImageData(SW, SH), D = img.data;
-      let p = 0;
-      for (let y = 0; y < SH; y++) {
-        const v0 = y / SH, brow = (y & 3) * 4;
-        for (let x = 0; x < SW; x++) {
+      /* TWO PASSES, AND THE SECOND ONE IS THE WHOLE FIX (2026-07-25, Andrew: "lets just fix this
+         pink nebula" — the screenshot showed a regular cross-hatch mesh over the gas).
+
+         The gas used to be computed AND coloured at half resolution and then blitted up 2x, which
+         turned every dither cell into FOUR screen pixels across. At that size an ordered dither
+         stops being texture and becomes a window screen. The field itself is smooth and loses
+         nothing at half res, so only the quantize/dither/colour step has to be per-screen-pixel:
+         one cheap half-res pass does all the noise, one full-res pass does the dither.
+
+         The dither is also now a per-pixel HASH rather than a Bayer matrix. An ordered matrix is
+         periodic by construction, so it leaves a visible lattice however small the cell; a hash
+         has no repeating structure at any scale and reads as grain, which is what soft gas wants.
+         (Ordered dither is still right for hard-edged shading — it is wrong for a smooth volume.)
+
+         Every colour and alpha number below is UNCHANGED from the version in that screenshot.
+         Andrew liked everything except the mesh, so the ramp thresholds, the palette and the
+         alpha curve are deliberately left alone — this commit must not move the brightness. */
+      const fT = new Float32Array(SW * SH), fL = new Float32Array(SW * SH), fC = new Float32Array(SW * SH);
+      for (let y = 0, i = 0; y < SH; y++) {
+        const v0 = y / SH;
+        for (let x = 0; x < SW; x++, i++) {
           const u0 = x / SW;
           const u = u0 + (wxF(u0, v0) - 0.5) * 0.26;      // domain warp -> filaments, not blobs
           const v = v0 + (wyF(u0, v0) - 0.5) * 0.26;
-
-          // ENVELOPE: the cloud has a shape and falls off to nothing. Rule 4 — gas that covers
-          // everything is camo; gas with an edge is a subject.
+          // ENVELOPE: the cloud has a shape and falls off to nothing. Gas that covers everything
+          // is camo; gas with an edge is a subject.
           const env = Math.max(0, Math.min(1, (shape(u0, v0) - 0.34) * 2.6));
-          if (env <= 0.001) { D[p + 3] = 0; p += 4; continue; }
-
+          if (env <= 0.001) continue;                     // fT/fL/fC stay 0 here
           const dens = d1(u, v) * 0.46 + d2(u, v) * 0.28 + d3(u, v) * 0.17 + d4(u, v) * 0.09;
-          let t = Math.max(0, Math.min(1, (dens - 0.34) * 2.3)) * env;
+          fT[i] = Math.max(0, Math.min(1, (dens - 0.34) * 2.3)) * env;
+          fC[i] = Math.max(0, tealF(u * 1.2, v * 1.2) - 0.54) * 2.0;
+          fL[i] = Math.max(0, Math.min(1, (lane1(u0 * 1.15, v0 * 1.15) * 0.62 + lane2(u0, v0) * 0.38 - 0.54) * 3.0));
+        }
+      }
+      // deterministic per-pixel dither offset in [-0.5,0.5) — same pixel, same grain, every build
+      const dith = (x, y) => {
+        let k = Math.imul(x + 0x1F123BB5, 0x27D4EB2D) ^ Math.imul(y + 0x68E31DA4, 0x165667B1);
+        k = Math.imul(k ^ (k >>> 15), 0x2C1B3C6D);
+        return (((k ^ (k >>> 12)) >>> 0) / 4294967296) - 0.5;
+      };
+      // bilinear sample of a half-res field, wrapping — the tile is a torus
+      const samp = (F, fx, fy) => {
+        const x0 = Math.floor(fx), y0 = Math.floor(fy), tx = fx - x0, ty = fy - y0;
+        const xa = ((x0 % SW) + SW) % SW, ya = ((y0 % SH) + SH) % SH;
+        const xb = (xa + 1) % SW, yb = (ya + 1) % SH;
+        const top = F[ya * SW + xa] + (F[ya * SW + xb] - F[ya * SW + xa]) * tx;
+        const bot = F[yb * SW + xa] + (F[yb * SW + xb] - F[yb * SW + xa]) * tx;
+        return top + (bot - top) * ty;
+      };
 
-          // DITHER instead of banding (rule 2). The Bayer threshold decides which side of the
-          // quantization step each pixel falls on, so a ramp becomes a fine checker rather than
-          // a flat plateau — which is exactly the difference between pixel art and camo.
-          const bay = (BY[brow + (x & 3)] + 0.5) / 16 - 0.5;
-          t = Math.max(0, Math.min(1, Math.round((t + bay / LV) * LV) / LV));
+      const scratch = mkCv(w, h), sc2 = scratch.getContext('2d');
+      const img = sc2.createImageData(w, h), D = img.data;
+      let p = 0;
+      for (let y = 0; y < h; y++) {
+        const fy = y * 0.5;
+        for (let x = 0; x < w; x++) {
+          const fx = x * 0.5;
+          let t = samp(fT, fx, fy);
+          if (t <= 0.002) { D[p + 3] = 0; p += 4; continue; }
+          t = Math.max(0, Math.min(1, Math.round((t + dith(x, y) / LV) * LV) / LV));
           if (t <= 0) { D[p + 3] = 0; p += 4; continue; }
 
-          // COLOUR: a wide ramp ending near white (rule 3), plus a teal region for hue contrast
+          // COLOUR: a wide ramp ending near white, plus a teal region for hue contrast
           let col;
           if (t < 0.40) col = mix3(LT.OUT, LT.MID, t / 0.40);
           else if (t < 0.78) col = mix3(LT.MID, LT.HOT, (t - 0.40) / 0.38);
           else col = mix3(LT.HOT, LT.CORE, (t - 0.78) / 0.22);
-          const teal = Math.max(0, tealF(u * 1.2, v * 1.2) - 0.54) * 2.0;
+          const teal = samp(fC, fx, fy);
           if (teal > 0) col = mix3(col, LT.TEAL, Math.min(0.7, teal) * (1 - t * 0.5));
 
           // DUST LANES: hard, near-black, and they bite INTO the cloud. This is the structure.
-          const ln = lane1(u0 * 1.15, v0 * 1.15) * 0.62 + lane2(u0, v0) * 0.38;
-          const dark = Math.max(0, Math.min(1, (ln - 0.54) * 3.0));
+          const dark = samp(fL, fx, fy);
           let alpha = 0.10 + 0.90 * t;                    // thin gas lets the field through
           if (dark > 0) { col = mix3(col, LT.LANE, dark); alpha = Math.min(1, alpha + dark * 0.55); }
 
@@ -490,11 +526,11 @@ const SpaceBG = (() => {
               These carry the top of the value range and give the eye somewhere to land. */
       gc.globalCompositeOperation = 'lighter';
       for (let i = 0, n = 5 + Math.floor(rnd() * 5); i < n; i++) {
-        const sx = rnd() * SW, sy = rnd() * SH;
-        if (shape(sx / SW, sy / SH) < 0.46) continue;     // only where the cloud actually is
-        const R = Math.min(SW, SH) * (0.03 + 0.055 * rnd());
-        puff9(gc, SW, SH, sx, sy, R, rnd() < 0.5 ? [190, 110, 130] : [120, 150, 220], 0.16 + 0.10 * rnd());
-        puff9(gc, SW, SH, sx, sy, R * 0.28, [255, 246, 250], 0.22);
+        const sx = rnd() * w, sy = rnd() * h;
+        if (shape(sx / w, sy / h) < 0.46) continue;        // only where the cloud actually is
+        const R = Math.min(w, h) * (0.03 + 0.055 * rnd());
+        puff9(gc, w, h, sx, sy, R, rnd() < 0.5 ? [190, 110, 130] : [120, 150, 220], 0.16 + 0.10 * rnd());
+        puff9(gc, w, h, sx, sy, R * 0.28, [255, 246, 250], 0.22);
         gc.fillStyle = 'rgba(255,250,255,0.95)';
         gc.fillRect(sx | 0, sy | 0, 1, 1);
       }
