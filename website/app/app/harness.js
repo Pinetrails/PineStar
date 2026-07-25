@@ -129,6 +129,14 @@ const Harness = (() => {
       const r = await fetch('/api/auth/codex/status');   // same relative idiom app.js's refreshCodexStatus uses (works in browser + desktop webview)
       if (r && r.ok) { const j = await r.json(); if (j && j.connected) _configuredByProvider.codex = true; }
     } catch (_) {}
+    // The OTHER device-code OAuth providers (grok/kimi) hold their tokens sidecar-side too — same probe,
+    // same fail-open contract (a dead route just leaves them unconfigured).
+    await Promise.all(['grok', 'kimi'].map(async pid => {
+      try {
+        const r = await fetch('/api/auth/' + pid + '/status');
+        if (r && r.ok) { const j = await r.json(); if (j && j.connected) _configuredByProvider[pid] = true; }
+      } catch (_) {}
+    }));
   }
   /* whether a key is set — works in both modes; never exposes the value. In dev mode the host holds the
      key (runtimeKey), so we report configured without one — that's what lets a fresh origin auto-resume. */
@@ -138,7 +146,13 @@ const Harness = (() => {
     if (p === 'openai' || p === 'openai-api') return 'openai';
     if (p === 'anthropic' || p === 'claude') return 'anthropic';
     if (p === 'gemini' || p === 'google' || p === 'google-ai' || p === 'google-gemini') return 'gemini';
-    if (p === 'xai' || p === 'x-ai' || p === 'grok') return 'xai';
+    // grok/kimi are their OWN keyless OAuth (subscription) providers — NOT aliases for the API-key
+    // providers. Folding 'grok' into 'xai' here silently rewrote every GROK OAUTH selection into the
+    // API-key xAI provider (and 'kimi' fell through to 'openrouter'), so the OAuth brains could never
+    // actually be the active provider anywhere Harness owns the truth.
+    if (p === 'grok' || p === 'grok-oauth' || p === 'supergrok' || p === 'xai-oauth') return 'grok';
+    if (p === 'kimi' || p === 'moonshot' || p === 'kimi-code' || p === 'kimi-for-coding' || p === 'kimi-oauth') return 'kimi';
+    if (p === 'xai' || p === 'x-ai') return 'xai';
     if (p === 'groq') return 'groq';
     if (p === 'mistral' || p === 'mistralai') return 'mistral';
     if (p === 'deepseek') return 'deepseek';
@@ -172,7 +186,8 @@ const Harness = (() => {
   }
   function providerNeedsKey(provider) {
     const p = normalizeProviderId(provider);
-    return p !== 'codex' && p !== 'ollama' && p !== 'custom';
+    // codex/grok/kimi authenticate by device-code OAuth tokens held sidecar-side; ollama/custom are keyless endpoints.
+    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom';
   }
   function configured(provider) {
     const p = normalizeProviderId(provider);
@@ -193,6 +208,9 @@ const Harness = (() => {
   function hasStoredCredential(provider) {
     const p = normalizeProviderId(provider);
     if (p === 'codex') return DESKTOP ? !!_configuredByProvider.codex : (getProv() === 'codex');
+    // grok/kimi mirror codex: OAuth tokens live sidecar-side, so the desktop configured map (fed by the boot
+    // probe + app.js's status refresh) is the only local truth; in the browser the active-provider pick stands in.
+    if (p === 'grok' || p === 'kimi') return DESKTOP ? !!_configuredByProvider[p] : (getProv() === p);
     if (p === 'ollama') return false;                      // an endpoint is configuration, never a credential
     if (p === 'custom' && !getKey(p)) return false;        // a keyless custom endpoint must not manufacture a key row
     if (DESKTOP) return !!(_configuredByProvider[p] || (p === 'openrouter' && _configured));
@@ -206,12 +224,19 @@ const Harness = (() => {
   const setKey = (k, provider) => {
     const p = normalizeProviderId(provider || getProv());
     if (DESKTOP) {
-      setDesktopConfigured(p, !!(k && String(k).trim()));
+      const on = !!(k && String(k).trim());
+      // configured flips ONLY after the keychain write PROVES itself. The old optimistic pre-invoke flip meant a
+      // rejected write (locked/denied keychain) left the map claiming "configured" while no key existed anywhere —
+      // Settings toasted "✓ stored in your OS keychain", the no-key nudges stayed cleared, and the next run died
+      // with no re-entry hint (desktop-only strand; the browser branch is synchronous localStorage). Callers see
+      // the rejection and must render the honest failure.
       return invoke('harness_store_provider_key', { provider: p, key: k || '', baseUrl: getBaseUrl(p) || '' })
         .catch(e => {
           if (p === 'openrouter') return invoke('harness_store_key', { key: k || '' });
           throw e;
-        });
+        })
+        .then(r => { setDesktopConfigured(p, on); return r; })
+        .catch(e => { setDesktopConfigured(p, false); throw e; });
     }
     writeScoped(LS.key, p, k || '');
   };
@@ -247,6 +272,7 @@ const Harness = (() => {
   function defaultReasoningEffortForProvider(provider) {
     const p = normalizeProviderId(provider);
     if (p === 'codex') return 'low';
+    if (p === 'kimi') return 'none';   // mirrors the sidecar registry profile (kimi-for-coding has no reasoning dial)
     if (p === 'ollama') return 'none';
     return 'medium';
   }
@@ -416,7 +442,7 @@ const Harness = (() => {
       if (internal) reqBody.internal = true;
       if (/^(answer|cancel|replace)$/.test(String(taskAction || ''))) reqBody.taskAction = String(taskAction);
       if (recipeId) reqBody.recipeId = String(recipeId).slice(0, 60);   // provenance spine: which recipe launched this run (rides to the durable run row)
-      // project-anchored session (Hermes-parity working folder): the sidecar injects the folder context line
+      // project-anchored session (ref-parity working folder): the sidecar injects the folder context line
       // ONLY when this root is still a standing blessed path grant — an un-blessed root injects nothing.
       if (projectRoot) reqBody.projectRoot = String(projectRoot);
       // THE MOAT (FLOOR-REAL): send the agent's REAL placed capability objects so the sidecar grants exactly what's
@@ -429,7 +455,7 @@ const Harness = (() => {
       // available when the STATION has the required shared gear (a specialist owns only a desk yet still gets its
       // class skills). Sent separately so the tool projection is untouched; the sidecar uses it for skills only.
       if (Array.isArray(stationPlaced) && stationPlaced.length) reqBody.stationPlaced = stationPlaced;
-      if (!DESKTOP && !DEVMODE && provider !== 'codex') reqBody.key = key;   // dev/desktop/Codex keep secrets server-side
+      if (!DESKTOP && !DEVMODE && provider !== 'codex' && provider !== 'grok' && provider !== 'kimi') reqBody.key = key;   // dev/desktop + the OAuth providers keep secrets server-side (custom/ollama may still ride an optional key)
       res = await fetch('/api/run', {
         method: 'POST', signal,
         headers: { 'Content-Type': 'application/json' },
@@ -452,6 +478,7 @@ const Harness = (() => {
     const reader = res.body.getReader();
     const dec = new TextDecoder();
     let buf = '', full = '', lastUsage = null, runId = null, errMsg = null, endReason = null, finishReason = null;
+    let budgetScope = null, budgetCapUsd = null;   // additive: WHICH spend cap ended a 'budget' run (+ its $ cap)
 
     for (;;) {
       const { value, done } = await reader.read();
@@ -505,7 +532,12 @@ const Harness = (() => {
             if (payload.runId) { delete runModels[payload.runId]; internalRuns.delete(payload.runId); }
             // latch the lead's stop reason AND (Lane 5, additive) WHY it stopped when the provider truncated/
             // filtered it — the caller renders a "cut short" recap instead of a delivered crate for those.
-            if (!payload.runId || payload.runId === runId) { endReason = payload.reason; finishReason = payload.finishReason || null; }
+            if (!payload.runId || payload.runId === runId) {
+              endReason = payload.reason; finishReason = payload.finishReason || null;
+              // additive budget-stop detail: which cap fired + the effective $ cap (absent on non-budget stops)
+              budgetScope = payload.budgetScope || null;
+              budgetCapUsd = (typeof payload.budgetCapUsd === 'number' && isFinite(payload.budgetCapUsd)) ? payload.budgetCapUsd : null;
+            }
             break;   // the lead's own end, not a forwarded worker's
         }
       }
@@ -513,8 +545,8 @@ const Harness = (() => {
     totals.calls++;
     // surface the error to the caller (do NOT swallow it just because some text streamed first) —
     // a network/fetch failure still throws below; this is for in-band run errors / capdenied.
-    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason, finishReason };
-    return { text: full, usage: lastUsage, runId, endReason, finishReason };
+    if (errMsg) return { text: full, usage: lastUsage, runId, error: errMsg, endReason, finishReason, budgetScope, budgetCapUsd };
+    return { text: full, usage: lastUsage, runId, endReason, finishReason, budgetScope, budgetCapUsd };
   }
 
   /* Read-only fetch of an agent's notebook (its memory.md) from the sidecar. The agent writes these notes

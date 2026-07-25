@@ -69,8 +69,13 @@ binary; platform keyring; updater → GitHub Releases `androoAGI/starnet-release
 
 - `npm run test:fast` — THE merge gate: ~364 steps from `test/fast.list` via
   `scripts/run-fast-tests.mjs`.
-- `npm run test:http` — HTTP/e2e; `npm run test:world` — headless world sim;
-  `npm run validate` — map validation.
+- `npm run test:http` — HTTP/e2e. `npm test` = test:fast + test:http.
+  (The old `validate` / `test:world` steps were retired 2026-07-24: both were Phase-0.0 wrappers
+  around the v7 engine files `frontend/js/map.js` + `frontend/js/data.js`, which no longer exist —
+  so `npm test` had been failing at step 1. The current engine is covered by `worldmodel.test.js`,
+  `crew-containment.test.js` and `station-authority.test.js` in the fast gate.)
+- `npm run sync:website` — regenerate the starnetos.com demo embed (`website/app`) from `frontend/`;
+  gated by `test/website-app-sync.test.js`, so never hand-edit `website/app`.
 - QA station: `npm run qa:guardian` (pinned-worktree trunk gate: test:fast→shoot→golden→audit),
   `qa:beginner`, `qa:janitor`, ledger at `scripts/qa/ledger.mjs`; dashboards in `qa/`.
 - Release: `scripts/release-bump.mjs`, `release-assemble-manifest.mjs`,

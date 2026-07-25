@@ -265,6 +265,12 @@
           '<span class="mc-state" style="color:' + b[0] + '">' + b[1] + (c.toolCount ? ' · ' + c.toolCount + ' tool' + (c.toolCount === 1 ? '' : 's') : '') + '</span></div>' +
         '<div class="mc-url dim">' + where + timeout + '</div>' + detail + tools +
         '<div class="mc-acts">' +
+          // an OAuth connector's stored grant can die provider-side (token revoked, DCR client deleted) — a state
+          // RELOAD can't cure (it reconnects with the same dead grant) and EDIT can't reach (its form is the
+          // http-bearer/stdio editor; there is no bearer to paste). A fresh browser consent is the only cure, so
+          // the row always carries it — same engine as the catalog card's ▸ SIGN IN (ccSignIn), which is otherwise
+          // unreachable here: the catalog card renders a disabled ✓ ADDED for every installed connector.
+          (c.oauth ? '<button class="bb xs" data-act="resign" title="re-run the browser OAuth sign-in — the fix for a revoked or expired grant">⏼ RE-SIGN-IN</button>' : '') +
           '<button class="bb xs" data-act="reload">↻ RELOAD</button>' +
           '<button class="bb xs" data-act="edit">✎ EDIT</button>' +
           '<button class="bb xs danger" data-act="remove">✕ REMOVE</button>' +
@@ -291,9 +297,13 @@
       const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
       const act = btn.dataset.act;
       if (act === 'edit') { const c = lastList.find(x => x.id === id); if (c) startEdit(c); return; }
+      // ⏼ RE-SIGN-IN: a fresh OAuth consent for an installed connector — the callback upserts new tokens and
+      // reconnects, so this works for revoked/expired grants where RELOAD just re-errors. ccSignIn owns the
+      // pending/poll state; its progress lands in THIS pane's message line (msgEl), not the catalog's.
+      if (act === 'resign') { sfx('click'); ccSignIn(id, msgEl); return; }
       btn.disabled = true;
       try {
-        if (act === 'remove') { await postJSON('/api/connectors/remove', { id }); notify('Connector "' + id + '" removed'); sfx('click'); if (editing === id) resetForm(); }
+        if (act === 'remove') { await postJSON('/api/connectors/remove', { id }); notify('Connector "' + id + '" removed'); sfx('click'); if (editing === id) resetForm(); ccRefresh(); }
         else if (act === 'reload') {
           msgEl.classList.remove('ok'); msgEl.textContent = 'reloading ' + id + '…';
           const j = await (await postJSON('/api/connectors/refresh', { id })).json().catch(() => ({}));
@@ -441,27 +451,30 @@
     }
     // OAuth sign-in: start the flow, open the provider's consent (browser tab on desktop, popup in a browser),
     // then poll until the connector connects — but only if the consent window actually opened.
-    async function ccSignIn(id) {
-      if (ccPending.has(id)) { sfx('bad'); ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'a sign-in is already in progress for this connector…'; return; }
+    async function ccSignIn(id, msgOut) {
+      // progress lands in the caller's message line: the catalog's by default, the MCP CONNECTORS pane's when the
+      // ⏼ RE-SIGN-IN row action drives this (the user is looking at that tab — the catalog line is off-screen).
+      const out = msgOut || ccMsgEl;
+      if (ccPending.has(id)) { sfx('bad'); out.classList.remove('ok'); out.textContent = 'a sign-in is already in progress for this connector…'; return; }
       ccPending.add(id);   // one in-flight sign-in per connector — no duplicate popups / concurrent pollers
       const e = ccCache.find(x => x.id === id); const label = (e && e.name) || id;
-      ccMsgEl.classList.remove('ok'); ccMsgEl.textContent = 'starting sign-in for ' + label + '…';
+      out.classList.remove('ok'); out.textContent = 'starting sign-in for ' + label + '…';
       let url;
       try {
         const j = await (await postJSON('/api/connectors/oauth/start', { id: id })).json().catch(() => ({}));
-        if (j.error || !j.url) { ccMsgEl.textContent = '✕ ' + (j.error || 'could not start sign-in'); sfx('bad'); ccPending.delete(id); return; }
+        if (j.error || !j.url) { out.textContent = '✕ ' + (j.error || 'could not start sign-in'); sfx('bad'); ccPending.delete(id); return; }
         url = j.url;
-      } catch (err) { ccMsgEl.textContent = '✕ ' + ((err && err.message) || 'request failed'); sfx('bad'); ccPending.delete(id); return; }
+      } catch (err) { out.textContent = '✕ ' + ((err && err.message) || 'request failed'); sfx('bad'); ccPending.delete(id); return; }
       const opened = await openSignIn(url);
       if (!opened.opened) {
         // The consent window never opened (popup-blocked in a browser, or the OS-browser hand-off failed on
         // desktop). Do NOT start the poll — a "waiting for sign-in" claim against a window that doesn't exist
         // is the exact lie this fix removes. Tell the truth and stop.
-        ccMsgEl.textContent = '✕ couldn’t open the sign-in page for ' + label + (opened.where === 'popup' ? ' — allow pop-ups for this site, then try again.' : ' — try again.'); sfx('bad'); ccPending.delete(id); return;
+        out.textContent = '✕ couldn’t open the sign-in page for ' + label + (opened.where === 'popup' ? ' — allow pop-ups for this site, then try again.' : ' — try again.'); sfx('bad'); ccPending.delete(id); return;
       }
       const win = opened.win;   // popup handle when in a browser; null on desktop (opened in the real browser)
       ccPendingWin.set(id, win || null);   // remembered so a CANCEL can close a still-open popup
-      ccMsgEl.textContent = 'complete the sign-in for ' + label + (opened.where === 'browser' ? ' in your browser…' : ' in the popup window…');
+      out.textContent = 'complete the sign-in for ' + label + (opened.where === 'browser' ? ' in your browser…' : ' in the popup window…');
       // Turn the card's SIGN IN button into a visible CANCEL affordance for the duration of the poll — before this
       // the only way out of a stalled/abandoned sign-in was to wait out the 5-minute cap (EL-11 #13).
       const signBtn = ccListEl.querySelector('.cc-card[data-id="' + (window.CSS && CSS.escape ? CSS.escape(id) : id) + '"] button[data-cc-act]');
@@ -475,8 +488,8 @@
         try {
           const j = await Harness.api.get('/api/connectors');
           const c = (j.connectors || []).find(x => x.id === id);
-          if (c && c.state === 'up') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); sfx('click'); notify('Connector "' + label + '" connected', 'good'); ccMsgEl.classList.add('ok'); ccMsgEl.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
-          if (c && c.state === 'error') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); sfx('bad'); ccMsgEl.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); return; }
+          if (c && c.state === 'up') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); sfx('click'); notify('Connector "' + label + '" connected', 'good'); out.classList.add('ok'); out.textContent = '✓ ' + label + ' signed in — ' + (c.toolCount || 0) + ' tool(s)'; ccRefresh(); refresh(); try { if (win && !win.closed) win.close(); } catch (_) {} return; }
+          if (c && c.state === 'error') { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); sfx('bad'); out.textContent = '✕ ' + label + ' — ' + (c.detail || 'connection failed'); ccRefresh(); refresh(); return; }
         } catch (_) {}
         if (tries > 150) { stopCcPoll(id); ccPending.delete(id); ccPendingWin.delete(id); ccResetSignBtn(id); }   // ~5-minute cap so a stalled/abandoned sign-in stops polling
       }, 2000);

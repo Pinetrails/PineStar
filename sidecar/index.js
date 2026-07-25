@@ -4290,6 +4290,7 @@ function startTelegram(token, key, model, agentCfg) {
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: the fallback line carries the stored recommendation
+    groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
     newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
@@ -4456,6 +4457,7 @@ function startTelegramBot(botId) {
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),
+    groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
     newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
     // HARD-LOCK: this bot IS its bound agent — resolveAgent (top of the hub's resolution order) always answers
     // it, so /talk bindings and floor routing can never quietly change who @ThisBot is. No roster/setModel
@@ -4617,6 +4619,7 @@ function getDevHub() {
     secrets: devHubSecrets,
     persona: DEV_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: same recommendation line on the dev channel
+    groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
@@ -8194,12 +8197,13 @@ async function runOnce(o) {
   } else if (taskBrief) {
     let goal = null; try { goal = commanderGoals.get() || null; } catch (_) {}
     let patterns = []; try { patterns = taskBriefStore.patterns(5); } catch (_) {}
+    let deferredDimensions = []; try { deferredDimensions = taskBriefStore.deferredDimensions(); } catch (_) {}
     // TASK BRIEF v2: a recipe-launched run carries its recipe's declared material decisions (normalized by
     // recipes.js — the same data the launch chips rendered), so a mid-run question arrives pre-aimed.
     let recipeIntake = [];
     try { const rr = o.recipeId ? Recipes.get(String(o.recipeId)) : null; if (rr && Array.isArray(rr.intake)) recipeIntake = rr.intake; } catch (_) {}
     taskContextBlock = CommanderContext.compose({
-      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, recipeIntake, existingSystem: system || ''
+      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, deferredDimensions, recipeIntake, existingSystem: system || ''
     });
   }
 
@@ -11441,8 +11445,16 @@ function serveTaskBriefs(req, res) {
     const status = String(u.searchParams.get('status') || '').slice(0, 24);
     const limit = Math.max(1, Math.min(100, Number(u.searchParams.get('limit')) || 20));
     const briefs = taskBriefStore.list({ key: key || undefined, status: status || undefined, limit });
-    json(200, { briefs, patterns: taskBriefStore.patterns(5) });
-  } catch (_) { json(200, { briefs: [], patterns: [] }); }
+    // `grounded` is the OBSERVED-behaviour suggestion for the newest brief's open question (see
+    // taskBriefStore.groundedFor): provable from answered history, so the client can mark a chip with a real
+    // count instead of only the model's assertion. Null whenever nothing was observed twice — never a guess.
+    const pats = taskBriefStore.patterns(50);
+    const b0 = briefs[0];
+    const q0 = b0 && Array.isArray(b0.questions) ? b0.questions[b0.questions.length - 1] : null;
+    let grounded = null;
+    try { grounded = q0 ? taskBriefStore.groundedFor(q0, pats) : null; } catch (_) { grounded = null; }
+    json(200, { briefs, patterns: pats.slice(0, 5), grounded });
+  } catch (_) { json(200, { briefs: [], patterns: [], grounded: null }); }
 }
 
 // GET /api/threads/proposals?agent=<id>&run=<id> — NS-6: the pending MINED thread candidates for a run (with the

@@ -942,7 +942,7 @@ const Chat = (() => {
       if (!activeWs || activeWs.id !== id || isBusy()) return;
       const b = j && Array.isArray(j.briefs) && j.briefs[0];
       const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
-      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options, recommended: q.recommended || '', reason: q.reason || '' });
+      if (q && !q.answer && Array.isArray(q.options) && q.options.length >= 2) offerTaskQuestion({ question: q.text, options: q.options, recommended: q.recommended || '', reason: q.reason || '', grounded: (j && j.grounded) || null });
     } catch (_) { /* a missing/offline sidecar leaves history readable; the next load retries */ }
   }
 
@@ -2901,9 +2901,19 @@ const Chat = (() => {
     clearNudge();   // the question CLAIMS the moment: a live gentle nudge leaves whole (prompt + chips) — its chip
                     // row would be wiped by choices() below anyway, and a stuck activeNudge would mute beats forever
     pendingTaskQuestion = Object.assign({}, tq, { streamId: activeWs && activeWs.id });
-    // The host-validated recommended default (brief_ask path) gets the gold suggested chip + a one-line why.
-    // A marker-path question stores no recommendation, so rec resolves empty and this renders plain chips.
-    const rec = String(tq.recommended || '').trim().toLowerCase();
+    // TWO KINDS of suggestion, and they must never be confused. GROUNDED comes from the Commander's own
+    // answered history (taskBriefStore.groundedFor: same question, same option, >=2 times, no tie) — provable,
+    // so it outranks the model's assertion and states its count. The model's brief_ask recommendation is a
+    // guess with a rationale; it stands only when nothing was actually observed.
+    // NOTE: a marker-path question stores no `recommended`, but it CAN still carry a grounded suggestion —
+    // that one is derived from the Commander's answers, not from the unvalidated question, so it stays honest.
+    // Only the model's own guess is gated on the validated path.
+    const g = (tq.grounded && tq.grounded.option && Number(tq.grounded.count) >= 2) ? tq.grounded : null;
+    const has = v => !!v && tq.options.some(o => o.toLowerCase() === String(v).trim().toLowerCase());
+    // Fall back to the model's guess if the grounded option is not among the rendered choices (stale history,
+    // edited options) — otherwise a mismatch would silently cost BOTH the chip and the model's rationale.
+    const rec = String((has(g && g.option) ? g.option : tq.recommended) || '').trim().toLowerCase();
+    const useGrounded = !!(g && has(g.option));
     const items = tq.options.map(o => {
       const suggested = !!(rec && o.toLowerCase() === rec);
       return { label: suggested ? '★ ' + o : o, value: o, suggested };
@@ -2911,11 +2921,24 @@ const Chat = (() => {
     items.push({ label: 'use your judgment', value: '', skip: true });
     const q = row('agent'); q.d.classList.add('nudge');
     q.body.textContent = '⌖ ' + tq.question;
-    if (rec && items.some(it => it.suggested) && String(tq.reason || '').trim()) {
-      const why = document.createElement('div'); why.className = 'tq-reason';
-      why.textContent = '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim();
-      q.body.appendChild(why);
+    const marked = items.some(it => it.suggested);
+    const why = (rec && marked) ? (useGrounded
+      ? '★ suggested: ' + g.option + ' — you chose this ' + g.count + ' times before'
+      : (String(tq.reason || '').trim() ? '★ suggested: ' + tq.recommended + ' — ' + String(tq.reason).trim() : '')) : '';
+    if (why) {
+      const el = document.createElement('div'); el.className = 'tq-reason' + (useGrounded ? ' grounded' : '');
+      el.textContent = why;
+      q.body.appendChild(el);
     }
+    // The chips read as "pick exactly one", but a TYPED reply has always been a first-class answer here: while
+    // a question is pending, free text routes through TaskIntent.routeReply and is stored verbatim as the
+    // answer. So "both operators and executives" already worked — nothing said so. This is the same escape
+    // hatch the channels spell out in text, and it covers "more than one" and "none of these" alike.
+    // Worded without a direction: this line sits ABOVE the chip row (choices() appends that to the log after
+    // this body), so "below" would have pointed at the composer past the very options it is an alternative to.
+    const hint = document.createElement('div'); hint.className = 'tq-hint';
+    hint.textContent = 'or ignore these and type your own answer — more than one is fine';
+    q.body.appendChild(hint);
     autoscroll();
     choices(items, item => {
       vanish(q.d);
@@ -2945,31 +2968,59 @@ const Chat = (() => {
   }
   function briefReadCard(ws, p) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('tb-read');
+    // The label is its own small caption, NOT a prefix on the objective: "▸ my read: " used to eat the front of
+    // the one line that matters, so the objective started mid-sentence at caption size. Caption above, objective
+    // as the card's headline.
+    const cap = document.createElement('div'); cap.className = 'tb-read-cap';
+    cap.textContent = 'my read';
+    r.body.appendChild(cap);
     const head = document.createElement('div'); head.className = 'tb-read-head';
-    head.textContent = '▸ my read: ' + p.objective;
+    head.textContent = p.objective;
     r.body.appendChild(head);
+    // Key/value ROWS, not a ' · '-joined run-on: these three answer different questions (what comes out / who it's
+    // for / when it's done) and each value is a full clause, so a single wrapped line made them unscannable.
     const meta = [];
-    if (p.deliverable) meta.push('deliverable: ' + p.deliverable);
-    if (p.audience) meta.push('for: ' + p.audience);
-    if (p.success) meta.push('done when: ' + p.success);
-    if (meta.length) { const m = document.createElement('div'); m.className = 'tb-read-meta'; m.textContent = meta.join(' · '); r.body.appendChild(m); }
+    if (p.deliverable) meta.push(['deliverable', p.deliverable]);
+    if (p.audience) meta.push(['for', p.audience]);
+    if (p.success) meta.push(['done when', p.success]);
+    if (meta.length) {
+      const m = document.createElement('div'); m.className = 'tb-read-meta';
+      for (const [k, v] of meta) {
+        const mr = document.createElement('div'); mr.className = 'tb-read-mrow';
+        const mk = document.createElement('span'); mk.className = 'tb-read-mk'; mk.textContent = k + ' — ';   // separator lives in REAL text, not a ::after — #chat-log is a selectable transcript and generated content doesn't copy
+        const mv = document.createElement('span'); mv.className = 'tb-read-mv'; mv.textContent = v;
+        mr.appendChild(mk); mr.appendChild(mv); m.appendChild(mr);
+      }
+      r.body.appendChild(m);
+    }
     const line = document.createElement('div'); line.className = 'tb-read-fix';
     const input = document.createElement('input'); input.className = 'tb-read-in';
     input.placeholder = 'correct anything — it folds straight into the run';
+    const chips = [];
     const asum = (Array.isArray(p.assumptions) ? p.assumptions : []).filter(Boolean);
     if (asum.length) {
+      // The chips carried no affordance copy — a dim '~ …' row reads as decoration, not as "tap this to argue".
+      const acap = document.createElement('div'); acap.className = 'tb-read-cap tb-read-cap2';
+      acap.textContent = 'assuming — tap to correct';
+      r.body.appendChild(acap);
       const wrap = document.createElement('div'); wrap.className = 'tb-read-assumps';
       for (const a of asum) {
-        const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'tb-read-assump'; chip.textContent = '~ ' + a;
+        const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'tb-read-assump'; chip.textContent = a;
         chip.onclick = () => { input.value = 'Not "' + a + '" — '; input.focus(); };   // tap = start the correction; the user's own words ARE the taste signal
         wrap.appendChild(chip);
+        chips.push(chip);
       }
       r.body.appendChild(wrap);
     }
+    // Once the card can no longer steer, the chips must stop LOOKING like they can. They live on r.body while
+    // the input lives on `line`, so replacing the line's contents used to detach the input and leave every chip
+    // still lit — tapping one then wrote into a detached node and focused nothing, a promise the copy made
+    // ("tap to correct") and the card silently broke.
+    const retire = () => { for (const c of chips) { c.disabled = true; c.title = 'this read is closed — say it in chat instead'; } };
     const send = () => {
       const text = input.value.trim(); if (!text) return;
       const rid = (typeof Channels !== 'undefined' && Channels.runIdOf) ? Channels.runIdOf(ws.id) : null;
-      if (!rid) { input.value = ''; input.placeholder = 'run already finished — say it in chat instead'; return; }
+      if (!rid) { input.value = ''; input.placeholder = 'run already finished — say it in chat instead'; retire(); return; }
       fetch('/api/run/steer', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId: rid, text: text }) })
         .then(res => res.ok ? res.json() : null)
         .then(d => {
@@ -2978,6 +3029,7 @@ const Chat = (() => {
           const tag = document.createElement('span'); tag.className = 'tb-read-ack' + (ok ? '' : ' err');
           tag.textContent = ok ? '✔ folded into the run — ' + text : '✕ the run already ended — say it in chat instead';
           line.appendChild(tag);
+          retire();
         })
         .catch(() => { input.placeholder = 'could not reach the run — say it in chat'; });
     };
@@ -2990,20 +3042,25 @@ const Chat = (() => {
   // TASK BRIEF v2: enrich a run-end marker question with the durable brief's host-validated recommendation
   // before rendering the chips. Safe ordering: the sidecar persists the question BEFORE it emits the buffered
   // task run-end, so one fetch here always sees the stored row. Fail-open on every path — offline sidecar,
-  // mismatched text, or a marker-path question (no recommendation stored) renders exactly the plain chips.
+  // mismatched text, or a marker-path question (no MODEL recommendation stored) renders exactly the plain
+  // chips — though a marker question may still carry a grounded suggestion, which comes from the Commander's
+  // own answered history rather than from the unvalidated question.
   async function presentTaskQuestion(ws, tq) {
-    let recommended = '', reason = '';
+    let recommended = '', reason = '', grounded = null;
     try {
       const r = await fetch('/api/task-briefs?key=' + encodeURIComponent('stream:' + ws.id) + '&status=clarifying&limit=1', { cache: 'no-store' });
       if (r.ok) {
         const j = await r.json();
         const b = j && Array.isArray(j.briefs) && j.briefs[0];
         const q = b && Array.isArray(b.questions) && b.questions[b.questions.length - 1];
-        if (q && !q.answer && q.text === tq.question) { recommended = q.recommended || ''; reason = q.reason || ''; }
+        if (q && !q.answer && q.text === tq.question) {
+          recommended = q.recommended || ''; reason = q.reason || '';
+          grounded = j.grounded || null;   // this response always carried it; the client used to drop it
+        }
       }
     } catch (_) { /* enrichment only — the question itself never depends on this fetch */ }
     if (!isActiveWs(ws)) return;   // the Commander switched away mid-fetch; restoreTaskQuestion re-presents on return
-    offerTaskQuestion(Object.assign({}, tq, { recommended, reason }));
+    offerTaskQuestion(Object.assign({}, tq, { recommended, reason, grounded }));
   }
 
   // R4 PAYOFF RECEIPT: one provable line at the exact moment an answer/observation lands in the dossier, so

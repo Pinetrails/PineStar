@@ -23,7 +23,25 @@ function registerTaskBriefTools(registry, store, state, clock) {
       const checked = Policy.validateQuestion(args, state.brief);
       // A rejection is model-facing steering: name the fix and forbid the prose fallback (live-caught
       // 2026-07-16: after rejections the model asked in plain prose and escaped the brief lifecycle).
-      if (!checked.ok) throw new Error(checked.error + '. Correct the arguments and call brief_ask again — do NOT ask in plain prose; if you cannot satisfy the validator, end your reply with: TASK_QUESTION: <question> || <option A> | <option B>');
+      if (!checked.ok) {
+        // brief_ask is a HIDDEN tool, so a rejection reaches neither the transcript nor telemetry. Left
+        // unlogged it was invisible: a model that chronically fails the validator quietly downgrades to the
+        // marker fallback (no recommendation at all) and the Commander just stops seeing ★ chips with no
+        // way to know why. One warn line makes that rate knowable without surfacing model churn as UI noise.
+        try { console.warn('[taskbrief] brief_ask rejected: ' + checked.error); } catch (_) {}
+        throw new Error(checked.error + '. Correct the arguments and call brief_ask again — do NOT ask in plain prose; if you cannot satisfy the validator, end your reply with: TASK_QUESTION: <question> || <option A> | <option B>');
+      }
+      // ASK-WORTHINESS GATE: the Commander has repeatedly answered "use your judgment" in this dimension, so
+      // asking again spends one of only two questions on something they have already told us to decide. Refuse
+      // and steer to the honest alternative — pick a reversible default and SURFACE it as a correctable
+      // assumption in brief_proceed, where the read card makes it visible and steerable.
+      let deferred = [];
+      try { deferred = typeof store.deferredDimensions === 'function' ? store.deferredDimensions() : []; } catch (_) { deferred = []; }
+      if (deferred.indexOf(checked.question.dimension) >= 0) {
+        try { console.warn('[taskbrief] brief_ask suppressed: ' + checked.question.dimension + ' is a habitually deferred dimension'); } catch (_) {}
+        throw new Error('the Commander has repeatedly answered "use your judgment" on ' + checked.question.dimension
+          + ' decisions — do not ask this. Choose the most sensible reversible default, call brief_proceed, and state that choice as a correctable assumption.');
+      }
       const saved = await store.ask(state.brief.id, args, now());
       if (!saved) throw new Error('question was rejected by the Task Brief policy');
       state.brief = saved;

@@ -53,6 +53,59 @@ A.eq(Policy.validateQuestion(material({ question: 'What does good look like?', o
 A.eq(Policy.validateQuestion(material({ options: ['operators', 'Operators'] }), { questions: [] }).ok, false, 'duplicate options do not masquerade as distinct choices');
 A.eq(Policy.validateQuestion(material({ discoverable: true }), { questions: [] }).ok, false, 'a discoverable gap must be researched instead of asked');
 A.eq(Policy.validateQuestion(material({ recommended: 'not listed' }), { questions: [] }).ok, false, 'recommended default must be one of the visible choices');
+
+// RECOMMENDATION MATCHING — a formatting slip must not silently cost the Commander the ★ suggestion, and a
+// rescue must never resolve to the WRONG chip. Every accepted form returns the CANONICAL option text.
+{
+  const opts = ['operators', 'executives', 'customers'];
+  for (const near of ['operators', 'Operators', 'operators.', 'operators!', '"operators"', '“operators”', 'the operators', '  operators  ']) {
+    A.eq(Policy.matchOption(opts, near), 'operators', 'near-miss recommendation resolves to the canonical option: ' + JSON.stringify(near));
+    A.eq(Policy.validateQuestion(material({ recommended: near }), { questions: [] }).question.recommended, 'operators', 'the stored recommendation is canonical, never the model spelling: ' + JSON.stringify(near));
+  }
+  for (const miss of ['', 'not listed', 'ops team', 'whoever']) {
+    A.eq(Policy.matchOption(opts, miss), '', 'a genuine miss stays rejected rather than guessing: ' + JSON.stringify(miss));
+  }
+  A.eq(Policy.matchOption(['ship it', 'do not ship it'], 'ship'), '', 'an ambiguous substring matching two options fails closed');
+  A.eq(Policy.matchOption(['ship it', 'do not ship it'], 'do not ship it.'), 'do not ship it', 'negation is never collapsed into its opposite');
+  A.eq(Policy.matchOption(['A. keep it', 'B. drop it'], 'keep it'), 'A. keep it', 'an enumerator prefix still resolves uniquely');
+  A.eq(Policy.matchOption(['2) ship', '3) hold'], 'ship'), '2) ship', 'a numeric enumerator resolves too');
+  // NEGATION INVERSION (caught in review 2026-07-24). A substring tier used to rescue enumerators, but the
+  // negated option CONTAINS the positive one, so every one of these resolved to the exact opposite of intent
+  // and the uniqueness guard could not help — exactly one option matched, it was just the wrong one.
+  A.eq(Policy.matchOption(['publish', 'do not publish'], "don't publish"), '', 'a contracted negation never resolves to its opposite');
+  A.eq(Policy.matchOption(['include tests', 'skip tests'], 'do not include tests'), '', 'a spelled-out negation never resolves to its opposite');
+  A.eq(Policy.matchOption(['dark', 'light'], 'not dark'), '', '"not dark" is not a vote for dark');
+  A.eq(Policy.matchOption(['operators', 'executives'], 'anyone but operators'), '', 'an exclusion never resolves to the excluded option');
+  A.eq(Policy.matchOption(['operators', 'executives'], 'definitely not operators'), '', 'an emphatic exclusion never resolves to the excluded option');
+}
+
+// NEAR-DUPLICATE OPTIONS — "operators", "operators." and "the operators" are ONE choice offered three times.
+// Exact-string dedupe let them through as a fake trilemma; both producers now collapse them identically.
+{
+  const ask = (options) => Policy.validateQuestion(material({ options, recommended: options[0] }), { questions: [] });
+  A.eq(ask(['operators', 'operators.', 'the operators']).ok, false, 'three spellings of one choice is not a decision');
+  A.eq(ask(['PDF', 'PDF.']).ok, false, 'a punctuation-only difference is not a second option');
+  A.eq(ask(['yes', 'yes!', 'no']).question.options, ['yes', 'no'], 'a fake trilemma collapses to the honest dilemma');
+  A.eq(ask(['operators', 'executives', 'customers']).question.options, ['operators', 'executives', 'customers'], 'genuinely distinct options are untouched');
+  A.eq(TaskIntent.dedupeOptions(['x', '  ', '.', 'X']), ['x'], 'blank and punctuation-only entries are never offered as choices');
+  // Deduping is deliberately STRICTER than recommendation-matching: an article carries meaning between two
+  // options ("the doc" = the existing one, "a doc" = a new one), so folding them destroyed real alternatives
+  // and then rejected the whole question as "not a decision".
+  A.eq(TaskIntent.dedupeOptions(['the doc', 'a doc']), ['the doc', 'a doc'], 'definite vs indefinite are different choices, not a duplicate');
+  A.eq(TaskIntent.dedupeOptions(['operators', 'operators.', 'the operators']), ['operators'], 'a bare noun and its definite form ARE one choice');
+  A.eq(TaskIntent.dedupeOptions(['a report', 'the report']), ['a report', 'the report'], 'a-vs-the survives: make a new one vs use the existing one');
+  A.eq(ask(['operators', 'operators.', 'the operators']).ok, false, 'three spellings of one choice is still not a decision');
+  // The MARKER path is the last resort and has NO retry loop, so dedupe there is best-effort: nulling the
+  // parse does not mean "fail closed" upstream, it means "no question asked" — the brief completes as done
+  // and the raw TASK_QUESTION: line leaks into the transcript and out to channels.
+  A.eq(TaskIntent.parse('TASK_QUESTION: who is this for? || the operators | operators.').options, ['the operators', 'operators.'], 'a recoverable marker question is never destroyed by dedupe');
+  A.eq(TaskIntent.parse('TASK_QUESTION: pick? || dark | Dark | dark.').options, ['dark', 'Dark', 'dark.'], 'an all-duplicate marker keeps its raw options rather than leaking the protocol line');
+  A.eq(TaskIntent.parse('TASK_QUESTION: pick? || dark | dark. | light').options, ['dark', 'light'], 'a marker with a real alternative still dedupes');
+  // model-controlled input: cap BEFORE the pairwise compare or a huge option list blocks the sidecar
+  const huge = Array.from({ length: 20000 }, (_, i) => 'opt' + i);
+  const t0 = Date.now(); TaskIntent.dedupeOptions(huge); const spent = Date.now() - t0;
+  A.ok(spent < 250, 'a pathological option list cannot block the single-process sidecar (took ' + spent + 'ms)');
+}
 A.eq(Policy.validateQuestion(material({ dimension: 'vibes' }), { questions: [] }).ok, false, 'unknown decision dimensions fail closed');
 A.eq(Policy.validateQuestion(material({ newBlocker: false }), { questions: [{ answer: 'operators' }] }).ok, false, 'second question requires a newly exposed blocker');
 A.eq(Policy.validateQuestion(material({ newBlocker: true }), { questions: [{ answer: '' }] }).ok, false, 'second question cannot precede the first answer');
@@ -99,6 +152,124 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   await s2.ask(incomplete.id, material({ question: 'Which group owns this dashboard?' }), 250);
   await s2.prepare({ key: 'stream:w3', text: 'operators' }, 260);
   A.eq(s2.patterns(5)[0].count, 2, 'unfinished work never contributes relationship evidence');
+
+  // GROUNDED RECOMMENDATION — the suggestion drawn from the Commander's OWN answered history. It is the only
+  // provable one on this surface, so it must appear ONLY when actually observed (>=2), and never leak across
+  // questions or outlive its own answer.
+  {
+    const open = { text: parsed.question, options: parsed.options, answer: '' };
+    const g = s2.groundedFor(open);
+    A.ok(g && g.option === 'operators' && g.count === 2, 'a decision answered twice becomes a grounded suggestion with its real count');
+    A.eq(s2.groundedFor({ text: parsed.question, options: parsed.options, answer: 'customers' }), null, 'an already-answered question is never re-suggested');
+    A.eq(s2.groundedFor({ text: 'what output format do you want?', options: ['PDF', 'HTML'], answer: '' }), null, 'a different question never inherits another decision history');
+    A.eq(s2.groundedFor({ text: parsed.question, options: ['interns', 'vendors'], answer: '' }), null, 'history that is no longer an offered option cannot ground a chip');
+    A.eq(s2.groundedFor({ text: parsed.question, options: ['operators'], answer: '' }), null, 'a one-option question is never grounded');
+    // the count is REAL: it is the same number patterns() reports, not a fabricated confidence
+    A.eq(g.count, s2.patterns(5).find(p => p.answer === 'operators').count, 'the displayed count IS the observed pattern count');
+  }
+
+  // GROUNDED HONESTY (caught in review 2026-07-24). This is the ONE surface labelled provable, so every way it
+  // could misquote the Commander is a correctness bug, not a polish item.
+  {
+    const SKIP = 'Use your judgment. Choose the most sensible reversible default and continue the original task.';
+    const Q = parsed.question, OPTS = parsed.options;
+    let k = 0;
+    const run = async (store, answer, opts) => {
+      const t = 5000 + (k * 10), uid = 'gh' + (k++), key = 'stream:' + uid;
+      const b = await store.prepare({ id: 'tb_' + uid, key, streamId: uid, text: 'Build a dashboard' }, t);
+      await store.ask(b.id, { dimension: 'audience', question: Q, text: Q, options: opts || OPTS, recommended: (opts || OPTS)[0], reason: 'matters', discoverable: false }, t + 1);
+      await store.prepare({ key, text: answer }, t + 2);
+      await store.proceed(b.id, { objective: 'ship' }, t + 3); await store.complete(b.id, 'r' + uid, t + 4);
+    };
+    const open = { text: Q, options: OPTS, answer: '' };
+
+    const neg = makeStore(memFs());
+    await run(neg, 'not operators'); await run(neg, 'not operators');
+    A.eq(neg.groundedFor(open), null, 'a negated answer never becomes a "you chose operators" claim');
+
+    const skip = makeStore(memFs());
+    await run(skip, SKIP); await run(skip, SKIP);
+    A.eq(skip.groundedFor(open), null, 'declining to choose twice is not a choice made twice');
+
+    const tie = makeStore(memFs());
+    await run(tie, 'operators'); await run(tie, 'operators'); await run(tie, 'executives'); await run(tie, 'executives');
+    A.eq(tie.groundedFor(open), null, 'a dead heat is not a preference');
+    await run(tie, 'operators');
+    A.eq(tie.groundedFor(open).count, 3, 'a clear winner still surfaces with its real count');
+
+    const split = makeStore(memFs());
+    await run(split, 'operators'); await run(split, 'operators'); await run(split, 'operators.'); await run(split, 'operators.');
+    const sg = split.groundedFor(open);
+    A.eq([sg.option, sg.count], ['operators', 4], 'counts fold across spellings of the same option instead of understating');
+  }
+
+  // ASK-WORTHINESS — a dimension the Commander habitually waves off with "use your judgment" stops being
+  // asked about. Conservative on purpose: a false suppression silently guesses at something they cared about.
+  {
+    const SKIP = 'Use your judgment. Choose the most sensible reversible default and continue the original task.';
+    const s3 = makeStore(memFs());
+    let n = 0;
+    const decide = async (dimension, answer) => {
+      const t = 1000 + (n * 10), uid = dimension + '_' + (n++), key = 'stream:' + uid;
+      const text = 'which ' + dimension + ' applies for ' + uid + '?';
+      const b = await s3.prepare({ id: 'tb_' + uid, key, streamId: uid, text: 'Do a thing' }, t);
+      await s3.ask(b.id, { dimension, question: text, text, options: ['alpha', 'beta'], recommended: 'alpha', reason: 'matters', discoverable: false }, t + 1);
+      await s3.prepare({ key, text: answer }, t + 2);
+      await s3.proceed(b.id, { objective: 'ship' }, t + 3);
+      await s3.complete(b.id, 'run_' + uid, t + 4);
+    };
+    await decide('scope', SKIP); await decide('scope', SKIP);
+    A.eq(s3.deferredDimensions().length, 0, 'two deferrals is not yet a habit — the question still gets asked');
+    await decide('scope', SKIP);
+    A.eq(s3.deferredDimensions().join(), 'scope', 'a third deferral in one dimension stops the agent asking about it');
+    // engagement protects a dimension: real answers outweigh the skips
+    for (let i = 0; i < 3; i++) await decide('audience', SKIP);
+    for (let i = 0; i < 5; i++) await decide('audience', 'operators');
+    A.eq(s3.deferredDimensions().indexOf('audience'), -1, 'a dimension they actually engage with is never suppressed by a minority of skips');
+    // an answer that merely MENTIONS judgment is a real answer, not a deferral
+    const s4 = makeStore(memFs()); n = 0;
+    const s4decide = async () => {
+      const t = 1000 + (n * 10), uid = 'safety_' + (n++), key = 'stream:' + uid;
+      const text = 'which safety bar for ' + uid + '?';
+      const b = await s4.prepare({ id: 'tb_' + uid, key, streamId: uid, text: 'Do a thing' }, t);
+      await s4.ask(b.id, { dimension: 'safety', question: text, text, options: ['alpha', 'beta'], recommended: 'alpha', reason: 'matters', discoverable: false }, t + 1);
+      await s4.prepare({ key, text: 'I trust your judgment on encryption, but use AES-256' }, t + 2);
+      await s4.proceed(b.id, { objective: 'ship' }, t + 3); await s4.complete(b.id, 'r_' + uid, t + 4);
+    };
+    await s4decide(); await s4decide(); await s4decide();
+    A.eq(s4.deferredDimensions().length, 0, 'an answer that merely mentions judgment is never miscounted as a deferral');
+
+    // A deferral that still STATES a constraint is an engaged answer — suppressing the dimension would mute
+    // decisions the Commander is actively steering.
+    const s5 = makeStore(memFs()); n = 0;
+    for (const a of ['Use your judgment, but keep it under 3 pages', 'Use your judgment — stay inside the api package', 'use your judgment but do not touch billing']) {
+      const t = 1000 + (n * 10), uid = 'eng_' + (n++), key = 'stream:' + uid, text = 'how wide ' + uid + '?';
+      const b = await s5.prepare({ id: 'tb_' + uid, key, streamId: uid, text: 'Do a thing' }, t);
+      await s5.ask(b.id, { dimension: 'scope', question: text, text, options: ['alpha', 'beta'], recommended: 'alpha', reason: 'matters', discoverable: false }, t + 1);
+      await s5.prepare({ key, text: a }, t + 2);
+      await s5.proceed(b.id, { objective: 'ship' }, t + 3); await s5.complete(b.id, 'r_' + uid, t + 4);
+    }
+    A.eq(s5.deferredDimensions(), [], 'a deferral carrying a real constraint does not suppress the dimension');
+
+    // RECOVERY. Suppression blocks brief_ask, the only path that records a dimension — so without a way back
+    // the latch is permanent by construction and there is no reset route, setting, or UI.
+    const s6 = makeStore(memFs()); n = 0;
+    const s6decide = async (dimension, answer) => {
+      const t = 1000 + (n * 10), uid = 'rec_' + (n++), key = 'stream:' + uid, text = 'which ' + dimension + ' for ' + uid + '?';
+      const b = await s6.prepare({ id: 'tb_' + uid, key, streamId: uid, text: 'Do a thing' }, t);
+      await s6.ask(b.id, { dimension, question: text, text, options: ['alpha', 'beta'], recommended: 'alpha', reason: 'matters', discoverable: false }, t + 1);
+      await s6.prepare({ key, text: answer }, t + 2);
+      await s6.proceed(b.id, { objective: 'ship' }, t + 3); await s6.complete(b.id, 'r_' + uid, t + 4);
+    };
+    for (let i = 0; i < 3; i++) await s6decide('scope', SKIP);
+    A.eq(s6.deferredDimensions(), ['scope'], 'three pure deferrals suppress the dimension');
+    for (let i = 0; i < 8; i++) await s6decide('audience', 'alpha');
+    A.eq(s6.deferredDimensions(), [], 'a probe is allowed through after PROBE_GAP completed tasks');
+    await s6decide('scope', 'alpha');
+    A.eq(s6.deferredDimensions(), [], 'answering the probe for real re-opens the dimension immediately');
+    for (let i = 0; i < 3; i++) await s6decide('scope', SKIP);
+    A.eq(s6.deferredDimensions(), ['scope'], 'and deferring again re-suppresses it — the signal stays live in both directions');
+  }
 
   const cancelled = await s2.prepare({ id: 'tb_cancel', key: 'stream:cancel', text: 'Build a report' }, 300);
   await s2.ask(cancelled.id, material(), 310);
@@ -241,6 +412,39 @@ A.eq(Policy.canMutate({ status: 'executing' }, { scope: 'execute' }).ok, true, '
   A.ok(/\.choice\.suggested/.test(cssSrc) && /--gold-rgb/.test(cssSrc.slice(cssSrc.indexOf('.choice.suggested'), cssSrc.indexOf('.choice.suggested') + 700)), 'the suggested chip uses the theme gold vocabulary, never a literal amber');
   A.ok(/briefFor/.test(hubSrc) && /suggested: ' \+ q\.recommended/.test(hubSrc), 'the channel fallback carries the stored recommendation');
   A.ok(/briefFor: \(key\) => taskBriefStore\.active\(key\)/.test(indexSrc), 'both hub compositions read recommendations from the durable store');
+
+  // GROUNDED SUGGESTION wiring — the observed-history recommendation must reach every surface, outrank the
+  // model's guess, and stay visually separable from it (provable vs asserted must never look identical).
+  A.ok(/grounded = q0 \? taskBriefStore\.groundedFor\(q0, pats\)/.test(indexSrc), 'the briefs route serves the grounded suggestion for the open question');
+  A.ok(/j\.grounded \|\| null/.test(chatSrc), 'COMMS reads the grounded field the response already carried');
+  A.ok(/you chose this ' \+ g\.count \+ ' times before/.test(chatSrc), 'the grounded why-line states a real observed count, never a vague confidence');
+  A.ok(/tq-reason' \+ \(useGrounded \? ' grounded' : ''\)/.test(chatSrc), 'a grounded suggestion is marked so it cannot be mistaken for the model guess');
+  A.ok(/has\(g && g\.option\) \? g\.option : tq\.recommended/.test(chatSrc), 'a grounded option that is not among the choices falls back to the model recommendation instead of losing both');
+  A.ok(/\.tq-reason\.grounded/.test(cssSrc), 'the grounded why-line has its own provable-source styling');
+  A.ok(/groundedFor: \(q\) => taskBriefStore\.groundedFor\(q\)/.test(indexSrc) && /groundedFor \? groundedFor\(q\)/.test(hubSrc), 'messaging channels carry the same grounded suggestion as COMMS');
+  A.ok(/console\.warn\('\[taskbrief\] brief_ask rejected/.test(fs.readFileSync(path.join(__dirname, '../sidecar/taskbrief-tools.js'), 'utf8')), 'a hidden-tool rejection is logged instead of silently downgrading the surface');
+
+  // ASK-WORTHINESS wiring — the gate refuses at the tool, the prompt says so first, and a store without the
+  // capability (older/injected) still works. Plus the typed-answer escape hatch is finally VISIBLE.
+  {
+    const toolsSrc = fs.readFileSync(path.join(__dirname, '../sidecar/taskbrief-tools.js'), 'utf8');
+    const cxSrc = fs.readFileSync(path.join(__dirname, '../sidecar/commander-context.js'), 'utf8');
+    A.ok(/typeof store\.deferredDimensions === 'function'/.test(toolsSrc), 'the ask-worthiness gate degrades safely when the store cannot answer');
+    A.ok(/deferred\.indexOf\(checked\.question\.dimension\) >= 0/.test(toolsSrc), 'a habitually deferred dimension is refused at the tool boundary');
+    A.ok(/<deferred_decisions provenance="commander-observed">/.test(cxSrc), 'the deferred dimensions are declared to the model with honest provenance');
+    A.ok(/deferredDimensions = taskBriefStore\.deferredDimensions\(\)/.test(indexSrc) && /goal, patterns, deferredDimensions/.test(indexSrc), 'runOnce feeds the observed deferrals into the composed context');
+    A.eq(CommanderContext.compose({ deferredDimensions: [] }), '', 'no observed deferrals -> no block');
+    A.ok(/scope/.test(CommanderContext.compose({ deferredDimensions: ['scope'] })), 'an observed deferral names the dimension it covers');
+    const gate = await (async () => {
+      const reg = makeRegistry();
+      registerTaskBriefTools(reg, { ask: async () => ({ id: 'b' }), proceed: async () => null, deferredDimensions: () => ['scope'] }, { brief: { id: 'b', status: 'ready', questions: [] } }, { now: () => 1 });
+      const args = { dimension: 'scope', question: 'how wide should this go?', options: ['just the api', 'the whole service'], recommended: 'just the api', reason: 'changes the work', discoverable: false };
+      return reg.get('brief.ask').run(args).then(() => '').catch(e => e.message);
+    })();
+    A.ok(/repeatedly answered "use your judgment"/.test(gate) && /correctable assumption/.test(gate), 'the refusal steers to deciding + surfacing an assumption, never to silent guessing');
+    A.ok(/tq-hint/.test(chatSrc) && /more than one is fine/.test(chatSrc), 'the chip row tells the Commander a typed answer is accepted');
+    A.ok(/\.tq-hint/.test(cssSrc), 'the typed-answer hint is styled as a quiet affordance note');
+  }
 
   // TASK BRIEF v2 — recipe intake: declared material decisions, settled at launch or aimed mid-run.
   const Recipes = require('../frontend/app/recipes.js');
