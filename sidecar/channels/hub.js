@@ -913,7 +913,10 @@
       const opt = entry.options[hit.idx];
       if (!opt) { await ack('That option is no longer available.'); return; }
 
-      await ack('✓ ' + String(opt.display || opt.label).slice(0, 60));
+      // Only add the tick when the label doesn't already open with its own marker — a consent button reads
+      // "✅ Allow for this session", and prefixing that produced a doubled "✓ ✅" in the live toast.
+      const shown = String(opt.display || opt.label).trim().slice(0, 60);
+      await ack((/^[\p{L}\p{N}]/u.test(shown) ? '✓ ' : '') + shown);
 
       // Stamp the decision into the original message and strip the spent buttons. Cosmetic ONLY: the decision
       // below is recorded whether or not this edit lands (Telegram 400s a no-op edit, and the message may have
