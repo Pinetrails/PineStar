@@ -32,11 +32,14 @@ if (!m) A.report('agent-config-target.test');
 const SRC = m[0];
 
 // build a two-agent station focused on `focusId`; returns the callable + the live objects + side-effect spies.
+// composeSystemPrompt models the ONE structural thing that matters here: an orchestrator's prompt embeds the
+// live crew's roles (real rosterClause + rosterRole, which read each specialist's purpose), so a stale lead
+// prompt is observable. recomposeOrchestrators mirrors app.js's own focused-follows behaviour.
 function station(focusId) {
   const mk = (id, name) => ({ id, name, role: id === 'agent' ? 'orchestrator' : 'specialist',
     purpose: '', systemPrompt: 'SYS:' + id + ':', docs: { identity: 'ID-' + id, purpose: '', manual: '', context: '' } });
   const agents = new Map([['agent', mk('agent', 'NOVA')], ['scout', mk('scout', 'SCOUT')]]);
-  const spy = { chatSystem: [], syncChannels: 0, pushRoster: 0, persist: 0 };
+  const spy = { chatSystem: [], syncChannels: 0, pushRoster: 0, persist: 0, recompose: 0 };
   const apply = new Function('CTX', `
     const agents = CTX.agents, spy = CTX.spy;
     let agent = agents.get(CTX.focusId);
@@ -45,7 +48,19 @@ function station(focusId) {
       for (const k of ['identity', 'purpose', 'manual', 'context']) if (typeof a.docs[k] !== 'string') a.docs[k] = '';
       return a.docs;
     }
-    function composeSystemPrompt(a) { return 'SYS:' + a.id + ':' + a.docs.context; }
+    function crewClause(a) {
+      if (a.role !== 'orchestrator') return '';
+      return '|CREW:' + [...agents.values()].filter(x => x.id !== a.id).map(x => x.name + '=' + (x.purpose || 'general')).join(',');
+    }
+    function composeSystemPrompt(a) { return 'SYS:' + a.id + ':' + a.docs.context + crewClause(a); }
+    function recomposeOrchestrators() {
+      spy.recompose++;
+      for (const x of agents.values()) {
+        if (x.role !== 'orchestrator') continue;
+        x.systemPrompt = composeSystemPrompt(x);
+        if (agent && agent.id === x.id) Chat.setSystem(x.systemPrompt);
+      }
+    }
     function el() { return null; }
     function syncChannels() { spy.syncChannels++; }
     function pushRoster() { spy.pushRoster++; }
@@ -110,18 +125,42 @@ function station(focusId) {
 {
   const away = station('agent');
   away.apply({ context: 'C' }, 'scout');
-  A.eq(away.spy.chatSystem, [], 're-speccing a bystander never pushes a new system prompt into the running COMMS session');
+  A.eq(away.spy.chatSystem, [], 'a bystander\'s prompt is never pushed into the running COMMS session');
   A.eq(away.spy.syncChannels, 0, 'nor re-points a connected Telegram bot at the wrong identity');
   A.eq(away.spy.pushRoster, 1, 'the sidecar roster still learns the new prompt (delegation + cron runs read it)');
   A.eq(away.spy.persist, 1, 'and the edit is persisted');
 
   const live = station('agent');
   live.apply({ context: 'C' }, 'agent');
-  A.eq(live.spy.chatSystem, ['SYS:agent:C'], 'editing the FOCUSED agent hands the recomposed prompt to the live chat');
+  A.eq(live.spy.chatSystem, ['SYS:agent:C|CREW:SCOUT=general'], 'editing the FOCUSED agent hands the recomposed prompt to the live chat');
   A.eq(live.spy.syncChannels, 1, 'and re-syncs its channels');
 }
 
-/* ---------- G. the dossier SAVE button names the agent it is showing ---------- */
+/* ---------- G. THE CACHED-PROMPT TRAP: re-purposing a specialist re-composes the lead ----------
+   rosterRole() reads a crew member's purpose, and the lead's "YOUR CREW: <name> — <role>" line is baked into
+   its STORED systemPrompt (roster-clause.test §D locks the same trap for summon / rehydrate / rename). Before
+   this was wired, a purpose.md edit on a specialist left the orchestrator briefing itself — and the sidecar —
+   on a job that specialist no longer had. */
+{
+  const s = station('agent');
+  A.eq(s.hero.systemPrompt, 'SYS:agent:', 'baseline: the lead carries its stored prompt');
+  s.apply({ purpose: 'hunts flaky tests' }, 'scout');
+  A.eq(s.spy.recompose, 1, 'a specialist re-purpose recomposes the orchestrators');
+  A.eq(s.hero.systemPrompt, 'SYS:agent:|CREW:SCOUT=hunts flaky tests', 'the lead\'s crew line carries the specialist\'s NEW purpose');
+  A.eq(s.spy.chatSystem, ['SYS:agent:|CREW:SCOUT=hunts flaky tests'], 'the focused lead\'s own live session follows (its prompt genuinely changed)');
+  A.ok(s.spy.recompose <= s.spy.pushRoster, 'the recompose lands BEFORE the roster push, so the pushed lead prompt is fresh');
+}
+{
+  // …and only when the crew line can actually move: a doc that is not part of rosterRole costs nothing.
+  const quiet = station('agent');
+  quiet.apply({ context: 'C', manual: 'M', identity: 'I' }, 'scout');
+  A.eq(quiet.spy.recompose, 0, 'context/manual/identity edits do not touch the crew line, so no needless recompose');
+  const own = station('agent');
+  own.apply({ purpose: 'P' }, 'agent');
+  A.eq(own.spy.recompose, 0, 'the orchestrator editing its OWN purpose is already recomposed in place — no second pass');
+}
+
+/* ---------- H. the dossier SAVE button names the agent it is showing ---------- */
 A.ok(stationui.indexOf('access.config.apply({ [key]: val }, a && a.id)') >= 0, 'the .md SAVE handler passes the selected agent\'s id');
 A.ok(stationui.indexOf('access.config.apply({ [key]: val })') === -1, 'the id-less call (the erase) is gone');
 A.ok(/function wireConfig\(body\) \{[\s\S]{0,600}const a = present\[sel\];/.test(stationui), 'wireConfig resolves the selected agent BEFORE wiring the .md editors');

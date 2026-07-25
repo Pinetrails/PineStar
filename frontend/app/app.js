@@ -361,6 +361,12 @@ const App = (() => {
     a.systemPrompt = composeSystemPrompt(a);
     if (focused && typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(a.systemPrompt);
     if (focused) syncChannels();   // keep a connected Telegram bot on the SAME (updated) identity — no reconnect needed
+    // THE CACHED-PROMPT TRAP (roster-clause.test §D): rosterRole() reads a crew member's specialty/purpose, and the
+    // lead's "YOUR CREW: <name> — <role>" line is BAKED into its stored systemPrompt. So re-purposing a specialist
+    // is a roster-shape change and the orchestrators must recompose, exactly like summon / rehydrate / rename — or
+    // the lead keeps pushing a stale crew line to the sidecar and briefs itself on a job its specialist no longer has.
+    // (Also covers deploySpecialty, which sets specialtyId then patches {purpose, manual} through here.)
+    if (patch && typeof patch === 'object' && typeof patch.purpose === 'string' && a.role !== 'orchestrator') recomposeOrchestrators();
     pushRoster();     // a re-specced agent's new identity must reach the sidecar roster (for delegation)
     persist();
   }
