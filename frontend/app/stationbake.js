@@ -422,11 +422,22 @@ const StationBake = (() => {
       // Painted LAST so it re-tones the whole tile over the plate work above.
       const wN = wallTo(x, y, x, y - 1), wS = wallTo(x, y, x, y + 1), wW = wallTo(x, y, x - 1, y), wE = wallTo(x, y, x + 1, y);
       if (wN || wS || wW || wE) {
+        /* The catch-lit room-facing edge is drawn BEFORE the trim's darkening, and rides
+           DEPTH.deckSeam. Two bugs here, both showing as a bright 1px column running the room's
+           ENTIRE length one tile inside each side wall (Andrew 2026-07-24: "the line that divides
+           the left and right side wall"):
+             1. it was an OPAQUE fill derived from the raw `base`, so it punched straight through the
+                trim's own 6% darkening AND through the plate work — the column reset to base tone
+                and therefore read brighter than the deck no matter how small the delta got;
+             2. at a flat 0.06 the delta was +20 luminance on top of that.
+           Painting it first and letting the trim overlay darken it too keeps it a gentle LIFT
+           relative to the border course it belongs to, instead of a hole punched through it. */
+        const tk = 'rgba(255,246,224,' + (Math.max(0, DEPTH.deckSeam) * 0.05 * fd).toFixed(3) + ')';
+        if (wN && !wS) px(X, Y + T - 1, T, 1, tk);
+        if (wS && !wN) px(X, Y, T, 1, tk);
+        if (wW && !wE) px(X + T - 1, Y, 1, T, tk);
+        if (wE && !wW) px(X, Y, 1, T, tk);
         px(X, Y, T, T, 'rgba(6,7,10,' + (0.06 * fd).toFixed(3) + ')');
-        if (wN && !wS) px(X, Y + T - 1, T, 1, sh(0.06));
-        if (wS && !wN) px(X, Y, T, 1, sh(0.06));
-        if (wW && !wE) px(X + T - 1, Y, 1, T, sh(0.06));
-        if (wE && !wW) px(X, Y, 1, T, sh(0.06));
       }
       const dN = doorTo(x, y, x, y - 1), dS = doorTo(x, y, x, y + 1), dW = doorTo(x, y, x - 1, y), dE = doorTo(x, y, x + 1, y);
       if (dN || dS || dW || dE) {
@@ -841,6 +852,14 @@ const StationBake = (() => {
       // the SIDE faces (s/w/e) and interior seams carry the room's own wall tone too — otherwise a
       // cobalt room's tall north wall would meet three brown-grey walls at its corners.
       const pal = wallPal(e.z), wallFace = pal.face, wallTop = pal.top;
+      /* A SIDE WALL IS SEEN AS ITS TOP SURFACE, and that surface is a BAND, not a line. The band
+         used to be a hardcoded '#2f2b20' — a fixed olive that matched no room's hue — and I had put
+         a 1px `pal.face +0.14` highlight immediately beside it, which spiked one column to lum 61
+         between a 43 and a 29. A single bright column running a wall's whole length reads as an
+         annoying divider, not as light (Andrew 2026-07-24). One palette-derived crest band instead:
+         hull → crest → face → contact seam steps DOWN monotonically into the room, so the eye reads
+         a shell, a top surface, then an inner face, with nothing spiking above its neighbours. */
+      const wallCrest = U.shade(pal.base, -0.22);
       // walls only extrude OUTSIDE the tile when the neighbour is void. Interior boundaries
       // (a non-door seam to another zone) draw the face only, so the wall never smears onto
       // an adjacent room/corridor floor (v7 render.js parity).
@@ -854,29 +873,27 @@ const StationBake = (() => {
         // the south wall is seen as its TOP surface plus the shadow it drops onto the deck in
         // front of it — same contact-seam law as the north face, mirrored.
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X, Y + T - dep, T, 1);
-        b.fillStyle = wallFace; b.fillRect(X, Y + T - fw, T, fw);
-        b.fillStyle = U.shade(pal.face, 0.14); b.fillRect(X, Y + T - fw, T, 1);   // lit top edge of the wall
+        b.fillStyle = wallCrest; b.fillRect(X, Y + T - fw, T, 2);                 // the wall's top surface (a band)
+        b.fillStyle = wallFace; b.fillRect(X, Y + T - fw + 2, T, fw - 2);
         b.fillStyle = rib; b.fillRect(X + 5, Y + T - fw, 1, fw);
         if (e.exterior) { b.fillStyle = wallDk; b.fillRect(X, Y + T, T, out); }
       } else if (e.side === 'w') {
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X + fw, Y, 1, T);      // contact seam onto the deck
         b.fillStyle = wallFace; b.fillRect(X, Y, fw, T);
-        b.fillStyle = U.shade(pal.face, 0.14); b.fillRect(X, Y, 1, T);            // lit top edge
         b.fillStyle = rib; b.fillRect(X, Y + 5, fw, 1);
         if (e.exterior) {
           const side = Math.max(out, Math.round(e.room ? WALL.side : WALL.side * 0.6));
-          b.fillStyle = '#2f2b20'; b.fillRect(X - 3, Y, 3, T);            // wall-top mid tone against the floor
+          b.fillStyle = wallCrest; b.fillRect(X - 3, Y, 3, T);            // the wall's LIT TOP surface, palette-derived
           b.fillStyle = wallDk; b.fillRect(X - side, Y, side - 3, T);     // outer hull band
           b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X - side, Y, 1, T);
         }
       } else {
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X + T - dep, Y, 1, T);
         b.fillStyle = wallFace; b.fillRect(X + T - fw, Y, fw, T);
-        b.fillStyle = U.shade(pal.face, 0.14); b.fillRect(X + T - 1, Y, 1, T);
         b.fillStyle = rib; b.fillRect(X + T - fw, Y + 5, fw, 1);
         if (e.exterior) {
           const side = Math.max(out, Math.round(e.room ? WALL.side : WALL.side * 0.6));
-          b.fillStyle = '#2f2b20'; b.fillRect(X + T, Y, 3, T);
+          b.fillStyle = wallCrest; b.fillRect(X + T, Y, 3, T);
           b.fillStyle = wallDk; b.fillRect(X + T + 3, Y, side - 3, T);
           b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X + T + side - 1, Y, 1, T);
         }
