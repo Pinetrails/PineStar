@@ -158,10 +158,13 @@
               emit: o2.emit || childEmit,      // lifecycle/cost ride the lead/global stream -> the floor lights the worker
               signal: o2.signal || (ctx && ctx.signal),
               runId: o2.runId || newId(), trigger: 'directive', surface: 'autonomous',
-              // SAME ACCESS AS THE ORCHESTRATOR: share the lead's consent broker so a worker's write/shell follows
-              // the lead's APPROVAL posture (full-auto bypass, or a prompt forwarded to the watched lead) instead of
-              // the headless default-deny — and add the WORKBENCH so the terminal is actually available to grant.
-              // (A headless lead passes an autonomous broker → its workers still can't self-approve shell. Safe.)
+              // Share the lead's consent broker so a worker's WRITES follow the lead's APPROVAL posture
+              // (full-auto bypass, or a prompt forwarded to the watched lead) instead of the headless default-deny.
+              // NOT "same access as the orchestrator" — a worker runs surface:'autonomous' (below), and
+              // enforceRunAuthority strips WORKSPACE_PROCESS tools on any non-interactive surface *before* consent is
+              // ever consulted. So of the WORKBENCH grant a worker receives, shell.exec and verify.run never reach the
+              // model at all; only its background-shell and browser-test tools survive. Widening that is a deliberate
+              // permissions-surface decision, not something to fix by editing this comment.
               consent: ctx && ctx.consent,
               extraObjects: WORKER_KIT,
               maxCostUsd: perWorker,           // a runaway worker can't blow the lead's per-run ceiling

@@ -1,12 +1,20 @@
 /* node test/capsummary.test.js -- the truthful capabilities note appended to the system prompt.
    Verifies it is derived from the resolved grant set, names the object to place for missing core
-   powers, is interactive-only, and does not erase real host-granted/dynamic tools. */
+   powers on the interactive floor, states an honest unattended-run limit on autonomous surfaces,
+   refuses to claim a power whose headline tool was stripped, and does not erase real
+   host-granted/dynamic tools. */
 'use strict';
 const A = require('./_assert.js');
 const { summarizeCapabilities } = require('../sidecar/capability/capsummary.js');
 
-// helper: a resolved-like object from a list of capIds
+// helper: a resolved-like object from a list of capIds (no tool list -> resolve by capId alone)
 const resolvedWith = (...capIds) => ({ grants: capIds.map((id) => ({ capId: id, tool: id + '.x' })) });
+// helper: a resolved-like object carrying BOTH grants and the surviving tool list, the shape
+// production always passes (post enforceRunAuthority).
+const resolvedTools = (capIds, tools) => ({
+  grants: capIds.map((id) => ({ capId: id, tool: id + '.x' })),
+  tools: tools.slice()
+});
 
 (function () {
   // 1) interactive, nothing placed (compute-only) -> honest "can't yet" + place-the-object guidance
@@ -26,12 +34,20 @@ const resolvedWith = (...capIds) => ({ grants: capIds.map((id) => ({ capId: id, 
   // 3) interactive, all core placed -> no "do NOT have" section at all
   const full = summarizeCapabilities(resolvedWith('web', 'cabinet', 'workbench', 'memory'), { surface: 'interactive' });
   A.ok(!/do NOT have/.test(full), 'all core placed: no missing-powers section');
-  A.ok(/run shell commands, verify code, and control the desktop computer/.test(full) && /read and write files/.test(full),
+  A.ok(/run shell commands and verify code/.test(full) && /read and write files/.test(full),
     'all core placed: lists them under CAN');
+  A.ok(!/control the desktop computer/.test(full),
+    'workbench never claims desktop control (computer.use/desktop.open carry no grant and are always stripped)');
 
-  // 4) autonomous surface -> empty (full office, no placement UI)
-  A.eq(summarizeCapabilities(resolvedWith(), { surface: 'autonomous' }), '', 'autonomous: no note');
-  A.eq(summarizeCapabilities(resolvedWith('web'), { surface: 'autonomous' }), '', 'autonomous: no note even with grants');
+  // 4) autonomous surface -> still emits, but with the unattended limit instead of placement advice
+  const auto = summarizeCapabilities(resolvedWith(), { surface: 'autonomous' });
+  A.ok(auto.length > 0, 'autonomous: emits a ground-truth note (silence let it over-promise)');
+  A.ok(/UNATTENDED run/.test(auto), 'autonomous: names the unattended-run limit');
+  A.ok(!/place a DISH|place a CABINET|place a WORKBENCH/.test(auto),
+    'autonomous: no placement advice (there is no placement UI on this surface)');
+  A.ok(/state plainly what you could not do/.test(auto), 'autonomous: told to report the blocker, not pretend');
+  A.ok(/do NOT blame missing credentials/.test(auto),
+    'autonomous: explicitly forbidden from blaming credentials for an ungranted power');
 
   // 5) no surface specified -> behaves as interactive (emits the note)
   A.ok(summarizeCapabilities(resolvedWith()).length > 0, 'unspecified surface defaults to interactive (emits)');
@@ -49,8 +65,22 @@ const resolvedWith = (...capIds) => ({ grants: capIds.map((id) => ({ capId: id, 
   // 8) the exact power -> object pairing is correct
   A.ok(/search\/fetch the web and use the controlled browser -> place a DISH/.test(none), 'pairing: web/browser -> DISH');
   A.ok(/read and write files -> place a CABINET/.test(none), 'pairing: files -> CABINET');
-  A.ok(/run shell commands, verify code, and control the desktop computer -> place a WORKBENCH/.test(none),
-    'pairing: shell/verify/computer -> WORKBENCH');
+  A.ok(/run shell commands and verify code -> place a WORKBENCH/.test(none),
+    'pairing: shell/verify -> WORKBENCH');
+
+  // 8b) a capId that OUTLIVES its headline tool must not be claimed. On an autonomous run the
+  // workbench capId survives via shell.bg.*/browser.test_* while shell.exec and verify.run are
+  // stripped by enforceRunAuthority -- claiming "run shell commands" there is exactly the
+  // over-promise this block exists to prevent.
+  const partial = summarizeCapabilities(
+    resolvedTools(['workbench', 'cabinet'], ['shell.bg.status', 'browser.test_state', 'fs.read', 'fs.write']),
+    { surface: 'autonomous' });
+  A.ok(!/You CAN:[^\n]*run shell commands/.test(partial),
+    'partial workbench: shell is NOT claimed when shell.exec was stripped');
+  A.ok(/do NOT have:[^\n]*run shell commands/.test(partial),
+    'partial workbench: shell is reported as missing');
+  A.ok(/You CAN:[^\n]*read and write files/.test(partial),
+    'partial workbench: a fully-surviving cap (files) is still claimed');
 
   // 9) the note is AUTHORITATIVE (defeats an earlier unconditional "you always have web/files" identity clause)
   A.ok(/AUTHORITATIVE/.test(none) && /ignore it/.test(none), 'note explicitly overrides any earlier blanket capability claim');
