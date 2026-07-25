@@ -37,6 +37,40 @@
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
   function str(v) { return v == null ? '' : String(v); }
 
+  // an OpenAI-format message's content is either a plain string or a multimodal parts array
+  function flattenContent(c) {
+    if (typeof c === 'string') return c;
+    if (Array.isArray(c)) return c.map(p => (p && typeof p.text === 'string') ? p.text : '').join(' ');
+    return '';
+  }
+
+  /* H1.1 BOUNDARY MARKER — why this is not just an integer.
+
+     appendTurns() takes a POSITIONAL `fromIndex`, which is only sound while the loop's messages array grows
+     MONOTONICALLY. It does not: on compaction loop.js REBUILDS that array in place and SHORTER (older turns
+     fold into a single summary note). A boundary captured before the loop then points PAST the new end, the
+     append loop runs zero times, and the run's ENTIRE dialogue is dropped with no error and no log line.
+     It fails worst exactly where the transcript matters most — long, resumed sessions, which are both the
+     likeliest to compact and the ones whose history recall_conversation is meant to search.
+
+     A per-message marker survives the fold, because compaction reuses the same message OBJECTS in the prefix
+     and kept tail rather than cloning them. Symbol-keyed and non-enumerable, so it is invisible to
+     JSON.stringify — it never reaches disk, and never rides out to a provider on the wire. */
+  const PERSISTED = Symbol('skynet.transcript.persisted');
+
+  // Mark messages as already-recorded. The host calls this on the prompt BEFORE the loop runs, so whatever the
+  // loop appends afterwards is exactly that run's new dialogue. Returns how many were newly marked.
+  function markPersisted(messages) {
+    if (!Array.isArray(messages)) return 0;
+    let n = 0;
+    for (const m of messages) {
+      if (!m || typeof m !== 'object' || m[PERSISTED]) continue;
+      try { Object.defineProperty(m, PERSISTED, { value: true, enumerable: false, configurable: true, writable: true }); n++; }
+      catch (_) { /* frozen/sealed message: it just stays eligible — a duplicate row beats a lost transcript */ }
+    }
+    return n;
+  }
+
   function makeTranscriptStore(opts) {
     opts = opts || {};
     const io = opts.io || { readAll() { return []; }, append() {} };
@@ -132,9 +166,25 @@
       for (let i = Math.max(0, num(fromIndex)); i < messages.length; i++) {
         const m = messages[i];
         if (!m || !ROLES[m.role] || m.role === 'system') continue;
-        const content = (typeof m.content === 'string') ? m.content
-          : (Array.isArray(m.content) ? m.content.map(p => (p && typeof p.text === 'string') ? p.text : '').join(' ') : '');
-        append({ streamId: streamId, agentId: agentId, role: m.role, content: content, toolCalls: m.tool_calls, toolCallId: m.tool_call_id });
+        append({ streamId: streamId, agentId: agentId, role: m.role, content: flattenContent(m.content), toolCalls: m.tool_calls, toolCallId: m.tool_call_id });
+        n++;
+      }
+      return n;
+    }
+
+    // H1.1, compaction-safe: append every message NOT yet carrying the persisted marker, marking as it goes.
+    // This is the boundary appendTurns' positional `fromIndex` could not express — see PERSISTED above. Same row
+    // shape and same skip rule (injected 'system' fences are not dialogue), so the durable file is unchanged;
+    // only WHICH messages are considered new differs. Idempotent: appending the same array twice writes once,
+    // which also makes it safe to drain mid-run (at a compaction) and again at run end.
+    function appendNew(streamId, agentId, messages) {
+      if (!Array.isArray(messages)) return 0;
+      let n = 0;
+      for (const m of messages) {
+        if (!m || typeof m !== 'object' || m[PERSISTED]) continue;
+        markPersisted([m]);                                    // mark BEFORE the role filter so fences aren't re-checked
+        if (!ROLES[m.role] || m.role === 'system') continue;
+        append({ streamId: streamId, agentId: agentId, role: m.role, content: flattenContent(m.content), toolCalls: m.tool_calls, toolCallId: m.tool_call_id });
         n++;
       }
       return n;
@@ -178,12 +228,12 @@
     }
 
     return {
-      append, appendTurns, history, reconstruct, search,
+      append, appendTurns, appendNew, markPersisted, history, reconstruct, search,
       all() { return rows.map(r => Object.assign({}, r)); },
       count() { return rows.length; },
       _internals: { normStream, SID_RE }
     };
   }
 
-  return { makeTranscriptStore, _internals: { SID_RE, ROLES } };
+  return { makeTranscriptStore, markPersisted, _internals: { SID_RE, ROLES, PERSISTED, flattenContent } };
 });

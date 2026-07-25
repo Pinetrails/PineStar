@@ -4191,7 +4191,11 @@ function armQuestRefresh() {
    never breaks a run); the restore route is always available. The pure index/rollback math is checkpoint.js;
    the git/fs is here, the one ambient-I/O edge. ---- */
 const CHECKPOINTS_ENABLED = /^(1|true|yes|on)$/i.test(String(ENV('CHECKPOINTS') || '').trim());
-const mutatesWorkspace = (name) => /^fs\.(write|append|edit)$/.test(name) || /^(shell|verify)\./.test(name);
+// fs.patch belongs here with the other writers: it is the WIDEST-blast-radius fs tool (multi-hunk, multi-file,
+// and the one the system prompt actively recommends over fs.edit for real edits), so leaving it out meant the
+// single most destructive tool ran with NO workspace lease and NO checkpoint snapshot — the exact combination
+// the net exists to prevent. Keep this pattern in sync with the fs writers in tools/builtin/fs.js.
+const mutatesWorkspace = (name) => /^fs\.(write|append|edit|patch)$/.test(name) || /^(shell|verify)\./.test(name);
 // WORKSPACE LEASE (concurrent-sessions lane): same-agent runs are now admitted concurrently; the ONE thing
 // they can't share — the workspace dir + shadow-git checkpoint repo — is guarded here instead, at the first
 // workspace-MUTATING tool call. Held from first touch until run end (checkpoint chain stays contiguous per
@@ -8412,6 +8416,13 @@ async function runOnce(o) {
   // reads agent.cost.tokensIn as "current prompt size") is not transiently corrupted by the summarizer's small
   // prompt. The loop owns the accounting; this emit is for the cost stream only.
   async function summarize(older, prevSummary) {
+    // TRANSCRIPT DRAIN (before the fold): `older` is the exact slice compaction is about to delete from the live
+    // messages array. Turns THIS run produced that land in the fold would otherwise never reach the durable
+    // transcript at all — the run-end append can only see what SURVIVED the fold. Draining here keeps the durable
+    // dialogue complete for precisely the long runs that compact (and whose history recall_conversation searches).
+    // Marker-keyed and idempotent, so draining here and again at run end writes each turn exactly once, and a
+    // summarizer that fails (leaving history unfolded) still leaves the transcript correct. Fail-open.
+    try { transcriptStore.appendNew(o.streamId, agentId, older); } catch (_) { /* never block a compaction */ }
     const transcript = older.map(mm => {
       const c = (mm && typeof mm.content === 'string') ? mm.content : JSON.stringify((mm && mm.content) || '');
       return (mm && mm.role ? mm.role : 'msg') + ': ' + c;
@@ -8797,11 +8808,22 @@ async function runOnce(o) {
   } catch (_) {}
 
   let result;
-  const _txStart = msgs.length;   // H1.1: boundary — turns the loop appends to msgs after this ARE this run's new dialogue
+  // H1.1 boundary: mark the assembled prompt as already-recorded, so the run-end drain appends exactly the turns
+  // the LOOP adds. This used to be a positional `msgs.length`, which a compaction silently invalidated — it
+  // rebuilds the same array in place and SHORTER, leaving the index past the end and dropping the entire run's
+  // dialogue with no error. See the PERSISTED marker in transcriptstore.js.
+  transcriptStore.markPersisted(msgs);
   let bufferedTaskEnd = null;
   // Hold a successful user-facing Task Brief end until the final text is known; a question maps to the
   // contract's additive `clarifying` terminal (neither product nor slag — every success path keys on 'done').
   const loopEmit = (name, payload) => {
+    // TOOL-OUTPUT BUDGET RESET: the per-run budget exists so a few big reads/fetches can't blow the context
+    // window. A compaction has just FOLDED those tool results out of the prompt — the bytes are no longer in
+    // context, so charging them against the budget for the rest of the run blinds the agent while the loop
+    // keeps paying for turns (every tool comes back "[tool output omitted]" with ~30 iterations still to go).
+    // Freeing the budget at the moment the context is freed keeps the two in sync; erring generous here is the
+    // right direction, since the alternative is a run that can still call tools but can no longer SEE any.
+    if (name === 'agent.compact') toolBytes = 0;
     if (taskBrief && name === 'agent.run.end' && payload && payload.runId === runId && payload.reason === 'done') {
       bufferedTaskEnd = payload; return;
     }
@@ -8892,7 +8914,7 @@ async function runOnce(o) {
       // run, incl. headless ones (cron/Telegram/delegated). Append the triggering user directive, then EVERY new
       // turn the loop produced (assistant incl. tool_calls + tool results), so a resume can rebuild exact state.
       if (title) transcriptStore.append({ streamId: o.streamId, agentId, role: 'user', content: title });
-      if (result && Array.isArray(result.messages)) transcriptStore.appendTurns(o.streamId, agentId, result.messages, _txStart);
+      if (result && Array.isArray(result.messages)) transcriptStore.appendNew(o.streamId, agentId, result.messages);
     } catch (_) {}
     // QUEST V2 §A — the run-lifecycle sweeps at the settle point: a run ending 'done' completes every OPEN quest
     // whose run-contract is bound to this runId (bound at the injection seam / the quest.update progress tick);

@@ -400,9 +400,14 @@
       const maxRecoveries = 1 + fallbacks.length;
       let retriesUsed = 0;
       const MAX_STREAM_RETRIES = 2;
+      // A truncation is its own (cheap, transient) retry class — kept separate from MAX_STREAM_RETRIES and
+      // deliberately tighter, because a truncation costs a FULL generation to re-run.
+      let truncRetries = 0;
+      const MAX_TRUNC_RETRIES = 1;
       while (true) {
         acc.text = ''; acc.toolCalls = {}; usage = null; lastFinishReason = null;
         let streamErr = null;
+        let sawTruncation = false;
         try {
           const req = { model, messages, tools, signal, stream: true };
           for await (const ev of provider.stream(req)) {
@@ -411,11 +416,28 @@
             else if (ev.type === 'tool_start') { acc.toolCalls[ev.index] = { id: ev.id, name: ev.name, args: '' }; }
             else if (ev.type === 'tool_args') { if (acc.toolCalls[ev.index]) acc.toolCalls[ev.index].args += (ev.chunk || ''); }
             else if (ev.type === 'usage') { usage = ev.usage; if (cost) emit('cost.estimate', Object.assign({ agentId, runId }, cost.estimate(usage, model))); }
-            else if (ev.type === 'done') { lastFinishReason = ev.finishReason; }   // A3: remember WHY the turn stopped
+            else if (ev.type === 'done') { lastFinishReason = ev.finishReason; sawTruncation = !!ev.truncated; }   // A3: remember WHY the turn stopped
             // 'tool_done' needs no action here
           }
         } catch (e) { streamErr = e; }
-        if (!streamErr) break;                       // stream succeeded
+        if (!streamErr) {
+          // TRUNCATED STREAM (truthful-telemetry law). The response body ended CLEANLY mid-generation: the
+          // adapter observed neither its protocol's end-of-stream sentinel nor a finish_reason. There is no
+          // exception to classify, so this used to fall straight through the `break` below — a half-written
+          // answer shipped as a completed delivery, and the turn recorded $0 for tokens the provider still
+          // bills. Adapters that genuinely cannot tell report truncated:false, so this is inert for them.
+          if (!sawTruncation) break;                 // clean, properly-terminated stream
+          if (truncRetries < MAX_TRUNC_RETRIES && !signal.aborted) {
+            truncRetries++;                          // a truncation is transient — re-run the turn once
+            if (sleep) { try { await sleep(STREAM_RETRY_DELAYS[0]); } catch (_) {} }
+            if (signal.aborted) break;
+            continue;
+          }
+          // Retry spent. Hand it to the fatal path, which reconciles the usage the provider WILL bill before
+          // ending — so a truncated turn is recorded as the transient provider failure it is, never a delivery.
+          fatal = { message: 'model stream ended mid-generation (no completion marker) — the response was truncated in transit', retryable: true };
+          break;
+        }
         if (signal.aborted) break;                   // a cancel mid-stream: fall through to the cancel check below
         // classify so `transient` is honest, and so the shouldCompress / shouldFallback / shouldRotateCredential
         // hints drive recovery instead of being discarded.

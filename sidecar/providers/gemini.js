@@ -3,9 +3,9 @@
    contents/tools/functionCall wire. */
 'use strict';
 (function (root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'), require('./errorClass.js'));
-  else { root.SK = root.SK || {}; root.SK.providers = root.SK.providers || {}; root.SK.providers.gemini = factory(root.SK.providers.provider, root.SK.providers.errorClass); }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (provider, errorClass) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'), require('./errorClass.js'), require('./prices.js'));
+  else { root.SK = root.SK || {}; root.SK.providers = root.SK.providers || {}; root.SK.providers.gemini = factory(root.SK.providers.provider, root.SK.providers.errorClass, root.SK.providers.prices); }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (provider, errorClass, prices) {
   'use strict';
 
   const classifyApiError = errorClass.classifyApiError;
@@ -193,7 +193,10 @@
       name: m.displayName || m.name || id,
       context_length: Number(m.inputTokenLimit || m.context_length || 0) || 0,
       max_completion_tokens: Number(m.outputTokenLimit || m.max_completion_tokens || 0) || null,
-      pricing: null,
+      // /v1beta/models reports no pricing, so this comes from the dated list-rate table (prices.js) rather
+      // than the wire. Same {prompt, completion} per-token shape every other adapter publishes, so
+      // listModels() and priceOf() can never disagree. Unknown model -> null -> honestly 'unpriced'.
+      pricing: prices.pricingBlock('gemini', id),
       supported_parameters: canGenerate ? ['tools'] : [],
       supportsTools: canGenerate ? true : null,
       supportsReasoning: null,
@@ -305,7 +308,8 @@
       }
 
       try {
-        while (true) {
+        let sawSentinel = false;                     // the protocol's own end-of-stream marker
+        while (!sawSentinel) {
           const { value, done } = await reader.read();
           if (done) break;
           buf += dec.decode(value, { stream: true });
@@ -315,15 +319,23 @@
             buf = buf.slice(nl + 1);
             const p = parseLine(line);
             if (!p) continue;
-            if (p.done) return;
+            if (p.done) { sawSentinel = true; break; }
             yield* emitFrom(p.json);
           }
         }
-        buf += dec.decode();
-        if (buf.trim()) {
-          const p = parseLine(buf);
-          if (p && !p.done && p.json) yield* emitFrom(p.json);
+        if (!sawSentinel) {
+          buf += dec.decode();
+          if (buf.trim()) {
+            const p = parseLine(buf);
+            if (p && p.done) sawSentinel = true;
+            else if (p && p.json) yield* emitFrom(p.json);
+          }
         }
+        // STREAM-END TRUTH (truthful-telemetry law): always emit exactly ONE terminal event, and say honestly
+        // whether the stream really ENDED or merely stopped arriving. A clean mid-generation FIN yields neither
+        // a candidate finishReason (which sets doneEmitted) nor a sentinel; the loop cannot otherwise tell that
+        // apart from a finished answer, so it shipped the fragment as a completed — and $0 — delivery.
+        if (!doneEmitted) yield { type: 'done', finishReason: null, truncated: !sawSentinel };
       } catch (e) {
         if (isAbort(e, req.signal)) return;
         throw e;
@@ -388,7 +400,11 @@
       return catalog ? catalog.find(m => m.id === clean || m.id === id) : null;
     }
     function contextLimit(id) { const m = findModel(id); return (m && m.context_length) || defaultContext; }
-    function priceOf() { return null; }
+    // Gemini's API never reports a price, and returning null here left spentUsd at 0.00 for the whole run —
+    // which silently disabled the per-run spend ceiling and the day/global pools (loop.js only stops when
+    // spentUsd crosses the cap). Resolved off the dated list-rate table, independent of catalog warm state so
+    // the cap works from the first turn; an unrecognized model still returns null and stays 'unpriced'.
+    function priceOf(id) { return prices.priceOf('gemini', id); }
     function supportsTools(id) { const m = findModel(id); return m ? m.supportsTools : true; }
     function reasoningEfforts() { return ['none']; }
 

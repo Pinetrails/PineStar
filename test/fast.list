@@ -32,8 +32,10 @@ test/verify.test.js
 test/provider.replay.test.js
 test/provider.openrouter.test.js
 test/provider.openai-compatible.test.js
+test/transcript.compaction.e2e.test.js
 test/provider.anthropic.test.js
 test/provider.gemini.test.js
+test/provider.prices.test.js
 test/provider.timeouts.test.js
 test/provider.registry.test.js
 test/provider.codex-auth.test.js
