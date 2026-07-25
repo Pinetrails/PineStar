@@ -62,10 +62,7 @@
       rigor: 'hard',
       needsProject: true,
       params: [
-        { key: 'goal', label: 'What should it get working?', placeholder: 'make the failing auth tests pass without changing the API', required: true,
-          examples: ['make the failing auth tests pass without changing the API',
-                     'get the build back to green',
-                     'fix the 3 failing checkout tests'] },
+        { key: 'goal', label: 'What should it get working?', placeholder: 'make the failing auth tests pass without changing the API', required: true },
         { key: 'check', label: 'The command you run to check it', placeholder: 'npm test', required: true, default: 'npm test' }
       ],
       objective:
@@ -91,12 +88,8 @@
       rigor: 'soft',
       needsProject: true,
       params: [
-        { key: 'hunting', label: 'What is it hunting?', placeholder: 'unhandled promise rejections', required: true,
-          examples: ['unhandled promise rejections',
-                     'API calls with no error handling',
-                     'debug logging left in production code'] },
-        { key: 'where', label: 'Where should it look?', placeholder: 'the src/ folder', required: false, default: 'the whole project',
-          examples: ['the src/ folder', 'everything except vendor/', 'the whole project'] }
+        { key: 'hunting', label: 'What is it hunting?', placeholder: 'unhandled promise rejections', required: true },
+        { key: 'where', label: 'Where should it look?', placeholder: 'the src/ folder', required: false, default: 'the whole project' }
       ],
       objective:
         'Sweep this project for one specific class of problem and fix them one at a time.\n\n' +
@@ -121,12 +114,8 @@
       rigor: 'soft',
       needsProject: false,
       params: [
-        { key: 'question', label: 'What are you trying to find out?', placeholder: 'how are competitors pricing AI agent products?', required: true,
-          examples: ['how are competitors pricing AI agent products?',
-                     'what do reviewers complain about most in this category?',
-                     'which channels are similar products launching on?'] },
-        { key: 'angle', label: 'Anything to focus on or avoid?', placeholder: 'focus on self-serve pricing; skip enterprise', required: false, default: 'no particular constraint',
-          examples: ['focus on self-serve pricing; skip enterprise', 'only sources from the last 12 months'] }
+        { key: 'question', label: 'What are you trying to find out?', placeholder: 'how are competitors pricing AI agent products?', required: true },
+        { key: 'angle', label: 'Anything to focus on or avoid?', placeholder: 'focus on self-serve pricing; skip enterprise', required: false, default: 'no particular constraint' }
       ],
       objective:
         'Research one question, going deeper each pass.\n\nQUESTION: {question}\nFOCUS: {angle}\n\n' +
@@ -142,8 +131,7 @@
   ];
 
   const FROZEN = CATALOG.map(t => Object.freeze(Object.assign({}, t, {
-    params: Object.freeze((t.params || []).map(p => Object.freeze(Object.assign({ required: true, default: '', examples: [] }, p,
-      { examples: Object.freeze((p.examples || []).slice()) })))),
+    params: Object.freeze((t.params || []).map(p => Object.freeze(Object.assign({ required: true, default: '' }, p)))),
     shape: Object.freeze((t.shape || []).slice())
   })));
 

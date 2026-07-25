@@ -29,6 +29,8 @@
   let loopAgentId = 'agent';
   let pickedDir = '';                   // the blessed project root for a project-shaped loop
   let dailyCap = 5;                     // $/day — a real default, so an unattended loop is never born uncapped
+  // armed by a pre-flight warning: the NEXT start proceeds anyway. Reset on any edit so a new mistake re-warns.
+  let preflightOk = false;
 
   const T = () => (typeof LoopTemplates !== 'undefined' ? LoopTemplates : null);
 
@@ -377,17 +379,12 @@
     }
 
     // ---------- STEP 2: describe it ----------
-    // one field per row, each with clickable worked examples — a placeholder is passive, an example teaches.
+    // one field per row. The placeholder carries the example; suggestion chips under every field turned out to
+    // be scaffolding the form did not need.
     function fieldRow(pm) {
-      const ex = (pm.examples || []).slice(0, 3);
       return '<label class="mc-lbl">' + esc(pm.label) +
         (pm.required ? ' <span style="color:var(--bad)">*</span>' : ' <span class="dim">(optional)</span>') +
         '<textarea class="key-input lp-p" data-key="' + esc(pm.key) + '" rows="2" placeholder="' + esc(pm.placeholder || '') + '" style="resize:vertical"></textarea>' +
-        (ex.length
-          ? '<div class="lp-ex"><span class="dim">try:</span> ' +
-            ex.map(e => '<button type="button" class="lp-ex-b" data-for="' + esc(pm.key) + '" data-val="' + esc(e) + '">' + esc(e) + '</button>').join('') +
-            '</div>'
-          : '') +
         '</label>';
     }
 
@@ -403,9 +400,8 @@
         : '';
       const checkRow = t.check
         ? '<label class="mc-lbl">The command you run to check it <span style="color:var(--bad)">*</span>' +
-          '<div class="lp-dir"><input id="lp-check" class="key-input lp-p" data-key="check" placeholder="npm test" autocomplete="off">' +
-          '<button class="bb xs" id="lp-test" type="button">▶ TEST</button></div>' +
-          '<div id="lp-testout" class="lp-testout dim">the station runs this itself after every pass — test it here first</div></label>'
+          '<input id="lp-check" class="key-input lp-p" data-key="check" placeholder="npm test" autocomplete="off">' +
+          '<div id="lp-testout" class="lp-testout dim">the station runs this itself after every pass</div></label>'
         : '';
 
       formEl.innerHTML =
@@ -426,12 +422,6 @@
           '<details class="lp-preview"><summary>what the agent will be told</summary><pre id="lp-prev"></pre></details>' +
         '</details>';
 
-      // an example chip fills its field — the fastest way to learn what belongs there.
-      formEl.querySelectorAll('.lp-ex-b').forEach(btn => btn.addEventListener('click', () => {
-        const el = formEl.querySelector('.lp-p[data-key="' + btn.dataset.for + '"]');
-        if (el) { el.value = btn.dataset.val; el.dispatchEvent(new Event('input', { bubbles: true })); el.focus(); }
-        sfx('click');
-      }));
       formEl.querySelectorAll('.rt-agent-btn').forEach(b => b.addEventListener('click', () => {
         loopAgentId = b.dataset.agent || 'agent'; sfx('click'); renderForm();
       }));
@@ -465,40 +455,6 @@
         });
       }
 
-      /* TEST IT. The check command was the one field with no feedback, so people guessed. Running it once,
-         now, turns three expensive failures into instant ones — and the important one is a check that
-         ALREADY PASSES: without this the loop spends a pass, gets a trusted green and declares "objective
-         met" having done nothing, which is the app claiming a success that never happened. */
-      const testBtn = formEl.querySelector('#lp-test');
-      if (testBtn) testBtn.addEventListener('click', async () => {
-        const dir = dirEl ? (dirEl.value || '').trim() : '';
-        const cmd = (checkEl.value || '').trim();
-        if (!dir || !cmd) { testOut.innerHTML = '<span style="color:var(--bad)">pick a project and type a command first</span>'; sfx('bad'); return; }
-        testBtn.disabled = true; testOut.textContent = 'running it…';
-        try {
-          // approving the folder is what lets the station run anything there — the same gate the loop uses.
-          const b = await (await post('/api/projects/bless', { path: dir, surface: 'interactive' })).json();
-          if (!b || !b.ok) { testOut.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((b && b.reason) || 'that folder could not be approved') + '</span>'; sfx('bad'); }
-          else {
-            const r = await (await post('/api/loops/testcheck', { path: dir, cmd: cmd })).json();
-            if (r && r.error) { testOut.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); }
-            else if (r && r.alreadyGreen) {
-              testOut.innerHTML = '<span style="color:var(--gold)">⚠ this check ALREADY passes</span> <span class="dim">— ' + esc(r.summary || '') +
-                '. A loop would finish immediately with nothing to do. Point it at a check that is currently failing.</span>';
-              sfx('bad');
-            } else if (r && r.couldNotRun) {
-              // never call a typo a good target — but do not assert it IS broken either; show it and say what it looks like.
-              testOut.innerHTML = '<span style="color:var(--bad)">✕ that command could not run</span> <span class="dim">— ' + esc((r.summary || '').slice(0, 120)) + '. Check the command and the folder.</span>';
-              sfx('bad');
-            } else {
-              testOut.innerHTML = '<span class="pos">✓ ran it — it fails right now</span> <span class="dim">— ' + esc((r.summary || '').slice(0, 120)) + '. If that is a real test failure, it is a good target; if it looks like an error in the command itself, fix the command.</span>';
-              sfx('click');
-            }
-          }
-        } catch (_) { testOut.innerHTML = '<span style="color:var(--bad)">✕ could not reach the station</span>'; sfx('bad'); }
-        testBtn.disabled = false; gate();
-      });
-
       formEl.querySelectorAll('.lp-p').forEach(el => el.addEventListener('input', gate));
       if (capEl) capEl.addEventListener('input', gate);
       gate();
@@ -523,6 +479,7 @@
        sync. Nothing is DISABLED here: a missing field simply means there is not yet a loop to summarise,
        which is a statement of fact rather than a permission wall. */
     function gate() {
+      preflightOk = false;   // the form changed — re-check before starting
       const tpl = T(); const t = tpl && tpl.get(pickedId); if (!t) return;
       const values = currentValues(), extra = currentExtra();
       const missing = tpl.requiredMissing(t, values);
@@ -557,6 +514,33 @@
           if (!b || !b.ok) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((b && b.reason) || 'that folder could not be approved') + '</span>'; sfx('bad'); return; }
         } catch (_) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ could not reach the station</span>'; sfx('bad'); return; }
       }
+
+      /* THE CHECK PRE-FLIGHT, now automatic. It used to be a TEST button, which asked the user to know to
+         press it; the form reads fine without that scaffolding, but the guard behind it is not scaffolding —
+         a check that ALREADY passes makes the loop finish on its first pass and declare "objective met"
+         having done nothing, which is the app claiming a success that never happened. So START runs it and
+         only speaks up when something is actually wrong.
+
+         NOT A WALL. A second click proceeds anyway (someone may genuinely intend a check that cannot run yet,
+         e.g. deps this loop will install). It makes the mistake visible; it does not overrule the Commander. */
+      const cmdNow = (values.check || '').trim();
+      if (cmdNow && extra.workdir && !preflightOk) {
+        try {
+          const r = await (await post('/api/loops/testcheck', { path: extra.workdir, cmd: cmdNow })).json();
+          const warn = (r && r.alreadyGreen)
+            ? 'that check ALREADY passes — this loop would finish immediately with nothing to do'
+            : (r && r.couldNotRun) ? 'that command could not run — ' + String(r.summary || '').slice(0, 90)
+            : (r && r.error) ? r.error : null;
+          if (warn) {
+            preflightOk = true;   // armed: the next click goes ahead regardless
+            msgEl.innerHTML = '<span style="color:var(--gold)">⚠ ' + esc(warn) + '</span>' +
+              '<span class="dim"> — fix it above, or press START again to go ahead anyway.</span>';
+            sfx('bad');
+            return;
+          }
+        } catch (_) { /* the pre-flight is a courtesy; never block creation on a station hiccup */ }
+      }
+
       const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;
       const spec = tpl.buildSpec(t, values, Object.assign({}, extra, { provider: provider, workdir: extra.workdir || undefined }));
       try {
