@@ -124,7 +124,8 @@
       '<p class="set-about dim">Common platforms and where their API docs live. Picking one just fills the form below — ' +
         'you still paste your own key. Anything not listed works too: type its name.</p>' +
       '<div id="ky-catalog" class="cc-list"><span class="loading pulse">loading platforms…</span></div>' +
-      '<div class="sec"><span class="sec-l">ADD A PLATFORM</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +      '<div class="mc-form">' +
+      '<div class="sec"><span class="sec-l">ADD A PLATFORM</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<div class="mc-form">' +
         '<input id="ky-name" class="key-input" placeholder="platform name — e.g. Resend" autocomplete="off" spellcheck="false" maxlength="64">' +
         '<input id="ky-key" type="password" class="key-input" placeholder="API key" autocomplete="off" spellcheck="false">' +
         '<input id="ky-docs" class="key-input" placeholder="API docs URL (optional — helps agents use the service)" autocomplete="off" spellcheck="false">' +
