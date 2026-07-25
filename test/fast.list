@@ -134,6 +134,7 @@ test/skills.library.test.js
 test/slash.test.js
 test/slash-actions.test.js
 test/slash.parity.test.js
+test/usercommands.test.js
 test/slash.palette.test.js
 test/slash.config.test.js
 test/voice.button.test.js
