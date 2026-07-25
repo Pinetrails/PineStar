@@ -102,7 +102,11 @@ const SpaceBG = (() => {
      starts at or before the origin and the copy at (x,y) ends at or after (w,h). Fully
      offscreen copies cost nothing worth measuring. */
   function tile2(ctx, cv, w, h, ox, oy) {
-    const x = ((ox % w) + w) % w, y = ((oy % h) + h) % h;
+    // SNAP TO WHOLE PIXELS. A parallax offset is depth x pan and lands on fractions constantly;
+    // blitting a pixel-art tile to a half-pixel softens every edge and makes the layer shimmer as
+    // the camera creeps. Rounding also makes the wrap exact: a layer panned by a whole number of
+    // tile widths returns to precisely where it started instead of drifting by float error.
+    const x = ((Math.round(ox) % w) + w) % w, y = ((Math.round(oy) % h) + h) % h;
     ctx.drawImage(cv, x - w, y - h, w, h);
     ctx.drawImage(cv, x, y - h, w, h);
     ctx.drawImage(cv, x - w, y, w, h);
@@ -110,6 +114,24 @@ const SpaceBG = (() => {
   }
 
   const mkCv = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+
+  /* sine by lookup, indexed in TURNS rather than radians. A surface deck evaluates several waves
+     per pixel across the whole tile (~3.7M calls at 720p), which is too many real Math.sin calls
+     for a rebuild that must not stall a resize. Turns also make the torus exact: an integer wave
+     count across w or h wraps by construction, and the power-of-two mask does the modulo. */
+  const SIN_N = 2048, SIN_MASK = SIN_N - 1;
+  const SIN_LUT = new Float32Array(SIN_N);
+  for (let i = 0; i < SIN_N; i++) SIN_LUT[i] = Math.sin((i / SIN_N) * Math.PI * 2);
+
+  /* one horizontal dash, wrapped in x — foam and glitter are short and lie along the surface, and
+     a dash that runs off the right edge has to reappear on the left or the tile seam shows. */
+  function hdash(c, w, x, y, len, style) {
+    c.fillStyle = style;
+    const x0 = ((x % w) + w) % w;
+    const over = x0 + len - w;
+    c.fillRect(x0, y, over > 0 ? len - over : len, 1);
+    if (over > 0) c.fillRect(0, y, over, 1);
+  }
 
   /* screen offset for a layer at parallax depth d: 0 = infinitely far (nailed to the screen,
      the old behaviour), 1 = rides exactly with the station. The camera pans the world by
@@ -530,103 +552,165 @@ const SpaceBG = (() => {
   }
 
   /* --------------------------------------------------------------- BACKDROP: OCEAN ---- */
-  /* Open water from altitude. The deck is anisotropic: from this high, sea does not read as
-     waves, it reads as fine directional grain with a swell running through it, plus one broad
-     specular sheen where the sun answers back. The sun itself is never in frame (law 3) — you
-     only ever see what it does to the water. */
+  /* Open water from altitude.
+
+     THE MISTAKE THIS IS A REWRITE OF (2026-07-24, Andrew: "it looks like stars"): the first
+     version drew the sea as SPARSE BRIGHT MARKS ON A DARK FIELD and gave the glint the same
+     shape as the star twinkle — isolated 1px points, independently fading in and out. That is
+     not a description of water, it is the definition of a starfield, so it read as one.
+
+     Water is a CONTINUOUS SURFACE: every pixel is water, and waves are a modulation of it, never
+     marks scattered on top of a dark background. So the deck is built as a real wave field —
+     four crossing waves summed per pixel through an ImageData buffer, quantized into a handful
+     of flat bands so it stays pixel-art rather than turning into a smooth photograph. The finest
+     wave deliberately runs fast in y and slow in x, which lays the field into HORIZONTAL STREAKS;
+     that anisotropy is what the eye actually reads as a water surface seen from above.
+
+     Foam sits on the crests of that same field and glitter is DENSE and lies on a BRIGHT sheen —
+     the two properties a starfield can never have (stars are sparse, independent, and on black).
+     The sun is never in frame (law 3); you only see what it does to the water. */
 
   const OCEAN_BG = {
     label: 'OCEAN',
     blurb: 'Open water, a long way down. Sun on the swell.',
-    base: '#050d16',
+    base: '#0a2036',
 
     build(w, h, rnd) {
-      const area = w * h;
+      /* THE SEA IS BUILT AT HALF RESOLUTION and blitted back up by tile2 (which always draws a
+         tile at the full w x h, whatever the source size). Two reasons, both good: the per-pixel
+         wave pass is 4x cheaper — a full-res 4K build measured 442ms, which is a visible hitch on
+         the one-shot resize rebuild — and the 2x upscale gives the water CHUNKIER pixels, which
+         sits better beside the station's own art than a fine smooth field does. Toroidality
+         survives scaling: the source wraps in its own space, so the blit wraps in ours. */
+      const SW = Math.max(1, Math.ceil(w / 2)), SH = Math.max(1, Math.ceil(h / 2));
+      const area = SW * SH;
+      const seaCv = mkCv(SW, SH), sc = seaCv.getContext('2d');
 
-      /* ---- the water itself: depth mottling, then grain, then swell ---- */
-      const seaCv = mkCv(w, h), sc = seaCv.getContext('2d');
-      sc.fillStyle = '#0a1a2b'; sc.fillRect(0, 0, w, h);
-      // large slow variation in depth/colour so the sea is never a flat rectangle
-      for (let i = 0, n = 14; i < n; i++) {
-        const shallow = rnd() < 0.45;
-        puff9(sc, w, h, rnd() * w, rnd() * h, (0.14 + 0.22 * rnd()) * Math.min(w, h),
-          shallow ? [26, 92, 110] : [4, 12, 30], 0.16 + 0.14 * rnd());
+      /* ---- THE WAVE FIELD ----
+         Each wave is an integer number of cycles across the tile, so every one is periodic on the
+         torus and the tile cannot seam. The last is the texture wave: many cycles in y, few in x. */
+      const wi = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+      const waves = [
+        { nx: wi(1, 2), ny: wi(1, 2), a: 0.36 },        // the long swell
+        { nx: wi(2, 4), ny: -wi(1, 3), a: 0.26 },       // a second swell, crossing
+        { nx: wi(5, 8), ny: wi(3, 6), a: 0.20 },        // chop
+        { nx: wi(2, 4), ny: wi(22, 34), a: 0.18 },      // TEXTURE: fast in y, slow in x -> streaks
+      ];
+      // Precompute each wave's phase per column and per row, in LUT units. The inner loop then
+      // costs an add, a mask and a table read per wave instead of a Math.sin.
+      for (const v of waves) {
+        v.px = new Float32Array(SW);
+        v.py = new Float32Array(SH);
+        const ph = rnd();
+        for (let x = 0; x < SW; x++) v.px[x] = (v.nx * x / SW) * SIN_N;
+        for (let y = 0; y < SH; y++) v.py[y] = ((v.ny * y / SH) + ph) * SIN_N;
       }
 
-      /* THE SWELL — two crossing directional waves. Their interference is what stops the grain
-         below from reading as television static: crests bunch, troughs go quiet. */
-      const th1 = rnd() * Math.PI, th2 = th1 + 0.6 + rnd() * 0.7;
-      const k1 = (2 + Math.floor(rnd() * 3)) * Math.PI * 2, k2 = (3 + Math.floor(rnd() * 4)) * Math.PI * 2;
-      const ph1 = rnd() * 7, ph2 = rnd() * 7;
-      // periodic in BOTH axes (integer wave counts across w and h) so the tile stays seamless
-      const swell = (x, y) => {
-        const u1 = (x / w) * Math.cos(th1) + (y / h) * Math.sin(th1);
-        const u2 = (x / w) * Math.cos(th2) + (y / h) * Math.sin(th2);
-        return 0.5 * Math.sin(u1 * k1 + ph1) + 0.5 * Math.sin(u2 * k2 + ph2);
-      };
+      /* the specular sheen: where the sun answers back. Toroidal distance, so it wraps too. */
+      const gx = rnd() * SW, gy = rnd() * SH, gR = Math.min(SW, SH) * (0.34 + 0.12 * rnd());
+      const dt = (a, b, m) => { const d = Math.abs(a - b) % m; return Math.min(d, m - d); };
 
-      /* THE GRAIN — short dashes aligned to the swell direction. Bright where a crest is. */
-      const grainN = Math.min(14000, Math.round(area / 620));
-      const dx = Math.cos(th1), dy = Math.sin(th1);
-      for (let i = 0; i < grainN; i++) {
-        const x = rnd() * w, y = rnd() * h;
-        const s = swell(x, y);
-        if (s < -0.15 && rnd() < 0.75) continue;              // troughs stay dark — this is the structure
-        const lit = Math.max(0, (s + 0.4) / 1.4);
-        const len = 1 + Math.round(rnd() * 3 + lit * 2);
-        sc.fillStyle = 'rgba(' + (120 + Math.round(90 * lit)) + ',' + (170 + Math.round(70 * lit)) + ',' + (190 + Math.round(60 * lit)) + ',' + (0.10 + 0.42 * lit * rnd()).toFixed(3) + ')';
-        for (let k = 0; k < len; k++) sc.fillRect(((x + dx * k) % w + w) % w, ((y + dy * k * 0.5) % h + h) % h, 1, 1);
+      // palette: trough -> crest. Bright enough that the CRT pass still leaves it reading as water.
+      const DEEP = [12, 46, 74], CREST = [86, 168, 190], FOAM = [206, 234, 240];
+      const LEVELS = 7;                                  // quantize into flat bands = pixel art, not a photo
+
+      const img = sc.createImageData(SW, SH), D = img.data;
+      const w0 = waves[0], w1 = waves[1], w2 = waves[2], w3 = waves[3];
+      let p = 0;
+      for (let y = 0; y < SH; y++) {
+        const y0 = w0.py[y], y1 = w1.py[y], y2 = w2.py[y], y3 = w3.py[y];
+        for (let x = 0; x < SW; x++) {
+          const v = w0.a * SIN_LUT[((w0.px[x] + y0) | 0) & SIN_MASK]
+                  + w1.a * SIN_LUT[((w1.px[x] + y1) | 0) & SIN_MASK]
+                  + w2.a * SIN_LUT[((w2.px[x] + y2) | 0) & SIN_MASK]
+                  + w3.a * SIN_LUT[((w3.px[x] + y3) | 0) & SIN_MASK];
+          let t = v * 0.5 + 0.5;                         // 0 = trough, 1 = crest
+          t = Math.round(t * LEVELS) / LEVELS;           // flat bands
+
+          const sheen = Math.max(0, 1 - Math.hypot(dt(x, gx, SW), dt(y, gy, SH)) / gR);
+          const s2 = sheen * sheen;
+
+          let r = DEEP[0] + (CREST[0] - DEEP[0]) * t + 70 * s2;
+          let g = DEEP[1] + (CREST[1] - DEEP[1]) * t + 78 * s2;
+          let b = DEEP[2] + (CREST[2] - DEEP[2]) * t + 74 * s2;
+          if (t > 0.88) {                                // foam breaks on the highest crests only
+            const f = (t - 0.88) / 0.12;
+            r += (FOAM[0] - r) * f; g += (FOAM[1] - g) * f; b += (FOAM[2] - b) * f;
+          }
+          D[p] = r; D[p + 1] = g; D[p + 2] = b; D[p + 3] = 255;
+          p += 4;
+        }
+      }
+      sc.putImageData(img, 0, 0);
+
+      /* ---- FOAM STREAKS — short bright dashes lying ALONG the surface, on the crests. Drawn as
+              dashes rather than dots for the same reason the texture wave is anisotropic. ---- */
+      const foamN = Math.min(5200, Math.round(area / 950));
+      for (let i = 0; i < foamN; i++) {
+        const x = rnd() * SW, y = (rnd() * SH) | 0;
+        const v = w0.a * SIN_LUT[(((w0.nx * x / SW) * SIN_N + w0.py[y]) | 0) & SIN_MASK]
+                + w3.a * SIN_LUT[(((w3.nx * x / SW) * SIN_N + w3.py[y]) | 0) & SIN_MASK];
+        if (v < 0.30) continue;                          // crests only
+        const lit = Math.min(1, (v - 0.30) / 0.34);
+        hdash(sc, SW, x, y, 1 + Math.round(rnd() * 3 + lit * 2),
+          'rgba(216,238,244,' + (0.10 + 0.34 * lit * rnd()).toFixed(3) + ')');
       }
 
-      /* ---- THE GLINT — the broad specular sheen, prerendered soft; its sparkles are live ---- */
-      const glintX = rnd() * w, glintY = rnd() * h, glintR = Math.min(w, h) * (0.30 + 0.12 * rnd());
-      puff9(sc, w, h, glintX, glintY, glintR, [180, 214, 236], 0.10);
-      puff9(sc, w, h, glintX, glintY, glintR * 0.5, [220, 240, 255], 0.09);
-
+      /* ---- THE GLITTER — live, and the thing most likely to regress into stars. It stays honest
+              because it is DENSE, it is short DASHES not points, and it only exists inside the
+              bright sheen. Sparse + isolated + on dark is the starfield look; this is none of it. */
+      // normalized against the HALF-res field the sheen was placed in, so the glitter lands on
+      // the sheen after the 2x blit rather than a quarter of the way across the tile.
       const sparks = [];
-      const sparkN = Math.min(220, Math.round(area / 14000));
+      const sparkN = Math.min(900, Math.round(area / 700));
       for (let i = 0; i < sparkN; i++) {
-        // clustered into the sheen: sqrt keeps them dense at the centre, thinning outward
-        const ang = rnd() * Math.PI * 2, rad = Math.sqrt(rnd()) * glintR;
+        const ang = rnd() * Math.PI * 2, rad = Math.sqrt(rnd()) * gR * 0.92;
         sparks.push({
-          x: (glintX + Math.cos(ang) * rad) / w, y: (glintY + Math.sin(ang) * rad * 0.7) / h,
-          ph: rnd() * 10, r: rnd() < 0.75 ? px1() : px1() * 2,
+          x: (gx + Math.cos(ang) * rad) / SW, y: (gy + Math.sin(ang) * rad * 0.75) / SH,
+          ph: rnd() * 6.283, sp: 0.9 + rnd() * 2.2, len: 2 + Math.round(rnd() * 2),
         });
       }
 
-      /* ---- cloud + shadow decks (shared shapes, different depth) ---- */
-      const cloudCv = buildCloudDeck(w, h, mulberry32(0x0CEA11), { spread: 150000, min: 0.05, vary: 0.09, alpha: 0.17, tint: [226, 238, 252] });
-      const shadowCv = buildCloudDeck(w, h, mulberry32(0x0CEA11), { spread: 150000, min: 0.05, vary: 0.09, alpha: 0.14, tint: [2, 8, 18] });
+      /* ---- cloud + shadow decks (same shapes, different depth) ---- */
+      const cloudCv = buildCloudDeck(w, h, mulberry32(0x0CEA11), { spread: 118000, min: 0.05, vary: 0.10, alpha: 0.26, tint: [232, 242, 254] });
+      const shadowCv = buildCloudDeck(w, h, mulberry32(0x0CEA11), { spread: 118000, min: 0.05, vary: 0.10, alpha: 0.20, tint: [3, 16, 30] });
+      // a second, thinner deck much closer in — two cloud layers moving at different rates is the
+      // cheapest honest way to say "there is air between you and the water".
+      const wispCv = buildCloudDeck(w, h, mulberry32(0x0CEA22), { spread: 260000, min: 0.09, vary: 0.16, alpha: 0.13, tint: [244, 250, 255] });
 
-      hazeOver(sc, w, h, [70, 120, 150], 0.10);   // distance wash, applied to the deck only
+      hazeOver(sc, SW, SH, [96, 150, 176], 0.12);        // distance wash on the deck only
 
-      return { seaCv, cloudCv, shadowCv, sparks };
+      return { seaCv, cloudCv, shadowCv, wispCv, sparks };
     },
 
     draw(ctx, w, h, now, cam, st) {
       const t = now / 1000;
-      // the deck: parallax + a slow current drift of its own
       const sx = parX(cam, SURF.deck) + t * 1.5, sy = parY(cam, SURF.deck) + t * 0.5;
       tile2(ctx, st.seaCv, w, h, sx, sy);
 
-      // cloud SHADOWS ride the water (deck depth) but drift on the wind, so they slide across it
-      ctx.globalAlpha = 0.85;
+      // cloud SHADOWS lie ON the water (deck depth) but travel on the wind, so they slide across it
+      ctx.globalAlpha = 0.8;
       tile2(ctx, st.shadowCv, w, h, parX(cam, SURF.deck) + t * 5.5, parY(cam, SURF.deck) + t * 1.6);
       ctx.globalAlpha = 1;
 
-      // THE SPARKLE — fast, hard, and white. Sea glint snaps; it does not breathe like a star.
+      /* THE GLITTER. Sea glint snaps rather than breathing, so the twinkle is sharpened with a
+         fourth power — but MANY are lit at once, which is what separates a shimmering patch of
+         water from a sky full of independent stars. */
       for (const s of st.sparks) {
-        const tw = Math.sin(now / (110 + s.ph * 60) + s.ph);
-        if (tw < 0.55) continue;                        // most are dark most of the time — that is the look
-        const a = (tw - 0.55) / 0.45;
+        const q = Math.sin(now * 0.006 * s.sp + s.ph);
+        if (q <= 0) continue;
+        const a = q * q * q * q;
+        if (a < 0.06) continue;
         const x = ((s.x * w + sx) % w + w) % w, y = ((s.y * h + sy) % h + h) % h;
-        ctx.fillStyle = 'rgba(235,248,255,' + (a * 0.95).toFixed(3) + ')';
-        ctx.fillRect(x, y, s.r, s.r);
+        ctx.fillStyle = 'rgba(244,252,255,' + (a * 0.9).toFixed(3) + ')';
+        ctx.fillRect(x, y, s.len, 1);                    // a dash along the surface, never a dot
       }
 
-      // the cloud deck itself, much closer to the station — the parallax gap here IS the altitude
-      ctx.globalAlpha = 0.9;
+      // the cloud decks, much closer to the station — the parallax gap here IS the altitude
+      ctx.globalAlpha = 0.92;
       tile2(ctx, st.cloudCv, w, h, parX(cam, SURF.cloud) + t * 5.5, parY(cam, SURF.cloud) + t * 1.6);
+      ctx.globalAlpha = 0.75;
+      tile2(ctx, st.wispCv, w, h, parX(cam, SURF.cloud * 1.55) + t * 13, parY(cam, SURF.cloud * 1.55) + t * 3.6);
       ctx.globalAlpha = 1;
     },
   };
