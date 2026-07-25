@@ -52,8 +52,17 @@ const assistantRow = src.indexOf("const r = row('agent'", renderStart);
 A.ok(stoppedMarker > renderStart && stoppedMarker < assistantRow,
   'renderHistory recognizes a zero-token stopped marker before skipping empty assistant prose');
 
-// The shared action itself remains guarded by retryLast's disabled-state rule.
-A.ok(/function\s+retryLast[\s\S]*?if\s*\(\s*!activeWs\s*\|\|\s*isBusy\(\)\s*\)\s*return/.test(src),
-  'Try again is inert without an active idle stream');
+// The shared action itself remains guarded by retryLast's disabled-state rule. The two guards were SPLIT so
+// each can say why nothing happened (a silently-inert command reads as a broken app) — what must hold is that
+// both still return BEFORE any send, which is what "inert" actually means here.
+A.ok(/function\s+retryLast[\s\S]*?if\s*\(\s*!activeWs\s*\)\s*return[\s\S]*?if\s*\(\s*isBusy\(\)\s*\)\s*return/.test(src),
+  'Try again is inert without an active idle stream (both guards return before any send)');
+{
+  const guards = /function\s+retryLast\s*\(\s*\)\s*\{([\s\S]*?)\n\s{2}\}/.exec(src);
+  const body = guards ? guards[1] : '';
+  const firstSend = body.indexOf('send(text');
+  const busyGuard = body.indexOf('if (isBusy())');
+  A.ok(firstSend > 0 && busyGuard > 0 && busyGuard < firstSend, 'the busy guard precedes the retry send');
+}
 
 A.report('chat-stopped-retry.test');
