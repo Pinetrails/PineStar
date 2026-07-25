@@ -46,7 +46,30 @@ const ROUTES = {
   '/blank': () => ({ status: 200, body: PAGE('<a id=open href="/second" target="_blank">Open receipt</a>') }),
   '/second': () => ({ status: 200, body: PAGE('<h1>Receipt</h1><button id=print>Print receipt</button>', '<title>Receipt</title>') }),
   '/click': () => ({ status: 200, body: PAGE('<button id=go>Load</button><div id=out></div>',
-    '<script>addEventListener("click",function(e){if(e.target.id==="go"){setTimeout(function(){document.getElementById("out").innerHTML="<button id=next>Second step</button>";},300);}})</script>') })
+    '<script>addEventListener("click",function(e){if(e.target.id==="go"){setTimeout(function(){document.getElementById("out").innerHTML="<button id=next>Second step</button>";},300);}})</script>') }),
+  // A menu whose real target only EXISTS on hover - the classic nav that is unreachable without it.
+  '/hovermenu': () => ({ status: 200, body: PAGE(
+    '<button id=menu>Products</button><div id=sub></div>',
+    '<style>#menu{width:120px;height:24px}</style>' +
+    '<script>document.addEventListener("mouseover",function(e){if(e.target.id==="menu"){document.getElementById("sub").innerHTML="<a id=deep href=\'/second\'>Enterprise plan</a>";}});</script>') }),
+  // HTML5 drag-and-drop: the drop handler only fires if intermediate dragover events arrive.
+  '/dragdrop': () => ({ status: 200, body: PAGE(
+    '<button id=src draggable=true style="width:100px;height:40px">DRAG ME</button>' +
+    '<button id=dst style="width:100px;height:40px;margin-top:60px">DROP HERE</button><div id=result></div>',
+    '<script>addEventListener("DOMContentLoaded",function(){' +
+    'var s=document.getElementById("src"),d=document.getElementById("dst");' +
+    's.addEventListener("dragstart",function(e){e.dataTransfer.setData("text/plain","payload");});' +
+    'd.addEventListener("dragover",function(e){e.preventDefault();});' +
+    'd.addEventListener("drop",function(e){e.preventDefault();document.getElementById("result").innerHTML="<button id=ok>DROPPED "+e.dataTransfer.getData("text/plain")+"</button>";});' +
+    '});</script>') }),
+  // The upload control is a styled LABEL over a hidden input - the shape real sites ship, and the
+  // reason a ref usually points at the label rather than the <input type=file>.
+  '/upload': () => ({ status: 200, body: PAGE(
+    '<label id=pick for=f style="display:inline-block;width:160px;height:30px">CHOOSE FILE</label>' +
+    '<input id=f type=file style="position:absolute;left:-9999px"><div id=chosen></div>',
+    '<script>document.addEventListener("change",function(e){if(e.target.id==="f"&&e.target.files[0]){' +
+    'document.getElementById("chosen").innerHTML="<button id=got>PICKED "+e.target.files[0].name+"</button>";}});</script>') }),
+  '/download': () => ({ status: 200, body: PAGE('<a id=dl href="/file.txt" download="report.txt">Download report</a>') })
 };
 
 (async () => {
@@ -60,7 +83,12 @@ const ROUTES = {
 
   let BASE = '';
   const server = http.createServer((req, res) => {
-    const route = ROUTES[String(req.url).split('?')[0]];
+    const u = String(req.url).split('?')[0];
+    if (u === '/file.txt') {   // a real download, not an HTML page
+      res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename="report.txt"' });
+      return res.end('QUARTERLY REPORT BODY');
+    }
+    const route = ROUTES[u];
     const out = route ? route(BASE) : { status: 404, body: PAGE('<p>nope</p>') };
     res.writeHead(out.status, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(out.body);
@@ -69,8 +97,9 @@ const ROUTES = {
   const base = 'http://127.0.0.1:' + server.address().port;
   BASE = base;
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-gauntlet-'));
+  const downloadDir = path.join(profileDir, 'agent-downloads');
   const driver = T.makeCdpDriver({
-    chrome, forceHeadless: true, syntheticInputOnly: true, cdpPort: 0, profileDir, timeoutMs: 20000
+    chrome, forceHeadless: true, syntheticInputOnly: true, cdpPort: 0, profileDir, timeoutMs: 20000, downloadDir
   });
 
   try {
@@ -239,6 +268,72 @@ const ROUTES = {
       let bad = false;
       try { await driver.selectTab(3); } catch (_) { bad = true; }
       A.ok(bad, 'selecting a tab that does not exist is refused rather than silently ignored');
+    }
+
+    /* 6b. HOVER — menus, tooltips and disclosure widgets render their real targets only on mouseover.
+       Without hover an entire navigation is unreachable from a snapshot, and the agent concludes the
+       site has no such link. */
+    {
+      await driver.navigate(base + '/hovermenu');
+      const before = await driver.snapshot(40);
+      A.ok(!before.some(n => /Enterprise plan/.test(n.text || '')), 'the hover-only link does not exist yet');
+      const menu = before.find(n => /Products/.test(n.text || ''));
+      A.ok(!!menu, 'the menu trigger is in the snapshot');
+      await driver.hover(menu);
+      const after = await driver.snapshot(40);
+      A.ok(after.some(n => /Enterprise plan/.test(n.text || '')), 'hover reveals the real target, and auto-wait waited for it');
+    }
+
+    /* 6c. DRAG — a press/release pair at two points is ignored by every HTML5 drop handler; the
+       intermediate dragover events are what make it real. */
+    {
+      await driver.navigate(base + '/dragdrop');
+      const nodes = await driver.snapshot(40);
+      const src = nodes.find(n => /DRAG ME/.test(n.text || ''));
+      const dst = nodes.find(n => /DROP HERE/.test(n.text || ''));
+      A.ok(!!src && !!dst, 'both drag endpoints are in the snapshot');
+      await driver.drag(src, dst);
+      const after = await driver.snapshot(40);
+      A.ok(after.some(n => /DROPPED payload/.test(n.text || '')),
+        'the drop handler fired AND received the dragged payload');
+    }
+
+    /* 6d. UPLOAD — the ref points at a styled LABEL over a hidden input, which is what real sites
+       ship. The driver has to resolve from the click point to the actual <input type=file>. */
+    {
+      const upDir = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-gauntlet-up-'));
+      const upFile = path.join(upDir, 'resume.pdf');
+      fs.writeFileSync(upFile, 'PDF BYTES');
+      try {
+        await driver.navigate(base + '/upload');
+        const nodes = await driver.snapshot(40);
+        const label = nodes.find(n => /CHOOSE FILE/.test(n.text || ''));
+        A.ok(!!label, 'the visible upload control is in the snapshot');
+        await driver.upload(label, [upFile]);
+        const after = await driver.snapshot(40);
+        A.ok(after.some(n => /PICKED resume\.pdf/.test(n.text || '')),
+          'the page received the file through a HIDDEN input reached via its label, and fired change');
+      } finally { fs.rmSync(upDir, { recursive: true, force: true }); }
+    }
+
+    /* 6e. DOWNLOAD INTO THE JAIL — the Chrome profile lives in a temp dir outside WORKSPACES, so
+       downloaded bytes used to be unreachable to the agent even by accident. */
+    {
+      await driver.navigate(base + '/download');
+      const nodes = await driver.snapshot(40);
+      const link = nodes.find(n => /Download report/.test(n.text || ''));
+      A.ok(!!link, 'the download link is in the snapshot');
+      await driver.click(link);
+      let landed = null;
+      for (let i = 0; i < 40 && !landed; i++) {
+        await new Promise(r => setTimeout(r, 150));
+        try {
+          const hit = fs.readdirSync(downloadDir).find(f => /report/.test(f) && !/\.crdownload$/.test(f));
+          if (hit) landed = path.join(downloadDir, hit);
+        } catch (_) {}
+      }
+      A.ok(!!landed, 'the downloaded file lands in the directory the agent can actually read');
+      A.eq(fs.readFileSync(landed, 'utf8'), 'QUARTERLY REPORT BODY', 'and it is the real bytes, not a stub');
     }
 
     // 7. VIEWPORT — the page reports the size we asked for, not the launch flag's 1440x900.
