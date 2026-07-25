@@ -138,6 +138,8 @@ const WorldModel = (() => {
      model never forces a colour). This catalog is the sole source: add a material here, give it
      a recipe in stationbake, and it appears in the DECK MATERIAL palette automatically. */
   const FLOOR_MATERIALS = {
+    // the hab default since 2026-07-25 — see the note above deckSpine in stationbake.js
+    spine: { label: 'SPINE',  pitch: [4, 3], suggest: null },
     plate: { label: 'PLATE',  pitch: [2, 2], suggest: null },
     panel: { label: 'PANEL',  pitch: [4, 1], suggest: null },
     tile:  { label: 'TILE',   pitch: [2, 2], suggest: null },
@@ -149,7 +151,7 @@ const WorldModel = (() => {
     plank: { label: 'PLANK',  pitch: [5, 1], suggest: 'walnut' },
     turf:  { label: 'TURF',   pitch: [1, 1], suggest: 'fern' },
   };
-  const MAT_ORDER = ['plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
+  const MAT_ORDER = ['spine', 'plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
 
   /* the WALL material catalog — the deck's opposite number. Walls carry the same two axes as the
      floor (hue × recipe) and read from the same FLOOR_STYLES hue catalog, because a room should be
@@ -172,16 +174,26 @@ const WorldModel = (() => {
   /* room categories — a capability-zone label + a default floor (hue + material). kind drives
      nothing behavioural yet (capability mapping is a later pass); it tags the zone + seeds the
      look. `mat` is the DEFAULT deck material a room of this kind is built with — a room whose
-     floorMat is null renders at this material, which is what keeps every station built before
-     the material axis existed rendering pixel-identical. */
+     floorMat is null renders at this material.
+
+     THIS MAP IS THE AUTHORITY on a room's default deck. `MAT_BY_KIND` in stationbake.js looks like
+     a second copy but is only a fallback for geometry that arrives without `matOf` — projected
+     geometry always carries it, so editing stationbake alone changes NOTHING you can see. Change
+     both, and keep them agreeing.
+
+     2026-07-25: hab and corridor moved off `plate` onto `spine` (they must move together or a
+     corridor reads as a different floor through the doorway). This DELIBERATELY changes the look of
+     every station already built — floorMat is null on all of them — because the default deck is the
+     one surface every player sees. `plate` stays in the palette, so the old look is still choosable
+     and nothing is destroyed. It also means the Guardian goldens all shift. */
   const ROOM_KINDS = {
-    hab:      { label: 'HAB',      floor: 'hull',     mat: 'plate' },
+    hab:      { label: 'HAB',      floor: 'hull',     mat: 'spine' },
     bridge:   { label: 'BRIDGE',   floor: 'cobalt',   mat: 'panel' },
     lab:      { label: 'LAB',      floor: 'sterile',  mat: 'tile'  },
     factory:  { label: 'FOUNDRY',  floor: 'rust',     mat: 'tread' },
     quarters: { label: 'QUARTERS', floor: 'verdant',  mat: 'soft'  },
     storage:  { label: 'STORAGE',  floor: 'rust',     mat: 'tread' },
-    corridor: { label: 'CORRIDOR', floor: 'corridor', mat: 'plate' },
+    corridor: { label: 'CORRIDOR', floor: 'corridor', mat: 'spine' },
   };
   // a room's effective deck material: explicit override, else the kind default, else plate.
   const matOfRoom = rm => (rm && FLOOR_MATERIALS[rm.floorMat]) ? rm.floorMat

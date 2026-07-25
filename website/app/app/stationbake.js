@@ -211,9 +211,17 @@ const StationBake = (() => {
        hex   — honeycomb cells on an offset lattice: advanced-tech, nothing else here is non-rectilinear.
        plank — staggered wood boards: per-board tone, grain hairlines, occasional knot.
        turf  — hydroponic growth: pure blade scatter, NO lattice at all. The absence of a grid
-               is the whole point; it is what separates a grown surface from a built one. */
-  const MAT_BY_KIND = { hab: 'plate', bridge: 'panel', lab: 'tile', factory: 'tread', storage: 'tread', quarters: 'soft' };
-  const MAT_PITCH = { plate: [2, 2], panel: [4, 1], tile: [2, 2], tread: [2, 2], soft: [3, 2], grate: [1, 1], hex: [1, 1], plank: [5, 1], turf: [1, 1] };
+               is the whole point; it is what separates a grown surface from a built one.
+
+     V5 replaces `plate` as the HAB default with `spine` (see the note above deckSpine). `plate` is
+     NOT deleted — it stays in the palette as the classic, so a station that preferred the old deck
+     can still choose it, and no existing station loses a look it was built with. Every room carries
+     `floorMat: null` (inherit), so the swap reaches stations built before it existed — which is the
+     point: the default deck is the one surface every player sees and it had aged. */
+  // FALLBACK ONLY — projected geometry always carries matOf, so this map is not what you see in
+  // game. WorldModel.ROOM_KINDS[kind].mat is the authority; keep the two in step.
+  const MAT_BY_KIND = { hab: 'spine', corridor: 'spine', bridge: 'panel', lab: 'tile', factory: 'tread', storage: 'tread', quarters: 'soft' };
+  const MAT_PITCH = { plate: [2, 2], panel: [4, 1], tile: [2, 2], tread: [2, 2], soft: [3, 2], grate: [1, 1], hex: [1, 1], plank: [5, 1], turf: [1, 1], spine: [4, 3] };
   const MAT_NO_WEAR = { tile: 1, grate: 1, turf: 1 };   // gloss, open mesh and growth don't take boot scuffs
   // the room's deck material — the model's per-room choice when it has one, else the kind default
   // (a station built before the material axis existed has none, and bakes exactly as it always did).
@@ -424,7 +432,53 @@ const StationBake = (() => {
     if ((clump % 7) === 0) { const r = hp(X, Y, 99); px(X + (r % T), Y + ((r >>> 6) % T), 1, 1, vivid(base, (cl + 0.70) * fd)); }   // seed head
   }
 
+  /* ---------- SPINE · the deck that replaces `plate` as the hab default (2026-07-25) ----------
+     `plate` was a uniform 24px grid of identical slabs with random specks dropped on it. Two things
+     dated it: EVERY MODULE WAS THE SAME SIZE, which reads as bathroom tile rather than engineering,
+     and its detail was scattered at random instead of composed — a hatch means nothing when it
+     could be anywhere. SPINE fixes both: big STAGGERED 4×3 plates (so no module lines up with its
+     neighbour above), each read as a discrete bolted panel — recess inside the joint, four corner
+     fixings, brushed grain — under a heavier TRANSVERSE structural seam every third band. That
+     seam is the hierarchy: one strong line, then joints, then surface grain.
+
+     NO LONGITUDINAL SERVICE CHANNEL. The first cut ran a recessed trench (dark inner wall, lit lip,
+     grating ticks) every 6 tiles, and it was the design's centrepiece — it gave the deck direction.
+     Andrew cut it on sight: at station scale a room shows only two or three of them, so they don't
+     read as a rhythm, they read as two black bars ruled across the floor. Do not reintroduce a
+     full-height vertical line here without looking at a whole room first — the trench looked
+     correct in every close-up and wrong in every wide shot, which is the trap this deck sets. */
+  function deckSpine(b, base, x, y, X, Y, z, n, fd) {
+    const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
+    const sh = d => U.shade(base, d * fd);
+    const sk = Math.max(0, DEPTH.deckSeam);
+    const band = Math.floor(y / 3), off = (band % 2) * 2;
+    const pcx = Math.floor((x - off) / 4);
+    const lx = ((x - off) % 4 + 4) % 4, ly = ((y % 3) + 3) % 3;
+    const pn = h2(pcx, band, z + ':sp');
+    const body = ((pn % 5) - 2) * 0.013;
+    px(X, Y, T, T, sh(body));
+    for (let i = 1; i < T; i += 3) px(X, Y + i, T, 1, sh(body + ((i & 1) ? 0.026 : -0.020)));   // brushed grain
+    // PLATE AS A PANEL — a 1px recess just inside the joint on the plate's own outer edges, so a
+    // plate reads as a discrete bolted panel instead of a cell in a grid.
+    if (lx === 0) px(X + 2, Y, 1, T, sh(body - 0.09));
+    if (lx === 3) px(X + T - 3, Y, 1, T, sh(body - 0.09));
+    if (ly === 0) px(X, Y + 2, T, 1, sh(body - 0.09));
+    if (ly === 2) px(X, Y + T - 3, T, 1, sh(body - 0.09));
+    if (lx === 0) { px(X, Y, 1, T, sh(-0.26 * sk)); px(X + 1, Y, 1, T, sh(body + 0.07 * sk)); } // plate joint
+    if (ly === 0) { px(X, Y, T, 1, sh(-0.26 * sk)); px(X, Y + 1, T, 1, sh(body + 0.07 * sk)); }
+    // bolts at EVERY plate corner, not one — four fixings is what makes it read as fastened down
+    const bolt = (bx, by) => { px(bx, by, 2, 2, sh(0.15)); px(bx, by, 1, 1, sh(0.27)); px(bx + 1, by + 1, 1, 1, sh(-0.22)); };
+    if (ly === 0 && lx === 0) bolt(X + 3, Y + 3);
+    if (ly === 0 && lx === 3) bolt(X + T - 5, Y + 3);
+    if (ly === 2 && lx === 0) bolt(X + 3, Y + T - 5);
+    if (ly === 2 && lx === 3) bolt(X + T - 5, Y + T - 5);
+    // a heavier TRANSVERSE structural seam every third band — a cross-rhythm, so the deck has two
+    // scales of line rather than one.
+    if (((y % 9) + 9) % 9 === 0) { px(X, Y, T, 1, sh(-0.34)); px(X, Y + 1, T, 1, sh(0.09)); }
+  }
+
   function paintDeck(b, mat, base, x, y, X, Y, z, n, fd) {
+    if (mat === 'spine') return deckSpine(b, base, x, y, X, Y, z, n, fd);
     if (mat === 'grate') return deckGrate(b, base, x, y, X, Y, z, n, fd);
     if (mat === 'hex') return deckHex(b, base, x, y, X, Y, z, n, fd);
     if (mat === 'plank') return deckPlank(b, base, x, y, X, Y, z, n, fd);
