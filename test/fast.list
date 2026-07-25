@@ -333,6 +333,7 @@ test/steer-idle-honesty.test.js
 test/model-ack-honesty.test.js
 test/toolprops.test.js
 test/worldmodel.test.js
+test/path-smoothing.test.js
 test/run-truth.test.js
 test/station-authority.test.js
 test/zones.test.js

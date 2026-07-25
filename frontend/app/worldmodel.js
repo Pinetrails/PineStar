@@ -849,6 +849,55 @@ const WorldModel = (() => {
         const k = lx + ',' + ly;
         return !blockedTiles.has(k) && !(extra && extra.has(k));
       };
+      /* ---------- path smoothing (string-pulling) ----------
+         path() is a 4-NEIGHBOUR BFS, so its raw output is a staircase of orthogonal tile hops: a body
+         following it pivots 90° at nearly every tile and never once moves diagonally. We pull the string —
+         from the current anchor, keep the FARTHEST later waypoint with clear line of sight and drop
+         everything between — which collapses the staircase into long straight runs and true diagonals.
+         losClear is deliberately conservative. It walks the segment one tile at a time; every touched tile
+         must be walkable; every orthogonal hop must satisfy canStep (so a shortcut can NEVER skip a zone
+         seam that a door is meant to gate); and an exact diagonal step demands BOTH corner tiles plus the
+         canStep legality of both ways around — so a shortcut can't squeeze a body through the diagonal gap
+         between two blockers. canStep is orthogonal-only, so it is never called on a diagonal pair. */
+      function losClear(x0, y0, x1, y1, extra) {
+        let x = x0, y = y0;
+        let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+        const xi = x1 > x0 ? 1 : -1, yi = y1 > y0 ? 1 : -1;
+        let err = dx - dy;
+        dx *= 2; dy *= 2;
+        let guard = dx + dy + 4;   // the walk is bounded; never trust the loop to terminate on its own
+        while ((x !== x1 || y !== y1) && guard-- > 0) {
+          if (!walkable(x, y, extra)) return false;
+          if (err > 0) {
+            if (!walkable(x + xi, y, extra) || !canStep(x, y, x + xi, y)) return false;
+            x += xi; err -= dy;
+          } else if (err < 0) {
+            if (!walkable(x, y + yi, extra) || !canStep(x, y, x, y + yi)) return false;
+            y += yi; err += dx;
+          } else {   // exact diagonal — both corners open, and legal whichever way round we go
+            if (!walkable(x + xi, y, extra) || !walkable(x, y + yi, extra)) return false;
+            if (!canStep(x, y, x + xi, y) || !canStep(x, y, x, y + yi)) return false;
+            if (!canStep(x + xi, y, x + xi, y + yi) || !canStep(x, y + yi, x + xi, y + yi)) return false;
+            x += xi; y += yi; err -= dy; err += dx;
+          }
+        }
+        return guard > 0 && walkable(x1, y1, extra);
+      }
+      function smoothPath(pts, sx, sy, extra) {
+        if (!pts || pts.length < 3) return pts;
+        const out = [];
+        let ax = sx, ay = sy, i = 0;
+        while (i < pts.length) {
+          let best = i;
+          for (let j = pts.length - 1; j > i; j--) {
+            if (losClear(ax, ay, pts[j].x, pts[j].y, extra)) { best = j; break; }
+          }
+          out.push(pts[best]);
+          ax = pts[best].x; ay = pts[best].y;
+          i = best + 1;
+        }
+        return out;
+      }
       function path(sx, sy, tx, ty, extra) {
         if (!walkable(tx, ty, extra)) return null;
         if (sx === tx && sy === ty) return [];
@@ -871,7 +920,8 @@ const WorldModel = (() => {
         if (prev[target] === -1) return null;
         const out = []; let cur = target;
         while (cur !== start) { out.push({ x: cur % COLS, y: (cur / COLS) | 0 }); cur = prev[cur]; }
-        return out.reverse();
+        out.reverse();
+        return smoothPath(out, sx, sy, extra);   // collapse the BFS staircase into straight runs + diagonals
       }
 
       return {
