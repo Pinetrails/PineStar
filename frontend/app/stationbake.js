@@ -1189,8 +1189,12 @@ const StationBake = (() => {
     bakeEdgeAO(b);
     bakeCorridorDressing(b);
     bakeWalls(b);
-    bakeRoomLighting(b);
 
+    /* The chamfer pass runs BEFORE bakeRoomLighting (2026-07-25). It used to run after, which made
+       a rounded corner the only surface in the room the ceiling lights never touched — the corner
+       read as a dark blob beside a lit wall, and no amount of geometric alignment fixes that,
+       because the mismatch is tonal. Lighting the corner with everything else is what actually
+       makes it connect. */
     // chamfer floor-cut + curved interior wall pass
     for (const [ccx, ccy, kind] of G.chamfers) {
       const X = ccx * T, Y = ccy * T, A = CORNER[kind], ax = X + A.cx * T, ay = Y + A.cy * T;
@@ -1212,43 +1216,75 @@ const StationBake = (() => {
       const sgnX = A.cx ? -1 : 1, sgnY = A.cy ? -1 : 1;
       const fill = (x, y, w, h, c) => { if (w > 0 && h > 0) { b.fillStyle = c; b.fillRect(x, y, w, h); } };
       const outerBand = U.shade(cPal.base, -0.62);   // the same contact-seam tone the straight walls use
+      const vFace = sgnY < 0 ? NFACE : FACEW;   // top corners meet the deep north face; bottom ones the thin south wall
+      const aIn = Math.max(1, Rc - FACEW), bIn = Math.max(1, Rc - vFace);
       eachCornerRow(kind, ax, ay, Rc, (py, edge) => {
         const ady = Math.abs(py + 0.5 - ay);
         if (edge == null) { fill(X, py, T, 1, hullC); return; }       // row lies wholly outside the curve
-        // radial taper: 0 at the arc's side end (ady≈0) → 1 at its north/south end (ady≈Rc)
-        const tt = Math.min(1, ady / Rc);
-        const faceW = FACEW + 1 + (NFACE - FACEW - 1) * (sgnY < 0 ? tt : 0);
-        const rIn = Math.max(1, Rc - faceW);
-        /* On rows the INNER circle doesn't reach, there is no inner boundary — the face runs to the
-           tile edge and there is NO contact seam to draw. Forcing dxIn to 0 put `inner` at ax, i.e.
-           exactly the tile boundary, and painted the seam tone there on every such row: a dark 1px
-           stripe down the column where the chamfer hands off to the straight wall, drawn OVER that
-           wall's face. That was the "few pixels off" at every corner — the straight wall's first
-           column measured a flat lum 19, which is precisely U.shade(base,-0.62), the seam tone.
-           Everything is clamped to the chamfer's own tile now so no layer reaches into its neighbour. */
-        const hasInner = ady < rIn;
+        /* THE INNER BOUNDARY IS AN ELLIPSE, NOT A CIRCLE — this is the whole reason corners never
+           quite met their walls. The deck's edge at a rounded corner has to land on TWO straight
+           walls: x = Xroom + FACEW on the side wall (4px) and y = Yroom + NFACE on the north wall
+           (9px). At T=12 those sit 8 and 3 from the corner's centre, so NO single radius can touch
+           both — a concentric circle, however finely rasterized, is guaranteed to miss one of them,
+           and it was missing the north wall by 2px (Andrew drew the line: 2026-07-25).
+           Semi-axes Rc-FACEW and Rc-<the n/s wall's own depth> make it meet both dead on, and the
+           face thickness then tapers from the side wall's to the north wall's entirely on its own —
+           no hand-tuned taper term, which is what the old `faceW` guess was. */
+        /* Rows the ellipse doesn't reach carry no inner boundary at all: the face runs to the tile
+           edge and there is NO contact seam. Forcing the inner x to the centre instead put it exactly
+           on the tile boundary and painted the seam tone there every such row — a dark 1px stripe
+           down the handoff column, drawn OVER the straight wall's face. Everything is clamped to the
+           chamfer's own tile now, so no layer can reach into its neighbour. */
+        const ty = ady / bIn;
+        const hasInner = ty < 1;
+        const dxIn = hasInner ? aIn * Math.sqrt(1 - ty * ty) : 0;
+        const inner = hasInner ? (sgnX < 0 ? Math.round(ax - dxIn) : Math.round(ax + dxIn))
+                               : (sgnX < 0 ? X + T : X);
         const clamp = (x0, x1, c) => fill(Math.max(X, x0), py, Math.min(X + T, x1) - Math.max(X, x0), 1, c);
-        // x where a given radius crosses this row; past the arc's reach it returns the tile's inner
-        // extreme, so a band simply runs to the tile edge instead of collapsing onto the boundary.
-        const xR = (r) => {
-          if (ady >= r) return sgnX < 0 ? X + T : X;
-          const d0 = Math.sqrt(r * r - ady * ady);
-          return sgnX < 0 ? Math.round(ax - d0) : Math.round(ax + d0);
-        };
-        const band = (rA, rB, col) => { const p = xR(rA), q = xR(rB); clamp(Math.min(p, q), Math.max(p, q), col); };
-        /* The face is NOT a flat fill. It carries the same structure the straight wall has
-           vertically — a lit course at its outer edge and a shadowed foot where it meets the deck —
-           only measured RADIALLY, so the corner reads as the same wall instead of a blank patch
-           beside a detailed one. */
-        const rCourse = Math.max(rIn, Rc - 4), rFoot = Math.min(rCourse, rIn + 3);
-        const inner = xR(rIn);
-        if (sgnX < 0) clamp(X, edge, hullC); else clamp(edge + 1, X + T, hullC);   // 1. cut the deck
+        if (sgnX < 0) clamp(X, edge, hullC); else clamp(edge + 1, X + T, hullC);      // 1. cut the deck
         if (sgnX < 0) clamp(edge - 3, edge, outerBand); else clamp(edge + 1, edge + 4, outerBand);
-        band(rCourse, Rc, U.shade(cPal.face, 0.10));                  // lit top course at the outer edge
-        band(rFoot, rCourse, cPal.face);                              // body
-        band(rIn, rFoot, U.shade(cPal.face, -0.24));                  // shadowed foot against the deck
-        if (hasInner) clamp(inner, inner + 1, outerBand);              // contact seam onto the deck
+        /* 2. the face: BODY, then a shadowed foot where it meets the deck. Deliberately NO lit top
+           course in here — the straight wall's lit course sits 14px higher, up in the crown, so its
+           in-tile face is body+foot too. Painting a course at the tile's outer edge instead put a
+           lum-65 band against a lum-32 wall (the ellipse's b semi-axis is only 3px, so most rows
+           never reach it and fell into the "outer sliver" case, which lit the WHOLE run). The lit
+           top belongs to the crown raster on the tall side and to the crest band on the side wall. */
+        const lo = Math.min(edge, inner), hi = Math.max(edge, inner);
+        clamp(lo, hi + 1, cPal.face);
+        if (hasInner) {
+          // the foot mirrors wallFoot's depth AND grading exactly (4px / 2px / 1px, -0.24 / -0.40 /
+          // -0.58). A 2px flat foot against the straight wall's graded 4px one left the corner ~9
+          // luminance brighter than the wall it joins, which reads as a mismatch even once the
+          // geometry lines up.
+          for (const [d, k] of [[4, -0.24], [2, -0.40], [1, -0.58]]) {
+            if (sgnX < 0) clamp(Math.max(lo, inner - d), inner, U.shade(cPal.face, k));
+            else clamp(inner + 1, Math.min(hi + 1, inner + 1 + d), U.shade(cPal.face, k));
+          }
+          clamp(inner, inner + 1, outerBand);                                        // contact seam onto the deck
+        }
       });
+      /* The inner boundary is nearly HORIZONTAL where it meets the north/south wall and nearly
+         VERTICAL where it meets the side wall. A per-ROW walk lays exactly one seam pixel per row,
+         which is right on the steep stretch but leaves the shallow one sparse — so against the
+         straight wall the deck appeared to start a row early and the contact line broke up. Walk the
+         COLUMNS as well and lay the seam at the ellipse's y: the contact line is then continuous the
+         whole way round and terminates on both straight walls' own seams. Same row/column duality
+         the crown needed. */
+      for (let ix = X; ix < X + T; ix++) {
+        const adx = Math.abs(ix + 0.5 - ax);
+        if (adx >= aIn) continue;
+        const dy = bIn * Math.sqrt(1 - (adx / aIn) * (adx / aIn));
+        const py = sgnY < 0 ? Math.round(ay - dy) : Math.round(ay + dy);
+        if (py < Y || py >= Y + T) continue;
+        // same graded foot as the row pass, so the shallow stretch is shaded like the steep one
+        for (const [d, k] of [[4, -0.24], [2, -0.40], [1, -0.58]]) {
+          for (let j = 1; j <= d; j++) {
+            const fy = sgnY < 0 ? py - j : py + j;
+            if (fy >= Y && fy < Y + T) fill(ix, fy, 1, 1, U.shade(cPal.face, k));
+          }
+        }
+        fill(ix, py, 1, 1, outerBand);
+      }
       // HULL RIM — the outer silhouette's own curve (HR), concentric with the interior one and now
       // rasterized off the SAME row walk, so the two curves stay a fixed pixel distance apart all
       // the way round instead of one being a crisp staircase beside a soft anti-aliased stroke.
@@ -1288,6 +1324,8 @@ const StationBake = (() => {
         }
       }
     }
+
+    bakeRoomLighting(b);   // after the chamfers, so a rounded corner is lit like every other surface
 
     // faint room name plates (the v7 floor-code stencil, generalized)
     b.font = '7px monospace'; b.fillStyle = 'rgba(255,255,255,0.07)'; b.textAlign = 'left';
