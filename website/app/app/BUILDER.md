@@ -50,7 +50,8 @@ frame (the model itself uses signed, unbounded world-tile coords so the station 
   windows:[], doorDefs:[[x1,y1,x2,y2]], zoneGrid, idx(x,y), canStep(x1,y1,x2,y2),
   walkable(lx,ly,extra?), path(sx,sy,tx,ty,extra?), blockedTiles,  // BFS nav for the live agent
   baseColorOf(id,lx,ly),             // per-tile floor base colour (room style or paint override)
-  nameOf(id), kindOf(id), FLOOR_STYLES }
+  nameOf(id), kindOf(id), matOf(id), // matOf = effective deck material (override, else kind default)
+  FLOOR_STYLES, FLOOR_MATERIALS }
 ```
 
 Doors are **auto-derived**: any two orthogonally-adjacent different-zone tiles become an open
@@ -59,13 +60,29 @@ live agent: a tile is walkable if it's in a zone, not a rounded-corner (chamfer)
 caller's `extra` blocked set (furniture/desks live in the renderer, passed per query); `path` is a BFS
 that crosses zone seams only where `canStep` allows (same zone or a door).
 
-Validation error codes: `OVERLAP`, `TOO_SMALL`, `TOO_SHORT`, `TOO_FAR`, `BAD_STYLE`, `SPAWN_ROOM`, `NOT_FOUND`, `NO_RECT`, `NOTHING` (undo/redo).
+Validation error codes: `OVERLAP`, `TOO_SMALL`, `TOO_SHORT`, `TOO_FAR`, `BAD_STYLE`, `BAD_MAT`, `SPAWN_ROOM`, `NOT_FOUND`, `NO_RECT`, `NOTHING` (undo/redo).
 
 ## Extending
 
-- **New floor style** → add to `WorldModel.FLOOR_STYLES` (`{ base, label }`). It appears in the PAINT palette automatically.
-- **New room kind** → add to `WorldModel.ROOM_KINDS` + `KIND_ORDER`. It appears in the ROOM palette automatically.
+- **New floor style (HUE)** → add to `WorldModel.FLOOR_STYLES` (`{ base, label }`). It appears in the PAINT palette's COLOUR row automatically.
+- **New floor material (RECIPE)** → add to `WorldModel.FLOOR_MATERIALS` (`{ label, pitch, suggest }`) + `MAT_ORDER`, then give it a painter in `stationbake.js` (`deck*` + a `paintDeck` branch). It appears in the PAINT palette's MATERIAL row automatically, previewed through `StationBake.sampleMaterial` — i.e. by the real bake.
+- **New room kind** → add to `WorldModel.ROOM_KINDS` + `KIND_ORDER` (give it a `floor` hue and a `mat` material). It appears in the ROOM palette automatically.
 - **New tool** → add to `TOOLS` in `build.js` and a `commit*` branch.
+
+### The two floor axes
+
+The deck is **hue × material**, deliberately orthogonal (`stationbake.js` §floor passes):
+
+- `room.floorStyle` (+ per-tile `floorPaint` overrides) → the base **colour**.
+- `room.floorMat` → the **recipe** drawn in that colour. `null` means "inherit `ROOM_KINDS[kind].mat`",
+  which is what keeps every station built before the material axis existed rendering pixel-identical —
+  `setMaterial`/`setDeck` normalize a kind-default choice back to `null` so it never serializes.
+
+Every material derives its marks from the tile's own base via `U.shade`, so the two compose freely.
+`setDeck(id, {style, mat})` lays both in ONE undo slot (what a REFIT room-click commits); `setFloor` /
+`setMaterial` move a single axis. Material recipes must key every mark on **bake-pixel coords**
+(`X`,`Y`) or world tile coords — never on position within the surface — or chunk↔monolithic pixel
+parity breaks; `test/stationbake.materials.test.js` guards exactly that.
 
 ## Deliberately deferred (next passes — each is additive on this foundation)
 
