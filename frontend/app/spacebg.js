@@ -573,7 +573,31 @@ const SpaceBG = (() => {
   const OCEAN_BG = {
     label: 'OCEAN',
     blurb: 'Open water, a long way down. Sun on the swell.',
-    base: '#0a2036',
+    base: '#05101c',
+
+    /* THE LIGHT BLOCK — every luminance in this backdrop, in one place.
+       The station must stay the brightest thing on screen; it is the subject and it is lit from
+       within. Measured live at 1440x900, backdrop luma / station luma: THE VOID sits at 0.53,
+       NIGHT CITY 0.62, DEEP FIELD 0.45. The first OCEAN came in at 1.25 — BRIGHTER than the
+       station — which inverted the composition and made the station read as a dark cutout
+       pasted onto a bright picture (Andrew, 2026-07-24: "the lighting is way off compared to
+       the station"). Everything below was scaled down together to land near 0.55.
+
+       Scale these AS A SET. Dimming the water while leaving the highlights hot would push the
+       pop-out ratio back up and turn the sea into a starfield again — which is the exact bug
+       this backdrop was already rebuilt once to fix. */
+    LIGHT: {
+      DEEP: [3, 13, 23],            // trough
+      CREST: [22, 45, 53],          // crest
+      FOAM: [58, 76, 83],           // broken water on the highest crests
+      SHEEN: [17, 20, 19],          // additive specular boost at the centre of the sun's answer
+      FOAM_RGB: '108,130,140', FOAM_A: [0.05, 0.17],
+      GLITTER_RGB: '150,182,196', GLITTER_A: 0.38,
+      HAZE: [18, 34, 45], HAZE_A: 0.20,
+      CLOUD: [100, 113, 132], CLOUD_A: 0.18,
+      WISP: [108, 120, 136], WISP_A: 0.08,
+      SHADOW: [2, 7, 14], SHADOW_A: 0.14,
+    },
 
     build(w, h, rnd) {
       /* THE SEA IS BUILT AT HALF RESOLUTION and blitted back up by tile2 (which always draws a
@@ -610,8 +634,8 @@ const SpaceBG = (() => {
       const gx = rnd() * SW, gy = rnd() * SH, gR = Math.min(SW, SH) * (0.34 + 0.12 * rnd());
       const dt = (a, b, m) => { const d = Math.abs(a - b) % m; return Math.min(d, m - d); };
 
-      // palette: trough -> crest. Bright enough that the CRT pass still leaves it reading as water.
-      const DEEP = [12, 46, 74], CREST = [86, 168, 190], FOAM = [206, 234, 240];
+      const LT = OCEAN_BG.LIGHT;
+      const DEEP = LT.DEEP, CREST = LT.CREST, FOAM = LT.FOAM, SHEEN = LT.SHEEN;   // NB: not SH — that is the half-res height
       const LEVELS = 7;                                  // quantize into flat bands = pixel art, not a photo
 
       const img = sc.createImageData(SW, SH), D = img.data;
@@ -630,9 +654,9 @@ const SpaceBG = (() => {
           const sheen = Math.max(0, 1 - Math.hypot(dt(x, gx, SW), dt(y, gy, SH)) / gR);
           const s2 = sheen * sheen;
 
-          let r = DEEP[0] + (CREST[0] - DEEP[0]) * t + 70 * s2;
-          let g = DEEP[1] + (CREST[1] - DEEP[1]) * t + 78 * s2;
-          let b = DEEP[2] + (CREST[2] - DEEP[2]) * t + 74 * s2;
+          let r = DEEP[0] + (CREST[0] - DEEP[0]) * t + SHEEN[0] * s2;
+          let g = DEEP[1] + (CREST[1] - DEEP[1]) * t + SHEEN[1] * s2;
+          let b = DEEP[2] + (CREST[2] - DEEP[2]) * t + SHEEN[2] * s2;
           if (t > 0.88) {                                // foam breaks on the highest crests only
             const f = (t - 0.88) / 0.12;
             r += (FOAM[0] - r) * f; g += (FOAM[1] - g) * f; b += (FOAM[2] - b) * f;
@@ -653,7 +677,7 @@ const SpaceBG = (() => {
         if (v < 0.30) continue;                          // crests only
         const lit = Math.min(1, (v - 0.30) / 0.34);
         hdash(sc, SW, x, y, 1 + Math.round(rnd() * 3 + lit * 2),
-          'rgba(216,238,244,' + (0.10 + 0.34 * lit * rnd()).toFixed(3) + ')');
+          'rgba(' + LT.FOAM_RGB + ',' + (LT.FOAM_A[0] + LT.FOAM_A[1] * lit * rnd()).toFixed(3) + ')');
       }
 
       /* ---- THE GLITTER — live, and the thing most likely to regress into stars. It stays honest
@@ -672,13 +696,13 @@ const SpaceBG = (() => {
       }
 
       /* ---- cloud + shadow decks (same shapes, different depth) ---- */
-      const cloudCv = buildCloudDeck(w, h, mulberry32(0x0CEA11), { spread: 118000, min: 0.05, vary: 0.10, alpha: 0.26, tint: [232, 242, 254] });
-      const shadowCv = buildCloudDeck(w, h, mulberry32(0x0CEA11), { spread: 118000, min: 0.05, vary: 0.10, alpha: 0.20, tint: [3, 16, 30] });
+      const cloudCv = buildCloudDeck(w, h, mulberry32(0x0CEA11), { spread: 118000, min: 0.05, vary: 0.10, alpha: LT.CLOUD_A, tint: LT.CLOUD });
+      const shadowCv = buildCloudDeck(w, h, mulberry32(0x0CEA11), { spread: 118000, min: 0.05, vary: 0.10, alpha: LT.SHADOW_A, tint: LT.SHADOW });
       // a second, thinner deck much closer in — two cloud layers moving at different rates is the
       // cheapest honest way to say "there is air between you and the water".
-      const wispCv = buildCloudDeck(w, h, mulberry32(0x0CEA22), { spread: 260000, min: 0.09, vary: 0.16, alpha: 0.13, tint: [244, 250, 255] });
+      const wispCv = buildCloudDeck(w, h, mulberry32(0x0CEA22), { spread: 260000, min: 0.09, vary: 0.16, alpha: LT.WISP_A, tint: LT.WISP });
 
-      hazeOver(sc, SW, SH, [96, 150, 176], 0.12);        // distance wash on the deck only
+      hazeOver(sc, SW, SH, LT.HAZE, LT.HAZE_A);          // distance wash on the deck only
 
       return { seaCv, cloudCv, shadowCv, wispCv, sparks };
     },
@@ -702,7 +726,7 @@ const SpaceBG = (() => {
         const a = q * q * q * q;
         if (a < 0.06) continue;
         const x = ((s.x * w + sx) % w + w) % w, y = ((s.y * h + sy) % h + h) % h;
-        ctx.fillStyle = 'rgba(244,252,255,' + (a * 0.9).toFixed(3) + ')';
+        ctx.fillStyle = 'rgba(' + OCEAN_BG.LIGHT.GLITTER_RGB + ',' + (a * OCEAN_BG.LIGHT.GLITTER_A).toFixed(3) + ')';
         ctx.fillRect(x, y, s.len, 1);                    // a dash along the surface, never a dot
       }
 
