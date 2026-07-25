@@ -121,6 +121,14 @@
        never enters the prompt and no tool can reach it. */
     const snapshot = isFn(deps.snapshot) ? deps.snapshot : null;
     const check = isFn(deps.check) ? deps.check : null;
+    /* projectLine(loop) -> string. THE FOLDER THE LOOP WORKS IN, told to the agent.
+
+       A dogfood run against a real repo failed three passes in a row with "the workspace is empty — no
+       src/cart.js": the loop knew its workdir, the path grant allowed it, and the agent was never told the
+       path existed. Relative paths resolve inside the agent's own jail, so a project-shaped loop that does
+       not inject this is asking the agent to edit files it cannot find. The interactive path has always sent
+       this (handleRun -> projectScopeLine); the loop driver simply never did. */
+    const projectLine = isFn(deps.projectLine) ? deps.projectLine : null;
 
     // loopId -> { runId, abort, startedAt }. In-memory only; the DURABLE half is the fire-claim on the record,
     // which is what survives a restart. Both are consulted by the gate.
@@ -244,7 +252,8 @@
         key: key,
         model: fresh.model || ident.model || deps.defaultModel,
         provider: provider,
-        system: ident.system || personaOf(),
+        // the persona, plus the project-folder anchor when this loop works in a real folder
+        system: (ident.system || personaOf()) + (projectLine ? String(projectLine(fresh) || '') : ''),
         messages: buildMessages(fresh),
         agentId: fresh.agentId,
         isTask: true,

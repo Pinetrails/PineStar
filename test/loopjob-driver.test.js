@@ -48,6 +48,7 @@ function world(opts) {
     defaultModel: 'test-model',
     persona: 'STATION PERSONA',
     harvest: opts.harvest,
+    projectLine: opts.projectLine,
     ledger: (e) => ledger.push(e),
     maxParallel: opts.maxParallel,
     maxRunMs: opts.maxRunMs
@@ -269,6 +270,30 @@ function world(opts) {
     A.eq(w.loop().iterations[0].commit, 'deadbee', 'the harvest commit IS recorded when a harvest proves one');
     A.eq(w.loop().state, 'idle', 'and nothing queues');
     A.eq(w.tick(T0 + MIN).fired, 1, 'so an auto loop keeps going without a review');
+  }
+
+  // ---- 12. THE PROJECT ANCHOR: a project-shaped loop must TELL the agent where the project is -------------
+  // REGRESSION from a real dogfood run: three passes burned $0.33 replying "the workspace is empty — no
+  // src/cart.js". The loop knew its workdir and the path grant allowed it; the agent was simply never told the
+  // path existed, and relative paths resolve inside its own jail.
+  {
+    const w = world({ projectLine: (l) => l.workdir ? '\n\nPROJECT FOLDER: ' + l.workdir : '' });
+    w.seed({ workdir: 'C:/proj/cart', checkCmd: 'node test/run.js' });
+    w.tick(T0);
+    const sys = w.calls[0].system;
+    A.ok(/PROJECT FOLDER: C:\/proj\/cart/.test(sys), 'the project folder is injected into the system prompt');
+    A.ok(/STATION PERSONA/.test(sys), 'and it is APPENDED to the persona, never replacing it');
+
+    // a loop with no folder must inject nothing — never assert access we cannot prove
+    const w2 = world({ projectLine: (l) => l.workdir ? '\n\nPROJECT FOLDER: ' + l.workdir : '' });
+    w2.seed({});
+    w2.tick(T0);
+    A.eq(w2.calls[0].system, 'STATION PERSONA', 'a folderless loop gets the bare persona, no phantom anchor');
+
+    // and with no projectLine dep wired at all the driver still runs (older hosts)
+    const w3 = world(); w3.seed({ workdir: 'C:/proj' });
+    w3.tick(T0);
+    A.eq(w3.calls[0].system, 'STATION PERSONA', 'the dep is optional');
   }
 
   A.report('loopjob-driver (LOOP tick driver)');

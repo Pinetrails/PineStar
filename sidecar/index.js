@@ -4105,8 +4105,11 @@ async function runLoopCheck(loop, before) {
   // RE-CHECK THE BLESSING EVERY ITERATION. A root blessed yesterday may have been revoked since, and a loop
   // grinding unattended is exactly the case where a stale grant would go unnoticed.
   if (!isBlessedRoot(loop.workdir)) {
-    return Object.assign(loopcheck.verdict({ result: { exitCode: 1, out: '' } }), {
-      mustReview: true, note: 'the project folder is no longer a blessed root — the check was NOT run'
+    // Say it in the SUMMARY, not only the note — the summary is what the panel and the ledger render, and a
+    // refusal that reads as "check failed (exit 1)" sends everyone hunting for a code defect that isn't there.
+    const why = 'the check did NOT run — "' + loop.workdir + '" is not an approved project folder';
+    return Object.assign(loopcheck.verdict({ result: { exitCode: 1, out: why } }), {
+      mustReview: true, summary: why, note: why + ' (approve it from a watched session, then resume this loop)'
     });
   }
   const res = await shellRunCommand({
@@ -4181,6 +4184,9 @@ const loopDriver = makeLoopDriver({
   maxParallel: LOOP_MAX_PARALLEL,
   maxRunMs: LOOP_MAX_RUN_MS,
   // the pre-iteration changed-file snapshot, so the check attributes files to THIS iteration only.
+  // Tell the agent WHERE the project is. Reuses the interactive path's own helper AND its live blessing
+  // check, so a revoked grant injects nothing rather than asserting folder access we cannot prove.
+  projectLine: (loop) => (loop && loop.workdir && isBlessedRoot(loop.workdir)) ? projectScopeLine(loop.workdir, true) : '',
   snapshot: (loop) => (loop && loop.workdir && loop.checkCmd) ? loopChangedFiles(loop.workdir) : Promise.resolve(null),
   check: (loop, ctx) => runLoopCheck(loop, ctx && ctx.before),
   ledger: (entry) => { try { autonomyLedger.record(entry); } catch (_) {} },
@@ -4270,7 +4276,12 @@ function handleLoopsCreate(req, res) {
     let provider; try { provider = parseCronProviderOr400(body.provider); } catch (e) { return json(e.code || 400, { error: e.message }); }
     // A workdir must EXIST at create time. Accepting a path that is not there would let the loop claim a
     // project it cannot touch, and the first iteration would fail for a reason the Commander never saw.
-    const workdir = body.workdir != null ? String(body.workdir) : null;
+    /* CANONICALIZE THE PATH. isBlessedRoot does an exact (case-insensitive on win32) string match against the
+       stored grant, and blessing stores a resolved OS-native path. A workdir posted with forward slashes on
+       Windows therefore matched NOTHING — and the failure was silent and total: the agent was never told where
+       the project was, and the check refused to run, surfacing only as a generic "check failed (exit 1)".
+       Caught by a real dogfood run; a user typing a path by hand would hit it every time. */
+    const workdir = body.workdir != null ? path.resolve(String(body.workdir)) : null;
     if (workdir) { try { if (!fs.statSync(workdir).isDirectory()) return json(400, { error: 'not a folder: ' + workdir }); } catch (e) { return json(400, { error: 'that folder does not exist: ' + workdir }); } }
     // A check needs somewhere to run. Accepting a checkCmd with no workdir would create a loop whose stated
     // exit condition could never be evaluated — a promise the harness cannot keep.
@@ -4307,6 +4318,7 @@ function handleLoopsUpdate(req, res) {
     if (Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
       try { patch.agentId = parseCronAgentIdOr400(patch.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
     }
+    if (Object.prototype.hasOwnProperty.call(patch, 'workdir') && patch.workdir) patch.workdir = path.resolve(String(patch.workdir));
     try { loopJobs = loopjobStore.updateLoop(loopJobs, id, patch, { now: Date.now() }); saveLoops(); }
     catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
     armLoops(true);

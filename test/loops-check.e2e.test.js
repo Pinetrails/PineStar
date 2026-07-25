@@ -132,7 +132,11 @@ function makeRepo() {
       const l = st.loops.find(x => x.id === id);
       A.ok(l.lastCheck, 'a check verdict was recorded');
       A.eq(l.lastCheck.trusted, false, 'an unblessed root can NEVER produce a trusted green');
-      A.ok(/no longer a blessed root|not.*blessed/i.test(l.lastCheck.note || ''), 'and says the check was not run: ' + l.lastCheck.note);
+      // the refusal must be legible in the SUMMARY too, not just the note — the summary is what the panel and
+      // the ledger render, and a refusal reading "check failed (exit 1)" sends everyone hunting a code defect
+      // that does not exist (a real dogfood run lost three passes to exactly that).
+      A.ok(/did NOT run/i.test(l.lastCheck.summary || ''), 'the SUMMARY says the check never ran: ' + l.lastCheck.summary);
+      A.ok(/not an approved project folder/i.test(l.lastCheck.note || ''), 'and the note says why: ' + l.lastCheck.note);
       A.ok(l.state !== 'done', 'so it cannot complete the objective');
       await fetch(B + '/api/loops/remove', { method: 'POST', headers, body: JSON.stringify({ id }) });
     }
