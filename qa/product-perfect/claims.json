@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b6d324326e6d4506dd73db5fc3a7917f935bdac8",
+    "sourceCommit": "1ef945a966412cd63d0aad611a292072a4c0f8cc",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -123,8 +123,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 114721,
-        "sha256": "d894f87f2829f5a21af07d2dd7c92108eff906442b2d2c05a121d811fa67545b"
+        "bytes": 107393,
+        "sha256": "0d044b02b9f50731938d83bfc189d6ed2b0b7a1cd4818cbf11656e08031cf609"
       },
       {
         "path": "frontend/app/channels.js",
@@ -178,8 +178,8 @@
       },
       {
         "path": "frontend/app/crtlab.js",
-        "bytes": 12089,
-        "sha256": "73565ba5897947aac999a028b17a743d7d67e0b6642adcb79acaa00250e52d00"
+        "bytes": 11695,
+        "sha256": "fbeaa5e61c0112b52e99dab9583ebf8b7db0b653c9c7763124fa77c07fa6e54d"
       },
       {
         "path": "frontend/app/ctxgauge.js",
@@ -603,8 +603,8 @@
       },
       {
         "path": "frontend/app/spacebg.js",
-        "bytes": 14108,
-        "sha256": "42061ec652cafbc5db9e184e66d5028addf8f714f804057fc54427b76ec5d7c5"
+        "bytes": 63728,
+        "sha256": "7a8d2b808c0fdaba1f107a52f2d5e795fbd955a00a240b4b6729185c618ecc4a"
       },
       {
         "path": "frontend/app/specialties.js",
@@ -618,8 +618,8 @@
       },
       {
         "path": "frontend/app/stationbake.js",
-        "bytes": 98776,
-        "sha256": "8aeafd732e28a9f2ae2452874de6ee7f5cf5c694d139c21779e698b436fd4d45"
+        "bytes": 61560,
+        "sha256": "f14920f72977bdeda59224e3b0c2c7de026e2abb18d1278a204f232e7869512d"
       },
       {
         "path": "frontend/app/stationquests.js",
@@ -633,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 413433,
-        "sha256": "c1be366ee9c34f5d500b5e1ec510561b5f2cc504980b49c9b27c721f21f17883"
+        "bytes": 416564,
+        "sha256": "1f2a740d62d86e2ce22d46de6f63d42f4772258e742af67b9a3fc003b3176a26"
       },
       {
         "path": "frontend/app/study.js",
@@ -813,13 +813,13 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 459600,
-        "sha256": "c0f33b09cf0f870f1acc3246feef8cdd24a616fe6d99971ac2ec4b0341fa4197"
+        "bytes": 460692,
+        "sha256": "703ee5b29c5086decc896b157296429bd91f611fe195703dc8bba5174a674fd0"
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 65394,
-        "sha256": "1c29a93db2f6da8436ba01ea24d35c66612e768a74d9e1c93481830fbd43b600"
+        "bytes": 55545,
+        "sha256": "76997ab7a0d03edda7a72c191bc5fe6942cd88269cbf2c4f014e8bd661cfd402"
       },
       {
         "path": "frontend/app/xp.js",
@@ -838,8 +838,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 211892,
-        "sha256": "d8343b8d58325592ce0f4bb9d902dfdcf71fffec1b2834ce9a0876a99bde205a"
+        "bytes": 211042,
+        "sha256": "f3f21fa2af6b80b9fbdb83b05f501d190ac38cc248792455c563768373e03f69"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -873,8 +873,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 88551,
-        "sha256": "2e6cfabd7c9749963bd252c0e4ca93d38a2ab3cb7f4b9926d580099e16e31499"
+        "bytes": 89813,
+        "sha256": "c40475b87a46e6563677d81b2a6bef2e8dc879384623f7971162d5079bdc991b"
       },
       {
         "path": "frontend/css/titlebar.css",
