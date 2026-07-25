@@ -417,6 +417,22 @@ function dynamicCommands(opts) {
     });
   }
 
+  // COMMANDER-DEFINED commands (sidecar/usercommands.js). Added BEFORE skills/recipes cannot take their names
+  // but AFTER builtins, so a user command can never shadow a builtin — addCommand refuses a used name, which
+  // means /help can never be redefined out from under someone.
+  for (const u of (Array.isArray(opts.userCommands) ? opts.userCommands : [])) {
+    if (!u || !u.name) continue;
+    addCommand(out, used, {
+      name: u.name,
+      category: u.category || 'Yours',
+      desc: u.desc || '',
+      source: 'user',
+      action: 'user',
+      dispatch: 'user',
+      target: { type: 'user', userType: u.userType, target: u.target || '', command: u.command || '' }
+    });
+  }
+
   for (const s of (Array.isArray(opts.skills) ? opts.skills : [])) {
     if (!s || !s.slug || s.available === false) continue;
     const base = cleanName(s.slug);
@@ -475,10 +491,35 @@ function findSkill(slug, skills) {
 
 function dispatch(input, opts) {
   opts = opts || {};
+  return dispatchDepth(input, opts, 0);
+}
+
+/* depth guards an ALIAS CHAIN: /a → /b → /a would otherwise recurse forever. The reference harness recurses
+   through its own process_command with no visible bound; we cap it and say so rather than hanging. */
+const MAX_ALIAS_DEPTH = 5;
+
+function dispatchDepth(input, opts, depth) {
   const commands = dynamicCommands(opts);
   const hit = resolveWith(input, commands);
   if (!hit) return { ok: false, error: 'unknown slash command', status: 404 };
   const c = hit.command;
+  if (c.target && c.target.type === 'user') {
+    // ALIAS: rewrite to the target and re-resolve through this same registry, so an alias can only ever reach
+    // a command the Commander could have typed — it inherits every guard the real command has.
+    if (c.target.userType === 'alias') {
+      if (depth >= MAX_ALIAS_DEPTH) return { ok: false, error: 'alias chain too deep (possible loop)', status: 400 };
+      const line = (c.target.target + (hit.args ? ' ' + hit.args : '')).trim();
+      return dispatchDepth(line, opts, depth + 1);
+    }
+    // EXEC: the registry stays PURE — it hands back what to run and the caller (which owns spawn) decides
+    // whether it is allowed to run it here. See runUserExec / runSlashForChannel in sidecar/index.js.
+    return {
+      ok: true,
+      command: visibleCommand(c),
+      args: hit.args,
+      directive: { type: 'exec', name: c.name, command: c.target.command, args: hit.args }
+    };
+  }
   if (c.target && c.target.type === 'recipe') {
     const recipe = findRecipe(c.target.id, opts.recipes);
     if (!recipe) return { ok: false, error: 'unknown recipe', status: 404 };

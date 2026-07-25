@@ -163,10 +163,11 @@ const skillGuard = require('./skills/guard.js');            // guard scanner for
 const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
 const skillCurator = require('./skillcurator.js');          // skill lifecycle/consolidation maintenance
 const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
+const { makeUserCommands } = require('./usercommands.js');  // Commander-defined slash commands (alias/exec)
 const slashActionsMod = require('./slash-actions.js');     // server-side execution for dispatch:'server' commands
 const Recipes = require('../frontend/app/recipes.js');     // built-in mission recipes, also exposed as slash commands
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
-const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
+const { makeShellTool, runCommand: shellRunCommand } = require('./tools/builtin/shell.js');   // the workbench capability + the shared spawn primitive
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
 const { makeProcLedger } = require('./procledger.js');              // persistent child-PID ledger — boot sweep reaps force-kill orphans
 const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
@@ -3038,6 +3039,10 @@ const cronDriver = makeCronDriver({
     if (first && first.indexOf(WORKSHOP_MARK) === 0) {
       return runWorkshopShift(opts.agentId, { runId: opts.runId, emit: opts.emit, signal: opts.signal });
     }
+    // AUTOMATION: a routine whose prompt IS a slash command runs the COMMAND, not a model turn. Same redirect
+    // shape as the workshop sentinel above. Deterministic, zero spend, and the answer is the identical text
+    // every other surface prints — "/usage every morning at 9" needs no model and should not pay for one.
+    if (first && first.charAt(0) === '/') return runSlashRoutine(first, opts);
     return runOnce(opts);
   },
   emit: cronEmitNotify, newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
@@ -4345,6 +4350,7 @@ function startTelegram(token, key, model, agentCfg) {
   const hub = makeChannelHub({
     channel: 'telegram', runOnce: runOnce, store: channelStore,
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
+    userCommandNames: () => userCommandEntries().map(c => c.name),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
     chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
@@ -4525,6 +4531,7 @@ function startTelegramBot(botId) {
   const hub = makeChannelHub({
     channel: 'telegram:' + botId, runOnce: runOnce, store: makeBotScopedStore(botId),
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
+    userCommandNames: () => userCommandEntries().map(c => c.name),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     // live per-message read (same contract as the station bot). THE BOT IS ITS AGENT: identity (system prompt),
@@ -4709,6 +4716,7 @@ function getDevHub() {
   devHub = makeChannelHub({
     channel: 'dev', maxMessageLength: 4000, agentPrefix: 'dev_',
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
+    userCommandNames: () => userCommandEntries().map(c => c.name),
     runOnce: runOnce, store: channelStore,
     send: (chatId, text) => { const k = String(chatId); const arr = devReplies.get(k) || []; arr.push({ text: String(text == null ? '' : text), ts: Date.now() }); if (arr.length > 20) arr.shift(); devReplies.set(k, arr); return Promise.resolve({ ok: true }); },
     secrets: devHubSecrets,
@@ -6631,6 +6639,28 @@ async function handleCronRun(req, res) {
     return res.end(JSON.stringify({ error: (!model ? 'choose a model for this routine agent first' : cronCredentialError(provider)) }));
   }
 
+  // COMMAND ROUTINE: "Run Now" must behave exactly like the scheduled fire, which the cron driver's runOnce
+  // wrapper redirects to runSlashRoutine. This path calls runOnce DIRECTLY, so without the same redirect a
+  // routine whose prompt is "/usage" would model-run here and command-run on schedule — the same routine
+  // doing two different things depending on who started it. Placed AFTER the credential gate above so both
+  // paths gate identically (see runSlashRoutine's note on that shared limit).
+  if (String(job.prompt || '').charAt(0) === '/') {
+    res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+    const runIdC = crypto.randomUUID();
+    const busC = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
+    const emitC = wrapEmitDiag(makeEmitter(busC, e => { if (e) console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
+    try { cronEmit('cron.fire', { jobId: job.id, runId: runIdC, scheduledFor: Date.now() }); } catch (_) {}
+    let out;
+    try { out = await runSlashRoutine(String(job.prompt), { agentId: job.agentId, runId: runIdC, emit: emitC }); }
+    catch (e) { out = { ok: false, text: 'that command failed: ' + ((e && e.message) || e) }; }
+    try {
+      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runIdC, status: out.ok ? 'ok' : 'error', reason: out.ok ? 'done' : 'error', error: out.ok ? undefined : out.text }, { now: Date.now() }));
+    } catch (_) {}
+    try { cronEmit('cron.result', { jobId: job.id, runId: runIdC, outcome: out.ok ? 'ok' : 'failed', reason: out.ok ? 'done' : 'error' }); } catch (_) {}
+    try { res.end(); } catch (_) {}
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
   const kaOff = attachStreamKeepAlive(res);   // hold-open heartbeat: a long tool phase must not leave the stream byte-silent
   const ac = new AbortController();
@@ -7807,7 +7837,7 @@ function placedTypesFrom(v) {
 function slashOptions(placedTypes) {
   const skills = skillsCatalog.catalog(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes || [] });
   const recipes = (Recipes && Recipes.builtins) ? Recipes.builtins() : [];
-  return { skills, recipes };
+  return { skills, recipes, userCommands: userCommandEntries() };
 }
 
 // GET /api/slash/catalog -- server-owned command metadata for chat palettes and future gateway surfaces.
@@ -7934,6 +7964,80 @@ const slashActions = slashActionsMod.makeSlashActions({
    The one honest difference is where `placed` comes from: a browser knows its live floor, a phone does not, so
    the agent's room objects are read from the routing plan's bay. That keeps /tools answering for the room this
    agent actually occupies. Returns { ok, text?, title?, lines? }; never throws. */
+/* ---- COMMANDER-DEFINED COMMANDS (sidecar/usercommands.js) --------------------------------------------
+   Loaded from WORKSPACES/usercommands.json — deliberately OUTSIDE any agent's fs jail, so an agent cannot
+   author one. That is the whole safety argument for the exec type: these are the Commander's own snippets,
+   never something a model wrote. Re-read on every catalog build so editing the file takes effect without a
+   restart (it is a handful of entries; the read is trivial). */
+const USER_COMMANDS_FILE = path.join(WORKSPACES, 'usercommands.json');
+const userCommandStore = makeUserCommands({
+  fs: fs, file: USER_COMMANDS_FILE,
+  onWarn: (m) => { try { console.warn('[usercommands] ' + m); } catch (_) {} }
+});
+function userCommandEntries() {
+  try { return userCommandStore.catalogEntries(userCommandStore.load()); } catch (_) { return []; }
+}
+
+/* The environment a Commander-defined exec command sees: this process's env MINUS anything key-shaped. The
+   sidecar holds provider credentials in env; a user snippet that runs `env` should not print them. Mirrors
+   the reference harness's _sanitize_subprocess_env (MIT — see NOTICE.md). */
+const EXEC_ENV_DENY_RE = /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|_PAT$|AUTH)/i;
+function sanitizedExecEnv() {
+  const out = {};
+  for (const k of Object.keys(process.env)) {
+    if (EXEC_ENV_DENY_RE.test(k)) continue;
+    out[k] = process.env[k];
+  }
+  return out;
+}
+
+/* runUserExec(directive) — run one Commander-defined shell snippet. Reuses the SAME spawn/timeout/kill
+   primitive shell.exec and verify.run use (shellTools.runCommand) rather than a second spawner, runs in the
+   workspaces root, sanitizes the env, bounds the output, and redacts what comes back. Never throws. */
+async function runUserExec(directive) {
+  const cmd = String((directive && directive.command) || '').trim();
+  const name = String((directive && directive.name) || 'command');
+  if (!cmd) return { ok: false, text: '/' + name + ' has no command defined.' };
+  let r;
+  try {
+    r = await shellRunCommand({
+      spawn: childSpawn, cmd: cmd, cwd: WORKSPACES,
+      timeoutMs: 30000, maxBytes: 16000, env: sanitizedExecEnv(), clock: { now: () => Date.now() }
+    });
+  } catch (e) { return { ok: false, text: '/' + name + ' could not start: ' + ((e && e.message) || e) }; }
+  const body = redact(String((r && r.out) || '')).trim();
+  if (r && r.timedOut) return { ok: false, text: '/' + name + ' timed out after 30s.' + (body ? '\n' + body : '') };
+  return { ok: true, text: body || ('/' + name + ' ran and produced no output.') };
+}
+
+/* runSlashRoutine(line, opts) — a SCHEDULED slash command. The cron driver's runOnce wrapper redirects here
+   when a routine's prompt starts with '/', so "/usage" every morning costs nothing and cannot drift from what
+   the same command prints in COMMS or on your phone: it is the same runSlashForChannel call.
+
+   It hand-emits the three run events the driver's sink assembles its record from (there is no model run to
+   emit them for us), and the numbers are the honest ones — turns 0, usd 0, model '' — because no model was
+   consulted. Never throws: a failure becomes the run's text, so the routine records an outcome either way.
+
+   KNOWN LIMIT: cron-driver.js gates every fire on a model credential (cron-driver.js:201, 'no-capability'),
+   so a command routine still needs a configured provider even though it will not call one. Lifting that
+   means teaching the shared driver about slash prompts — deliberately not done here. */
+async function runSlashRoutine(line, opts) {
+  opts = opts || {};
+  const agentId = String(opts.agentId || 'agent');
+  const runId = String(opts.runId || '');
+  const emit = (typeof opts.emit === 'function') ? opts.emit : () => {};
+  try { emit('agent.run.start', { agentId: agentId, runId: runId, trigger: 'schedule', model: '' }); } catch (_) {}
+  let r;
+  try { r = await runSlashForChannel(line, { agentId: agentId }); }
+  catch (e) { r = { ok: false, text: 'that command failed: ' + ((e && e.message) || e) }; }
+  const body = (r && Array.isArray(r.lines) && r.lines.length)
+    ? ((r.title ? r.title + '\n' : '') + r.lines.join('\n'))
+    : String((r && r.text) || '');
+  if (body) { try { emit('agent.token', { agentId: agentId, runId: runId, delta: body }); } catch (_) {} }
+  try { emit('agent.run.end', { agentId: agentId, runId: runId, reason: 'done', turns: 0, usd: 0 }); } catch (_) {}
+  return { ok: !!(r && r.ok !== false), text: body };
+}
+
 async function runSlashForChannel(input, ctx) {
   ctx = ctx || {};
   const agentId = /^[A-Za-z0-9_-]{1,40}$/.test(String(ctx.agentId || '')) ? String(ctx.agentId) : 'agent';
@@ -7946,6 +8050,12 @@ async function runSlashForChannel(input, ctx) {
   try { out = slash.dispatch(String(input || ''), slashOptions(placed)); }
   catch (e) { return { ok: false, text: 'That command could not be read.' }; }
   if (!out || !out.ok || !out.directive) return { ok: false, text: 'Unknown command.' };
+  // A Commander-defined EXEC command is a shell snippet. It runs from the desktop, but NOT from a messaging
+  // surface by default: a chat app is reachable by anyone who gets the bot token, and "remote shell" is a much
+  // larger blast radius than "read my spend". Conservative on purpose — easy to relax, impossible to un-leak.
+  if (out.directive.type === 'exec') {
+    return { ok: false, text: 'That is one of your shell commands — for safety those only run in the StarNet desktop app, not over messaging.' };
+  }
   // Only dispatch:'server' commands can answer off-browser. A client command would need the DOM, so say that
   // plainly rather than returning an empty reply that reads like a failure.
   if (out.directive.type !== 'server') return { ok: false, text: 'That command only works in the StarNet desktop app.' };
@@ -7961,6 +8071,13 @@ async function handleSlashDispatch(req, res) {
   const input = body.input != null ? body.input : ('/' + String(body.command || ''));
   const placed = placedTypesFrom(body.placed);
   const out = slash.dispatch(input, slashOptions(placed));
+  // A Commander-defined exec command runs HERE (the browser has no shell) and comes back as a say directive,
+  // so the palette prints its output like any other command result.
+  if (out.ok && out.directive && out.directive.type === 'exec') {
+    const r = await runUserExec(out.directive);
+    out.directive = { type: 'say', ok: r.ok !== false, text: r.text || '', title: '', lines: [] };
+    return json(200, out);
+  }
   if (out.ok && out.directive && out.directive.type === 'server') {
     // `placed` rides the ctx too: /tools answers "what can THIS agent call", which depends on the props on its
     // floor — the browser is the only one that knows the live floor, so it must travel with the dispatch.
