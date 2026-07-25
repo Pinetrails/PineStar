@@ -5684,6 +5684,16 @@ const World = (() => {
       if (usd >= cap) hudNote('⛔ budget cap hit for ' + scopeWord + ' — ' + money(usd) + ' of ' + money(cap), 'warn');
       else hudNote('⚠ budget warning for ' + scopeWord + ' — ' + money(usd) + ' of ' + money(cap) + ' (' + Math.round(usd / cap * 100) + '%)', 'warn');
     });
+    // LOW CREDITS MADE VISIBLE (2026-07-25): the balance the user BOUGHT is running out. Distinct from
+    // budget.threshold above — that is spend against a cap they set; this is money running down. Fired once
+    // per crossing by credits.js, so this can be a plain note without any de-dup of its own.
+    // Says the real number and what happens next; never a percentage bar (a balance has no denominator).
+    U.bus.on('credits.low', p => {
+      if (!p || !isFinite(+p.balanceUsd)) return;
+      const bal = U.usd(+p.balanceUsd);
+      if (p.exhausted) hudNote('⛔ out of credits — ' + bal + ' left; managed runs will refuse until you add more', 'warn');
+      else hudNote('⚠ credits running low — ' + bal + ' left, under the ' + U.usd(+p.thresholdUsd) + ' a run can reserve', 'warn');
+    });
     // G0.4 CAPDENIED MADE VISIBLE: the run genuinely STOPPED at the capability gate (loop.js emits this
     // before ending the run) — flash the acting agent's desk red + say it plainly. Today this was
     // audio-only; the fix-it quest generator built on it is G1b's, not ours.

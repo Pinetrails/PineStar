@@ -256,6 +256,18 @@
       "usd"
     ]
   },
+  "credits.low": {
+    "required": [
+      "balanceUsd",
+      "thresholdUsd"
+    ],
+    "properties": [
+      "balanceUsd",
+      "exhausted",
+      "purchaseUrl",
+      "thresholdUsd"
+    ]
+  },
   "crew.summon.request": {
     "required": [
       "agentId",

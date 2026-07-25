@@ -369,6 +369,9 @@ const CREDITS_URL = String(ENV('CREDITS_URL') || '').trim();
 const CREDITS_API_KEY = String(ENV('CREDITS_API_KEY') || '').trim();
 const CREDITS_ACCOUNT = String(ENV('CREDITS_ACCOUNT') || '').trim();
 const CREDITS_PURCHASE_URL = String(ENV('CREDITS_PURCHASE_URL') || '').trim();
+// Floor for the low-credit warning. The EFFECTIVE threshold is max(this, the per-run cap) — see the
+// makeCredits wiring below for why the cap is the meaningful half. 0 disables the warning outright.
+const CREDITS_LOW_USD = (() => { const n = Number(ENV('CREDITS_LOW_USD')); return Number.isFinite(n) && n >= 0 ? n : 5; })();
 // a live permission.prompt left unanswered this long auto-denies (never hangs a run). P1-9: env
 // STARNET_CONSENT_TIMEOUT_MS > a UI-saved override > the 120s default; the frozen resolve keeps it constant per boot.
 const CONSENT_TIMEOUT_MS = resolveKnob('CONSENT_TIMEOUT_MS', 'consentTimeoutMs', 120000);
@@ -565,7 +568,17 @@ const budget = makeBudget({ caps: { agent: BUDGET_CAPS.perAgent, day: BUDGET_CAP
 const credits = makeCredits({
   url: CREDITS_URL, apiKey: CREDITS_API_KEY, accountId: CREDITS_ACCOUNT, purchaseUrl: CREDITS_PURCHASE_URL,
   fetch: globalThis.fetch, clock: { now: () => Date.now() },
-  onError: (stage, err) => console.warn('[credits] ' + stage + ' failed:', (err && err.message) || err)
+  onError: (stage, err) => console.warn('[credits] ' + stage + ' failed:', (err && err.message) || err),
+  // WHY THE PER-RUN CAP IS THE THRESHOLD, not a round number: admission reserves `perRun` before a managed
+  // run starts, so once the balance drops below that cap the very next run is REFUSED. That makes it the one
+  // non-arbitrary point to warn at — "$5 left" means nothing on a station whose runs reserve $10, and the
+  // user would hit the wall with a cheerful warning still unspoken. The env floor only raises it.
+  // A GETTER, not a number: effectiveCaps is mutable (the Commander can retune perRun live from SETTINGS,
+  // and it is defined AFTER this call), so reading it per-check keeps the warning honest without a restart.
+  lowBalanceUsd: () => Math.max(CREDITS_LOW_USD, Number((effectiveCaps && effectiveCaps.perRun) || 0)),
+  // Late-bound on purpose: cronEmit is declared further down. Balance changes only ever happen after boot
+  // (refresh() resolves on a later tick), so by first call it exists — the typeof guard covers the rest.
+  emit: (name, payload) => { try { if (typeof cronEmit === 'function') cronEmit(name, payload); } catch (_) {} }
 });
 if (credits.configured()) { credits.refresh().catch(() => {}); }   // warm the balance cache at boot (fail-open)
 
