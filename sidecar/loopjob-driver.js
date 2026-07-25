@@ -348,7 +348,9 @@
                 h || {},
                 // the review card needs to show WHAT CHANGED. A harvest that proved its own file list wins;
                 // otherwise fall back to what the check observed this pass.
-                (h && h.files && h.files.length) ? {} : { files: (verdict && verdict.changedFiles) || [] }
+                (h && h.files && h.files.length) ? {} : { files: (verdict && verdict.changedFiles) || [] },
+                // the per-pass diff, captured by the host at settle time — what the review card actually shows
+                { diff: (verdict && verdict.diff) || null }
               )),
               // a harvest failure (e.g. git refused the commit) is a REAL iteration failure, not a silent
               // success: the work did not land, so the loop must not park a candidate the Commander cannot act on.

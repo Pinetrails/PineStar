@@ -118,6 +118,19 @@
       return '<div class="mc-detail"><span class="pos">✓ check passed</span> <span class="dim">' + esc(c.summary || '') + '</span></div>';
     }
 
+    /* diffHTML — colourise a unified diff. Every line is escaped FIRST and only then wrapped in a span, so
+       diff content (which is arbitrary file text the agent wrote) can never inject markup into the panel. */
+    function diffHTML(text) {
+      return String(text || '').split('\n').map(line => {
+        const safe = esc(line);
+        if (/^\+\+\+|^---/.test(line)) return '<span class="d-file">' + safe + '</span>';
+        if (line.charAt(0) === '@') return '<span class="d-hunk">' + safe + '</span>';
+        if (line.charAt(0) === '+') return '<span class="d-add">' + safe + '</span>';
+        if (line.charAt(0) === '-') return '<span class="d-del">' + safe + '</span>';
+        return '<span class="d-ctx">' + safe + '</span>';
+      }).join('\n');
+    }
+
     /* a pending candidate — the review gate. The REJECT button carries its true cost in the label, because a
        stacked queue means rejecting #3 also discards #4 and #5 (they were built on top of it). */
     function pendingCard(l, p, idx, pending) {
@@ -131,6 +144,15 @@
         (p.commit ? '<div class="mc-detail dim">commit ' + esc(String(p.commit).slice(0, 8)) + '</div>' : '') +
         /* WHAT CHANGED. "Deliverable = OPEN, not read" is a locked product law — approving work you cannot
            see makes the review gate theatre. The file list is the minimum honest answer to "what did it do". */
+        /* THE DIFF. "Deliverable = OPEN, not read" is a locked product law, and a review gate you cannot see
+           through is theatre — the file list said WHICH files, this says WHAT CHANGED. Folded by default so a
+           queue of candidates stays scannable; the label states exactly what it is measured against, because a
+           loop does not commit between passes and an earlier un-approved pass may have touched these files too. */
+        (p.diff
+          ? '<details class="lp-diff"><summary>▸ view the change</summary>' +
+            '<div class="lp-diff-note dim">unified diff for the files this pass touched, against your last commit</div>' +
+            '<pre class="lp-diff-body">' + diffHTML(p.diff) + '</pre></details>'
+          : '') +
         ((p.files && p.files.length)
           ? '<div class="lp-files"><span class="dim">changed ' + p.files.length + ' file' + (p.files.length === 1 ? '' : 's') + ':</span> ' +
             p.files.slice(0, 6).map(f => '<code>' + esc(String(f.path || f).split(/[\/]/).pop()) + '</code>').join(' ') +

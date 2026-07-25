@@ -84,6 +84,11 @@
   const RED_STREAK_MAX = 10;
   const EXIT_MODES = ['check-green', 'empty-digests', 'never'];
   const TEXT_CAP = 4000, TITLE_CAP = 140, SUM_CAP = 1200, NOTE_CAP = 800, FILE_CAP = 50;
+  /* A REVIEW DIFF IS HELD ONLY WHILE IT IS REVIEWABLE. The whole point is to let the Commander SEE the change
+     before ruling on it, so it is stored on the iteration — but a diff per pass across a 200-entry ledger would
+     bloat loops.json without limit. recordVerdict drops it the moment a verdict lands, so at most `queueCap`
+     diffs are ever resident (≤12), and a ruled iteration keeps its title/summary/files as the durable record. */
+  const DIFF_CAP = 12000;
 
   const iso = LJ._internals.iso;
   const dayOf = LJ._internals.dayOf;
@@ -365,6 +370,7 @@
         // the parsed report for this pass. Stored rather than re-derived, because `summary` is truncated and
         // the DIGEST line lives at the END of the reply — re-parsing it later would read a cut-off string.
         digest: (ok && !cancelled) ? LJ.readDigest(result.text) : null,
+        diff: result.diff != null ? str(result.diff, DIFF_CAP) : null,
         check: chk ? {
           passed: !!chk.passed, summary: str(chk.summary, SUM_CAP), note: str(chk.note, NOTE_CAP),
           tampered: !!chk.tampered, tamperedPaths: (chk.tamperedPaths || []).slice(0, FILE_CAP).map(p => str(p, 400)),
@@ -380,6 +386,8 @@
         settled.verdict = 'approved';
         settled.verdictNote = 'auto-applied (this loop has full access to merge)';
         settled.verdictAt = iso(now);
+        settled.diff = null;   // self-approved: there is no review to hold a diff for
+
       }
       its[idx] = settled;
 
@@ -494,14 +502,16 @@
 
       const its = (loop.iterations || []).map(it => {
         if (it.n === num) {
-          return Object.assign({}, it, { verdict: v, verdictNote: note, verdictAt: iso(now) });
+          // the diff was for DECIDING; once decided it is dead weight in a durable file (see DIFF_CAP).
+          return Object.assign({}, it, { verdict: v, verdictNote: note, verdictAt: iso(now), diff: null });
         }
         // cascade: only on rejection, only un-approved candidates ABOVE the rejected one.
         if (v === 'rejected' && it.n > num && it.outcome === 'candidate' && !it.verdict) {
           return Object.assign({}, it, {
             verdict: 'discarded',
             verdictNote: 'discarded — built on top of rejected #' + num,
-            verdictAt: iso(now)
+            verdictAt: iso(now),
+            diff: null
           });
         }
         return it;

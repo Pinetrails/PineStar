@@ -470,4 +470,50 @@ function cycle(loops, res, at) {
     'a check-measured loop does not expect digests, so it is never flagged for missing them');
 }
 
+// ---- 25. THE REVIEW DIFF: held while reviewable, dropped the moment it is decided -----------------------
+// "Deliverable = OPEN, not read" — a review gate you cannot see through is theatre. But a diff per pass across
+// a 200-entry ledger would bloat the durable file without limit, so it lives exactly as long as it is useful.
+{
+  const DIFF = [
+    '--- a/src/cart.js',
+    '+++ b/src/cart.js',
+    '@@ -12,1 +12,1 @@',
+    '-  return a / b;',
+    '+  return b === 0 ? 0 : a / b;'
+  ].join('\n');
+  let loops = mk({ queueCap: 5 });
+  loops = cycle(loops, { runId: 'd1', status: 'ok', text: 'w', title: 'guard the divide', diff: DIFF, files: [{ path: 'src/cart.js' }] }, T0);
+  A.eq(one(loops).iterations[0].diff, DIFF, 'the pass stores its diff');
+  const s = LJ.summarize(one(loops), { now: T0 + HOUR });
+  A.eq(s.pending[0].diff, DIFF, 'and it rides the projection so the card can render it');
+  A.eq(s.pending[0].files[0].path, 'src/cart.js', 'alongside the file list');
+
+  loops = S.recordVerdict(loops, 'l1', 1, 'approved', { now: T0 + HOUR });
+  A.eq(one(loops).iterations[0].diff, null, 'ONCE DECIDED the diff is dropped — it was for deciding');
+  A.eq(one(loops).iterations[0].title, 'guard the divide', 'but the durable record of what happened remains');
+  A.eq(one(loops).iterations[0].files.length, 1, 'including which files it touched');
+
+  // a rejection cascade must drop the diffs it discards too, or they linger forever unreviewable
+  let st = mk({ queueCap: 5 });
+  for (let i = 1; i <= 3; i++) st = cycle(st, { runId: 'x' + i, status: 'ok', text: 'w', title: 'w' + i, diff: DIFF }, T0 + i * HOUR);
+  st = S.recordVerdict(st, 'l1', 1, 'rejected', { now: T0 + 9 * HOUR, note: 'no' });
+  A.eq(one(st).iterations.filter(it => it.diff).length, 0, 'a cascade drops the discarded passes diffs as well');
+
+  // gate:'auto' never queues, so holding a diff for a review that will not happen is pure bloat
+  let au = mk({ gate: 'auto', queueCap: 5 });
+  au = cycle(au, { runId: 'a1', status: 'ok', text: 'w', title: 'auto', diff: DIFF }, T0);
+  A.eq(one(au).iterations[0].verdict, 'approved', 'an auto pass self-approves');
+  A.eq(one(au).iterations[0].diff, null, 'and holds no diff for a review nobody will open');
+
+  // an oversized diff is clamped rather than allowed to bloat the durable file
+  let big = mk({ queueCap: 5 });
+  big = cycle(big, { runId: 'b1', status: 'ok', text: 'w', title: 'huge', diff: 'x'.repeat(50000) }, T0);
+  A.ok(one(big).iterations[0].diff.length <= 12000, 'a huge diff is capped at DIFF_CAP');
+
+  // a non-git project simply has none — the card falls back to the file list rather than inventing one
+  let nog = mk({ queueCap: 5 });
+  nog = cycle(nog, { runId: 'n1', status: 'ok', text: 'w', title: 'no git' }, T0);
+  A.eq(one(nog).iterations[0].diff, null, 'no diff is invented when none was captured');
+}
+
 A.report('loopjob (pure LOOP core)');

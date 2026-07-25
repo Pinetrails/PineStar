@@ -318,7 +318,11 @@
       maxIterations: loop.maxIterations != null ? loop.maxIterations : null,
       queueCap: queueCapOf(loop),
       pendingCount: pend.length,
-      pending: pend.map(it => ({ n: it.n, title: it.title, summary: it.summary, commit: it.commit, files: it.files, endedAt: it.endedAt, usd: it.usd })),
+      // `diff` rides ONLY on pending rows — it exists to be read before a verdict, and the store drops it after.
+      pending: pend.map(it => ({
+        n: it.n, title: it.title, summary: it.summary, commit: it.commit, files: it.files,
+        endedAt: it.endedAt, usd: it.usd, diff: it.diff || null
+      })),
       approvedCount: its.filter(it => it.verdict === 'approved').length,
       rejectedCount: its.filter(it => it.verdict === 'rejected').length,
       noopCount: its.filter(it => it.outcome === 'noop').length,

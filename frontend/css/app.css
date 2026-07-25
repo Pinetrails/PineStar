@@ -3200,3 +3200,19 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
   background: rgba(0,0,0,.3); border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-faint);
   color: var(--ph-dim); font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
 }
+
+/* the review diff — the change itself, not a description of it */
+.lp-diff { margin-top: 6px; }
+.lp-diff summary { cursor: pointer; font-size: 11px; letter-spacing: .04em; color: var(--gold); opacity: .9; }
+.lp-diff summary:hover { opacity: 1; }
+.lp-diff-note { font-size: 10.5px; margin: 4px 0 3px; }
+.lp-diff-body {
+  margin: 0; padding: 8px 10px; max-height: 320px; overflow: auto;
+  background: rgba(0,0,0,.42); border: 1px solid var(--ph-faint); border-left: 3px solid var(--gold);
+  font-size: 11px; line-height: 1.45; white-space: pre; tab-size: 2;
+}
+.lp-diff-body .d-add  { color: #7bc88a; display: block; }
+.lp-diff-body .d-del  { color: #e0736d; display: block; }
+.lp-diff-body .d-hunk { color: var(--ph); opacity: .75; display: block; }
+.lp-diff-body .d-file { color: var(--ph-bright); display: block; }
+.lp-diff-body .d-ctx  { color: var(--ph-dim); display: block; }

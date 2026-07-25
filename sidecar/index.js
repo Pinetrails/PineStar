@@ -4094,6 +4094,29 @@ function loopPrecheck(loop) {
    pass can be BELIEVED lives in the pure loopcheck.js. ---- */
 const LOOP_CHECK_MAX_BYTES = 64000;
 
+/* captureLoopDiff — the real unified diff for the files a pass touched, captured AT SETTLE TIME.
+
+   WHY AT SETTLE, AND WHY BOUNDED TO THIS PASS'S FILES. A loop does not commit between passes, so `git diff`
+   later shows the CUMULATIVE working-tree change, not what any one pass did. Capturing when the pass ends,
+   restricted to the paths that pass introduced, is the most faithful attribution available without snapshotting
+   file contents — and it is what makes a review card show the change rather than the agent's description of it.
+
+   HONESTY: the label the UI shows says "against your last commit", because that is literally what this is. If
+   an earlier un-approved pass also touched one of these files, its lines are in here too — the panel says so.
+   A non-git project yields '' and the card offers the file list alone rather than inventing a diff. */
+const LOOP_DIFF_MAX = 12000;
+async function captureLoopDiff(root, files) {
+  if (!root || !files || !files.length) return '';
+  try {
+    // `--` then explicit pathspecs: never a whole-tree dump, and a path that looks like a flag cannot be one.
+    const r = await runGit(root, ['diff', '--unified=3', '--no-color', '--'].concat(files.slice(0, 40)), 15000);
+    if (!r.ok && !r.stdout) return '';
+    let out = String(r.stdout || '');
+    if (out.length > LOOP_DIFF_MAX) out = out.slice(0, LOOP_DIFF_MAX) + '\n… (diff truncated — open the folder to read the rest)';
+    return out;
+  } catch (_) { return ''; }
+}
+
 /* detectCheckCommand — what "run this project's tests" actually MEANS for this folder. Without it every
    project is offered `npm test`, which is wrong the moment someone points a loop at a python or rust repo —
    and it is wrong on their very first try, on the hero template. Reads real files only; never guesses a
@@ -4167,6 +4190,7 @@ async function runLoopCheck(loop, before) {
       const after = await loopChangedFiles(loop.workdir);
       const beforeSet0 = new Set((before && before.files) || []);
       v0.changedFiles = after.files.filter(f => !beforeSet0.has(f)).slice(0, 40);
+      v0.diff = await captureLoopDiff(loop.workdir, v0.changedFiles);
     } catch (_) { v0.changedFiles = []; }
     return v0;
   }
@@ -4208,6 +4232,7 @@ async function runLoopCheck(loop, before) {
   // the files this pass actually touched, so the review card can show WHAT CHANGED rather than only the
   // agent's prose about it. "Deliverable = OPEN, not read" — you cannot judge work you cannot see.
   v.changedFiles = introduced.slice(0, 40);
+  v.diff = await captureLoopDiff(loop.workdir, v.changedFiles);
   if (v.tampered) {
     const fresh = v.tamperedPaths.filter(p => introduced.indexOf(p) >= 0);
     v.note = v.note + (fresh.length
