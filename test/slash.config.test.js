@@ -22,7 +22,7 @@ A.ok(voice.indexOf('function setSpeakReplies') >= 0 && voice.indexOf('setSpeakRe
 // --- reasoning effort is a REAL dial, not a status readout (it used to answer "not a separate toggle yet") ---
 A.ok(app.indexOf("typeof patch.reasoningEffort === 'string'") >= 0, 'App config applies reasoning-effort changes');
 A.ok(app.indexOf('Harness.setReasoningEffort(eff)') >= 0, 'the effort patch reaches the harness store the run payload reads');
-A.ok(app.indexOf('agent.reasoningEffort = eff') >= 0, 'the effort is kept on the agent so it persists and reaches the roster');
+A.ok(app.indexOf('a.reasoningEffort = eff') >= 0, 'the effort is kept on the TARGETED agent so it persists and reaches the roster');
 A.ok(chat.indexOf("App.applyConfig({ reasoningEffort: want })") >= 0, '/reasoning writes through the config seam');
 A.ok(chat.indexOf("App.applyConfig({ reasoningEffort: 'minimal' })") >= 0, '/fast drives the same real dial instead of announcing a mode that does not exist');
 A.ok(chat.indexOf('is not a reasoning level') >= 0, 'an unknown level is refused, never silently normalized to medium');

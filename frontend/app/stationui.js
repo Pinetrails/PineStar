@@ -1715,6 +1715,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   }
 
   function wireConfig(body) {
+    // the agent this dossier is OPEN ON — every control below is per-agent and must name it. Hoisted above the
+    // .md save wiring on purpose: that handler used to omit the id, so a doc edit landed on the focused agent
+    // instead of this one (see App.applyAgentConfig's targeting note).
+    const a = present[sel];
     body.querySelectorAll('[data-edit]').forEach(b => b.addEventListener('click', () => {
       agEdit[b.dataset.edit] = true; sfx('click'); rerender('agents');
     }));
@@ -1724,7 +1728,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     body.querySelectorAll('[data-save]').forEach(b => b.addEventListener('click', () => {
       const key = b.dataset.save, ta = body.querySelector('#cf-ta-' + key);
       const val = ta ? ta.value : '';
-      if (access.config && access.config.apply) access.config.apply({ [key]: val });
+      if (access.config && access.config.apply) access.config.apply({ [key]: val }, a && a.id);
       delete agEdit[key]; sfx('click');
       const meta = CONFIG_FILES.find(f => f.key === key);
       notify('saved ' + (meta ? meta.file : key) + ' — your agent runs on it now', 'good');
@@ -1734,7 +1738,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const openKey = Object.keys(agEdit).find(k => agEdit[k] && k.charAt(0) !== '_');
     if (openKey) { const ta = body.querySelector('#cf-ta-' + openKey); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }
     // P1-6 per-agent MODEL pin — save / clear via App.setAgentModel (updates a.model/a.provider/a.reasoningEffort + pushRoster).
-    const a = present[sel];
     const mSave = body.querySelector('#ag-model-save');
     const mMsg = body.querySelector('#ag-model-msg');
     const setMMsg = (t, ok) => { if (mMsg) { mMsg.textContent = t || ''; mMsg.className = 'msg' + (ok ? ' ok' : ''); } };
