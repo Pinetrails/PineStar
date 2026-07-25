@@ -50,6 +50,8 @@ function world(opts) {
     harvest: opts.harvest,
     projectLine: opts.projectLine,
     context: opts.context,
+    trackRun: opts.trackRun,
+    untrackRun: opts.untrackRun,
     ledger: (e) => ledger.push(e),
     maxParallel: opts.maxParallel,
     maxRunMs: opts.maxRunMs
@@ -342,6 +344,42 @@ function world(opts) {
     for (let i = 0; i < 3; i++) { w4.tick(T0 + i * MIN); await w4.flush(); }
     A.eq(w4.loop().state, 'paused', 'three blind passes park the loop');
     A.ok(/could not read the project folder/.test(w4.loop().stopReason || ''), 'with the real reason on the record');
+  }
+
+  /* ---- 14. THE DESK STAYS LIT: a loop pass is a REAL run in the host registry ---------------------------
+     The world shows a loop by animating the agent at its desk, and it rebuilds that from
+     GET /api/state/snapshot on every reconnect — a snapshot built from the host's run registry, which
+     "clears any agent absent here". A loop pass that never registers therefore darkens a genuinely-working
+     agent the moment the app reloads. */
+  {
+    const tracked = new Map();
+    const w = world({
+      trackRun: (runId, agentId, ac) => tracked.set(runId, { agentId, ac }),
+      untrackRun: (runId) => tracked.delete(runId)
+    });
+    w.seed({});
+    w.tick(T0);
+    A.eq(tracked.size, 1, 'a live pass is registered with the host');
+    A.eq([...tracked.values()][0].agentId, 'agent', 'under the agent that is actually working');
+    A.ok([...tracked.values()][0].ac && typeof [...tracked.values()][0].ac.abort === 'function',
+      'with its abort handle, so /api/cancel and E-STOP can reach a single pass');
+
+    await w.finish({ text: 'did a thing', usd: 0 });
+    A.eq(tracked.size, 0, 'and it is released when the pass genuinely ends — the desk goes quiet only then');
+
+    // every terminal path must release it, or an agent stays falsely lit forever
+    const w2 = world({ trackRun: (r, a, ac) => tracked.set(r, { a, ac }), untrackRun: (r) => tracked.delete(r) });
+    w2.seed({}); w2.tick(T0);
+    await w2.fail(new Error('provider 500'));
+    A.eq(tracked.size, 0, 'a FAILED pass releases the desk too');
+
+    const w3 = world({ runThrows: true, trackRun: (r, a, ac) => tracked.set(r, { a, ac }), untrackRun: (r) => tracked.delete(r) });
+    w3.seed({}); w3.tick(T0);
+    A.eq(tracked.size, 0, 'and so does a run host that throws outright');
+
+    // the deps are optional — an older host without them still runs
+    const w4 = world(); w4.seed({});
+    A.eq(w4.tick(T0).fired, 1, 'tracking is optional; the driver works without it');
   }
 
   A.report('loopjob-driver (LOOP tick driver)');

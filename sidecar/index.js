@@ -4257,6 +4257,12 @@ const loopDriver = makeLoopDriver({
   // the pre-iteration changed-file snapshot, so the check attributes files to THIS iteration only.
   // Tell the agent WHERE the project is. Reuses the interactive path's own helper AND its live blessing
   // check, so a revoked grant injects nothing rather than asserting folder access we cannot prove.
+  // A loop pass is a REAL run and must appear in the run registry like every other one: the reconnect
+  // snapshot is built from it, and the world darkens any agent missing from that snapshot.
+  trackRun: (runId, agentId, ac) => {
+    try { runs.set(runId, ac); runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'loop' }); } catch (_) {}
+  },
+  untrackRun: (runId) => { try { runs.delete(runId); runsMeta.delete(runId); } catch (_) {} },
   projectLine: (loop) => (loop && loop.workdir && isBlessedRoot(loop.workdir)) ? projectScopeLine(loop.workdir, true) : '',
   /* THE PROJECT SNAPSHOT. Reuses sidecar/projectscan.js (already used by the night shift) to put the real
      absolute root and what is actually in it in front of the agent. It does two jobs at once:

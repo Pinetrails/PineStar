@@ -135,6 +135,13 @@
        CONVERGENCE — the loop declaring "nothing left to do" about a project it never opened. A real dogfood
        run did exactly that. */
     const context = isFn(deps.context) ? deps.context : null;
+    /* trackRun / untrackRun — register a live iteration in the host's run registry, exactly as the cron,
+       night-shift, workshop and interactive paths do. This is what makes an agent STAY LIT at its desk:
+       GET /api/state/snapshot is built from that registry, and the world's reconnect reconcile clears any
+       agent absent from it — so without this, reloading the app mid-iteration darkens an agent that is
+       genuinely still working. It also lets /api/cancel target a single loop pass. */
+    const trackRun = isFn(deps.trackRun) ? deps.trackRun : null;
+    const untrackRun = isFn(deps.untrackRun) ? deps.untrackRun : null;
 
     // loopId -> { runId, abort, startedAt }. In-memory only; the DURABLE half is the fire-claim on the record,
     // which is what survives a restart. Both are consulted by the gate.
@@ -173,6 +180,7 @@
       const next = store.settleIteration(getLoops(), loopId, Object.assign({ runId: runId }, result), { now: at });
       setLoops(next);
       leases.delete(loopId);
+      if (untrackRun) { try { untrackRun(runId); } catch (_) {} }   // the desk goes quiet only when the pass really ends
       const loop = store.getLoop(next, loopId);
       const it = loop && (loop.iterations || []).slice().reverse().find(x => String(x.runId) === String(runId));
       note(result.status === 'ok' ? 'act' : 'decline', loop, {
@@ -215,6 +223,7 @@
       const iterN = fresh.iterationCount;
       const ac = newAbort();
       leases.set(loop.id, { runId: runId, abort: ac, startedAt: nowMs, beatAt: nowMs });
+      if (trackRun) { try { trackRun(runId, fresh.agentId, ac); } catch (_) {} }
       // take the pre-iteration snapshot NOW (before any work), so the check can tell what THIS iteration
       // changed rather than inheriting every uncommitted edit from earlier iterations. A snapshot failure is
       // not fatal — it degrades the verdict to "cannot prove", which loopcheck already treats as unsafe.
