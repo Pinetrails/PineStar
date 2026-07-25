@@ -146,8 +146,10 @@ async function main() {
     { id: 'test-http', title: 'Sidecar HTTP/e2e gate', cmd: npmCmd, args: ['run', 'test:http'], env: nonLiveEnv, required: true },
     { id: 'audit-mock', title: 'Deterministic UI audit gate', cmd: npmCmd, args: ['run', 'audit'], env: nonLiveEnv, required: true },
     { id: 'golden', title: 'Reviewed UI golden gate', cmd: npmCmd, args: ['run', 'golden'], env: nonLiveEnv, required: true },
-    { id: 'validate-map', title: 'World layout validator', cmd: npmCmd, args: ['run', 'validate'], env: nonLiveEnv, required: true },
-    { id: 'test-world', title: 'World behavior simulation', cmd: npmCmd, args: ['run', 'test:world'], env: nonLiveEnv, required: true },
+    // The 'validate-map' + 'test-world' steps were removed 2026-07-24 with the scripts they invoked:
+    // both were Phase-0.0 wrappers around the ported v7 engine files frontend/js/map.js and
+    // frontend/js/data.js, which no longer exist — so two REQUIRED steps here could never pass. The
+    // current engine is gated by worldmodel/crew-containment/station-authority inside test:fast above.
     {
       id: 'live-smoke',
       title: 'Paid provider smoke via /api/run',

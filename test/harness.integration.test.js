@@ -111,7 +111,7 @@ const fixture = {
   const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: 5000 });
 
   // ---- DRIFT GUARDS (these alone would have caught both default-path showstoppers) ----
-  const EXPECTED = ['web_search', 'web_fetch', 'browser.navigate', 'browser.login', 'browser.snapshot', 'browser.click', 'browser.type', 'browser.scroll', 'browser.back', 'browser.press', 'browser.console', 'browser.dialog', 'browser.get_text', 'browser.vision', 'fs.read', 'fs.write', 'fs.list', 'fs.search', 'fs.append', 'fs.edit', 'fs.patch', 'notebook.read', 'notebook.write', 'notebook.feedback', 'recall_conversation', 'skill.write', 'skill.manage', 'skill.list', 'skill.view', 'todo', 'widget.set', 'quest.update'];
+  const EXPECTED = ['web_search', 'web_fetch', 'web_request', 'browser.navigate', 'browser.login', 'browser.snapshot', 'browser.click', 'browser.type', 'browser.scroll', 'browser.back', 'browser.press', 'browser.console', 'browser.dialog', 'browser.get_text', 'browser.vision', 'fs.read', 'fs.write', 'fs.list', 'fs.search', 'fs.append', 'fs.edit', 'fs.patch', 'notebook.read', 'notebook.write', 'notebook.feedback', 'recall_conversation', 'skill.write', 'skill.manage', 'skill.list', 'skill.view', 'todo', 'widget.set', 'quest.update'];
   A.eq(resolved.tools.slice().sort(), EXPECTED.slice().sort(), 'office objects resolve to the full toolset (object=capability is real)');
   for (const name of EXPECTED) A.ok(registry.get(name), 'tool registered: ' + name);
 

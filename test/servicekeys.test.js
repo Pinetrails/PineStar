@@ -143,4 +143,7 @@ const K = require('../sidecar/servicekeys.js');
   A.ok(K.remove([], 'x').error, 'remove unknown id errors');
 }
 
-console.log('servicekeys.test.js OK');
+// report() LAST — it is what calls process.exit(fail?1:0). This file ended in a bare console.log,
+// which is why it could sit in NO gate for months and then be adopted into one without anybody
+// noticing it could never turn the gate red.
+A.report('servicekeys.test');

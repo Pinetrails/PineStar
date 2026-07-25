@@ -327,6 +327,16 @@ const App = (() => {
       if (typeof patch.approvalMode === 'string') {
         agent.approvalMode = patch.approvalMode === 'full' ? 'full' : 'ask';
       }
+      // REASONING EFFORT: a real per-provider dial (Harness scopes it by provider and every run payload carries
+      // it). Mirrors what the model dock does when it sets model+provider+effort together — the harness store is
+      // what the next run reads, and the copy on the agent is what persists + reaches the sidecar roster below.
+      if (typeof patch.reasoningEffort === 'string' && patch.reasoningEffort.trim()) {
+        const eff = (typeof Harness !== 'undefined' && Harness.normalizeReasoningEffort)
+          ? Harness.normalizeReasoningEffort(patch.reasoningEffort) : patch.reasoningEffort.trim();
+        if (typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(eff);
+        agent.reasoningEffort = eff;
+        const storedAgent = agents.get(agent.id); if (storedAgent) storedAgent.reasoningEffort = eff;
+      }
       // Away-workshop grant (W3): a plain per-agent consent flag. NOT a system-prompt field — it only
       // changes what an autonomous run is allowed to WRITE inside its own jail. Reaches the sidecar via
       // pushRoster (below) so the consent broker can honor it; the backend lane (W1) reads it there.

@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "2b4680eb60e582cbe6c0851459224685524def16",
+    "sourceCommit": "9972dbd9ba228624f34b8645bf391c4624684bd2",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 283623,
-        "sha256": "b335c4f7049afbfce7c9e9a9a4bb09e2a9f87c188b8621b90a89abe0e4296002"
+        "bytes": 284495,
+        "sha256": "26767695b0f1b02034fd51205287ada8bbcef0f69c02d5bd8631ae26ae2b1c82"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -123,8 +123,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 107393,
-        "sha256": "0d044b02b9f50731938d83bfc189d6ed2b0b7a1cd4818cbf11656e08031cf609"
+        "bytes": 107253,
+        "sha256": "89ee641c04aa5d15a6d8c5fd956d0695bdd48b3f349d6dd2a96aebda21e286f4"
       },
       {
         "path": "frontend/app/channels.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 430775,
-        "sha256": "22ac3565f414942e31831d43e6e978f29b270e243483abdb28717dcca8707ef0"
+        "bytes": 440678,
+        "sha256": "eee144b39764c84ab89b49a349cd103e66d48dd7cb17c0d536ed619c5ace8cec"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -238,8 +238,8 @@
       },
       {
         "path": "frontend/app/fork.js",
-        "bytes": 10474,
-        "sha256": "b08abdd0904df416cc64f8505281f86728088ea70a862c35d862cfa0d1c58d01"
+        "bytes": 13916,
+        "sha256": "1f86de983cb4b89736a0878e547d63725a90ae6565e293901c89e4b04d3ee359"
       },
       {
         "path": "frontend/app/friendlyerror.js",
@@ -443,8 +443,8 @@
       },
       {
         "path": "frontend/app/propsprites.js",
-        "bytes": 332914,
-        "sha256": "a5acabe2e9731633b1c8884c6ae8df59aaa28b2bf66a6868eaef06f5aa5495ca"
+        "bytes": 519114,
+        "sha256": "9051cd8791fefcb4e13a5c4d87b7b9ecbabd3d46cfafffa7f957690c29f5317a"
       },
       {
         "path": "frontend/app/prospect.js",
@@ -603,8 +603,8 @@
       },
       {
         "path": "frontend/app/spacebg.js",
-        "bytes": 63728,
-        "sha256": "7a8d2b808c0fdaba1f107a52f2d5e795fbd955a00a240b4b6729185c618ecc4a"
+        "bytes": 14108,
+        "sha256": "42061ec652cafbc5db9e184e66d5028addf8f714f804057fc54427b76ec5d7c5"
       },
       {
         "path": "frontend/app/specialties.js",
@@ -633,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 416459,
-        "sha256": "d049694bea3010950490db21870697dc81ba26acbf344c85d553accdb80a76fe"
+        "bytes": 413433,
+        "sha256": "c1be366ee9c34f5d500b5e1ec510561b5f2cc504980b49c9b27c721f21f17883"
       },
       {
         "path": "frontend/app/study.js",
@@ -673,8 +673,8 @@
       },
       {
         "path": "frontend/app/toolprops.js",
-        "bytes": 3223,
-        "sha256": "b1010918bc148547f1eecf207f8b88a0a1a6d181907a07d060fccff582c37c21"
+        "bytes": 3336,
+        "sha256": "49deacb84530b8c40859f94ccd65078ec6d6282c812d71e6f071c9362f3c63b1"
       },
       {
         "path": "frontend/app/topbar.js",
@@ -748,8 +748,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 54143,
-        "sha256": "a76a4aa2f8a80b03f176f4d80477f8703584dad23f377cb67b5240e65c20271c"
+        "bytes": 60319,
+        "sha256": "09b6b62853ec82b552101b79b1f5d20e3e127c7b7eee65da76a94229552e7c6f"
       },
       {
         "path": "frontend/app/windows/logbook.js",
@@ -813,8 +813,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 460490,
-        "sha256": "bc1ee97668c325245295127b1f6f4ab2f7ee4bc6148ce3752ffa3a281f833d6d"
+        "bytes": 459600,
+        "sha256": "c0f33b09cf0f870f1acc3246feef8cdd24a616fe6d99971ac2ec4b0341fa4197"
       },
       {
         "path": "frontend/app/worldmodel.js",
@@ -838,8 +838,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 207579,
-        "sha256": "b2ac9af820ccd71477275e1fe925a80a3b41dc88f1e20e378aa0acfd06a44126"
+        "bytes": 211042,
+        "sha256": "f3f21fa2af6b80b9fbdb83b05f501d190ac38cc248792455c563768373e03f69"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -873,8 +873,8 @@
       },
       {
         "path": "frontend/css/style.css",
-        "bytes": 89813,
-        "sha256": "c40475b87a46e6563677d81b2a6bef2e8dc879384623f7971162d5079bdc991b"
+        "bytes": 88551,
+        "sha256": "2e6cfabd7c9749963bd252c0e4ca93d38a2ab3cb7f4b9926d580099e16e31499"
       },
       {
         "path": "frontend/css/titlebar.css",
@@ -1828,11 +1828,15 @@
     {
       "id": "manual-mcp-connect",
       "domain": "integrations",
-      "claim": "Users can connect HTTP or local stdio MCP servers and discover their tools.",
+      "claim": "Users can connect remote HTTP MCP servers and discover their tools. Local stdio servers are refused on the desktop host, and the panel says so instead of offering a form that cannot work.",
       "surfaceLocators": [
         {
           "path": "frontend/app/windows/connectors.js",
-          "needle": "Remote http(s) servers, or a local"
+          "needle": "Remote http(s) MCP servers."
+        },
+        {
+          "path": "frontend/app/windows/connectors.js",
+          "needle": "Local <code>stdio</code> MCP servers can’t run here."
         }
       ],
       "authorityChecks": [
@@ -1845,12 +1849,17 @@
           "kind": "contains",
           "path": "sidecar/mcp/manager.js",
           "needle": "tools/list"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/mcp/transport.stdio.js",
+          "needle": "deps.userControlIsolated === true"
         }
       ],
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
       "ownerWave": "W6",
-      "qualification": "Manual manager paths exist; W6 still needs live connect/fail/revoke evidence.",
+      "qualification": "Manual manager paths exist; W6 still needs live connect/fail/revoke evidence. 2026-07-24: the previous wording claimed local stdio connectivity, which the shipped app never had — the installed desktop pins STARNET_MCP_STDIO=0 and makeStdioTransport requires a broker-proven isolated cell that no production path sets, so the stdio form was withdrawn in favour of an in-panel explanation.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [

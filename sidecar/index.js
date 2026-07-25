@@ -96,7 +96,8 @@ const { makeFolderPick } = require('./folderpick.js');          // Projects rail
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeTelegramTransport } = require('./channels/telegram.transport.js');   // multi-bot connect: getMe token probe
 const { makeChannelStore } = require('./channels/store.js');
-const { makeChannelHub } = require('./channels/hub.js');
+const { makeChannelHub, menuCommands } = require('./channels/hub.js');
+const { makePromptRegistry } = require('./channels/prompts.js');   // C6: the bounded token→meaning map behind inline keyboards
 const { makeOpenAiCompat } = require('./openai-compat.js');   // /v1/* OpenAI-compatible surface (external harness ingress)
 const { makeChannelRegistry, wireChannel } = require('./channels/registry.js');   // H6.2: channel descriptors + generic wire-up
 const { parseSlackTokens } = require('./channels/slack.js');                       // slack stores its two tokens as ONE secret string
@@ -109,6 +110,7 @@ const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
 const connectorCatalog = require('./mcp/catalog.js');       // curated one-click MCP connector catalog (pure data + selectors)
 const serviceKeysMod = require('./servicekeys.js');         // KEYS tab: custom service API keys (pure core — env injection + masked list)
+const serviceKeysCatalog = require('./servicekeys-catalog.js');   // KEYS tab: the curated PLATFORM directory (pure data)
 const mcpOauth = require('./mcp/oauth.js');                 // generic OAuth 2.1 client for MCP connectors (discover/DCR/PKCE/refresh)
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
@@ -2011,6 +2013,53 @@ function blanketSetFor(agentId) {
 }
 const pendingByRun = new Map();            // runId -> Map(promptId -> resolve(decision)); the live consent prompts
 const pendingSummonByRun = new Map();      // runId -> Map(requestId -> resolve(newAgentId|null)); live team.summon requests awaiting the browser
+
+/* ---- CHANNEL CONSENT (C6): the pause/resolve behind a messaging approve/deny keyboard ---------------------
+   A chat that opted into `/approvals` runs surface:'interactive', so the broker await-pauses on a prompt just
+   like a browser run does. The TIMING is the browser's, byte-for-byte: the same unit-tested makeConsentWait,
+   the same CONSENT_TIMEOUT_MS fail-closed floor, the same instant deny on abort. The hub owns only the
+   keyboard render and the button→decision hop; nothing about pausing a run lives out there.
+
+   Deliberately a SEPARATE map from pendingByRun: the browser's consent card resolves a prompt with the runId
+   it learned from its OWN NDJSON stream, which it never has for a channel run. Putting these in pendingByRun
+   would surface prompts through GET /api/state/snapshot that the app is structurally unable to answer — a card
+   that lies about being actionable. A Telegram prompt is answered on Telegram (or it fail-closes). */
+const channelPendingByRun = new Map();     // runId -> Map(promptId -> finish(decision)); live CHANNEL consent prompts
+function channelAskConsent(o) {
+  const runId = String((o && o.runId) || '');
+  let pend = channelPendingByRun.get(runId);
+  if (!pend) { pend = new Map(); channelPendingByRun.set(runId, pend); }
+  // the exact fields the browser's consent card renders, so both surfaces describe one ask identically.
+  const fields = {
+    tool: (o.call && o.call.name) || 'tool',
+    scope: (o.tool && o.tool.scope) || 'write',
+    argsSummary: consentSummary(o.call)
+  };
+  return makeConsentWait({
+    pending: pend, signal: o.signal, timeoutMs: CONSENT_TIMEOUT_MS, extendMs: CONSENT_ACK_EXTEND_MS,
+    uuid: () => crypto.randomUUID(),
+    // onPrompt is the hub's cue to render the keyboard. It is called synchronously while the deny timer is
+    // already armed, so a throw from the renderer must never escape into the waiter (it would leave the run
+    // paused with no timer owner) — hence the guard.
+    emitPrompt: (promptId) => { try { if (typeof o.onPrompt === 'function') o.onPrompt(promptId, fields); } catch (_) {} }
+  }).ask().then((decision) => {
+    // makeConsentWait removes its own promptId; drop the run's bucket once the last prompt settles so a long
+    // -lived channel can't accumulate one empty Map per run forever.
+    if (pend.size === 0) channelPendingByRun.delete(runId);
+    return decision;
+  });
+}
+// Resolve one prompt BY ITS OWN ID. (The reference harness resolves the session's queue head instead, so with
+// two concurrent prompts a tap on the second answers the first — keying by promptId makes that unrepresentable.)
+// Returns false when the host already settled it: timed out, aborted by a superseding message, or E-STOPped.
+function channelResolveConsent(runId, promptId, decision) {
+  const d = (decision === 'once' || decision === 'session' || decision === 'always' || decision === 'full') ? decision : 'deny';
+  const pend = channelPendingByRun.get(String(runId == null ? '' : runId));
+  const finish = pend && pend.get(String(promptId == null ? '' : promptId));
+  if (!finish) return false;
+  finish(d);
+  return true;
+}
 // unconditional hardline floor: protected files no flag (not even Full Access) can write. The authoritative
 // resolved-abs-path floor belongs in dispatch AFTER resolveInside; this catches the reachable relative cases.
 function hardlineFloor(call) {
@@ -2025,7 +2074,10 @@ function hardlineFloor(call) {
    the bus, never returned by /status) so polling survives a restart with no browser open. The adapter is the
    lone ambient-I/O edge (injected globalThis.fetch); the hub drives the SAME runOnce host with
    surface:'autonomous' (a headless chat has no browser to answer a consent prompt — ungranted writes
-   default-deny and the run continues). Opt-in: nothing starts unless the Commander connects (or env is set). */
+   default-deny and the run continues) — unless a chat opted into approve/deny buttons with `/approvals on`,
+   which flips THAT chat to surface:'interactive' and answers the prompt over an inline keyboard (C6; the
+   pause/resolve stays here in channelAskConsent/channelResolveConsent, the hub only renders and routes the
+   tap). Opt-in: nothing starts unless the Commander connects (or env is set). */
 const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the STARNET station, reachable over Telegram. '
   + 'Address the user as "Commander", keep a spark of personality, and keep replies concise and chat-friendly. '
   + 'When the Commander gives you a task you have REAL tools (web search/read, files, memory) — use them and '
@@ -2469,7 +2521,9 @@ if (require.main === module) {
   inputGuard.observe('boot').catch(() => {});
 }
 const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
-const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env });
+// serviceEnv: the KEYS-tab vars a shell child must receive. Lazy + per call — sanitizeChildEnv strips every
+// *_API_KEY from the inherited env, so without this the pasted key never reaches curl (see servicekeys.runEnv).
+const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: () => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV }) });
 try { console.log('[exec-env]', JSON.stringify(executionEnvironment.describe())); } catch (_) {}
 const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200 });
 
@@ -2523,8 +2577,11 @@ function saveConnectorConfigs() {
 /* ---- Custom service API keys (the KEYS tab's "add an unlisted platform"): a third credential class beside
    provider keys and connector tokens. Persisted in a PROTECTED sibling file (outside the fs jail, never on the
    bus; /api/servicekeys responses carry a masked last4, never the value). Enabled keys are applied to
-   process.env (shell.exec children inherit it — that is HOW a pasted key actually works for an agent), with
-   servicekeys.applyEnv's ownership guard so an operator-exported ambient var is never clobbered. The prompt
+   process.env with servicekeys.applyEnv's ownership guard so an operator-exported ambient var is never
+   clobbered. NOTE: a shell child does NOT simply inherit process.env — environment.js hands it a
+   sanitizeChildEnv() snapshot that strips every *_KEY/_TOKEN name, which silently severed this whole feature
+   until the executionEnvironment `serviceEnv` hook (servicekeys.runEnv) merged the enabled vars back in per
+   call. Change either side and re-run test/servicekeys.env.test.js — the prompt PROMISES the var is there. The prompt
    seam advertises the env-var NAMES only, gated on shell.exec being in the run's resolved tools. ---- */
 const SERVICEKEYS_FILE = path.join(CONNECTORS_DIR, 'servicekeys.json');
 // Every model-provider keyEnv name (+ its STARNET_/SKYNET_ scoped forms, which ENV() also reads): a KEYS
@@ -4281,6 +4338,13 @@ function startTelegram(token, key, model, agentCfg) {
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
     chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    // INLINE KEYBOARDS (C6): multiple-choice answers and — for chats that ran /approvals on — approve/deny.
+    // The registry is per-BOT (its tokens address this bot's messages only). askConsent/resolveConsent keep the
+    // pause/resolve in the host; the hub only renders the keyboard and routes the tap back.
+    prompts: makePromptRegistry({ newId: () => crypto.randomUUID() }),
+    answerCallback: (cbId, text) => adapterRef ? adapterRef.answerCallback(cbId, text) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    askConsent: channelAskConsent, resolveConsent: channelResolveConsent,
     secrets: () => {
       const t = (channelSecrets && channelSecrets.telegram) || {};
       const provider = normalizeProvider(t.provider);
@@ -4290,6 +4354,7 @@ function startTelegram(token, key, model, agentCfg) {
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: the fallback line carries the stored recommendation
+    groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
     newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
@@ -4386,8 +4451,20 @@ function startTelegram(token, key, model, agentCfg) {
   // first getUpdates round-trip succeeds, or to 'error' if the token is bad. The panel derives CONNECTED from this.
   telegramStatus = { connected: false, state: 'connecting', detail: '' };
   adapter.connect();
+  publishCommandMenu(adapter, 'telegram');
   console.log('  · telegram channel connecting…');
   return { secretsPersisted };
+}
+
+// Publish the bot's "/" menu from the hub's OWN command table, so Telegram can never offer a command the hub
+// doesn't implement (or hide one it does). Fire-and-forget and non-blocking: an empty menu is cosmetic, and a
+// slow setMyCommands must never delay or fail a connect (a lesson the reference harness learned the hard way —
+// it had to move this off the connect path entirely after slow calls blew its connect timeout).
+function publishCommandMenu(adapter, label) {
+  if (!adapter || typeof adapter.setCommands !== 'function') return;
+  Promise.resolve(adapter.setCommands(menuCommands()))
+    .then((r) => { if (r && r.ok === false) console.warn('[' + label + '] command menu not published: ' + (r.error || 'unknown')); })
+    .catch(() => {});
 }
 function stopTelegram() {
   if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
@@ -4456,6 +4533,7 @@ function startTelegramBot(botId) {
     },
     persona: TELEGRAM_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),
+    groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
     newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: 4096,
     // HARD-LOCK: this bot IS its bound agent — resolveAgent (top of the hub's resolution order) always answers
     // it, so /talk bindings and floor routing can never quietly change who @ThisBot is. No roster/setModel
@@ -4464,7 +4542,13 @@ function startTelegramBot(botId) {
     resolveStation: (agentId) => router.stationFor(agentId),
     fetchMedia: (item) => adapterRef ? adapterRef.getFile(item.fileId, { maxBytes: item.maxBytes }) : Promise.resolve({ ok: false, error: 'no adapter' }),
     saveAttachment: (agentId, name, dataUrl) => attachments.saveAttachment(agentId, name, dataUrl),
-    expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId)
+    expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId),
+    // INLINE KEYBOARDS (C6) — same wiring as the station bot, with its OWN registry so tokens minted for this
+    // bot's messages can never address another bot's chat. /approvals is per-chat here too.
+    prompts: makePromptRegistry({ newId: () => crypto.randomUUID() }),
+    answerCallback: (cbId, text) => adapterRef ? adapterRef.answerCallback(cbId, text) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    askConsent: channelAskConsent, resolveConsent: channelResolveConsent
   });
   const adapter = makeTelegramAdapter({
     fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE, clock: { now: () => Date.now() },
@@ -4486,6 +4570,7 @@ function startTelegramBot(botId) {
   entry.adapter = adapter; entry.hub = hub;
   telegramBots.set(botId, entry);
   adapter.connect();
+  publishCommandMenu(adapter, 'telegram:' + botId);
   console.log('  · telegram bot ' + (rec.username ? '@' + rec.username : botId) + ' connecting…');
 }
 function stopTelegramBot(botId) {
@@ -4617,6 +4702,7 @@ function getDevHub() {
     secrets: devHubSecrets,
     persona: DEV_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: same recommendation line on the dev channel
+    groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
@@ -5010,6 +5096,8 @@ const ROUTES = [
   { m: 'GET', exact: '/api/servicekeys', h: handleServiceKeysList },
   { m: 'POST', exact: '/api/servicekeys', h: handleServiceKeyUpsert },
   { m: 'POST', exact: '/api/servicekeys/toggle', h: handleServiceKeyToggle },
+  { m: 'GET', exact: '/api/servicekeys/catalog', h: handleServiceKeysCatalog },
+  { m: 'POST', exact: '/api/servicekeys/autonomy', h: handleServiceKeyAutonomy },
   { m: 'POST', exact: '/api/servicekeys/remove', h: handleServiceKeyRemove },
   { m: 'GET', prefix: '/api/toolsets', h: handleToolsetsList },
   { m: 'POST', prefix: '/api/toolsets/', h: handleToolsetToggle },
@@ -5802,6 +5890,29 @@ async function handleServiceKeyToggle(req, res) {
   if (r.error) return json(404, { error: r.error });
   serviceKeys = r.list;
   applyServiceKeysEnv();
+  const saved = saveServiceKeys();
+  return json(saved ? 200 : 500, { ok: saved, saved, key: serviceKeysMod.toPublic(r.record) });
+}
+// The PLATFORM directory behind the KEYS picker. Pure curated data + a live `installed` cross-ref against
+// the Commander's own keys; carries no secrets (the store is consulted only for env-var NAMES).
+async function handleServiceKeysCatalog(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const have = (Array.isArray(serviceKeys) ? serviceKeys : []).map(r => r && r.envVar).filter(Boolean);
+    return json(200, { groups: serviceKeysCatalog.grouped(have) });
+  } catch (e) { return json(200, { groups: [], error: String((e && e.message) || e) }); }
+}
+// The UNATTENDED grant: may an agent spend this key while nobody is watching (cron / Night Shift /
+// a messaged run)? Separate from `enabled` and default OFF, so adding a key never silently widens what
+// happens overnight. No env re-apply is needed — this flag is read by web_request at call time, not baked
+// into any child environment.
+async function handleServiceKeyAutonomy(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 12)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  if (typeof body.autonomous !== 'boolean') return json(400, { error: 'autonomous must be a boolean' });
+  const r = serviceKeysMod.setAutonomous(serviceKeys, body.id, body.autonomous);
+  if (r.error) return json(404, { error: r.error });
+  serviceKeys = r.list;
   const saved = saveServiceKeys();
   return json(saved ? 200 : 500, { ok: saved, saved, key: serviceKeysMod.toPublic(r.record) });
 }
@@ -8194,12 +8305,13 @@ async function runOnce(o) {
   } else if (taskBrief) {
     let goal = null; try { goal = commanderGoals.get() || null; } catch (_) {}
     let patterns = []; try { patterns = taskBriefStore.patterns(5); } catch (_) {}
+    let deferredDimensions = []; try { deferredDimensions = taskBriefStore.deferredDimensions(); } catch (_) {}
     // TASK BRIEF v2: a recipe-launched run carries its recipe's declared material decisions (normalized by
     // recipes.js — the same data the launch chips rendered), so a mid-run question arrives pre-aimed.
     let recipeIntake = [];
     try { const rr = o.recipeId ? Recipes.get(String(o.recipeId)) : null; if (rr && Array.isArray(rr.intake)) recipeIntake = rr.intake; } catch (_) {}
     taskContextBlock = CommanderContext.compose({
-      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, recipeIntake, existingSystem: system || ''
+      brief: taskBrief, dossier: commanderDossier.get(), goal, patterns, deferredDimensions, recipeIntake, existingSystem: system || ''
     });
   }
 
@@ -8211,7 +8323,14 @@ async function runOnce(o) {
   const managedSkills = [];
   const seenLoadedSkills = new Set();
   const openrouterToolKey = providerId === 'openrouter' ? runKey : runtimeKey;
-  makeWebTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
+  // web_search/web_fetch (DDG/Jina, OR fallback) + web_request. `surface` is HOST AUTHORITY here: it comes
+  // from the run, never from tool args, so an autonomous run cannot claim to be watched to unlock a key.
+  makeWebTools({
+    openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null,
+    surface: surface,
+    redact: redact,
+    resolveServiceKey: (name, sfc) => serviceKeysMod.resolveForRequest(serviceKeys, name, sfc)
+  }).register(registry);
   // STUDIO media tools, built up-front so browser.vision can borrow its multimodal analyze path
   // (one provider seam, no duplication). Registered below; here we only need its vision callback.
   // STARNET_IMAGE_MODEL overrides the studio's default text->image model (image.js picks the current-gen
@@ -8440,6 +8559,18 @@ async function runOnce(o) {
     // cabinet:write / notebook:write (jail-scoped) — exec stays locked, non-jail tools unchanged. A read of the
     // live store each check keeps it honest (a toggle flip takes effect on the very next tool call, no restart).
     workshop: (call, tool) => workshopOf(agentId),
+    // UNATTENDED CREDENTIAL GRANT: every ${VAR} this call references must name a service key the Commander
+    // approved for unattended use. Read live from the store, so revoking the toggle takes effect on the very
+    // next tool call. The tool re-checks independently at send time — this tier only decides consent.
+    credentialed: (call) => {
+      try {
+        const hs = (call && call.args && call.args.headers) || {};
+        const refs = [];
+        for (const k of Object.keys(hs)) String(hs[k]).replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (m, n) => { refs.push(n); return m; });
+        if (!refs.length) return false;   // references no credential -> nothing was pre-approved; ask/deny as usual
+        return refs.every(n => serviceKeysMod.resolveForRequest(serviceKeys, n, 'autonomous').ok);
+      } catch (_) { return false; }
+    },
     surface: surface, prompt: prompt
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
@@ -8867,8 +8998,14 @@ async function runOnce(o) {
   // no service keys gets a byte-identical prompt (promptBlock('') === ''). Fail-open: never breaks a run.
   let serviceKeysBlock = '';
   try {
-    if (isTask && resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('shell.exec') >= 0) {
-      const b = serviceKeysMod.promptBlock(serviceKeys);
+    // Composes when the run has EITHER route to spend a key: web_request (a placed dish) or shell.exec (a
+    // placed workbench). Before web_request existed this was shell-only, which meant a dish-only station —
+    // the common case — never learned that any key existed, so the model could not reference one.
+    const kt = (isTask && resolved && Array.isArray(resolved.tools)) ? resolved.tools : [];
+    const canShell = kt.indexOf('shell.exec') >= 0;
+    const canRequest = kt.indexOf('web_request') >= 0;
+    if (canShell || canRequest) {
+      const b = serviceKeysMod.promptBlock(serviceKeys, { shell: canShell, request: canRequest });
       if (b) serviceKeysBlock = '\n\n' + b;
     }
   } catch (_) { serviceKeysBlock = ''; }
@@ -11441,8 +11578,16 @@ function serveTaskBriefs(req, res) {
     const status = String(u.searchParams.get('status') || '').slice(0, 24);
     const limit = Math.max(1, Math.min(100, Number(u.searchParams.get('limit')) || 20));
     const briefs = taskBriefStore.list({ key: key || undefined, status: status || undefined, limit });
-    json(200, { briefs, patterns: taskBriefStore.patterns(5) });
-  } catch (_) { json(200, { briefs: [], patterns: [] }); }
+    // `grounded` is the OBSERVED-behaviour suggestion for the newest brief's open question (see
+    // taskBriefStore.groundedFor): provable from answered history, so the client can mark a chip with a real
+    // count instead of only the model's assertion. Null whenever nothing was observed twice — never a guess.
+    const pats = taskBriefStore.patterns(50);
+    const b0 = briefs[0];
+    const q0 = b0 && Array.isArray(b0.questions) ? b0.questions[b0.questions.length - 1] : null;
+    let grounded = null;
+    try { grounded = q0 ? taskBriefStore.groundedFor(q0, pats) : null; } catch (_) { grounded = null; }
+    json(200, { briefs, patterns: pats.slice(0, 5), grounded });
+  } catch (_) { json(200, { briefs: [], patterns: [], grounded: null }); }
 }
 
 // GET /api/threads/proposals?agent=<id>&run=<id> — NS-6: the pending MINED thread candidates for a run (with the

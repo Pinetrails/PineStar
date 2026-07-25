@@ -58,6 +58,9 @@
     dish: [
       { capId: 'web', tool: 'web_search', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'web_fetch', scope: 'read', requiresConsent: false, network: true },
+      // web_request calls a third-party API AS the Commander (it spends a stored key), so unlike the two
+      // keyless readers above it always asks. Its unattended use is additionally gated per-key.
+      { capId: 'web', tool: 'web_request', scope: 'execute', requiresConsent: true, network: true },
       { capId: 'web', tool: 'browser.navigate', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.snapshot', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.get_text', scope: 'read', requiresConsent: false, network: true },

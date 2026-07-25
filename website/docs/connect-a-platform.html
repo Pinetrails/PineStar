@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Connect a platform — StarNet Docs</title>
+<link rel="icon" type="image/svg+xml" href="../assets/favicon.svg">
+<link rel="stylesheet" href="docs.css?v=20260723">
+</head>
+<body>
+
+<div class="crt-scan" aria-hidden="true"></div>
+<div class="crt-vignette" aria-hidden="true"></div>
+
+<header class="topbar">
+  <a class="brand" href="../index.html">STARNET TERMLINK</a>
+  <nav class="topnav">
+    <a href="../index.html#features">FEATURES</a>
+    <a href="../index.html#download">DOWNLOAD</a>
+    <a href="index.html">DOCS</a>
+    <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
+  </nav>
+  <span class="live-dot"><span class="dot"></span>OPEN SOURCE</span>
+</header>
+
+<div class="docs-shell">
+  <aside class="docs-side">
+    <div class="side-title">// DOCS</div>
+    <a href="index.html">DOCS</a>
+    <a href="getting-started.html">GETTING STARTED</a>
+    <a href="providers.html">PROVIDERS &amp; KEYS</a>
+    <a href="station.html">THE STATION</a>
+    <a href="agents.html">AGENTS &amp; TEAMS</a>
+    <a href="autonomy.html">AUTONOMY &amp; NIGHT SHIFT</a>
+    <a href="skills.html">SKILLS, RECIPES, ROUTINES</a>
+    <a href="connect-a-platform.html" class="active">CONNECT A PLATFORM</a>
+    <a href="connectors.html">CONNECTORS &amp; INTEROP</a>
+    <a href="migrating.html">FROM OPENCLAW / HERMES</a>
+    <a href="troubleshooting.html">TROUBLESHOOTING</a>
+  </aside>
+  <main class="docs-main">
+<h1>CONNECT A PLATFORM</h1>
+<p class="doc-sub">// Printify, Etsy, Shopify, Stripe, your own internal API — the whole decision in one page</p>
+
+<h2>Which route do I need?</h2>
+<p>There are two, and the right one depends on the platform, not on you. Check in this order:</p>
+
+<ol>
+  <li><b>Does the platform publish a <i>remote</i> MCP server?</b> Then add it in
+    <b>TOOLSETS &amp; CONNECTORS &rarr; MCP CONNECTORS</b>, or find it already sitting in <b>CATALOG</b>.
+    You get ready-made tools, and it is the least work. Notion, Linear, Stripe, GitHub and Sentry are here.</li>
+  <li><b>Otherwise it has a plain REST API.</b> Paste its key in <b>KEYS</b> and your agent calls the API
+    directly with <code>web_request</code>. This is the route for most of the long tail — including every
+    print-on-demand and marketplace service we checked.</li>
+</ol>
+
+<div class="callout">Print-on-demand and marketplace platforms are route 2 today. As of July 2026 there is no
+remote MCP server for Printify, Printful, Etsy or WooCommerce — the only Printify MCP that exists is a
+<i>local</i> <code>npx</code> server, and StarNet will not spawn unsandboxed child processes on your machine.
+Route 2 works for all of them.</div>
+
+<h2>Route 1 — a remote MCP server</h2>
+<p>Open <b>TOOLSETS &amp; CONNECTORS</b> (dock: <b>&#8644; TOOLSETS</b>).</p>
+<ul>
+  <li><b>CATALOG</b> — browse vetted servers. <b>&#9656; no setup</b> connects instantly, <b>API key</b> takes a
+    pasted token, <b>OAUTH</b> opens a browser sign-in. One click and its tools are live.</li>
+  <li><b>MCP CONNECTORS</b> — for anything not in the catalog. Give it a short id, paste the server's
+    <b>Streamable-HTTP endpoint</b> (usually ending <code>/mcp</code>), and a bearer token if it needs one.</li>
+</ul>
+<p>The connector must be a <b>remote http(s)</b> server. A local <code>stdio</code> command
+(<code>npx …</code>, <code>uvx …</code>) cannot run here — StarNet refuses to spawn unsandboxed child
+processes on your machine, and the panel says so rather than offering a form that would never connect.
+If a service only ships a local server, use route 2.</p>
+
+<h2>Route 2 — an API key + <code>web_request</code></h2>
+
+<h3>1. Paste the key</h3>
+<p><b>TOOLSETS &amp; CONNECTORS &rarr; KEYS &rarr; PICK A PLATFORM</b>. Choose your platform (or type any name),
+paste your key, and save. StarNet stores it locally and shows only the last four characters, ever.</p>
+<p>Each key becomes a named environment variable — <code>Printify</code> becomes
+<code>PRINTIFY_API_KEY</code>. Adding the platform's <b>API docs URL</b> is worth the ten seconds: it rides
+into the agent's prompt, so it can look up the right endpoint instead of guessing.</p>
+
+<h3>2. Give the agent a dish</h3>
+<p>A key on its own does nothing. Tools come from <a href="station.html">placed props</a>: the
+<b>dish</b> grants the web toolset, which is what contains <code>web_request</code>. Place one in the agent's
+bay from the build menu. (If you want the agent to use the key from a terminal instead, that is the
+<b>workbench</b> prop — but for calling an API you do not need it.)</p>
+
+<h3>3. Ask for the thing you want</h3>
+<p>&ldquo;List my Printify shops and tell me which products are unpublished.&rdquo; The agent calls the API,
+you approve the call, and it reports back.</p>
+
+<h2>Your key is never shown to the model</h2>
+<p>This is the part worth understanding, because it is unusual. The agent never receives your key. It writes
+a <b>placeholder</b> naming the key, and StarNet substitutes the real value at the moment the request leaves
+your machine:</p>
+<pre><code>web_request
+  url:     https://api.printify.com/v1/shops.json
+  headers: { "Authorization": "Bearer ${PRINTIFY_API_KEY}" }</code></pre>
+<p>The model sees only the name. A leaked transcript, a log, or a model provider never sees the value, and
+the response comes back with any echoed secret scrubbed. Placeholders work in <b>headers only</b> — StarNet
+refuses to send a URL the model wrote containing a secret, because URLs leak into browser history, proxy logs
+and <code>Referer</code> headers.</p>
+<p>Some APIs will not take a header and want the key as a query parameter instead. That still works, and the
+rule is unchanged: the agent names the key and the slot, and <b>StarNet attaches the value itself</b>, after
+the agent has finished composing the request.</p>
+<pre><code>web_request
+  url:  https://api.example.com/v1/items
+  auth: { "key": "SOME_API_KEY", "in": "query", "name": "api_key" }</code></pre>
+<p>The agent still never handles the value, and it is attached only to the first request — if the server
+redirects somewhere else, the credential is not carried along.</p>
+
+<h2>Letting it run while you are away</h2>
+<p>By default a key is usable only in <b>watched sessions</b> — you are at the station and approve the call.
+Scheduled routines, Night Shift, and agents messaged over Telegram cannot spend it.</p>
+<p>To change that for one platform, tick <b>&ldquo;usable in scheduled &amp; messaged runs&rdquo;</b> on that key's row in
+KEYS. It is per key, off by default, and revocable at any time — the next tool call sees the change
+immediately. Nothing else about unattended runs widens: they still cannot run shell commands, and they still
+cannot spend any key you have not ticked.</p>
+
+<h2>When it does not work</h2>
+<table>
+  <tr><th>What you see</th><th>What it means</th></tr>
+  <tr><td>&ldquo;no enabled service key provides X_API_KEY&rdquo;</td>
+      <td>The placeholder name does not match a key you saved, or that key is switched off. Check the exact
+          env-var name shown on the key's row in KEYS.</td></tr>
+  <tr><td>&ldquo;this run is unattended and &lsquo;X&rsquo; is not approved for unattended use&rdquo;</td>
+      <td>A scheduled or messaged run tried to spend a watched-only key. Tick the unattended box on that key,
+          or run the task while you are at the station.</td></tr>
+  <tr><td>The agent has no <code>web_request</code></td>
+      <td>No <b>dish</b> is placed in that agent's bay, or the <b>web</b> toolset is switched off in TOOLSETS.</td></tr>
+  <tr><td>HTTP 401 / 403 from the platform</td>
+      <td>The key reached the platform and the platform rejected it — wrong key, wrong scope, or the wrong
+          header name. Check the platform's docs for the header it expects.</td></tr>
+  <tr><td>A connector sits red on &ldquo;stdio&rdquo;</td>
+      <td>Local <code>stdio</code> servers cannot run here. Remove it and use route 1 with a remote URL, or
+          route 2 with a key.</td></tr>
+  <tr><td>&ldquo;refusing private/loopback/intranet host&rdquo;</td>
+      <td>Working as intended: agents cannot reach your local network or cloud metadata endpoints.</td></tr>
+</table>
+
+<h2>What StarNet will not do</h2>
+<ul>
+  <li>Show your key to the model, write it to a file, or send it anywhere except the platform you named.</li>
+  <li>Forward your credential across a redirect to a different host.</li>
+  <li>Spawn a local MCP child process on your machine.</li>
+  <li>Spend a key in an unattended run you did not explicitly approve for that.</li>
+</ul>
+
+<div class="doc-next"><a href="skills.html">&larr; SKILLS, RECIPES, ROUTINES</a><a href="connectors.html">NEXT: CONNECTORS &amp; INTEROP &rarr;</a></div>
+  </main>
+</div>
+
+<footer class="footer">
+  <div class="footer-links">
+    <a href="../index.html">HOME</a>
+    <a href="https://github.com/androoAGI/starnet" target="_blank" rel="noopener">GITHUB</a>
+    <a href="https://github.com/androoAGI/starnet-releases/releases/latest" target="_blank" rel="noopener">RELEASES</a>
+    <a href="mailto:androo.agi@gmail.com">CONTACT</a>
+  </div>
+  <div class="footer-fine">MIT license &middot; StarNet</div>
+</footer>
+
+</body>
+</html>
