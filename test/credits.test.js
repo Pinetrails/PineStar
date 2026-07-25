@@ -12,8 +12,9 @@ function fakeFetch(seed) {
   const book = Object.assign({ default: 0 }, seed || {});
   const calls = [];
   const json = (obj, ok) => Promise.resolve({ ok: ok !== false, status: ok === false ? 500 : 200, json: () => Promise.resolve(obj) });
-  return {
+  const self = {
     calls, book,
+    fail: false,   // set true to make every mutating POST 500 (drives the fail-closed / cache-invalidation paths)
     fetch(url, init) {
       const u = String(url);
       const method = (init && init.method) || 'GET';
@@ -21,12 +22,14 @@ function fakeFetch(seed) {
       try { body = init && init.body ? JSON.parse(init.body) : {}; } catch (_) {}
       calls.push({ url: u, method, headers: (init && init.headers) || {}, body });
       if (u.indexOf('/v1/balance') >= 0) { const acct = /account=([^&]+)/.exec(u); const id = acct ? decodeURIComponent(acct[1]) : 'default'; return json({ balanceUsd: book[id] || 0 }); }
+      if (self.fail && (u.indexOf('/v1/debit') >= 0 || u.indexOf('/v1/credit') >= 0)) return json({ ok: false, reason: 'backend down' }, false);
       if (u.indexOf('/v1/debit') >= 0) { const id = body.account || 'default'; book[id] = (book[id] || 0) - (body.usd || 0); return json({ ok: true, balanceUsd: book[id] }); }
       if (u.indexOf('/v1/credit') >= 0) { const id = body.account || 'default'; book[id] = (book[id] || 0) + (body.usd || 0); return json({ ok: true, balanceUsd: book[id] }); }
       if (u.indexOf('/v1/history') >= 0) { return json({ entries: [{ ts: 1, kind: 'debit', usd: 1 }] }); }
       return json({}, false);
     }
   };
+  return self;
 }
 
 // ---- CONFIG GATING: no url => fully inert, zero surface, no payment calls ever ----
@@ -159,6 +162,111 @@ function fakeFetch(seed) {
     const healed = await c.refresh('acct');
     A.eq(healed, 10, 'refresh() re-reads the authoritative balance and heals the cache');
     A.eq(c.snapshot().balanceUsd, 10, 'cache is trustworthy again after refresh');
+  }
+
+  /* ---- LOW-BALANCE WARNING -------------------------------------------------------------------
+     The value of this feature is entirely in WHEN it fires. Firing every debit makes it noise the
+     user learns to ignore; firing once and never re-arming means the second time they run dry it
+     is silent. Both failure modes are tested here, not just the happy path. */
+
+  // helper: a configured adapter with the warning armed at $5 and every emit captured
+  function withWarn(seedBalance, opts) {
+    const f = fakeFetch({ acct: seedBalance });
+    const events = [];
+    const c = makeCredits(Object.assign({
+      url: 'https://c.example', apiKey: 'k', accountId: 'acct', purchaseUrl: 'https://c.example/account',
+      fetch: f.fetch, clock: { now: () => 1000 },
+      lowBalanceUsd: 5,
+      emit: (name, payload) => events.push({ name, payload })
+    }, opts || {}));
+    return { c, f, events, low: () => events.filter(e => e.name === 'credits.low') };
+  }
+
+  {
+    const { c, low } = withWarn(20);
+    await c.refresh('acct');
+    A.eq(low().length, 0, 'a healthy balance emits nothing');
+  }
+
+  {
+    const { c, low } = withWarn(4);
+    await c.refresh('acct');
+    A.eq(low().length, 1, 'crossing the threshold warns');
+    const p = low()[0].payload;
+    A.eq(p.balanceUsd, 4, 'the warning carries the REAL balance, not the threshold');
+    A.eq(p.thresholdUsd, 5, 'and what tripped it');
+    A.eq(p.exhausted, false, 'still spendable, so not exhausted');
+    A.eq(p.purchaseUrl, 'https://c.example/account', 'and where to fix it');
+  }
+
+  {
+    // the anti-nag property: the balance moves on EVERY debit, so without a latch this fires per run
+    const { c, low } = withWarn(4.5);
+    await c.refresh('acct');
+    A.eq(low().length, 1, 'first crossing warns');
+    c.beginRun({ accountId: 'acct', runId: 'r1', capUsd: 0.5 }); await flush();
+    c.beginRun({ accountId: 'acct', runId: 'r2', capUsd: 0.5 }); await flush();
+    await c.refresh('acct');
+    A.eq(low().length, 1, 'still ONE warning after further spend — the latch holds');
+  }
+
+  {
+    // exhaustion must break through the low latch: it is the one that actually stops the station
+    const { c, f, low } = withWarn(4);
+    await c.refresh('acct');
+    A.eq(low().length, 1, 'low fired');
+    f.book.acct = 0;
+    await c.refresh('acct');
+    A.eq(low().length, 2, 'hitting zero warns AGAIN even though low already fired');
+    A.eq(low()[1].payload.exhausted, true, 'and is flagged exhausted');
+  }
+
+  {
+    // re-arm after a top-up, with hysteresis: $5.10 on a $5 threshold must NOT re-arm (a refund settling
+    // against a debit jitters around the line), $10 must
+    const { c, f, low } = withWarn(4);
+    await c.refresh('acct');
+    A.eq(low().length, 1, 'warned once');
+    f.book.acct = 5.10; await c.refresh('acct');
+    f.book.acct = 4;    await c.refresh('acct');
+    A.eq(low().length, 1, 'a hair above the line does NOT re-arm — no flapping');
+    f.book.acct = 10;   await c.refresh('acct');   // clears threshold x 1.25
+    f.book.acct = 4;    await c.refresh('acct');
+    A.eq(low().length, 2, 'a real top-up re-arms, so the NEXT time they run dry they are told');
+  }
+
+  {
+    // an invalidated cache is UNKNOWN, not empty — warning on it would cry wolf on every network blip
+    const { c, f, low } = withWarn(20);
+    await c.refresh('acct');
+    f.fail = true;
+    c.beginRun({ accountId: 'acct', runId: 'r1', capUsd: 1 }); await flush(); await flush();
+    A.eq(c.snapshot().balanceUsd, null, 'cache invalidated by the failed POST');
+    A.eq(low().length, 0, 'unknown balance never emits a low-credit warning');
+  }
+
+  {
+    const { c, low } = withWarn(1, { lowBalanceUsd: 0 });
+    await c.refresh('acct');
+    A.eq(low().length, 0, 'lowBalanceUsd 0 disables the warning entirely');
+  }
+
+  {
+    // the threshold is a GETTER in production (effectiveCaps.perRun is live-tunable) — prove it is read
+    // per-check, not captured once at construction
+    let cap = 1;
+    const { c, low } = withWarn(4, { lowBalanceUsd: () => cap });
+    await c.refresh('acct');
+    A.eq(low().length, 0, 'above a $1 threshold — quiet');
+    cap = 5;
+    await c.refresh('acct');
+    A.eq(low().length, 1, 'raising the cap live makes the SAME balance low, with no restart');
+  }
+
+  {
+    const c = makeCredits({ url: '', emit: () => { throw new Error('must never be called'); } });
+    A.eq(c.configured(), false, 'an unconfigured (BYOK) station stays inert');
+    A.eq(c.snapshot().balanceUsd, null, 'and has no balance to warn about');
   }
 
   A.report('credits.test');

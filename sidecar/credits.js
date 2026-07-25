@@ -54,7 +54,9 @@
   /* opts: {
        url, apiKey, accountId, purchaseUrl,   // config (url empty => inert)
        fetch, clock, ledger,                  // injected IO + the shared spend ledger (managed final truth)
-       onError                                // optional: (stage, err) => void — background POST failures
+       onError,                               // optional: (stage, err) => void — background POST failures
+       lowBalanceUsd,                         // number OR () => number — warn at/below this balance; 0 disables
+       emit                                   // optional: (name, payload) => void — bus emit for 'credits.low'
      } */
   function makeCredits(opts) {
     opts = opts || {};
@@ -72,14 +74,65 @@
     // run refuses rather than spending against an unknown balance). refresh() populates/reconciles it.
     const cache = { balanceUsd: null, at: 0 };
 
+    /* ---- LOW-BALANCE WARNING ------------------------------------------------------------------
+       Without this, a managed run just stops at $0 with no warning — the user's first signal that
+       they ran out is work failing. That is the same dishonesty as a silent gauge: the harness knew
+       and did not say.
+
+       WHY IT LIVES HERE: every path that can move the balance (refresh, the optimistic debit, the
+       authoritative debit/credit responses) funnels through setBalance() below, so this is the one
+       choke point where "the balance went down" is observable. Detecting it at the call sites would
+       mean four detectors and a missed one.
+
+       LATCHING: fire ONCE per crossing, not once per run. Nagging every turn is how a warning gets
+       ignored, and the balance moves on every debit. The latch clears only when the balance climbs
+       back above threshold × REARM (hysteresis) — a bare `> threshold` re-arm would re-fire on the
+       cent-level jitter of a refund settling against a debit.
+
+       TWO LEVELS, SEPARATE LATCHES: 'low' (you should top up) and 'exhausted' (<= 0, work WILL be
+       refused). Exhausted must be able to fire even when low already did, or the one that actually
+       stops the station is the one that stays silent. */
+    const REARM = 1.25;
+    const warned = { low: false, exhausted: false };
+    const emitFn = typeof opts.emit === 'function' ? opts.emit : null;
+    // number or getter — index.js passes a getter so a live per-run cap change is picked up without a restart
+    function lowThreshold() {
+      const raw = typeof opts.lowBalanceUsd === 'function' ? opts.lowBalanceUsd() : opts.lowBalanceUsd;
+      const n = num(raw);
+      return n > 0 ? n : 0;   // 0 (or unset/garbage) disables the warning entirely
+    }
+
+    // The ONLY writer of cache.balanceUsd. Every caller goes through here so the crossing check cannot be
+    // bypassed. `null` means "unknown" (fail-closed) and must never be treated as a low balance — that would
+    // fire a scary warning every time a background POST invalidates the cache.
+    function setBalance(v) {
+      const b = (v == null) ? null : num(v);
+      cache.balanceUsd = b;
+      cache.at = clock.now();
+      if (b == null) return;                      // unknown ≠ low
+      const t = lowThreshold();
+      if (!emitFn || !(t > 0)) return;
+
+      if (b <= 0 && !warned.exhausted) {
+        warned.exhausted = true; warned.low = true;
+        try { emitFn('credits.low', { balanceUsd: b, thresholdUsd: t, purchaseUrl, exhausted: true }); } catch (_) {}
+        return;
+      }
+      if (b > 0 && b <= t && !warned.low) {
+        warned.low = true;
+        try { emitFn('credits.low', { balanceUsd: b, thresholdUsd: t, purchaseUrl, exhausted: false }); } catch (_) {}
+        return;
+      }
+      if (b > t * REARM) { warned.low = false; warned.exhausted = false; }   // topped up — arm for next time
+    }
+
     // A background debit/credit POST FAILED, so the optimistic cache no longer reflects a state we can trust
     // (the debit may or may not have landed on the backend). Rather than let the cache DRIFT — and admit later
     // runs against a fictional balance — INVALIDATE it (null). The next admission then fail-closes cleanly
     // (payment.balance() throws -> billing returns managed_credit_unavailable) and refresh() re-reads the
     // authoritative backend balance right before that admission, self-healing the drift. Loud on the way out.
     function onPostFailure(stage, e) {
-      cache.balanceUsd = null;   // fail-closed until the next authoritative refresh reconciles
-      cache.at = clock.now();
+      setBalance(null);          // fail-closed until the next authoritative refresh reconciles ('unknown', never 'low')
       try { console.warn('[credits] ' + stage + ' POST failed (status ' + ((e && e.status) || '?') + '); invalidating cached balance -> next managed run fail-closes until refresh reconciles'); } catch (_) {}
       onError(stage, e);
     }
@@ -111,7 +164,7 @@
       try {
         const j = await getJson('/v1/balance?account=' + encodeURIComponent(acct(id)));
         const b = num(j && (j.balanceUsd != null ? j.balanceUsd : j.balance));
-        cache.balanceUsd = b; cache.at = clock.now();
+        setBalance(b);
         return b;
       } catch (e) { onError('refresh', e); return null; }
     }
@@ -125,17 +178,20 @@
       },
       debit(id, usd, meta) {
         const amt = num(usd);
-        if (cache.balanceUsd != null) cache.balanceUsd = Math.max(0, cache.balanceUsd - amt);   // optimistic hold
+        // The optimistic hold is what makes the warning TIMELY: it lands the moment the run reserves,
+        // not a round-trip later. The authoritative response below re-runs the same check with the
+        // real number — the latch means the user still only sees it once.
+        if (cache.balanceUsd != null) setBalance(Math.max(0, cache.balanceUsd - amt));
         postJson('/v1/debit', { account: acct(id), usd: amt, meta: meta || {} })
-          .then(body => { if (body && body.balanceUsd != null) { cache.balanceUsd = num(body.balanceUsd); cache.at = clock.now(); } })
+          .then(body => { if (body && body.balanceUsd != null) setBalance(num(body.balanceUsd)); })
           .catch(e => onPostFailure('debit', e));
         return { ok: true };
       },
       credit(id, usd, meta) {
         const amt = num(usd);
-        if (cache.balanceUsd != null) cache.balanceUsd = cache.balanceUsd + amt;   // optimistic refund
+        if (cache.balanceUsd != null) setBalance(cache.balanceUsd + amt);   // optimistic refund
         postJson('/v1/credit', { account: acct(id), usd: amt, meta: meta || {} })
-          .then(body => { if (body && body.balanceUsd != null) { cache.balanceUsd = num(body.balanceUsd); cache.at = clock.now(); } })
+          .then(body => { if (body && body.balanceUsd != null) setBalance(num(body.balanceUsd)); })
           .catch(e => onPostFailure('credit', e));
         return { ok: true };
       }
