@@ -367,19 +367,37 @@ const StationBake = (() => {
     const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
     const sh = d => U.shade(base, d * fd);
     const clump = h2(x >> 1, y >> 1, z + ':cl');                 // 2×2-tile patches read denser/sparser
-    const cl = ((clump % 5) - 2) * 0.020;
-    px(X, Y, T, T, base);
-    px(X, Y, T, T, sh(cl));
-    const TONE = [-0.20, -0.10, 0.07, 0.16];
-    for (let i = 0; i < 22; i++) {
-      const r = hp(X, Y, i);
-      const by = (r >>> 5) % T;
-      px(X + (r % T), Y + by, 1, Math.min(1 + ((r >>> 13) % 3), T - by), sh(cl + TONE[(r >>> 11) & 3]));
+    const cl = ((clump % 5) - 2) * 0.022;
+    /* v2 (2026-07-25). The first pass was a flat green field with ~22 sparse 1px specks scattered on
+       it, which read as salt-and-pepper noise over paint rather than as grass. Three things fix it:
+         UNDERSTORY — the base goes DARKER than every blade, so blades read as lit tips against
+           shadow instead of light dots sitting on top of a green fill;
+         DENSITY — a jittered 2×2 lattice of short vertical blade ticks covering most of the tile,
+           rather than a handful of specks leaving big flat areas;
+         SPREAD — a wider tone range, so neighbouring blades actually separate from each other.
+       Still no lattice in the finished read: the ticks are jittered off their sample points and the
+       clump term varies density at the 2-tile scale, so a large lawn never tiles visibly. */
+    px(X, Y, T, T, sh(cl - 0.24));                               // understory: shadow between blades
+    /* Tone lifts are kept modest ON PURPOSE. U.shade brightens toward WHITE, so it desaturates as it
+       lightens — a +0.45 blade under a warm lamp pool stops being green and goes silvery/frosted.
+       Capping the brightest blade near +0.22 keeps the lawn reading as grass in the lit pools, where
+       the additive room light is already doing most of the lifting. */
+    const TONE = [-0.15, -0.05, 0.05, 0.13, 0.21];
+    for (let cy = 0; cy < T; cy += 2) for (let cx = 0; cx < T; cx += 2) {
+      const r = hp(X + cx, Y + cy, 7);
+      const bx = cx + (r & 1), by = cy + ((r >>> 2) & 1);
+      if (by >= T) continue;
+      const hgt = Math.min(2 + ((r >>> 5) % 2), T - by);
+      const t = TONE[(r >>> 9) % 5];
+      px(X + bx, Y + by, 1, hgt, sh(cl + t));
+      if (((r >>> 14) % 3) === 0) px(X + bx, Y + by, 1, 1, sh(cl + t + 0.09));   // lit tip — what makes a blade a blade
     }
-    if ((clump % 4) === 0) {                                     // a taller blade catching the room light
-      const r = hp(X, Y, 99);
-      px(X + (r % T), Y + ((r >>> 6) % (T - 3)), 1, 3, sh(cl + 0.24));
+    for (let i = 0; i < 2; i++) {                                // taller blades breaking the canopy
+      const r = hp(X, Y, 90 + i);
+      const by = (r >>> 6) % (T - 3);
+      px(X + (r % T), Y + by, 1, 4, sh(cl + 0.24));
     }
+    if ((clump % 7) === 0) { const r = hp(X, Y, 99); px(X + (r % T), Y + ((r >>> 6) % T), 1, 1, sh(cl + 0.32)); }   // pale seed head
   }
 
   function paintDeck(b, mat, base, x, y, X, Y, z, n, fd) {
