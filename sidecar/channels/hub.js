@@ -111,14 +111,26 @@
   // separate lists, so they are now derived from this one array: adding a command here lights it up everywhere.
   // `menu:false` keeps a command working but off the published menu (help is redundant next to Telegram's menu).
   // Names must satisfy Telegram's command grammar (lowercase a-z0-9_, 1-32) — asserted by the unit test.
+  // `slash:true` marks a command the SIDECAR executes through the shared slash registry (sidecar/slash.js →
+  // slash-actions.js) — the same code path the desktop palette uses, so the answer here is byte-identical to the
+  // answer there instead of a second implementation that drifts. Everything else is control-plane work only this
+  // hub can do (it owns the in-flight run and the transcript file).
   const COMMANDS = [
+    { command: 'status', description: 'What this chat is doing right now' },
+    { command: 'stop', description: 'Stop the run in progress' },
+    { command: 'new', description: 'Forget this chat\'s history and start fresh' },
     { command: 'agents', description: 'List agents (→ marks the one you are talking to)' },
     { command: 'talk', description: 'Switch this chat to another agent', usage: '/talk <name>' },
     { command: 'model', description: 'Show or change the current agent\'s model', usage: '/model [id]' },
+    { command: 'usage', description: 'Real spend from the station ledger', slash: true },
+    { command: 'tools', description: 'The tools this agent can actually call', slash: true },
+    { command: 'routine', description: 'List, create or pause scheduled routines', usage: '/routine [list|add <schedule> | <task>|pause N|rm N]', slash: true },
+    { command: 'away', description: 'Queue work to build on the away shift', usage: '/away [<what to build>|list|on|off]', slash: true },
     { command: 'approvals', description: 'Approve/deny buttons for this chat (on or off)', usage: '/approvals [on|off]' },
     { command: 'whoami', description: 'Show which agent this chat is talking to' },
     { command: 'help', description: 'List these commands', menu: false }
   ];
+  const SLASH_CMDS = COMMANDS.reduce((m, c) => { if (c.slash) m[c.command] = 1; return m; }, {});
   const KNOWN_CMDS = COMMANDS.reduce((m, c) => { m[c.command] = 1; return m; }, {});
   // the setMyCommands payload (name + one-line description only — Telegram renders no usage strings).
   function menuCommands() {
@@ -211,6 +223,10 @@
     //   roster()          -> [{ agentId, name, model, provider }]  (the SAME roster the browser dossier reads)
     //   setModel(id,model)-> { ok, agentId, model, name?, error? } (MUST go through the roster's own write path)
     //   modelCatalog()    -> [modelId,...]  (optional; when reachable, /model validates against it)
+    // runSlash(input, ctx) -> { ok, text } — executes a slash command through the SHARED registry the desktop
+    // palette uses, in-process (no self-HTTP, no api token). Injected so this module stays testable and so a
+    // wire-up that has no slash layer simply reports the command as unavailable rather than crashing.
+    const runSlashFn = typeof o.runSlash === 'function' ? o.runSlash : null;
     const rosterFn = typeof o.roster === 'function' ? o.roster : null;
     const setModelFn = typeof o.setModel === 'function' ? o.setModel : null;
     const modelCatalogFn = typeof o.modelCatalog === 'function' ? o.modelCatalog : null;
@@ -460,6 +476,75 @@
 
       if (cmd === 'help') {
         await deliver(chatId, helpText(), '', 'command');
+        return;
+      }
+
+      // ---- SHARED SLASH COMMANDS (/usage /tools /routine /away) ----------------------------------------
+      // Executed by the sidecar's own registry, so what you read on your phone is what you'd read on the
+      // desktop — the same text from the same code, not a second implementation that drifts. A card-shaped
+      // reply (title + lines) is flattened to plain text: Telegram has no card.
+      if (SLASH_CMDS[cmd]) {
+        if (!runSlashFn) { await deliver(chatId, '⚠ ' + '/' + cmd + ' is not available on this channel.', '', 'command'); return; }
+        let r;
+        try { r = await runSlashFn('/' + cmd + (arg ? ' ' + arg : ''), { agentId: boundId }); }
+        catch (e) { try { console.error('[' + channel + '] /' + cmd + ' threw:', (e && e.message) || e); } catch (_) {} r = null; }
+        if (!r) { await deliver(chatId, '⚠ Could not run /' + cmd + ' right now — try again in a moment.', '', 'command'); return; }
+        const body = (r.lines && r.lines.length)
+          ? ((r.title ? r.title + '\n' : '') + r.lines.join('\n'))
+          : String(r.text || '');
+        await deliver(chatId, body || ('/' + cmd + ' had nothing to report.'), '', 'command');
+        return;
+      }
+
+      // ---- /stop — abort the run this CHAT has in flight -------------------------------------------------
+      // Only this hub can do it: it owns the inflight record (chatId -> { runId, abort, ... }). Marked
+      // superseded first so the run's own teardown stays quiet rather than reporting a failure you caused.
+      if (cmd === 'stop') {
+        const live = inflight.get(chatId);
+        if (!live) { await deliver(chatId, 'Nothing is running for this chat right now.', '', 'command'); return; }
+        live.superseded = true;
+        let aborted = false;
+        try { live.abort.abort(); aborted = true; } catch (_) { aborted = false; }
+        await deliver(chatId, aborted ? 'Stopped the run in progress.' : '⚠ Could not stop that run — it may already be finishing.', '', 'command');
+        return;
+      }
+
+      // ---- /new — forget this chat's transcript ----------------------------------------------------------
+      // A browser chat can start over because its history lives in localStorage. A messaging chat has no
+      // browser: the store file IS the conversation, so this is the only way to start fresh. It refuses while
+      // a run is in flight — clearing the history under a live run would strand it mid-conversation.
+      if (cmd === 'new') {
+        if (inflight.get(chatId)) { await deliver(chatId, 'A run is still going — send /stop first, then /new.', '', 'command'); return; }
+        if (!store || typeof store.clearHistory !== 'function') { await deliver(chatId, '⚠ Clearing history is not available on this channel.', '', 'command'); return; }
+        let dropped = 0;
+        try { dropped = store.clearHistory(boundId); }
+        catch (e) { await deliver(chatId, '⚠ Could not clear this chat: ' + ((e && e.message) || 'the write failed') + '.', '', 'command'); return; }
+        await deliver(chatId, dropped
+          ? ('Cleared ' + dropped + ' message' + (dropped === 1 ? '' : 's') + ' — this chat starts fresh. I no longer remember what we discussed.')
+          : 'Nothing to clear — this chat had no history yet.', '', 'command');
+        return;
+      }
+
+      // ---- /status — what is this chat doing RIGHT NOW ---------------------------------------------------
+      // Reads only live in-memory state + the stored transcript, so it can never claim a run that isn't there.
+      if (cmd === 'status') {
+        const live = inflight.get(chatId);
+        const bits = [];
+        if (live) {
+          // only quote a duration when BOTH a clock and a start stamp exist — a hub built without a clock
+          // (unit wire-ups) must say it is working, never invent an elapsed time.
+          const t = now ? now() : 0;
+          bits.push((t && live.startedAt)
+            ? ('Working — ' + Math.max(0, Math.round((t - live.startedAt) / 1000)) + 's so far.')
+            : 'Working on something right now.');
+        } else bits.push('Idle — nothing running.');
+        const me = (roster || []).find(x => String(x.agentId) === String(boundId));
+        bits.push('Agent: ' + (me ? (me.name || me.agentId) : boundId) + (me && me.model ? ' (' + me.model + ')' : ''));
+        let turns = 0;
+        try { turns = (store && typeof store.loadHistory === 'function') ? store.loadHistory(boundId).length : 0; } catch (_) { turns = 0; }
+        bits.push('History: ' + turns + ' message' + (turns === 1 ? '' : 's') + ' remembered.');
+        bits.push('Approve/deny buttons: ' + ((boundRec && boundRec.approvals) ? 'ON' : 'OFF') + '.');
+        await deliver(chatId, bits.join('\n'), '', 'command');
         return;
       }
 
