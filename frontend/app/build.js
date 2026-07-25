@@ -1279,21 +1279,12 @@ const Build = (() => {
     ctx.imageSmoothingEnabled = false;
     // The backdrop, shared with the live world (SpaceBG) so entering/exiting REFIT doesn't jump the sky —
     // same selection, same camera contract (REFIT's zoom is the world's `scale`), so the parallax matches too.
-    // A LANDED station has no sky: the ground layer below covers the frame, so skip the starfield entirely.
-    if (typeof Terrain !== 'undefined' && Terrain.active()) {
-      ctx.fillStyle = Terrain.baseColor(); ctx.fillRect(0, 0, cv.width, cv.height);
-    } else if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now, { panX, panY, scale: zoom });
+    if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now, { panX, panY, scale: zoom });
     else { ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height); }
 
     ctx.setTransform(zoom, 0, 0, zoom, panX, panY);
     ctx.imageSmoothingEnabled = false;
     const ox = cache.origin.tx * t, oy = cache.origin.ty * t;
-    // the ground, in world space under the bake — REFIT blits the station at (ox,oy), so the
-    // clearing must be placed there too, not at the origin like the live world.
-    if (typeof Terrain !== 'undefined' && Terrain.active()) {
-      Terrain.draw(ctx, { scale: zoom, panX, panY }, cv.width, cv.height,
-        { x: ox, y: oy, w: cache.baseCv.width, h: cache.baseCv.height });
-    }
     const drawVisibleRect = visibleBakeRect(cacheGeo);
     if (StationBake.drawBase) StationBake.drawBase(ctx, cache, ox, oy, drawVisibleRect);
     else ctx.drawImage(cache.baseCv, ox, oy);
