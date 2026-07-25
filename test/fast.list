@@ -382,5 +382,6 @@ test/release-cut.test.js
 test/opensource-readiness.test.js
 test/release-train-provenance.test.js
 test/website-app-sync.test.js
+test/lint-gate-can-fail.js
 test/lint-emits.js
 test/lint-determinism.js

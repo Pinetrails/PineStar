@@ -463,7 +463,13 @@
           url: { type: 'string', description: 'Full https URL of the API endpoint.' },
           method: { type: 'string', description: 'GET (default), HEAD, POST, PUT, PATCH or DELETE.' },
           headers: { type: 'object', description: 'Request headers. Use ${KEY_NAME} to reference a stored key.' },
-          body: { type: 'string', description: 'Request body for POST/PUT/PATCH (send JSON as a string).' }
+          body: { type: 'string', description: 'Request body for POST/PUT/PATCH (send JSON as a string).' },
+          auth: {
+            type: 'object',
+            description: 'For APIs that want the key as a query parameter instead of a header: ' +
+              '{"key":"SOME_API_KEY","in":"query","name":"api_key"}. The host appends it at send time, so the ' +
+              'secret never appears in the url you write. "in":"header" also works (optional "prefix", e.g. "Bearer ").'
+          }
         }
       },
       run: async (args, ctx) => {
@@ -485,6 +491,30 @@
           if (r.failure) throw new Error(r.failure);
           headers[k] = r.out;
         }
+        /* AUTH DESCRIPTOR — for APIs that take the key as a query parameter. The model NAMES the key and the
+           slot; the HOST resolves and attaches it here, after the model has finished composing the request.
+           That keeps the "a secret never appears in a url the model wrote" rule intact while still covering
+           the (real, common) class of APIs that will not accept a header. The value is attached only to the
+           FIRST hop: a redirect target comes from the server, so an open redirect cannot carry it onward. */
+        const auth = (args && args.auth && typeof args.auth === 'object') ? args.auth : null;
+        if (auth) {
+          const where = String(auth.in || 'header').toLowerCase();
+          const slot = String(auth.name || '').trim();
+          const keyName = String(auth.key || '').trim();
+          if (!slot) throw new Error('auth.name is required (the header or query-parameter name to put the key in)');
+          if (!/^[A-Z][A-Z0-9_]*$/.test(keyName)) throw new Error('auth.key must be a stored key NAME like PRINTIFY_API_KEY, never a key value');
+          if (where !== 'query' && where !== 'header') throw new Error('auth.in must be "query" or "header"');
+          const r = serviceKeys.resolve(keyName, surface);
+          if (!r.ok) {
+            throw new Error(r.reason === 'unattended'
+              ? 'this run is unattended and "' + r.name + '" is not approved for unattended use — approve it in TOOLSETS & CONNECTORS → KEYS, or run this while watching'
+              : 'no enabled service key provides ' + keyName + ' — add it in TOOLSETS & CONNECTORS → KEYS');
+          }
+          used.push(keyName);
+          if (where === 'query') u.searchParams.set(slot, r.value);
+          else headers[slot] = String(auth.prefix || '') + r.value;
+        }
+
         const hasBody = method !== 'GET' && method !== 'HEAD' && args && args.body != null;
         if (hasBody && !Object.keys(headers).some(k => k.toLowerCase() === 'content-type')) headers['Content-Type'] = 'application/json';
 
