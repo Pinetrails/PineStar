@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "72c47773ed5d4c8ccd7287a2e9b2ae08fc2ba5d9",
+    "sourceCommit": "5ad5964adf804a0ca0d1bc0dab4e3cde2d4ebc87",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -633,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 413328,
-        "sha256": "a394f7e575a267a0145f9a3556e9367e8cd3085f2dbbb1301adad2987e3f2c1b"
+        "bytes": 413433,
+        "sha256": "c1be366ee9c34f5d500b5e1ec510561b5f2cc504980b49c9b27c721f21f17883"
       },
       {
         "path": "frontend/app/study.js",
@@ -673,8 +673,8 @@
       },
       {
         "path": "frontend/app/toolprops.js",
-        "bytes": 3223,
-        "sha256": "b1010918bc148547f1eecf207f8b88a0a1a6d181907a07d060fccff582c37c21"
+        "bytes": 3336,
+        "sha256": "49deacb84530b8c40859f94ccd65078ec6d6282c812d71e6f071c9362f3c63b1"
       },
       {
         "path": "frontend/app/topbar.js",
@@ -748,8 +748,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 54143,
-        "sha256": "a76a4aa2f8a80b03f176f4d80477f8703584dad23f377cb67b5240e65c20271c"
+        "bytes": 60319,
+        "sha256": "09b6b62853ec82b552101b79b1f5d20e3e127c7b7eee65da76a94229552e7c6f"
       },
       {
         "path": "frontend/app/windows/logbook.js",
@@ -1828,11 +1828,15 @@
     {
       "id": "manual-mcp-connect",
       "domain": "integrations",
-      "claim": "Users can connect HTTP or local stdio MCP servers and discover their tools.",
+      "claim": "Users can connect remote HTTP MCP servers and discover their tools. Local stdio servers are refused on the desktop host, and the panel says so instead of offering a form that cannot work.",
       "surfaceLocators": [
         {
           "path": "frontend/app/windows/connectors.js",
-          "needle": "Remote http(s) servers, or a local"
+          "needle": "Remote http(s) MCP servers."
+        },
+        {
+          "path": "frontend/app/windows/connectors.js",
+          "needle": "Local <code>stdio</code> MCP servers can’t run here."
         }
       ],
       "authorityChecks": [
@@ -1845,12 +1849,17 @@
           "kind": "contains",
           "path": "sidecar/mcp/manager.js",
           "needle": "tools/list"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/mcp/transport.stdio.js",
+          "needle": "deps.userControlIsolated === true"
         }
       ],
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
       "ownerWave": "W6",
-      "qualification": "Manual manager paths exist; W6 still needs live connect/fail/revoke evidence.",
+      "qualification": "Manual manager paths exist; W6 still needs live connect/fail/revoke evidence. 2026-07-24: the previous wording claimed local stdio connectivity, which the shipped app never had — the installed desktop pins STARNET_MCP_STDIO=0 and makeStdioTransport requires a broker-proven isolated cell that no production path sets, so the stdio form was withdrawn in favour of an in-panel explanation.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [

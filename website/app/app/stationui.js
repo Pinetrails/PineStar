@@ -2153,6 +2153,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     { icon: '▣', name: 'COMPUTE',     tools: 'model.chat',               cap: null },
     { icon: '⌕', name: 'WEB SEARCH',  tools: 'web_search',               cap: 'dish' },
     { icon: '⇩', name: 'WEB FETCH',   tools: 'web_fetch',                cap: 'dish' },
+    { icon: '⇄', name: 'CALL AN API', tools: 'web_request',              cap: 'dish', consent: true },
     { icon: '▤', name: 'READ FILES',  tools: 'fs.read · fs.list',        cap: 'cabinet' },
     { icon: '✎', name: 'WRITE FILES', tools: 'fs.write · append · edit', cap: 'cabinet', consent: true },
     { icon: '◉', name: 'MEMORY',      tools: 'notebook.read · write',    cap: 'notebook' },

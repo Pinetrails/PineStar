@@ -109,6 +109,7 @@ const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
 const connectorCatalog = require('./mcp/catalog.js');       // curated one-click MCP connector catalog (pure data + selectors)
 const serviceKeysMod = require('./servicekeys.js');         // KEYS tab: custom service API keys (pure core — env injection + masked list)
+const serviceKeysCatalog = require('./servicekeys-catalog.js');   // KEYS tab: the curated PLATFORM directory (pure data)
 const mcpOauth = require('./mcp/oauth.js');                 // generic OAuth 2.1 client for MCP connectors (discover/DCR/PKCE/refresh)
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
@@ -2469,7 +2470,9 @@ if (require.main === module) {
   inputGuard.observe('boot').catch(() => {});
 }
 const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
-const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env });
+// serviceEnv: the KEYS-tab vars a shell child must receive. Lazy + per call — sanitizeChildEnv strips every
+// *_API_KEY from the inherited env, so without this the pasted key never reaches curl (see servicekeys.runEnv).
+const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: () => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV }) });
 try { console.log('[exec-env]', JSON.stringify(executionEnvironment.describe())); } catch (_) {}
 const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200 });
 
@@ -2523,8 +2526,11 @@ function saveConnectorConfigs() {
 /* ---- Custom service API keys (the KEYS tab's "add an unlisted platform"): a third credential class beside
    provider keys and connector tokens. Persisted in a PROTECTED sibling file (outside the fs jail, never on the
    bus; /api/servicekeys responses carry a masked last4, never the value). Enabled keys are applied to
-   process.env (shell.exec children inherit it — that is HOW a pasted key actually works for an agent), with
-   servicekeys.applyEnv's ownership guard so an operator-exported ambient var is never clobbered. The prompt
+   process.env with servicekeys.applyEnv's ownership guard so an operator-exported ambient var is never
+   clobbered. NOTE: a shell child does NOT simply inherit process.env — environment.js hands it a
+   sanitizeChildEnv() snapshot that strips every *_KEY/_TOKEN name, which silently severed this whole feature
+   until the executionEnvironment `serviceEnv` hook (servicekeys.runEnv) merged the enabled vars back in per
+   call. Change either side and re-run test/servicekeys.env.test.js — the prompt PROMISES the var is there. The prompt
    seam advertises the env-var NAMES only, gated on shell.exec being in the run's resolved tools. ---- */
 const SERVICEKEYS_FILE = path.join(CONNECTORS_DIR, 'servicekeys.json');
 // Every model-provider keyEnv name (+ its STARNET_/SKYNET_ scoped forms, which ENV() also reads): a KEYS
@@ -5013,6 +5019,8 @@ const ROUTES = [
   { m: 'GET', exact: '/api/servicekeys', h: handleServiceKeysList },
   { m: 'POST', exact: '/api/servicekeys', h: handleServiceKeyUpsert },
   { m: 'POST', exact: '/api/servicekeys/toggle', h: handleServiceKeyToggle },
+  { m: 'GET', exact: '/api/servicekeys/catalog', h: handleServiceKeysCatalog },
+  { m: 'POST', exact: '/api/servicekeys/autonomy', h: handleServiceKeyAutonomy },
   { m: 'POST', exact: '/api/servicekeys/remove', h: handleServiceKeyRemove },
   { m: 'GET', prefix: '/api/toolsets', h: handleToolsetsList },
   { m: 'POST', prefix: '/api/toolsets/', h: handleToolsetToggle },
@@ -5805,6 +5813,29 @@ async function handleServiceKeyToggle(req, res) {
   if (r.error) return json(404, { error: r.error });
   serviceKeys = r.list;
   applyServiceKeysEnv();
+  const saved = saveServiceKeys();
+  return json(saved ? 200 : 500, { ok: saved, saved, key: serviceKeysMod.toPublic(r.record) });
+}
+// The PLATFORM directory behind the KEYS picker. Pure curated data + a live `installed` cross-ref against
+// the Commander's own keys; carries no secrets (the store is consulted only for env-var NAMES).
+async function handleServiceKeysCatalog(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const have = (Array.isArray(serviceKeys) ? serviceKeys : []).map(r => r && r.envVar).filter(Boolean);
+    return json(200, { groups: serviceKeysCatalog.grouped(have) });
+  } catch (e) { return json(200, { groups: [], error: String((e && e.message) || e) }); }
+}
+// The UNATTENDED grant: may an agent spend this key while nobody is watching (cron / Night Shift /
+// a messaged run)? Separate from `enabled` and default OFF, so adding a key never silently widens what
+// happens overnight. No env re-apply is needed — this flag is read by web_request at call time, not baked
+// into any child environment.
+async function handleServiceKeyAutonomy(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 12)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  if (typeof body.autonomous !== 'boolean') return json(400, { error: 'autonomous must be a boolean' });
+  const r = serviceKeysMod.setAutonomous(serviceKeys, body.id, body.autonomous);
+  if (r.error) return json(404, { error: r.error });
+  serviceKeys = r.list;
   const saved = saveServiceKeys();
   return json(saved ? 200 : 500, { ok: saved, saved, key: serviceKeysMod.toPublic(r.record) });
 }
@@ -8215,7 +8246,14 @@ async function runOnce(o) {
   const managedSkills = [];
   const seenLoadedSkills = new Set();
   const openrouterToolKey = providerId === 'openrouter' ? runKey : runtimeKey;
-  makeWebTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
+  // web_search/web_fetch (DDG/Jina, OR fallback) + web_request. `surface` is HOST AUTHORITY here: it comes
+  // from the run, never from tool args, so an autonomous run cannot claim to be watched to unlock a key.
+  makeWebTools({
+    openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null,
+    surface: surface,
+    redact: redact,
+    resolveServiceKey: (name, sfc) => serviceKeysMod.resolveForRequest(serviceKeys, name, sfc)
+  }).register(registry);
   // STUDIO media tools, built up-front so browser.vision can borrow its multimodal analyze path
   // (one provider seam, no duplication). Registered below; here we only need its vision callback.
   // STARNET_IMAGE_MODEL overrides the studio's default text->image model (image.js picks the current-gen
@@ -8444,6 +8482,18 @@ async function runOnce(o) {
     // cabinet:write / notebook:write (jail-scoped) — exec stays locked, non-jail tools unchanged. A read of the
     // live store each check keeps it honest (a toggle flip takes effect on the very next tool call, no restart).
     workshop: (call, tool) => workshopOf(agentId),
+    // UNATTENDED CREDENTIAL GRANT: every ${VAR} this call references must name a service key the Commander
+    // approved for unattended use. Read live from the store, so revoking the toggle takes effect on the very
+    // next tool call. The tool re-checks independently at send time — this tier only decides consent.
+    credentialed: (call) => {
+      try {
+        const hs = (call && call.args && call.args.headers) || {};
+        const refs = [];
+        for (const k of Object.keys(hs)) String(hs[k]).replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (m, n) => { refs.push(n); return m; });
+        if (!refs.length) return false;   // references no credential -> nothing was pre-approved; ask/deny as usual
+        return refs.every(n => serviceKeysMod.resolveForRequest(serviceKeys, n, 'autonomous').ok);
+      } catch (_) { return false; }
+    },
     surface: surface, prompt: prompt
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
@@ -8871,8 +8921,14 @@ async function runOnce(o) {
   // no service keys gets a byte-identical prompt (promptBlock('') === ''). Fail-open: never breaks a run.
   let serviceKeysBlock = '';
   try {
-    if (isTask && resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('shell.exec') >= 0) {
-      const b = serviceKeysMod.promptBlock(serviceKeys);
+    // Composes when the run has EITHER route to spend a key: web_request (a placed dish) or shell.exec (a
+    // placed workbench). Before web_request existed this was shell-only, which meant a dish-only station —
+    // the common case — never learned that any key existed, so the model could not reference one.
+    const kt = (isTask && resolved && Array.isArray(resolved.tools)) ? resolved.tools : [];
+    const canShell = kt.indexOf('shell.exec') >= 0;
+    const canRequest = kt.indexOf('web_request') >= 0;
+    if (canShell || canRequest) {
+      const b = serviceKeysMod.promptBlock(serviceKeys, { shell: canShell, request: canRequest });
       if (b) serviceKeysBlock = '\n\n' + b;
     }
   } catch (_) { serviceKeysBlock = ''; }

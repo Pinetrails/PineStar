@@ -27,6 +27,7 @@ const ToolProps = (() => {
   const EXACT = {
     web_search: 'dish',
     web_fetch: 'dish',
+    web_request: 'dish',   // calling a third-party API is a WEB reach — the dish is the prop that projects it
     todo: 'notebook',
     recall_conversation: 'notebook',
     'widget.set': 'notebook'   // WIDGET RAILS Phase 2: agent-fed rail readout — a notebook-object (memory) grant
