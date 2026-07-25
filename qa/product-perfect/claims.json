@@ -28,8 +28,8 @@
       },
       {
         "path": "PRIVACY.md",
-        "bytes": 9593,
-        "sha256": "036ff5fe314ba7c41782d40b447ee2790ceba232584bf345e24ad0ced99bcac4"
+        "bytes": 11747,
+        "sha256": "9d10f669cc0a3e38c1b50e7aa82db4947f12430ce59e72e1ad84dbc2d4f49f64"
       },
       {
         "path": "README.md",
@@ -43,8 +43,8 @@
       },
       {
         "path": "TERMS.md",
-        "bytes": 3128,
-        "sha256": "9c4288ae8facc306c8c8f742568c7df70bc4ff62b947b73fa92f6bf831530abe"
+        "bytes": 4761,
+        "sha256": "1208e4ea16cac90d6fc1eecfdd2d1bebfc97bf00c4d5ef8f6aa6f79e2f415385"
       },
       {
         "path": "docs/DOWNLOAD_PAGE.md",
@@ -1915,11 +1915,11 @@
     {
       "id": "local-first-no-account",
       "domain": "privacy",
-      "claim": "StarNet is local-first with no StarNet cloud account or data server.",
+      "claim": "StarNet is local-first: no StarNet account is required and no StarNet server holds user data, unless the user opts into managed credits.",
       "surfaceLocators": [
         {
           "path": "PRIVACY.md",
-          "needle": "no StarNet cloud, no StarNet"
+          "needle": "There is exactly one opt-in exception"
         }
       ],
       "authorityChecks": [
@@ -1937,7 +1937,7 @@
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
       "ownerWave": "W2",
-      "qualification": "The app server and stores are local; third-party provider/channel/update traffic remains qualified.",
+      "qualification": "The app server and stores are local; third-party provider/channel/update traffic remains qualified. Managed credits (optional, not yet launched) add a billing account and relay model calls through StarNet's gateway — PRIVACY.md states that carve-out explicitly.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
@@ -2195,11 +2195,11 @@
     {
       "id": "free-no-markup-budget-caps",
       "domain": "release",
-      "claim": "The app is free/no-markup and enforces configurable spend caps.",
+      "claim": "The app is free and takes no markup on the user's own keys; managed credits are a separate opt-in paid path. Configurable spend caps are enforced.",
       "surfaceLocators": [
         {
           "path": "TERMS.md",
-          "needle": "StarNet does not resell model access"
+          "needle": "adds no markup, and has no way to bill you"
         }
       ],
       "authorityChecks": [
@@ -2217,7 +2217,7 @@
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
       "ownerWave": "W6",
-      "qualification": "Budget enforcement exists; free/no-markup remains an owner business-policy claim.",
+      "qualification": "Budget enforcement exists; free/no-markup remains an owner business-policy claim, and is now scoped to the BYOK path — TERMS.md §2 states plainly that StarNet does resell model access on the optional credits path.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
