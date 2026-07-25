@@ -18,7 +18,7 @@ async function rejects(p, re, msg) {
 }
 
 function fakeDriver() {
-  const log = { clicked: [], typed: [], pressed: [], scrolled: [], navigated: [], testInput: [], evaluated: [], states: [] };
+  const log = { clicked: [], typed: [], pressed: [], scrolled: [], navigated: [], testInput: [], evaluated: [], states: [], hovered: [], dragged: [], selected: [], viewports: [] };
   let pageText = 'Example page text';
   return {
     log,
@@ -34,6 +34,11 @@ function fakeDriver() {
     click: async node => { log.clicked.push(node.text); return 'clicked ' + node.text; },
     type: async (node, text) => { log.typed.push([node.text, text]); pageText += ' ' + text; return 'typed ' + text; },
     press: async key => { log.pressed.push(key); return 'pressed ' + key; },
+    hover: async node => { log.hovered.push(node.text); return 'hovered'; },
+    drag: async (a, b) => { log.dragged.push([a.text, b.text]); return 'dragged'; },
+    selectOption: async (node, value) => { log.selected.push([node.text, value]); return value === 'nope' ? { ok: false, reason: 'no option matching "nope"', options: ['a', 'b'] } : { ok: true, value, label: value.toUpperCase() }; },
+    viewport: async (w, h, o) => { log.viewports.push([w, h, o && o.mobile === true]); return w + 'x' + h; },
+    forward: async () => 'https://example.com/fwd',
     scroll: async (x, y) => { log.scrolled.push([x, y]); return 'scrolled ' + y; },
     back: async () => 'https://example.com/back',
     getText: async () => pageText,
@@ -65,10 +70,13 @@ function fakeDriver() {
   const B = makeBrowserTools({ driver, vision: async ({ question }) => 'vision answer: ' + question });
   const names = B.tools.map(t => t.name).sort();
   A.eq(names, [
-    'browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.get_text',
-    'browser.login', 'browser.navigate', 'browser.press', 'browser.scroll', 'browser.snapshot',
+    'browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.drag',
+    'browser.forward', 'browser.get_text', 'browser.hover', 'browser.login', 'browser.navigate',
+    'browser.network',
+    'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot',
+    'browser.tab_close', 'browser.tab_select', 'browser.tabs',
     'browser.test_input', 'browser.test_navigate', 'browser.test_snapshot', 'browser.test_state',
-    'browser.type', 'browser.vision'
+    'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision'
   ], 'browser action surface is complete');
   A.eq(B.tools.find(t => t.name === 'browser.click').requiresConsent, true, 'click is consent-gated');
   A.eq(B.tools.find(t => t.name === 'browser.snapshot').requiresConsent, false, 'snapshot is read-only');
@@ -291,8 +299,19 @@ function fakeDriver() {
     A.ok(!launches[0].args.includes('--new-window'), 'synthetic test browser never requests a window');
     A.ok(sent.some(m => m.method === 'Target.setAutoAttach' && m.params.waitForDebuggerOnStart === true), 'new targets are paused before scripts can reach native input APIs');
     FakeWS.last.fire('message', { data: JSON.stringify({ method: 'Target.attachedToTarget', params: { sessionId: 'popup-session', targetInfo: { type: 'page', targetId: 'popup-target' } } }) });
-    await new Promise(resolve => setTimeout(resolve, 10));
-    A.ok(sent.some(m => m.method === 'Target.closeTarget' && m.params.targetId === 'popup-target'), 'unexpected popup target is closed while paused');
+    // Adoption is a multi-hop promise chain (inject shim, inject settle marker, record, resume).
+    await new Promise(resolve => setTimeout(resolve, 60));
+    // A popup is now ADOPTED rather than killed: a target=_blank checkout, a PDF that opens beside the
+    // page, or an SSO popup used to be Target.closeTarget'd while paused, which read to the agent as
+    // "the link did nothing". The reason for closing was real - a new page target does not inherit a
+    // target-scoped preload - so adoption installs the SAME shim before resuming, exactly like the
+    // iframe path, and closes the target if that injection ever fails.
+    const popupShim = sent.filter(m => m.sessionId === 'popup-session' && m.method === 'Page.addScriptToEvaluateOnNewDocument');
+    A.ok(popupShim.some(m => /requestPointerLock/.test(m.params.source)), 'an adopted popup gets the input-isolation shim');
+    const resumeAt = sent.findIndex(m => m.sessionId === 'popup-session' && m.method === 'Runtime.runIfWaitingForDebugger');
+    const shimAt = sent.findIndex(m => m.sessionId === 'popup-session' && m.method === 'Page.addScriptToEvaluateOnNewDocument');
+    A.ok(shimAt >= 0 && resumeAt > shimAt, 'the shim is installed BEFORE the popup is allowed to run');
+    A.ok(!sent.some(m => m.method === 'Target.closeTarget' && m.params.targetId === 'popup-target'), 'a successfully shimmed popup is kept, not killed');
     await d.close();
 
     isolationReady = false; currentUrl = 'about:blank'; sent.length = 0;
@@ -330,6 +349,538 @@ function fakeDriver() {
     A.eq(privatePort.attachedPort(), launchedPort, 'driver reports the privately owned attached port');
     await privatePort.close();
     fs.rmSync(privateProfile, { recursive: true, force: true });
+  }
+
+  // ---- AUTO-WAIT: actions settle before they return ------------------------------------------
+  // THE SILENT CORRUPTER this replaces: the whole wait vocabulary was three fixed sleeps, and
+  // click/type/press returned with ZERO settle, so the next snapshot read the PRE-CLICK DOM and any
+  // SPA hydrating past the blind 900ms answered an empty page ("no interactive elements").
+  {
+    // A fake page whose settle probe reports a scripted hydration timeline.
+    function settleRig(script) {
+      const state = { probes: 0, sent: [], url: 'about:blank' };
+      class WS {
+        constructor() { this.handlers = {}; WS.last = this; setTimeout(() => this.fire('open', {}), 0); }
+        addEventListener(n, fn) { (this.handlers[n] = this.handlers[n] || []).push(fn); }
+        fire(n, v) { for (const fn of this.handlers[n] || []) fn(v); }
+        send(raw) {
+          const m = JSON.parse(raw); state.sent.push(m);
+          if (m.method === 'Page.navigate') state.url = m.params.url;
+          const expr = String((m.params && m.params.expression) || '');
+          let value = state.url;
+          if (/return \{ready:/.test(expr)) value = { ready: true, error: null };          // isolation attestation
+          else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) {  // the settle probe
+            value = script(state.probes++);
+          }
+          const result = m.method === 'Runtime.evaluate' ? { result: { value } } : {};
+          setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+        }
+        close() {}
+      }
+      const driver = T.makeCdpDriver({
+        chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9349,
+        settleQuietPolls: 2, settleNavBudgetMs: 400, settleActionBudgetMs: 400, settleMinObserveMs: 0, settleEmptyGraceMs: 0,
+        fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://settle' }] }),
+        WebSocketImpl: WS,
+        spawn: () => ({ pid: 51, on(ev, fn) { if (ev === 'close') this._c = fn; }, kill() { if (this._c) queueMicrotask(() => this._c(0)); } })
+      });
+      return { driver, state };
+    }
+
+    // The settle marker itself must observe the DOM and survive a page that has no <html> yet.
+    A.ok(/MutationObserver/.test(T.SETTLE_BOOTSTRAP), 'settle bootstrap observes DOM mutations');
+    A.ok(/documentElement \? observe\(\) :/.test(T.SETTLE_BOOTSTRAP) || /documentElement/.test(T.SETTLE_BOOTSTRAP), 'settle bootstrap defers until a document root exists');
+    A.ok(/document\.readyState/.test(T.SETTLE_PROBE) && /s\.n/.test(T.SETTLE_PROBE), 'settle probe reads readyState and the mutation counter');
+    A.ok(!/Date\.now|performance\.now/.test(T.SETTLE_BOOTSTRAP), 'settle marker counts mutations rather than reading a clock (determinism law)');
+    A.ok(/addScriptToEvaluateOnNewDocument/.test(T.makeCdpDriver.toString()), 'settle marker is reinstalled for every new document');
+
+    // A. a page that hydrates late: navigate must NOT return on the first look.
+    {
+      const rig = settleRig(i => i < 3 ? { ok: true, ready: 'loading', n: i } : { ok: true, ready: 'complete', n: 99 });
+      await rig.driver.navigate('http://127.0.0.1:5173/');
+      A.ok(rig.state.probes >= 4, 'navigate keeps polling a hydrating page instead of a blind fixed sleep (probes=' + rig.state.probes + ')');
+      await rig.driver.close();
+    }
+
+    // B. a static page settles on the FIRST quiet read — auto-wait is faster than the old 900ms sleep.
+    {
+      const t0 = Date.now();
+      const rig = settleRig(() => ({ ok: true, ready: 'complete', n: 7 }));
+      await rig.driver.navigate('http://127.0.0.1:5173/');
+      A.ok(Date.now() - t0 < 800, 'an already-quiet page returns well inside the old 900ms blind wait');
+      A.ok(rig.state.probes <= 4, 'a settled page costs only the quiet-confirmation polls (' + rig.state.probes + ')');
+      await rig.driver.close();
+    }
+
+    // C. THE REGRESSION: click/type/press must settle. Previously they issued Input.* and returned.
+    {
+      const rig = settleRig(() => ({ ok: true, ready: 'complete', n: 0 }));
+      await rig.driver.navigate('http://127.0.0.1:5173/');
+      const before = rig.state.probes;
+      await rig.driver.click({ x: 1, y: 1, w: 10, h: 10 });
+      A.ok(rig.state.probes > before, 'click settles before returning');
+      const afterClick = rig.state.probes;
+      await rig.driver.press('Enter');
+      A.ok(rig.state.probes > afterClick, 'press settles before returning');
+      const afterPress = rig.state.probes;
+      await rig.driver.scroll(0, 400);
+      A.ok(rig.state.probes > afterPress, 'scroll settles (lazy-load/infinite-scroll content lands before the next snapshot)');
+      await rig.driver.close();
+    }
+
+    // D. a page that NEVER goes quiet (a spinner, a poller) must still return at the budget.
+    {
+      let tick = 0;
+      const rig = settleRig(() => ({ ok: true, ready: 'complete', n: tick++ }));
+      const t0 = Date.now();
+      await rig.driver.navigate('http://127.0.0.1:5173/');
+      const ms = Date.now() - t0;
+      A.ok(ms >= 350, 'a never-quiet page spends its settle budget');
+      A.ok(ms < 3000, 'a never-quiet page still returns — auto-wait can never hang the run (' + ms + 'ms)');
+      await rig.driver.close();
+    }
+
+    // D2. MINIMUM OBSERVATION WINDOW. Quiescence cannot see the future: a click handler that renders
+    // from a setTimeout leaves the page genuinely still in the meantime. Watching for a minimum span
+    // catches that, while staying adaptive - a slow page still waits far past the window.
+    {
+      const state = { probes: 0 };
+      class WS2 {
+        constructor() { this.handlers = {}; WS2.last = this; setTimeout(() => this.fire('open', {}), 0); }
+        addEventListener(n, fn) { (this.handlers[n] = this.handlers[n] || []).push(fn); }
+        fire(n, v) { for (const fn of this.handlers[n] || []) fn(v); }
+        send(raw) {
+          const m = JSON.parse(raw);
+          const expr = String((m.params && m.params.expression) || '');
+          let value = 'about:blank';
+          if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
+          else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) { state.probes++; value = { ok: true, ready: 'complete', n: 0 }; }
+          const result = m.method === 'Runtime.evaluate' ? { result: { value } } : {};
+          setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+        }
+        close() {}
+      }
+      const drv = T.makeCdpDriver({
+        chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9352,
+        settleQuietPolls: 1, settleNavBudgetMs: 5000, settleActionBudgetMs: 5000, settleMinObserveMs: 300, settleEmptyGraceMs: 0,
+        fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://min' }] }),
+        WebSocketImpl: WS2,
+        spawn: () => ({ pid: 81, on(ev, fn) { if (ev === 'close') this._c = fn; }, kill() { if (this._c) queueMicrotask(() => this._c(0)); } })
+      });
+      const t0 = Date.now();
+      await drv.navigate('http://127.0.0.1:5173/');
+      const ms = Date.now() - t0;
+      A.ok(ms >= 280, 'a page that is quiet from the first poll is still observed for the minimum window (' + ms + 'ms)');
+      A.ok(ms < 2000, 'and the minimum window does not become a long fixed sleep');
+      await drv.close();
+    }
+
+    // E. no settle marker (a page that blocked the bootstrap) falls back to the legacy blind sleep
+    // rather than skipping the wait entirely.
+    {
+      const rig = settleRig(() => 'http://127.0.0.1:5173/');   // a non-object answer = unmeasurable
+      const t0 = Date.now();
+      await rig.driver.navigate('http://127.0.0.1:5173/');
+      A.ok(Date.now() - t0 >= 850, 'an unmeasurable page still gets the legacy 900ms settle');
+      await rig.driver.close();
+    }
+  }
+
+  // ---- THE REST OF THE TABLE-STAKES ACTION SET -----------------------------------------------
+  // hover/select/drag/viewport/forward were all missing outright: menus that only open on hover were
+  // unreachable, a native <select> cannot be driven by clicking (its popup is browser chrome, not
+  // page content), and the viewport was pinned to the --window-size launch flag.
+  {
+    const d = fakeDriver();
+    const X = makeBrowserTools({ driver: d });
+    const tool = n => X.tools.find(t => t.name === n);
+    const snap = await X.session.snapshot();
+    const [btn, box] = snap;
+
+    await tool('browser.hover').run({ ref: btn.ref }, {});
+    A.eq(d.log.hovered, ['Search'], 'hover reaches the element by ref');
+
+    await tool('browser.drag').run({ from: btn.ref, to: box.ref }, {});
+    A.eq(d.log.dragged, [['Search', 'Query']], 'drag carries both endpoints');
+
+    const sel = await tool('browser.select').run({ ref: box.ref, value: 'uk' }, {});
+    A.ok(/Selected "UK"/.test(sel.content), 'select reports the chosen option by its label');
+    const bad = await tool('browser.select').run({ ref: box.ref, value: 'nope' }, {});
+    A.ok(/Could not select/.test(bad.content), 'a missing option is reported, not silently ignored');
+    A.ok(/Available values: a, b/.test(bad.content), 'and the real options are offered back');
+
+    const vp = await tool('browser.viewport').run({ width: 375, height: 812, mobile: true }, {});
+    A.eq(d.log.viewports, [[375, 812, true]], 'viewport passes width/height/mobile to the driver');
+    A.ok(/fresh browser\.snapshot/.test(vp.content), 'resizing tells the agent its refs are now stale');
+    // A resize relays the page, so every earlier ref must be dead rather than silently mis-aimed.
+    await rejects(X.session.click(btn.ref), /stale browser ref/, 'refs from before a resize are invalidated');
+
+    const fwd = await tool('browser.forward').run({}, {});
+    A.ok(/example\.com\/fwd/.test(fwd.content), 'forward completes the history pair with back');
+
+    // Consent posture: reading/looking is free, mutating the page is gated.
+    A.eq(tool('browser.hover').requiresConsent, false, 'hover is not consent-gated (it mutates nothing)');
+    A.eq(tool('browser.viewport').requiresConsent, false, 'resizing the viewport is not consent-gated');
+    A.eq(tool('browser.select').requiresConsent, true, 'select changes form state, so it is consent-gated');
+    A.eq(tool('browser.drag').requiresConsent, true, 'drag is consent-gated');
+
+    // A driver that predates these says so plainly rather than throwing a raw TypeError.
+    const old = fakeDriver(); delete old.hover;
+    await rejects(makeBrowserTools({ driver: old }).session.hover('b1'), /unknown browser ref|unavailable in this driver/, 'a driver without hover reports it honestly');
+  }
+
+  // ---- TABS: adopted page targets ------------------------------------------------------------
+  // A target=_blank checkout, a PDF beside the page or an SSO popup used to be Target.closeTarget'd
+  // while still paused, which read to the agent as "the link did nothing".
+  {
+    const sent = [];
+    class WS3 {
+      constructor() { this.handlers = {}; WS3.last = this; setTimeout(() => this.fire('open', {}), 0); }
+      addEventListener(n, fn) { (this.handlers[n] = this.handlers[n] || []).push(fn); }
+      fire(n, v) { for (const fn of this.handlers[n] || []) fn(v); }
+      emit(method, params) { this.fire('message', { data: JSON.stringify({ method, params }) }); }
+      send(raw) {
+        const m = JSON.parse(raw); sent.push(m);
+        const expr = String((m.params && m.params.expression) || '');
+        let result = {};
+        if (m.method === 'Runtime.evaluate') {
+          let value = null;
+          if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
+          else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
+          else if (/location\.href, title/.test(expr)) value = m.sessionId ? { url: 'https://x.test/receipt', title: 'Receipt' } : { url: 'https://x.test/', title: 'Shop' };
+          else if (/role="button"/.test(expr)) value = m.sessionId ? [{ index: 0, role: 'button', text: 'Print', x: 1, y: 1, w: 9, h: 9 }] : [{ index: 0, role: 'link', text: 'Open', x: 1, y: 1, w: 9, h: 9 }];
+          else value = 'https://x.test/';
+          result = { result: { value } };
+        }
+        setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+      }
+      close() {}
+    }
+    const d = T.makeCdpDriver({
+      chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9353,
+      settleQuietPolls: 1, settleNavBudgetMs: 300, settleActionBudgetMs: 300, settleMinObserveMs: 0, settleEmptyGraceMs: 0,
+      fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://tabs' }] }),
+      WebSocketImpl: WS3,
+      spawn: () => ({ pid: 91, on(ev, fn) { if (ev === 'close') this._c = fn; }, kill() { if (this._c) queueMicrotask(() => this._c(0)); } })
+    });
+    await d.navigate('https://x.test/');
+    A.eq((await d.tabs()).length, 1, 'one tab before any popup');
+
+    WS3.last.emit('Target.attachedToTarget', { sessionId: 'tab-2', targetInfo: { type: 'page', targetId: 'TARGET2' } });
+    await new Promise(r => setTimeout(r, 60));
+    const list = await d.tabs();
+    A.eq(list.length, 2, 'an adopted page target becomes a second tab instead of being killed');
+    A.eq(list[0].active, true, 'the ORIGINAL tab stays active — switching is never implicit');
+    A.eq(list[1].url, 'https://x.test/receipt', 'the new tab reports its OWN url, read from its own session');
+
+    // Page commands must follow the active tab, and ONLY on an explicit switch.
+    const beforeSwitch = (await d.snapshot(10))[0];
+    A.eq(beforeSwitch.text, 'Open', 'before switching, snapshot still reads tab 0');
+    await d.selectTab(1);
+    A.eq((await d.tabs())[1].active, true, 'tab_select moves the active target');
+    A.eq((await d.snapshot(10))[0].text, 'Print', 'after switching, snapshot reads the SECOND tab');
+    const sawSession = sent.filter(m => m.method === 'Runtime.evaluate' && /role="button"/.test(String(m.params.expression))).pop();
+    A.eq(sawSession.sessionId, 'tab-2', 'page commands carry the active tab session');
+
+    await d.selectTab(0);
+    A.eq((await d.snapshot(10))[0].text, 'Open', 'switching back reads tab 0 again');
+    const back = sent.filter(m => m.method === 'Runtime.evaluate' && /role="button"/.test(String(m.params.expression))).pop();
+    A.ok(back.sessionId === undefined, 'tab 0 sends with NO session id (the original target)');
+
+    let threw = false;
+    try { await d.selectTab(9); } catch (_) { threw = true; }
+    A.ok(threw, 'selecting a nonexistent tab is refused');
+    try { threw = false; await d.closeTab(0); } catch (_) { threw = true; }
+    A.ok(threw, 'the first tab cannot be closed');
+
+    await d.closeTab(1);
+    A.eq((await d.tabs()).length, 1, 'a closed tab leaves the list');
+    A.ok(sent.some(m => m.method === 'Target.closeTarget' && m.params.targetId === 'TARGET2'), 'closing a tab closes its real target');
+
+    // A tab that vanishes on its own must not strand the driver on a dead session.
+    WS3.last.emit('Target.attachedToTarget', { sessionId: 'tab-3', targetInfo: { type: 'page', targetId: 'TARGET3' } });
+    await new Promise(r => setTimeout(r, 60));
+    await d.selectTab(1);
+    WS3.last.emit('Target.detachedFromTarget', { sessionId: 'tab-3' });
+    const after = await d.tabs();
+    A.eq(after.length, 1, 'a detached tab drops out of the list');
+    A.eq(after[0].active, true, 'and the driver falls back to the original tab rather than a dead session');
+    await d.close();
+  }
+
+  // ---- IFRAME TRAVERSAL ----------------------------------------------------------------------
+  // snapshot/get_text ran Runtime.evaluate with no session, so they never left the top frame:
+  // an Auth0/Okta/Stripe login, a payment form or a consent wall was completely invisible.
+  {
+    const sent = [];
+    let attachHook = null;
+    class WS {
+      constructor() { this.handlers = {}; WS.last = this; setTimeout(() => this.fire('open', {}), 0); }
+      addEventListener(n, fn) { (this.handlers[n] = this.handlers[n] || []).push(fn); }
+      fire(n, v) { for (const fn of this.handlers[n] || []) fn(v); }
+      emit(method, params) { this.fire('message', { data: JSON.stringify({ method, params }) }); }
+      send(raw) {
+        const m = JSON.parse(raw); sent.push(m);
+        const expr = String((m.params && m.params.expression) || '');
+        let result = {};
+        if (m.method === 'DOM.getFrameOwner') result = { backendNodeId: 77 };
+        else if (m.method === 'DOM.getBoxModel') result = { model: { content: [100, 200, 400, 200, 400, 500, 100, 500] } };
+        else if (m.method === 'Runtime.evaluate') {
+          let value = 'about:blank';
+          if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
+          else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
+          else if (/const pick = doc/.test(expr)) value = m.sessionId ? 'Enter your card' : 'Top page';
+          else if (/role="button"/.test(expr)) {
+            // The TOP document answers one button; the iframe session answers a different one.
+            value = m.sessionId
+              ? [{ index: 0, role: 'textbox', text: 'Card number', x: 5, y: 10, w: 200, h: 30 }]
+              : [{ index: 0, role: 'button', text: 'Checkout', x: 10, y: 20, w: 80, h: 30 }];
+          }
+          result = { result: { value } };
+        }
+        setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+        if (m.method === 'Target.setAutoAttach' && attachHook) { const h = attachHook; attachHook = null; setTimeout(h, 1); }
+      }
+      close() {}
+    }
+    const d = T.makeCdpDriver({
+      chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9351,
+      settleQuietPolls: 1, settleNavBudgetMs: 300, settleActionBudgetMs: 300,
+      fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://frames' }] }),
+      WebSocketImpl: WS,
+      spawn: () => ({ pid: 71, on(ev, fn) { if (ev === 'close') this._c = fn; }, kill() { if (this._c) queueMicrotask(() => this._c(0)); } })
+    });
+    // An out-of-process iframe attaches (as production Chrome does for a cross-origin frame).
+    attachHook = () => WS.last.emit('Target.attachedToTarget', { sessionId: 'frame-1', targetInfo: { type: 'iframe', targetId: 'FRAME1' } });
+    await d.navigate('https://shop.test/');
+    await new Promise(r => setTimeout(r, 30));
+
+    const nodes = await d.snapshot(40);
+    A.eq(nodes.length, 2, 'snapshot returns the top document AND the iframe');
+    A.eq(nodes[0].text, 'Checkout', 'top-frame element first');
+    const inner = nodes[1];
+    A.eq(inner.text, 'Card number', 'the iframe element is no longer invisible');
+    // THE COORDINATE TRAP: the frame reports 5,10 relative to ITSELF; the iframe box starts at 100,200.
+    A.eq([inner.x, inner.y], [105, 210], 'iframe coordinates are translated into the top page, so a click lands correctly');
+    A.eq(inner.frame, 1, 'the element is marked as belonging to a frame');
+    A.eq(nodes.map(n => n.index), [0, 1], 'indexes are renumbered across the merged set');
+
+    const text = await d.getText();
+    A.ok(/Top page/.test(text) && /Enter your card/.test(text), 'get_text reads the frame as well as the top document');
+    A.ok(/--- frame 1 ---/.test(text), 'frame text is labelled rather than silently concatenated');
+    A.ok(sent.some(m => m.method === 'Page.addScriptToEvaluateOnNewDocument' && m.sessionId === 'frame-1' && /__STARNET_SETTLE__/.test(m.params.source)), 'the settle marker is installed into adopted frames too');
+
+    /* THE WEDGE GUARD. An out-of-process iframe has NO execution context while paused, so a
+       Runtime.evaluate into it always fails ("Cannot find default execution context"). The old chain
+       did exactly that, rejected, closed the target, and never resumed the frame — and a paused OOPIF
+       blocks its PARENT's renderer, so every later eval on the top page timed out. Measured on trunk:
+       ANY page with a cross-origin iframe hung browser.navigate for the full CDP timeout and threw.
+       The frame must therefore be set up with preloads ONLY, and must always end up resumed. */
+    const frameMsgs = sent.filter(m => m.sessionId === 'frame-1');
+    const resumeIdx = frameMsgs.findIndex(m => m.method === 'Runtime.runIfWaitingForDebugger');
+    A.ok(resumeIdx >= 0, 'an adopted frame is ALWAYS resumed — leaving it paused wedges the parent page');
+    // Only the window BEFORE the resume is the paused window; snapshot/get_text legitimately
+    // evaluate in the frame afterwards.
+    const whilePaused = frameMsgs.slice(0, resumeIdx);
+    A.ok(!whilePaused.some(m => m.method === 'Runtime.evaluate'),
+      'a PAUSED iframe target is never Runtime.evaluate\'d — it has no execution context yet');
+    A.ok(whilePaused.length > 0 && whilePaused.every(m => m.method === 'Page.addScriptToEvaluateOnNewDocument'),
+      'only preloads precede the resume');
+
+    // A popup is the MIRROR CASE: Page.* does not ack until resume, so its preload must be sent
+    // without awaiting, while Runtime.evaluate (about:blank has a context) is the liveness check.
+    const popMsgs = sent.filter(m => m.sessionId === 'popup-session');
+    if (popMsgs.length) {
+      const addAt = popMsgs.findIndex(m => m.method === 'Page.addScriptToEvaluateOnNewDocument');
+      const runAt = popMsgs.findIndex(m => m.method === 'Runtime.runIfWaitingForDebugger');
+      A.ok(addAt >= 0 && runAt > addAt, 'a popup preload is queued before its resume');
+    }
+    await d.close();
+  }
+
+  // ---- FILE UPLOAD, JAIL-CHECKED --------------------------------------------------------------
+  // Without DOM.setFileInputFiles any form with an attachment step was a dead end. The path an
+  // upload posts must come through the SAME jail as fs.* - an upload is an exfiltration primitive
+  // if it can reach outside the agent's workspace.
+  {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-upload-'));
+    try {
+      const fsp = require('node:fs/promises');
+      fs.mkdirSync(path.join(ws, 'ag'), { recursive: true });
+      fs.writeFileSync(path.join(ws, 'ag', 'resume.pdf'), 'PDF');
+      fs.writeFileSync(path.join(ws, 'secret.txt'), 'not yours');   // OUTSIDE the agent's folder
+
+      const d = fakeDriver();
+      d.upload = async (node, abs) => { d.log.uploaded = [node.text, abs]; return abs.length + ' file(s) attached'; };
+      const U = makeBrowserTools({ driver: d, fsp, pathMod: path, root: ws });
+      const snap = await U.session.snapshot();
+      const ref = snap[0].ref;
+      const up = U.tools.find(t => t.name === 'browser.upload');
+
+      const ok = await up.run({ ref, paths: ['resume.pdf'] }, { agentId: 'ag' });
+      A.eq(d.log.uploaded[1], [path.join(ws, 'ag', 'resume.pdf')], 'the driver receives an ABSOLUTE path inside the agent workspace');
+      A.ok(/Submit the form when ready/.test(ok.content), 'the agent is told attaching is not submitting');
+
+      await rejects(up.run({ ref, paths: ['../secret.txt'] }, { agentId: 'ag' }), /illegal path|escapes workspace/i, 'a path escaping the workspace is refused');
+      await rejects(up.run({ ref, paths: [path.join(ws, 'secret.txt')] }, { agentId: 'ag' }), /illegal path/i, 'an absolute path outside the jail is refused');
+      await rejects(up.run({ ref, paths: ['nope.txt'] }, { agentId: 'ag' }), /ENOENT|not found/i, 'a missing file fails loudly here, not silently inside the page');
+      A.eq(d.log.uploaded[1], [path.join(ws, 'ag', 'resume.pdf')], 'no refused upload ever reached the driver');
+      A.eq(up.requiresConsent, true, 'upload is consent-gated');
+    } finally { fs.rmSync(ws, { recursive: true, force: true }); }
+  }
+
+  // AGENT INPUT NEVER BECOMES PAGE CODE: browser.select embeds the requested value as a string
+  // literal in a fixed expression, so a crafted value cannot compose script.
+  {
+    A.eq(T.jsLiteral('plain'), '"plain"', 'a plain value is a plain literal');
+    A.eq(T.jsLiteral('a"b'), '"a\\"b"', 'quotes are escaped');
+    // The property that matters: whatever the agent supplies, evaluating the literal yields the SAME
+    // STRING BACK — it is data, never code. eval here is the point of the assertion.
+    for (const evil of ['"}); alert(1); (() => ({a: "', '\\"; globalThis.pwned = 1; //', '</script>', '\n\r\t']) {
+      A.eq(eval(T.jsLiteral(evil)), evil, 'break-out attempt round-trips as data: ' + JSON.stringify(evil));
+    }
+    const ls = T.jsLiteral('x' + String.fromCharCode(0x2028) + 'y');
+    A.ok(ls.indexOf('\\u2028') > 0, 'U+2028 is escaped (legal in JSON, a line terminator in older JS)');
+    A.ok(ls.indexOf(String.fromCharCode(0x2028)) < 0, 'and the raw separator never reaches the page expression');
+  }
+
+  // ---- SCREENSHOTS ARE NO LONGER WRITE-ONLY --------------------------------------------------
+  // screenshot() had exactly ONE consumer - vision() - which handed the base64 to a model and
+  // returned a BYTE COUNT. The user could never see what the agent saw, and the frame was dropped.
+  {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-shots-'));
+    try {
+      const fsp = require('node:fs/promises');
+      const emitted = [];
+      const ctx = { agentId: 'ag', room: 'lab', emit: (name, payload) => emitted.push([name, payload]) };
+      const S = makeBrowserTools({ driver: fakeDriver(), fsp, pathMod: path, root: ws });
+
+      const out = await S.tools.find(t => t.name === 'browser.screenshot').run({}, ctx);
+      const rel = (out.content.match(/shots\/shot-[a-f0-9]+\.png/) || [])[0];
+      A.ok(!!rel, 'screenshot reports the saved path');
+      A.ok(fs.existsSync(path.join(ws, 'ag', rel)), 'the PNG is actually written into the agent workspace jail');
+      A.eq(fs.readFileSync(path.join(ws, 'ag', rel)).toString(), 'png', 'the captured bytes are what got written');
+      const deliv = emitted.find(e => e[0] === 'deliverable');
+      A.ok(!!deliv, 'a deliverable event is emitted so the capture shows up in the station');
+      A.eq(deliv[1].kind, 'image', 'the deliverable is an image');
+      A.eq(deliv[1].agentId, 'ag', 'the deliverable is attributed to the capturing agent');
+      A.eq(deliv[1].room, 'lab', 'the deliverable carries the room');
+      A.ok(/\/api\/file\?agent=ag/.test(out.content), 'a viewer link is offered');
+
+      // Content-addressed: the same viewport twice is ONE file, not a pile of near-duplicates.
+      const again = await S.tools.find(t => t.name === 'browser.screenshot').run({}, ctx);
+      A.eq((again.content.match(/shots\/shot-[a-f0-9]+\.png/) || [])[0], rel, 'an unchanged capture is idempotent (content-addressed)');
+
+      // vision now PERSISTS the frame it analyzed, so the model's reading can be checked against pixels.
+      const V = makeBrowserTools({ driver: fakeDriver(), fsp, pathMod: path, root: ws, vision: async () => 'a login form' });
+      const vout = await V.tools.find(t => t.name === 'browser.vision').run({ question: 'what is this?' }, ctx);
+      A.ok(/a login form/.test(vout.content), 'vision still answers the question');
+      A.ok(/Screenshot saved to shots\//.test(vout.content), 'vision saves the frame it analyzed instead of dropping it');
+
+      // No workspace wired: say so honestly rather than naming a file that does not exist.
+      const N = makeBrowserTools({ driver: fakeDriver() });
+      const nout = await N.tools.find(t => t.name === 'browser.screenshot').run({}, ctx);
+      A.ok(/no workspace to save into/.test(nout.content), 'a run without a workspace admits the image was discarded');
+      A.ok(!/shots\//.test(nout.content), 'and never invents a saved path');
+    } finally { fs.rmSync(ws, { recursive: true, force: true }); }
+  }
+
+  // ---- NETWORK TRUTH: the agent is told the main document's real HTTP status ------------------
+  // Before this, navigate() returned only location.href, so a 403, a 404 and a page that rendered
+  // nothing were indistinguishable — the agent read the error page and reported it as the answer.
+  {
+    A.eq(T.describeResponse(null), { text: '', summary: '' }, 'a driver that cannot observe the network claims nothing');
+    A.eq(T.describeResponse({ status: 200 }).text, ' (HTTP 200)', 'a 2xx is reported plainly');
+    A.ok(/HTTP 403/.test(T.describeResponse({ status: 403, statusText: 'Forbidden' }).text), 'a 403 is surfaced');
+    A.ok(/error response, not the content/.test(T.describeResponse({ status: 404 }).text), 'a non-2xx warns that the body is an error page');
+    A.ok(/REQUEST FAILED/.test(T.describeResponse({ status: 0, failure: 'net::ERR_NAME_NOT_RESOLVED' }).text), 'a transport failure is distinguished from an HTTP status');
+
+    // Fake CDP that emits Network events for the page it "loads".
+    function netRig(events) {
+      const state = { sent: [], url: 'about:blank' };
+      class WS {
+        constructor() { this.handlers = {}; WS.last = this; setTimeout(() => this.fire('open', {}), 0); }
+        addEventListener(n, fn) { (this.handlers[n] = this.handlers[n] || []).push(fn); }
+        fire(n, v) { for (const fn of this.handlers[n] || []) fn(v); }
+        emit(method, params) { this.fire('message', { data: JSON.stringify({ method, params }) }); }
+        send(raw) {
+          const m = JSON.parse(raw); state.sent.push(m);
+          const expr = String((m.params && m.params.expression) || '');
+          let result = {};
+          if (m.method === 'Page.getFrameTree') result = { frameTree: { frame: { id: 'MAIN' } } };
+          else if (m.method === 'Runtime.evaluate') {
+            let value = state.url;
+            if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
+            else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
+            result = { result: { value } };
+          }
+          if (m.method === 'Page.navigate') { state.url = m.params.url; for (const e of events) this.emit(e[0], e[1]); }
+          setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+        }
+        close() {}
+      }
+      const driver = T.makeCdpDriver({
+        chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9350,
+        settleQuietPolls: 1, settleNavBudgetMs: 300, settleActionBudgetMs: 300, settleMinObserveMs: 0, settleEmptyGraceMs: 0,
+        fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://net' }] }),
+        WebSocketImpl: WS,
+        spawn: () => ({ pid: 61, on(ev, fn) { if (ev === 'close') this._c = fn; }, kill() { if (this._c) queueMicrotask(() => this._c(0)); } })
+      });
+      return { driver, state };
+    }
+
+    // A. a 403 main document is captured and reported.
+    {
+      const rig = netRig([['Network.responseReceived', { type: 'Document', frameId: 'MAIN', response: { status: 403, statusText: 'Forbidden', url: 'https://x.test/' } }]]);
+      await rig.driver.navigate('https://x.test/');
+      A.eq(rig.driver.lastResponse().status, 403, 'main-document 403 captured from the Network domain');
+      await rig.driver.close();
+    }
+
+    // B. THE SUB-FRAME TRAP: an ad/iframe 404 must never read as the page's own status.
+    {
+      const rig = netRig([
+        ['Network.responseReceived', { type: 'Document', frameId: 'MAIN', response: { status: 200, statusText: 'OK', url: 'https://x.test/' } }],
+        ['Network.responseReceived', { type: 'Document', frameId: 'IFRAME', response: { status: 404, statusText: 'Not Found', url: 'https://ads.test/' } }]
+      ]);
+      await rig.driver.navigate('https://x.test/');
+      A.eq(rig.driver.lastResponse().status, 200, 'a sub-frame document response never overwrites the top frame status');
+      await rig.driver.close();
+    }
+
+    // C. a transport failure (DNS/refused/cert) produces no response at all.
+    {
+      const rig = netRig([['Network.loadingFailed', { requestId: 'r1', type: 'Document', errorText: 'net::ERR_NAME_NOT_RESOLVED' }]]);
+      await rig.driver.navigate('https://nope.test/');
+      A.eq(rig.driver.lastResponse().failure, 'net::ERR_NAME_NOT_RESOLVED', 'transport failure recorded');
+      A.eq(rig.driver.lastResponse().status, 0, 'a failed request has no HTTP status');
+      await rig.driver.close();
+    }
+
+    // D. status must not leak from the previous page.
+    {
+      const rig = netRig([['Network.responseReceived', { type: 'Document', frameId: 'MAIN', response: { status: 500, statusText: 'Server Error', url: 'https://x.test/' } }]]);
+      await rig.driver.navigate('https://x.test/');
+      A.eq(rig.driver.lastResponse().status, 500, 'first navigation records its status');
+      rig.state.sent.length = 0;
+      const quiet = netRig([]);                       // a second navigation that emits nothing
+      await quiet.driver.navigate('https://y.test/');
+      A.eq(quiet.driver.lastResponse(), null, 'a navigation with no observed response reports NOTHING rather than a stale status');
+      await rig.driver.close(); await quiet.driver.close();
+    }
+
+    // E. the tool text the agent actually reads carries the status.
+    {
+      const statusDriver = fakeDriver();
+      statusDriver.lastResponse = () => ({ status: 403, statusText: 'Forbidden', failure: null });
+      const B403 = makeBrowserTools({ driver: statusDriver });
+      const out = await B403.tools.find(t => t.name === 'browser.navigate').run({ url: 'https://example.com' }, {});
+      A.ok(/HTTP 403/.test(out.content), 'browser.navigate tells the agent the page was a 403');
+      A.ok(/error response, not the content/.test(out.content), 'and warns that the body is the error page');
+      // A driver with no network visibility must not invent a status.
+      const plain = await makeBrowserTools({ driver: fakeDriver() }).tools.find(t => t.name === 'browser.navigate').run({ url: 'https://example.com' }, {});
+      A.ok(!/HTTP/.test(plain.content), 'a driver without network visibility claims no status (truthful telemetry)');
+    }
   }
 
   // ---- ATTENDED BROWSER LOGIN (browser.login): human-driven headed takeover on the persistent

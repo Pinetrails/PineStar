@@ -88,7 +88,9 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(captured.url, 'https://gemini.test/v1beta/models/gemini-test:streamGenerateContent?alt=sse', 'POSTs to streamGenerateContent SSE endpoint');
     A.eq(captured.headers['x-goog-api-key'], 'KEY', 'api key sent as x-goog-api-key');
     A.eq(captured.body.systemInstruction, { parts: [{ text: 'sys' }] }, 'leading system -> systemInstruction');
-    A.eq(captured.body.tools[0].functionDeclarations[0], { name: 'web', description: 'd', parameters: { type: 'object' } }, 'OpenAI tool -> Gemini functionDeclaration');
+    // A no-argument tool omits `parameters` entirely: Gemini rejects an OBJECT schema whose
+    // properties bag is empty ("should be non-empty for OBJECT type").
+    A.eq(captured.body.tools[0].functionDeclarations[0], { name: 'web', description: 'd' }, 'OpenAI tool -> Gemini functionDeclaration');
     A.eq(captured.body.contents[0].parts[1], { functionCall: { name: 'web', args: { q: 1 } } }, 'assistant tool_call -> functionCall part');
     A.eq(captured.body.contents[1].parts[0], { functionResponse: { name: 'web', response: { result: 'yes' } } }, 'tool result -> functionResponse part');
   }

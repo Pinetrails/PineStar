@@ -3,9 +3,9 @@
    contents/tools/functionCall wire. */
 'use strict';
 (function (root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'), require('./errorClass.js'), require('./prices.js'));
-  else { root.SK = root.SK || {}; root.SK.providers = root.SK.providers || {}; root.SK.providers.gemini = factory(root.SK.providers.provider, root.SK.providers.errorClass, root.SK.providers.prices); }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (provider, errorClass, prices) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'), require('./errorClass.js'), require('./prices.js'), require('./toolschema.js'));
+  else { root.SK = root.SK || {}; root.SK.providers = root.SK.providers || {}; root.SK.providers.gemini = factory(root.SK.providers.provider, root.SK.providers.errorClass, root.SK.providers.prices, root.SK.providers.toolschema); }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (provider, errorClass, prices, toolschema) {
   'use strict';
 
   const classifyApiError = errorClass.classifyApiError;
@@ -153,11 +153,15 @@
       const fn = (item && item.function) || {};
       const name = String(fn.name || '').trim();
       if (!name) continue;
-      declarations.push({
-        name,
-        description: fn.description || '',
-        parameters: fn.parameters || { type: 'object', properties: {} }
-      });
+      // A third-party MCP `inputSchema` reaches here verbatim (mcp/translate.js passes it through and
+      // registry.wireFormat() hands it straight over). Gemini's Schema is an OpenAPI-3.0 subset and
+      // answers an unknown field — `$schema`, `additionalProperties`, `$ref`, `oneOf` … — with a 400
+      // on EVERY turn, so one zod-authored connector would take out every Gemini run. Prune to the
+      // documented field set here, at the wire seam that owns the constraint.
+      const decl = { name, description: fn.description || '' };
+      const params = toolschema.forGemini(fn.parameters || {});
+      if (!toolschema.isEmptyObjectSchema(params)) decl.parameters = params;
+      declarations.push(decl);
     }
     return declarations.length ? [{ functionDeclarations: declarations }] : null;
   }

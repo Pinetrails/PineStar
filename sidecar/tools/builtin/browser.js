@@ -21,6 +21,46 @@
   const NET = require('node:net');
 
   const MAX_TEXT = 12000;
+  /* AUTO-WAIT (2026-07-25). The whole wait vocabulary used to be three fixed sleeps — navigate 900ms,
+     back 500ms, connect-retry 250ms — and click/type/press returned with ZERO settle time. So the
+     snapshot after a click read the PRE-CLICK DOM, and any SPA that hydrated past 900ms answered an
+     empty page, which the agent reported as "no interactive elements". A fixed sleep is wrong in both
+     directions: too short for a slow app, wasted latency on a static one.
+     Instead the page tells us when it went quiet. A MutationObserver counts DOM changes; we poll that
+     counter and proceed as soon as readyState is complete AND the count has held still across
+     SETTLE_QUIET_POLLS polls, giving up at a budget. A static page now settles in ~1 poll (FASTER than
+     the old 900ms blind wait) and a slow SPA gets the time it actually needs.
+     The page keeps a mutation COUNTER, never a timestamp: the determinism law bans ambient time in
+     backend logic, and a counter is the better primitive anyway — the sidecar owns the notion of
+     "quiet" (counter unchanged across N consecutive polls) and the page just reports what happened. */
+  const SETTLE_POLL_MS = 40;
+  const SETTLE_QUIET_POLLS = 3;         // consecutive unchanged polls (~120ms) before we call it settled
+  const SETTLE_NAV_BUDGET_MS = 8000;    // ceiling for a navigation/history move
+  const SETTLE_ACTION_BUDGET_MS = 3000; // ceiling after click/type/press/scroll
+  // Paid ONLY when a snapshot came back empty — see the re-read note in snapshot().
+  const SETTLE_EMPTY_GRACE_MS = 1500;
+  /* A MINIMUM observation window before quiescence may be declared. DOM quiescence cannot see the
+     future: a click handler that renders from a setTimeout leaves the page genuinely still in the
+     meantime, so a pure quiet check returns before the work lands. Watching for at least this long
+     catches the ordinary handler/animation-frame delay while still being adaptive - a slow page
+     keeps waiting well past it, unlike the fixed sleeps this replaced. */
+  const SETTLE_MIN_OBSERVE_MS = 400;
+  const SETTLE_BOOTSTRAP = String.raw`(() => {
+    if (globalThis.__STARNET_SETTLE__) return;
+    const s = { n: 0 };
+    try { Object.defineProperty(globalThis, '__STARNET_SETTLE__', { value: s, configurable: false, writable: false }); } catch (e) { return; }
+    const bump = () => { s.n++; };
+    const observe = () => {
+      try { new MutationObserver(bump).observe(document.documentElement || document, { childList: true, subtree: true, attributes: true, characterData: true }); } catch (e) {}
+    };
+    // addScriptToEvaluateOnNewDocument runs before <html> exists, so defer until there is a root.
+    try { if (document.documentElement) observe(); else document.addEventListener('readystatechange', observe, { once: true }); } catch (e) {}
+    // A resource landing (or a history move) is a change even when it mutates no nodes.
+    try { addEventListener('load', bump); addEventListener('popstate', bump); } catch (e) {}
+  })()`;
+  // Cheap per-poll read: is the document done, and how many mutations has it seen so far?
+  const SETTLE_PROBE = `(() => { const s = globalThis.__STARNET_SETTLE__;
+    return { ok: !!s, ready: document.readyState, n: s ? s.n : -1 }; })()`;
   const DEFAULT_PORT = Number(process.env.STARNET_BROWSER_CDP || process.env.SKYNET_BROWSER_CDP || 9347);
   // Installed Chrome's "new" headless mode can still enter the platform pointer-lock path after
   // a CDP click. On Windows that path calls ClipCursor and moves the REAL cursor. Install this
@@ -213,6 +253,25 @@
     });
   }
   function clamp(s, n) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n).trimEnd() + ' ...' : s; }
+  /* Embed an agent-supplied VALUE in a fixed page expression as a string literal. JSON.stringify covers
+     quotes/backslashes/control chars; U+2028 and U+2029 are legal in JSON but were line terminators in
+     JS before ES2019, so they are escaped explicitly rather than trusted to the engine's edition. */
+  function jsLiteral(v) {
+    var LS = String.fromCharCode(0x2028), PS = String.fromCharCode(0x2029);
+    return JSON.stringify(String(v == null ? '' : v)).split(LS).join('\\u2028').split(PS).join('\\u2029');
+  }
+  /* Render the main document's real HTTP outcome for the agent. A non-2xx is NOT an error the tool
+     throws on — the page may still be worth reading — but the agent must be told, or it will report an
+     error page's contents as the answer. A driver that cannot observe the network says nothing. */
+  function describeResponse(r) {
+    if (!r) return { text: '', summary: '' };
+    if (r.failure) return { text: ' — REQUEST FAILED (' + r.failure + ')', summary: ' (failed)' };
+    const code = Number(r.status) || 0;
+    if (!code) return { text: '', summary: '' };
+    if (code >= 200 && code < 300) return { text: ' (HTTP ' + code + ')', summary: ' ' + code };
+    return { text: ' — HTTP ' + code + (r.statusText ? ' ' + r.statusText : '') +
+             ' (the page below is the server\'s error response, not the content you asked for)', summary: ' ' + code };
+  }
   function hostOf(u) {
     let h = u.hostname.toLowerCase();
     if (h.charAt(0) === '[') h = h.slice(1, -1);
@@ -351,14 +410,53 @@
     // budget. Derived from timeoutMs (so an injected test rig scales with it) and floored well above it.
     // MUST stay comfortably under the browser.navigate TOOL budget (NAV_TOOL_TIMEOUT_MS below): if the outer
     // tool timeout fired first it would abort the run() mid-flight and the Page.stopLoading recovery would
-    // never happen — leaving exactly the wedged session this change exists to prevent.
+    // never happen - leaving exactly the wedged session that change exists to prevent.
     const navTimeoutMs = deps.navTimeoutMs || Math.max(timeoutMs * 2, 30000);
+    // Auto-wait thresholds are injectable so a test can drive the real settle loop (including the
+    // budget-exhausted path) without burning the production ceilings in wall-clock time.
+    const settleQuietPolls = deps.settleQuietPolls == null ? SETTLE_QUIET_POLLS : Number(deps.settleQuietPolls);
+    const settleNavBudgetMs = deps.settleNavBudgetMs == null ? SETTLE_NAV_BUDGET_MS : Number(deps.settleNavBudgetMs);
+    const settleActionBudgetMs = deps.settleActionBudgetMs == null ? SETTLE_ACTION_BUDGET_MS : Number(deps.settleActionBudgetMs);
+    const settleEmptyGraceMs = deps.settleEmptyGraceMs == null ? SETTLE_EMPTY_GRACE_MS : Number(deps.settleEmptyGraceMs);
+    const settleMinObserveMs = deps.settleMinObserveMs == null ? SETTLE_MIN_OBSERVE_MS : Number(deps.settleMinObserveMs);
     if (!fetchImpl || !WebSocketImpl) throw new Error('browser unavailable: Node WebSocket/fetch is not available');
     if (!chromePath) throw new Error('browser unavailable: Chromium not found; set STARNET_CHROME');
     // We run headed only if requested AND the chosen binary can actually show a window.
     const headed = wantHeaded && !binIsHeadlessOnly;
 
     let proc = null, procExited = false, procError = null, procClosePromise = null, cdp = null, consoleLog = [], dialog = null, attachedPort = null;
+    /* NETWORK TRUTH. navigate() used to return only location.href, so a 403, a 404 and a page that
+       simply rendered nothing were indistinguishable to the agent — it would "read" an error page and
+       report its contents as the answer. The Network domain gives the main document's real status, and
+       an in-flight request count that makes auto-wait aware of XHR that has not landed yet. */
+    let mainFrameId = null, lastResponse = null;
+    const inflight = new Set();
+    /* REQUEST LOG. `browser.console` already lets the agent see what the page SAID; this is what the
+       page DID. Without it "the button did nothing" is unfalsifiable — you cannot tell a 401 from a
+       CORS refusal from a request that was never made. Bounded like consoleLog, and deliberately
+       header-free: Authorization/Cookie live in headers, and the agent does not need them to debug. */
+    const NETLOG_MAX = 200;
+    let netLog = [];
+    const netById = new Map();
+    function netRecord(requestId, patch) {
+      let row = netById.get(requestId);
+      if (!row) {
+        row = { id: requestId, method: '', url: '', type: '', status: 0, bytes: 0, failure: null, done: false };
+        netById.set(requestId, row);
+        netLog.push(row);
+        if (netLog.length > NETLOG_MAX) { const drop = netLog.shift(); netById.delete(drop.id); }
+      }
+      Object.assign(row, patch);
+      return row;
+    }
+    const frameSessions = new Map();   // CDP sessionId -> frameId, for every adopted (out-of-process) iframe
+    /* TABS. pageSessions holds every adopted extra page target in the order it appeared. activeSession
+       is the CDP session every page-scoped command targets: null means the ORIGINAL tab, so the default
+       behaviour of every existing tool is byte-identical until the agent explicitly switches. That
+       matters — the failure mode of a multi-target driver is quietly reading the WRONG DOM, so
+       switching is never implicit. */
+    const pageSessions = new Map();    // CDP sessionId -> targetId, for every adopted extra tab
+    let activeSession = null;
     async function connect() {
       if (cdp) return cdp;
       try { FS.mkdirSync(profileDir, { recursive: true }); } catch (_) {}
@@ -419,7 +517,36 @@
                 const info = p.targetInfo || {}, sid = p.sessionId;
                 if (!sid) return;
                 if (info.type === 'page') {
-                  Promise.resolve(cdp.send('Target.closeTarget', { targetId: info.targetId })).catch(() => {});
+                  /* ADOPT, don't kill. A target=_blank link or a popup used to be closed outright
+                     (Target.closeTarget while still paused), so a checkout that opens in a new tab, a
+                     PDF that opens beside the page, or an SSO popup was a dead end with no explanation.
+                     The reason for closing was real — a new page target does NOT inherit a
+                     target-scoped preload, so it could run unshimmed script — but that is exactly what
+                     the iframe path already solves: attach, inject the shim, THEN resume. Runs are
+                     forceHeadless, so an adopted tab can never put a window on the user's screen.
+                     If the shim fails to install we still close it: fail closed, never unshimmed. */
+                  /* A PAUSED PAGE TARGET IS THE MIRROR IMAGE OF A PAUSED IFRAME (both measured):
+                       iframe — Page.* acknowledges; Runtime.evaluate has no execution context.
+                       page   — Page.* does NOT acknowledge until resumed; Runtime.evaluate works,
+                                because a popup starts life on about:blank, which HAS a context.
+                     So the preload must be sent WITHOUT awaiting its reply — awaiting deadlocks until
+                     the CDP timeout, and the catch would then close the very tab we set out to adopt.
+                     It still takes effect; only the acknowledgement is deferred. Wire order is
+                     preserved, so it is installed before the resume that triggers the navigation. */
+                  cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP }, sid).catch(() => {});
+                  cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP }, sid).catch(() => {});
+                  Promise.resolve()
+                    // Runtime.evaluate DOES answer while a page target is paused, so it both shims the
+                    // current about:blank document and proves the session is live before we resume.
+                    .then(() => cdp.send('Runtime.evaluate', { expression: SYNTHETIC_INPUT_BOOTSTRAP, awaitPromise: true }, sid))
+                    .then(() => cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP }, sid))
+                    .then(() => { pageSessions.set(sid, info.targetId); })
+                    .then(() => cdp.send('Runtime.runIfWaitingForDebugger', {}, sid))
+                    .catch(() => {
+                      pageSessions.delete(sid);
+                      // cdp may already be null if the driver closed mid-adoption; nothing to close then.
+                      if (cdp && info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {});
+                    });
                   return;
                 }
                 if (info.type !== 'iframe') {
@@ -428,12 +555,39 @@
                   Promise.resolve(cdp.send('Runtime.runIfWaitingForDebugger', {}, sid)).catch(() => {});
                   return;
                 }
+                /* AN OUT-OF-PROCESS IFRAME HAS NO EXECUTION CONTEXT WHILE PAUSED.
+                   This path used to Runtime.evaluate the bootstrap into a paused OOPIF. That call
+                   ALWAYS fails ("Cannot find default execution context") — there is no document yet
+                   to evaluate into — so the chain rejected, the catch closed the target, and the frame
+                   never resumed. A paused OOPIF blocks its PARENT's renderer, so every subsequent
+                   Runtime.evaluate on the top page timed out too: measured, any page carrying a
+                   cross-origin iframe (Stripe, Auth0/Okta, reCAPTCHA, a consent wall, an embed) made
+                   browser.navigate hang for the full CDP timeout and then throw.
+                   The preload is the ONLY thing needed and the only thing that works here:
+                   Page.addScriptToEvaluateOnNewDocument DOES acknowledge on a paused OOPIF (~1ms) and
+                   applies to the document the frame is about to load. Then resume. */
                 Promise.resolve()
                   .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP }, sid))
-                  .then(() => cdp.send('Runtime.evaluate', { expression: SYNTHETIC_INPUT_BOOTSTRAP, awaitPromise: true }, sid))
+                  .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP }, sid))
+                  // Remember the adopted frame. It was already attached and shimmed, but nothing ever
+                  // recorded its session, so snapshot/get_text could never look inside it: a login form
+                  // in an Auth0/Okta/Stripe iframe, or a consent banner, was simply invisible.
+                  .then(() => { if (info.targetId) frameSessions.set(sid, info.targetId); })
                   .then(() => cdp.send('Runtime.runIfWaitingForDebugger', {}, sid))
-                  .catch(() => { if (info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {}); });
+                  // Fail closed: an unshimmed frame is removed rather than resumed. Leaving it PAUSED
+                  // is the one outcome we must never pick — that is what wedged the parent page.
+                  .catch(() => {
+                    frameSessions.delete(sid);
+                    if (cdp && info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {});
+                  });
               });
+              cdp.on('Target.detachedFromTarget', p => {
+              if (!p || !p.sessionId) return;
+              frameSessions.delete(p.sessionId);
+              pageSessions.delete(p.sessionId);
+              // A closed tab must never leave the driver pointed at a dead session.
+              if (activeSession === p.sessionId) activeSession = null;
+            });
               await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
             }
             await cdp.send('Page.enable');
@@ -444,6 +598,54 @@
               await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP });
               await cdp.send('Runtime.evaluate', { expression: SYNTHETIC_INPUT_BOOTSTRAP, awaitPromise: true });
             }
+            // The settle marker is measurement, not a security shim, so it installs UNCONDITIONALLY —
+            // auto-wait must still work on a rig that disabled the synthetic-input isolation.
+            await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP });
+            await cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP });
+            await cdp.send('Network.enable');
+            await cdp.send('DOM.enable');   // getFrameOwner/getBoxModel, for placing iframe content in the top page
+            // Identify the top frame so a sub-frame's document response can never be mistaken for the
+            // page's own status (an ad iframe 404 must not read as "the page 404'd").
+            try {
+              const tree = await cdp.send('Page.getFrameTree');
+              mainFrameId = (tree && tree.frameTree && tree.frameTree.frame && tree.frameTree.frame.id) || null;
+            } catch (_) { mainFrameId = null; }
+            /* DOWNLOADS INTO THE JAIL. The Chrome profile lives in OS.tmpdir(), outside WORKSPACES, so
+               anything the agent downloaded landed where it could not read it back — the bytes were
+               unreachable even by accident. Point Chrome at the agent's own downloads/ directory.
+               Browser.setDownloadBehavior is browser-scoped and not always accepted on a page
+               connection; Page.setDownloadBehavior is the deprecated page-scoped equivalent. Try both. */
+            if (deps.downloadDir) {
+              try { FS.mkdirSync(deps.downloadDir, { recursive: true }); } catch (_) {}
+              const behavior = { behavior: 'allow', downloadPath: deps.downloadDir };
+              try { await cdp.send('Browser.setDownloadBehavior', Object.assign({ eventsEnabled: true }, behavior)); }
+              catch (_) { try { await cdp.send('Page.setDownloadBehavior', behavior); } catch (_) {} }
+            }
+            cdp.on('Network.requestWillBeSent', p => {
+              if (!p || !p.requestId) return;
+              inflight.add(p.requestId);
+              const req = p.request || {};
+              netRecord(p.requestId, { method: req.method || 'GET', url: req.url || '', type: p.type || '' });
+            });
+            cdp.on('Network.loadingFinished', p => {
+              if (!p || !p.requestId) return;
+              inflight.delete(p.requestId);
+              netRecord(p.requestId, { bytes: Math.max(0, Math.round(Number(p.encodedDataLength) || 0)), done: true });
+            });
+            cdp.on('Network.responseReceived', p => {
+              if (!p) return;
+              const r = p.response || {};
+              if (p.requestId) netRecord(p.requestId, { status: Number(r.status) || 0, url: r.url || '', type: p.type || '' });
+              if (p.type !== 'Document') return;
+              if (mainFrameId && p.frameId && p.frameId !== mainFrameId) return;
+              lastResponse = { status: Number(r.status) || 0, statusText: r.statusText || '', url: r.url || '', mimeType: r.mimeType || '', failure: null };
+            });
+            cdp.on('Network.loadingFailed', p => {
+              if (!p) return;
+              if (p.requestId) { inflight.delete(p.requestId); netRecord(p.requestId, { failure: p.errorText || 'request failed', done: true }); }
+              // A transport-level failure (DNS, refused, cert) never produces a response at all.
+              if (p.type === 'Document') lastResponse = { status: 0, statusText: '', url: '', mimeType: '', failure: p.errorText || 'request failed' };
+            });
             cdp.on('Runtime.consoleAPICalled', p => {
               const text = (p.args || []).map(a => a.value != null ? a.value : (a.description || a.type || '')).join(' ');
               consoleLog.push({ type: p.type || 'log', text: clamp(text, 500) });
@@ -457,16 +659,75 @@
       }
       throw new Error('browser unavailable: could not attach to Chromium');
     }
-    async function evalJS(expression) {
+    /* Page-scoped command channel. Every page command (Runtime/Input/DOM/Emulation/Page) goes through
+       here so it lands on the ACTIVE tab; browser-scoped commands (Target and Browser) keep using cdp
+       directly and are never given a sessionId. An explicit sessionId argument still wins, which is how
+       snapshot/get_text reach individual iframe sessions. */
+    let pageProxy = null;
+    async function page() {
       const c = await connect();
+      if (!pageProxy || pageProxy.__cdp !== c) {
+        pageProxy = {
+          __cdp: c,
+          // NOTE the 4th arg: CdpClient.send takes a per-call timeout (navigation uses it). Dropping it
+          // here would silently put navigation back on the 15s budget and re-open the stalled-session wedge.
+          send: (method, params, sessionId, timeoutMs) => c.send(method, params, sessionId !== undefined ? sessionId : (activeSession || undefined), timeoutMs),
+          on: (n, fn) => c.on(n, fn)
+        };
+      }
+      return pageProxy;
+    }
+    async function evalJS(expression) {
+      const c = await page();
       const r = await c.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
       if (r.exceptionDetails) throw new Error('page eval failed: ' + ((r.exceptionDetails.exception && r.exceptionDetails.exception.description) || r.exceptionDetails.text || 'exception'));
       return r.result && r.result.value;
     }
+    /* Wait for the page to go quiet. Returns true if it genuinely settled, false if the budget ran out
+       or the settle marker was unavailable (a page that blocked the bootstrap, or a bare CDP endpoint).
+       NEVER throws and NEVER waits past the budget: a wait helper that can hang would be worse than the
+       fixed sleeps it replaces. `fallbackMs` is the legacy blind sleep used only when we cannot measure. */
+    async function waitForSettle(c, opts) {
+      opts = opts || {};
+      const quietPolls = opts.quietPolls == null ? settleQuietPolls : opts.quietPolls;
+      const budgetMs = opts.budgetMs || settleActionBudgetMs;
+      // The budget is a TIMER, not a clock read — determinism law bans ambient time in backend logic,
+      // and a timer expresses "stop waiting" just as well.
+      let expired = false, observed = settleMinObserveMs <= 0;
+      const timer = setTimeout(() => { expired = true; }, budgetMs);
+      const minTimer = observed ? null : setTimeout(() => { observed = true; }, settleMinObserveMs);
+      try {
+        let lastN = null, stable = 0;
+        for (;;) {
+          let probe = null;
+          try {
+            const r = await c.send('Runtime.evaluate', { expression: SETTLE_PROBE, returnByValue: true });
+            probe = r && r.result && r.result.value;
+          } catch (_) { probe = null; }
+          // Marker absent (or a non-object answer from a stub endpoint): we cannot measure quiescence.
+          if (!probe || typeof probe !== 'object' || probe.ok !== true) {
+            const fb = Number(opts.fallbackMs || 0);
+            if (fb > 0) await sleep(fb);
+            return false;
+          }
+          stable = (lastN !== null && probe.n === lastN) ? stable + 1 : 0;
+          lastN = probe.n;
+          // A quiet DOM is not proof of a quiet page: an XHR can still be in flight with nothing
+          // rendered yet. Wait for the network too — but a long-poll/SSE/websocket connection never
+          // finishes, so a much longer run of DOM stillness releases us regardless.
+          const netIdle = inflight.size === 0;
+          if (observed && probe.ready === 'complete' && stable >= quietPolls && (netIdle || stable >= quietPolls * 3)) return true;
+          if (expired) return false;                  // spend the budget, then proceed with what we have
+          await sleep(SETTLE_POLL_MS);
+        }
+      } finally { clearTimeout(timer); if (minTimer) clearTimeout(minTimer); }
+    }
     async function navigate(url) {
-      const c = await connect();
+      const c = await page();
+      lastResponse = null;   // this navigation's status, never the previous page's
+      netLog = []; netById.clear();   // the log describes THIS page, not whatever came before
       /* A stalled navigation used to poison the WHOLE session. Page.navigate blocks until commit, so a slow
-         or challenge-walled origin blew the 15s command budget and threw "CDP timeout: Page.navigate" — and
+         or challenge-walled origin blew the 15s command budget and threw "CDP timeout: Page.navigate" - and
          because nothing ever cancelled it, the renderer stayed busy loading and the NEXT tool call
          (browser.snapshot's Runtime.evaluate) queued behind it and timed out too. A user hit exactly that
          pair on a listing page, which reads as "the browser is broken" rather than "that page did not load".
@@ -484,7 +745,9 @@
           'refusing automated browsers, or may be holding a challenge page. Try browser.get_text to see what ' +
           'did load, or reach the site through its API with web_request instead.');
       }
-      await sleep(900);
+      // Replaces the blind 900ms sleep: wait for the page to actually go quiet, keeping the fixed sleep
+      // only as the fallback for a page whose quiescence we cannot measure.
+      await waitForSettle(c, { budgetMs: settleNavBudgetMs, fallbackMs: 900 });
       const finalUrl = await evalJS('location.href');
       if (deps.syntheticInputOnly !== false) {
         const isolation = await evalJS(`(() => {
@@ -513,45 +776,269 @@
       }
       return finalUrl;
     }
+    /* Where an adopted iframe sits in the TOP page. Elements inside a frame report coordinates relative
+       to that frame, so without this offset every click into an iframe would land somewhere else. If the
+       offset cannot be determined the frame's elements are OMITTED rather than offered at coordinates we
+       know are wrong — an invisible element is a gap, a mis-aimed one is a wrong action. */
+    async function frameOffset(c, frameId) {
+      try {
+        const owner = await c.send('DOM.getFrameOwner', { frameId });
+        if (!owner || !owner.backendNodeId) return null;
+        const box = await c.send('DOM.getBoxModel', { backendNodeId: owner.backendNodeId });
+        const quad = box && box.model && box.model.content;
+        if (!quad || quad.length < 2) return null;
+        return { x: Math.round(quad[0]), y: Math.round(quad[1]) };
+      } catch (_) { return null; }
+    }
+    async function evalIn(c, expression, sessionId) {
+      try {
+        const r = await c.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId);
+        if (r && r.exceptionDetails) return null;
+        return r && r.result && r.result.value;
+      } catch (_) { return null; }
+    }
     async function snapshot(limit) {
-      return evalJS(`(() => {
+      const c = await page();
+      const cap = Math.max(1, Math.min(200, Number(limit || 80)));
+      let out = await collectNodes(c, cap);
+      /* AUTO-WAIT + RE-READ. DOM quiescence cannot see the future: a page whose framework renders from
+         a setTimeout is genuinely STILL at load time, goes quiet, and only then paints. That is exactly
+         the reported symptom — an empty snapshot the agent reports as "no interactive elements".
+         An empty page is already a dead end, so it is the one case worth paying for: wait a bounded
+         grace and look once more. A page that HAS content pays nothing. */
+      if (!out.length && settleEmptyGraceMs > 0) {
+        await sleep(settleEmptyGraceMs);
+        await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+        out = await collectNodes(c, cap);
+      }
+      return out.map((n, i) => Object.assign({}, n, { index: i }));
+    }
+    async function collectNodes(c, cap) {
+      const expr = snapshotExpr(cap);
+      const raw = await evalIn(c, expr);
+      const out = Array.isArray(raw) ? raw : [];   // a non-array answer means 'nothing readable', not a crash
+      let frameNo = 0;
+      // Out-of-process frames are tracked per driver, not per tab, so only merge them while the
+      // ORIGINAL tab is active — attributing tab 0's frames to tab 2 would be exactly the
+      // wrong-DOM failure this design exists to avoid.
+      for (const [sid, frameId] of (activeSession ? [] : frameSessions)) {
+        if (out.length >= cap) break;
+        frameNo++;
+        const off = await frameOffset(c, frameId);
+        if (!off) continue;
+        const nodes = (await evalIn(c, expr, sid)) || [];
+        for (const n of nodes) {
+          if (out.length >= cap) break;
+          out.push(Object.assign({}, n, { x: n.x + off.x, y: n.y + off.y, frame: frameNo }));
+        }
+      }
+      return out;
+    }
+    /* Walks SAME-ORIGIN iframes as well as the top document. An out-of-process (cross-origin) frame
+       gets its own CDP session and is handled by frameSessions; a same-origin frame does NOT — it
+       shares this execution context, and document.querySelectorAll simply does not descend into it.
+       Without this walk a same-origin embedded form is invisible for the same reason a cross-origin
+       one was. Offsets accumulate down the tree so every coordinate is in TOP-page space. */
+    function snapshotExpr(cap) {
+      return `(() => {
         const q = 'a,button,input,textarea,select,[role="button"],[onclick],summary,label';
-        return Array.from(document.querySelectorAll(q)).filter(el => {
-          const r = el.getBoundingClientRect();
-          return r.width > 1 && r.height > 1 && r.bottom >= 0 && r.right >= 0 && r.top <= innerHeight && r.left <= innerWidth;
-        }).slice(0, ${Math.max(1, Math.min(200, Number(limit || 80)))}).map((el, i) => {
-          const r = el.getBoundingClientRect();
-          const tag = el.tagName.toLowerCase();
-          const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'input' || tag === 'textarea' ? 'textbox' : tag);
-          const text = (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('title') || '').replace(/\\s+/g, ' ').trim().slice(0, 160);
-          return { index: i, role, text, x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
-        });
-      })()`);
+        const out = [];
+        const visit = (doc, dx, dy, frame, depth) => {
+          if (!doc || depth > 4 || out.length >= ${cap}) return;
+          for (const el of doc.querySelectorAll(q)) {
+            if (out.length >= ${cap}) return;
+            const r = el.getBoundingClientRect();
+            const x = r.left + dx, y = r.top + dy;
+            if (!(r.width > 1 && r.height > 1 && y + r.height >= 0 && x + r.width >= 0 && y <= innerHeight && x <= innerWidth)) continue;
+            const tag = el.tagName.toLowerCase();
+            const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'input' || tag === 'textarea' ? 'textbox' : tag);
+            const text = (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('title') || '').replace(/\\s+/g, ' ').trim().slice(0, 160);
+            const node = { index: out.length, role, text, x: Math.round(x), y: Math.round(y), w: Math.round(r.width), h: Math.round(r.height) };
+            if (frame) node.frame = frame;
+            out.push(node);
+          }
+          let n = frame;
+          for (const f of doc.querySelectorAll('iframe,frame')) {
+            let sub = null;
+            try { sub = f.contentDocument; } catch (e) { sub = null; }   // cross-origin: handled via its own CDP session
+            if (!sub) continue;
+            const fr = f.getBoundingClientRect();
+            visit(sub, dx + fr.left, dy + fr.top, (n = (n || 0) + 1), depth + 1);
+          }
+        };
+        visit(document, 0, 0, 0, 0);
+        return out;
+      })()`;
+    }
+    // Every mutating action settles before it returns, so the NEXT snapshot/get_text reads the DOM the
+    // action produced rather than the one it replaced. This is the fix for the silent corrupter: these
+    // three used to return with zero settle time.
+    function center(node) {
+      return { x: node.x + Math.max(1, Math.floor(node.w / 2)), y: node.y + Math.max(1, Math.floor(node.h / 2)) };
     }
     async function click(node) {
-      const c = await connect();
+      const c = await page();
       const x = node.x + Math.max(1, Math.floor(node.w / 2));
       const y = node.y + Math.max(1, Math.floor(node.h / 2));
       await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
       await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'clicked';
     }
     async function type(node, text) {
       await click(node);
-      const c = await connect();
+      const c = await page();
       await c.send('Input.insertText', { text: String(text || '') });
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'typed';
     }
     async function press(key) {
-      const c = await connect();
+      const c = await page();
       key = String(key || 'Enter');
       await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key });
       await c.send('Input.dispatchKeyEvent', { type: 'keyUp', key });
+      // Enter/Escape routinely submit or dismiss, so a keypress gets a navigation-sized budget.
+      await waitForSettle(c, { budgetMs: settleNavBudgetMs });
       return 'pressed ' + key;
+    }
+    /* Hover is not a nicety: menus, tooltips and disclosure widgets render their real targets only on
+       mouseover, so without it whole navigations are unreachable from a snapshot. */
+    async function hover(node) {
+      const c = await page();
+      const p = center(node);
+      await c.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: 'none' });
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+      return 'hovered';
+    }
+    /* HTML5 drag-and-drop needs intermediate move events — a press/release pair at two points is
+       ignored by every library that listens for dragover. */
+    async function drag(from, to) {
+      const c = await page();
+      const a = center(from), b = center(to);
+      await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: a.x, y: a.y, button: 'left', clickCount: 1 });
+      const steps = 6;
+      for (let i = 1; i <= steps; i++) {
+        await c.send('Input.dispatchMouseEvent', {
+          type: 'mouseMoved', button: 'left',
+          x: Math.round(a.x + (b.x - a.x) * i / steps),
+          y: Math.round(a.y + (b.y - a.y) * i / steps)
+        });
+      }
+      await c.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: b.x, y: b.y, button: 'left', clickCount: 1 });
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+      return 'dragged';
+    }
+    /* A <select> cannot be driven by synthetic clicks — the popup is native chrome, outside the page.
+       Set the value and fire the events a framework listens for. The agent supplies only a VALUE, never
+       code: it is embedded as a JS string literal, so no page script can be composed from tool input. */
+    async function selectOption(node, value) {
+      const p = center(node);
+      const lit = jsLiteral(value);
+      const r = await evalJS(`(() => {
+        const el = document.elementFromPoint(${p.x}, ${p.y});
+        const sel = el && (el.tagName === 'SELECT' ? el : el.closest && el.closest('select'));
+        if (!sel) return { ok: false, reason: 'no <select> at this ref' };
+        const want = ${lit};
+        const opts = Array.from(sel.options || []);
+        const hit = opts.find(o => o.value === want) || opts.find(o => (o.label || o.text || '').trim() === want);
+        if (!hit) return { ok: false, reason: 'no option matching ' + JSON.stringify(want), options: opts.slice(0, 40).map(o => o.value) };
+        sel.value = hit.value;
+        sel.dispatchEvent(new Event('input', { bubbles: true }));
+        sel.dispatchEvent(new Event('change', { bubbles: true }));
+        return { ok: true, value: hit.value, label: (hit.label || hit.text || '').trim() };
+      })()`);
+      await waitForSettle(await page(), { budgetMs: settleActionBudgetMs });
+      return r;
+    }
+    /* The viewport was pinned to the launch flag --window-size=1440,900, so mobile layouts and
+       responsive breakpoints were simply unreachable. */
+    async function viewport(width, height, opts) {
+      opts = opts || {};
+      const c = await page();
+      await c.send('Emulation.setDeviceMetricsOverride', {
+        width: Math.max(1, Math.round(Number(width) || 0)),
+        height: Math.max(1, Math.round(Number(height) || 0)),
+        deviceScaleFactor: Number(opts.scale) > 0 ? Number(opts.scale) : 1,
+        mobile: opts.mobile === true
+      });
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+      return Math.round(Number(width) || 0) + 'x' + Math.round(Number(height) || 0);
+    }
+    /* Tab 0 is always the ORIGINAL target (sessionId null); adopted tabs follow in the order they
+       appeared. Switching is explicit and never implicit — a multi-target driver's worst failure is
+       silently reading the wrong DOM, so nothing moves the agent between tabs on its own. */
+    function tabSessions() { return [null].concat(Array.from(pageSessions.keys())); }
+    async function tabs() {
+      const c = await page();
+      const out = [];
+      const sessions = tabSessions();
+      for (let i = 0; i < sessions.length; i++) {
+        const sid = sessions[i];
+        const info = await evalIn(c, '({ url: location.href, title: document.title })', sid === null ? undefined : sid);
+        out.push({
+          index: i,
+          url: (info && info.url) || '(unknown)',
+          title: (info && info.title) || '',
+          active: (activeSession || null) === sid
+        });
+      }
+      return out;
+    }
+    async function selectTab(index) {
+      const sessions = tabSessions();
+      const i = Number(index);
+      if (!Number.isInteger(i) || i < 0 || i >= sessions.length) throw new Error('no such tab: ' + index + ' (there are ' + sessions.length + ')');
+      activeSession = sessions[i];
+      const c = await page();
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+      return (await evalIn(c, 'location.href')) || '(unknown)';
+    }
+    async function closeTab(index) {
+      const sessions = tabSessions();
+      const i = Number(index);
+      if (i === 0) throw new Error('the first tab cannot be closed');
+      if (!Number.isInteger(i) || i < 0 || i >= sessions.length) throw new Error('no such tab: ' + index);
+      const sid = sessions[i];
+      const targetId = pageSessions.get(sid);
+      pageSessions.delete(sid);
+      if (activeSession === sid) activeSession = null;   // never leave the driver on a dead session
+      const c = await connect();
+      if (targetId) { try { await c.send('Target.closeTarget', { targetId }); } catch (_) {} }
+      return 'closed tab ' + i;
+    }
+    async function forward() {
+      await evalJS('history.forward()');
+      await waitForSettle(await page(), { budgetMs: settleNavBudgetMs, fallbackMs: 500 });
+      return evalJS('location.href');
+    }
+    /* FILE UPLOAD. Without DOM.setFileInputFiles any form with an attachment step is a dead end.
+       The ref usually points at a styled LABEL, because real file inputs are routinely hidden — so
+       resolve from the click point to the actual <input type=file> (self, the label's control, or the
+       nearest one in the same container) and hand CDP that element's objectId. Paths are resolved and
+       jail-checked by the caller; this only ever sees absolute paths. */
+    async function upload(node, absPaths) {
+      const c = await page();
+      await c.send('DOM.enable');
+      const p = center(node);
+      const r = await c.send('Runtime.evaluate', { expression: `(() => {
+        const el = document.elementFromPoint(${p.x}, ${p.y});
+        if (!el) return null;
+        if (el.tagName === 'INPUT' && el.type === 'file') return el;
+        if (el.control && el.control.tagName === 'INPUT' && el.control.type === 'file') return el.control;
+        const lbl = el.closest && el.closest('label');
+        if (lbl && lbl.control && lbl.control.type === 'file') return lbl.control;
+        const scope = (el.closest && el.closest('form,fieldset,section,div')) || document;
+        return scope.querySelector('input[type=file]');
+      })()` });
+      const objectId = r && r.result && r.result.objectId;
+      if (!objectId) throw new Error('no file input found at this ref — snapshot the page and pick the upload control');
+      await c.send('DOM.setFileInputFiles', { files: absPaths, objectId });
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+      return absPaths.length + ' file(s) attached';
     }
     async function testInput(action) {
       const a = Object.assign({}, action || {});
-      const c = await connect();
+      const c = await page();
       const kind = String(a.action || '');
       const code = String(a.key || a.code || '');
       const key = code.indexOf('Key') === 0 ? code.slice(3).toLowerCase()
@@ -611,19 +1098,55 @@
         return {url:location.href,title:document.title,syntheticReady:!!(s&&s.ready),popupBlocked:!!(s&&s.popupBlocked),pointerLockTag:document.pointerLockElement&&document.pointerLockElement.tagName||null,element};
       })()`);
     }
-    async function scroll(x, y) { await evalJS('window.scrollBy(' + (Number(x) || 0) + ',' + (Number(y) || 0) + ')'); return 'scrolled'; }
-    async function back() { await evalJS('history.back()'); await sleep(500); return evalJS('location.href'); }
+    // Scrolling is what triggers lazy-load / infinite-scroll, so it settles too — otherwise the very
+    // content the scroll was meant to reveal is missing from the next snapshot.
+    async function scroll(x, y) {
+      await evalJS('window.scrollBy(' + (Number(x) || 0) + ',' + (Number(y) || 0) + ')');
+      await waitForSettle(await page(), { budgetMs: settleActionBudgetMs });
+      return 'scrolled';
+    }
+    async function back() {
+      await evalJS('history.back()');
+      await waitForSettle(await page(), { budgetMs: settleNavBudgetMs, fallbackMs: 500 });
+      return evalJS('location.href');
+    }
     async function getText(selector) {
-      const sel = selector ? JSON.stringify(String(selector)) : 'null';
-      return evalJS(`(() => { const el = ${sel} ? document.querySelector(${sel}) : document.body; return (el && (el.innerText || el.textContent) || '').replace(/\\s+\\n/g, '\\n').trim(); })()`);
+      const sel = selector ? jsLiteral(String(selector)) : 'null';
+      // Same-origin frames are appended for the same reason snapshot walks them: their content is
+      // invisible to a top-document read even though the agent can see it on screen.
+      const expr = `(() => {
+        const pick = doc => { const el = ${sel} ? doc.querySelector(${sel}) : doc.body; return (el && (el.innerText || el.textContent) || '').replace(/\\s+\\n/g, '\\n').trim(); };
+        const parts = [pick(document)];
+        let n = 0;
+        for (const f of document.querySelectorAll('iframe,frame')) {
+          let sub = null;
+          try { sub = f.contentDocument; } catch (e) { sub = null; }
+          if (!sub) continue;
+          const t = pick(sub);
+          if (t) parts.push('\\n--- frame ' + (++n) + ' ---\\n' + t);
+        }
+        return parts.join('').trim();
+      })()`;
+      const c = await page();
+      const parts = [String((await evalIn(c, expr)) || '')];
+      // Read adopted iframes too. A consent wall, a payment form or an SSO login is routinely the
+      // ONLY meaningful text on the page and lives entirely inside a frame — reading just the top
+      // document returns an empty-looking page and the agent concludes there is nothing there.
+      let frameNo = 0;
+      for (const [sid] of frameSessions) {
+        frameNo++;
+        const t = String((await evalIn(c, expr, sid)) || '').trim();
+        if (t) parts.push('\n--- frame ' + frameNo + ' ---\n' + t);
+      }
+      return parts.join('').trim();
     }
     async function handleDialog(action, promptText) {
-      const c = await connect();
+      const c = await page();
       await c.send('Page.handleJavaScriptDialog', { accept: action !== 'dismiss', promptText: promptText || '' });
       const d = dialog; dialog = null; return d || { type: 'none', message: '' };
     }
     async function screenshot() {
-      const c = await connect();
+      const c = await page();
       const r = await c.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
       return r.data || '';
     }
@@ -645,7 +1168,7 @@
     // actually on the user's screen. Headless mode, or a headless-only binary fallback in
     // a headed request, both read as not visible.
     function visible() { return headed; }
-    return { navigate, snapshot, click, type, press, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
+    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), networkLog: () => netLog.map(r => Object.assign({}, r)), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
   }
 
   function makeBrowserSession(deps) {
@@ -741,6 +1264,11 @@
       version++;
       return finalUrl || u.href;
     }
+    // A driver predating this accessor (an injected test fake) simply reports no status.
+    function lastResponse() {
+      const d = driver;
+      return (d && typeof d.lastResponse === 'function') ? d.lastResponse() : null;
+    }
     async function snapshot(limit) {
       const nodes = await ensureDriver().snapshot(limit);
       version++;
@@ -750,6 +1278,28 @@
     async function click(ref) { return ensureDriver().click(requireRef(ref)); }
     async function type(ref, text) { return ensureDriver().type(requireRef(ref), text); }
     async function press(key) { return ensureDriver().press(key); }
+    // A driver that predates one of these (an injected fake) says so plainly instead of throwing a
+    // TypeError the agent cannot interpret.
+    function driverFn(d, name) {
+      if (typeof d[name] !== 'function') throw new Error('browser.' + name + ' is unavailable in this driver');
+      return d[name].bind(d);
+    }
+    async function hover(ref) { const d = ensureDriver(); return driverFn(d, 'hover')(requireRef(ref)); }
+    async function drag(fromRef, toRef) { const d = ensureDriver(); return driverFn(d, 'drag')(requireRef(fromRef), requireRef(toRef)); }
+    async function selectOption(ref, value) { const d = ensureDriver(); return driverFn(d, 'selectOption')(requireRef(ref), value); }
+    async function viewport(width, height, opts) {
+      const d = ensureDriver();
+      const out = await driverFn(d, 'viewport')(width, height, opts || {});
+      version++;   // a resize relays the page: every ref from the previous layout is now meaningless
+      return out;
+    }
+    async function forward() { const d = ensureDriver(); version++; return driverFn(d, 'forward')(); }
+    async function upload(ref, absPaths) { const d = ensureDriver(); return driverFn(d, 'upload')(requireRef(ref), absPaths); }
+    async function tabs() { const d = ensureDriver(); return driverFn(d, 'tabs')(); }
+    // Switching tabs points every subsequent tool at a DIFFERENT document, so refs from the old one
+    // must die — a ref silently re-aimed at another page is the worst outcome available here.
+    async function selectTab(i) { const d = ensureDriver(); const out = await driverFn(d, 'selectTab')(i); version++; return out; }
+    async function closeTab(i) { const d = ensureDriver(); const out = await driverFn(d, 'closeTab')(i); version++; return out; }
     async function requireLocalDriver() {
       if (!localMode) throw new Error('browser.test_input requires browser.test_navigate to a loopback URL first');
       const d = ensureDriver(false);
@@ -779,20 +1329,29 @@
     async function scroll(x, y) { return ensureDriver().scroll(x, y); }
     async function back() { version++; return ensureDriver().back(); }
     async function getText(selector) { return ensureDriver().getText(selector); }
+    // A driver without network visibility reports an empty log rather than pretending.
+    function networkLog(limit) {
+      const d = driver;
+      const rows = (d && typeof d.networkLog === 'function') ? d.networkLog() : [];
+      return rows.slice(-(limit || 60));
+    }
     async function consoleLog(limit) {
       const list = ensureDriver().consoleLog ? ensureDriver().consoleLog() : [];
       return list.slice(-(limit || 40));
     }
     async function dialog(action, promptText) { return ensureDriver().handleDialog(action || 'accept', promptText || ''); }
+    async function screenshot() { return ensureDriver().screenshot(); }
     async function vision(question) {
       const data = await ensureDriver().screenshot();
       const bytes = Math.round(String(data || '').length * 3 / 4);
+      // `image` rides along so the caller can PERSIST the analyzed frame — the screenshot used to be
+      // handed to the model and dropped, leaving the user unable to check what the agent actually saw.
       if (deps.vision) {
         const answer = await deps.vision({ imageBase64: data, question: question || '' });
-        return { ok: true, answer: String(answer == null ? '' : answer), bytes };
+        return { ok: true, answer: String(answer == null ? '' : answer), bytes, image: data };
       }
       // No vision provider wired — do NOT fake an answer. Report honestly.
-      return { ok: false, bytes, reason: 'no vision route wired into this run — do not ask the user for an API key; report the screenshot as unavailable' };
+      return { ok: false, bytes, image: data, reason: 'no vision route wired into this run — do not ask the user for an API key; report the screenshot as unavailable' };
     }
     /* ATTENDED LOGIN TAKEOVER: the agent hit a login wall and asks the Commander to sign in THEMSELVES.
        Two live consent asks bracket a headed relaunch on the persistent profile:
@@ -864,7 +1423,7 @@
       const d = driver || null;
       return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
     }
-    return { navigate, snapshot, click, type, press, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, login, close, visible, headlessFallback, attachedPort, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
+    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, tabs, selectTab, closeTab, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, networkLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
   }
 
   function makeBrowserTools(deps) {
@@ -875,6 +1434,34 @@
     const exec = (name, description, schema, run, consent) => ({ name, capability: 'web', impact: 'synthetic-browser', scope: 'execute', requiresConsent: consent !== false, timeoutMs: 20000, description, schema, run });
     const testRead = (name, description, schema, run) => ({ name, capability: 'workbench', impact: 'synthetic-browser', scope: 'read', requiresConsent: false, timeoutMs: 20000, description, schema, run });
     const testExec = (name, description, schema, run) => ({ name, capability: 'workbench', impact: 'synthetic-browser', scope: 'execute', requiresConsent: false, timeoutMs: 20000, description, schema, run });
+    /* SCREENSHOTS WERE WRITE-ONLY. screenshot() had exactly one consumer — vision() — which handed the
+       base64 to a model and returned a BYTE COUNT, so the user could never see what the agent saw and
+       the agent could never re-examine it. Frames now land in the agent's jailed workspace and emit the
+       same `deliverable` event image_generate already uses, so a capture shows up in the station.
+       Saving needs the workspace jail; a rig without it degrades to the old capture-only behaviour
+       rather than pretending a file exists. */
+    const shotFsp = deps.fsp, shotPath = deps.pathMod, shotRoot = deps.root;
+    const canSaveShots = !!(shotFsp && shotPath && shotRoot);
+    const shotJail = canSaveShots ? require('./fs.js').makeFsTools({ fsp: shotFsp, pathMod: shotPath, root: shotRoot })._internals : null;
+    async function saveShot(ctx, b64) {
+      if (!canSaveShots) return null;
+      const aid = (ctx && ctx.agentId) || 'agent';
+      const buffer = Buffer.from(String(b64 || ''), 'base64');
+      if (!buffer.length) return null;
+      // Content-addressed name: deterministic (no ambient clock/rng — determinism law) and idempotent,
+      // so re-capturing an unchanged viewport reuses one file instead of piling up near-duplicates.
+      const h = require('node:crypto').createHash('sha1').update(buffer).digest('hex').slice(0, 12);
+      const rel = 'shots/shot-' + h + '.png';
+      const { abs } = await shotJail.resolveInside(aid, rel);   // throws on jail escape / abs / '..'
+      await shotFsp.mkdir(shotPath.dirname(abs), { recursive: true });
+      await shotFsp.writeFile(abs, buffer);
+      if (ctx && typeof ctx.emit === 'function') {
+        const d = { id: 'shot_' + h, agentId: aid, kind: 'image', title: rel };
+        if (ctx.room) d.room = ctx.room;
+        ctx.emit('deliverable', d);
+      }
+      return { rel, bytes: buffer.length, viewer: '/api/file?agent=' + encodeURIComponent(aid) + '&path=' + encodeURIComponent(rel) };
+    }
     const navProps = { url: { type: 'string' } };
     if (allowVisible) navProps.visible = { type: 'boolean' };
     const localNavRequired = deps.requireOwnedServer === true ? ['url', 'serverId'] : ['url'];
@@ -894,7 +1481,10 @@
             : (session.headlessFallback && session.headlessFallback()
               ? ' (headless fallback — no visible window; no full Chrome found, only a headless-shell binary)'
               : ' (headless — not visible to the user)');
-          return { content: 'Browser navigated to ' + url + suffix, summary: 'navigated' };
+          // HONEST STATUS. Without this the agent cannot tell a 403/404 from a page that simply
+          // rendered nothing, and will happily read an error page back as the answer.
+          const http = describeResponse(session.lastResponse && session.lastResponse());
+          return { content: 'Browser navigated to ' + url + http.text + suffix, summary: 'navigated' + http.summary };
         }), { timeoutMs: NAV_TOOL_TIMEOUT_MS }),
       testRead('browser.test_navigate', 'Open an agent-owned local dev URL (127.0.0.1/localhost/::1 only) in the HEADLESS CDP browser for UI/game testing. In normal runs serverId must name this agent\'s running shell background server. Physical pointer/keyboard locks are emulated inside the page, so they never reach Windows.', { type: 'object', required: localNavRequired, properties: { url: { type: 'string' }, serverId: { type: 'string' } } },
         async (a, ctx) => {
@@ -925,8 +1515,10 @@
       read('browser.snapshot', 'Return a structured snapshot of visible interactive elements. Element refs expire after the next snapshot.', { type: 'object', properties: { limit: { type: 'number' } } },
         async a => {
           const nodes = await session.snapshot(a.limit || 80);
-          const lines = nodes.map(n => n.ref + ' [' + n.role + '] ' + (n.text || '(no text)') + ' @ ' + n.x + ',' + n.y + ' ' + n.w + 'x' + n.h);
-          return { content: lines.join('\n') || 'No visible interactive elements.', summary: nodes.length + ' ref(s)' };
+          // The frame marker matters to the agent: an element inside an iframe belongs to a different
+          // document (a payment form, an SSO login), and its coordinates are already translated here.
+          const lines = nodes.map(n => n.ref + ' [' + n.role + '] ' + (n.text || '(no text)') + ' @ ' + n.x + ',' + n.y + ' ' + n.w + 'x' + n.h + (n.frame ? ' (iframe ' + n.frame + ')' : ''));
+          return { content: lines.join('\n') || 'No visible interactive elements.', summary: nodes.length + ' ref(s)' + (nodes.some(n => n.frame) ? ' (incl. iframes)' : '') };
         }),
       exec('browser.click', 'Click a visible element by ref from the latest browser.snapshot.', { type: 'object', required: ['ref'], properties: { ref: { type: 'string' } } },
         async a => ({ content: await session.click(a.ref), summary: 'clicked' })),
@@ -934,6 +1526,49 @@
         async a => ({ content: await session.type(a.ref, a.text), summary: 'typed' })),
       exec('browser.scroll', 'Scroll the page by x/y CSS pixels.', { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } } },
         async a => ({ content: await session.scroll(a.x || 0, a.y || 0), summary: 'scrolled' }), false),
+      exec('browser.hover', 'Move the pointer over an element by ref from the latest browser.snapshot. Menus, tooltips and disclosure widgets only render their real targets on hover — take a fresh snapshot afterwards to see what appeared.', { type: 'object', required: ['ref'], properties: { ref: { type: 'string' } } },
+        async a => ({ content: await session.hover(a.ref), summary: 'hovered' }), false),
+      exec('browser.select', 'Choose an option in a <select> dropdown by ref. Pass the option value OR its visible label. A native dropdown cannot be driven by clicking — its popup is browser chrome, not part of the page.', { type: 'object', required: ['ref', 'value'], properties: { ref: { type: 'string' }, value: { type: 'string' } } },
+        async a => {
+          const r = await session.select(a.ref, a.value);
+          if (r && r.ok) return { content: 'Selected "' + (r.label || r.value) + '".', summary: 'selected' };
+          const opts = r && r.options && r.options.length ? ' Available values: ' + r.options.join(', ') : '';
+          return { content: 'Could not select: ' + ((r && r.reason) || 'unknown') + '.' + opts, summary: 'not selected' };
+        }),
+      exec('browser.drag', 'Drag one element onto another (both refs from the latest browser.snapshot). Sends the intermediate move events HTML5 drag-and-drop listeners require.', { type: 'object', required: ['from', 'to'], properties: { from: { type: 'string' }, to: { type: 'string' } } },
+        async a => ({ content: await session.drag(a.from, a.to), summary: 'dragged' })),
+      exec('browser.viewport', 'Resize the page viewport, e.g. to check a mobile layout (375x812) or a wide desktop one. Element refs from earlier snapshots stop being valid — take a fresh browser.snapshot after resizing.', { type: 'object', required: ['width', 'height'], properties: { width: { type: 'number' }, height: { type: 'number' }, mobile: { type: 'boolean' }, scale: { type: 'number' } } },
+        async a => ({ content: 'Viewport is now ' + await session.viewport(a.width, a.height, { mobile: a.mobile === true, scale: a.scale }) + ' — take a fresh browser.snapshot.', summary: 'viewport' }), false),
+      exec('browser.forward', 'Go forward in browser history (the counterpart of browser.back).', { type: 'object', properties: {} },
+        async () => ({ content: 'Browser moved forward to ' + await session.forward(), summary: 'forward' }), false),
+      read('browser.tabs', 'List the browser tabs. A link with target="_blank", a checkout popup or a PDF opens a NEW tab — it is listed here, and browser.tab_select switches to it. Tab 0 is the one you started in.', { type: 'object', properties: {} },
+        async () => {
+          const list = await session.tabs();
+          return {
+            content: list.map(t => '[' + t.index + ']' + (t.active ? ' *' : '  ') + ' ' + (t.title || '(untitled)') + ' — ' + t.url).join('\n'),
+            summary: list.length + ' tab(s)'
+          };
+        }),
+      exec('browser.tab_select', 'Switch to a tab by index from browser.tabs. Every later action applies to THAT tab, and element refs from the previous tab stop being valid — take a fresh browser.snapshot.', { type: 'object', required: ['index'], properties: { index: { type: 'number' } } },
+        async a => ({ content: 'Now on tab ' + a.index + ': ' + await session.selectTab(a.index) + ' — take a fresh browser.snapshot.', summary: 'tab ' + a.index }), false),
+      exec('browser.tab_close', 'Close a tab by index from browser.tabs. Tab 0 cannot be closed.', { type: 'object', required: ['index'], properties: { index: { type: 'number' } } },
+        async a => ({ content: await session.closeTab(a.index), summary: 'tab closed' })),
+      exec('browser.upload', 'Attach files from your workspace to a file-upload control on the page. "ref" is the upload control (or its visible label) from the latest browser.snapshot; "paths" are workspace-relative files. Submitting the form is a separate click.', { type: 'object', required: ['ref', 'paths'], properties: { ref: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } } } },
+        async (a, ctx) => {
+          if (!canSaveShots) throw new Error('browser.upload needs a workspace; this run has none');
+          const aid = (ctx && ctx.agentId) || 'agent';
+          const rels = Array.isArray(a.paths) ? a.paths : [a.paths];
+          if (!rels.length) throw new Error('browser.upload needs at least one path');
+          // Resolve through the SAME jail as fs.* — an upload must never be able to post a file from
+          // outside the agent's workspace (resolveInside throws on '..', absolute paths, escapes).
+          const abs = [];
+          for (const rel of rels) {
+            const r = await shotJail.resolveInside(aid, String(rel));
+            await shotFsp.stat(r.abs);   // fail loudly here, not silently inside the page
+            abs.push(r.abs);
+          }
+          return { content: await session.upload(a.ref, abs) + ': ' + rels.join(', ') + '. Submit the form when ready.', summary: 'uploaded ' + abs.length };
+        }),
       exec('browser.back', 'Go back in browser history.', { type: 'object', properties: {} },
         async () => ({ content: 'Browser went back to ' + await session.back(), summary: 'back' }), false),
       exec('browser.press', 'Press a keyboard key in the browser.', { type: 'object', required: ['key'], properties: { key: { type: 'string' } } },
@@ -942,6 +1577,18 @@
         async a => {
           const rows = await session.consoleLog(a.limit || 40);
           return { content: rows.map(r => '[' + r.type + '] ' + r.text).join('\n') || 'No console messages.', summary: rows.length + ' console row(s)' };
+        }),
+      read('browser.network', 'List the network requests the CURRENT page made — method, URL, type, HTTP status, size, and any transport failure. Use this when a page "did nothing": it separates a 401/403, a request that failed outright, and a request that was never made. "filter" matches the URL; "failedOnly" shows just errors and non-2xx.', { type: 'object', properties: { limit: { type: 'number' }, filter: { type: 'string' }, failedOnly: { type: 'boolean' } } },
+        async a => {
+          let rows = session.networkLog(a.limit || 60);
+          if (a.filter) { const f = String(a.filter).toLowerCase(); rows = rows.filter(r => String(r.url).toLowerCase().indexOf(f) >= 0); }
+          if (a.failedOnly === true) rows = rows.filter(r => r.failure || (r.status && (r.status < 200 || r.status >= 300)));
+          if (!rows.length) return { content: 'No matching network requests were recorded for this page.', summary: '0 requests' };
+          const line = r => (r.method || 'GET') + ' ' + (r.status ? r.status : (r.failure ? 'FAILED' : 'pending')) +
+            ' ' + clamp(r.url, 200) + (r.type ? ' [' + r.type + ']' : '') +
+            (r.bytes ? ' ' + r.bytes + 'B' : '') + (r.failure ? ' — ' + r.failure : '');
+          const bad = rows.filter(r => r.failure || (r.status && (r.status < 200 || r.status >= 300))).length;
+          return { content: rows.map(line).join('\n'), summary: rows.length + ' request(s)' + (bad ? ', ' + bad + ' failed' : '') };
         }),
       exec('browser.dialog', 'Accept or dismiss the current JavaScript dialog.', { type: 'object', properties: { action: { type: 'string' }, promptText: { type: 'string' } } },
         async a => {
@@ -966,17 +1613,36 @@
         }
       },
       read('browser.vision', 'Capture the current viewport and answer a question about what is on screen (vision rides the session\'s own model when no dedicated vision key exists — never ask the user for an API key). If no vision route is available this returns a clear "unavailable" result — it never fabricates a description.', { type: 'object', properties: { question: { type: 'string' } } },
-        async a => {
+        async (a, ctx) => {
           const r = await session.vision(a.question || '');
+          // Save the analyzed frame either way: on success so the user can check the model's reading
+          // against the actual pixels, and on failure so the capture is not simply thrown away.
+          let shot = null;
+          try { shot = await saveShot(ctx, r && r.image); } catch (_) { shot = null; }
+          const saved = shot ? '\n\nScreenshot saved to ' + shot.rel + '\nView: ' + shot.viewer : '';
           if (r && r.ok) {
-            return { content: r.answer || '(vision model returned no text)', summary: 'vision' };
+            return { content: (r.answer || '(vision model returned no text)') + saved, summary: 'vision' };
           }
           const reason = (r && r.reason) || 'vision model is not configured';
-          return { content: 'browser.vision unavailable: ' + reason + ' (captured ' + ((r && r.bytes) || 0) + ' bytes but did not analyze them).', summary: 'vision unavailable' };
+          return { content: 'browser.vision unavailable: ' + reason + ' (captured ' + ((r && r.bytes) || 0) + ' bytes but did not analyze them).' + saved, summary: 'vision unavailable' };
+        }),
+      read('browser.screenshot', 'Capture the current viewport as a PNG, save it into your workspace, and show it to the user. Use this to prove what a page actually looked like, or to keep a frame you want to refer back to. Returns the saved path; browser.vision is the tool that ANSWERS QUESTIONS about a page.', { type: 'object', properties: {} },
+        async (a, ctx) => {
+          const data = await session.screenshot();
+          if (!data) return { content: 'Screenshot unavailable: this browser driver captured no image.', summary: 'no image' };
+          const shot = await saveShot(ctx, data);
+          if (!shot) {
+            const bytes = Math.round(String(data).length * 3 / 4);
+            return { content: 'Captured ' + bytes + ' bytes but this run has no workspace to save into, so the image was discarded.', summary: 'not saved' };
+          }
+          return {
+            content: 'Screenshot saved to ' + shot.rel + ' (' + (shot.bytes / 1024).toFixed(0) + ' KB).\nView: ' + shot.viewer,
+            summary: 'shot → ' + shot.rel
+          };
         })
     ];
     return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
   }
 
-  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
+  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, SETTLE_BOOTSTRAP, SETTLE_PROBE, SETTLE_QUIET_POLLS, describeResponse, jsLiteral, CHROME_CANDIDATES } };
 });
