@@ -3,9 +3,9 @@
    messages wire, then normalizes Anthropic SSE back to HarnessEvent. */
 'use strict';
 (function (root, factory) {
-  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'), require('./errorClass.js'), require('./prices.js'));
-  else { root.SK = root.SK || {}; root.SK.providers = root.SK.providers || {}; root.SK.providers.anthropic = factory(root.SK.providers.provider, root.SK.providers.errorClass, root.SK.providers.prices); }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function (provider, errorClass, prices) {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./provider.js'), require('./errorClass.js'), require('./prices.js'), require('./toolschema.js'));
+  else { root.SK = root.SK || {}; root.SK.providers = root.SK.providers || {}; root.SK.providers.anthropic = factory(root.SK.providers.provider, root.SK.providers.errorClass, root.SK.providers.prices, root.SK.providers.toolschema); }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (provider, errorClass, prices, toolschema) {
   'use strict';
 
   const normalizeFinish = provider.normalizeFinish;
@@ -169,10 +169,14 @@
       const fn = (item && item.function) || {};
       const name = String(fn.name || '').trim();
       if (!name) continue;
+      // Anthropic tolerates extra JSON-Schema keywords, so this is normalize() not the Gemini prune:
+      // it only repairs shapes the wire genuinely rejects — chiefly a `{anyOf:[X,{type:'null'}]}`
+      // null-union at the root of input_schema, the standard zod/Pydantic optional-field shape that
+      // arrives with third-party MCP connector tools.
       out.push({
         name,
         description: fn.description || '',
-        input_schema: fn.parameters || { type: 'object', properties: {} }
+        input_schema: toolschema.normalize(fn.parameters || { type: 'object', properties: {} })
       });
     }
     return out.length ? out : null;

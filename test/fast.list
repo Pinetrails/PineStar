@@ -35,6 +35,7 @@ test/provider.openai-compatible.test.js
 test/transcript.compaction.e2e.test.js
 test/provider.anthropic.test.js
 test/provider.gemini.test.js
+test/provider.toolschema.test.js
 test/provider.prices.test.js
 test/provider.timeouts.test.js
 test/provider.registry.test.js
