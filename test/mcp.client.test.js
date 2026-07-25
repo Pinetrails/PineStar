@@ -125,7 +125,11 @@ function makeFakeTransport(handle) {
 
     const out = await def.run({ title: 'hi' }, {});
     A.eq(calls[0][0], 'create_issue', 'run() calls the MCP tool by its ORIGINAL (un-namespaced) name');
-    A.eq(out.content, 'created #1', 'text content blocks are rendered to plain text');
+    // A connector result is THIRD-PARTY-authored, so since 2026-07-25 it arrives inside the shared
+    // untrusted-content fence (sidecar/tools/fence.js) — the rendered text is preserved verbatim INSIDE it.
+    A.ok(out.content.indexOf('created #1') > 0, 'text content blocks are rendered to plain text');
+    A.ok(/^\[BEGIN EXTERNAL WEB CONTENT/.test(out.content), 'an MCP result is fenced as untrusted content');
+    A.ok(/\[END EXTERNAL WEB CONTENT\]$/.test(out.content), 'the fence is closed');
 
     const ro = makeMcpToolDef({ connectorId: 'gh', mcpTool: { name: 'list_issues', annotations: { readOnlyHint: true }, inputSchema: { type: 'object' } }, call: () => Promise.resolve({ content: [] }) });
     A.eq(ro.scope, 'read', 'readOnlyHint -> read scope');
@@ -158,7 +162,8 @@ function makeFakeTransport(handle) {
 
     const okr = await reg.dispatch(mk({ path: '/etc/hosts' }), { authorize: exactAuthority, canUse: () => ({ ok: true }) });
     A.eq(okr.ok, true, 'a granted, valid MCP dispatch succeeds');
-    A.eq(okr.content, 'FILE:/etc/hosts', 'dispatch returns the MCP tool output');
+    A.ok(okr.content.indexOf('FILE:/etc/hosts') > 0, 'dispatch returns the MCP tool output');
+    A.ok(/^\[BEGIN EXTERNAL WEB CONTENT/.test(okr.content), 'and it stays fenced through dispatch');
   }
 
   A.report('mcp.client.test');

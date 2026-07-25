@@ -19,6 +19,10 @@
   const FS = require('node:fs');
   const CP = require('node:child_process');
   const NET = require('node:net');
+  // UNTRUSTED-CONTENT FENCE (2026-07-25): page text, snapshots, console rows and dialog messages are all
+  // authored by the SITE, not the Commander. web_* has fenced since the web lane; these reads did not, so
+  // the most direct "read a hostile page" path arrived raw. Same marker pair as web — one model contract.
+  const { fenceExternal } = require('../fence.js');
 
   const MAX_TEXT = 12000;
   const DEFAULT_PORT = Number(process.env.STARNET_BROWSER_CDP || process.env.SKYNET_BROWSER_CDP || 9347);
@@ -926,7 +930,7 @@
         async a => {
           const nodes = await session.snapshot(a.limit || 80);
           const lines = nodes.map(n => n.ref + ' [' + n.role + '] ' + (n.text || '(no text)') + ' @ ' + n.x + ',' + n.y + ' ' + n.w + 'x' + n.h);
-          return { content: lines.join('\n') || 'No visible interactive elements.', summary: nodes.length + ' ref(s)' };
+          return { content: fenceExternal(lines.join('\n') || 'No visible interactive elements.', 'page snapshot from the controlled browser'), summary: nodes.length + ' ref(s)' };
         }),
       exec('browser.click', 'Click a visible element by ref from the latest browser.snapshot.', { type: 'object', required: ['ref'], properties: { ref: { type: 'string' } } },
         async a => ({ content: await session.click(a.ref), summary: 'clicked' })),
@@ -941,15 +945,15 @@
       read('browser.console', 'Read recent browser console warnings/errors/logs.', { type: 'object', properties: { limit: { type: 'number' } } },
         async a => {
           const rows = await session.consoleLog(a.limit || 40);
-          return { content: rows.map(r => '[' + r.type + '] ' + r.text).join('\n') || 'No console messages.', summary: rows.length + ' console row(s)' };
+          return { content: fenceExternal(rows.map(r => '[' + r.type + '] ' + r.text).join('\n') || 'No console messages.', 'browser console output from the page'), summary: rows.length + ' console row(s)' };
         }),
       exec('browser.dialog', 'Accept or dismiss the current JavaScript dialog.', { type: 'object', properties: { action: { type: 'string' }, promptText: { type: 'string' } } },
         async a => {
           const d = await session.dialog(a.action || 'accept', a.promptText || '');
-          return { content: 'Dialog ' + (d.type || 'none') + ': ' + (d.message || ''), summary: 'dialog' };
+          return { content: 'Dialog ' + (d.type || 'none') + ': ' + fenceExternal(d.message || '', 'javascript dialog text from the page'), summary: 'dialog' };
         }),
       read('browser.get_text', 'Return visible page text, optionally scoped by CSS selector.', { type: 'object', properties: { selector: { type: 'string' } } },
-        async a => ({ content: clamp(await session.getText(a.selector || ''), MAX_TEXT), summary: 'text' })),
+        async a => ({ content: fenceExternal(clamp(await session.getText(a.selector || ''), MAX_TEXT), 'page text from the controlled browser'), summary: 'text' })),
       // ATTENDED LOGIN: requiresConsent stays false because the flow runs its OWN two-phase live consent
       // (open-window ask + done-wait) — the generic broker card would double-prompt. timeoutMs must outlive
       // both consent waits (each fail-closes on its own CONSENT timer + rendered-ack extension), so the only
@@ -969,7 +973,8 @@
         async a => {
           const r = await session.vision(a.question || '');
           if (r && r.ok) {
-            return { content: r.answer || '(vision model returned no text)', summary: 'vision' };
+            // the vision answer DESCRIBES attacker-controlled pixels, so it inherits the page's trust level
+            return { content: fenceExternal(r.answer || '(vision model returned no text)', 'vision description of the page on screen'), summary: 'vision' };
           }
           const reason = (r && r.reason) || 'vision model is not configured';
           return { content: 'browser.vision unavailable: ' + reason + ' (captured ' + ((r && r.bytes) || 0) + ' bytes but did not analyze them).', summary: 'vision unavailable' };
