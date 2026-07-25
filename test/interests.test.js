@@ -117,4 +117,7 @@ A.ok(n.topics['ok-topic'].ev[0].q.length <= 140, 'oversized evidence clips on hy
 A.eq(n.lastPassAt, 0, 'a corrupt pass stamp degrades to 0');
 A.eq(n.runsSincePass, 0, 'a negative run counter degrades to 0');
 
-console.log('interests.test: OK');
+// report() LAST — it is what calls process.exit(fail?1:0). This file used to end in a bare
+// console.log, so every assertion failure printed FAIL and STILL exited 0: the fast gate scored
+// it green no matter what broke. Never end an _assert.js test any other way.
+A.report('interests.test');

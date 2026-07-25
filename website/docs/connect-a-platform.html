@@ -100,8 +100,16 @@ your machine:</p>
   headers: { "Authorization": "Bearer ${PRINTIFY_API_KEY}" }</code></pre>
 <p>The model sees only the name. A leaked transcript, a log, or a model provider never sees the value, and
 the response comes back with any echoed secret scrubbed. Placeholders work in <b>headers only</b> — StarNet
-refuses to put a secret in a URL, because URLs leak into browser history, proxy logs and <code>Referer</code>
-headers.</p>
+refuses to send a URL the model wrote containing a secret, because URLs leak into browser history, proxy logs
+and <code>Referer</code> headers.</p>
+<p>Some APIs will not take a header and want the key as a query parameter instead. That still works, and the
+rule is unchanged: the agent names the key and the slot, and <b>StarNet attaches the value itself</b>, after
+the agent has finished composing the request.</p>
+<pre><code>web_request
+  url:  https://api.example.com/v1/items
+  auth: { "key": "SOME_API_KEY", "in": "query", "name": "api_key" }</code></pre>
+<p>The agent still never handles the value, and it is attached only to the first request — if the server
+redirects somewhere else, the credential is not carried along.</p>
 
 <h2>Letting it run while you are away</h2>
 <p>By default a key is usable only in <b>watched sessions</b> — you are at the station and approve the call.

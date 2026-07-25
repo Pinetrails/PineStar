@@ -111,4 +111,7 @@ A.eq(Widgets._fmtAge(2 * 3600000, 0), '2h', 'hours');
 A.eq(Widgets._fmtAge(4 * 86400000, 0), '4d', 'days');
 A.eq(Widgets._fmtAge(0, 999999), 'now', 'a future timestamp clamps to "now", never negative');
 
-console.log('widgets.test.js OK');
+// report() LAST — it is what calls process.exit(fail?1:0). This file used to end in a bare
+// console.log, so every assertion failure printed FAIL and STILL exited 0: the fast gate scored
+// it green no matter what broke. Never end an _assert.js test any other way.
+A.report('widgets.test');

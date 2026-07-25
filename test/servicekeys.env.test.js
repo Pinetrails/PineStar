@@ -129,6 +129,43 @@ function harness(hostEnv, getKeys) {
   A.ok(h, 'harness constructed');
 }
 
-// report() LAST — it is what exits non-zero. A file ending in a bare console.log prints FAIL and still
-// exits 0, so the fast gate scores it green (6 gate files currently do exactly that; see the lane notes).
+// ---- E. the DOCKER backend gets the same keys, without ever putting one on the command line ----
+{
+  const host = { PATH: 'p', OPENROUTER_API_KEY: 'BILLING-SECRET' };
+  let keys = K.upsert([], { name: 'Printify', key: 'docker-secret-xyz' }, 1, { reservedEnv: RESERVED }).list;
+  // runEnv RESOLVES values out of the host env (that is what preserves applyEnv's ambient-wins rule), so the
+  // host must be populated first — exactly as the sidecar does on every save via applyServiceKeysEnv().
+  let owned = K.applyEnv(keys, host, {}, { reservedEnv: RESERVED });
+  let captured = null;
+  const spawn = (file, a, b) => {
+    captured = { file, args: Array.isArray(a) ? a : null, opts: Array.isArray(a) ? b : a };
+    return { on() {}, kill() {}, stdout: { on() {} }, stderr: { on() {} } };
+  };
+  const env = makeEnvironmentManager({
+    spawn, fs: require('fs'), pathMod: require('path'), root: OS.tmpdir() + '/starnet-sk-docker-test',
+    env: host, config: { backend: 'docker' },
+    serviceEnv: () => K.runEnv(keys, host, { reservedEnv: RESERVED })
+  });
+  A.eq(env.backendId, 'docker', 'the docker backend is under test');
+
+  env.execute({ agentId: 'a', cmd: 'echo hi' }).catch(() => {});
+  const argv = (captured.args || []).join(' ');
+  // `-e NAME` (no =value) tells docker to forward the variable from its OWN env. This is the whole point:
+  // the name is safe in a `ps` listing, the value never touches argv or a temp file on disk.
+  A.ok(/-e PRINTIFY_API_KEY/.test(argv), 'the container is told to inherit the key BY NAME');
+  A.ok(argv.indexOf('docker-secret-xyz') < 0, 'THE CORE PROPERTY: the secret is NEVER on the docker argv');
+  A.eq(captured.opts.env.PRINTIFY_API_KEY, 'docker-secret-xyz', 'the value rides the docker client env instead');
+  A.ok(!('OPENROUTER_API_KEY' in captured.opts.env), 'a provider/billing key still never reaches a container');
+  A.eq(captured.opts.env.STARNET_USER_CONTROL_MODE, 'preserve', 'host safety pins survive the merge');
+
+  // revoked -> gone on the very next call, and with no keys the argv gains no -e flags at all
+  keys = K.setEnabled(keys, 'printify', false).list;
+  owned = K.applyEnv(keys, host, owned, { reservedEnv: RESERVED });   // scrubs the var it owns, as the sidecar does
+  captured = null;
+  env.execute({ agentId: 'a', cmd: 'echo hi' }).catch(() => {});
+  A.ok((captured.args || []).join(' ').indexOf('-e PRINTIFY_API_KEY') < 0, 'disabling removes it from the next container');
+}
+
+// report() LAST — it is what calls process.exit(fail?1:0); a file ending in a bare console.log prints FAIL
+// and still exits 0. test/lint-gate-can-fail.js now enforces this across every gate step.
 A.report('servicekeys.env.test.js');
