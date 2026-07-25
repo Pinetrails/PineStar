@@ -957,39 +957,86 @@ const StationBake = (() => {
      it carries the fixings (a bolt at head and foot, nowhere else), and the bumper rail BREAKS at
      it, so the rail reads as segments held between columns rather than a stripe painted over
      everything. Gives the wall the vertical rhythm the SPINE deck deliberately lacks. */
-  function wallBulkhead(b, pal, X, topY, h, e, n, room, footY) {
-    const wd = wallDet();
-    const px = (a, c, w, ht, col) => { b.fillStyle = col; b.fillRect(a, c, w, ht); };
-    const bay = Math.floor(e.x / 3), tx = ((e.x % 3) + 3) % 3;      // tx 0 = the stanchion tile
-    const bn = h2(bay, e.y, 'bhd');
-    const body = U.shade(pal.face, ((bn % 5) - 2) * 0.016 * wd);
-    const sh = d => U.shade(body, d * wd);
-    px(X, topY, T, h, body);
-    for (let i = 3; i < h - 5; i += 4) px(X, topY + i, T, 1, sh(-0.045));             // coarse horizontal grain
-    wallFoot(b, body, X, footY, wd);                                                  // seated first, marks over it
-    // the INFILL PANEL — recessed, so the stanchions stand in front of it. Dark line along the
-    // top (light comes from above, so the top of a recess is in shadow), catch-lit along the
-    // bottom lip. This is the only place the wall gets a sense of two planes.
-    const pt = topY + 3, pb = footY - 7;
-    px(X, pt, T, pb - pt, sh(-0.075));
-    px(X, pt, T, 1, sh(-0.28));
-    px(X, pb - 1, T, 1, sh(0.11));
-    // BUMPER RAIL, segmented between stanchions (skips the stanchion's 4px)
-    const rail = topY + Math.round(h * 0.58);
-    const rx = tx === 0 ? X + 4 : X, rw = tx === 0 ? T - 4 : T;
-    px(rx, rail, rw, 2, sh(-0.24));
-    px(rx, rail, rw, 1, sh(0.13));
-    if (tx === 0) {
-      // STARTS BELOW THE CROWN and stays dimmer than it. Drawn from topY with a bright edge, the
-      // stanchion read as a fence post standing ON the wall top at room scale — the crown is the
-      // brightest continuous line in the room and anything vertical touching it joins it.
-      const sy = topY + 2, sh2 = footY - sy;
-      px(X, sy, 5, sh2, sh(0.05));                                                    // stanchion body, in front
-      px(X, sy, 1, sh2, sh(-0.32));                                                    // its cast shadow
-      px(X + 4, sy, 1, sh2, sh(0.11));                                                 // its lit edge, under the crown
+  /* the pilaster every BULKHEAD variant shares: a raised column standing in front of the infill.
+     It STARTS BELOW THE CROWN and stays dimmer than it — drawn from topY with a bright edge it
+     read as a fence post standing ON the wall top at room scale, because the crown is the
+     brightest continuous line in the room and anything vertical touching it joins it. */
+  function wallPilaster(b, sh, X, topY, footY, w, bolts) {
+    const px = (a, c, wd_, ht, col) => { b.fillStyle = col; b.fillRect(a, c, wd_, ht); };
+    const sy = topY + 2, ht = footY - sy;
+    px(X, sy, w, ht, sh(0.05));                                                        // column body, in front
+    px(X, sy, 1, ht, sh(-0.32));                                                       // its cast shadow
+    px(X + w - 1, sy, 1, ht, sh(0.11));                                                // its lit edge
+    if (bolts) {
       const bolt = (by) => { px(X + 1, by, 2, 2, sh(0.13)); px(X + 2, by + 1, 1, 1, sh(-0.24)); };
       bolt(sy + 2); bolt(footY - 8);                                                   // head and foot only
     }
+  }
+
+  /* A1 · BULKHEAD — pilaster every 3 tiles, and the bay between them is a properly FRAMED recess:
+     all four edges, dark on top and left where light cannot reach, catch-lit along the bottom and
+     right. The first cut only had a top and bottom line and no grain discipline, so the bay read as
+     an empty dark field with a stripe through it; the frame is what makes it read as a panel set
+     INTO the wall rather than paint on a flat plane. */
+  function wallBulkhead(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const px = (a, c, w, ht, col) => { b.fillStyle = col; b.fillRect(a, c, w, ht); };
+    const bay = Math.floor(e.x / 3), tx = ((e.x % 3) + 3) % 3;      // tx 0 = the pilaster tile
+    const body = U.shade(pal.face, ((h2(bay, e.y, 'bhd') % 5) - 2) * 0.016 * wd);
+    const sh = d => U.shade(body, d * wd);
+    px(X, topY, T, h, body);
+    wallFoot(b, body, X, footY, wd);                                                  // seated first, marks over it
+    const pt = topY + 3, pb = footY - 7;
+    px(X, pt, T, pb - pt, sh(-0.085));                                                // the recessed field
+    px(X, pt, T, 1, sh(-0.30));                                                       // frame: shadowed head
+    px(X, pb - 1, T, 1, sh(0.12));                                                    // frame: catch-lit sill
+    if (tx === 1) px(X, pt, 1, pb - pt, sh(-0.22));                                   // frame: shadowed left jamb
+    if (tx === 0) px(X - 1, pt, 1, pb - pt, sh(0.08));                                // frame: lit right jamb
+    const rail = topY + Math.round(h * 0.58);                                          // rail, segmented at the bay
+    const rx = tx === 0 ? X + 5 : X, rw = tx === 0 ? T - 5 : T;
+    px(rx, rail, rw, 2, sh(-0.24));
+    px(rx, rail, rw, 1, sh(0.13));
+    if (tx === 0) wallPilaster(b, sh, X, topY, footY, 5, true);
+  }
+
+  /* A2 · BULKHEAD TIGHT — the same idea at twice the frequency: a slimmer pilaster every 2 tiles,
+     the bay left FLUSH (no recess, no frame) and the rail run unbroken. Denser vertical rhythm and
+     much quieter between the columns — the bet is that the rhythm alone carries the wall and the
+     recess was doing too much. */
+  function wallBulkheadTight(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const px = (a, c, w, ht, col) => { b.fillStyle = col; b.fillRect(a, c, w, ht); };
+    const bay = Math.floor(e.x / 2), tx = ((e.x % 2) + 2) % 2;
+    const body = U.shade(pal.face, ((h2(bay, e.y, 'bht') % 5) - 2) * 0.014 * wd);
+    const sh = d => U.shade(body, d * wd);
+    px(X, topY, T, h, body);
+    wallFoot(b, body, X, footY, wd);
+    px(X, topY + 2, T, 1, sh(0.07));                                                  // a single lit line under the crown
+    const rail = topY + Math.round(h * 0.62);
+    px(X, rail, T, 2, sh(-0.22));
+    px(X, rail, T, 1, sh(0.11));
+    if (tx === 0) wallPilaster(b, sh, X, topY, footY, 3, false);
+  }
+
+  /* A3 · COURSED BAY — the pilaster rhythm of A1 with the bay split into two stacked courses, each
+     with its own lit lip. Marries BULKHEAD's vertical structure to COURSES' horizontal read, so the
+     bay is never one empty field but the wall still has columns. The busiest of the three. */
+  function wallBulkheadCoursed(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const px = (a, c, w, ht, col) => { b.fillStyle = col; b.fillRect(a, c, w, ht); };
+    const bay = Math.floor(e.x / 3), tx = ((e.x % 3) + 3) % 3;
+    const body = U.shade(pal.face, ((h2(bay, e.y, 'bhc') % 5) - 2) * 0.016 * wd);
+    const sh = d => U.shade(body, d * wd);
+    px(X, topY, T, h, body);
+    wallFoot(b, body, X, footY, wd);
+    const pt = topY + 3, pb = footY - 6, mid = pt + Math.round((pb - pt) * 0.48);
+    [[pt, mid], [mid, pb]].forEach(([y0, y1], ci) => {
+      px(X, y0, T, y1 - y0, sh(-0.06 - ci * 0.045));                                  // lower course sits darker
+      px(X, y0, T, 1, sh(0.13));                                                      // lit course lip
+      px(X, y1 - 1, T, 1, sh(-0.26));                                                 // shadowed underside
+      for (let rx = 5; rx < T; rx += 9) px(X + rx, y0 + 2, 1, 1, sh(0.14));           // fixings on the lip
+    });
+    if (tx === 0) wallPilaster(b, sh, X, topY, footY, 5, true);
   }
 
   /* B · COURSES — riveted hull plating, all horizontal: three stacked courses, each with a lit top
@@ -1054,7 +1101,8 @@ const StationBake = (() => {
   const WALL_RECIPES = {
     plating: wallPlating, ribbed: wallRibbed, panelled: wallPanelled,
     viewport: wallViewport, pipework: wallPipework, wainscot: wallWainscot, hedge: wallHedge,
-    bulkhead: wallBulkhead, courses: wallCourses, service: wallService
+    bulkhead: wallBulkhead, courses: wallCourses, service: wallService,
+    bulkheadtight: wallBulkheadTight, bulkheadcoursed: wallBulkheadCoursed
   };
 
   function bakeWalls(b) {
@@ -1526,14 +1574,24 @@ const StationBake = (() => {
           const base = Math.round(ay - Math.sqrt(R * R - adx * adx));   // upper quadrant (tl/tr)
           const tt = Math.max(0, Math.min(1, 1 - adx / R));             // 0 at the side end → 1 at the north end
           const k = Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * up;
-          cols.set(ix, { top: Math.round(base - k), base });
+          cols.set(ix, { top: Math.round(base - k), base, tt });
         }
+        /* THE CROWN MUST TAPER WITH THE WALL IT CROWNS (2026-07-25, Andrew: "the thick diagonal
+           lines"). The face height eases to zero around the chamfer — but the crown used to keep
+           its full capH AND its +0.30 lit top edge the whole way, so a wall that had receded to
+           nothing was still capped at full thickness in the brightest tone in the room. Stepped
+           along a diagonal staircase that stops reading as a wall top and reads as a thick bright
+           bar ruled across the corner. It is the same failure the deck's service channel had: a
+           mark that is correct on the straight is wrong where the geometry turns.
+           Now the cap thins 3→1px and dims as it recedes, and the lit top edge fades out with it,
+           so the corner reads as the wall going away from you. Straight walls are untouched. */
         for (const [ix, c] of cols) {
           const faceH = c.base - c.top; if (faceH <= 0) continue;
           b.fillStyle = cPal.face; b.fillRect(ix, c.top, 1, faceH + 1);            // face column, integer
-          // crown = opaque cap pixels stepped up the curve (pixel stairs, not a stroke)
-          b.fillStyle = cPal.cap; b.fillRect(ix, c.top - capH, 1, capH);
-          b.fillStyle = U.shade(cPal.cap, 0.30); b.fillRect(ix, c.top - capH, 1, 1); // 1px lit top edge
+          const capAt = Math.max(1, Math.round(capH * (0.30 + 0.70 * c.tt)));
+          const cap = U.shade(cPal.cap, -0.22 * (1 - c.tt));
+          b.fillStyle = cap; b.fillRect(ix, c.top - capAt, 1, capAt);
+          if (capAt >= capH) { b.fillStyle = U.shade(cap, 0.30); b.fillRect(ix, c.top - capAt, 1, 1); }  // lit edge only at full thickness
           b.fillStyle = U.shade(cPal.cap, -0.45); b.fillRect(ix, c.top - 1, 1, 1);   // 1px darker seam beneath crown
         }
       }

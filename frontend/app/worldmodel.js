@@ -162,7 +162,9 @@ const WorldModel = (() => {
      through. Baked stars would be a lie; the real sky is already back there. */
   const WALL_MATERIALS = {
     // base-wall candidates — see the note above wallBulkhead in stationbake.js
-    bulkhead: { label: 'BULKHEAD', suggest: null },
+    bulkhead:        { label: 'BULKHEAD', suggest: null },
+    bulkheadtight:   { label: 'BHD-TIGHT', suggest: null },
+    bulkheadcoursed: { label: 'BHD-CRS',  suggest: null },
     courses:  { label: 'COURSES',  suggest: null },
     service:  { label: 'SERVICE',  suggest: null },
     plating:  { label: 'PLATING',  suggest: null },
@@ -173,7 +175,7 @@ const WorldModel = (() => {
     wainscot: { label: 'WAINSCOT', suggest: 'walnut' },
     hedge:    { label: 'HEDGE',    suggest: 'fern' },
   };
-  const WALL_ORDER = ['bulkhead', 'courses', 'service', 'plating', 'ribbed', 'panelled', 'viewport', 'pipework', 'wainscot', 'hedge'];
+  const WALL_ORDER = ['bulkhead', 'bulkheadtight', 'bulkheadcoursed', 'courses', 'service', 'plating', 'ribbed', 'panelled', 'viewport', 'pipework', 'wainscot', 'hedge'];
 
   /* room categories — a capability-zone label + a default floor (hue + material). kind drives
      nothing behavioural yet (capability mapping is a later pass); it tags the zone + seeds the
