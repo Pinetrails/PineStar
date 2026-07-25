@@ -33,6 +33,30 @@ Our channel is a clean two-layer pipeline (fetch transport → transport-agnosti
 
 Live edit-streaming + edit throttle/`_edit_overflow_split` + draft streaming; MarkdownV2 table/spoiler/blockquote rewrite + separate HTML keyboard path; code-fence repair in the chunker (moot for plain text); DoH + fallback-IP transport + proxy auto-detection (censorship/scale); connection-pool drain / pool-size tuning / wedge heartbeat (httpx/PTB artifacts); full pid/argv/psutil single-instance lockfile (EADDRINUSE + 409-fatal cover the realistic double-launch); pairing codes / owner-admin tiers / per-scope slash allowlists / per-user rate-limit (multi-tenant — trust-on-first-use is the right-sized version); clarify inline keyboard (would need a **requested** new `shared/events.js` rung + a clarify tool/loop seam — free-text "which did you mean?" suffices); paginated model-picker keyboard; media in/out (photo/voice/document), edited-message reprocessing, group @mention gating; fsync-before-rename / RLock (already atomic; no Python-threads problem in single-threaded Node).
 
+## STATUS — COMMAND PARITY SHIPPED (2026-07-25, both gates green, additive-only)
+
+The P1 **`/stop` + `/new` interceptor** row above is now CLOSED, together with the wider gap it belonged to:
+the desktop palette had 43 commands and a phone had 6, so the surface you reach for when you are *away from
+the machine* — kill a runaway run, check what a routine spent — was the one that could not do it.
+
+- **Control plane (only this hub can do it):** `/stop` aborts the run this chat has in flight (marks it
+  superseded first, so the run's own teardown stays quiet), `/new` clears the transcript via the new
+  `store.clearHistory` and REFUSES while a run is live, `/status` reports live state only (working/idle,
+  bound agent, real stored turn count, approvals state) and never quotes a duration it cannot compute.
+- **Shared registry (`slash:true` in the COMMANDS table):** `/usage /tools /routine /away` are executed by
+  `runSlashForChannel` in `sidecar/index.js` — the SAME `slash.dispatch` + `slashActions.run` pair that
+  `POST /api/slash/dispatch` uses, called in-process (no self-HTTP, no api token). So the answer on your
+  phone is the answer the desktop prints, rather than a second implementation that drifts. `placed` is read
+  from the routing plan's bay, so `/tools` answers for the room that agent actually occupies.
+- Live-proven on `POST /api/dev/inbound` (a real `makeChannelHub`): `/tools`, `/routine` and `/away` replies
+  are **byte-identical** to `/api/slash/dispatch`; `/usage` differs only by the agent id, which is the
+  per-agent scoping working. `/routine add` from the channel minted a real cron job bound to the channel
+  agent; `/new` cleared a real 3-turn transcript and left `{"version":1,"messages":[]}` on disk.
+- **NOT wire-verified:** `setMyCommands` now publishes **12** entries (was 5). Telegram rejects that call
+  *wholesale* if any single name/description is malformed. `test/channels.parity.test.js` enforces the
+  documented grammar (`^[a-z0-9_]{1,32}$`, non-empty description ≤256) but only a real bot token proves the
+  call. Re-run the logging-proxy walk before relying on the blue "/" menu.
+
 ## STATUS — C6 INLINE KEYBOARDS SHIPPED (2026-07-24, both gates green, additive-only)
 
 The P2 "interactive consent inline keyboard" row above, **plus** the multiple-choice keyboard that §3 had left

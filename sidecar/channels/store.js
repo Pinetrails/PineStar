@@ -119,6 +119,20 @@
         return msgs.filter(m => m && ROLES[m.role] && typeof m.content === 'string');
       },
 
+      /* clearHistory — drop this agent's messaging transcript and start fresh. A browser chat can hit /new
+         because its history lives in localStorage; a messaging chat has no browser, so THIS file is the only
+         copy and the only way to start over. Writes an empty envelope through the same atomic path (keeping
+         the .bak the writer makes) rather than unlinking, so a reader mid-flight never sees a missing file.
+         Returns the number of turns discarded, so the caller can report what actually happened. */
+      clearHistory(agentId) {
+        const file = historyFile(agentId);
+        const raw = readJson(file);
+        const had = (raw && Array.isArray(raw.messages)) ? raw.messages.length : 0;
+        if (!had) return 0;                                    // nothing stored -> no write, no .bak churn
+        writeJsonAtomic(file, { version: 1, messages: [] });
+        return had;
+      },
+
       appendTurn(agentId, role, text) {
         if (!ROLES[role]) throw new Error('bad role: ' + role);
         const file = historyFile(agentId);

@@ -4343,6 +4343,7 @@ function startTelegram(token, key, model, agentCfg) {
   let adapterRef = null;
   const hub = makeChannelHub({
     channel: 'telegram', runOnce: runOnce, store: channelStore,
+    runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
     chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
@@ -4522,6 +4523,7 @@ function startTelegramBot(botId) {
   const entry = { adapter: null, hub: null, status: { connected: false, state: 'connecting', detail: '' } };
   const hub = makeChannelHub({
     channel: 'telegram:' + botId, runOnce: runOnce, store: makeBotScopedStore(botId),
+    runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     // live per-message read (same contract as the station bot). THE BOT IS ITS AGENT: identity (system prompt),
@@ -4705,6 +4707,7 @@ function getDevHub() {
   if (devHub) return devHub;
   devHub = makeChannelHub({
     channel: 'dev', maxMessageLength: 4000, agentPrefix: 'dev_',
+    runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     runOnce: runOnce, store: channelStore,
     send: (chatId, text) => { const k = String(chatId); const arr = devReplies.get(k) || []; arr.push({ text: String(text == null ? '' : text), ts: Date.now() }); if (arr.length > 20) arr.shift(); devReplies.set(k, arr); return Promise.resolve({ ok: true }); },
     secrets: devHubSecrets,
@@ -7889,6 +7892,35 @@ const slashActions = slashActionsMod.makeSlashActions({
 // POST /api/slash/dispatch { input } -- resolve a slash command to a typed directive. Client directives are
 // performed by the browser; a dispatch:'server' command is EXECUTED here and returns { type:'say' } carrying the
 // finished text, so every surface that can POST here gets the same answer without re-implementing the command.
+/* runSlashForChannel(input, ctx) — execute a slash command for a NON-BROWSER surface (the messaging hub today,
+   any future gateway tomorrow). It goes through the SAME slash.dispatch + slashActions.run pair that
+   POST /api/slash/dispatch uses, called in-process so a channel never has to self-HTTP or carry an api token —
+   which is what makes a Telegram answer byte-identical to the desktop one instead of a second implementation.
+
+   The one honest difference is where `placed` comes from: a browser knows its live floor, a phone does not, so
+   the agent's room objects are read from the routing plan's bay. That keeps /tools answering for the room this
+   agent actually occupies. Returns { ok, text?, title?, lines? }; never throws. */
+async function runSlashForChannel(input, ctx) {
+  ctx = ctx || {};
+  const agentId = /^[A-Za-z0-9_-]{1,40}$/.test(String(ctx.agentId || '')) ? String(ctx.agentId) : 'agent';
+  let placed = [];
+  try {
+    const st = router.stationFor(agentId);
+    placed = placedTypesFrom((st && st.rooms && st.rooms.bay && st.rooms.bay.objects) || []);
+  } catch (_) { placed = []; }
+  let out;
+  try { out = slash.dispatch(String(input || ''), slashOptions(placed)); }
+  catch (e) { return { ok: false, text: 'That command could not be read.' }; }
+  if (!out || !out.ok || !out.directive) return { ok: false, text: 'Unknown command.' };
+  // Only dispatch:'server' commands can answer off-browser. A client command would need the DOM, so say that
+  // plainly rather than returning an empty reply that reads like a failure.
+  if (out.directive.type !== 'server') return { ok: false, text: 'That command only works in the StarNet desktop app.' };
+  let r;
+  try { r = await slashActions.run(out.directive.action, out.directive.args, { agentId: agentId, placed: placed }); }
+  catch (e) { return { ok: false, text: 'That command failed: ' + ((e && e.message) || e) }; }
+  return r || { ok: false, text: 'No answer.' };
+}
+
 async function handleSlashDispatch(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body; try { body = JSON.parse(await readBody(req, 1 << 14)) || {}; } catch (e) { return json(400, { ok: false, error: 'bad json' }); }
