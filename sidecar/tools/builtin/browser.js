@@ -18,6 +18,7 @@
   const OS = require('node:os');
   const FS = require('node:fs');
   const CP = require('node:child_process');
+  const NET = require('node:net');
 
   const MAX_TEXT = 12000;
   const DEFAULT_PORT = Number(process.env.STARNET_BROWSER_CDP || process.env.SKYNET_BROWSER_CDP || 9347);
@@ -183,6 +184,34 @@
   ].filter(Boolean);
 
   function sleep(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
+
+  /* A private, per-run CDP endpoint that does NOT announce itself as automation.
+     `--remote-debugging-port=0` asks Chromium to pick the port, but Chromium's
+     content/child/runtime_features.cc special-cases port 0 and calls
+     WebRuntimeFeatures::EnableAutomationControlled(true) — i.e. it sets navigator.webdriver.
+     Sites key off that flag; Google refuses sign-in to browsers "being controlled through
+     software automation" (support.google.com/accounts/answer/7675428), which would break the
+     attended-login takeover for the very human who is supposed to be driving. A NON-zero port
+     carries no such flag, and a CDP client attaching later cannot set it (it is a startup-time
+     Blink runtime feature). So we do the ephemeral allocation ourselves: bind 127.0.0.1:0, keep
+     whatever the OS hands us, release it, and pass that number to Chromium. Same private
+     per-run endpoint as before — no process-wide port another agent's run could attach to. */
+  function allocateEphemeralPort() {
+    return new Promise((resolve, reject) => {
+      let srv;
+      try { srv = NET.createServer(); } catch (e) { reject(e); return; }
+      srv.unref();
+      srv.once('error', reject);
+      srv.listen(0, '127.0.0.1', () => {
+        const addr = srv.address();
+        const port = addr && addr.port;
+        srv.close(() => {
+          if (Number.isInteger(port) && port > 0 && port < 65536) resolve(port);
+          else reject(new Error('could not allocate a private CDP port'));
+        });
+      });
+    });
+  }
   function clamp(s, n) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n).trimEnd() + ' ...' : s; }
   function hostOf(u) {
     let h = u.hostname.toLowerCase();
@@ -304,10 +333,14 @@
       const r = resolveChrome(wantHeaded, deps.existsSync);
       if (r) { chromePath = r.path; binIsHeadlessOnly = r.headless; }
     }
-    // Production passes port 0 so Chromium allocates a private endpoint and writes it into
-    // this run's unique profile. A process-wide port can attach to another agent's browser.
+    // Production passes cdpPort 0, meaning "give this run its own private endpoint" — a
+    // process-wide port can attach to another agent's browser. We honour that request by
+    // allocating a NON-zero ephemeral port ourselves (see allocateEphemeralPort): literal 0
+    // reaches Chromium as an automation signal and sets navigator.webdriver.
     const cdpPort = deps.cdpPort == null ? DEFAULT_PORT : Number(deps.cdpPort);
+    const privatePort = cdpPort === 0;
     const profileDir = deps.profileDir || P.join(OS.tmpdir(), 'starnet-browser-' + process.pid);
+    // Stale from a previous run on this profile; cleared so nothing can mistake it for live state.
     const activePortFile = P.join(profileDir, 'DevToolsActivePort');
     const timeoutMs = deps.timeoutMs || 15000;
     if (!fetchImpl || !WebSocketImpl) throw new Error('browser unavailable: Node WebSocket/fetch is not available');
@@ -319,9 +352,12 @@
     async function connect() {
       if (cdp) return cdp;
       try { FS.mkdirSync(profileDir, { recursive: true }); } catch (_) {}
-      if (cdpPort === 0) { try { FS.rmSync(activePortFile, { force: true }); } catch (_) {} }
+      if (privatePort) { try { FS.rmSync(activePortFile, { force: true }); } catch (_) {} }
+      // Allocated here, not by Chromium, so the launch carries no automation flag. Chromium still
+      // writes the bound port into this profile's DevToolsActivePort, which stays the readiness proof.
+      const launchPort = privatePort ? await allocateEphemeralPort() : cdpPort;
       const args = ['--disable-gpu', '--no-first-run', '--no-default-browser-check',
-        '--remote-debugging-port=' + cdpPort, '--window-size=1440,900',
+        '--remote-debugging-port=' + launchPort, '--window-size=1440,900',
         '--user-data-dir=' + profileDir];
       if (headed) {
         // Visible window the user can watch (and hear — no --mute-audio in headed mode).
@@ -349,12 +385,11 @@
       for (let i = 0; i < 40; i++) {
         if (procExited) throw new Error('spawned Chromium exited before CDP ownership was established' + (procError ? ': ' + procError : ''));
         try {
-          let port = cdpPort;
-          if (port === 0) {
-            const line = String(FS.readFileSync(activePortFile, 'utf8') || '').split(/\r?\n/)[0];
-            port = Number(line);
-            if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error('invalid private CDP port');
-          }
+          // We chose launchPort ourselves, so it IS the endpoint — no DevToolsActivePort read-back.
+          // (Chromium only writes that file when IT picked the port; installed Chrome launched on an
+          // explicit port may never write it, which would strand the loop.) A successful /json/list
+          // on our own private port is the readiness proof.
+          const port = launchPort;
           const r = await fetchImpl('http://127.0.0.1:' + port + '/json/list');
           const targets = await r.json();
           const page = targets.find(t => t && t.type === 'page');

@@ -314,12 +314,20 @@ function fakeDriver() {
       cdpPort: 0, profileDir: privateProfile,
       fetchImpl: async url => { fetched.push(url); return { json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://owned-private' }] }; },
       WebSocketImpl: FakeWS,
-      spawn: (exe, args) => { privateLaunches.push(args); fs.writeFileSync(path.join(privateProfile, 'DevToolsActivePort'), '45678\n/devtools/browser/private\n'); return fakeProc(44); }
+      spawn: (exe, args) => { privateLaunches.push(args); return fakeProc(44); }
     });
     await privatePort.navigate('http://127.0.0.1:5173/');
-    A.ok(privateLaunches[0].includes('--remote-debugging-port=0'), 'production mode asks Chromium for an ephemeral CDP port');
-    A.ok(fetched.some(u => /127\.0\.0\.1:45678\/json\/list/.test(u)), 'driver attaches only through the port written by its private profile');
-    A.eq(privatePort.attachedPort(), 45678, 'driver reports the privately owned attached port');
+    // FINGERPRINT GUARD: production must launch on a private port it allocated ITSELF, never on
+    // literal 0. Chromium's runtime_features.cc special-cases --remote-debugging-port=0 and turns on
+    // AutomationControlled (navigator.webdriver), and Google refuses sign-in to browsers "being
+    // controlled through software automation" — which would break attended login for the human driving it.
+    const portArg = privateLaunches[0].find(a => /^--remote-debugging-port=/.test(a));
+    A.ok(portArg, 'production launch carries a private CDP port');
+    const launchedPort = Number(String(portArg).split('=')[1]);
+    A.ok(Number.isInteger(launchedPort) && launchedPort > 0 && launchedPort < 65536, 'the private CDP port is a real ephemeral port, never literal 0 (port 0 sets navigator.webdriver)');
+    A.ok(launchedPort !== 9347, 'the private port is per-run, never the process-wide default another agent run could attach to');
+    A.ok(fetched.some(u => u === 'http://127.0.0.1:' + launchedPort + '/json/list'), 'driver attaches only through the private port it allocated for this run');
+    A.eq(privatePort.attachedPort(), launchedPort, 'driver reports the privately owned attached port');
     await privatePort.close();
     fs.rmSync(privateProfile, { recursive: true, force: true });
   }
