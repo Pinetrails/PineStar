@@ -366,7 +366,7 @@ gen/
 | # | Decision | Recommendation | Blocks |
 |---|---|---|---|
 | **D1** | **Billing at launch:** BYOK-first / credits-first / hybrid? | **Hybrid, BYOK default.** Fastest + zero key/billing/regulatory liability; credits is a flip-the-switch upgrade. | Whether you need any cloud backend for v1 (Phase 4 vs not). |
-| **D2** | **Credit margin model:** $50 = $50-at-cost (margin from breakage) or $50 = ~$38-at-markup (~25–30% on every call)? | **Markup on every call**, disclosed in-app. Sustainable; breakage-only is fragile. | Unit economics + in-game meter framing. |
+| **D2** | **Credit margin model:** margin from breakage, or a markup applied on every call? | **Markup on every call**, disclosed in-app. Sustainable; breakage-only is fragile. *(Rate redacted — pricing internals live in the private billing repo, not here.)* | Unit economics + in-game meter framing. |
 | **D3** | **Credit policy:** rollover? refundable? | **Expire monthly, non-refundable, single-purpose.** Minimizes stored-value exposure. | Legal posture; UX goodwill tradeoff. |
 | **D4** | **When does an agent actually run?** Pure-pull (directive only) / scheduled / autonomous self-initiation? | **Pull as the default; scheduled as opt-in; autonomy a per-agent toggle granted at onboarding.** Autonomy is the scariest for spend. | Trigger model in `SessionManager` (P1/P3). |
 | **D5** | **Tool scope at v1:** model+image only, or also shell/fs/web? | **Computer (model) only in P1; terminal/cabinet/uplink in P3 behind prompts.** Staged by object placement. | Sandbox effort; safety surface. |
