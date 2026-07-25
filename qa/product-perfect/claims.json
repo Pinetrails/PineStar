@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "1d879a4f5e5d7820768988f905c46633221540cd",
+    "sourceCommit": "9e1b392240810414049bc36e8871dbd4474a16d9",
     "pathSetSha256": "23d48b916e771aa6065193748d4e388d75917d0df198bc03fca66a78c6f6447f",
     "files": [
       {
@@ -323,8 +323,8 @@
       },
       {
         "path": "frontend/app/loop-templates.js",
-        "bytes": 14362,
-        "sha256": "b9bb38b50f2dcac1a4552f7f2111c050abff40ba552459fd3260066085c580ee"
+        "bytes": 13493,
+        "sha256": "41bdda7d7fcf3561ab68bd51c77ebd3a7dc4f859ec63c1ec3b1499a2264f92d3"
       },
       {
         "path": "frontend/app/maintquests.js",
@@ -763,8 +763,8 @@
       },
       {
         "path": "frontend/app/windows/loops.js",
-        "bytes": 40787,
-        "sha256": "e4a78a26aa8a12a2548fbdae9fbf4430846130bdf6fc835f3723f61c5276261e"
+        "bytes": 39038,
+        "sha256": "5ca60919f399c1389ba59a795616e27538b647ccea05da20a3e85d7df3ed2d1f"
       },
       {
         "path": "frontend/app/windows/messaging.js",
@@ -848,8 +848,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 215893,
-        "sha256": "7dc1dd052d6f0652bb6f8041400a0af0b6fb1862e8c9330ffe5e3581e0738f76"
+        "bytes": 215387,
+        "sha256": "1fd984632f49668d217a6705198482de1e08aecfb2d9c63dd9e225833cc1cc81"
       },
       {
         "path": "frontend/css/asciifx.css",
