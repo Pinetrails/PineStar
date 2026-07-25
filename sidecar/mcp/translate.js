@@ -22,6 +22,14 @@
 
   const NAME_MAX = 64;   // the OpenRouter/OpenAI function-name grammar is ^[A-Za-z0-9_-]{1,64}$
 
+  /* Every BUILT-IN tool clamps what it hands back (fs.read 200k, shell 64k, web_fetch 6k,
+     web_request 8k, image, browser). An MCP connector's payload is authored by a third-party
+     server, and registry.dispatch does no central capping, so this was the one unclamped door
+     into the model's context: a single `query` against a filesystem/database/API connector could
+     return megabytes and blow the window (or the budget) in ONE call. 64k chars matches
+     shell.exec — an MCP call is the same shape of act (run an external thing, read its output). */
+  const RESULT_MAX_CHARS = 64000;
+
   // wire-safe segment: runs of disallowed chars collapse to a single '_', leading/trailing separators trimmed
   // (so "My Server!" -> "My_Server", "do.thing" -> "do_thing"); legitimate inner _ / - are preserved.
   function sanitizePart(s) {
@@ -69,6 +77,20 @@
     return parts.join('\n').trim();
   }
 
+  /* Clamp with a hint the model can ACT on, matching the fs.search / web_fetch convention: say it was
+     cut, say how much is missing, and point at the paging/filtering knob the server itself exposes. */
+  function clampResult(text, max) {
+    const s = String(text == null ? '' : text);
+    const limit = max > 0 ? max : RESULT_MAX_CHARS;
+    if (s.length <= limit) return { text: s, truncated: false };
+    const dropped = s.length - limit;
+    return {
+      text: s.slice(0, limit) + '\n\n…[truncated — ' + dropped + ' more characters. Narrow the request (a ' +
+            'filter, a smaller page/limit argument, or a more specific query) rather than re-running this as-is.]',
+      truncated: true
+    };
+  }
+
   function makeMcpToolDef(o) {
     o = o || {};
     const connectorId = o.connectorId || 'mcp';
@@ -97,14 +119,20 @@
       timeoutMs: o.timeoutMs || 0,                       // 0 -> inherit the host's per-tool timeout (CAPS.toolTimeoutMs)
       run: async function (args, ctx) {
         const res = await call(mcpTool.name, args || {});
-        const text = renderContent(res && res.content);
+        // Clamp BEFORE the error branch too: a failing server is just as able to hand back a
+        // megabyte of stack trace as a succeeding one.
+        const clamped = clampResult(renderContent(res && res.content), o.maxResultChars);
+        const text = clamped.text;
         // an MCP-level error (isError:true) is surfaced by THROWING — registry.dispatch turns any throw into a
         // clean isError tool_result, so the model sees the failure text without us inventing a result shape.
         if (res && res.isError) { const e = new Error(text || ('MCP tool ' + mcpTool.name + ' reported an error')); e.__mcpToolError = true; throw e; }
-        return { content: text, summary: 'mcp:' + connectorId + ' ' + mcpTool.name };
+        return {
+          content: text,
+          summary: 'mcp:' + connectorId + ' ' + mcpTool.name + (clamped.truncated ? ' (truncated)' : '')
+        };
       }
     };
   }
 
-  return { makeMcpToolDef, mcpToolName, _internals: { sanitizePart, translateSchema, renderContent } };
+  return { makeMcpToolDef, mcpToolName, RESULT_MAX_CHARS, _internals: { sanitizePart, translateSchema, renderContent, clampResult } };
 });
