@@ -1219,20 +1219,35 @@ const StationBake = (() => {
         const tt = Math.min(1, ady / Rc);
         const faceW = FACEW + 1 + (NFACE - FACEW - 1) * (sgnY < 0 ? tt : 0);
         const rIn = Math.max(1, Rc - faceW);
-        const dxIn = ady >= rIn ? 0 : Math.sqrt(rIn * rIn - ady * ady);
-        if (sgnX < 0) {
-          const inner = Math.round(ax - dxIn);
-          fill(X, py, edge - X, 1, hullC);                            // 1. cut the deck
-          fill(edge - 3, py, 3, 1, outerBand);                        // 2. dark band hugging the outside
-          fill(edge, py, Math.max(1, inner - edge), 1, cPal.face);    // 3. the interior wall face
-          fill(inner, py, 1, 1, outerBand);                           // 4. contact seam onto the deck
-        } else {
-          const inner = Math.round(ax + dxIn);
-          fill(edge + 1, py, X + T - edge - 1, 1, hullC);
-          fill(edge + 1, py, 3, 1, outerBand);
-          fill(Math.min(inner, edge), py, Math.max(1, edge - inner + 1), 1, cPal.face);
-          fill(inner, py, 1, 1, outerBand);
-        }
+        /* On rows the INNER circle doesn't reach, there is no inner boundary — the face runs to the
+           tile edge and there is NO contact seam to draw. Forcing dxIn to 0 put `inner` at ax, i.e.
+           exactly the tile boundary, and painted the seam tone there on every such row: a dark 1px
+           stripe down the column where the chamfer hands off to the straight wall, drawn OVER that
+           wall's face. That was the "few pixels off" at every corner — the straight wall's first
+           column measured a flat lum 19, which is precisely U.shade(base,-0.62), the seam tone.
+           Everything is clamped to the chamfer's own tile now so no layer reaches into its neighbour. */
+        const hasInner = ady < rIn;
+        const clamp = (x0, x1, c) => fill(Math.max(X, x0), py, Math.min(X + T, x1) - Math.max(X, x0), 1, c);
+        // x where a given radius crosses this row; past the arc's reach it returns the tile's inner
+        // extreme, so a band simply runs to the tile edge instead of collapsing onto the boundary.
+        const xR = (r) => {
+          if (ady >= r) return sgnX < 0 ? X + T : X;
+          const d0 = Math.sqrt(r * r - ady * ady);
+          return sgnX < 0 ? Math.round(ax - d0) : Math.round(ax + d0);
+        };
+        const band = (rA, rB, col) => { const p = xR(rA), q = xR(rB); clamp(Math.min(p, q), Math.max(p, q), col); };
+        /* The face is NOT a flat fill. It carries the same structure the straight wall has
+           vertically — a lit course at its outer edge and a shadowed foot where it meets the deck —
+           only measured RADIALLY, so the corner reads as the same wall instead of a blank patch
+           beside a detailed one. */
+        const rCourse = Math.max(rIn, Rc - 4), rFoot = Math.min(rCourse, rIn + 3);
+        const inner = xR(rIn);
+        if (sgnX < 0) clamp(X, edge, hullC); else clamp(edge + 1, X + T, hullC);   // 1. cut the deck
+        if (sgnX < 0) clamp(edge - 3, edge, outerBand); else clamp(edge + 1, edge + 4, outerBand);
+        band(rCourse, Rc, U.shade(cPal.face, 0.10));                  // lit top course at the outer edge
+        band(rFoot, rCourse, cPal.face);                              // body
+        band(rIn, rFoot, U.shade(cPal.face, -0.24));                  // shadowed foot against the deck
+        if (hasInner) clamp(inner, inner + 1, outerBand);              // contact seam onto the deck
       });
       // HULL RIM — the outer silhouette's own curve (HR), concentric with the interior one and now
       // rasterized off the SAME row walk, so the two curves stay a fixed pixel distance apart all
