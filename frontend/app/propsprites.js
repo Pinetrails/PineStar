@@ -1198,13 +1198,13 @@ const PropSprites = (() => {
 
   /* ---- DECOR EXPANSION (2026-07-15): theming set, same v2 oblique kit ---- */
 
-  F.neonsign = (x, y, w, h, f) => {   // v4 WALL neon â€” shallow flush-mounted tube; no pole, no floor contact
+  F.neonsign = (x, y, w, h, f) => {   // v4 WALL neon — shallow flush-mounted tube; no pole, no floor contact
     // v3 stood this on a weighted pole in the middle of the deck, which is wrong for a blocks:false prop:
     // agents walked through the pole. It is now bolted flat to the wall. All the presence comes from the
     // tube and its spill, and light does not collide with anybody.
     const on = flick(90, x) > -0.92;                            // mains buzz with an eerie dropout (kept)
     const tube = on ? ACC.lounge : '#3a2434';
-    px(x + 1, y - 1, 10, 13, '#070a0c');                        // sign edge â€” 1px of depth, that is all it gets
+    px(x + 1, y - 1, 10, 13, '#070a0c');                        // sign edge — 1px of depth, that is all it gets
     px(x + 2, y, 8, 11, '#101418');                             // dark face
     px(x + 2, y, 8, 1, '#232d33'); keyEdge(x + 2, y, 4, 1, 0.22);   // frame crown takes the ceiling strip
     px(x + 2, y + 1, 1, 9, '#1a2228'); px(x + 9, y + 1, 1, 9, '#0a0e11');
@@ -1225,7 +1225,7 @@ const PropSprites = (() => {
     px(x + 8, y + 9, 1, 1, blink(1300, x) ? '#2a1414' : ACC.alert);   // tired ballast LED (kept)
   };
 
-  F.lavalamp = (x, y, w, h, f) => {   // v4 lava lamp â€” tall tapered glass, wax lit from INSIDE with falloff
+  F.lavalamp = (x, y, w, h, f) => {   // v4 lava lamp — tall tapered glass, wax lit from INSIDE with falloff
     const r = RAMP.steel;
     shadow2(x + 3, y + 11, 6);
     // pedestal foot + cap are the only metal; keeping them small is what makes the glass read as glass
@@ -1257,9 +1257,9 @@ const PropSprites = (() => {
     bloom(x + 3, y - 3, 6, 11, '#ff6ad5', 0.09 + 0.05 * (flick(1100, x) * 0.5 + 0.5));   // kept breathing haze
   };
 
-  F.crt_pile = (x, y, w, h, f) => {   // v4 scrap stack â€” two dead CRTs, the top tube still whispering static
+  F.crt_pile = (x, y, w, h, f) => {   // v4 scrap stack — two dead CRTs, the top tube still whispering static
     // blocks:true: a genuine solid on the deck, so it keeps its full contact shadow and its mass. The
-    // OVERHANG of the top set is the silhouette â€” a neatly aligned stack reads as a cabinet.
+    // OVERHANG of the top set is the silhouette — a neatly aligned stack reads as a cabinet.
     const r = RAMP.gun;
     shadow2(x + 1, y + 11, 10);
     // bottom CRT, face-on, dead
@@ -1290,7 +1290,7 @@ const PropSprites = (() => {
     cable(x + 2, y + 10, x - 1, y + 11, 1.2, '#0e1418');        // dead lead spilling west onto the deck
   };
 
-  F.cablerun = (x, y, w, h, f) => {   // v4 taped floor loom (2x1) â€” FLAT paint, walk-over, zero rise
+  F.cablerun = (x, y, w, h, f) => {   // v4 taped floor loom (2x1) — FLAT paint, walk-over, zero rise
     // Agents cross this constantly, so the whole prop lives in the ground plane: no oblique body, no front
     // face, no contact shadow. Depth comes from the strands separating and the tape lying on top of them.
     const HI = '#2c383f', MD = '#161d21', LO = '#080c0e';
@@ -1302,7 +1302,7 @@ const PropSprites = (() => {
         px(x + sx, yy + s, 1, 1, i === 0 ? HI : (i === 1 ? MD : LO));
       }
     }
-    // gaffer tape crossings pinning the loom to the deck â€” painted flat, with a peeling corner
+    // gaffer tape crossings pinning the loom to the deck — painted flat, with a peeling corner
     for (const tx of [x + 5, x + w - 9]) {
       px(tx, y + 4, 4, 6, '#3a3426');
       px(tx, y + 4, 4, 1, '#4c4430'); keyEdge(tx, y + 4, 4, 1, 0.14);
@@ -1313,13 +1313,13 @@ const PropSprites = (() => {
     px(x + 10, y + 3, 3, 1, '#0e1418'); px(x + 13, y + 2, 2, 1, '#0e1418');
     px(x + 15, y + 5, 4, 3, '#1c2429'); px(x + 15, y + 5, 4, 1, '#2c383f'); px(x + 16, y + 6, 2, 1, '#0a0e11');
     if (blink(2400, x)) { px(x + 15, y + 2, 1, 1, ACC.flow); bloom(x + 15, y + 2, 1, 1, ACC.flow, 0.30); }  // rare stray spark (kept)
-    // the PACKET: one live datum running the loom. Flat light on a flat prop â€” a bloom ring, no rise.
+    // the PACKET: one live datum running the loom. Flat light on a flat prop — a bloom ring, no rise.
     const pxp = x + 1 + Math.round((now / 14) % (w - 5));
     bloom(pxp, y + 6, 3, 1, ACC.data, 0.34);
     px(pxp, y + 6, 3, 1, U.shade(ACC.data, -0.10));
   };
 
-  F.hazardpad = (x, y, w, h, f) => {   // v4 hazard decal (2x1) â€” pure deck PAINT, walk-over, zero rise
+  F.hazardpad = (x, y, w, h, f) => {   // v4 hazard decal (2x1) — pure deck PAINT, walk-over, zero rise
     // This is paint on plating and nothing else: no body, no shadow, no lip. Its job is to say "keep clear"
     // and then get walked over without an agent ever appearing to clip through it.
     const Y = '#9a8038', K = '#141a1e';
@@ -1331,7 +1331,7 @@ const PropSprites = (() => {
     }
     px(x + 1, y + 1, w - 2, 1, K); px(x + 1, y + h - 2, w - 2, 1, K);   // border rails
     // flat two-temperature split: the ceiling strips fall on the north half, the cold bounce fills the south.
-    // On a decal this is the ONLY light cue there is â€” there are no facets to shade.
+    // On a decal this is the ONLY light cue there is — there are no facets to shade.
     keyEdge(x + 2, y + 2, w - 4, 2, 0.10);
     rimEdge(x + 2, y + h - 5, w - 4, 2, 0.08);
     // WEAR is the whole story of a hazard pad: the stripes get walked off first down the middle
@@ -3943,13 +3943,13 @@ const PropSprites = (() => {
     if (on) px(x + 6, y - 1, 1, 1, blink(800, ph) ? '#7a8a86' : '#5a6a66');   // someone just poured — a wisp off the can
   };
 
-  F.stool = (x, y, w, h, f) => {   // v4 gas-lift task stool â€” one big oval seat over a thin chrome stem
+  F.stool = (x, y, w, h, f) => {   // v4 gas-lift task stool — one big oval seat over a thin chrome stem
     // blocks:true, so this one IS a solid on the deck and keeps a real contact shadow. The whole read is
     // the fat seat against the thin stem: at 12px that contrast is the only thing distinguishing a stool
     // from a bollard.
     const r = RAMP.steel;
     shadow2(x + 3, y + 11, 7);                                  // real floor contact
-    // splayed foot ring â€” an oval we look down on, so the base reads as five spokes, not a disc
+    // splayed foot ring — an oval we look down on, so the base reads as five spokes, not a disc
     px(x + 3, y + 8, 6, 1, LINE); px(x + 2, y + 9, 8, 1, LINE); px(x + 3, y + 10, 6, 1, LINE);
     px(x + 3, y + 9, 6, 1, '#46535c');
     keyEdge(x + 3, y + 9, 3, 1, 0.24);                          // warm key on the ring's west arc
@@ -3963,7 +3963,7 @@ const PropSprites = (() => {
     keyEdge(x + 5, y + 4, 1, 4, 0.26); rimEdge(x + 6, y + 5, 1, 3, 0.28);
     px(x + 5, y + 6, 2, 1, '#7d8a94');                          // lift collar catches a hard line
     px(x + 8, y + 5, 2, 1, '#39434b'); px(x + 10, y + 5, 1, 1, '#1a1e22');   // adjust lever
-    // BIG round cushioned seat â€” this is a top-down game, so the seat is the prop
+    // BIG round cushioned seat — this is a top-down game, so the seat is the prop
     px(x + 3, y, 6, 1, LINE); px(x + 2, y + 1, 8, 1, LINE); px(x + 1, y + 2, 10, 2, LINE);
     px(x + 2, y + 4, 8, 1, LINE); px(x + 3, y + 5, 6, 1, LINE);
     px(x + 3, y + 1, 6, 1, '#4a8a82'); px(x + 3, y + 1, 3, 1, '#5aa89c');
@@ -4424,7 +4424,7 @@ const PropSprites = (() => {
   };
 
   F.chair = (x, y, w, h, f) => {
-    // CHAIR â€” the renderer draws this at EVERY agent's seat, so it appears more often than any other prop
+    // CHAIR — the renderer draws this at EVERY agent's seat, so it appears more often than any other prop
     // on the station. It is therefore deliberately QUIET: no emissives, no accent LEDs, no bloom. Its only
     // job is to sit next to a workstation and never compete with it. v4 adds material (chrome stem, warm
     // crown / cold flank on the pad) and nothing louder.
@@ -4449,33 +4449,46 @@ const PropSprites = (() => {
       return;
     }
     const r = RAMP.steel;
-    shadow2(x + 3, y + 10, 7);                                  // blocks:true â€” a real solid, real contact
+    shadow2(x + 3, y + 10, 7);                                  // blocks:true — a real solid, real contact
     // star base: arm bar + casters. Kept low and dark so it disappears under a seated body.
     px(x + 2, y + 10, 8, 1, '#10161a');
     px(x + 3, y + 10, 6, 1, '#2a343c'); keyEdge(x + 3, y + 10, 3, 1, 0.16);
     px(x + 2, y + 9, 1, 1, '#242e35'); px(x + 9, y + 9, 1, 1, '#242e35');   // NW/NE arm tips
-    px(x + 2, y + 11, 2, 1, '#1a1e22'); px(x + 8, y + 11, 2, 1, '#1a1e22'); px(x + 5, y + 11, 2, 1, '#1a1e22');
+    for (const cw of [x + 2, x + 5, x + 8]) px(cw, y + 11, 2, 1, '#1a1e22');   // casters
     // chrome gas-lift column: warm west / cold east, matching the stool
     px(x + 4, y + 7, 4, 3, LINE);
     px(x + 5, y + 7, 1, 3, '#54616a'); px(x + 6, y + 7, 1, 3, '#39434b');
     keyEdge(x + 5, y + 7, 1, 2, 0.20); rimEdge(x + 6, y + 7, 1, 3, 0.22);
-    // rounded backrest, north (kept orientation â€” the agent body renders over the seat)
-    chamf(x + 2, y - 2, 8, 5, LINE, 1);
-    px(x + 3, y - 1, 6, 3, r.face);
-    px(x + 3, y - 1, 6, 1, r.lit); keyEdge(x + 3, y - 1, 3, 1, 0.22);       // cap catches the ceiling strip
-    px(x + 3, y, 1, 2, U.shade(r.face, 0.08)); px(x + 8, y, 1, 2, r.dk);
-    rimEdge(x + 8, y, 1, 2, 0.20);
-    px(x + 4, y + 1, 4, 1, U.shade(r.face, -0.20));             // lumbar seam (kept)
-    // seat pad, middle-south â€” stays visible under a seated agent
-    px(x + 3, y + 3, 6, 1, LINE); px(x + 2, y + 4, 8, 5, LINE);
-    px(x + 3, y + 4, 6, 1, '#4a8a82'); px(x + 3, y + 4, 3, 1, '#5aa89c');
-    keyEdge(x + 3, y + 4, 4, 1, 0.20);
-    px(x + 3, y + 5, 6, 2, '#2f6a62');
-    px(x + 3, y + 5, 1, 2, '#4a8a82'); px(x + 8, y + 5, 1, 2, '#26554e');
-    rimEdge(x + 8, y + 5, 1, 2, 0.18);
-    px(x + 4, y + 6, 1, 1, '#26554e'); px(x + 7, y + 6, 1, 1, '#26554e');   // seat stitches (kept)
-    px(x + 3, y + 7, 6, 1, r.face); px(x + 3, y + 7, 2, 1, r.lit);          // front lip
-    px(x + 4, y + 8, 4, 1, r.dk);                                          // rounded skirt
+    // BACKREST — a WAISTED mesh back, not a slab. At 12px the PROFILE is the only thing that says
+    // "chair" rather than "small appliance": a headrest bar clear of the shoulders, then a pinch at
+    // the lumbar. Legibility bought from silhouette costs no brightness, so the prop stays quiet.
+    px(x + 4, y - 4, 4, 1, LINE); px(x + 3, y - 3, 6, 1, LINE);
+    px(x + 2, y - 2, 8, 4, LINE); px(x + 3, y + 2, 6, 1, LINE);
+    px(x + 4, y - 3, 4, 1, U.shade(r.face, 0.16));              // headrest bar
+    keyEdge(x + 4, y - 3, 2, 1, 0.26);
+    px(x + 3, y - 2, 6, 3, r.face);                             // shoulders — the widest span
+    px(x + 3, y - 2, 1, 3, U.shade(r.face, 0.12)); px(x + 8, y - 2, 1, 3, r.dk);
+    rimEdge(x + 8, y - 2, 1, 3, 0.20);
+    for (let j = 0; j < 3; j++)                                 // mesh weave, alternating rows
+      px(x + 4, y - 2 + j, 4, 1, U.shade(r.face, j % 2 ? -0.13 : 0.03));
+    px(x + 4, y + 1, 4, 1, U.shade(r.face, -0.26));             // pinched waist = the lumbar read
+    // seat pad, middle-south — stays visible under a seated agent
+    px(x + 1, y + 3, 10, 5, LINE);
+    px(x + 2, y + 4, 8, 1, '#4a8a82'); px(x + 2, y + 4, 4, 1, '#5aa89c');
+    keyEdge(x + 2, y + 4, 4, 1, 0.20);
+    px(x + 2, y + 5, 8, 2, '#2f6a62');
+    px(x + 2, y + 5, 1, 2, '#4a8a82'); px(x + 9, y + 5, 1, 2, '#26554e');
+    rimEdge(x + 9, y + 5, 1, 2, 0.18);
+    px(x + 3, y + 6, 1, 1, '#26554e'); px(x + 8, y + 6, 1, 1, '#26554e');   // seat stitches (kept)
+    px(x + 2, y + 7, 8, 1, r.face); px(x + 2, y + 7, 3, 1, r.lit);          // front lip
+    px(x + 3, y + 8, 6, 1, r.dk);                                          // rounded skirt
+    // ARMRESTS — the second tell, and the cheapest one: two nubs breaking the outline east and west,
+    // riding just above the seat. Drawn last so they read as in FRONT of the pad, not sunk into it.
+    px(x, y + 2, 2, 4, LINE); px(x + 10, y + 2, 2, 4, LINE);
+    px(x, y + 3, 2, 1, U.shade(r.face, 0.14)); keyEdge(x, y + 3, 1, 1, 0.26);   // west arm takes the key
+    px(x, y + 4, 2, 1, U.shade(r.face, -0.18));
+    px(x + 10, y + 3, 2, 1, U.shade(r.face, -0.04));            // east arm sits in shade
+    px(x + 10, y + 4, 2, 1, r.dk); rimEdge(x + 10, y + 3, 1, 2, 0.22);
   };
 
   /* ============ DETAIL-PASS PROPS (auto-generated) ============ */
@@ -6092,9 +6105,9 @@ const PropSprites = (() => {
     px(x + 1, botY - 1, 1, 1, r.lit); px(x + cw - 5, botY - 1, 1, 1, r.lit);
     underAO(x + 3, botY, cw - 8, 1);
   };
-  F.treasury_pnl_holo = (x, y, w, h, f) => {   // v4 P&L holo â€” FLUSH deck emitter + a taller projection with real falloff
+  F.treasury_pnl_holo = (x, y, w, h, f) => {   // v4 P&L holo — FLUSH deck emitter + a taller projection with real falloff
     // blocks:false, so the puck is set INTO the deck rather than standing on it: agents cross this tile.
-    // All the presence comes from the light above it, which is free â€” light has no collision.
+    // All the presence comes from the light above it, which is free — light has no collision.
     const cx = x + (w >> 1), G = '#9bff4a', GT = '#d6ffb0';
     const lensY = y + 7;
     // recessed housing: a stepped oval well cut into the plating
@@ -6107,7 +6120,7 @@ const PropSprites = (() => {
     px(x + 3, lensY, 6, 1, '#1d2a1a');                          // lens ring
     px(x + 4, lensY, 4, 1, G); px(x + 5, lensY, 2, 1, GT);      // hot lens core
     px(x + 3, lensY + 1, 1, 1, blink(900) ? G : '#1c2a1a');     // status dot (kept)
-    // PROJECTION â€” taller than v3 and lit by falloff instead of one flat alpha rect. The flicker is the
+    // PROJECTION — taller than v3 and lit by falloff instead of one flat alpha rect. The flicker is the
     // hologram's only material: a rock-steady hologram reads as a painted-on decal.
     const base = lensY - 1, top = y - 5, span = base - top;
     const fl = 0.55 + 0.18 * flick(220) + 0.12 * flick(90, 1);
@@ -6128,7 +6141,7 @@ const PropSprites = (() => {
       const bx = startX + b * (bw + gap), by = base - 1 - hgt;
       px(bx, by, bw, hgt, G);
       px(bx, by, bw, 1, GT);                                    // each bar cap is its brightest row
-      px(bx + bw - 1, by + 1, 1, hgt - 1, U.shade(G, -0.35));   // shaded east face â€” even light has volume
+      px(bx + bw - 1, by + 1, 1, hgt - 1, U.shade(G, -0.35));   // shaded east face — even light has volume
     }
     ctx.restore();
     ctx.save();                                                 // interlace + one sweeping refresh band
@@ -6731,13 +6744,13 @@ const PropSprites = (() => {
     px(x + w - 5, y - 10, 1, 1, on2 ? ACC.work : '#16302a');
     if (on2) bloom(x + w - 5, y - 10, 1, 1, ACC.work, 0.34);
   };
-  F.arc_floorlight = (x, y, w, h, f) => {   // v4 deck light â€” FLAT recessed ring; the only rise is the light itself
-    // Walk-over prop: everything here sits at or below the deck plane. v4 only changes falloff â€” v3 stamped
+  F.arc_floorlight = (x, y, w, h, f) => {   // v4 deck light — FLAT recessed ring; the only rise is the light itself
+    // Walk-over prop: everything here sits at or below the deck plane. v4 only changes falloff — v3 stamped
     // two flat alpha rects, which read as a translucent sticker lying on the floor rather than as a lamp.
     const cx = x + (w >> 1);
     const well = [[3, 6], [2, 8], [1, 10], [1, 10], [1, 10], [1, 10], [2, 8], [3, 6]];
     well.forEach((s, j) => px(x + s[0], y + 2 + j, s[1], 1, '#171b19'));
-    px(x + 3, y + 2, 6, 1, '#101413');                          // deep top lip â€” light never reaches in here
+    px(x + 3, y + 2, 6, 1, '#101413');                          // deep top lip — light never reaches in here
     px(x + 3, y + 9, 6, 1, U.shade('#1f2422', 0.12));           // bottom bevel catch (kept)
     const ring = [[3, 6], [2, 8], [2, 8], [2, 8], [2, 8], [3, 6]];
     ring.forEach((s, j) => px(x + s[0], y + 3 + j, s[1], 1, '#2a302d'));
@@ -6746,7 +6759,7 @@ const PropSprites = (() => {
     rimEdge(x + 9, y + 4, 1, 4, 0.22);                          // cold bounce on the east arc
     px(x + 3, y + 4, 1, 1, '#48544c'); px(x + 8, y + 4, 1, 1, '#48544c');   // bezel bolts
     px(x + 3, y + 7, 1, 1, '#1f2622'); px(x + 8, y + 7, 1, 1, '#1f2622');
-    // lens: slow breath (kept). Idle is never dead â€” a floor light that goes black reads as a hole in the deck.
+    // lens: slow breath (kept). Idle is never dead — a floor light that goes black reads as a hole in the deck.
     const pulse = 0.62 + 0.38 * (0.5 + 0.5 * Math.sin(now / 1300));
     const lens = [[4, 4], [3, 6], [3, 6], [4, 4]];
     lens.forEach((s, j) => px(x + s[0], y + 4 + j, s[1], 1, U.shade('#dfe2e0', -0.42 + 0.24 * pulse)));
@@ -6756,7 +6769,7 @@ const PropSprites = (() => {
     px(cx - 2, y + 10, 1, 1, '#56706e'); px(cx + 1, y + 10, 1, 1, '#56706e');   // aisle chevron (kept)
     px(cx - 1, y + 11, 2, 1, '#56706e');
   };
-  F.arc_ladder = (x, y, w, h, f) => {   // v4 ladder â€” bold diagonal LEANING on the wall; feet-only floor contact
+  F.arc_ladder = (x, y, w, h, f) => {   // v4 ladder — bold diagonal LEANING on the wall; feet-only floor contact
     // blocks:false, so it must not read as a solid mass parked on the deck: it leans, its footprint is two
     // rubber feet, and its shadow lives only under those feet. The diagonal is the entire silhouette.
     const r = RAMP.steel;
