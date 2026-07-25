@@ -35,6 +35,8 @@ const ROUTES = {
   '/inner': () => ({ status: 200, body: PAGE('<p>Card details</p><button id=pay>Pay now</button>') }),
   '/missing': () => ({ status: 404, body: PAGE('<h1>Not found</h1><p>no such page</p>') }),
   '/form': () => ({ status: 200, body: PAGE('<select id=country><option value=us>United States</option><option value=uk>United Kingdom</option></select>') }),
+  '/blank': () => ({ status: 200, body: PAGE('<a id=open href="/second" target="_blank">Open receipt</a>') }),
+  '/second': () => ({ status: 200, body: PAGE('<h1>Receipt</h1><button id=print>Print receipt</button>', '<title>Receipt</title>') }),
   '/click': () => ({ status: 200, body: PAGE('<button id=go>Load</button><div id=out></div>',
     '<script>addEventListener("click",function(e){if(e.target.id==="go"){setTimeout(function(){document.getElementById("out").innerHTML="<button id=next>Second step</button>";},300);}})</script>') })
 };
@@ -129,7 +131,43 @@ const ROUTES = {
         'the snapshot AFTER a click sees what the click produced — this is the pre-click-DOM bug, gone');
     }
 
-    // 6. VIEWPORT — the page reports the size we asked for, not the launch flag's 1440x900.
+    /* 6. TABS — and the honest limit of the current posture.
+
+       New page targets are no longer KILLED: adoption (attach, inject the isolation shim, inject the
+       settle marker, then resume) is wired, and tabs/tab_select/tab_close drive it. That path is
+       covered in browser.test.js against a fake CDP.
+
+       But under the SHIPPING posture no second target is ever created to adopt, because the
+       synthetic-input isolation deliberately neutralises window.open (browser.js `blockedOpen`), and
+       `popupReady` is one of the conditions of the navigate-time isolation attestation. A popup is a
+       new browsing context that would not inherit a target-scoped preload, so blocking it is a
+       security decision, not an oversight — un-blocking it is Andrew's call, not a fix to slip in.
+
+       So this asserts what is TRUE today, and doubles as a tripwire: if the popup block is ever
+       relaxed, this test starts failing and tells you the tab path now needs live verification. */
+    {
+      await driver.navigate(base + '/blank');
+      const nodes = await driver.snapshot(40);
+      const link = nodes.find(n => /Open receipt/.test(n.text || ''));
+      A.ok(!!link, 'the _blank link is in the snapshot');
+      const before = await driver.tabs();
+      A.eq(before.length, 1, 'one tab to begin with');
+      A.eq(before[0].active, true, 'the original tab is the active one');
+      await driver.click(link);
+      await new Promise(r => setTimeout(r, 500));
+      A.eq((await driver.tabs()).length, 1,
+        'TRIPWIRE: no second target appears while window.open is blocked by the isolation shim — if this fails, popups now open and the tab path needs live verification');
+      A.eq(String(await driver.testEval('String(window.open("/second","_blank"))')), 'null',
+        'window.open is neutralised by the isolation shim (popupReady, part of the navigate attestation)');
+      let threw = false;
+      try { await driver.closeTab(0); } catch (_) { threw = true; }
+      A.ok(threw, 'the first tab can never be closed');
+      let bad = false;
+      try { await driver.selectTab(3); } catch (_) { bad = true; }
+      A.ok(bad, 'selecting a tab that does not exist is refused rather than silently ignored');
+    }
+
+    // 7. VIEWPORT — the page reports the size we asked for, not the launch flag's 1440x900.
     {
       await driver.viewport(375, 812, { mobile: false });
       A.eq(String(await driver.testEval('innerWidth + "x" + innerHeight')), '375x812',

@@ -73,6 +73,7 @@ function fakeDriver() {
     'browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.drag',
     'browser.forward', 'browser.get_text', 'browser.hover', 'browser.login', 'browser.navigate',
     'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot',
+    'browser.tab_close', 'browser.tab_select', 'browser.tabs',
     'browser.test_input', 'browser.test_navigate', 'browser.test_snapshot', 'browser.test_state',
     'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision'
   ], 'browser action surface is complete');
@@ -297,8 +298,19 @@ function fakeDriver() {
     A.ok(!launches[0].args.includes('--new-window'), 'synthetic test browser never requests a window');
     A.ok(sent.some(m => m.method === 'Target.setAutoAttach' && m.params.waitForDebuggerOnStart === true), 'new targets are paused before scripts can reach native input APIs');
     FakeWS.last.fire('message', { data: JSON.stringify({ method: 'Target.attachedToTarget', params: { sessionId: 'popup-session', targetInfo: { type: 'page', targetId: 'popup-target' } } }) });
-    await new Promise(resolve => setTimeout(resolve, 10));
-    A.ok(sent.some(m => m.method === 'Target.closeTarget' && m.params.targetId === 'popup-target'), 'unexpected popup target is closed while paused');
+    // Adoption is a multi-hop promise chain (inject shim, inject settle marker, record, resume).
+    await new Promise(resolve => setTimeout(resolve, 60));
+    // A popup is now ADOPTED rather than killed: a target=_blank checkout, a PDF that opens beside the
+    // page, or an SSO popup used to be Target.closeTarget'd while paused, which read to the agent as
+    // "the link did nothing". The reason for closing was real - a new page target does not inherit a
+    // target-scoped preload - so adoption installs the SAME shim before resuming, exactly like the
+    // iframe path, and closes the target if that injection ever fails.
+    const popupShim = sent.filter(m => m.sessionId === 'popup-session' && m.method === 'Page.addScriptToEvaluateOnNewDocument');
+    A.ok(popupShim.some(m => /requestPointerLock/.test(m.params.source)), 'an adopted popup gets the input-isolation shim');
+    const resumeAt = sent.findIndex(m => m.sessionId === 'popup-session' && m.method === 'Runtime.runIfWaitingForDebugger');
+    const shimAt = sent.findIndex(m => m.sessionId === 'popup-session' && m.method === 'Page.addScriptToEvaluateOnNewDocument');
+    A.ok(shimAt >= 0 && resumeAt > shimAt, 'the shim is installed BEFORE the popup is allowed to run');
+    A.ok(!sent.some(m => m.method === 'Target.closeTarget' && m.params.targetId === 'popup-target'), 'a successfully shimmed popup is kept, not killed');
     await d.close();
 
     isolationReady = false; currentUrl = 'about:blank'; sent.length = 0;
@@ -514,6 +526,85 @@ function fakeDriver() {
     // A driver that predates these says so plainly rather than throwing a raw TypeError.
     const old = fakeDriver(); delete old.hover;
     await rejects(makeBrowserTools({ driver: old }).session.hover('b1'), /unknown browser ref|unavailable in this driver/, 'a driver without hover reports it honestly');
+  }
+
+  // ---- TABS: adopted page targets ------------------------------------------------------------
+  // A target=_blank checkout, a PDF beside the page or an SSO popup used to be Target.closeTarget'd
+  // while still paused, which read to the agent as "the link did nothing".
+  {
+    const sent = [];
+    class WS3 {
+      constructor() { this.handlers = {}; WS3.last = this; setTimeout(() => this.fire('open', {}), 0); }
+      addEventListener(n, fn) { (this.handlers[n] = this.handlers[n] || []).push(fn); }
+      fire(n, v) { for (const fn of this.handlers[n] || []) fn(v); }
+      emit(method, params) { this.fire('message', { data: JSON.stringify({ method, params }) }); }
+      send(raw) {
+        const m = JSON.parse(raw); sent.push(m);
+        const expr = String((m.params && m.params.expression) || '');
+        let result = {};
+        if (m.method === 'Runtime.evaluate') {
+          let value = null;
+          if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
+          else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
+          else if (/location\.href, title/.test(expr)) value = m.sessionId ? { url: 'https://x.test/receipt', title: 'Receipt' } : { url: 'https://x.test/', title: 'Shop' };
+          else if (/role="button"/.test(expr)) value = m.sessionId ? [{ index: 0, role: 'button', text: 'Print', x: 1, y: 1, w: 9, h: 9 }] : [{ index: 0, role: 'link', text: 'Open', x: 1, y: 1, w: 9, h: 9 }];
+          else value = 'https://x.test/';
+          result = { result: { value } };
+        }
+        setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+      }
+      close() {}
+    }
+    const d = T.makeCdpDriver({
+      chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9353,
+      settleQuietPolls: 1, settleNavBudgetMs: 300, settleActionBudgetMs: 300, settleMinObserveMs: 0, settleEmptyGraceMs: 0,
+      fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://tabs' }] }),
+      WebSocketImpl: WS3,
+      spawn: () => ({ pid: 91, on(ev, fn) { if (ev === 'close') this._c = fn; }, kill() { if (this._c) queueMicrotask(() => this._c(0)); } })
+    });
+    await d.navigate('https://x.test/');
+    A.eq((await d.tabs()).length, 1, 'one tab before any popup');
+
+    WS3.last.emit('Target.attachedToTarget', { sessionId: 'tab-2', targetInfo: { type: 'page', targetId: 'TARGET2' } });
+    await new Promise(r => setTimeout(r, 60));
+    const list = await d.tabs();
+    A.eq(list.length, 2, 'an adopted page target becomes a second tab instead of being killed');
+    A.eq(list[0].active, true, 'the ORIGINAL tab stays active — switching is never implicit');
+    A.eq(list[1].url, 'https://x.test/receipt', 'the new tab reports its OWN url, read from its own session');
+
+    // Page commands must follow the active tab, and ONLY on an explicit switch.
+    const beforeSwitch = (await d.snapshot(10))[0];
+    A.eq(beforeSwitch.text, 'Open', 'before switching, snapshot still reads tab 0');
+    await d.selectTab(1);
+    A.eq((await d.tabs())[1].active, true, 'tab_select moves the active target');
+    A.eq((await d.snapshot(10))[0].text, 'Print', 'after switching, snapshot reads the SECOND tab');
+    const sawSession = sent.filter(m => m.method === 'Runtime.evaluate' && /role="button"/.test(String(m.params.expression))).pop();
+    A.eq(sawSession.sessionId, 'tab-2', 'page commands carry the active tab session');
+
+    await d.selectTab(0);
+    A.eq((await d.snapshot(10))[0].text, 'Open', 'switching back reads tab 0 again');
+    const back = sent.filter(m => m.method === 'Runtime.evaluate' && /role="button"/.test(String(m.params.expression))).pop();
+    A.ok(back.sessionId === undefined, 'tab 0 sends with NO session id (the original target)');
+
+    let threw = false;
+    try { await d.selectTab(9); } catch (_) { threw = true; }
+    A.ok(threw, 'selecting a nonexistent tab is refused');
+    try { threw = false; await d.closeTab(0); } catch (_) { threw = true; }
+    A.ok(threw, 'the first tab cannot be closed');
+
+    await d.closeTab(1);
+    A.eq((await d.tabs()).length, 1, 'a closed tab leaves the list');
+    A.ok(sent.some(m => m.method === 'Target.closeTarget' && m.params.targetId === 'TARGET2'), 'closing a tab closes its real target');
+
+    // A tab that vanishes on its own must not strand the driver on a dead session.
+    WS3.last.emit('Target.attachedToTarget', { sessionId: 'tab-3', targetInfo: { type: 'page', targetId: 'TARGET3' } });
+    await new Promise(r => setTimeout(r, 60));
+    await d.selectTab(1);
+    WS3.last.emit('Target.detachedFromTarget', { sessionId: 'tab-3' });
+    const after = await d.tabs();
+    A.eq(after.length, 1, 'a detached tab drops out of the list');
+    A.eq(after[0].active, true, 'and the driver falls back to the original tab rather than a dead session');
+    await d.close();
   }
 
   // ---- IFRAME TRAVERSAL ----------------------------------------------------------------------

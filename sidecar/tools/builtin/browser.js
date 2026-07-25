@@ -422,6 +422,13 @@
     let mainFrameId = null, lastResponse = null;
     const inflight = new Set();
     const frameSessions = new Map();   // CDP sessionId -> frameId, for every adopted (out-of-process) iframe
+    /* TABS. pageSessions holds every adopted extra page target in the order it appeared. activeSession
+       is the CDP session every page-scoped command targets: null means the ORIGINAL tab, so the default
+       behaviour of every existing tool is byte-identical until the agent explicitly switches. That
+       matters — the failure mode of a multi-target driver is quietly reading the WRONG DOM, so
+       switching is never implicit. */
+    const pageSessions = new Map();    // CDP sessionId -> targetId, for every adopted extra tab
+    let activeSession = null;
     async function connect() {
       if (cdp) return cdp;
       try { FS.mkdirSync(profileDir, { recursive: true }); } catch (_) {}
@@ -482,7 +489,26 @@
                 const info = p.targetInfo || {}, sid = p.sessionId;
                 if (!sid) return;
                 if (info.type === 'page') {
-                  Promise.resolve(cdp.send('Target.closeTarget', { targetId: info.targetId })).catch(() => {});
+                  /* ADOPT, don't kill. A target=_blank link or a popup used to be closed outright
+                     (Target.closeTarget while still paused), so a checkout that opens in a new tab, a
+                     PDF that opens beside the page, or an SSO popup was a dead end with no explanation.
+                     The reason for closing was real — a new page target does NOT inherit a
+                     target-scoped preload, so it could run unshimmed script — but that is exactly what
+                     the iframe path already solves: attach, inject the shim, THEN resume. Runs are
+                     forceHeadless, so an adopted tab can never put a window on the user's screen.
+                     If the shim fails to install we still close it: fail closed, never unshimmed. */
+                  Promise.resolve()
+                    .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP }, sid))
+                    .then(() => cdp.send('Runtime.evaluate', { expression: SYNTHETIC_INPUT_BOOTSTRAP, awaitPromise: true }, sid))
+                    .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP }, sid))
+                    .then(() => cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP }, sid))
+                    .then(() => { pageSessions.set(sid, info.targetId); })
+                    .then(() => cdp.send('Runtime.runIfWaitingForDebugger', {}, sid))
+                    .catch(() => {
+                      pageSessions.delete(sid);
+                      // cdp may already be null if the driver closed mid-adoption; nothing to close then.
+                      if (cdp && info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {});
+                    });
                   return;
                 }
                 if (info.type !== 'iframe') {
@@ -501,9 +527,15 @@
                   // in an Auth0/Okta/Stripe iframe, or a consent banner, was simply invisible.
                   .then(() => { if (info.targetId) frameSessions.set(sid, info.targetId); })
                   .then(() => cdp.send('Runtime.runIfWaitingForDebugger', {}, sid))
-                  .catch(() => { if (info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {}); });
+                  .catch(() => { if (cdp && info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {}); });
               });
-              cdp.on('Target.detachedFromTarget', p => { if (p && p.sessionId) frameSessions.delete(p.sessionId); });
+              cdp.on('Target.detachedFromTarget', p => {
+              if (!p || !p.sessionId) return;
+              frameSessions.delete(p.sessionId);
+              pageSessions.delete(p.sessionId);
+              // A closed tab must never leave the driver pointed at a dead session.
+              if (activeSession === p.sessionId) activeSession = null;
+            });
               await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
             }
             await cdp.send('Page.enable');
@@ -564,8 +596,24 @@
       }
       throw new Error('browser unavailable: could not attach to Chromium');
     }
-    async function evalJS(expression) {
+    /* Page-scoped command channel. Every page command (Runtime/Input/DOM/Emulation/Page) goes through
+       here so it lands on the ACTIVE tab; browser-scoped commands (Target and Browser) keep using cdp
+       directly and are never given a sessionId. An explicit sessionId argument still wins, which is how
+       snapshot/get_text reach individual iframe sessions. */
+    let pageProxy = null;
+    async function page() {
       const c = await connect();
+      if (!pageProxy || pageProxy.__cdp !== c) {
+        pageProxy = {
+          __cdp: c,
+          send: (method, params, sessionId) => c.send(method, params, sessionId !== undefined ? sessionId : (activeSession || undefined)),
+          on: (n, fn) => c.on(n, fn)
+        };
+      }
+      return pageProxy;
+    }
+    async function evalJS(expression) {
+      const c = await page();
       const r = await c.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
       if (r.exceptionDetails) throw new Error('page eval failed: ' + ((r.exceptionDetails.exception && r.exceptionDetails.exception.description) || r.exceptionDetails.text || 'exception'));
       return r.result && r.result.value;
@@ -610,7 +658,7 @@
       } finally { clearTimeout(timer); if (minTimer) clearTimeout(minTimer); }
     }
     async function navigate(url) {
-      const c = await connect();
+      const c = await page();
       lastResponse = null;   // this navigation's status, never the previous page's
       await c.send('Page.navigate', { url });
       await waitForSettle(c, { budgetMs: settleNavBudgetMs, fallbackMs: 900 });
@@ -664,7 +712,7 @@
       } catch (_) { return null; }
     }
     async function snapshot(limit) {
-      const c = await connect();
+      const c = await page();
       const cap = Math.max(1, Math.min(200, Number(limit || 80)));
       let out = await collectNodes(c, cap);
       /* AUTO-WAIT + RE-READ. DOM quiescence cannot see the future: a page whose framework renders from
@@ -683,7 +731,10 @@
       const expr = snapshotExpr(cap);
       const out = (await evalIn(c, expr)) || [];
       let frameNo = 0;
-      for (const [sid, frameId] of frameSessions) {
+      // Out-of-process frames are tracked per driver, not per tab, so only merge them while the
+      // ORIGINAL tab is active — attributing tab 0's frames to tab 2 would be exactly the
+      // wrong-DOM failure this design exists to avoid.
+      for (const [sid, frameId] of (activeSession ? [] : frameSessions)) {
         if (out.length >= cap) break;
         frameNo++;
         const off = await frameOffset(c, frameId);
@@ -739,7 +790,7 @@
       return { x: node.x + Math.max(1, Math.floor(node.w / 2)), y: node.y + Math.max(1, Math.floor(node.h / 2)) };
     }
     async function click(node) {
-      const c = await connect();
+      const c = await page();
       const x = node.x + Math.max(1, Math.floor(node.w / 2));
       const y = node.y + Math.max(1, Math.floor(node.h / 2));
       await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
@@ -749,13 +800,13 @@
     }
     async function type(node, text) {
       await click(node);
-      const c = await connect();
+      const c = await page();
       await c.send('Input.insertText', { text: String(text || '') });
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return 'typed';
     }
     async function press(key) {
-      const c = await connect();
+      const c = await page();
       key = String(key || 'Enter');
       await c.send('Input.dispatchKeyEvent', { type: 'keyDown', key });
       await c.send('Input.dispatchKeyEvent', { type: 'keyUp', key });
@@ -766,7 +817,7 @@
     /* Hover is not a nicety: menus, tooltips and disclosure widgets render their real targets only on
        mouseover, so without it whole navigations are unreachable from a snapshot. */
     async function hover(node) {
-      const c = await connect();
+      const c = await page();
       const p = center(node);
       await c.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: p.x, y: p.y, button: 'none' });
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
@@ -775,7 +826,7 @@
     /* HTML5 drag-and-drop needs intermediate move events — a press/release pair at two points is
        ignored by every library that listens for dragover. */
     async function drag(from, to) {
-      const c = await connect();
+      const c = await page();
       const a = center(from), b = center(to);
       await c.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: a.x, y: a.y, button: 'left', clickCount: 1 });
       const steps = 6;
@@ -809,14 +860,14 @@
         sel.dispatchEvent(new Event('change', { bubbles: true }));
         return { ok: true, value: hit.value, label: (hit.label || hit.text || '').trim() };
       })()`);
-      await waitForSettle(await connect(), { budgetMs: settleActionBudgetMs });
+      await waitForSettle(await page(), { budgetMs: settleActionBudgetMs });
       return r;
     }
     /* The viewport was pinned to the launch flag --window-size=1440,900, so mobile layouts and
        responsive breakpoints were simply unreachable. */
     async function viewport(width, height, opts) {
       opts = opts || {};
-      const c = await connect();
+      const c = await page();
       await c.send('Emulation.setDeviceMetricsOverride', {
         width: Math.max(1, Math.round(Number(width) || 0)),
         height: Math.max(1, Math.round(Number(height) || 0)),
@@ -826,9 +877,51 @@
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return Math.round(Number(width) || 0) + 'x' + Math.round(Number(height) || 0);
     }
+    /* Tab 0 is always the ORIGINAL target (sessionId null); adopted tabs follow in the order they
+       appeared. Switching is explicit and never implicit — a multi-target driver's worst failure is
+       silently reading the wrong DOM, so nothing moves the agent between tabs on its own. */
+    function tabSessions() { return [null].concat(Array.from(pageSessions.keys())); }
+    async function tabs() {
+      const c = await page();
+      const out = [];
+      const sessions = tabSessions();
+      for (let i = 0; i < sessions.length; i++) {
+        const sid = sessions[i];
+        const info = await evalIn(c, '({ url: location.href, title: document.title })', sid === null ? undefined : sid);
+        out.push({
+          index: i,
+          url: (info && info.url) || '(unknown)',
+          title: (info && info.title) || '',
+          active: (activeSession || null) === sid
+        });
+      }
+      return out;
+    }
+    async function selectTab(index) {
+      const sessions = tabSessions();
+      const i = Number(index);
+      if (!Number.isInteger(i) || i < 0 || i >= sessions.length) throw new Error('no such tab: ' + index + ' (there are ' + sessions.length + ')');
+      activeSession = sessions[i];
+      const c = await page();
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+      return (await evalIn(c, 'location.href')) || '(unknown)';
+    }
+    async function closeTab(index) {
+      const sessions = tabSessions();
+      const i = Number(index);
+      if (i === 0) throw new Error('the first tab cannot be closed');
+      if (!Number.isInteger(i) || i < 0 || i >= sessions.length) throw new Error('no such tab: ' + index);
+      const sid = sessions[i];
+      const targetId = pageSessions.get(sid);
+      pageSessions.delete(sid);
+      if (activeSession === sid) activeSession = null;   // never leave the driver on a dead session
+      const c = await connect();
+      if (targetId) { try { await c.send('Target.closeTarget', { targetId }); } catch (_) {} }
+      return 'closed tab ' + i;
+    }
     async function forward() {
       await evalJS('history.forward()');
-      await waitForSettle(await connect(), { budgetMs: settleNavBudgetMs, fallbackMs: 500 });
+      await waitForSettle(await page(), { budgetMs: settleNavBudgetMs, fallbackMs: 500 });
       return evalJS('location.href');
     }
     /* FILE UPLOAD. Without DOM.setFileInputFiles any form with an attachment step is a dead end.
@@ -837,7 +930,7 @@
        nearest one in the same container) and hand CDP that element's objectId. Paths are resolved and
        jail-checked by the caller; this only ever sees absolute paths. */
     async function upload(node, absPaths) {
-      const c = await connect();
+      const c = await page();
       await c.send('DOM.enable');
       const p = center(node);
       const r = await c.send('Runtime.evaluate', { expression: `(() => {
@@ -858,7 +951,7 @@
     }
     async function testInput(action) {
       const a = Object.assign({}, action || {});
-      const c = await connect();
+      const c = await page();
       const kind = String(a.action || '');
       const code = String(a.key || a.code || '');
       const key = code.indexOf('Key') === 0 ? code.slice(3).toLowerCase()
@@ -922,12 +1015,12 @@
     // content the scroll was meant to reveal is missing from the next snapshot.
     async function scroll(x, y) {
       await evalJS('window.scrollBy(' + (Number(x) || 0) + ',' + (Number(y) || 0) + ')');
-      await waitForSettle(await connect(), { budgetMs: settleActionBudgetMs });
+      await waitForSettle(await page(), { budgetMs: settleActionBudgetMs });
       return 'scrolled';
     }
     async function back() {
       await evalJS('history.back()');
-      await waitForSettle(await connect(), { budgetMs: settleNavBudgetMs, fallbackMs: 500 });
+      await waitForSettle(await page(), { budgetMs: settleNavBudgetMs, fallbackMs: 500 });
       return evalJS('location.href');
     }
     async function getText(selector) {
@@ -947,7 +1040,7 @@
         }
         return parts.join('').trim();
       })()`;
-      const c = await connect();
+      const c = await page();
       const parts = [String((await evalIn(c, expr)) || '')];
       // Read adopted iframes too. A consent wall, a payment form or an SSO login is routinely the
       // ONLY meaningful text on the page and lives entirely inside a frame — reading just the top
@@ -961,12 +1054,12 @@
       return parts.join('').trim();
     }
     async function handleDialog(action, promptText) {
-      const c = await connect();
+      const c = await page();
       await c.send('Page.handleJavaScriptDialog', { accept: action !== 'dismiss', promptText: promptText || '' });
       const d = dialog; dialog = null; return d || { type: 'none', message: '' };
     }
     async function screenshot() {
-      const c = await connect();
+      const c = await page();
       const r = await c.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
       return r.data || '';
     }
@@ -988,7 +1081,7 @@
     // actually on the user's screen. Headless mode, or a headless-only binary fallback in
     // a headed request, both read as not visible.
     function visible() { return headed; }
-    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
+    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
   }
 
   function makeBrowserSession(deps) {
@@ -1115,6 +1208,11 @@
     }
     async function forward() { const d = ensureDriver(); version++; return driverFn(d, 'forward')(); }
     async function upload(ref, absPaths) { const d = ensureDriver(); return driverFn(d, 'upload')(requireRef(ref), absPaths); }
+    async function tabs() { const d = ensureDriver(); return driverFn(d, 'tabs')(); }
+    // Switching tabs points every subsequent tool at a DIFFERENT document, so refs from the old one
+    // must die — a ref silently re-aimed at another page is the worst outcome available here.
+    async function selectTab(i) { const d = ensureDriver(); const out = await driverFn(d, 'selectTab')(i); version++; return out; }
+    async function closeTab(i) { const d = ensureDriver(); const out = await driverFn(d, 'closeTab')(i); version++; return out; }
     async function requireLocalDriver() {
       if (!localMode) throw new Error('browser.test_input requires browser.test_navigate to a loopback URL first');
       const d = ensureDriver(false);
@@ -1232,7 +1330,7 @@
       const d = driver || null;
       return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
     }
-    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
+    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, tabs, selectTab, closeTab, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
   }
 
   function makeBrowserTools(deps) {
@@ -1346,6 +1444,18 @@
         async a => ({ content: 'Viewport is now ' + await session.viewport(a.width, a.height, { mobile: a.mobile === true, scale: a.scale }) + ' — take a fresh browser.snapshot.', summary: 'viewport' }), false),
       exec('browser.forward', 'Go forward in browser history (the counterpart of browser.back).', { type: 'object', properties: {} },
         async () => ({ content: 'Browser moved forward to ' + await session.forward(), summary: 'forward' }), false),
+      read('browser.tabs', 'List the browser tabs. A link with target="_blank", a checkout popup or a PDF opens a NEW tab — it is listed here, and browser.tab_select switches to it. Tab 0 is the one you started in.', { type: 'object', properties: {} },
+        async () => {
+          const list = await session.tabs();
+          return {
+            content: list.map(t => '[' + t.index + ']' + (t.active ? ' *' : '  ') + ' ' + (t.title || '(untitled)') + ' — ' + t.url).join('\n'),
+            summary: list.length + ' tab(s)'
+          };
+        }),
+      exec('browser.tab_select', 'Switch to a tab by index from browser.tabs. Every later action applies to THAT tab, and element refs from the previous tab stop being valid — take a fresh browser.snapshot.', { type: 'object', required: ['index'], properties: { index: { type: 'number' } } },
+        async a => ({ content: 'Now on tab ' + a.index + ': ' + await session.selectTab(a.index) + ' — take a fresh browser.snapshot.', summary: 'tab ' + a.index }), false),
+      exec('browser.tab_close', 'Close a tab by index from browser.tabs. Tab 0 cannot be closed.', { type: 'object', required: ['index'], properties: { index: { type: 'number' } } },
+        async a => ({ content: await session.closeTab(a.index), summary: 'tab closed' })),
       exec('browser.upload', 'Attach files from your workspace to a file-upload control on the page. "ref" is the upload control (or its visible label) from the latest browser.snapshot; "paths" are workspace-relative files. Submitting the form is a separate click.', { type: 'object', required: ['ref', 'paths'], properties: { ref: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } } } },
         async (a, ctx) => {
           if (!canSaveShots) throw new Error('browser.upload needs a workspace; this run has none');
