@@ -76,6 +76,19 @@
     // stays governed by allowedChats, independently.
     let owner = o.ownerUserId ? String(o.ownerUserId) : '';
     const onOwnerClaim = typeof o.onOwnerClaim === 'function' ? o.onOwnerClaim : null;
+    // Chats whose offline backlog we discarded while the owner was still UNCLAIMED (a fresh install, or any
+    // first contact). We cannot apologise at connect: claiming ownership from stale backlog is exactly the
+    // anti-stale-directive behaviour we preserve, and answering a chat we have NOT yet proven is the owner
+    // would break owner-only silence toward a stranger who found a discoverable bot. So the notice waits here
+    // until that chat proves it IS the owner by sending a live message. Bounded — a flood of stranger DMs
+    // while the bot was down must not grow this without limit.
+    const deferredOfflineNotice = new Set();
+    const MAX_DEFERRED_NOTICE = 50;
+    // ONE wording for both paths. It deliberately states NO count: getUpdates({offset:-1}) returns only the
+    // LAST pending update, yet advancing past it discards every earlier one too — so a tally of what we could
+    // SEE would under-report what we actually DROPPED, and "1 message arrived" when three did is exactly the
+    // kind of confident-but-wrong claim this project treats as a defect.
+    const OFFLINE_NOTICE = 'I was offline — anything you sent while I was away was not processed. Please resend whatever still matters.';
     function ownerOk(userId) {
       const uid = String(userId == null ? '' : userId);
       if (!owner) { if (!uid) return false; owner = uid; if (onOwnerClaim) { try { onOwnerClaim(uid); } catch (_) {} } return true; }
@@ -112,6 +125,15 @@
         const m = n.message;
         if (!admitted(m)) return;
         if (m.chatType === 'dm' && !ownerOk(m.userId)) return;   // a non-owner DM never reaches the run host
+        // This chat had backlog discarded while the owner was unclaimed, and has now PROVEN it is the owner by
+        // getting admitted. Pay the deferred apology before its reply — otherwise the Commander's first
+        // impression of a bot that was simply switched off is silence, which is what a broken bot looks like.
+        // Detached + best-effort by design: the notice must never delay or block the real message.
+        if (deferredOfflineNotice.delete(String(m.chatId))) {
+          Promise.resolve()
+            .then(() => transport.send(String(m.chatId), OFFLINE_NOTICE, {}))
+            .catch(e => { try { console.error('[' + name + '] deferred offline-notice failed for chat ' + m.chatId + ':', (e && e.message) || e); } catch (_) {} });
+        }
         const im = {
           channel: name,
           chatId: String(m.chatId),
@@ -213,14 +235,18 @@
                 if (admit) {
                   const cid = String(m.chatId);
                   droppedByChat.set(cid, (droppedByChat.get(cid) || 0) + 1);
+                } else if (m && m.chatType === 'dm' && !owner && deferredOfflineNotice.size < MAX_DEFERRED_NOTICE) {
+                  // Owner still unclaimed, so we cannot tell yet whether this is the Commander or a stranger.
+                  // DEFER the apology rather than drop it: this is the first-run case where someone messages a
+                  // bot that is not running, and answering with nothing at all reads as a broken bot.
+                  deferredOfflineNotice.add(String(m.chatId));
                 }
               }
               // the next poll uses `offset` (= last backlog id + 1), which confirms+discards the backlog; we did NOT dispatch it.
               // Best-effort notice: never throw (a failed notice must not stop connect); the loop below still starts.
-              for (const [cid, count] of droppedByChat) {
+              for (const cid of droppedByChat.keys()) {
                 if (stopped) break;
-                const plural = count === 1 ? 'message' : 'messages';
-                try { await transport.send(cid, 'I was offline — ' + count + ' ' + plural + ' arrived while I was away and were not processed.', {}); }
+                try { await transport.send(cid, OFFLINE_NOTICE, {}); }
                 catch (e) { try { console.error('[' + name + '] offline-notice send failed for chat ' + cid + ':', (e && e.message) || e); } catch (_) {} }
               }
             } catch (e) { if (stopped || isAbort(e)) return; /* fatal/transient handled by the loop below */ }
