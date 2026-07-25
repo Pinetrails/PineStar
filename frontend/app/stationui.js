@@ -191,9 +191,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         document.body.style.setProperty('--ph-glow2', 'rgba(' + rgb + ', ' + (base[1] * gm).toFixed(3) + ')');
       }
     }
-    // THE BACKDROP — what the station floats in. SpaceBG owns the registry and falls back to
-    // its own default for an unknown id, so a hand-edited or future-version save can never
-    // blank the sky. Applied here (not only in the picker) so it survives a reload.
+    // WHERE THE STATION IS. One saved value spans two layers that work opposite ways: a SKY is
+    // screen-space and must not zoom, a GROUND is world-space and must. Both modules resolve the
+    // id themselves — Terrain turns OFF for anything that is not a known ground, SpaceBG falls
+    // back to its default — so an unknown or future-version id can never blank the frame.
+    // Applied here rather than only in the picker so it survives a reload.
+    if (typeof Terrain !== 'undefined' && Terrain.setGround) Terrain.setGround(s.backdrop);
     if (typeof SpaceBG !== 'undefined' && SpaceBG.setBackdrop) SpaceBG.setBackdrop(s.backdrop);
     // CRT scanlines are part of the fixed shipped look — no user toggle. `no-scan` stays an
     // internal flag (set by scripts/verify-stars2.mjs to flatten the feed for star-pixel
@@ -4097,10 +4100,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // THE BACKDROP — what the station floats in. Swatches are painted by the REAL backdrop
       // renderer below (SpaceBG.paintSample), never by a stand-in gradient, so a preview can
       // not promise a sky the station won't deliver — the same law the deck/wall swatches follow.
-      '<h4 class="ms-h">BACKDROP <span class="dim">— where the station is parked</span></h4>' +
-      '<p class="set-about">The station holds position somewhere. Change where. Each one is drawn live, not a picture — so the swatch is exactly what you get.</p>' +
+      '<h4 class="ms-h">BACKDROP <span class="dim">— where the station is</span></h4>' +
+      '<p class="set-about">The station is somewhere. Change where — in orbit, over open country, or landed on it. Each one is drawn live, not a picture, so the swatch is exactly what you get.</p>' +
       '<div class="set-backdrops" id="set-backdrop">' +
-      (typeof SpaceBG === 'undefined' ? '' : SpaceBG.list().map(b => {
+      (typeof SpaceBG === 'undefined' ? '' : []
+        .concat(SpaceBG.list())
+        .concat(typeof Terrain === 'undefined' || !Terrain.list ? [] : Terrain.list())
+        .map(b => {
         const on = (s.backdrop || 'void') === b.id;
         return '<button class="set-bd' + (on ? ' sel' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '" data-bd="' + esc(b.id) + '" title="' + esc(b.blurb) + '">' +
           '<canvas class="set-bd-cv" width="112" height="63" aria-hidden="true"></canvas>' +
@@ -4273,8 +4279,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       bdChips.forEach(b => {
         const cv = b.querySelector('canvas');
         if (!cv) return;
-        try { SpaceBG.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd, 8000); }
-        catch (_) { /* a swatch that cannot paint stays blank rather than taking the panel down */ }
+        // route each swatch to the layer that actually owns that id — a ground painted by the
+        // sky renderer would just be a black chip, and vice versa.
+        const isGround = typeof Terrain !== 'undefined' && Terrain.GROUNDS && Terrain.GROUNDS[b.dataset.bd];
+        try {
+          if (isGround) Terrain.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd);
+          else SpaceBG.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd, 8000);
+        } catch (_) { /* a swatch that cannot paint stays blank rather than taking the panel down */ }
       });
       const syncBackdrop = () => bdChips.forEach(x => {
         const on = x.dataset.bd === (s.backdrop || 'void');
@@ -4282,9 +4293,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         x.setAttribute('aria-pressed', on ? 'true' : 'false');
       });
       bdChips.forEach(b => b.addEventListener('click', () => {
-        // trust SpaceBG's resolution rather than the button: it is the thing that decides what
-        // actually renders, so the saved value can never drift from what is on screen.
-        s.backdrop = SpaceBG.setBackdrop(b.dataset.bd);
+        // Offer the id to BOTH layers and save whichever one claimed it. Terrain answers with the
+        // ground id or null; SpaceBG resolves to a sky. Trusting the layers rather than the button
+        // is what keeps the saved value from ever drifting out of step with what is on screen.
+        const asGround = (typeof Terrain !== 'undefined' && Terrain.setGround) ? Terrain.setGround(b.dataset.bd) : null;
+        const asSky = SpaceBG.setBackdrop(b.dataset.bd);
+        s.backdrop = asGround || asSky;
         save(); sfx('click');
         syncBackdrop();
         flashSaved(appMsg());
