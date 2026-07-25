@@ -8413,6 +8413,9 @@ async function runOnce(o) {
   runBrowser = makeBrowserTools({
     vision: imageTools.hasVision ? imageTools.browserVision : null,
     ledger: procLedger,
+    // The workspace jail, so browser.screenshot can SAVE a frame and emit it as a deliverable
+    // instead of capturing bytes and dropping them. Same jail image_generate writes through.
+    fsp, pathMod: path, root: WORKSPACES,
     // Host authority, not model args: every normal run is headless and all page input locks
     // are emulated before navigation. The browser.test_* workbench tools are the sanctioned
     // localhost/game path and dispatch only CDP/page events.

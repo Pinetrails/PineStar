@@ -66,7 +66,7 @@ function fakeDriver() {
   const names = B.tools.map(t => t.name).sort();
   A.eq(names, [
     'browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.get_text',
-    'browser.login', 'browser.navigate', 'browser.press', 'browser.scroll', 'browser.snapshot',
+    'browser.login', 'browser.navigate', 'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.snapshot',
     'browser.test_input', 'browser.test_navigate', 'browser.test_snapshot', 'browser.test_state',
     'browser.type', 'browser.vision'
   ], 'browser action surface is complete');
@@ -430,6 +430,47 @@ function fakeDriver() {
       A.ok(Date.now() - t0 >= 850, 'an unmeasurable page still gets the legacy 900ms settle');
       await rig.driver.close();
     }
+  }
+
+  // ---- SCREENSHOTS ARE NO LONGER WRITE-ONLY --------------------------------------------------
+  // screenshot() had exactly ONE consumer - vision() - which handed the base64 to a model and
+  // returned a BYTE COUNT. The user could never see what the agent saw, and the frame was dropped.
+  {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-shots-'));
+    try {
+      const fsp = require('node:fs/promises');
+      const emitted = [];
+      const ctx = { agentId: 'ag', room: 'lab', emit: (name, payload) => emitted.push([name, payload]) };
+      const S = makeBrowserTools({ driver: fakeDriver(), fsp, pathMod: path, root: ws });
+
+      const out = await S.tools.find(t => t.name === 'browser.screenshot').run({}, ctx);
+      const rel = (out.content.match(/shots\/shot-[a-f0-9]+\.png/) || [])[0];
+      A.ok(!!rel, 'screenshot reports the saved path');
+      A.ok(fs.existsSync(path.join(ws, 'ag', rel)), 'the PNG is actually written into the agent workspace jail');
+      A.eq(fs.readFileSync(path.join(ws, 'ag', rel)).toString(), 'png', 'the captured bytes are what got written');
+      const deliv = emitted.find(e => e[0] === 'deliverable');
+      A.ok(!!deliv, 'a deliverable event is emitted so the capture shows up in the station');
+      A.eq(deliv[1].kind, 'image', 'the deliverable is an image');
+      A.eq(deliv[1].agentId, 'ag', 'the deliverable is attributed to the capturing agent');
+      A.eq(deliv[1].room, 'lab', 'the deliverable carries the room');
+      A.ok(/\/api\/file\?agent=ag/.test(out.content), 'a viewer link is offered');
+
+      // Content-addressed: the same viewport twice is ONE file, not a pile of near-duplicates.
+      const again = await S.tools.find(t => t.name === 'browser.screenshot').run({}, ctx);
+      A.eq((again.content.match(/shots\/shot-[a-f0-9]+\.png/) || [])[0], rel, 'an unchanged capture is idempotent (content-addressed)');
+
+      // vision now PERSISTS the frame it analyzed, so the model's reading can be checked against pixels.
+      const V = makeBrowserTools({ driver: fakeDriver(), fsp, pathMod: path, root: ws, vision: async () => 'a login form' });
+      const vout = await V.tools.find(t => t.name === 'browser.vision').run({ question: 'what is this?' }, ctx);
+      A.ok(/a login form/.test(vout.content), 'vision still answers the question');
+      A.ok(/Screenshot saved to shots\//.test(vout.content), 'vision saves the frame it analyzed instead of dropping it');
+
+      // No workspace wired: say so honestly rather than naming a file that does not exist.
+      const N = makeBrowserTools({ driver: fakeDriver() });
+      const nout = await N.tools.find(t => t.name === 'browser.screenshot').run({}, ctx);
+      A.ok(/no workspace to save into/.test(nout.content), 'a run without a workspace admits the image was discarded');
+      A.ok(!/shots\//.test(nout.content), 'and never invents a saved path');
+    } finally { fs.rmSync(ws, { recursive: true, force: true }); }
   }
 
   // ---- NETWORK TRUTH: the agent is told the main document's real HTTP status ------------------

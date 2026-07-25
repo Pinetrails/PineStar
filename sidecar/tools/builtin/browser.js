@@ -897,15 +897,18 @@
       return list.slice(-(limit || 40));
     }
     async function dialog(action, promptText) { return ensureDriver().handleDialog(action || 'accept', promptText || ''); }
+    async function screenshot() { return ensureDriver().screenshot(); }
     async function vision(question) {
       const data = await ensureDriver().screenshot();
       const bytes = Math.round(String(data || '').length * 3 / 4);
+      // `image` rides along so the caller can PERSIST the analyzed frame — the screenshot used to be
+      // handed to the model and dropped, leaving the user unable to check what the agent actually saw.
       if (deps.vision) {
         const answer = await deps.vision({ imageBase64: data, question: question || '' });
-        return { ok: true, answer: String(answer == null ? '' : answer), bytes };
+        return { ok: true, answer: String(answer == null ? '' : answer), bytes, image: data };
       }
       // No vision provider wired — do NOT fake an answer. Report honestly.
-      return { ok: false, bytes, reason: 'no vision route wired into this run — do not ask the user for an API key; report the screenshot as unavailable' };
+      return { ok: false, bytes, image: data, reason: 'no vision route wired into this run — do not ask the user for an API key; report the screenshot as unavailable' };
     }
     /* ATTENDED LOGIN TAKEOVER: the agent hit a login wall and asks the Commander to sign in THEMSELVES.
        Two live consent asks bracket a headed relaunch on the persistent profile:
@@ -977,7 +980,7 @@
       const d = driver || null;
       return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
     }
-    return { navigate, snapshot, click, type, press, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
+    return { navigate, snapshot, click, type, press, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
   }
 
   function makeBrowserTools(deps) {
@@ -988,6 +991,34 @@
     const exec = (name, description, schema, run, consent) => ({ name, capability: 'web', impact: 'synthetic-browser', scope: 'execute', requiresConsent: consent !== false, timeoutMs: 20000, description, schema, run });
     const testRead = (name, description, schema, run) => ({ name, capability: 'workbench', impact: 'synthetic-browser', scope: 'read', requiresConsent: false, timeoutMs: 20000, description, schema, run });
     const testExec = (name, description, schema, run) => ({ name, capability: 'workbench', impact: 'synthetic-browser', scope: 'execute', requiresConsent: false, timeoutMs: 20000, description, schema, run });
+    /* SCREENSHOTS WERE WRITE-ONLY. screenshot() had exactly one consumer — vision() — which handed the
+       base64 to a model and returned a BYTE COUNT, so the user could never see what the agent saw and
+       the agent could never re-examine it. Frames now land in the agent's jailed workspace and emit the
+       same `deliverable` event image_generate already uses, so a capture shows up in the station.
+       Saving needs the workspace jail; a rig without it degrades to the old capture-only behaviour
+       rather than pretending a file exists. */
+    const shotFsp = deps.fsp, shotPath = deps.pathMod, shotRoot = deps.root;
+    const canSaveShots = !!(shotFsp && shotPath && shotRoot);
+    const shotJail = canSaveShots ? require('./fs.js').makeFsTools({ fsp: shotFsp, pathMod: shotPath, root: shotRoot })._internals : null;
+    async function saveShot(ctx, b64) {
+      if (!canSaveShots) return null;
+      const aid = (ctx && ctx.agentId) || 'agent';
+      const buffer = Buffer.from(String(b64 || ''), 'base64');
+      if (!buffer.length) return null;
+      // Content-addressed name: deterministic (no ambient clock/rng — determinism law) and idempotent,
+      // so re-capturing an unchanged viewport reuses one file instead of piling up near-duplicates.
+      const h = require('node:crypto').createHash('sha1').update(buffer).digest('hex').slice(0, 12);
+      const rel = 'shots/shot-' + h + '.png';
+      const { abs } = await shotJail.resolveInside(aid, rel);   // throws on jail escape / abs / '..'
+      await shotFsp.mkdir(shotPath.dirname(abs), { recursive: true });
+      await shotFsp.writeFile(abs, buffer);
+      if (ctx && typeof ctx.emit === 'function') {
+        const d = { id: 'shot_' + h, agentId: aid, kind: 'image', title: rel };
+        if (ctx.room) d.room = ctx.room;
+        ctx.emit('deliverable', d);
+      }
+      return { rel, bytes: buffer.length, viewer: '/api/file?agent=' + encodeURIComponent(aid) + '&path=' + encodeURIComponent(rel) };
+    }
     const navProps = { url: { type: 'string' } };
     if (allowVisible) navProps.visible = { type: 'boolean' };
     const localNavRequired = deps.requireOwnedServer === true ? ['url', 'serverId'] : ['url'];
@@ -1078,13 +1109,32 @@
         }
       },
       read('browser.vision', 'Capture the current viewport and answer a question about what is on screen (vision rides the session\'s own model when no dedicated vision key exists — never ask the user for an API key). If no vision route is available this returns a clear "unavailable" result — it never fabricates a description.', { type: 'object', properties: { question: { type: 'string' } } },
-        async a => {
+        async (a, ctx) => {
           const r = await session.vision(a.question || '');
+          // Save the analyzed frame either way: on success so the user can check the model's reading
+          // against the actual pixels, and on failure so the capture is not simply thrown away.
+          let shot = null;
+          try { shot = await saveShot(ctx, r && r.image); } catch (_) { shot = null; }
+          const saved = shot ? '\n\nScreenshot saved to ' + shot.rel + '\nView: ' + shot.viewer : '';
           if (r && r.ok) {
-            return { content: r.answer || '(vision model returned no text)', summary: 'vision' };
+            return { content: (r.answer || '(vision model returned no text)') + saved, summary: 'vision' };
           }
           const reason = (r && r.reason) || 'vision model is not configured';
-          return { content: 'browser.vision unavailable: ' + reason + ' (captured ' + ((r && r.bytes) || 0) + ' bytes but did not analyze them).', summary: 'vision unavailable' };
+          return { content: 'browser.vision unavailable: ' + reason + ' (captured ' + ((r && r.bytes) || 0) + ' bytes but did not analyze them).' + saved, summary: 'vision unavailable' };
+        }),
+      read('browser.screenshot', 'Capture the current viewport as a PNG, save it into your workspace, and show it to the user. Use this to prove what a page actually looked like, or to keep a frame you want to refer back to. Returns the saved path; browser.vision is the tool that ANSWERS QUESTIONS about a page.', { type: 'object', properties: {} },
+        async (a, ctx) => {
+          const data = await session.screenshot();
+          if (!data) return { content: 'Screenshot unavailable: this browser driver captured no image.', summary: 'no image' };
+          const shot = await saveShot(ctx, data);
+          if (!shot) {
+            const bytes = Math.round(String(data).length * 3 / 4);
+            return { content: 'Captured ' + bytes + ' bytes but this run has no workspace to save into, so the image was discarded.', summary: 'not saved' };
+          }
+          return {
+            content: 'Screenshot saved to ' + shot.rel + ' (' + (shot.bytes / 1024).toFixed(0) + ' KB).\nView: ' + shot.viewer,
+            summary: 'shot → ' + shot.rel
+          };
         })
     ];
     return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
