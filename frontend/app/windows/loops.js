@@ -129,6 +129,13 @@
           ' <span class="dim">' + esc(fmtRel(p.endedAt)) + '</span></div>' +
         (p.summary ? '<div class="lp-pend-b">' + esc(String(p.summary).slice(0, 400)) + '</div>' : '') +
         (p.commit ? '<div class="mc-detail dim">commit ' + esc(String(p.commit).slice(0, 8)) + '</div>' : '') +
+        /* WHAT CHANGED. "Deliverable = OPEN, not read" is a locked product law — approving work you cannot
+           see makes the review gate theatre. The file list is the minimum honest answer to "what did it do". */
+        ((p.files && p.files.length)
+          ? '<div class="lp-files"><span class="dim">changed ' + p.files.length + ' file' + (p.files.length === 1 ? '' : 's') + ':</span> ' +
+            p.files.slice(0, 6).map(f => '<code>' + esc(String(f.path || f).split(/[\/]/).pop()) + '</code>').join(' ') +
+            (p.files.length > 6 ? ' <span class="dim">+' + (p.files.length - 6) + ' more</span>' : '') + '</div>'
+          : '') +
         '<div class="mc-acts">' +
           '<button class="bb xs" data-vact="approve" data-n="' + p.n + '">✓ APPROVE</button>' +
           '<button class="bb xs danger" data-vact="reject" data-n="' + p.n + '" data-stacked="' + stacked + '">' + rejectLabel + '</button>' +
@@ -309,6 +316,10 @@
           roster.map(a => '<button type="button" class="rt-agent-btn' + (a.id === loopAgentId ? ' active' : '') + '" data-agent="' + esc(a.id) + '" style="--rt-agent-color:' + esc(a.color || 'var(--ph)') + '">' +
             '<span class="rt-agent-dot"></span><span class="rt-agent-name">' + esc(a.name || a.id) + '</span></button>').join('') +
         '</div>' +
+        /* WHAT IT WILL ACTUALLY BE TOLD. Routines preview their next fire time; a loop had no equivalent, so a
+           beginner could not tell whether their two blanks produced a sane instruction. Folded shut by default
+           so it informs without shouting. */
+        '<details class="lp-preview"><summary>what the agent will be told</summary><pre id="lp-prev"></pre></details>' +
         '<button class="bb sm" id="lp-create">✦ START THIS LOOP</button>';
 
       formEl.querySelectorAll('.rt-agent-btn').forEach(b => b.addEventListener('click', () => {
@@ -319,10 +330,48 @@
         sfx('click');
         try {
           const r = await (await post('/api/folderpick', {})).json();
-          if (r && r.path) { pickedDir = r.path; formEl.querySelector('#lp-dir').value = r.path; }
+          if (r && r.path) {
+            pickedDir = r.path;
+            const di = formEl.querySelector('#lp-dir');
+            di.value = r.path;
+            di.dispatchEvent(new Event('change'));   // detect the check command for the folder just chosen
+          }
         } catch (_) { notify('could not open the folder picker — type the path instead', 'warn'); }
       });
       formEl.querySelector('#lp-create').addEventListener('click', createLoop);
+
+      // keep the preview honest: rebuild it from the REAL buildSpec, never a hand-written approximation.
+      const prevEl = formEl.querySelector('#lp-prev');
+      const repaintPreview = () => {
+        const values = {};
+        formEl.querySelectorAll('.lp-p').forEach(el => { values[el.dataset.key] = el.value; });
+        const dirNow = formEl.querySelector('#lp-dir');
+        const spec = tpl.buildSpec(t, values, { workdir: dirNow ? dirNow.value.trim() : '' });
+        prevEl.textContent = spec ? spec.objective : '';
+      };
+      formEl.querySelectorAll('.lp-p').forEach(el => el.addEventListener('input', repaintPreview));
+      repaintPreview();
+
+      /* DETECT THE CHECK COMMAND. Defaulting every project to `npm test` is wrong the moment someone points a
+         loop at a python or rust repo — and wrong on their first try, on the hero template. Ask the station
+         what this folder actually uses, and say WHY, so the suggestion is auditable rather than magic. */
+      const dirEl2 = formEl.querySelector('#lp-dir');
+      const checkEl = formEl.querySelector('.lp-p[data-key="check"]');
+      const detect = async () => {
+        if (!dirEl2 || !checkEl) return;
+        const val = (dirEl2.value || '').trim();
+        if (!val) return;
+        try {
+          const r = await (await post('/api/loops/detect', { path: val })).json();
+          if (r && r.ok && r.cmd) {
+            checkEl.value = r.cmd;
+            msgEl.innerHTML = '<span class="dim">check command: <b>' + esc(r.cmd) + '</b> — ' + esc(r.why) + '</span>';
+          } else if (r && r.ok) {
+            msgEl.innerHTML = '<span class="dim">' + esc(r.why || 'type the command you run yourself') + '</span>';
+          }
+        } catch (_) { /* detection is a convenience; never block the form on it */ }
+      };
+      if (dirEl2) dirEl2.addEventListener('change', detect);
     }
 
     async function createLoop() {

@@ -334,7 +334,13 @@
                 .catch(e => ({ ran: true, passed: false, trusted: false, mustReview: true, tampered: false, tamperedPaths: [], gitProven: false, summary: '', note: 'the check could not be run — ' + ((e && e.message) || e) }))
               : Promise.resolve(null);
             return checkP.then(verdict => Promise.resolve().then(() => harvest(fresh, withText, iterN)).then(
-              (h) => settle(loop.id, runId, Object.assign({ status: 'ok', check: verdict }, h || {})),
+              (h) => settle(loop.id, runId, Object.assign(
+                { status: 'ok', check: verdict },
+                h || {},
+                // the review card needs to show WHAT CHANGED. A harvest that proved its own file list wins;
+                // otherwise fall back to what the check observed this pass.
+                (h && h.files && h.files.length) ? {} : { files: (verdict && verdict.changedFiles) || [] }
+              )),
               // a harvest failure (e.g. git refused the commit) is a REAL iteration failure, not a silent
               // success: the work did not land, so the loop must not park a candidate the Commander cannot act on.
               (e) => settle(loop.id, runId, { status: 'error', error: 'harvest: ' + ((e && e.message) || 'failed') })

@@ -4094,6 +4094,29 @@ function loopPrecheck(loop) {
    pass can be BELIEVED lives in the pure loopcheck.js. ---- */
 const LOOP_CHECK_MAX_BYTES = 64000;
 
+/* detectCheckCommand — what "run this project's tests" actually MEANS for this folder. Without it every
+   project is offered `npm test`, which is wrong the moment someone points a loop at a python or rust repo —
+   and it is wrong on their very first try, on the hero template. Reads real files only; never guesses a
+   command for a toolchain whose manifest is not present. */
+function detectCheckCommand(root) {
+  const has = (f) => { try { return fs.existsSync(path.join(root, f)); } catch (_) { return false; } };
+  try {
+    if (has('package.json')) {
+      let scripts = {};
+      try { scripts = (JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) || {}).scripts || {}; } catch (_) {}
+      if (scripts.test) return { cmd: 'npm test', why: 'package.json defines a "test" script' };
+      if (scripts.check) return { cmd: 'npm run check', why: 'package.json defines a "check" script' };
+      return { cmd: 'npm test', why: 'this is an npm project (no "test" script found — check it runs)' };
+    }
+    if (has('pyproject.toml') || has('pytest.ini') || has('tox.ini') || has('conftest.py')) return { cmd: 'pytest', why: 'a pytest layout was found' };
+    if (has('Cargo.toml')) return { cmd: 'cargo test', why: 'Cargo.toml was found' };
+    if (has('go.mod')) return { cmd: 'go test ./...', why: 'go.mod was found' };
+    if (has('Makefile') || has('makefile')) return { cmd: 'make test', why: 'a Makefile was found' };
+    if (has('Gemfile')) return { cmd: 'bundle exec rspec', why: 'a Gemfile was found' };
+  } catch (_) {}
+  return { cmd: '', why: 'no familiar test setup here — type the command you run yourself' };
+}
+
 /* loopProjectFiles — a bounded, absolute-path listing of what is actually in the project. Deliberately NOT
    projectScan's job: that answers "what changed lately", this answers "what IS there", and a loop pointed at
    a clean repo needs the second one to orient at all. Skips the usual noise, caps breadth and depth so a huge
@@ -4133,7 +4156,20 @@ async function loopChangedFiles(root) {
    `before` is the pre-iteration changed-file snapshot, so the paths attributed to THIS iteration are the ones
    that appeared during it — not every uncommitted edit left by earlier iterations. */
 async function runLoopCheck(loop, before) {
-  if (!loop || !loop.checkCmd || !loop.workdir) return loopcheck.verdict({ result: null });
+  if (!loop || !loop.workdir) return loopcheck.verdict({ result: null });
+  /* NO CHECK COMMAND still means we can say WHAT CHANGED. A sweep or research loop runs no check, but its
+     candidates are just as unreviewable without a file list — "Deliverable = OPEN, not read" applies to every
+     shape, not only the one with a test suite. So compute the changed files and return a verdict that ran
+     nothing (ran:false keeps it out of the check state machine) but still carries them. */
+  if (!loop.checkCmd) {
+    const v0 = loopcheck.verdict({ result: null });
+    try {
+      const after = await loopChangedFiles(loop.workdir);
+      const beforeSet0 = new Set((before && before.files) || []);
+      v0.changedFiles = after.files.filter(f => !beforeSet0.has(f)).slice(0, 40);
+    } catch (_) { v0.changedFiles = []; }
+    return v0;
+  }
   // RE-CHECK THE BLESSING EVERY ITERATION. A root blessed yesterday may have been revoked since, and a loop
   // grinding unattended is exactly the case where a stale grant would go unnoticed.
   if (!isBlessedRoot(loop.workdir)) {
@@ -4169,6 +4205,9 @@ async function runLoopCheck(loop, before) {
     gitProven: after.gitProven,
     extraPaths: loop.checkPaths
   });
+  // the files this pass actually touched, so the review card can show WHAT CHANGED rather than only the
+  // agent's prose about it. "Deliverable = OPEN, not read" — you cannot judge work you cannot see.
+  v.changedFiles = introduced.slice(0, 40);
   if (v.tampered) {
     const fresh = v.tamperedPaths.filter(p => introduced.indexOf(p) >= 0);
     v.note = v.note + (fresh.length
@@ -4247,7 +4286,7 @@ const loopDriver = makeLoopDriver({
       return { text: lines.join('\n'), reachable: true };
     } catch (e) { return { text: '', reachable: false, why: 'project scan failed: ' + ((e && e.message) || e) }; }
   },
-  snapshot: (loop) => (loop && loop.workdir && loop.checkCmd) ? loopChangedFiles(loop.workdir) : Promise.resolve(null),
+  snapshot: (loop) => (loop && loop.workdir) ? loopChangedFiles(loop.workdir) : Promise.resolve(null),
   check: (loop, ctx) => runLoopCheck(loop, ctx && ctx.before),
   ledger: (entry) => { try { autonomyLedger.record(entry); } catch (_) {} },
   // VISIBILITY: forward each iteration's run events to the floor through the SAME redacted egress the routed
@@ -4455,6 +4494,21 @@ function handleLoopsControl(req, res) {
     }
     armLoops(true);
     json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: now }) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/loops/detect — what check command suits this folder? body: { path } -> { cmd, why, files }
+// Read-only and path-guarded: it only ever reports on a folder that exists; it never blesses or runs anything.
+function handleLoopsDetect(req, res) {
+  const json = loopJson(res);
+  readBody(req, 4096).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const root = body.path != null ? path.resolve(String(body.path)) : '';
+    if (!root) return json(400, { error: 'a folder is required' });
+    try { if (!fs.statSync(root).isDirectory()) return json(400, { error: 'not a folder: ' + root }); }
+    catch (e) { return json(400, { error: 'that folder does not exist: ' + root }); }
+    const d = detectCheckCommand(root);
+    json(200, { ok: true, root: root, cmd: d.cmd, why: d.why, files: loopProjectFiles(root, 12).length });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
 
@@ -5500,6 +5554,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/loops/verdict', h: handleLoopsVerdict },
   { m: 'POST', exact: '/api/loops/control', h: handleLoopsControl },
   { m: 'POST', exact: '/api/loops/remove', h: handleLoopsRemove },
+  { m: 'POST', exact: '/api/loops/detect', h: handleLoopsDetect },
   // ---- away workshop (W1/W2): grant toggle, backlog queue, pending deliverables, decide, force-fire a shift ----
   { m: 'POST', exact: '/api/workshop/grant', h: handleWorkshopGrant },
   { m: 'POST', exact: '/api/workshop/queue', h: handleWorkshopQueue },
