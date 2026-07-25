@@ -507,6 +507,17 @@
               const tree = await cdp.send('Page.getFrameTree');
               mainFrameId = (tree && tree.frameTree && tree.frameTree.frame && tree.frameTree.frame.id) || null;
             } catch (_) { mainFrameId = null; }
+            /* DOWNLOADS INTO THE JAIL. The Chrome profile lives in OS.tmpdir(), outside WORKSPACES, so
+               anything the agent downloaded landed where it could not read it back — the bytes were
+               unreachable even by accident. Point Chrome at the agent's own downloads/ directory.
+               Browser.setDownloadBehavior is browser-scoped and not always accepted on a page
+               connection; Page.setDownloadBehavior is the deprecated page-scoped equivalent. Try both. */
+            if (deps.downloadDir) {
+              try { FS.mkdirSync(deps.downloadDir, { recursive: true }); } catch (_) {}
+              const behavior = { behavior: 'allow', downloadPath: deps.downloadDir };
+              try { await cdp.send('Browser.setDownloadBehavior', Object.assign({ eventsEnabled: true }, behavior)); }
+              catch (_) { try { await cdp.send('Page.setDownloadBehavior', behavior); } catch (_) {} }
+            }
             cdp.on('Network.requestWillBeSent', p => { if (p && p.requestId) inflight.add(p.requestId); });
             cdp.on('Network.loadingFinished', p => { if (p && p.requestId) inflight.delete(p.requestId); });
             cdp.on('Network.responseReceived', p => {
@@ -725,6 +736,31 @@
       await waitForSettle(await connect(), { budgetMs: settleNavBudgetMs, fallbackMs: 500 });
       return evalJS('location.href');
     }
+    /* FILE UPLOAD. Without DOM.setFileInputFiles any form with an attachment step is a dead end.
+       The ref usually points at a styled LABEL, because real file inputs are routinely hidden — so
+       resolve from the click point to the actual <input type=file> (self, the label's control, or the
+       nearest one in the same container) and hand CDP that element's objectId. Paths are resolved and
+       jail-checked by the caller; this only ever sees absolute paths. */
+    async function upload(node, absPaths) {
+      const c = await connect();
+      await c.send('DOM.enable');
+      const p = center(node);
+      const r = await c.send('Runtime.evaluate', { expression: `(() => {
+        const el = document.elementFromPoint(${p.x}, ${p.y});
+        if (!el) return null;
+        if (el.tagName === 'INPUT' && el.type === 'file') return el;
+        if (el.control && el.control.tagName === 'INPUT' && el.control.type === 'file') return el.control;
+        const lbl = el.closest && el.closest('label');
+        if (lbl && lbl.control && lbl.control.type === 'file') return lbl.control;
+        const scope = (el.closest && el.closest('form,fieldset,section,div')) || document;
+        return scope.querySelector('input[type=file]');
+      })()` });
+      const objectId = r && r.result && r.result.objectId;
+      if (!objectId) throw new Error('no file input found at this ref — snapshot the page and pick the upload control');
+      await c.send('DOM.setFileInputFiles', { files: absPaths, objectId });
+      await waitForSettle(c, { budgetMs: settleActionBudgetMs });
+      return absPaths.length + ' file(s) attached';
+    }
     async function testInput(action) {
       const a = Object.assign({}, action || {});
       const c = await connect();
@@ -831,7 +867,7 @@
     // actually on the user's screen. Headless mode, or a headless-only binary fallback in
     // a headed request, both read as not visible.
     function visible() { return headed; }
-    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
+    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
   }
 
   function makeBrowserSession(deps) {
@@ -957,6 +993,7 @@
       return out;
     }
     async function forward() { const d = ensureDriver(); version++; return driverFn(d, 'forward')(); }
+    async function upload(ref, absPaths) { const d = ensureDriver(); return driverFn(d, 'upload')(requireRef(ref), absPaths); }
     async function requireLocalDriver() {
       if (!localMode) throw new Error('browser.test_input requires browser.test_navigate to a loopback URL first');
       const d = ensureDriver(false);
@@ -1074,7 +1111,7 @@
       const d = driver || null;
       return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
     }
-    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
+    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
   }
 
   function makeBrowserTools(deps) {
@@ -1186,6 +1223,22 @@
         async a => ({ content: 'Viewport is now ' + await session.viewport(a.width, a.height, { mobile: a.mobile === true, scale: a.scale }) + ' — take a fresh browser.snapshot.', summary: 'viewport' }), false),
       exec('browser.forward', 'Go forward in browser history (the counterpart of browser.back).', { type: 'object', properties: {} },
         async () => ({ content: 'Browser moved forward to ' + await session.forward(), summary: 'forward' }), false),
+      exec('browser.upload', 'Attach files from your workspace to a file-upload control on the page. "ref" is the upload control (or its visible label) from the latest browser.snapshot; "paths" are workspace-relative files. Submitting the form is a separate click.', { type: 'object', required: ['ref', 'paths'], properties: { ref: { type: 'string' }, paths: { type: 'array', items: { type: 'string' } } } },
+        async (a, ctx) => {
+          if (!canSaveShots) throw new Error('browser.upload needs a workspace; this run has none');
+          const aid = (ctx && ctx.agentId) || 'agent';
+          const rels = Array.isArray(a.paths) ? a.paths : [a.paths];
+          if (!rels.length) throw new Error('browser.upload needs at least one path');
+          // Resolve through the SAME jail as fs.* — an upload must never be able to post a file from
+          // outside the agent's workspace (resolveInside throws on '..', absolute paths, escapes).
+          const abs = [];
+          for (const rel of rels) {
+            const r = await shotJail.resolveInside(aid, String(rel));
+            await shotFsp.stat(r.abs);   // fail loudly here, not silently inside the page
+            abs.push(r.abs);
+          }
+          return { content: await session.upload(a.ref, abs) + ': ' + rels.join(', ') + '. Submit the form when ready.', summary: 'uploaded ' + abs.length };
+        }),
       exec('browser.back', 'Go back in browser history.', { type: 'object', properties: {} },
         async () => ({ content: 'Browser went back to ' + await session.back(), summary: 'back' }), false),
       exec('browser.press', 'Press a keyboard key in the browser.', { type: 'object', required: ['key'], properties: { key: { type: 'string' } } },

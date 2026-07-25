@@ -74,7 +74,7 @@ function fakeDriver() {
     'browser.forward', 'browser.get_text', 'browser.hover', 'browser.login', 'browser.navigate',
     'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot',
     'browser.test_input', 'browser.test_navigate', 'browser.test_snapshot', 'browser.test_state',
-    'browser.type', 'browser.viewport', 'browser.vision'
+    'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision'
   ], 'browser action surface is complete');
   A.eq(B.tools.find(t => t.name === 'browser.click').requiresConsent, true, 'click is consent-gated');
   A.eq(B.tools.find(t => t.name === 'browser.snapshot').requiresConsent, false, 'snapshot is read-only');
@@ -479,6 +479,37 @@ function fakeDriver() {
     // A driver that predates these says so plainly rather than throwing a raw TypeError.
     const old = fakeDriver(); delete old.hover;
     await rejects(makeBrowserTools({ driver: old }).session.hover('b1'), /unknown browser ref|unavailable in this driver/, 'a driver without hover reports it honestly');
+  }
+
+  // ---- FILE UPLOAD, JAIL-CHECKED --------------------------------------------------------------
+  // Without DOM.setFileInputFiles any form with an attachment step was a dead end. The path an
+  // upload posts must come through the SAME jail as fs.* - an upload is an exfiltration primitive
+  // if it can reach outside the agent's workspace.
+  {
+    const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-upload-'));
+    try {
+      const fsp = require('node:fs/promises');
+      fs.mkdirSync(path.join(ws, 'ag'), { recursive: true });
+      fs.writeFileSync(path.join(ws, 'ag', 'resume.pdf'), 'PDF');
+      fs.writeFileSync(path.join(ws, 'secret.txt'), 'not yours');   // OUTSIDE the agent's folder
+
+      const d = fakeDriver();
+      d.upload = async (node, abs) => { d.log.uploaded = [node.text, abs]; return abs.length + ' file(s) attached'; };
+      const U = makeBrowserTools({ driver: d, fsp, pathMod: path, root: ws });
+      const snap = await U.session.snapshot();
+      const ref = snap[0].ref;
+      const up = U.tools.find(t => t.name === 'browser.upload');
+
+      const ok = await up.run({ ref, paths: ['resume.pdf'] }, { agentId: 'ag' });
+      A.eq(d.log.uploaded[1], [path.join(ws, 'ag', 'resume.pdf')], 'the driver receives an ABSOLUTE path inside the agent workspace');
+      A.ok(/Submit the form when ready/.test(ok.content), 'the agent is told attaching is not submitting');
+
+      await rejects(up.run({ ref, paths: ['../secret.txt'] }, { agentId: 'ag' }), /illegal path|escapes workspace/i, 'a path escaping the workspace is refused');
+      await rejects(up.run({ ref, paths: [path.join(ws, 'secret.txt')] }, { agentId: 'ag' }), /illegal path/i, 'an absolute path outside the jail is refused');
+      await rejects(up.run({ ref, paths: ['nope.txt'] }, { agentId: 'ag' }), /ENOENT|not found/i, 'a missing file fails loudly here, not silently inside the page');
+      A.eq(d.log.uploaded[1], [path.join(ws, 'ag', 'resume.pdf')], 'no refused upload ever reached the driver');
+      A.eq(up.requiresConsent, true, 'upload is consent-gated');
+    } finally { fs.rmSync(ws, { recursive: true, force: true }); }
   }
 
   // AGENT INPUT NEVER BECOMES PAGE CODE: browser.select embeds the requested value as a string

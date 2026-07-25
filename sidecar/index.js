@@ -8416,6 +8416,9 @@ async function runOnce(o) {
     // The workspace jail, so browser.screenshot can SAVE a frame and emit it as a deliverable
     // instead of capturing bytes and dropping them. Same jail image_generate writes through.
     fsp, pathMod: path, root: WORKSPACES,
+    // Chrome's profile lives in OS.tmpdir(), OUTSIDE the workspace jail, so anything the agent
+    // downloaded landed somewhere it could never read back. Point downloads at its own folder.
+    downloadDir: /^[A-Za-z0-9_-]{1,40}$/.test(String(agentId || '')) ? path.join(WORKSPACES, String(agentId), 'downloads') : null,
     // Host authority, not model args: every normal run is headless and all page input locks
     // are emulated before navigation. The browser.test_* workbench tools are the sanctioned
     // localhost/game path and dispatch only CDP/page events.
