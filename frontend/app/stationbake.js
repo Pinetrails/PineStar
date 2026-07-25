@@ -43,9 +43,11 @@ const StationBake = (() => {
     wallPalCache.set(z, p);
     return p;
   }
+  // FALLBACK ONLY, like MAT_BY_KIND below: projected geometry always carries wallMatOf, so this
+  // default is not what you see in game. WorldModel.wallMatOfRoom is the authority — change both.
   const wallMatOf = z => {
     const m = G && G.wallMatOf ? G.wallMatOf(z) : null;
-    return WALL_RECIPES[m] ? m : 'plating';
+    return WALL_RECIPES[m] ? m : 'bulkhead';
   };
 
   /* live-tunable WALL HEIGHT — same contract as LIGHT below: the CRT LAB writes these and
@@ -973,70 +975,29 @@ const StationBake = (() => {
     }
   }
 
-  /* A1 · BULKHEAD — pilaster every 3 tiles, and the bay between them is a properly FRAMED recess:
-     all four edges, dark on top and left where light cannot reach, catch-lit along the bottom and
-     right. The first cut only had a top and bottom line and no grain discipline, so the bay read as
-     an empty dark field with a stripe through it; the frame is what makes it read as a panel set
-     INTO the wall rather than paint on a flat plane. */
+  /* BULKHEAD — the base wall since 2026-07-25, replacing `plating`. A slim pilaster every 2 tiles
+     and NOTHING between them: the bay is left flush, the rail runs unbroken, and the rhythm of the
+     columns alone carries the wall.
+
+     Three versions were built and Andrew picked this one. The other two put work INTO the bay — a
+     framed recess in one, two riveted courses in the other — and both lost to the empty bay. That
+     is the lesson worth keeping: on a face only 23px tall with a bright crown above it and a
+     shadowed foot below, the wall has room for ONE idea. Adding a second thing between the columns
+     competes with the columns instead of supporting them. If you are tempted to dress this bay,
+     render a whole room first and compare it against this. */
   function wallBulkhead(b, pal, X, topY, h, e, n, room, footY) {
     const wd = wallDet();
     const px = (a, c, w, ht, col) => { b.fillStyle = col; b.fillRect(a, c, w, ht); };
-    const bay = Math.floor(e.x / 3), tx = ((e.x % 3) + 3) % 3;      // tx 0 = the pilaster tile
-    const body = U.shade(pal.face, ((h2(bay, e.y, 'bhd') % 5) - 2) * 0.016 * wd);
-    const sh = d => U.shade(body, d * wd);
-    px(X, topY, T, h, body);
-    wallFoot(b, body, X, footY, wd);                                                  // seated first, marks over it
-    const pt = topY + 3, pb = footY - 7;
-    px(X, pt, T, pb - pt, sh(-0.085));                                                // the recessed field
-    px(X, pt, T, 1, sh(-0.30));                                                       // frame: shadowed head
-    px(X, pb - 1, T, 1, sh(0.12));                                                    // frame: catch-lit sill
-    if (tx === 1) px(X, pt, 1, pb - pt, sh(-0.22));                                   // frame: shadowed left jamb
-    if (tx === 0) px(X - 1, pt, 1, pb - pt, sh(0.08));                                // frame: lit right jamb
-    const rail = topY + Math.round(h * 0.58);                                          // rail, segmented at the bay
-    const rx = tx === 0 ? X + 5 : X, rw = tx === 0 ? T - 5 : T;
-    px(rx, rail, rw, 2, sh(-0.24));
-    px(rx, rail, rw, 1, sh(0.13));
-    if (tx === 0) wallPilaster(b, sh, X, topY, footY, 5, true);
-  }
-
-  /* A2 · BULKHEAD TIGHT — the same idea at twice the frequency: a slimmer pilaster every 2 tiles,
-     the bay left FLUSH (no recess, no frame) and the rail run unbroken. Denser vertical rhythm and
-     much quieter between the columns — the bet is that the rhythm alone carries the wall and the
-     recess was doing too much. */
-  function wallBulkheadTight(b, pal, X, topY, h, e, n, room, footY) {
-    const wd = wallDet();
-    const px = (a, c, w, ht, col) => { b.fillStyle = col; b.fillRect(a, c, w, ht); };
-    const bay = Math.floor(e.x / 2), tx = ((e.x % 2) + 2) % 2;
+    const bay = Math.floor(e.x / 2), tx = ((e.x % 2) + 2) % 2;      // tx 0 = the pilaster tile
     const body = U.shade(pal.face, ((h2(bay, e.y, 'bht') % 5) - 2) * 0.014 * wd);
     const sh = d => U.shade(body, d * wd);
     px(X, topY, T, h, body);
-    wallFoot(b, body, X, footY, wd);
+    wallFoot(b, body, X, footY, wd);                                                  // seated first, marks over it
     px(X, topY + 2, T, 1, sh(0.07));                                                  // a single lit line under the crown
     const rail = topY + Math.round(h * 0.62);
     px(X, rail, T, 2, sh(-0.22));
     px(X, rail, T, 1, sh(0.11));
     if (tx === 0) wallPilaster(b, sh, X, topY, footY, 3, false);
-  }
-
-  /* A3 · COURSED BAY — the pilaster rhythm of A1 with the bay split into two stacked courses, each
-     with its own lit lip. Marries BULKHEAD's vertical structure to COURSES' horizontal read, so the
-     bay is never one empty field but the wall still has columns. The busiest of the three. */
-  function wallBulkheadCoursed(b, pal, X, topY, h, e, n, room, footY) {
-    const wd = wallDet();
-    const px = (a, c, w, ht, col) => { b.fillStyle = col; b.fillRect(a, c, w, ht); };
-    const bay = Math.floor(e.x / 3), tx = ((e.x % 3) + 3) % 3;
-    const body = U.shade(pal.face, ((h2(bay, e.y, 'bhc') % 5) - 2) * 0.016 * wd);
-    const sh = d => U.shade(body, d * wd);
-    px(X, topY, T, h, body);
-    wallFoot(b, body, X, footY, wd);
-    const pt = topY + 3, pb = footY - 6, mid = pt + Math.round((pb - pt) * 0.48);
-    [[pt, mid], [mid, pb]].forEach(([y0, y1], ci) => {
-      px(X, y0, T, y1 - y0, sh(-0.06 - ci * 0.045));                                  // lower course sits darker
-      px(X, y0, T, 1, sh(0.13));                                                      // lit course lip
-      px(X, y1 - 1, T, 1, sh(-0.26));                                                 // shadowed underside
-      for (let rx = 5; rx < T; rx += 9) px(X + rx, y0 + 2, 1, 1, sh(0.14));           // fixings on the lip
-    });
-    if (tx === 0) wallPilaster(b, sh, X, topY, footY, 5, true);
   }
 
   /* B · COURSES — riveted hull plating, all horizontal: three stacked courses, each with a lit top
@@ -1101,8 +1062,7 @@ const StationBake = (() => {
   const WALL_RECIPES = {
     plating: wallPlating, ribbed: wallRibbed, panelled: wallPanelled,
     viewport: wallViewport, pipework: wallPipework, wainscot: wallWainscot, hedge: wallHedge,
-    bulkhead: wallBulkhead, courses: wallCourses, service: wallService,
-    bulkheadtight: wallBulkheadTight, bulkheadcoursed: wallBulkheadCoursed
+    bulkhead: wallBulkhead, courses: wallCourses, service: wallService
   };
 
   function bakeWalls(b) {

@@ -161,6 +161,11 @@ const WorldModel = (() => {
      leaves those pixels transparent so the live drifting starfield behind the station shows
      through. Baked stars would be a lie; the real sky is already back there. */
   const WALL_MATERIALS = {
+    // base-wall candidates — see the note above wallBulkhead in stationbake.js
+    // the base wall since 2026-07-25 — see the note above wallBulkhead in stationbake.js
+    bulkhead: { label: 'BULKHEAD', suggest: null },
+    courses:  { label: 'COURSES',  suggest: null },
+    service:  { label: 'SERVICE',  suggest: null },
     plating:  { label: 'PLATING',  suggest: null },
     ribbed:   { label: 'RIBBED',   suggest: null },
     panelled: { label: 'PANEL',    suggest: null },
@@ -169,7 +174,7 @@ const WorldModel = (() => {
     wainscot: { label: 'WAINSCOT', suggest: 'walnut' },
     hedge:    { label: 'HEDGE',    suggest: 'fern' },
   };
-  const WALL_ORDER = ['plating', 'ribbed', 'panelled', 'viewport', 'pipework', 'wainscot', 'hedge'];
+  const WALL_ORDER = ['bulkhead', 'courses', 'service', 'plating', 'ribbed', 'panelled', 'viewport', 'pipework', 'wainscot', 'hedge'];
 
   /* room categories — a capability-zone label + a default floor (hue + material). kind drives
      nothing behavioural yet (capability mapping is a later pass); it tags the zone + seeds the
@@ -200,7 +205,11 @@ const WorldModel = (() => {
     : ((rm && ROOM_KINDS[rm.kind] && ROOM_KINDS[rm.kind].mat) || 'plate');
   // walls: material defaults to plating; hue defaults to FOLLOWING THE FLOOR, so every room's
   // walls harmonize with its deck without the Commander having to pick twice.
-  const wallMatOfRoom = rm => (rm && WALL_MATERIALS[rm.wallMat]) ? rm.wallMat : 'plating';
+  /* THE AUTHORITY on a room's default wall material (stationbake's `wallMatOf` fallback is only for
+     geometry arriving without one). 2026-07-25: moved off `plating` onto `bulkhead` — every room
+     carries wallMat null, so this reaches stations already built, deliberately, for the same reason
+     the deck default moved. `plating` stays in the palette as the classic. */
+  const wallMatOfRoom = rm => (rm && WALL_MATERIALS[rm.wallMat]) ? rm.wallMat : 'bulkhead';
   const wallStyleOfRoom = rm => {
     if (rm && FLOOR_STYLES[rm.wallStyle]) return rm.wallStyle;
     if (rm && FLOOR_STYLES[rm.floorStyle]) return rm.floorStyle;
