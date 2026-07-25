@@ -424,7 +424,7 @@ const World = (() => {
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
         if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'place' || agent.goal === 'rounds' || agent.goal === 'post' || agent.goal === 'sleep' || agent.goal === 'mourn' || agent.goal === 'revisit' || agent.goal === 'firstwake') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.quirkKind = null; agent.placeTarget = null; agent.removeId = null; agent.roundsQueue = null; agent.wakePhase = 0; agent.glanceCd = 0; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation/quirk/placement/rounds/board-survey/sleep/grief/wake-ritual, re-decide next idle tick (firstWakeDone stays latched, so the ritual never re-arms)
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
-        if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = deskFace || 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
+        if (agent.working && seat) { const f = seatFoot(seat); agent.px = f.x; agent.py = f.y; agent.dir = deskFace || 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
       }
     }
@@ -478,7 +478,7 @@ const World = (() => {
     //    Uses the SAME desk+seat resolver as crew (deskPropFor/deskSeat) so the hero & crew seat identically.
     const home = agent && deskPropFor(agent.id), hs = home && deskSeat(home);
     if (home && hs) {
-      desk = { tx: home.x, ty: home.y, w: home.w || 1, h: home.h || 1 }; seat = { tx: hs.tx, ty: hs.ty };
+      desk = { tx: home.x, ty: home.y, w: home.w || 1, h: home.h || 1 }; seat = { tx: hs.tx, ty: hs.ty, cx: hs.cx };
       deskPropId = home.id; deskFace = hs.face;
       for (let dx = 0; dx < (desk.w || 1); dx++) for (let dy = 0; dy < (desk.h || 1); dy++) blocked.add((desk.tx + dx) + ',' + (desk.ty + dy));
       return;   // the placed prop + its chair are drawn by the render loop (skip the synthetic desk/chair)
@@ -490,7 +490,7 @@ const World = (() => {
     if (dtx + 1 > z.x2) dtx = Math.max(z.x1, z.x2 - 1);
     const dty = Math.min(z.y1 + 1, z.y2 - 1);
     desk = { tx: dtx, ty: dty, w: 2, h: 1 };
-    seat = { tx: dtx, ty: Math.min(dty + 1, z.y2) };
+    seat = { tx: dtx, ty: Math.min(dty + 1, z.y2), cx: dtx + 0.5 };   // 2-wide desk -> centre sits on the tile seam
     blocked.add(dtx + ',' + dty); blocked.add((dtx + 1) + ',' + dty);
   }
   // walk the hero to its work seat (or snap onto it if unreachable) + enter the 'work' goal — the shared "now sit
@@ -498,7 +498,7 @@ const World = (() => {
   function goToSeat() {
     agent.goal = 'work';
     if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) {
-      if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = deskFace || 'north'; }   // face the assigned desk (deskFace) when teleport-fallback seating
+      if (seat) { const f = seatFoot(seat); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = deskFace || 'north'; }   // face the assigned desk (deskFace) when teleport-fallback seating
     }
   }
   // G4 feature 1: resolve WHERE the permission-blocked hero waits, honestly from the live floor. Reuses the
@@ -1325,7 +1325,7 @@ const World = (() => {
      desk pose, generalised to crew: foot on the front tile, dir north, sitting (the chair sprite y-sorts behind
      so it reads as sitting IN the chair). Returns once seated; until then it advances along a path to the seat. */
   function stepCrewToSeat(b, s, dt, now) {
-    const foot = footOf(s.tx, s.ty);
+    const foot = seatFoot(s);
     if (Math.hypot(foot.x - b.px, foot.y - b.py) < 1.1) {   // arrived → sit at the desk
       b.px = foot.x; b.py = foot.y; b.pathPts = null; b.target = null; b.state = 'idle'; b.sitting = true; b.dir = 'north';
       return;
@@ -1505,8 +1505,21 @@ const World = (() => {
   function deskSeat(prop) {
     if (typeof PropAnchor === 'undefined' || !geo || !prop) return null;
     const a = PropAnchor.deriveAnchor(prop, geo, { approach: 'south', sit: true, extra: blocked });
-    return a ? { tx: a.tx, ty: a.ty, face: a.face } : null;
+    // `cx` = the FRACTIONAL tile x that centres a 1-tile chair on the desk. PropAnchor picks the nearest
+    // walkable WHOLE tile (pathing needs one), but an even-width desk's centre line falls on a tile
+    // boundary — a 2-wide desk seated at either tile sits 6px off-centre, which is exactly the "chair is
+    // stuck on the left" report. Only the RENDER + the final foot snap use cx; the walk target stays tx.
+    return a ? { tx: a.tx, ty: a.ty, face: a.face, cx: seatCx(prop, a.tx) } : null;
   }
+  // centre a 1-wide seat under a prop, but never drift further than one tile from the walkable anchor
+  // (a desk whose middle is walled off keeps its chair at the tile the body can actually reach).
+  function seatCx(prop, tx) {
+    const c = prop.x + ((prop.w || 1) / 2) - 0.5;
+    return Math.abs(c - tx) <= 0.5 ? c : tx;
+  }
+  // where a seated body's foot lands: the seat's centred x, its tile's y. A function declaration (not a
+  // const) because callers above this line run before it in source order.
+  function seatFoot(s) { return { x: ((s.cx == null ? s.tx : s.cx) + 0.5) * T, y: s.ty * T + T - 1 }; }
 
   /* ---------- capability-prop resolution (G0.1: which prop does a firing tool light?) ----------
      geo.props are in the bake's LOCAL frame; station.roomAt speaks WORLD tiles — geo.origin bridges them. */
@@ -3329,15 +3342,16 @@ const World = (() => {
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
         // to assigned PCs so a decorative/unmanned console keeps its existing look and the chair only ever
         // appears where an agent will actually sit (chair + sitter stay in lockstep — see stepCrewToSeat).
-        if (p.agentId && isWorkstationProp(p.t)) { const s = deskSeat(p); if (s) items.push({ y: (s.ty + 1) * T, draw: () => drawSeatChair(s.tx, s.ty) }); }
+        if (p.agentId && isWorkstationProp(p.t)) { const s = deskSeat(p); if (s) items.push({ y: (s.ty + 1) * T, draw: () => drawSeatChair(s.tx, s.ty, s.cx) }); }
       }
     }
     // one chair art everywhere: seats route through the canonical prop renderer (old F_chair = fallback)
-    function drawSeatChair(tx, ty) {
+    function drawSeatChair(tx, ty, cx) {
+      const sx = (cx == null ? tx : cx);   // fractional x centres the chair on an even-width desk
       if (typeof PropSprites !== 'undefined' && PropSprites.has('chair')) {
         PropSprites.setCtx(ctx); PropSprites.setNow(now);
-        PropSprites.draw({ t: 'chair', x: tx, y: ty, w: 1, h: 1 }, false);
-      } else F_chair(tx * T, ty * T);
+        PropSprites.draw({ t: 'chair', x: sx, y: ty, w: 1, h: 1 }, false);
+      } else F_chair(sx * T, ty * T);
     }
     if (desk && !deskPropId) items.push({ y: (desk.ty + desk.h) * T, draw: () => {   // skip the synthetic desk when a PLACED workstation prop is the hero's desk (the prop draws itself)
       // one desk art everywhere: the synthetic auto-desk routes through the canonical prop renderer,
@@ -3349,7 +3363,7 @@ const World = (() => {
         PropSprites.draw({ t: 'desk', x: desk.tx, y: desk.ty, w: desk.w, h: desk.h }, work, live);
       } else F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work, heat: live ? live.heat : 0, prog: live ? live.prog : null });
     } });
-    if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
+    if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty, seat.cx) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
     for (const b of crew) items.push({ y: (b.seated ? b.seatPy : b.py), draw: () => drawAgent(now, b) });   // the other agents, at their bays (seated → sort by the cushion pos like the hero's rposY, so a couch-lounging crew body tucks just behind the back-facing couch panel, head over the cap)
     items.sort((a, b) => a.y - b.y);

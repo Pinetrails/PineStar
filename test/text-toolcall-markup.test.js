@@ -117,4 +117,7 @@ const MARKUP = '<tool_call>{"name":"fs_read","arguments":{"path":"secret.txt"}}<
   }
 
   console.log('text-toolcall-markup.test: OK');
+  // report() settles the assertion counter — the .catch below only fires on a THROWN error, so
+  // without this a failed assertion still exits 0 and the gate scores it green.
+  A.report('text-toolcall-markup.test');
 })().catch(e => { console.error(e); process.exit(1); });

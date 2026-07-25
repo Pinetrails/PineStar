@@ -107,4 +107,7 @@ const run = (provider, extra) => runAgentLoop(Object.assign({
   }
 
   console.log('continuation-guard.test: OK');
+  // report() settles the assertion counter. The .catch below only fires on a THROWN error, so
+  // without this every one of the assertions above could fail and the file would still exit 0.
+  A.report('continuation-guard.test');
 })().catch(e => { console.error(e); process.exit(1); });
