@@ -296,10 +296,494 @@ const SpaceBG = (() => {
     },
   };
 
+  /* ---------------------------------------------------------- BACKDROP: DEEP FIELD ---- */
+  /* Space, but somewhere with things in it. This is where the galaxy and the ringed world from
+     2026-07-14 (35b3358e) live now — they were reverted out of THE VOID by request, and the
+     answer was never "delete the art", it was "stop decorating the default".
+
+     Unlike THE VOID this one DOES parallax, very slightly. A body at a knowable distance is the
+     one thing in space that can betray a static backdrop, so the layers separate a little under
+     a pan: nebulas barely, the bodies a touch more. Depths stay tiny on purpose — space that
+     slides like a cloud deck reads as cardboard scenery. */
+
+  const DEEP_BG = {
+    label: 'DEEP FIELD',
+    blurb: 'Crowded space. Worlds, rings, and a galaxy edge-on.',
+    base: '#040308',
+    D: { neb: 0.015, dust: 0.035, body: 0.055, star: 0.02 },
+
+    build(w, h, rnd) {
+      const area = w * h;
+      const u = px1();
+
+      /* ---- nebulas: same recipe as THE VOID but authored toroidally (this one pans in y) ---- */
+      const nebCv = mkCv(w, h), nc = nebCv.getContext('2d');
+      nc.globalCompositeOperation = 'lighter';
+      for (let b = 0, blobs = area > 2.2e6 ? 5 : 4; b < blobs; b++) {
+        const cx = rnd() * w, cy = rnd() * h;
+        const R = (0.18 + 0.22 * rnd()) * Math.min(w, h);
+        const hue = NEB_HUES[Math.floor(rnd() * NEB_HUES.length) % NEB_HUES.length];
+        const acc = NEB_HUES[Math.floor(rnd() * NEB_HUES.length) % NEB_HUES.length];
+        for (let p = 0; p < 7; p++) {
+          puff9(nc, w, h, cx + (rnd() - 0.5) * R * 1.3, cy + (rnd() - 0.5) * R * 0.9,
+            R * (0.35 + 0.45 * rnd()), p < 5 ? hue : acc, 0.06 + 0.05 * rnd());
+        }
+        puff9(nc, w, h, cx, cy, R * 0.30, hue, 0.16);
+      }
+
+      /* THE GALAXY — one distant inclined spiral: disk haze + two log-spiral arms + a warm core.
+         Kept clear of the tile edges so it never straddles the wrap seam. */
+      const gx = w * (0.22 + 0.56 * rnd()), gy = h * (0.18 + 0.5 * rnd());
+      const Rg = (0.11 + 0.06 * rnd()) * Math.min(w, h);
+      nc.save(); nc.translate(gx, gy); nc.rotate(rnd() * Math.PI); nc.scale(1, 0.34);
+      const dg = nc.createRadialGradient(0, 0, 0, 0, 0, Rg);
+      dg.addColorStop(0, 'rgba(210,190,255,0.10)'); dg.addColorStop(0.55, 'rgba(150,120,255,0.05)'); dg.addColorStop(1, 'rgba(150,120,255,0)');
+      nc.fillStyle = dg; nc.fillRect(-Rg, -Rg, Rg * 2, Rg * 2);
+      for (let arm = 0; arm < 2; arm++) for (let i = 0; i < 26; i++) {
+        const phi = (i / 26) * 2.4 * Math.PI, r = Rg * 0.16 * Math.exp(0.24 * phi);
+        const ax = r * Math.cos(phi + arm * Math.PI), ay = r * Math.sin(phi + arm * Math.PI);
+        const ag = nc.createRadialGradient(ax, ay, 0, ax, ay, Rg * 0.14);
+        ag.addColorStop(0, 'rgba(190,170,255,' + (0.055 * (1 - i / 26) + 0.02).toFixed(3) + ')'); ag.addColorStop(1, 'rgba(190,170,255,0)');
+        nc.fillStyle = ag; nc.fillRect(ax - Rg * 0.14, ay - Rg * 0.14, Rg * 0.28, Rg * 0.28);
+        if (i % 2) { nc.fillStyle = 'rgba(230,220,255,' + (0.35 * (1 - i / 26)).toFixed(3) + ')'; nc.fillRect(ax + (rnd() - 0.5) * Rg * 0.1, ay + (rnd() - 0.5) * Rg * 0.1, 1.5, 1.5); }
+      }
+      const cg = nc.createRadialGradient(0, 0, 0, 0, 0, Rg * 0.22);
+      cg.addColorStop(0, 'rgba(255,240,220,0.35)'); cg.addColorStop(0.4, 'rgba(255,220,190,0.12)'); cg.addColorStop(1, 'rgba(255,220,190,0)');
+      nc.fillStyle = cg; nc.fillRect(-Rg * 0.22, -Rg * 0.22, Rg * 0.44, Rg * 0.44);
+      nc.restore();
+
+      /* ---- dust: dense far field, toroidal ---- */
+      const dustCv = mkCv(w, h), dc = dustCv.getContext('2d');
+      const dustN = Math.min(9000, Math.round(area / 1000));
+      for (let i = 0; i < dustN; i++) {
+        dc.fillStyle = pickTint(rnd()) + (0.25 + 0.5 * rnd()).toFixed(3) + ')';
+        dc.fillRect(rnd() * w, rnd() * h, rnd() < 0.88 ? 1 : 2, 1);
+      }
+
+      /* ---- THE BODIES — opaque, drawn on their own layer ABOVE the dust so stars are
+              OCCLUDED rather than shining through a planet. That occlusion is most of what
+              makes a painted disc read as a solid world. ---- */
+      const bodyCv = mkCv(w, h), bc = bodyCv.getContext('2d');
+
+      /* THE WORLD — the big one. Terminator, limb darkening, atmosphere rim, and night-side
+         city lights. Placed clear of the tile edges so the wrap never bisects it. */
+      const R = (0.11 + 0.05 * rnd()) * Math.min(w, h);
+      const px0 = w * (0.20 + 0.60 * rnd()), py0 = h * (0.18 + 0.55 * rnd());
+      const lightAng = rnd() * Math.PI * 2;                    // where its sun is (never drawn — law 3)
+      const lx = Math.cos(lightAng), ly = Math.sin(lightAng);
+      const surface = rnd() < 0.5 ? 'banded' : 'rocky';
+
+      bc.save();
+      bc.beginPath(); bc.arc(px0, py0, R, 0, Math.PI * 2); bc.clip();   // everything below stays on the disc
+      const base = surface === 'banded' ? [188, 152, 108] : [96, 118, 138];
+      bc.fillStyle = rgba(base, 1); bc.fillRect(px0 - R, py0 - R, R * 2, R * 2);
+      if (surface === 'banded') {
+        for (let i = 0, n = 9 + Math.floor(rnd() * 7); i < n; i++) {   // gas bands, jittered widths
+          const yy = py0 - R + (i / n) * R * 2, th = (R * 2 / n) * (0.5 + rnd());
+          const sh = 0.72 + 0.5 * rnd();
+          bc.fillStyle = 'rgba(' + Math.round(base[0] * sh) + ',' + Math.round(base[1] * sh) + ',' + Math.round(base[2] * sh) + ',0.55)';
+          bc.fillRect(px0 - R, yy, R * 2, th);
+        }
+      } else {
+        for (let i = 0, n = 7 + Math.floor(rnd() * 6); i < n; i++) {   // continents / cloud masses
+          const a = rnd() * Math.PI * 2, d = rnd() * R * 0.85;
+          const land = rnd() < 0.55;
+          puff(bc, w, px0 + Math.cos(a) * d, py0 + Math.sin(a) * d, R * (0.18 + 0.30 * rnd()),
+            land ? [72, 96, 74] : [214, 226, 238], land ? 0.55 : 0.34);
+        }
+      }
+      // TERMINATOR: night falls off from the anti-solar side. Offsetting the gradient centre
+      // toward the light is what curves the shadow around a sphere instead of cutting it flat.
+      const tg = bc.createRadialGradient(px0 + lx * R * 0.75, py0 + ly * R * 0.75, R * 0.15, px0 - lx * R * 0.55, py0 - ly * R * 0.55, R * 1.85);
+      tg.addColorStop(0, 'rgba(255,244,214,0.16)');
+      tg.addColorStop(0.42, 'rgba(0,0,0,0)');
+      tg.addColorStop(0.72, 'rgba(2,4,10,0.72)');
+      tg.addColorStop(1, 'rgba(1,2,6,0.97)');
+      bc.fillStyle = tg; bc.fillRect(px0 - R, py0 - R, R * 2, R * 2);
+      // night-side city lights — only well past the terminator, and sparse
+      for (let i = 0, n = 40 + Math.floor(rnd() * 50); i < n; i++) {
+        const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * R * 0.95;
+        const sx = px0 + Math.cos(a) * d, sy = py0 + Math.sin(a) * d;
+        const night = -((sx - px0) * lx + (sy - py0) * ly) / R;      // 1 = deepest night
+        if (night < 0.35) continue;
+        bc.fillStyle = 'rgba(255,206,140,' + (0.14 + 0.55 * rnd() * night).toFixed(3) + ')';
+        bc.fillRect(sx, sy, 1, 1);
+      }
+      // LIMB DARKENING — the edge of a sphere always falls away from you
+      const lg = bc.createRadialGradient(px0, py0, R * 0.62, px0, py0, R);
+      lg.addColorStop(0, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(0,0,0,0.55)');
+      bc.fillStyle = lg; bc.fillRect(px0 - R, py0 - R, R * 2, R * 2);
+      bc.restore();
+
+      // ATMOSPHERE — a bright rim on the lit limb only, drawn OUTSIDE the clip so it can bloom
+      bc.save();
+      bc.lineWidth = Math.max(1.5, R * 0.055);
+      const rimA = Math.atan2(ly, lx);
+      const rimGrad = bc.createLinearGradient(px0 + lx * R, py0 + ly * R, px0 - lx * R, py0 - ly * R);
+      rimGrad.addColorStop(0, 'rgba(150,205,255,0.55)');
+      rimGrad.addColorStop(0.55, 'rgba(120,180,255,0.10)');
+      rimGrad.addColorStop(1, 'rgba(120,180,255,0)');
+      bc.strokeStyle = rimGrad;
+      bc.beginPath(); bc.arc(px0, py0, R * 1.012, rimA - 1.5, rimA + 1.5); bc.stroke();
+      bc.restore();
+
+      /* THE RINGED WORLD — small, far, and separately placed. Ring order: full ring → body over
+         it (hides the far half) → the near arc re-stroked in front. */
+      const pR = h * (0.030 + 0.018 * rnd());
+      const rx = w * (0.15 + 0.7 * rnd()), ry = h * (0.12 + 0.6 * rnd());
+      const ringTilt = -0.35, ringFlat = 0.32;
+      bc.save(); bc.translate(rx, ry); bc.rotate(ringTilt); bc.scale(1, ringFlat);
+      bc.strokeStyle = 'rgba(180,190,210,0.28)'; bc.lineWidth = Math.max(1, pR * 0.10);
+      bc.beginPath(); bc.arc(0, 0, pR * 1.75, 0, Math.PI * 2); bc.stroke();
+      bc.strokeStyle = 'rgba(180,190,210,0.13)'; bc.lineWidth = Math.max(1, pR * 0.22);
+      bc.beginPath(); bc.arc(0, 0, pR * 1.45, 0, Math.PI * 2); bc.stroke();
+      bc.restore();
+      const bg2 = bc.createRadialGradient(rx - pR * 0.45, ry - pR * 0.45, pR * 0.1, rx, ry, pR);
+      bg2.addColorStop(0, 'rgba(120,150,180,1)');      // muted slate-blue day side
+      bg2.addColorStop(0.6, 'rgba(70,90,120,1)');
+      bg2.addColorStop(1, 'rgba(14,18,28,1)');         // night limb
+      bc.beginPath(); bc.arc(rx, ry, pR, 0, Math.PI * 2); bc.fillStyle = bg2; bc.fill();
+      bc.save(); bc.translate(rx, ry); bc.rotate(ringTilt); bc.scale(1, ringFlat);
+      bc.strokeStyle = 'rgba(180,190,210,0.28)'; bc.lineWidth = Math.max(1, pR * 0.10);
+      bc.beginPath(); bc.arc(0, 0, pR * 1.75, 0, Math.PI); bc.stroke();
+      bc.restore();
+
+      /* ---- the live twinkle bands ---- */
+      const mid = [], near = [];
+      const midN = Math.min(340, Math.round(area / 11000)), nearN = Math.min(190, Math.round(area / 24000));
+      for (let i = 0; i < midN; i++) mid.push({ x: rnd(), y: rnd(), r: rnd() < 0.85 ? u : u * 2, ph: rnd() * 10, c: pickTint(rnd()) });
+      for (let i = 0; i < nearN; i++) near.push({ x: rnd(), y: rnd(), r: rnd() < 0.6 ? u : u * 2, ph: rnd() * 10, c: pickTint(rnd()), glint: rnd() < 0.08 });
+
+      return { nebCv, dustCv, bodyCv, mid, near };
+    },
+
+    draw(ctx, w, h, now, cam, st) {
+      const D = DEEP_BG.D, t = now / 1000;
+      ctx.globalAlpha = 0.9 + 0.1 * Math.sin(now / 7000);
+      tile2(ctx, st.nebCv, w, h, parX(cam, D.neb) + t * 1.2, parY(cam, D.neb));
+      ctx.globalAlpha = 0.92 + 0.08 * Math.sin(now / 4100);
+      tile2(ctx, st.dustCv, w, h, parX(cam, D.dust) + t * 3, parY(cam, D.dust));
+      ctx.globalAlpha = 1;
+      // the bodies sit above the dust: stars behind a world are occluded, not shining through
+      tile2(ctx, st.bodyCv, w, h, parX(cam, D.body) + t * 2, parY(cam, D.body));
+
+      const sx = parX(cam, D.star), sy = parY(cam, D.star);
+      for (const s of st.mid) {
+        const tw = (0.35 + 0.65 * Math.abs(Math.sin(now / (900 + s.ph * 300) + s.ph))) * 0.8;
+        ctx.fillStyle = s.c + tw.toFixed(3) + ')';
+        ctx.fillRect(((s.x * w + t * 8 + sx) % w + w) % w, ((s.y * h + sy) % h + h) % h, s.r, s.r);
+      }
+      for (const s of st.near) {
+        const tw = 0.35 + 0.65 * Math.abs(Math.sin(now / (900 + s.ph * 300) + s.ph));
+        const x = ((s.x * w + t * 15 + sx) % w + w) % w, y = ((s.y * h + sy) % h + h) % h;
+        ctx.fillStyle = s.c + tw.toFixed(3) + ')';
+        ctx.fillRect(x, y, s.r, s.r);
+        if (s.glint && tw > 0.55) {
+          ctx.fillStyle = s.c + (tw * 0.30).toFixed(3) + ')';
+          ctx.fillRect(x - s.r * 2, y + (s.r >> 1), s.r * 5, 1);
+          ctx.fillRect(x + (s.r >> 1), y - s.r * 2, 1, s.r * 5);
+        }
+      }
+
+      drawMeteor(ctx, w, h, now);
+      drawBolide(ctx, w, h, now);
+    },
+  };
+
+  /* ------------------------------------------------------- shared: SURFACE backdrops ---- */
+  /* Everything the station can float ABOVE (ocean, city, and whatever comes next) shares the
+     same three problems, so they share the same three helpers: a deck of drifting cloud, a
+     haze that kills contrast with distance, and the parallax depths that put them in order.
+
+     Depth semantics: d is the fraction of the camera pan a layer follows. The station sits at
+     d=1. Anything BELOW it follows less — the further down, the smaller d. So a surface at 0.10
+     crawls while clouds at 0.40 slide, and the gap between them is what the eye reads as
+     altitude. These two numbers are the whole illusion — tune them before tuning any colour. */
+  const SURF = { deck: 0.10, cloud: 0.40 };
+
+  /* Atmospheric perspective: everything far below is washed toward the sky's own colour. This
+     is why a surface backdrop can never just be a bright picture — without this the deck reads
+     as a texture swatch pasted behind the station instead of a place a long way down. */
+  function hazeOver(c, w, h, rgb, a) {
+    c.fillStyle = rgba(rgb, a);
+    c.fillRect(0, 0, w, h);
+  }
+
+  /* One toroidal deck of soft cloud. Returns a canvas to be tiled at SURF.cloud. `dark` builds
+     the SHADOW deck instead (the same shapes in negative) — shadows belong to clouds, so the
+     two decks drift together and the shadow deck rides the SURFACE depth, not the cloud depth. */
+  function buildCloudDeck(w, h, rnd, opts) {
+    const o = opts || {};
+    const cv = mkCv(w, h), c = cv.getContext('2d');
+    const n = Math.max(5, Math.round((w * h) / (o.spread || 190000)));
+    const tint = o.tint || [235, 244, 255];
+    for (let i = 0; i < n; i++) {
+      const cx = rnd() * w, cy = rnd() * h;
+      const R = (o.min || 0.06) * Math.min(w, h) + rnd() * (o.vary || 0.10) * Math.min(w, h);
+      // a cloud is a clump of puffs, never one disc — 5-9 lobes with a flattened, wind-sheared spread
+      for (let p = 0, lobes = 5 + Math.floor(rnd() * 5); p < lobes; p++) {
+        const lx = cx + (rnd() - 0.5) * R * 2.1, ly = cy + (rnd() - 0.5) * R * 1.1;
+        puff9(c, w, h, lx, ly, R * (0.42 + 0.5 * rnd()), tint, (o.alpha || 0.15) * (0.55 + 0.6 * rnd()));
+      }
+    }
+    return cv;
+  }
+
+  /* --------------------------------------------------------------- BACKDROP: OCEAN ---- */
+  /* Open water from altitude. The deck is anisotropic: from this high, sea does not read as
+     waves, it reads as fine directional grain with a swell running through it, plus one broad
+     specular sheen where the sun answers back. The sun itself is never in frame (law 3) — you
+     only ever see what it does to the water. */
+
+  const OCEAN_BG = {
+    label: 'OCEAN',
+    blurb: 'Open water, a long way down. Sun on the swell.',
+    base: '#050d16',
+
+    build(w, h, rnd) {
+      const area = w * h;
+
+      /* ---- the water itself: depth mottling, then grain, then swell ---- */
+      const seaCv = mkCv(w, h), sc = seaCv.getContext('2d');
+      sc.fillStyle = '#0a1a2b'; sc.fillRect(0, 0, w, h);
+      // large slow variation in depth/colour so the sea is never a flat rectangle
+      for (let i = 0, n = 14; i < n; i++) {
+        const shallow = rnd() < 0.45;
+        puff9(sc, w, h, rnd() * w, rnd() * h, (0.14 + 0.22 * rnd()) * Math.min(w, h),
+          shallow ? [26, 92, 110] : [4, 12, 30], 0.16 + 0.14 * rnd());
+      }
+
+      /* THE SWELL — two crossing directional waves. Their interference is what stops the grain
+         below from reading as television static: crests bunch, troughs go quiet. */
+      const th1 = rnd() * Math.PI, th2 = th1 + 0.6 + rnd() * 0.7;
+      const k1 = (2 + Math.floor(rnd() * 3)) * Math.PI * 2, k2 = (3 + Math.floor(rnd() * 4)) * Math.PI * 2;
+      const ph1 = rnd() * 7, ph2 = rnd() * 7;
+      // periodic in BOTH axes (integer wave counts across w and h) so the tile stays seamless
+      const swell = (x, y) => {
+        const u1 = (x / w) * Math.cos(th1) + (y / h) * Math.sin(th1);
+        const u2 = (x / w) * Math.cos(th2) + (y / h) * Math.sin(th2);
+        return 0.5 * Math.sin(u1 * k1 + ph1) + 0.5 * Math.sin(u2 * k2 + ph2);
+      };
+
+      /* THE GRAIN — short dashes aligned to the swell direction. Bright where a crest is. */
+      const grainN = Math.min(14000, Math.round(area / 620));
+      const dx = Math.cos(th1), dy = Math.sin(th1);
+      for (let i = 0; i < grainN; i++) {
+        const x = rnd() * w, y = rnd() * h;
+        const s = swell(x, y);
+        if (s < -0.15 && rnd() < 0.75) continue;              // troughs stay dark — this is the structure
+        const lit = Math.max(0, (s + 0.4) / 1.4);
+        const len = 1 + Math.round(rnd() * 3 + lit * 2);
+        sc.fillStyle = 'rgba(' + (120 + Math.round(90 * lit)) + ',' + (170 + Math.round(70 * lit)) + ',' + (190 + Math.round(60 * lit)) + ',' + (0.10 + 0.42 * lit * rnd()).toFixed(3) + ')';
+        for (let k = 0; k < len; k++) sc.fillRect(((x + dx * k) % w + w) % w, ((y + dy * k * 0.5) % h + h) % h, 1, 1);
+      }
+
+      /* ---- THE GLINT — the broad specular sheen, prerendered soft; its sparkles are live ---- */
+      const glintX = rnd() * w, glintY = rnd() * h, glintR = Math.min(w, h) * (0.30 + 0.12 * rnd());
+      puff9(sc, w, h, glintX, glintY, glintR, [180, 214, 236], 0.10);
+      puff9(sc, w, h, glintX, glintY, glintR * 0.5, [220, 240, 255], 0.09);
+
+      const sparks = [];
+      const sparkN = Math.min(220, Math.round(area / 14000));
+      for (let i = 0; i < sparkN; i++) {
+        // clustered into the sheen: sqrt keeps them dense at the centre, thinning outward
+        const ang = rnd() * Math.PI * 2, rad = Math.sqrt(rnd()) * glintR;
+        sparks.push({
+          x: (glintX + Math.cos(ang) * rad) / w, y: (glintY + Math.sin(ang) * rad * 0.7) / h,
+          ph: rnd() * 10, r: rnd() < 0.75 ? px1() : px1() * 2,
+        });
+      }
+
+      /* ---- cloud + shadow decks (shared shapes, different depth) ---- */
+      const cloudCv = buildCloudDeck(w, h, mulberry32(0x0CEA11), { spread: 150000, min: 0.05, vary: 0.09, alpha: 0.17, tint: [226, 238, 252] });
+      const shadowCv = buildCloudDeck(w, h, mulberry32(0x0CEA11), { spread: 150000, min: 0.05, vary: 0.09, alpha: 0.14, tint: [2, 8, 18] });
+
+      hazeOver(sc, w, h, [70, 120, 150], 0.10);   // distance wash, applied to the deck only
+
+      return { seaCv, cloudCv, shadowCv, sparks };
+    },
+
+    draw(ctx, w, h, now, cam, st) {
+      const t = now / 1000;
+      // the deck: parallax + a slow current drift of its own
+      const sx = parX(cam, SURF.deck) + t * 1.5, sy = parY(cam, SURF.deck) + t * 0.5;
+      tile2(ctx, st.seaCv, w, h, sx, sy);
+
+      // cloud SHADOWS ride the water (deck depth) but drift on the wind, so they slide across it
+      ctx.globalAlpha = 0.85;
+      tile2(ctx, st.shadowCv, w, h, parX(cam, SURF.deck) + t * 5.5, parY(cam, SURF.deck) + t * 1.6);
+      ctx.globalAlpha = 1;
+
+      // THE SPARKLE — fast, hard, and white. Sea glint snaps; it does not breathe like a star.
+      for (const s of st.sparks) {
+        const tw = Math.sin(now / (110 + s.ph * 60) + s.ph);
+        if (tw < 0.55) continue;                        // most are dark most of the time — that is the look
+        const a = (tw - 0.55) / 0.45;
+        const x = ((s.x * w + sx) % w + w) % w, y = ((s.y * h + sy) % h + h) % h;
+        ctx.fillStyle = 'rgba(235,248,255,' + (a * 0.95).toFixed(3) + ')';
+        ctx.fillRect(x, y, s.r, s.r);
+      }
+
+      // the cloud deck itself, much closer to the station — the parallax gap here IS the altitude
+      ctx.globalAlpha = 0.9;
+      tile2(ctx, st.cloudCv, w, h, parX(cam, SURF.cloud) + t * 5.5, parY(cam, SURF.cloud) + t * 1.6);
+      ctx.globalAlpha = 1;
+    },
+  };
+
+  /* ---------------------------------------------------------- BACKDROP: NIGHT CITY ---- */
+  /* A city at night from altitude: a lattice of light, arterials, and the orange dome of its own
+     light pollution. Roads are axis-aligned on purpose — that is both what most cities look like
+     from directly above AND the only thing that tiles seamlessly on a torus (a diagonal only
+     wraps if its slope is rational in w/h; the river gets the sine treatment instead). */
+
+  const CITY_BG = {
+    label: 'NIGHT CITY',
+    blurb: 'Somewhere with power. A grid of light, far below.',
+    base: '#06050a',
+
+    build(w, h, rnd) {
+      const area = w * h;
+      const cityCv = mkCv(w, h), c = cityCv.getContext('2d');
+      c.fillStyle = '#0a0810'; c.fillRect(0, 0, w, h);
+
+      /* districts: where the light is dense and where it is not. Sampled by everything below,
+         so parks, industry and downtown all fall out of one field instead of three systems. */
+      const cores = [];
+      for (let i = 0, n = 3 + Math.floor(rnd() * 3); i < n; i++) cores.push({ x: rnd() * w, y: rnd() * h, r: (0.18 + 0.20 * rnd()) * Math.min(w, h), s: 0.5 + rnd() });
+      const darks = [];
+      for (let i = 0, n = 2 + Math.floor(rnd() * 3); i < n; i++) darks.push({ x: rnd() * w, y: rnd() * h, r: (0.06 + 0.10 * rnd()) * Math.min(w, h) });
+      // toroidal distance — the field must agree across the seam or the grid density steps at the wrap
+      const dt = (a, b, m) => { const d = Math.abs(a - b) % m; return Math.min(d, m - d); };
+      function density(x, y) {
+        let v = 0.12;
+        for (const k of cores) { const d = Math.hypot(dt(x, k.x, w), dt(y, k.y, h)); v += k.s * Math.max(0, 1 - d / k.r); }
+        for (const k of darks) { const d = Math.hypot(dt(x, k.x, w), dt(y, k.y, h)); if (d < k.r) v *= 0.10 + 0.9 * (d / k.r); }
+        return Math.min(1.4, v);
+      }
+
+      /* THE RIVER — one sine band, periodic in w, that the grid refuses to cross. Cities bend
+         around water, and that bend is most of what stops a lattice reading as graph paper. */
+      const rivY = h * (0.2 + 0.6 * rnd()), rivAmp = h * (0.06 + 0.07 * rnd()), rivPh = rnd() * 7, rivHalf = h * (0.018 + 0.016 * rnd());
+      const rivAt = x => rivY + rivAmp * Math.sin((x / w) * Math.PI * 2 + rivPh);
+      const inRiver = (x, y) => { const d = Math.abs(((y - rivAt(x)) % h + h * 1.5) % h - h * 0.5); return d < rivHalf; };
+
+      /* ---- the grid: irregular spacing, brightness by district ---- */
+      const roadsV = [], roadsH = [];
+      for (let x = rnd() * 40; x < w; x += 26 + rnd() * 46) roadsV.push({ p: x, big: rnd() < 0.22 });
+      for (let y = rnd() * 40; y < h; y += 26 + rnd() * 46) roadsH.push({ p: y, big: rnd() < 0.22 });
+
+      const lampStep = 7;
+      for (const r of roadsV) {
+        for (let y = 0; y < h; y += lampStep) {
+          if (inRiver(r.p, y)) continue;
+          const d = density(r.p, y);
+          if (rnd() > d * 0.85) continue;
+          const a = Math.min(0.85, (r.big ? 0.42 : 0.24) * d + 0.06);
+          c.fillStyle = 'rgba(255,196,120,' + a.toFixed(3) + ')';
+          c.fillRect(r.p, y, r.big ? 2 : 1, 2);
+        }
+      }
+      for (const r of roadsH) {
+        for (let x = 0; x < w; x += lampStep) {
+          if (inRiver(x, r.p)) continue;
+          const d = density(x, r.p);
+          if (rnd() > d * 0.85) continue;
+          const a = Math.min(0.85, (r.big ? 0.42 : 0.24) * d + 0.06);
+          c.fillStyle = 'rgba(255,196,120,' + a.toFixed(3) + ')';
+          c.fillRect(x, r.p, 2, r.big ? 2 : 1);
+        }
+      }
+
+      /* ---- windows: the fill light between the roads. Cooler than the sodium streets. ---- */
+      const winN = Math.min(20000, Math.round(area / 420));
+      for (let i = 0; i < winN; i++) {
+        const x = rnd() * w, y = rnd() * h;
+        if (inRiver(x, y)) continue;
+        const d = density(x, y);
+        if (rnd() > d * 0.55) continue;
+        const warm = rnd() < 0.72;
+        c.fillStyle = warm
+          ? 'rgba(255,214,150,' + (0.10 + 0.5 * rnd() * d).toFixed(3) + ')'
+          : 'rgba(180,220,255,' + (0.10 + 0.4 * rnd() * d).toFixed(3) + ')';
+        c.fillRect(x, y, 1, 1);
+      }
+
+      /* ---- the river answers the city back: a dim reflected smear, no lamps of its own ---- */
+      for (let x = 0; x < w; x += 3) {
+        const y = rivAt(x), d = density(x, y);
+        c.fillStyle = 'rgba(120,140,190,' + (0.03 + 0.05 * d * rnd()).toFixed(3) + ')';
+        c.fillRect(x, ((y + (rnd() - 0.5) * rivHalf * 1.6) % h + h) % h, 2, 1);
+      }
+
+      /* ---- LIGHT POLLUTION: the orange dome over the dense parts. Drawn additively so it
+              blooms over the lattice instead of veiling it. ---- */
+      const glowCv = mkCv(w, h), gc = glowCv.getContext('2d');
+      gc.globalCompositeOperation = 'lighter';
+      // two passes: a wide low dome plus a tighter hotter core, so downtown reads hotter than
+      // the suburbs instead of the whole map sharing one flat orange.
+      for (const k of cores) {
+        puff9(gc, w, h, k.x, k.y, k.r * 1.25, [255, 148, 58], 0.10 * k.s);
+        puff9(gc, w, h, k.x, k.y, k.r * 0.55, [255, 186, 96], 0.09 * k.s);
+      }
+
+      /* ---- cloud deck, underlit by the city (this is the tell that the light is BELOW) ---- */
+      const cloudCv = buildCloudDeck(w, h, mulberry32(0xC17914), { spread: 165000, min: 0.05, vary: 0.10, alpha: 0.13, tint: [255, 176, 110] });
+
+      /* ---- TRAFFIC: live dots that run the arterials. The only moving thing down there. ---- */
+      const traffic = [];
+      const bigV = roadsV.filter(r => r.big), bigH = roadsH.filter(r => r.big);
+      const carN = Math.min(180, Math.round(area / 18000));
+      for (let i = 0; i < carN; i++) {
+        const vert = bigV.length && (!bigH.length || rnd() < 0.5);
+        const lane = vert ? bigV[Math.floor(rnd() * bigV.length)] : bigH[Math.floor(rnd() * bigH.length)];
+        if (!lane) continue;
+        traffic.push({
+          vert, p: lane.p, u: rnd(), spd: (0.010 + 0.022 * rnd()) * (rnd() < 0.5 ? -1 : 1),
+          warm: rnd() < 0.5,
+        });
+      }
+
+      /* Distance wash. Deliberately WARM, not the blue-grey a daylight haze would be: the only
+         thing lighting this air is the city underneath it, so the veil takes the city's colour.
+         A cool wash here measured blue-dominant overall and read as generic night, not sodium. */
+      hazeOver(c, w, h, [58, 34, 28], 0.13);
+
+      return { cityCv, glowCv, cloudCv, traffic };
+    },
+
+    draw(ctx, w, h, now, cam, st) {
+      const t = now / 1000;
+      const gx = parX(cam, SURF.deck), gy = parY(cam, SURF.deck);
+      tile2(ctx, st.cityCv, w, h, gx, gy);
+
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.globalAlpha = 0.85 + 0.15 * Math.sin(now / 6000);   // the dome breathes very slightly
+      tile2(ctx, st.glowCv, w, h, gx, gy);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.globalAlpha = 1;
+
+      // traffic — slow, and only on the arterials. Headlights warm one way, tail-lights red the other.
+      for (const car of st.traffic) {
+        car.u += car.spd / 1000 * 16;                 // ~frame-rate independent enough for a 1px dot
+        if (car.u > 1) car.u -= 1; else if (car.u < 0) car.u += 1;
+        const x = car.vert ? car.p : car.u * w, y = car.vert ? car.u * h : car.p;
+        const sx = ((x + gx) % w + w) % w, sy = ((y + gy) % h + h) % h;
+        ctx.fillStyle = car.warm ? 'rgba(255,236,190,0.85)' : 'rgba(255,120,90,0.75)';
+        ctx.fillRect(sx, sy, 1, 1);
+      }
+
+      // the underlit cloud deck, close to the station — again, the parallax gap is the altitude
+      ctx.globalAlpha = 0.82;
+      tile2(ctx, st.cloudCv, w, h, parX(cam, SURF.cloud) + t * 4.5, parY(cam, SURF.cloud) + t * 1.3);
+      ctx.globalAlpha = 1;
+    },
+  };
+
   /* ---------------------------------------------------------------------- registry ---- */
 
-  const BACKDROPS = { void: VOID_BG };
-  const ORDER = ['void'];
+  const BACKDROPS = { void: VOID_BG, deep: DEEP_BG, ocean: OCEAN_BG, city: CITY_BG };
+  const ORDER = ['void', 'deep', 'ocean', 'city'];
   const DEFAULT_ID = 'void';
 
   const has = id => Object.prototype.hasOwnProperty.call(BACKDROPS, id);
@@ -367,8 +851,25 @@ const SpaceBG = (() => {
      throwaway state at the swatch's own size; never touches the live tile cache. */
   function paintSample(ctx, w, h, id, now) {
     const bid = resolve(id);
-    const state = BACKDROPS[bid].build(w, h, mulberry32(SEED));
-    BACKDROPS[bid].draw(ctx, w, h, now || 0, null, state);
+    const bd = BACKDROPS[bid];
+    /* Build at a REFERENCE size and scale DOWN — never build at the swatch's own size. Every
+       backdrop scales its content two different ways: counts by area (stars, grain, windows) and
+       radii by min(w,h) (nebulas, glint, city cores). Building straight into a 112x63 swatch
+       therefore does not produce a miniature, it produces a distorted close-up where a single
+       nebula fills the entire sky — measured at mean RGB 85/122/151 against the real void's
+       12/13/14. A preview that bright is exactly the lie this function exists to prevent. */
+    const RW = 960, RH = Math.max(1, Math.round(RW * (h / w) || RW * 0.5625));
+    const off = mkCv(RW, RH), oc = off.getContext('2d');
+    oc.fillStyle = bd.base || '#040302';
+    oc.fillRect(0, 0, RW, RH);
+    bd.draw(oc, RW, RH, now || 0, null, bd.build(RW, RH, mulberry32(SEED)));
+
+    ctx.save();
+    ctx.clearRect(0, 0, w, h);
+    ctx.imageSmoothingEnabled = true;          // a true miniature; NN-crushing a starfield eats the stars
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(off, 0, 0, RW, RH, 0, 0, w, h);
+    ctx.restore();
     ctx.globalAlpha = 1;
   }
 

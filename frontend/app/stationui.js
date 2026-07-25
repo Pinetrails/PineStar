@@ -77,7 +77,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   /* ---------- persistence (user-owned UI state) ---------- */
   // themeHue/themeSat drive the CUSTOM phosphor derivation (theme:'custom'); themeGlow (0–150%) is an
   // independent bloom dial that also tames the hand-tuned presets. 100 = the shipped look, untouched.
-  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, textScale: 0, flicker: true, sound: true, keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
+  // `backdrop` is what the station floats in (SpaceBG's registry). 'void' is the shipped sky, so
+  // every save that predates this key merges to the exact look it already had.
+  function defaults() { return { theme: 'amber', themeHue: 35, themeSat: 100, themeGlow: 100, textScale: 0, flicker: true, sound: true, backdrop: 'void', keepComputerAwake: false, notifyPrefs: notifyDefaults() }; }
   // TEXT SIZE steps (percent → chip label; 0 = AUTO, the default). Applied as a body zoom in
   // applySettings(): zoom scales layout too, so every hard-px face (COMMS included) grows together —
   // a root font-size can't reach the ~800 px-sized declarations. world.js resize() reads the same
@@ -189,6 +191,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         document.body.style.setProperty('--ph-glow2', 'rgba(' + rgb + ', ' + (base[1] * gm).toFixed(3) + ')');
       }
     }
+    // THE BACKDROP — what the station floats in. SpaceBG owns the registry and falls back to
+    // its own default for an unknown id, so a hand-edited or future-version save can never
+    // blank the sky. Applied here (not only in the picker) so it survives a reload.
+    if (typeof SpaceBG !== 'undefined' && SpaceBG.setBackdrop) SpaceBG.setBackdrop(s.backdrop);
     // CRT scanlines are part of the fixed shipped look — no user toggle. `no-scan` stays an
     // internal flag (set by scripts/verify-stars2.mjs to flatten the feed for star-pixel
     // checks) and is intentionally never driven by settings here.
@@ -4088,6 +4094,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<label class="set-slider"><span class="set-slider-name">HUE</span><input type="range" id="set-hue" class="set-hue-track" min="0" max="359" step="1" value="' + clampN(s.themeHue, 0, 359, 35) + '"><span class="set-slider-val" id="set-hue-val">' + clampN(s.themeHue, 0, 359, 35) + '°</span></label>' +
       '<label class="set-slider"><span class="set-slider-name">SATURATION</span><input type="range" id="set-sat" min="0" max="100" step="1" value="' + clampN(s.themeSat, 0, 100, 100) + '"><span class="set-slider-val" id="set-sat-val">' + clampN(s.themeSat, 0, 100, 100) + '%</span></label>' +
       '<label class="set-slider"><span class="set-slider-name">GLOW</span><input type="range" id="set-glow" min="0" max="150" step="5" value="' + clampN(s.themeGlow, 0, 150, 100) + '"><span class="set-slider-val" id="set-glow-val">' + clampN(s.themeGlow, 0, 150, 100) + '%</span></label>' +
+      // THE BACKDROP — what the station floats in. Swatches are painted by the REAL backdrop
+      // renderer below (SpaceBG.paintSample), never by a stand-in gradient, so a preview can
+      // not promise a sky the station won't deliver — the same law the deck/wall swatches follow.
+      '<h4 class="ms-h">BACKDROP <span class="dim">— where the station is parked</span></h4>' +
+      '<p class="set-about">The station holds position somewhere. Change where. Each one is drawn live, not a picture — so the swatch is exactly what you get.</p>' +
+      '<div class="set-backdrops" id="set-backdrop">' +
+      (typeof SpaceBG === 'undefined' ? '' : SpaceBG.list().map(b => {
+        const on = (s.backdrop || 'void') === b.id;
+        return '<button class="set-bd' + (on ? ' sel' : '') + '" aria-pressed="' + (on ? 'true' : 'false') + '" data-bd="' + esc(b.id) + '" title="' + esc(b.blurb) + '">' +
+          '<canvas class="set-bd-cv" width="112" height="63" aria-hidden="true"></canvas>' +
+          '<span class="set-bd-name">' + esc(b.label) + '</span></button>';
+      }).join('')) +
+      '</div>' +
       '<h4 class="ms-h">DISPLAY</h4>' +
       // TEXT SIZE — the laptop-readability dial (2026-07-19): scales every panel, window and COMMS
       // face together; the station view re-renders sharp at the new scale (world.js resize).
@@ -4245,6 +4264,32 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       syncTextSize();
       flashSaved(appMsg());
     }));
+    /* BACKDROP chips — instant-apply + persist, same idiom as the theme row. Each swatch is
+       painted ONCE by the real backdrop renderer at swatch size; SpaceBG builds a throwaway
+       state for the sample, so this never disturbs the live station's tiles. The sample is
+       drawn with no camera, which is the honest still of a moving sky. */
+    const bdChips = host.querySelectorAll('#set-backdrop [data-bd]');
+    if (bdChips.length && typeof SpaceBG !== 'undefined' && SpaceBG.paintSample) {
+      bdChips.forEach(b => {
+        const cv = b.querySelector('canvas');
+        if (!cv) return;
+        try { SpaceBG.paintSample(cv.getContext('2d'), cv.width, cv.height, b.dataset.bd, 8000); }
+        catch (_) { /* a swatch that cannot paint stays blank rather than taking the panel down */ }
+      });
+      const syncBackdrop = () => bdChips.forEach(x => {
+        const on = x.dataset.bd === (s.backdrop || 'void');
+        x.classList.toggle('sel', on);
+        x.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+      bdChips.forEach(b => b.addEventListener('click', () => {
+        // trust SpaceBG's resolution rather than the button: it is the thing that decides what
+        // actually renders, so the saved value can never drift from what is on screen.
+        s.backdrop = SpaceBG.setBackdrop(b.dataset.bd);
+        save(); sfx('click');
+        syncBackdrop();
+        flashSaved(appMsg());
+      }));
+    }
     const awakeToggle = host.querySelector('#set-awake');
     if (awakeToggle) awakeToggle.addEventListener('change', ev => {
       const desired = !!ev.target.checked;
