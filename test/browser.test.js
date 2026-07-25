@@ -481,6 +481,69 @@ function fakeDriver() {
     await rejects(makeBrowserTools({ driver: old }).session.hover('b1'), /unknown browser ref|unavailable in this driver/, 'a driver without hover reports it honestly');
   }
 
+  // ---- IFRAME TRAVERSAL ----------------------------------------------------------------------
+  // snapshot/get_text ran Runtime.evaluate with no session, so they never left the top frame:
+  // an Auth0/Okta/Stripe login, a payment form or a consent wall was completely invisible.
+  {
+    const sent = [];
+    let attachHook = null;
+    class WS {
+      constructor() { this.handlers = {}; WS.last = this; setTimeout(() => this.fire('open', {}), 0); }
+      addEventListener(n, fn) { (this.handlers[n] = this.handlers[n] || []).push(fn); }
+      fire(n, v) { for (const fn of this.handlers[n] || []) fn(v); }
+      emit(method, params) { this.fire('message', { data: JSON.stringify({ method, params }) }); }
+      send(raw) {
+        const m = JSON.parse(raw); sent.push(m);
+        const expr = String((m.params && m.params.expression) || '');
+        let result = {};
+        if (m.method === 'DOM.getFrameOwner') result = { backendNodeId: 77 };
+        else if (m.method === 'DOM.getBoxModel') result = { model: { content: [100, 200, 400, 200, 400, 500, 100, 500] } };
+        else if (m.method === 'Runtime.evaluate') {
+          let value = 'about:blank';
+          if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
+          else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
+          else if (/querySelectorAll/.test(expr)) {
+            // The TOP document answers one button; the iframe session answers a different one.
+            value = m.sessionId
+              ? [{ index: 0, role: 'textbox', text: 'Card number', x: 5, y: 10, w: 200, h: 30 }]
+              : [{ index: 0, role: 'button', text: 'Checkout', x: 10, y: 20, w: 80, h: 30 }];
+          } else if (/innerText/.test(expr)) value = m.sessionId ? 'Enter your card' : 'Top page';
+          result = { result: { value } };
+        }
+        setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+        if (m.method === 'Target.setAutoAttach' && attachHook) { const h = attachHook; attachHook = null; setTimeout(h, 1); }
+      }
+      close() {}
+    }
+    const d = T.makeCdpDriver({
+      chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9351,
+      settleQuietPolls: 1, settleNavBudgetMs: 300, settleActionBudgetMs: 300,
+      fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://frames' }] }),
+      WebSocketImpl: WS,
+      spawn: () => ({ pid: 71, on(ev, fn) { if (ev === 'close') this._c = fn; }, kill() { if (this._c) queueMicrotask(() => this._c(0)); } })
+    });
+    // An out-of-process iframe attaches (as production Chrome does for a cross-origin frame).
+    attachHook = () => WS.last.emit('Target.attachedToTarget', { sessionId: 'frame-1', targetInfo: { type: 'iframe', targetId: 'FRAME1' } });
+    await d.navigate('https://shop.test/');
+    await new Promise(r => setTimeout(r, 30));
+
+    const nodes = await d.snapshot(40);
+    A.eq(nodes.length, 2, 'snapshot returns the top document AND the iframe');
+    A.eq(nodes[0].text, 'Checkout', 'top-frame element first');
+    const inner = nodes[1];
+    A.eq(inner.text, 'Card number', 'the iframe element is no longer invisible');
+    // THE COORDINATE TRAP: the frame reports 5,10 relative to ITSELF; the iframe box starts at 100,200.
+    A.eq([inner.x, inner.y], [105, 210], 'iframe coordinates are translated into the top page, so a click lands correctly');
+    A.eq(inner.frame, 1, 'the element is marked as belonging to a frame');
+    A.eq(nodes.map(n => n.index), [0, 1], 'indexes are renumbered across the merged set');
+
+    const text = await d.getText();
+    A.ok(/Top page/.test(text) && /Enter your card/.test(text), 'get_text reads the frame as well as the top document');
+    A.ok(/--- frame 1 ---/.test(text), 'frame text is labelled rather than silently concatenated');
+    A.ok(sent.some(m => m.method === 'Page.addScriptToEvaluateOnNewDocument' && m.sessionId === 'frame-1' && /__STARNET_SETTLE__/.test(m.params.source)), 'the settle marker is installed into adopted frames too');
+    await d.close();
+  }
+
   // ---- FILE UPLOAD, JAIL-CHECKED --------------------------------------------------------------
   // Without DOM.setFileInputFiles any form with an attachment step was a dead end. The path an
   // upload posts must come through the SAME jail as fs.* - an upload is an exfiltration primitive

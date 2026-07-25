@@ -411,6 +411,7 @@
        an in-flight request count that makes auto-wait aware of XHR that has not landed yet. */
     let mainFrameId = null, lastResponse = null;
     const inflight = new Set();
+    const frameSessions = new Map();   // CDP sessionId -> frameId, for every adopted (out-of-process) iframe
     async function connect() {
       if (cdp) return cdp;
       try { FS.mkdirSync(profileDir, { recursive: true }); } catch (_) {}
@@ -483,9 +484,16 @@
                 Promise.resolve()
                   .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP }, sid))
                   .then(() => cdp.send('Runtime.evaluate', { expression: SYNTHETIC_INPUT_BOOTSTRAP, awaitPromise: true }, sid))
+                  .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP }, sid))
+                  .then(() => cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP }, sid))
+                  // Remember the adopted frame. It was already attached and shimmed, but nothing ever
+                  // recorded its session, so snapshot/get_text could never look inside it: a login form
+                  // in an Auth0/Okta/Stripe iframe, or a consent banner, was simply invisible.
+                  .then(() => { if (info.targetId) frameSessions.set(sid, info.targetId); })
                   .then(() => cdp.send('Runtime.runIfWaitingForDebugger', {}, sid))
                   .catch(() => { if (info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {}); });
               });
+              cdp.on('Target.detachedFromTarget', p => { if (p && p.sessionId) frameSessions.delete(p.sessionId); });
               await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
             }
             await cdp.send('Page.enable');
@@ -501,6 +509,7 @@
             await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP });
             await cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP });
             await cdp.send('Network.enable');
+            await cdp.send('DOM.enable');   // getFrameOwner/getBoxModel, for placing iframe content in the top page
             // Identify the top frame so a sub-frame's document response can never be mistaken for the
             // page's own status (an ad iframe 404 must not read as "the page 404'd").
             try {
@@ -622,20 +631,60 @@
       }
       return finalUrl;
     }
+    /* Where an adopted iframe sits in the TOP page. Elements inside a frame report coordinates relative
+       to that frame, so without this offset every click into an iframe would land somewhere else. If the
+       offset cannot be determined the frame's elements are OMITTED rather than offered at coordinates we
+       know are wrong — an invisible element is a gap, a mis-aimed one is a wrong action. */
+    async function frameOffset(c, frameId) {
+      try {
+        const owner = await c.send('DOM.getFrameOwner', { frameId });
+        if (!owner || !owner.backendNodeId) return null;
+        const box = await c.send('DOM.getBoxModel', { backendNodeId: owner.backendNodeId });
+        const quad = box && box.model && box.model.content;
+        if (!quad || quad.length < 2) return null;
+        return { x: Math.round(quad[0]), y: Math.round(quad[1]) };
+      } catch (_) { return null; }
+    }
+    async function evalIn(c, expression, sessionId) {
+      try {
+        const r = await c.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true }, sessionId);
+        if (r && r.exceptionDetails) return null;
+        return r && r.result && r.result.value;
+      } catch (_) { return null; }
+    }
     async function snapshot(limit) {
-      return evalJS(`(() => {
+      const c = await connect();
+      const cap = Math.max(1, Math.min(200, Number(limit || 80)));
+      const expr = snapshotExpr(cap);
+      const out = (await evalIn(c, expr)) || [];
+      let frameNo = 0;
+      for (const [sid, frameId] of frameSessions) {
+        if (out.length >= cap) break;
+        frameNo++;
+        const off = await frameOffset(c, frameId);
+        if (!off) continue;
+        const nodes = (await evalIn(c, expr, sid)) || [];
+        for (const n of nodes) {
+          if (out.length >= cap) break;
+          out.push(Object.assign({}, n, { x: n.x + off.x, y: n.y + off.y, frame: frameNo }));
+        }
+      }
+      return out.map((n, i) => Object.assign({}, n, { index: i }));
+    }
+    function snapshotExpr(cap) {
+      return `(() => {
         const q = 'a,button,input,textarea,select,[role="button"],[onclick],summary,label';
         return Array.from(document.querySelectorAll(q)).filter(el => {
           const r = el.getBoundingClientRect();
           return r.width > 1 && r.height > 1 && r.bottom >= 0 && r.right >= 0 && r.top <= innerHeight && r.left <= innerWidth;
-        }).slice(0, ${Math.max(1, Math.min(200, Number(limit || 80)))}).map((el, i) => {
+        }).slice(0, ${cap}).map((el, i) => {
           const r = el.getBoundingClientRect();
           const tag = el.tagName.toLowerCase();
           const role = el.getAttribute('role') || (tag === 'a' ? 'link' : tag === 'input' || tag === 'textarea' ? 'textbox' : tag);
           const text = (el.innerText || el.value || el.getAttribute('aria-label') || el.getAttribute('title') || '').replace(/\\s+/g, ' ').trim().slice(0, 160);
           return { index: i, role, text, x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) };
         });
-      })()`);
+      })()`;
     }
     // Every mutating action settles before it returns, so the NEXT snapshot/get_text reads the DOM the
     // action produced rather than the one it replaced. This is the fix for the silent corrupter: these
@@ -836,8 +885,20 @@
       return evalJS('location.href');
     }
     async function getText(selector) {
-      const sel = selector ? JSON.stringify(String(selector)) : 'null';
-      return evalJS(`(() => { const el = ${sel} ? document.querySelector(${sel}) : document.body; return (el && (el.innerText || el.textContent) || '').replace(/\\s+\\n/g, '\\n').trim(); })()`);
+      const sel = selector ? jsLiteral(String(selector)) : 'null';
+      const expr = `(() => { const el = ${sel} ? document.querySelector(${sel}) : document.body; return (el && (el.innerText || el.textContent) || '').replace(/\\s+\\n/g, '\\n').trim(); })()`;
+      const c = await connect();
+      const parts = [String((await evalIn(c, expr)) || '')];
+      // Read adopted iframes too. A consent wall, a payment form or an SSO login is routinely the
+      // ONLY meaningful text on the page and lives entirely inside a frame — reading just the top
+      // document returns an empty-looking page and the agent concludes there is nothing there.
+      let frameNo = 0;
+      for (const [sid] of frameSessions) {
+        frameNo++;
+        const t = String((await evalIn(c, expr, sid)) || '').trim();
+        if (t) parts.push('\n--- frame ' + frameNo + ' ---\n' + t);
+      }
+      return parts.join('').trim();
     }
     async function handleDialog(action, promptText) {
       const c = await connect();
@@ -1199,8 +1260,10 @@
       read('browser.snapshot', 'Return a structured snapshot of visible interactive elements. Element refs expire after the next snapshot.', { type: 'object', properties: { limit: { type: 'number' } } },
         async a => {
           const nodes = await session.snapshot(a.limit || 80);
-          const lines = nodes.map(n => n.ref + ' [' + n.role + '] ' + (n.text || '(no text)') + ' @ ' + n.x + ',' + n.y + ' ' + n.w + 'x' + n.h);
-          return { content: lines.join('\n') || 'No visible interactive elements.', summary: nodes.length + ' ref(s)' };
+          // The frame marker matters to the agent: an element inside an iframe belongs to a different
+          // document (a payment form, an SSO login), and its coordinates are already translated here.
+          const lines = nodes.map(n => n.ref + ' [' + n.role + '] ' + (n.text || '(no text)') + ' @ ' + n.x + ',' + n.y + ' ' + n.w + 'x' + n.h + (n.frame ? ' (iframe ' + n.frame + ')' : ''));
+          return { content: lines.join('\n') || 'No visible interactive elements.', summary: nodes.length + ' ref(s)' + (nodes.some(n => n.frame) ? ' (incl. iframes)' : '') };
         }),
       exec('browser.click', 'Click a visible element by ref from the latest browser.snapshot.', { type: 'object', required: ['ref'], properties: { ref: { type: 'string' } } },
         async a => ({ content: await session.click(a.ref), summary: 'clicked' })),
