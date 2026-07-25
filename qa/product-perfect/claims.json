@@ -618,8 +618,8 @@
       },
       {
         "path": "frontend/app/stationbake.js",
-        "bytes": 100781,
-        "sha256": "b9d2348f80e604fcf6cec19cb6de4a4ab3711d1c31caae1b53d3a5dd378cc16c"
+        "bytes": 116916,
+        "sha256": "6aff007b24c0b4200b52ae23df6cd8ac1e6b461d9c33c3a92c65f8809c6402ff"
       },
       {
         "path": "frontend/app/stationquests.js",
