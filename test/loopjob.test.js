@@ -405,4 +405,69 @@ function cycle(loops, res, at) {
   A.eq(one(mk({ exitOn: 'nonsense' })).exitOn, 'never', 'and the same at creation');
 }
 
+// ---- 22. THE DIGEST PROTOCOL — the signal the loop templates actually ask the model for ------------------
+// REGRESSION: the shipped templates instructed "DIGEST: 0 findings" while this parser only understood
+// "NOTHING-TO-DO", so Sweep & Fix and Research could never converge and would run until the budget stopped
+// them. Asking a model to CONCEDE fails; asking it to FILE A REPORT works. Both signals are honoured now.
+{
+  A.eq(LJ.readDigest('DIGEST: 0 findings — nothing new').filed, true, 'a well-formed digest is read');
+  A.eq(LJ.readDigest('DIGEST: 0 findings — nothing new').count, 0, 'and its count is extracted');
+  A.eq(LJ.readDigest('did stuff\nDIGEST: 3 findings — fixed three').count, 3, 'a non-zero count reads too');
+  A.eq(LJ.readDigest('DIGEST:12 findings').count, 12, 'spacing is forgiving');
+  A.eq(LJ.readDigest('nothing here').filed, false, 'no digest = not filed');
+  A.eq(LJ.readDigest('the digest showed no findings').filed, false,
+    'PROSE ABOUT a digest is not a filed digest — the count must be a bare number after the marker');
+  A.eq(LJ.readDigest('DIGEST: lots of findings').filed, false, 'a countless digest is malformed, not zero');
+  A.eq(LJ.readDigest('DIGEST: lots of findings').malformed, true, 'and is flagged as malformed rather than ignored');
+
+  A.eq(LJ.nextOutcomeFor('DIGEST: 0 findings — nothing new'), 'noop', 'a zero-finding report IS convergence');
+  A.eq(LJ.nextOutcomeFor('DIGEST: 2 findings — fixed two'), 'candidate', 'a non-zero report is real work');
+  A.eq(LJ.nextOutcomeFor('NOTHING-TO-DO'), 'noop', 'the explicit override still works');
+  A.eq(LJ.nextOutcomeFor('I could not find anything at all'), 'candidate',
+    'prose that merely SOUNDS finished is never convergence — only a filed signal counts');
+
+  // end to end: a research-shaped loop now actually reaches DORMANT on filed zero-reports
+  let loops = mk({ exitOn: 'empty-digests', dryStopAfter: 2, queueCap: 5 });
+  loops = cycle(loops, { runId: 'd1', status: 'ok', text: 'looked around.\nDIGEST: 0 findings — nothing new' }, T0);
+  A.eq(one(loops).iterations[0].outcome, 'noop', 'pass 1 counted as empty');
+  loops = cycle(loops, { runId: 'd2', status: 'ok', text: 'DIGEST: 0 findings — nothing new' }, T0 + HOUR);
+  A.eq(one(loops).state, 'dormant', 'TWO filed zero-reports park the loop — the bug that shipped made this impossible');
+}
+
+// ---- 23. the closing instruction must match what the loop MEASURES --------------------------------------
+// The shipped digest block told EVERY loop to say NOTHING-TO-DO, contradicting the template's own protocol.
+{
+  const seed = (spec) => { let l = mk(spec); return cycle(l, { runId: 'x', status: 'ok', text: 'w', title: 'w' }, T0); };
+
+  const soft = LJ.digest(one(seed({ exitOn: 'empty-digests', queueCap: 5 })), {});
+  A.ok(/DIGEST: <n> findings/.test(soft), 'a digest-measured loop is asked for a DIGEST line');
+  A.ok(!/NOTHING-TO-DO and stop/.test(soft), 'and is NOT simultaneously told to say NOTHING-TO-DO');
+
+  const hard = LJ.digest(one(seed({ exitOn: 'check-green', checkCmd: 'npm test', queueCap: 5 })), {});
+  A.ok(/You do not declare this task finished/.test(hard), 'a check-measured loop is told the CHECK decides');
+  A.ok(!/DIGEST: <n>/.test(hard), 'and is not asked for a digest it does not need');
+  A.ok(!/NOTHING-TO-DO and stop/.test(hard), 'nor invited to self-declare a finish the check has not granted');
+
+  const open = LJ.digest(one(seed({ exitOn: 'never', queueCap: 5 })), {});
+  A.ok(/NOTHING-TO-DO/.test(open), 'an open-ended loop keeps the explicit escape hatch');
+}
+
+// ---- 24. a loop that stops FILING reports cannot converge — say so ---------------------------------------
+{
+  let loops = mk({ exitOn: 'empty-digests', dryStopAfter: 3, queueCap: 9 });
+  loops = cycle(loops, { runId: 'n1', status: 'ok', text: 'did a thing, forgot the report', title: 'a thing' }, T0);
+  A.eq(one(loops).noDigestStreak, 1, 'a pass with no readable digest is counted');
+  loops = cycle(loops, { runId: 'n2', status: 'ok', text: 'again no report', title: 'again' }, T0 + HOUR);
+  A.eq(one(loops).noDigestStreak, 2, 'and the streak grows');
+  const s = LJ.summarize(one(loops), { now: T0 + 2 * HOUR });
+  A.eq(s.expectsDigest, true, 'the projection says this loop needs reports to finish');
+  A.eq(s.noDigestStreak, 2, 'and how long it has gone without one — a silent non-reporting loop looks healthy otherwise');
+  A.ok(/did not include a readable DIGEST/.test(LJ.digest(one(loops), {})), 'and the model is told directly');
+
+  loops = cycle(loops, { runId: 'n3', status: 'ok', text: 'DIGEST: 1 findings — fixed it', title: 'fixed' }, T0 + 3 * HOUR);
+  A.eq(one(loops).noDigestStreak, 0, 'filing one resets the streak');
+  A.eq(LJ.summarize(one(mk({ exitOn: 'check-green' })), { now: T0 }).expectsDigest, false,
+    'a check-measured loop does not expect digests, so it is never flagged for missing them');
+}
+
 A.report('loopjob (pure LOOP core)');

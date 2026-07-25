@@ -3175,3 +3175,16 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
 .lp-dir .key-input { flex: 1 1 auto; }
 .lp-agent-pick { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 4px; }
 @media (min-width: 560px) { .lp-shapes { grid-template-columns: 1fr 1fr; } }
+
+/* the inline rejection-reason panel (replaced a native window.prompt) */
+.lp-why { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--ph-faint); }
+.lp-why-in { width: 100%; }
+.lp-why-cost { font-size: 11px; color: var(--bad); }
+/* the dock badge — how many loop results are waiting on the Commander */
+.bb { position: relative; }
+.lp-badge {
+  position: absolute; top: 4px; right: 6px; min-width: 15px; height: 15px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; line-height: 1; border-radius: 8px;
+  background: var(--gold); color: #0a0a0a; box-shadow: 0 0 6px rgba(255,200,80,.5);
+}

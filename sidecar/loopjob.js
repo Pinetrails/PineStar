@@ -52,10 +52,21 @@
   const DRY_STOP_DEFAULT = 3;     // consecutive NOTHING-TO-DO passes before the loop goes DORMANT
   const DRY_STOP_MAX = 20;
 
-  // the marker an iteration prints when it genuinely found nothing left to do. Matched case-insensitively
-  // and anywhere in the final text, because a model will wrap it in a sentence. Deliberately ugly and
-  // un-English so ordinary prose can never trip it.
+  /* ---- HOW A LOOP KNOWS IT IS FINISHED ---------------------------------------------------------------
+     Two accepted signals, because asking a model to CONCEDE ("say NOTHING-TO-DO") is asking for the one
+     thing models are worst at — they are trained to be helpful and will invent work rather than admit there
+     is none. Asking for a REPORT is something they do reliably:
+
+       DIGEST: 0 findings — nothing new          <- the primary signal (this repo's own loops/README rule 4)
+       NOTHING-TO-DO                             <- kept as an explicit override, and for loops that
+                                                    never asked for a digest
+
+     A digest carries a COUNT, so zero-findings is a fact we read rather than a mood we infer. Deliberately
+     rigid: the count must be a bare number right after the marker, so a sentence like "the digest showed no
+     findings" can never be mistaken for a filed report. */
   const NOTHING_MARK = /NOTHING-TO-DO/i;
+  const DIGEST_RE = /(?:^|\n)\s*DIGEST\s*:\s*(\d+)\s+finding/i;
+  const DIGEST_ANY = /(?:^|\n)\s*DIGEST\s*:/i;
 
   const GATES = ['halted', 'done', 'disabled', 'stopped', 'dormant', 'paused', 'max-iterations',
     'budget', 'in-flight', 'queue-full', 'concurrency', 'precheck'];
@@ -178,12 +189,29 @@
     return out(null, null);
   }
 
-  /* nextOutcomeFor — read an iteration's final text and classify it. The ONLY thing that makes an iteration
-     a 'noop' is the model explicitly declaring NOTHING-TO-DO; we never infer convergence from a short reply
-     or an empty diff, because "the agent said little" and "there is nothing left to do" are different facts
-     and only one of them is provable from the transcript. */
+  /* readDigest — parse the iteration's filed report. Returns { filed, count } where `filed` means the model
+     actually emitted a DIGEST line in the required shape. A malformed DIGEST (marker present, no count) is
+     `filed:false` — a report we cannot read is not a report, and treating it as zero would let a sloppy pass
+     silently push the loop toward dormancy. */
+  function readDigest(text) {
+    const s = String(text == null ? '' : text);
+    const m = s.match(DIGEST_RE);
+    if (m) return { filed: true, count: parseInt(m[1], 10) };
+    return { filed: false, count: null, malformed: DIGEST_ANY.test(s) };
+  }
+
+  /* nextOutcomeFor — classify an iteration's final text.
+
+     'noop' (a pass that found nothing, feeding the convergence counter) requires an EXPLICIT signal: either a
+     filed digest reporting zero findings, or the NOTHING-TO-DO override. Convergence is never inferred from a
+     short reply or an empty diff, because "the agent said little" and "there is nothing left to do" are
+     different facts and only one of them is provable from the transcript. */
   function nextOutcomeFor(text) {
-    return NOTHING_MARK.test(String(text == null ? '' : text)) ? 'noop' : 'candidate';
+    const s = String(text == null ? '' : text);
+    if (NOTHING_MARK.test(s)) return 'noop';
+    const d = readDigest(s);
+    if (d.filed && d.count === 0) return 'noop';
+    return 'candidate';
   }
 
   /* digest — the LEDGER BLOCK handed to the next iteration. This is the single highest-leverage function in
@@ -242,9 +270,29 @@
       lines.push('Do not modify tests, test config, or build/script definitions to make the check pass.');
     }
 
-    lines.push('', 'If there is genuinely nothing meaningful left to do for this objective, reply with the exact');
-    lines.push('token NOTHING-TO-DO and stop. Do NOT invent busywork to appear productive — an honest');
-    lines.push('NOTHING-TO-DO is the correct and valued answer, and the loop will park itself.');
+    /* THE CLOSING INSTRUCTION MUST MATCH WHAT THIS LOOP ACTUALLY MEASURES. Emitting a blanket
+       "say NOTHING-TO-DO" here while the template asked for a DIGEST line gave the model two contradictory
+       protocols and left soft loops unable to converge at all. So the ask is derived from `exitOn`. */
+    const exitOn = loop.exitOn || 'never';
+    if (exitOn === 'check-green') {
+      // the machine decides this one — asking the model to self-declare completion would invite it to claim
+      // a finish the check has not granted.
+      lines.push('', 'You do not declare this task finished — the check does. Keep making real progress toward');
+      lines.push('a genuinely passing check; the station runs it after every pass and tells you the result.');
+    } else if (exitOn === 'empty-digests') {
+      lines.push('', 'End this pass with one line in exactly this form:');
+      lines.push('  DIGEST: <n> findings — <one sentence on what you did, or "nothing new">');
+      lines.push('File it even when n is 0. An honest "DIGEST: 0 findings" is how this loop learns it is');
+      lines.push('finished — it is a correct and valued answer. Never invent work to avoid reporting zero.');
+      // a loop that expects reports and is not getting them can never converge; say so to the model directly.
+      const last = its[its.length - 1];
+      const lastFiled = !last || !last.digest || last.digest.filed !== false;
+      if (!lastFiled && its.length) lines.push('NOTE: your previous pass did not include a readable DIGEST line. Without it this loop cannot finish.');
+    } else {
+      lines.push('', 'If there is genuinely nothing meaningful left to do for this objective, reply with the exact');
+      lines.push('token NOTHING-TO-DO and stop. Do NOT invent busywork to appear productive — an honest');
+      lines.push('NOTHING-TO-DO is the correct and valued answer, and the loop will park itself.');
+    }
     lines.push('</loop_ledger>');
     return lines.join('\n');
   }
@@ -276,13 +324,21 @@
       noopCount: its.filter(it => it.outcome === 'noop').length,
       dryStreak: loop.dryStreak || 0,
       failStreak: loop.failStreak || 0,
+      // REPORTING COMPLIANCE. A loop whose exit condition is "N empty digests" cannot ever finish if the model
+      // stops filing them. The panel must be able to say that out loud rather than showing a loop that looks
+      // healthy and will in fact run until the budget stops it.
+      noDigestStreak: loop.noDigestStreak || 0,
+      expectsDigest: (loop.exitOn || 'never') === 'empty-digests',
       dryStopAfter: dryStopOf(loop),
       // the last few iterations regardless of outcome. Without this the panel can show a loop that has run 12
       // times with nothing to review and no way to say WHY — a failing loop would look identical to an idle
       // one. `error` is the real settled error string, never a generic "something went wrong".
       recent: its.slice(-5).map(it => ({
         n: it.n, outcome: it.outcome, title: it.title, error: it.error,
-        verdict: it.verdict, endedAt: it.endedAt, usd: it.usd, check: it.check || null
+        // verdictNote is the Commander's own reason. It rides the projection so the panel can show WHY
+        // something was rejected — otherwise the history reads as unexplained deletions.
+        verdict: it.verdict, verdictNote: it.verdictNote || null,
+        endedAt: it.endedAt, usd: it.usd, check: it.check || null
       })),
       // the check surface the panel renders its stepper from. `checkCmd` is shown so the Commander can see
       // exactly what is being run at their project root — it is their command, and it must never be a mystery.
@@ -321,6 +377,7 @@
     rollBudgetDay: rollBudgetDay,
     budgetLeft: budgetLeft,
     nextOutcomeFor: nextOutcomeFor,
+    readDigest: readDigest,
     digest: digest,
     summarize: summarize,
     queueCapOf: queueCapOf,
@@ -330,6 +387,6 @@
     QUEUE_CAP_MIN: QUEUE_CAP_MIN,
     QUEUE_CAP_MAX: QUEUE_CAP_MAX,
     DRY_STOP_DEFAULT: DRY_STOP_DEFAULT,
-    _internals: { iso: iso, dayOf: dayOf, clampInt: clampInt, NOTHING_MARK: NOTHING_MARK }
+    _internals: { iso: iso, dayOf: dayOf, clampInt: clampInt, NOTHING_MARK: NOTHING_MARK, DIGEST_RE: DIGEST_RE }
   };
 });

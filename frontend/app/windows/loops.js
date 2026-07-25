@@ -28,6 +28,7 @@
   let pickedId = 'build-test-verify';   // window-local: which shape the START pane is showing
   let loopAgentId = 'agent';
   let pickedDir = '';                   // the blessed project root for a project-shaped loop
+  let dailyCap = 5;                     // $/day — a real default, so an unattended loop is never born uncapped
 
   const T = () => (typeof LoopTemplates !== 'undefined' ? LoopTemplates : null);
 
@@ -62,10 +63,14 @@
     function stepper(l) {
       const t = T() && T().get((l.meta && l.meta.templateId) || '');
       const shape = (t && t.shape) || ['WORK', 'CHECK', 'REVIEW'];
+      /* ONLY LIGHT WHAT THE SERVER PROVES. An earlier version inferred the middle stage from "a check exists
+         and we are not waiting", which lit RUN YOUR CHECK on a loop that was idle between passes — inference
+         dressed as state, in the one panel built to be honest. Two provable stages: an iteration is genuinely
+         in flight (stage 0), or work is queued on the Commander (the last stage). Anything else lights
+         nothing and the binding line carries the truth. */
       let at = -1;
       if (l.state === 'running') at = 0;
-      else if (l.lastCheck && l.state !== 'waiting') at = 1;
-      if (l.pendingCount > 0) at = shape.length - 1;
+      else if (l.pendingCount > 0) at = shape.length - 1;
       return '<div class="lp-step">' + shape.map((s, i) =>
         '<span class="lp-step-i' + (i === at ? ' on' : '') + '">' + esc(s) + '</span>'
       ).join('<span class="lp-step-sep">›</span>') + '</div>';
@@ -127,6 +132,17 @@
         '<div class="mc-acts">' +
           '<button class="bb xs" data-vact="approve" data-n="' + p.n + '">✓ APPROVE</button>' +
           '<button class="bb xs danger" data-vact="reject" data-n="' + p.n + '" data-stacked="' + stacked + '">' + rejectLabel + '</button>' +
+        '</div>' +
+        /* THE REJECTION REASON, inline. This was a window.prompt() — a native modal, wrong for the station's
+           vocabulary and unreliable in the Tauri webview — holding the single most valuable input in the whole
+           subsystem: the reason rides into the NEXT pass's prompt and is what stops the loop repeating itself. */
+        '<div class="lp-why" hidden>' +
+          '<textarea class="key-input lp-why-in" rows="2" placeholder="why? the loop is told this, so it does not repeat the mistake" style="resize:vertical"></textarea>' +
+          '<div class="mc-acts">' +
+            '<button class="bb xs danger" data-vact="reject-confirm" data-n="' + p.n + '">✕ CONFIRM REJECT</button>' +
+            '<button class="bb xs" data-vact="reject-cancel">CANCEL</button>' +
+            '<span class="dim lp-why-cost"></span>' +
+          '</div>' +
         '</div></div>';
     }
 
@@ -136,7 +152,11 @@
       // "Research Loop ◈ Research Loop". Show the shape only when it adds something.
       const shapeName = !t ? 'custom' : (t.name === (l.name || '') ? t.emoji : (t.emoji + ' ' + t.name));
       const pending = l.pending || [];
-      const spent = l.budget && l.budget.spentTodayUsd ? ' · $' + l.budget.spentTodayUsd.toFixed(2) + ' today' : '';
+      // spend against its cap — a number with no ceiling beside it tells the Commander nothing about risk.
+      const bg = l.budget || {};
+      const spent = bg.spentTodayUsd
+        ? ' · $' + bg.spentTodayUsd.toFixed(2) + (bg.perDayUsd ? ' of $' + Number(bg.perDayUsd).toFixed(2) : '') + ' today'
+        : (bg.perDayUsd ? ' · $' + Number(bg.perDayUsd).toFixed(2) + '/day cap' : '');
       return '<div class="mc-row" data-id="' + esc(l.id) + '">' +
         '<div class="mc-top"><b>' + esc(l.name || '(unnamed)') + '</b> <span class="dim">' + esc(shapeName) + '</span> ' + bindingLine(l) + '</div>' +
         stepper(l) +
@@ -200,24 +220,28 @@
       const id = rowEl && rowEl.dataset.id; if (!id) return;
 
       if (vb) {
-        const n = parseInt(vb.dataset.n, 10);
-        const verdict = vb.dataset.vact === 'approve' ? 'approved' : 'rejected';
-        if (verdict === 'rejected') {
-          // STATE THE COST BEFORE THE CLICK. A stacked queue means rejecting this one discards everything
-          // built on top of it — the UI must never destroy work the Commander could still see without saying so.
+        const act = vb.dataset.vact;
+        const card = vb.closest('.lp-pend');
+
+        // REJECT opens the reason panel inline and STATES ITS COST there — a stacked queue means rejecting
+        // this one also discards everything built on top of it, and the UI must never destroy work the
+        // Commander can still see without saying so first.
+        if (act === 'reject') {
           const stacked = parseInt(vb.dataset.stacked, 10) || 0;
-          if (!vb.dataset.armed) {
-            vb.dataset.armed = '1';
-            vb.textContent = stacked > 0 ? '✕ CONFIRM — also discards ' + stacked : '✕ CONFIRM';
-            sfx('bad');
-            setTimeout(() => { if (vb.isConnected) { delete vb.dataset.armed; refresh(); } }, 6000);
-            return;
-          }
+          const why = card.querySelector('.lp-why');
+          why.hidden = false;
+          why.querySelector('.lp-why-cost').textContent = stacked > 0
+            ? 'also discards ' + stacked + ' built on top of this' : '';
+          why.querySelector('.lp-why-in').focus();
+          sfx('bad');
+          return;
         }
+        if (act === 'reject-cancel') { card.querySelector('.lp-why').hidden = true; sfx('click'); return; }
+
+        const n = parseInt(vb.dataset.n, 10);
+        const verdict = act === 'approve' ? 'approved' : 'rejected';
+        const note = verdict === 'rejected' ? ((card.querySelector('.lp-why-in') || {}).value || '') : undefined;
         vb.disabled = true; sfx('click');
-        // a rejection is worth a reason — it is the single most valuable thing the next pass can be told.
-        let note;
-        if (verdict === 'rejected') { note = window.prompt('Why? (the loop is told this, so it does not repeat the mistake)') || ''; }
         try {
           const r = await (await post('/api/loops/verdict', { id, n, verdict, note })).json();
           if (r && r.error) { notify(r.error, 'warn'); sfx('bad'); }
@@ -277,6 +301,10 @@
         '<div class="brief-v" style="margin:2px 0 8px">' + esc(t.blurb) + '</div>' +
         '<div class="mc-detail ' + (t.rigor === 'hard' ? '' : 'dim') + '" style="margin-bottom:8px">' + esc(tpl.rigorNote(t)) + '</div>' +
         projectRow + fields +
+        /* THE SPEND CAP. Pre-filled, not blank: a beginner starting their first unattended loop should not
+           have to know to set one. 0 means ungoverned (budgetcaps.js semantics) and is an explicit choice. */
+        '<label class="mc-lbl">Stop for the day after <span class="dim">(0 = no limit)</span>' +
+          '<div class="lp-dir"><span class="dim">$</span><input id="lp-cap" class="key-input" type="number" min="0" step="0.5" value="' + esc(String(dailyCap)) + '" autocomplete="off"></div></label>' +
         '<div class="lp-agent-pick" role="group" aria-label="Loop agent">' +
           roster.map(a => '<button type="button" class="rt-agent-btn' + (a.id === loopAgentId ? ' active' : '') + '" data-agent="' + esc(a.id) + '" style="--rt-agent-color:' + esc(a.color || 'var(--ph)') + '">' +
             '<span class="rt-agent-dot"></span><span class="rt-agent-name">' + esc(a.name || a.id) + '</span></button>').join('') +
@@ -323,8 +351,11 @@
           if (!b || !b.ok) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((b && b.reason) || 'that folder could not be approved') + '</span>'; sfx('bad'); return; }
         } catch (_) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ could not reach the station</span>'; sfx('bad'); return; }
       }
+      const capEl = formEl.querySelector('#lp-cap');
+      const cap = capEl ? Math.max(0, parseFloat(capEl.value) || 0) : 0;
+      dailyCap = cap;
       const provider = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : undefined;
-      const spec = tpl.buildSpec(t, values, { workdir: workdir || undefined, agentId: loopAgentId, provider });
+      const spec = tpl.buildSpec(t, values, { workdir: workdir || undefined, agentId: loopAgentId, provider, perDayUsd: cap });
       try {
         const r = await (await post('/api/loops', spec)).json();
         if (r && r.error) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); return; }
@@ -344,4 +375,60 @@
   }
 
   StationUI.registerWindow('loops', 'LOOPS', buildLoops, { console: true });
+
+  /* ================= THE WATCHER — a loop that needs you must SAY so =====================================
+     A loop's whole cadence depends on the Commander noticing that it stopped. Without this it parks on a full
+     queue and waits in silence forever, which turns "it stops for your verdict" into "it stops" — the loop
+     looks broken and the feature quietly fails. This runs whenever the app is up (not only while the window
+     is open) and does two things:
+
+       · a COUNT BADGE on the ∞ LOOPS dock button, so the state is visible at a glance;
+       · ONE toast per newly-arrived candidate, keyed by (loopId, iteration) so a poll never re-announces
+         work already announced — including across a reload, because the seen-set is persisted.
+
+     Deliberately NOT a COMMS beat: the beat slot is governed by locked rules (one post-run beat at a time,
+     decided cards vanish) and a loop finishing is not a conversational turn. A badge plus a toast is the
+     honest, low-risk surface; a channel ping for a Commander who is genuinely away is a later, separate call
+     that belongs server-side next to cron's autoNotify. */
+  const SEEN_KEY = 'starnet.loops.seen.v1';
+  const loadSeen = () => { try { return new Set(JSON.parse(localStorage.getItem(SEEN_KEY) || '[]')); } catch (_) { return new Set(); } };
+  const saveSeen = (s) => { try { localStorage.setItem(SEEN_KEY, JSON.stringify([...s].slice(-400))); } catch (_) {} };
+
+  function paintBadge(n) {
+    const btn = document.querySelector('.bb[data-term="loops"]');
+    if (!btn) return;
+    let dot = btn.querySelector('.lp-badge');
+    if (!n) { if (dot) dot.remove(); return; }
+    if (!dot) { dot = document.createElement('span'); dot.className = 'lp-badge'; btn.appendChild(dot); }
+    dot.textContent = String(n);
+    dot.title = n + ' loop result' + (n === 1 ? '' : 's') + ' waiting on you';
+  }
+
+  async function watch() {
+    let j;
+    try { j = await (await fetch('/api/loops', { headers: { 'X-StarNet-Token': window.__STARNET_API_TOKEN__ || '' } })).json(); }
+    catch (_) { return; }                       // station offline — say nothing rather than guess
+    const loops = (j && j.loops) || [];
+    let waiting = 0;
+    const seen = loadSeen();
+    const fresh = [];
+    for (const l of loops) {
+      waiting += (l.pendingCount || 0);
+      for (const p of (l.pending || [])) {
+        const key = l.id + ':' + p.n;
+        if (!seen.has(key)) { seen.add(key); fresh.push({ l, p }); }
+      }
+    }
+    paintBadge(waiting);
+    saveSeen(seen);
+    // announce at most one line per sweep — N new candidates at once is one event to a human, not N.
+    if (fresh.length && typeof StationUI !== 'undefined' && StationUI.h && StationUI.h.notify) {
+      const f = fresh[0];
+      StationUI.h.notify(fresh.length === 1
+        ? '∞ ' + (f.l.name || 'a loop') + ' has work for you — #' + f.p.n + ' ' + (f.p.title || '')
+        : '∞ ' + fresh.length + ' loop results are waiting on your review', 'good');
+    }
+  }
+  // first sweep after boot settles, then a slow heartbeat — this is a notifier, not a live view.
+  setTimeout(() => { watch(); setInterval(watch, 25000); }, 6000);
 })();

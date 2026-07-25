@@ -168,6 +168,7 @@
       iterationCount: 0,
       dryStreak: 0,
       failStreak: 0,
+      noDigestStreak: 0,
       iterations: [],
       budget: {
         // 0 = ungoverned, matching budgetcaps.js semantics (never "block everything").
@@ -235,7 +236,7 @@
   function resumeLoop(loops, id, ctx) {
     const now = (ctx && ctx.now) || 0;
     return mapLoop(loops, id, (loop) => Object.assign({}, loop, {
-      enabled: true, state: 'idle', stopReason: null, dryStreak: 0, failStreak: 0, redStreak: 0, updatedAt: iso(now)
+      enabled: true, state: 'idle', stopReason: null, dryStreak: 0, failStreak: 0, redStreak: 0, noDigestStreak: 0, updatedAt: iso(now)
     }));
   }
 
@@ -361,6 +362,9 @@
         files: normFiles(result.files),
         usd: usd,
         error: ok ? null : (result.error != null ? str(result.error, NOTE_CAP) : (cancelled ? 'cancelled' : 'error')),
+        // the parsed report for this pass. Stored rather than re-derived, because `summary` is truncated and
+        // the DIGEST line lives at the END of the reply — re-parsing it later would read a cut-off string.
+        digest: (ok && !cancelled) ? LJ.readDigest(result.text) : null,
         check: chk ? {
           passed: !!chk.passed, summary: str(chk.summary, SUM_CAP), note: str(chk.note, NOTE_CAP),
           tampered: !!chk.tampered, tamperedPaths: (chk.tamperedPaths || []).slice(0, FILE_CAP).map(p => str(p, 400)),
@@ -445,6 +449,13 @@
         next.failStreak = 0;
       }
 
+      /* REPORTING COMPLIANCE. A loop whose exit condition is "N empty digests" can only ever finish if the
+         model keeps filing them. Track the streak of passes that filed nothing readable so the panel can say
+         so out loud — otherwise a non-reporting loop looks perfectly healthy while being unable to stop. */
+      if ((loop.exitOn || 'never') === 'empty-digests' && outcome !== 'cancelled' && outcome !== 'failed') {
+        next.noDigestStreak = (settled.digest && settled.digest.filed) ? 0 : ((loop.noDigestStreak || 0) + 1);
+      }
+
       // still live: 'waiting' when the review queue is now full (the honest reason it goes quiet), else idle.
       const pend = LJ.pendingReviews(next).length;
       if (next.gate !== 'auto' && pend >= LJ.queueCapOf(next)) {
@@ -526,6 +537,7 @@
         // toward a loop that declares itself finished on a value nobody wrote.
         exitOn: normExit(l.exitOn),
         redStreak: isNum(l.redStreak) ? l.redStreak : 0,
+        noDigestStreak: isNum(l.noDigestStreak) ? l.noDigestStreak : 0,
         redStopAfter: isNum(l.redStopAfter) ? l.redStopAfter : RED_STREAK_MAX,
         checkCmd: l.checkCmd != null ? str(l.checkCmd, 600) : null,
         checkPaths: Array.isArray(l.checkPaths) ? l.checkPaths.map(x => str(x, 200)).filter(Boolean) : [],

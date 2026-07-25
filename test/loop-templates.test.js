@@ -105,4 +105,32 @@ const T = require('../frontend/app/loop-templates.js');
   A.eq(T.buildSpec('research', { question: 'q' }).gate, 'review', 'but the DEFAULT stays review when nothing is passed');
 }
 
+/* ---- 8. THE CROSS-MODULE CONTRACT — the form the template ASKS for must be the form the sidecar READS.
+   This is the exact bug that shipped: the templates instructed "DIGEST: 0 findings" while the sidecar's
+   convergence parser only understood "NOTHING-TO-DO", so two of the three shapes could never stop. Every
+   soft template's own instruction is now run through the real parser. */
+{
+  const LJ = require('../sidecar/loopjob.js');
+
+  // the literal example the rule shows a model, with a real count substituted
+  const sample = T.DIGEST_RULE.match(/DIGEST: <n> findings — <[^>]+>/);
+  A.ok(!!sample, 'the rule shows a concrete example line');
+  const filled = sample[0].replace('<n>', '0').replace(/<[^>]+>/, 'nothing new');
+  A.eq(LJ.readDigest(filled).filed, true, 'the sidecar can READ the exact form the template asks for');
+  A.eq(LJ.readDigest(filled).count, 0, 'and extract its count');
+  A.eq(LJ.nextOutcomeFor(filled), 'noop', 'so a zero-finding pass actually converges');
+  A.eq(LJ.nextOutcomeFor(sample[0].replace('<n>', '4').replace(/<[^>]+>/, 'found four')), 'candidate',
+    'and a non-zero pass is real work');
+
+  for (const t of T.list().filter(x => x.rigor === 'soft')) {
+    const m = t.objective.match(/DIGEST: <n> findings/);
+    A.ok(!!m, t.id + ' embeds the digest form in its objective');
+    A.eq(LJ.readDigest(t.objective.replace('<n>', '0')).filed, true,
+      t.id + ': the instruction it gives the model is one the sidecar can parse');
+  }
+  // and the hard template must NOT be asking for a digest it does not measure
+  const hard = T.list().find(x => x.rigor === 'hard');
+  A.ok(!/DIGEST:/.test(hard.objective), hard.id + ' does not ask for a digest — its check is the measure');
+}
+
 A.report('loop-templates (the shapes a beginner picks)');
