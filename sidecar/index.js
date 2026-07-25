@@ -8375,7 +8375,14 @@ async function runOnce(o) {
     openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null,
     surface: surface,
     redact: redact,
-    resolveServiceKey: (name, sfc) => serviceKeysMod.resolveForRequest(serviceKeys, name, sfc)
+    resolveServiceKey: (name, sfc) => serviceKeysMod.resolveForRequest(serviceKeys, name, sfc),
+    // web_fetch's clean-extraction path is keyed now (r.jina.ai 401s without a token), so it is attempted
+    // ONLY when the Commander has actually connected one. Resolved through the same grant as any other key,
+    // so an unattended run without the tick simply uses the direct fallback instead of failing.
+    jinaKey: (() => {
+      try { const r = serviceKeysMod.resolveForRequest(serviceKeys, 'JINA_API_KEY', surface); return r.ok ? r.value : ''; }
+      catch (_) { return ''; }
+    })()
   }).register(registry);
   // STUDIO media tools, built up-front so browser.vision can borrow its multimodal analyze path
   // (one provider seam, no duplication). Registered below; here we only need its vision callback.

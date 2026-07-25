@@ -331,8 +331,17 @@
     //  web_fetch
     // ====================================================================
 
-    // PRIMARY: Jina Reader. Keyless 20 RPM. Add deps.jinaKey later to raise to 500 RPM.
+    /* Jina Reader — clean text extraction, but KEYED. Its keyless tier is gone: as of 2026-07-25 every
+       r.jina.ai request without a token returns 401 AuthenticationRequiredError (verified against
+       example.com, Wikipedia and a vendor docs site — it is not a rate limit, it is auth). The old comment
+       here still promised "keyless 20 RPM", so every web_fetch spent a doomed round-trip on Jina before
+       silently falling back to directFetch. That is why fetch quality quietly degraded for everyone: the
+       fallback returns our own cruder htmlToText, and anti-bot sites refuse it outright.
+       Now: only attempted when a key is actually configured (deps.jinaKey, wired from the KEYS store), so a
+       user with no Jina key goes straight to direct with no wasted hop, and a user WITH one gets the good
+       extraction back. Either way the caller still falls back, so this can never be a hard failure. */
     async function jinaFetch(targetUrl, parent) {
+      if (!deps.jinaKey) { const e = new Error('jina not configured'); e.__retryDirect = true; throw e; }
       const headers = { 'Accept': 'text/plain', 'X-Return-Format': 'text', 'User-Agent': UA };
       if (deps.jinaKey) headers['Authorization'] = 'Bearer ' + deps.jinaKey;
       const res = await withTimeout(signal => doFetch('https://r.jina.ai/' + targetUrl, { headers, signal })

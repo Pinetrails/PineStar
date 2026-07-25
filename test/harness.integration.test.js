@@ -38,13 +38,21 @@ const { renderRecall, injectRecall, rank } = require('../sidecar/context.js');
 
 const ROOT = path.join(os.tmpdir(), 'starnet-itest-' + process.pid);
 
-// canned web: a DDG results page for search, a Jina Reader body for fetch. (No real network.)
+// canned web: a DDG results page for search, and the ARTICLE ITSELF for fetch. (No real network.)
+// The article is served on the DIRECT url, not through r.jina.ai, because that is the path a default
+// install actually takes: Jina Reader is keyed now (keyless returns 401), so web_fetch only attempts it
+// when a key is configured — which no default station has. This mock used to answer ONLY r.jina.ai, so the
+// integration mission was silently exercising a path real users never reach.
 const DDG_HTML = '<a class="result__a" href="/l/?uddg=https%3A%2F%2Fexample.com%2Farticle">Example Article</a>' +
   '<div class="result__snippet">A great article about the answer.</div>';
+const ARTICLE_HTML = '<html><body><article>The top result confirms the answer is 42.</article></body></html>';
 function cannedFetch(url) {
   const u = String(url);
   if (u.indexOf('duckduckgo') >= 0) return Promise.resolve({ status: 200, text: async () => DDG_HTML });
   if (u.indexOf('r.jina.ai') >= 0) return Promise.resolve({ status: 200, text: async () => 'Title: Example\nURL Source: https://example.com/article\nMarkdown Content:\nThe top result confirms the answer is 42.' });
+  if (u.indexOf('example.com/article') >= 0) {
+    return Promise.resolve({ status: 200, text: async () => ARTICLE_HTML, headers: { get: (h) => (/content-type/i.test(h) ? 'text/html' : '') } });
+  }
   return Promise.resolve({ status: 404, text: async () => '', headers: { get: () => '' } });
 }
 
