@@ -398,10 +398,14 @@
           '<div class="lp-dir"><input id="lp-dir" class="key-input" placeholder="the folder this loop works in" value="' + esc(pickedDir) + '" autocomplete="off">' +
           '<button class="bb xs" id="lp-pick" type="button">📁 PICK</button></div></label>'
         : '';
+      /* THE CHECK COMMAND IS NO LONGER A QUESTION when we can answer it ourselves. Typing a shell command is
+         the most technical thing this form ever asked for, and /api/loops/detect already reads the project's
+         real manifests. So: detected -> state it as a FACT, no field. Not detected -> ask, because the loop
+         cannot have a machine-checked ending without one. The command stays visible either way: it is run at
+         your project root and you are entitled to see exactly what that is. */
       const checkRow = t.check
-        ? '<label class="mc-lbl">The command you run to check it <span style="color:var(--bad)">*</span>' +
-          '<input id="lp-check" class="key-input lp-p" data-key="check" placeholder="npm test" autocomplete="off">' +
-          '<div id="lp-testout" class="lp-testout dim">the station runs this itself after every pass</div></label>'
+        ? '<div id="lp-checkrow" class="lp-checkline dim">reading the project…</div>' +
+          '<input id="lp-check" class="lp-p" data-key="check" type="hidden">'
         : '';
 
       formEl.innerHTML =
@@ -411,38 +415,63 @@
         projectRow +
         t.params.filter(pm => pm.key !== 'check').map(fieldRow).join('') +
         checkRow +
+        // WHO RUNS IT is a real choice, not an advanced setting — it belongs in the open.
+        '<label class="mc-lbl">Which agent runs it' +
+          '<div class="lp-agent-pick" role="group" aria-label="Loop agent">' +
+            roster.map(a => '<button type="button" class="rt-agent-btn' + (a.id === loopAgentId ? ' active' : '') + '" data-agent="' + esc(a.id) + '" style="--rt-agent-color:' + esc(a.color || 'var(--ph)') + '">' +
+              '<span class="rt-agent-dot"></span><span class="rt-agent-name">' + esc(a.name || a.id) + '</span></button>').join('') +
+          '</div></label>' +
         '<details class="lp-adv"><summary>more options</summary>' +
           '<label class="mc-lbl">Stop for the day after <span class="dim">(0 = no limit)</span>' +
             '<div class="lp-dir"><span class="dim">$</span><input id="lp-cap" class="key-input" type="number" min="0" step="0.5" value="' + esc(String(dailyCap)) + '"></div></label>' +
-          '<label class="mc-lbl">Which agent runs it' +
-            '<div class="lp-agent-pick" role="group" aria-label="Loop agent">' +
-              roster.map(a => '<button type="button" class="rt-agent-btn' + (a.id === loopAgentId ? ' active' : '') + '" data-agent="' + esc(a.id) + '" style="--rt-agent-color:' + esc(a.color || 'var(--ph)') + '">' +
-                '<span class="rt-agent-dot"></span><span class="rt-agent-name">' + esc(a.name || a.id) + '</span></button>').join('') +
-            '</div></label>' +
           '<details class="lp-preview"><summary>what the agent will be told</summary><pre id="lp-prev"></pre></details>' +
         '</details>';
-
       formEl.querySelectorAll('.rt-agent-btn').forEach(b => b.addEventListener('click', () => {
         loopAgentId = b.dataset.agent || 'agent'; sfx('click'); renderForm();
       }));
 
       const dirEl = formEl.querySelector('#lp-dir');
       const checkEl = formEl.querySelector('#lp-check');
-      const testOut = formEl.querySelector('#lp-testout');
       const capEl = formEl.querySelector('#lp-cap');
 
       if (dirEl) {
+        /* DETECT, then STATE IT — the user should not have to know their own test command by heart. When the
+           project's manifests answer the question we say what will run and why, as a fact with no field. Only
+           when nothing is recognisable do we ask, because a machine-checked ending is impossible without one.
+           The command is always SHOWN: it runs at your project root, so you are entitled to see it. */
         const detect = async () => {
           const val = (dirEl.value || '').trim();
-          if (val && checkEl) {
+          const rowEl = formEl.querySelector('#lp-checkrow');
+          if (val && checkEl && rowEl) {
+            rowEl.className = 'lp-checkline dim'; rowEl.textContent = 'reading the project…';
             try {
               const r = await (await post('/api/loops/detect', { path: val })).json();
-              if (r && r.ok && r.cmd) { checkEl.value = r.cmd; testOut.textContent = 'suggested "' + r.cmd + '" — ' + r.why + '. Test it to be sure.'; }
-              else if (r && r.ok) testOut.textContent = r.why || 'type the command you run yourself';
-            } catch (_) { /* detection is a convenience; never block the form on it */ }
+              if (r && r.ok && r.cmd) {
+                checkEl.value = r.cmd;
+                rowEl.className = 'lp-checkline';
+                rowEl.innerHTML = 'After each pass the station will run <code>' + esc(r.cmd) + '</code> ' +
+                  '<span class="dim">— ' + esc(r.why) + '.</span> ' +
+                  '<button type="button" class="lp-link" id="lp-checkedit">change</button>';
+                const ed = rowEl.querySelector('#lp-checkedit');
+                if (ed) ed.addEventListener('click', () => { sfx('click'); askForCheck(r.cmd); });
+              } else {
+                askForCheck('', (r && r.why) || '');
+              }
+            } catch (_) { askForCheck(''); }
           }
           gate();
         };
+        // the fallback: nothing recognisable here, so the one question we cannot answer for them.
+        function askForCheck(current, why) {
+          const rowEl = formEl.querySelector('#lp-checkrow'); if (!rowEl) return;
+          rowEl.className = 'lp-checkline';
+          rowEl.innerHTML = '<label class="mc-lbl">What command checks this project? <span style="color:var(--bad)">*</span>' +
+            '<input id="lp-checktext" class="key-input" placeholder="npm test" value="' + esc(current || '') + '" autocomplete="off">' +
+            '<span class="dim">' + esc(why || 'the station runs it after each pass to know when the loop is done') + '</span></label>';
+          const inp = rowEl.querySelector('#lp-checktext');
+          inp.addEventListener('input', () => { checkEl.value = inp.value; gate(); });
+          inp.focus();
+        }
         dirEl.addEventListener('change', detect);
         dirEl.addEventListener('input', gate);
         const pick = formEl.querySelector('#lp-pick');

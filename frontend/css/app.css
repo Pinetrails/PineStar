@@ -3257,3 +3257,9 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
 .lp-hist-v { text-align: center; }
 .lp-hist-t { color: var(--ph-dim); line-height: 1.4; }
 .lp-hist-why { grid-column: 3; margin: 0 0 4px 46px; font-size: 10.5px; color: var(--bad); opacity: .85; line-height: 1.4; }
+
+/* the check line: a stated fact, not a question, when we could detect it */
+.lp-checkline { font-size: 11.5px; color: var(--ph-bright); line-height: 1.6; margin: 8px 0 4px; }
+.lp-checkline code { background: rgba(0,0,0,.35); border: 1px solid var(--ph-faint); padding: 1px 6px; color: var(--gold); }
+.lp-link { font-family: inherit; font-size: 11px; color: var(--ph-dim); background: none; border: 0; border-bottom: 1px dotted var(--ph-faint); cursor: pointer; padding: 0; margin-left: 4px; }
+.lp-link:hover { color: var(--ph-bright); border-bottom-color: var(--ph); }
