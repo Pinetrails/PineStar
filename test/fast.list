@@ -310,6 +310,8 @@ test/cron.durability.test.js
 test/cron.lock.test.js
 test/cron.oneshot.test.js
 test/cron.run-now.test.js
+test/tool-withheld-message.test.js
+test/cron-guard.test.js
 test/routine-tools.test.js
 test/workstreams.test.js
 test/session-power-tools.test.js

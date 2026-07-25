@@ -53,6 +53,30 @@ function impactOfTool(tool) {
   return IMPACTS.EXTERNAL_UNKNOWN;
 }
 
+// The capability families that may be granted for unattended use. A name outside this set is DROPPED, so a
+// widened/corrupted job record can never mint authority the host does not model. 'workbench' = shell.exec +
+// verify.run (the workspace-process impact class). Deliberately NOT extended to media-control or
+// external-unknown: those are separate lanes with their own blast radii.
+// 'connectors' = the Commander's CONNECTED MCP servers (capability 'mcp:<connectorId>'). Deliberately NOT a
+// blanket external-unknown unlock: that impact class is also the FAIL-CLOSED default for any tool the host
+// cannot classify, so the grant is additionally narrowed to real connector tools by isConnectorTool below.
+const GRANTABLE_UNATTENDED = new Set(['workbench', 'connectors']);
+
+// A tool projected from a configured MCP connector. sidecar/mcp/translate.js stamps every such def with
+// capability 'mcp:<sanitized connectorId>'; nothing else in the registry uses that prefix.
+function isConnectorTool(tool) {
+  return /^mcp:/.test(String((tool && tool.capability) || ''));
+}
+
+function normalizeUnattendedGrants(list) {
+  const out = new Set();
+  for (const g of (Array.isArray(list) ? list : [])) {
+    const name = String(g == null ? '' : g).trim();
+    if (name && GRANTABLE_UNATTENDED.has(name)) out.add(name);
+  }
+  return out;
+}
+
 function makeRunAuthority(opts) {
   opts = opts || {};
   const surface = opts.surface === 'interactive' ? 'interactive' : 'autonomous';
@@ -60,11 +84,36 @@ function makeRunAuthority(opts) {
   const environment = opts.environment || null;
   const confirm = typeof opts.confirm === 'function' ? opts.confirm : null;
   const isolated = !!(environment && environment.supports && (environment.supports.userControlIsolation === true || environment.supports.hostileCodeSandbox === true));
+  /* UNATTENDED CAPABILITY GRANT (2026-07-25) — capability families the HOST has recorded as approved for
+     unattended use on THIS run: a routine whose Commander ticked "may use the terminal" in the ROUTINES panel.
+     The record is durable, per-routine and revocable, read off the persisted job by the composition root.
+
+     THE SAFETY PROPERTY, stated exactly: this value is NEVER derived from prompt text, model output, tool
+     results, Full Access, or a cached/blanket consent grant. The model cannot reach this path, so a prompt
+     injection cannot mint one — the worst an injected routine prompt can do is use a power its Commander had
+     already, deliberately, granted to that specific routine. That is why this widening is safe where
+     "Full Access implies shell" would not be, and why the blanket-grant escape below stays closed. */
+  const unattendedGrants = normalizeUnattendedGrants(opts.unattendedGrants);
+  const workbenchGranted = unattendedGrants.has('workbench');
+  const connectorsGranted = unattendedGrants.has('connectors');
+  // An unattended run may call a CONNECTOR tool only when the Commander granted this routine 'connectors'
+  // AND the tool really is one. A tool that merely fell through to external-unknown (the fail-closed default
+  // for anything unclassifiable) is NOT a connector and stays denied — the grant must never become a
+  // catch-all for "everything the host could not identify".
+  function connectorAllowedUnattended(tool) {
+    return connectorsGranted && isConnectorTool(tool);
+  }
   function project(tool) {
     const impact = impactOfTool(tool);
     if (impact === IMPACTS.PHYSICAL_INPUT || impact === IMPACTS.VISIBLE_DESKTOP) return false;
-    if (impact === IMPACTS.EXTERNAL_UNKNOWN) return surface === 'interactive' && !!confirm;
-    if (surface !== 'interactive' && (impact === IMPACTS.WORKSPACE_PROCESS || impact === IMPACTS.MEDIA_CONTROL)) return false;
+    if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
+      if (surface === 'interactive') return !!confirm;
+      return connectorAllowedUnattended(tool);
+    }
+    if (surface !== 'interactive' && impact === IMPACTS.MEDIA_CONTROL) return false;
+    // A host-process capability unattended requires the explicit per-run grant above — absent it, the
+    // pre-2026-07-25 blanket denial is unchanged.
+    if (surface !== 'interactive' && impact === IMPACTS.WORKSPACE_PROCESS) return workbenchGranted;
     return true;
   }
   function authorize(call, tool) {
@@ -73,6 +122,12 @@ function makeRunAuthority(opts) {
       return { ok: false, impact, reason: impact + ' is unavailable to ordinary StarNet runs; no native one-shot user lease exists' };
     }
     if (impact === IMPACTS.EXTERNAL_UNKNOWN) {
+      // A granted routine calling one of the Commander's own connected MCP servers: the recorded per-routine
+      // grant IS the approval, so this needs no live confirmation. Returned BEFORE the interactive-confirm
+      // branch and deliberately WITHOUT oneShot, so the ordinary consent broker still runs for it downstream.
+      if (surface !== 'interactive' && connectorAllowedUnattended(tool)) {
+        return { ok: true, impact, surface, isTask, isolated };
+      }
       if (surface !== 'interactive' || !confirm) return { ok: false, impact, reason: 'unknown external effects require a watched, exact per-call confirmation' };
       // Deliberately bypass the standing-grant broker: any affirmative UI choice authorizes
       // this call ONCE only. "Always", Full Access, and cached grants are not recorded here.
@@ -83,14 +138,22 @@ function makeRunAuthority(opts) {
           : { ok: false, impact, reason: 'exact external-effect confirmation was denied' };
       }, () => ({ ok: false, impact, reason: 'exact external-effect confirmation failed' }));
     }
-    // Full Access, cached grants, and task text never turn an unattended run into authority
-    // over a host process or the user's active media session. This gate runs before consent.
-    if (surface !== 'interactive' && (impact === IMPACTS.WORKSPACE_PROCESS || impact === IMPACTS.MEDIA_CONTROL)) {
+    // Full Access, cached grants, and task text never turn an unattended run into authority over a host
+    // process or the user's active media session. This gate runs before consent. The ONLY key that opens the
+    // host-process door unattended is the host-recorded per-run grant above — see its comment for why that is
+    // not the same escape: it cannot be minted by anything the model can influence.
+    if (surface !== 'interactive' && impact === IMPACTS.MEDIA_CONTROL) {
       return { ok: false, impact, reason: 'unattended runs cannot use ' + impact + ' even under Full Access' };
     }
-    return { ok: true, impact, surface, isTask, isolated };
+    if (surface !== 'interactive' && impact === IMPACTS.WORKSPACE_PROCESS && !workbenchGranted) {
+      return { ok: false, impact, reason: 'unattended runs cannot use ' + impact + ' without an explicit per-routine terminal grant (Full Access does not imply one)' };
+    }
+    return { ok: true, impact, surface, isTask, isolated, granted: (impact === IMPACTS.WORKSPACE_PROCESS && surface !== 'interactive') || undefined };
   }
-  return Object.freeze({ mode: 'preserve-user-control', surface, isTask, isolated, project, authorize });
+  return Object.freeze({
+    mode: 'preserve-user-control', surface, isTask, isolated, project, authorize,
+    unattendedGrants: Object.freeze(Array.from(unattendedGrants).sort())   // diagnostics/telemetry: what this run was actually granted
+  });
 }
 
 function enforceRunAuthority(resolved, registry, authority) {
@@ -199,4 +262,4 @@ async function backgroundOwnsLocalUrl(status, rawUrl, listenerProbe) {
   try { return await listenerProbe(status, rawUrl) === true; } catch (_) { return false; }
 }
 
-module.exports = { enforceSyntheticOnly, enforceRunAuthority, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, REAL_DESKTOP_TOOLS };
+module.exports = { enforceSyntheticOnly, enforceRunAuthority, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, REAL_DESKTOP_TOOLS, GRANTABLE_UNATTENDED, normalizeUnattendedGrants, isConnectorTool };

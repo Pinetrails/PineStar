@@ -72,6 +72,19 @@
     // never run a command. Pure: like hardline/networkOf, all state comes from the injected function. Default: none.
     const workshop = typeof opts.workshop === 'function' ? opts.workshop : null;
     const credentialed = typeof opts.credentialed === 'function' ? opts.credentialed : null;
+    // UNATTENDED TERMINAL GRANT (2026-07-25): the Commander's recorded per-ROUTINE "may use the terminal"
+    // approval for THIS run. Injected like workshop/credentialed; index.js derives it from the durable cron job
+    // record only. Default: none -> the exec lockout below is untouched and this file behaves exactly as before.
+    const terminalGrant = typeof opts.terminalGrant === 'function' ? opts.terminalGrant : null;
+    // the capability the terminal grant may unlock. 'workbench' = shell.exec + verify.run. Overridable for tests.
+    const TERMINAL_CAP = opts.terminalCap || 'workbench';
+    // UNATTENDED CONNECTOR GRANT (2026-07-25): the Commander's recorded per-ROUTINE "may use my connected
+    // tools" approval. Same injection shape and same host-only sourcing as terminalGrant. Default: none.
+    const connectorGrant = typeof opts.connectorGrant === 'function' ? opts.connectorGrant : null;
+    // MCP connector tools are stamped capability 'mcp:<connectorId>' by sidecar/mcp/translate.js. Matching the
+    // PREFIX (not a fixed name) is what lets one grant cover every server the Commander has connected, while
+    // still refusing every non-connector capability. Overridable for tests.
+    const CONNECTOR_CAP_RE = opts.connectorCapRe || /^mcp:/;
     // the jail-scoped capabilities the workshop grant may unlock a WRITE for (never execute, never a non-jail tool).
     // The plan calls these "cabinet | notebook"; in the live tool registry the FILE capability is `cabinet`
     // (sidecar/tools/builtin/fs.js — fs.write/append/edit/patch, realpath-jailed to workspaces/<agentId>/) and the
@@ -106,6 +119,38 @@
       try { return credentialed(call, tool) === true; } catch (_) { return false; }
     }
 
+    /* UNATTENDED TERMINAL GRANT — the ONLY key that opens the exec lockout (tier 2.5) for an unattended run.
+       Deliberately the narrowest carve-out in this file:
+         • autonomous only (interactive already asks a live human)
+         • the tool's capability must be exactly TERMINAL_CAP ('workbench' = shell.exec / verify.run) — no
+           other family, no wildcard
+         • the injected predicate must confirm THIS RUN carries the Commander's recorded per-routine grant
+       Unlike every other allow-tier this one is NOT reachable by a cached/permanent `always` grant, by prompt
+       text, or by anything the model emits — index.js sources it from the persisted cron job alone. That is
+       precisely why it may do what "Full Access implies shell" deliberately must not. No grant -> false ->
+       the lockout stands. */
+    function terminalAutonomy(call, tool) {
+      if (!terminalGrant) return false;
+      if (surface !== 'autonomous') return false;
+      if (!tool || tool.capability !== TERMINAL_CAP) return false;
+      try { return terminalGrant(call, tool) === true; } catch (_) { return false; }
+    }
+
+    /* UNATTENDED CONNECTOR GRANT — lets a granted routine call the Commander's OWN connected MCP servers with
+       nobody watching. Narrowed exactly like terminalAutonomy:
+         • autonomous only (interactive keeps its exact per-call confirmation, unchanged)
+         • the capability must match CONNECTOR_CAP_RE ('mcp:…') — a tool that merely fell through to the
+           external-unknown default is NOT a connector and gets nothing from this grant
+         • the injected predicate must confirm THIS RUN carries the recorded per-routine grant
+       Sits above the exec lockout for the same reason as the terminal tier: a non-read MCP tool is scope
+       'execute', so below the lockout this would be dead code. */
+    function connectorAutonomy(call, tool) {
+      if (!connectorGrant) return false;
+      if (surface !== 'autonomous') return false;
+      if (!tool || !CONNECTOR_CAP_RE.test(String(tool.capability || ''))) return false;
+      try { return connectorGrant(call, tool) === true; } catch (_) { return false; }
+    }
+
     function sessionSet(create) {
       let s = grantsSession.get(sessionKey);
       if (!s && create) { s = new Set(); grantsSession.set(sessionKey, s); }
@@ -125,10 +170,16 @@
       if (hr) return { allow: false, scope: scope, hardline: true, reason: String(hr) + ANTI_RETRY };
       // 2. BYPASS — Full Access.
       if (bypass) return { allow: true, scope: scope, reason: 'full-access' };
+      // 2.4 UNATTENDED TERMINAL GRANT — checked BEFORE the exec lockout because opening that lockout for exactly
+      // this case IS the feature (see terminalAutonomy). Ordering is load-bearing: below tier 2.5 it would be
+      // dead code. Still below the hardline floor (tier 1), so protected paths remain unwritable.
+      if (terminalAutonomy(call, tool)) return { allow: true, scope: scope, reason: 'per-routine unattended terminal grant' };
+      if (connectorAutonomy(call, tool)) return { allow: true, scope: scope, reason: 'per-routine unattended connector grant' };
       // 2.5 EXEC LOCKOUT — an UNATTENDED run may NEVER execute a command off a cached/pre-blessed grant: only a
-      // live human (interactive surface) can approve shell. This makes "no autonomous shell" un-pre-blessable —
-      // a permanent `always` grant a human gave once does NOT silently enable cron/headless command execution.
-      // Frozen FULL_ACCESS (tier 2 above) remains the sole, deliberate machine-wide exception.
+      // live human (interactive surface), or the explicit per-routine grant in tier 2.4, can approve shell. This
+      // keeps "no autonomous shell" un-pre-blessable — a permanent `always` grant a human gave once does NOT
+      // silently enable cron/headless command execution. Frozen FULL_ACCESS (tier 2) remains the other
+      // deliberate machine-wide exception.
       if (surface === 'autonomous' && scope === 'execute') return { allow: false, scope: scope, reason: SILENCE };
       // 2.6 AWAY WORKSHOP — an autonomous, jail-scoped WRITE by an agent the Commander granted "build things while
       // I'm away" is allowed. Sits ABOVE the cache tier (so it doesn't need a pre-seeded danger key) but BELOW the

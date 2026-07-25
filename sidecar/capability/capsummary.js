@@ -66,16 +66,26 @@ function summarizeCapabilities(resolved, opts) {
     'This block is AUTHORITATIVE: if anything earlier in your instructions implies you always have web or file access, ignore it -- what follows is what you ACTUALLY have right now:\n' +
     '- You CAN: ' + haveStr + '.\n';
 
-  if (lackCore.length) {
-    note += '- You do NOT have: ' + lackCore.map((c) => c.have).join(', ') + '.\n';
+  // On the UNATTENDED surface, absent connector tools are themselves a missing power worth naming -- and the
+  // block must render even when lackCore is EMPTY (a routine granted the terminal has no lacking core cap, yet
+  // still needs to be told whether its Commander's connectors are reachable). Interactive is unchanged.
+  const lackAutonomous = lackCore.map((c) => c.have).concat(hasConnectorTools ? [] : ['use live MCP connector tools']);
+  if (interactive ? lackCore.length : lackAutonomous.length) {
+    note += '- You do NOT have: ' + (interactive ? lackCore.map((c) => c.have) : lackAutonomous).join(', ') + '.\n';
     if (interactive) {
       note += 'If the Commander asks for something you lack, do NOT claim, promise, or pretend to do it. Say plainly you can\'t yet, ' +
         'and name the object to place to grant it: ' +
         lackCore.map((c) => c.have + ' -> place ' + c.object).join('; ') + '. ' +
         'You can always think and reply; that needs nothing.\n';
     } else {
-      note += 'This is an UNATTENDED run: no Commander is watching, so shell/terminal, desktop control and live connector tools ' +
-        'are unavailable on this surface by design -- they require a watched session to approve. Placing objects cannot change that here. ' +
+      // GRANT-AWARE (2026-07-25): a routine can now be granted the terminal and/or its Commander's MCP
+      // connectors for unattended use, so this branch must NOT assert a blanket "no shell, no connectors" --
+      // that would be a fresh lie to the model on exactly the granted runs the grant exists to enable. Only
+      // the capabilities genuinely absent from THIS run's resolved set (lackCore, plus connectors when none
+      // survived) are named; desktop control is unconditional because it carries no grant on any surface.
+      note += 'This is an UNATTENDED run: no Commander is watching, so ' + lackAutonomous.join(', ') + ' and desktop control ' +
+        'are unavailable on this run -- each needs either a watched session or an explicit per-routine grant the ' +
+        'Commander sets on the routine itself. Placing objects cannot change that here. ' +
         'Do NOT claim, promise, or pretend to do what you lack, and do NOT blame missing credentials for a power you were never granted. ' +
         'Do everything you genuinely can, then state plainly what you could not do and why, so the Commander can finish it in a watched session.\n';
     }
