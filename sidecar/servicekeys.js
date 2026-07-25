@@ -239,16 +239,27 @@
      user with no service keys. The caller gates this on shell.exec being in the run's resolved tools:
      advertising an env var the run can't read would be the exact truthful-telemetry violation the
      quest block comments warn about. */
-  function promptBlock(list) {
+  function promptBlock(list, opts) {
     const rows = cleanList(list).filter(r => r.enabled !== false && r.envVar && r.key);
     if (!rows.length) return '';
+    // WHICH WAY can this run actually spend a key? The block must describe only the routes the run HAS,
+    // or it teaches a tool the model wasn't given (the truthful-telemetry violation this block's own
+    // history is about). Default to both when unspecified so an un-updated caller stays informative.
+    const canShell = !opts || opts.shell !== false;
+    const canRequest = !opts || opts.request !== false;
     const lines = rows
       .slice().sort((a, b) => String(a.name).localeCompare(String(b.name)))
-      .map(r => '- ' + r.name + ': environment variable ' + r.envVar + (r.docsUrl ? ' (API docs: ' + r.docsUrl + ')' : ''));
+      .map(r => '- ' + r.name + ': ' + r.envVar
+        + (r.autonomous === true ? '' : ' [watched sessions only]')
+        + (r.docsUrl ? ' (API docs: ' + r.docsUrl + ')' : ''));
+    const how = [];
+    if (canRequest) how.push('with web_request, by writing the NAME as a placeholder in a header — e.g. '
+      + 'headers {"Authorization": "Bearer ${' + rows[0].envVar + '}"} — which the host substitutes at send time');
+    if (canShell) how.push('in your shell, where each name is an environment variable (curl etc.)');
     return '<service_keys>\n'
-      + 'The Commander has connected API keys for these services. Each key is available to your shell '
-      + 'commands as an environment variable — use it to call that service\'s API directly (curl etc.). '
-      + 'NEVER print, echo, or write the key\'s value anywhere; reference it only as the variable.\n'
+      + 'The Commander has connected API keys for these services. You can use them ' + how.join('; and ') + '.\n'
+      + 'You will never see a key\'s value and must never ask the Commander for one. NEVER print, echo, or '
+      + 'write a value anywhere; reference it only by name.\n'
       + lines.join('\n')
       + '\n</service_keys>';
   }

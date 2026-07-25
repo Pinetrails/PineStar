@@ -8868,8 +8868,14 @@ async function runOnce(o) {
   // no service keys gets a byte-identical prompt (promptBlock('') === ''). Fail-open: never breaks a run.
   let serviceKeysBlock = '';
   try {
-    if (isTask && resolved && Array.isArray(resolved.tools) && resolved.tools.indexOf('shell.exec') >= 0) {
-      const b = serviceKeysMod.promptBlock(serviceKeys);
+    // Composes when the run has EITHER route to spend a key: web_request (a placed dish) or shell.exec (a
+    // placed workbench). Before web_request existed this was shell-only, which meant a dish-only station —
+    // the common case — never learned that any key existed, so the model could not reference one.
+    const kt = (isTask && resolved && Array.isArray(resolved.tools)) ? resolved.tools : [];
+    const canShell = kt.indexOf('shell.exec') >= 0;
+    const canRequest = kt.indexOf('web_request') >= 0;
+    if (canShell || canRequest) {
+      const b = serviceKeysMod.promptBlock(serviceKeys, { shell: canShell, request: canRequest });
       if (b) serviceKeysBlock = '\n\n' + b;
     }
   } catch (_) { serviceKeysBlock = ''; }
