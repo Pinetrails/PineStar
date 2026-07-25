@@ -9,7 +9,12 @@
    1. THE VOID IS FROZEN. It is the default and it renders byte-identical to what shipped.
       On 2026-07-14 a galaxy + ringed planet were added to it and Andrew had them reverted
       (514386de: "keep the sky to starfield + nebulas + band + meteor"). That call stands.
-      Richer space lives in DEEP FIELD, which is opt-in. Never decorate the default.
+      Richer space lives in THE NURSERY, which is opt-in. Never decorate the default.
+      Corollary, learned the hard way on 2026-07-24: a NEW backdrop must not be the default
+      plus decoration either. The first attempt at richer space reused this file's own
+      nebula/dust/twinkle recipe and added bodies on top, and read exactly as what it was —
+      "just the void with planets". A backdrop earns its place by INVERTING the default's
+      signature, not by extending it.
    2. A BACKDROP IS NOT A WALLPAPER. Anything at a finite distance below the station MUST
       parallax with the camera, or the eye reads "picture behind a picture" instantly. Deep
       space is the one honest exception — it has no near reference, so THE VOID's depths are
@@ -64,6 +69,8 @@ const SpaceBG = (() => {
   const NEB_HUES = [[150, 90, 255], [255, 90, 190], [90, 200, 255], [90, 255, 200]];
 
   const rgba = (c, a) => 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (+a).toFixed(3) + ')';
+  // linear blend of two [r,g,b] triples — for ramps written straight into an ImageData buffer
+  const mix3 = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
   const px1 = () => Math.max(1, Math.round((typeof window !== 'undefined' && window.devicePixelRatio) || 1));
 
   /* stamp one soft radial puff, wrapped HORIZONTALLY (x-w / x / x+w) — for layers that only
@@ -122,6 +129,27 @@ const SpaceBG = (() => {
   const SIN_N = 2048, SIN_MASK = SIN_N - 1;
   const SIN_LUT = new Float32Array(SIN_N);
   for (let i = 0; i < SIN_N; i++) SIN_LUT[i] = Math.sin((i / SIN_N) * Math.PI * 2);
+
+  /* Value noise on an N x N lattice, WRAPPING. Lattice indices are taken modulo N, so any field
+     built from these is seamless on the torus by construction rather than by touch-up — which a
+     backdrop that parallaxes in both axes needs. Smoothstep between lattice points, so the field
+     is continuous; the CALLER is responsible for quantizing it into bands, because smooth noise
+     rendered straight to pixels is what reads as blur. */
+  function wrapNoise(N, rnd) {
+    const g = new Float32Array(N * N);
+    for (let i = 0; i < g.length; i++) g[i] = rnd();
+    return (u, v) => {
+      const fx = u * N, fy = v * N;
+      const ix = Math.floor(fx), iy = Math.floor(fy);
+      const x0 = ((ix % N) + N) % N, y0 = ((iy % N) + N) % N;
+      const x1 = (x0 + 1) % N, y1 = (y0 + 1) % N;
+      const tx = fx - ix, ty = fy - iy;
+      const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+      const a = g[y0 * N + x0], b = g[y0 * N + x1], c = g[y1 * N + x0], d = g[y1 * N + x1];
+      const top = a + (b - a) * sx, bot = c + (d - c) * sx;
+      return top + (bot - top) * sy;
+    };
+  }
 
   /* one horizontal dash, wrapped in x — foam and glitter are short and lie along the surface, and
      a dash that runs off the right edge has to reappear on the left or the tile seam shows. */
@@ -318,199 +346,174 @@ const SpaceBG = (() => {
     },
   };
 
-  /* ---------------------------------------------------------- BACKDROP: DEEP FIELD ---- */
-  /* Space, but somewhere with things in it. This is where the galaxy and the ringed world from
-     2026-07-14 (35b3358e) live now — they were reverted out of THE VOID by request, and the
-     answer was never "delete the art", it was "stop decorating the default".
+  /* --------------------------------------------------------- BACKDROP: THE NURSERY ---- */
+  /* Inside a molecular cloud, not looking at one from outside.
 
-     Unlike THE VOID this one DOES parallax, very slightly. A body at a knowable distance is the
-     one thing in space that can betray a static backdrop, so the layers separate a little under
-     a pan: nebulas barely, the bodies a touch more. Depths stay tiny on purpose — space that
-     slides like a cloud deck reads as cardboard scenery. */
+     WHAT THIS REPLACES, AND WHY (2026-07-24, Andrew: "its just the void with planets that dont
+     look good, a galaxy that looks terrible... i want a completely different space backround").
+     The old DEEP FIELD deserved that. It was built by reusing THE VOID's own nebula/dust/twinkle
+     recipe and bolting on the galaxy + ringed world recovered from the 2026-07-14 revert, so "the
+     void with things added" was a literally accurate description of its construction. It also
+     rested on an assumption that was never tested: that when those bodies were cut from the void
+     the ART had been fine and only the placement was wrong. It was not.
 
-  const DEEP_BG = {
-    label: 'DEEP FIELD',
-    blurb: 'Crowded space. Worlds, rings, and a galaxy edge-on.',
-    base: '#040308',
-    D: { neb: 0.015, dust: 0.035, body: 0.055, star: 0.02 },
+     A NEW BACKDROP HAS TO INVERT THE OLD ONE'S SIGNATURE, not decorate it. THE VOID is sparse
+     bright points on black — measured, 79% of its pixels are near-black. So this is the opposite:
+     gas is the substance, it fills the frame, and DARKNESS IS THE STRUCTURE — cold dust lanes
+     and globules bitten out of the glow. Nothing discrete is drawn at all. No planets, no rings,
+     no galaxy: those are exactly the objects that failed, and a cloud needs none of them.
+
+     Built with the three things this lane has already had to learn the hard way:
+       - a CONTINUOUS field through ImageData, never sparse marks (the OCEAN starfield bug)
+       - QUANTIZED into flat bands, because smooth noise renders as blur (the FOREST blur bug)
+       - real VALUE SEPARATION between the gas and the lanes (the FOREST outline bug)
+     Domain-warped noise is what makes it filamentary rather than blobby — sampling the density
+     field at coordinates that have themselves been pushed around by another noise field is the
+     difference between "gas" and "lava lamp". */
+
+  const NURSERY_BG = {
+    label: 'THE NURSERY',
+    blurb: 'Inside the cloud. Cold dust, hot young stars, no horizon.',
+    base: '#05040a',
+    D: { gas: 0.018, lane: 0.042, mote: 0.085 },
+    LEVELS: 9,                             // flat bands; enough for soft gas, few enough to stay crisp
+
+    /* One block, one place to tune. The cloud must still sit UNDER the station: backdrop/station
+       luma ~0.5-0.65, the law OCEAN established by shipping at 1.25 and inverting the frame.
+       A nebula is the easiest backdrop in this file to blow that budget on, so the density curve
+       is deliberately biased low — most of the frame is faint outer gas and hot cores are rare. */
+    LIGHT: {
+      EMPTY: [15, 11, 27],                 // between the filaments — NOT black; inside a cloud even
+                                           // the gaps glow. At [6,5,12] this measured DARKER than
+                                           // THE VOID (11.6 vs 12.7 luma, 68% of pixels near-black),
+                                           // which is the exact opposite of the point.
+      GAS1: [40, 21, 60],                  // faint outer violet
+      GAS2: [62, 22, 64],                  // mid magenta
+      GAS3: [104, 44, 76],                 // dense
+      CORE: [156, 104, 116],               // hot, and rare
+      TEAL: [22, 62, 74],                  // oxygen-region accent, mixed by its own field
+      LANE: [4, 3, 8],                     // cold dust: what the lanes multiply toward
+      STAR: [230, 226, 255],
+    },
 
     build(w, h, rnd) {
-      const area = w * h;
-      const u = px1();
+      /* half resolution, blitted back up — same reasoning as the OCEAN deck: the per-pixel pass
+         is 4x cheaper on a rebuild that must not stall a resize, and the 2x upscale gives the gas
+         chunkier pixels that sit better beside the station art than a fine smooth field. */
+      const SW = Math.max(1, Math.ceil(w / 2)), SH = Math.max(1, Math.ceil(h / 2));
+      const LT = NURSERY_BG.LIGHT, LV = NURSERY_BG.LEVELS;
+      const gasCv = mkCv(SW, SH), gc = gasCv.getContext('2d');
 
-      /* ---- nebulas: same recipe as THE VOID but authored toroidally (this one pans in y) ---- */
-      const nebCv = mkCv(w, h), nc = nebCv.getContext('2d');
-      nc.globalCompositeOperation = 'lighter';
-      for (let b = 0, blobs = area > 2.2e6 ? 5 : 4; b < blobs; b++) {
-        const cx = rnd() * w, cy = rnd() * h;
-        const R = (0.18 + 0.22 * rnd()) * Math.min(w, h);
-        const hue = NEB_HUES[Math.floor(rnd() * NEB_HUES.length) % NEB_HUES.length];
-        const acc = NEB_HUES[Math.floor(rnd() * NEB_HUES.length) % NEB_HUES.length];
-        for (let p = 0; p < 7; p++) {
-          puff9(nc, w, h, cx + (rnd() - 0.5) * R * 1.3, cy + (rnd() - 0.5) * R * 0.9,
-            R * (0.35 + 0.45 * rnd()), p < 5 ? hue : acc, 0.06 + 0.05 * rnd());
-        }
-        puff9(nc, w, h, cx, cy, R * 0.30, hue, 0.16);
-      }
+      // density octaves + the two fields that warp them, all wrapping
+      const d1 = wrapNoise(3, rnd), d2 = wrapNoise(6, rnd), d3 = wrapNoise(12, rnd), d4 = wrapNoise(24, rnd);
+      const wxF = wrapNoise(4, rnd), wyF = wrapNoise(4, rnd);
+      const lane1 = wrapNoise(5, rnd), lane2 = wrapNoise(11, rnd);
+      const tealF = wrapNoise(4, rnd);
 
-      /* THE GALAXY — one distant inclined spiral: disk haze + two log-spiral arms + a warm core.
-         Kept clear of the tile edges so it never straddles the wrap seam. */
-      const gx = w * (0.22 + 0.56 * rnd()), gy = h * (0.18 + 0.5 * rnd());
-      const Rg = (0.11 + 0.06 * rnd()) * Math.min(w, h);
-      nc.save(); nc.translate(gx, gy); nc.rotate(rnd() * Math.PI); nc.scale(1, 0.34);
-      const dg = nc.createRadialGradient(0, 0, 0, 0, 0, Rg);
-      dg.addColorStop(0, 'rgba(210,190,255,0.10)'); dg.addColorStop(0.55, 'rgba(150,120,255,0.05)'); dg.addColorStop(1, 'rgba(150,120,255,0)');
-      nc.fillStyle = dg; nc.fillRect(-Rg, -Rg, Rg * 2, Rg * 2);
-      for (let arm = 0; arm < 2; arm++) for (let i = 0; i < 26; i++) {
-        const phi = (i / 26) * 2.4 * Math.PI, r = Rg * 0.16 * Math.exp(0.24 * phi);
-        const ax = r * Math.cos(phi + arm * Math.PI), ay = r * Math.sin(phi + arm * Math.PI);
-        const ag = nc.createRadialGradient(ax, ay, 0, ax, ay, Rg * 0.14);
-        ag.addColorStop(0, 'rgba(190,170,255,' + (0.055 * (1 - i / 26) + 0.02).toFixed(3) + ')'); ag.addColorStop(1, 'rgba(190,170,255,0)');
-        nc.fillStyle = ag; nc.fillRect(ax - Rg * 0.14, ay - Rg * 0.14, Rg * 0.28, Rg * 0.28);
-        if (i % 2) { nc.fillStyle = 'rgba(230,220,255,' + (0.35 * (1 - i / 26)).toFixed(3) + ')'; nc.fillRect(ax + (rnd() - 0.5) * Rg * 0.1, ay + (rnd() - 0.5) * Rg * 0.1, 1.5, 1.5); }
-      }
-      const cg = nc.createRadialGradient(0, 0, 0, 0, 0, Rg * 0.22);
-      cg.addColorStop(0, 'rgba(255,240,220,0.35)'); cg.addColorStop(0.4, 'rgba(255,220,190,0.12)'); cg.addColorStop(1, 'rgba(255,220,190,0)');
-      nc.fillStyle = cg; nc.fillRect(-Rg * 0.22, -Rg * 0.22, Rg * 0.44, Rg * 0.44);
-      nc.restore();
+      const img = gc.createImageData(SW, SH), D = img.data;
+      let p = 0;
+      for (let y = 0; y < SH; y++) {
+        const v0 = y / SH;
+        for (let x = 0; x < SW; x++) {
+          const u0 = x / SW;
+          // DOMAIN WARP — sample the cloud at a point another field has dragged around. Without
+          // this the octaves stack into round blobs; with it they smear into filaments.
+          const u = u0 + (wxF(u0, v0) - 0.5) * 0.22;
+          const v = v0 + (wyF(u0, v0) - 0.5) * 0.22;
 
-      /* ---- dust: dense far field, toroidal ---- */
-      const dustCv = mkCv(w, h), dc = dustCv.getContext('2d');
-      const dustN = Math.min(9000, Math.round(area / 1000));
-      for (let i = 0; i < dustN; i++) {
-        dc.fillStyle = pickTint(rnd()) + (0.25 + 0.5 * rnd()).toFixed(3) + ')';
-        dc.fillRect(rnd() * w, rnd() * h, rnd() < 0.88 ? 1 : 2, 1);
-      }
+          const dens = d1(u, v) * 0.50 + d2(u, v) * 0.27 + d3(u, v) * 0.15 + d4(u, v) * 0.08;
+          /* The density curve IS the luma budget, and it is the easiest thing in this file to get
+             wrong in both directions. Squaring t crushed almost the whole field to nothing and the
+             cloud stopped filling the frame; leaving it linear would blow past the station. This
+             lifts the floor so gas is everywhere, while still keeping hot cores rare. */
+          let t = Math.max(0, Math.min(1, (dens - 0.24) * 1.85));
+          t = t * (0.55 + 0.45 * t);
+          t = Math.round(t * LV) / LV;                    // flat bands, not a smooth ramp
 
-      /* ---- THE BODIES — opaque, drawn on their own layer ABOVE the dust so stars are
-              OCCLUDED rather than shining through a planet. That occlusion is most of what
-              makes a painted disc read as a solid world. ---- */
-      const bodyCv = mkCv(w, h), bc = bodyCv.getContext('2d');
+          // colour ramp through the gas, with a teal oxygen region mixed in by its own field
+          let col;
+          if (t < 0.34) col = mix3(LT.EMPTY, LT.GAS1, t / 0.34);
+          else if (t < 0.62) col = mix3(LT.GAS1, LT.GAS2, (t - 0.34) / 0.28);
+          else if (t < 0.86) col = mix3(LT.GAS2, LT.GAS3, (t - 0.62) / 0.24);
+          else col = mix3(LT.GAS3, LT.CORE, (t - 0.86) / 0.14);
+          const teal = Math.max(0, (tealF(u * 1.3, v * 1.3) - 0.58)) * 1.7;
+          if (teal > 0) col = mix3(col, LT.TEAL, Math.min(0.65, teal) * t);
 
-      /* THE WORLD — the big one. Terminator, limb darkening, atmosphere rim, and night-side
-         city lights. Placed clear of the tile edges so the wrap never bisects it. */
-      const R = (0.11 + 0.05 * rnd()) * Math.min(w, h);
-      const px0 = w * (0.20 + 0.60 * rnd()), py0 = h * (0.18 + 0.55 * rnd());
-      const lightAng = rnd() * Math.PI * 2;                    // where its sun is (never drawn — law 3)
-      const lx = Math.cos(lightAng), ly = Math.sin(lightAng);
-      const surface = rnd() < 0.5 ? 'banded' : 'rocky';
+          /* THE LANES — cold dust in front of the glow. This is the STRUCTURE: without it the
+             cloud is a smear; with it the frame has shapes. Quantized too, so a lane has a
+             border rather than a fade. */
+          const ln = lane1(u0 * 1.1, v0 * 1.1) * 0.65 + lane2(u0, v0) * 0.35;
+          let dark = Math.max(0, Math.min(1, (ln - 0.52) * 2.6));
+          dark = Math.round(dark * 5) / 5;
+          if (dark > 0) col = mix3(col, LT.LANE, dark * 0.92);
 
-      bc.save();
-      bc.beginPath(); bc.arc(px0, py0, R, 0, Math.PI * 2); bc.clip();   // everything below stays on the disc
-      const base = surface === 'banded' ? [188, 152, 108] : [96, 118, 138];
-      bc.fillStyle = rgba(base, 1); bc.fillRect(px0 - R, py0 - R, R * 2, R * 2);
-      if (surface === 'banded') {
-        for (let i = 0, n = 9 + Math.floor(rnd() * 7); i < n; i++) {   // gas bands, jittered widths
-          const yy = py0 - R + (i / n) * R * 2, th = (R * 2 / n) * (0.5 + rnd());
-          const sh = 0.72 + 0.5 * rnd();
-          bc.fillStyle = 'rgba(' + Math.round(base[0] * sh) + ',' + Math.round(base[1] * sh) + ',' + Math.round(base[2] * sh) + ',0.55)';
-          bc.fillRect(px0 - R, yy, R * 2, th);
-        }
-      } else {
-        for (let i = 0, n = 7 + Math.floor(rnd() * 6); i < n; i++) {   // continents / cloud masses
-          const a = rnd() * Math.PI * 2, d = rnd() * R * 0.85;
-          const land = rnd() < 0.55;
-          puff(bc, w, px0 + Math.cos(a) * d, py0 + Math.sin(a) * d, R * (0.18 + 0.30 * rnd()),
-            land ? [72, 96, 74] : [214, 226, 238], land ? 0.55 : 0.34);
+          D[p] = col[0]; D[p + 1] = col[1]; D[p + 2] = col[2]; D[p + 3] = 255;
+          p += 4;
         }
       }
-      // TERMINATOR: night falls off from the anti-solar side. Offsetting the gradient centre
-      // toward the light is what curves the shadow around a sphere instead of cutting it flat.
-      const tg = bc.createRadialGradient(px0 + lx * R * 0.75, py0 + ly * R * 0.75, R * 0.15, px0 - lx * R * 0.55, py0 - ly * R * 0.55, R * 1.85);
-      tg.addColorStop(0, 'rgba(255,244,214,0.16)');
-      tg.addColorStop(0.42, 'rgba(0,0,0,0)');
-      tg.addColorStop(0.72, 'rgba(2,4,10,0.72)');
-      tg.addColorStop(1, 'rgba(1,2,6,0.97)');
-      bc.fillStyle = tg; bc.fillRect(px0 - R, py0 - R, R * 2, R * 2);
-      // night-side city lights — only well past the terminator, and sparse
-      for (let i = 0, n = 40 + Math.floor(rnd() * 50); i < n; i++) {
-        const a = rnd() * Math.PI * 2, d = Math.sqrt(rnd()) * R * 0.95;
-        const sx = px0 + Math.cos(a) * d, sy = py0 + Math.sin(a) * d;
-        const night = -((sx - px0) * lx + (sy - py0) * ly) / R;      // 1 = deepest night
-        if (night < 0.35) continue;
-        bc.fillStyle = 'rgba(255,206,140,' + (0.14 + 0.55 * rnd() * night).toFixed(3) + ')';
-        bc.fillRect(sx, sy, 1, 1);
+      gc.putImageData(img, 0, 0);
+
+      /* EMBEDDED STARS — hot young ones inside the cloud, each lighting the gas around it. Drawn
+         additively so the halo blooms through the gas instead of sitting on top as a grey disc.
+         These belong to the cloud, so they live in the tile, not in a twinkling layer. */
+      gc.globalCompositeOperation = 'lighter';
+      const embN = 10 + Math.floor(rnd() * 8);
+      const embs = [];
+      for (let i = 0; i < embN; i++) {
+        const sx = rnd() * SW, sy = rnd() * SH;
+        embs.push([sx, sy]);
+        const R = Math.min(SW, SH) * (0.05 + 0.09 * rnd());
+        const warm = rnd() < 0.4;
+        puff9(gc, SW, SH, sx, sy, R, warm ? [150, 96, 120] : [90, 110, 190], 0.13 + 0.10 * rnd());
+        puff9(gc, SW, SH, sx, sy, R * 0.34, LT.STAR, 0.16);
       }
-      // LIMB DARKENING — the edge of a sphere always falls away from you
-      const lg = bc.createRadialGradient(px0, py0, R * 0.62, px0, py0, R);
-      lg.addColorStop(0, 'rgba(0,0,0,0)'); lg.addColorStop(1, 'rgba(0,0,0,0.55)');
-      bc.fillStyle = lg; bc.fillRect(px0 - R, py0 - R, R * 2, R * 2);
-      bc.restore();
+      gc.globalCompositeOperation = 'source-over';
+      for (const [sx, sy] of embs) {                   // the star points themselves, hard pixels
+        gc.fillStyle = rgba(LT.STAR, 0.75 + 0.25 * rnd());
+        gc.fillRect(sx | 0, sy | 0, 1, 1);
+      }
 
-      // ATMOSPHERE — a bright rim on the lit limb only, drawn OUTSIDE the clip so it can bloom
-      bc.save();
-      bc.lineWidth = Math.max(1.5, R * 0.055);
-      const rimA = Math.atan2(ly, lx);
-      const rimGrad = bc.createLinearGradient(px0 + lx * R, py0 + ly * R, px0 - lx * R, py0 - ly * R);
-      rimGrad.addColorStop(0, 'rgba(150,205,255,0.55)');
-      rimGrad.addColorStop(0.55, 'rgba(120,180,255,0.10)');
-      rimGrad.addColorStop(1, 'rgba(120,180,255,0)');
-      bc.strokeStyle = rimGrad;
-      bc.beginPath(); bc.arc(px0, py0, R * 1.012, rimA - 1.5, rimA + 1.5); bc.stroke();
-      bc.restore();
+      /* DUST MOTES — a nearer, DARKER layer. Bright specks would rebuild the starfield this
+         backdrop exists to get away from; cold motes read as being inside something instead. */
+      const moteCv = mkCv(w, h), mc = moteCv.getContext('2d');
+      const moteN = Math.min(2600, Math.round((w * h) / 2600));
+      for (let i = 0; i < moteN; i++) {
+        mc.fillStyle = 'rgba(3,2,7,' + (0.20 + 0.45 * rnd()).toFixed(3) + ')';
+        mc.fillRect((rnd() * w) | 0, (rnd() * h) | 0, rnd() < 0.8 ? 1 : 2, 1);
+      }
 
-      /* THE RINGED WORLD — small, far, and separately placed. Ring order: full ring → body over
-         it (hides the far half) → the near arc re-stroked in front. */
-      const pR = h * (0.030 + 0.018 * rnd());
-      const rx = w * (0.15 + 0.7 * rnd()), ry = h * (0.12 + 0.6 * rnd());
-      const ringTilt = -0.35, ringFlat = 0.32;
-      bc.save(); bc.translate(rx, ry); bc.rotate(ringTilt); bc.scale(1, ringFlat);
-      bc.strokeStyle = 'rgba(180,190,210,0.28)'; bc.lineWidth = Math.max(1, pR * 0.10);
-      bc.beginPath(); bc.arc(0, 0, pR * 1.75, 0, Math.PI * 2); bc.stroke();
-      bc.strokeStyle = 'rgba(180,190,210,0.13)'; bc.lineWidth = Math.max(1, pR * 0.22);
-      bc.beginPath(); bc.arc(0, 0, pR * 1.45, 0, Math.PI * 2); bc.stroke();
-      bc.restore();
-      const bg2 = bc.createRadialGradient(rx - pR * 0.45, ry - pR * 0.45, pR * 0.1, rx, ry, pR);
-      bg2.addColorStop(0, 'rgba(120,150,180,1)');      // muted slate-blue day side
-      bg2.addColorStop(0.6, 'rgba(70,90,120,1)');
-      bg2.addColorStop(1, 'rgba(14,18,28,1)');         // night limb
-      bc.beginPath(); bc.arc(rx, ry, pR, 0, Math.PI * 2); bc.fillStyle = bg2; bc.fill();
-      bc.save(); bc.translate(rx, ry); bc.rotate(ringTilt); bc.scale(1, ringFlat);
-      bc.strokeStyle = 'rgba(180,190,210,0.28)'; bc.lineWidth = Math.max(1, pR * 0.10);
-      bc.beginPath(); bc.arc(0, 0, pR * 1.75, 0, Math.PI); bc.stroke();
-      bc.restore();
+      /* a FEW foreground stars — enough that the frame is alive, far too few to read as a
+         starfield. THE VOID owns that look and this backdrop is defined by not being it. */
+      const near = [];
+      const nearN = Math.min(46, Math.round((w * h) / 46000));
+      for (let i = 0; i < nearN; i++) near.push({ x: rnd(), y: rnd(), ph: rnd() * 10, r: px1() });
 
-      /* ---- the live twinkle bands ---- */
-      const mid = [], near = [];
-      const midN = Math.min(340, Math.round(area / 11000)), nearN = Math.min(190, Math.round(area / 24000));
-      for (let i = 0; i < midN; i++) mid.push({ x: rnd(), y: rnd(), r: rnd() < 0.85 ? u : u * 2, ph: rnd() * 10, c: pickTint(rnd()) });
-      for (let i = 0; i < nearN; i++) near.push({ x: rnd(), y: rnd(), r: rnd() < 0.6 ? u : u * 2, ph: rnd() * 10, c: pickTint(rnd()), glint: rnd() < 0.08 });
-
-      return { nebCv, dustCv, bodyCv, mid, near };
+      return { gasCv, moteCv, near };
     },
 
     draw(ctx, w, h, now, cam, st) {
-      const D = DEEP_BG.D, t = now / 1000;
-      ctx.globalAlpha = 0.9 + 0.1 * Math.sin(now / 7000);
-      tile2(ctx, st.nebCv, w, h, parX(cam, D.neb) + t * 1.2, parY(cam, D.neb));
-      ctx.globalAlpha = 0.92 + 0.08 * Math.sin(now / 4100);
-      tile2(ctx, st.dustCv, w, h, parX(cam, D.dust) + t * 3, parY(cam, D.dust));
-      ctx.globalAlpha = 1;
-      // the bodies sit above the dust: stars behind a world are occluded, not shining through
-      tile2(ctx, st.bodyCv, w, h, parX(cam, D.body) + t * 2, parY(cam, D.body));
+      const D = NURSERY_BG.D, t = now / 1000;
+      // the cloud itself: a very slow drift, and the smallest parallax in the file. Gas this
+      // close would still be light-years off; anything faster reads as cardboard scenery.
+      tile2(ctx, st.gasCv, w, h, parX(cam, D.gas) + t * 0.8, parY(cam, D.gas) + t * 0.25);
 
-      const sx = parX(cam, D.star), sy = parY(cam, D.star);
-      for (const s of st.mid) {
-        const tw = (0.35 + 0.65 * Math.abs(Math.sin(now / (900 + s.ph * 300) + s.ph))) * 0.8;
-        ctx.fillStyle = s.c + tw.toFixed(3) + ')';
-        ctx.fillRect(((s.x * w + t * 8 + sx) % w + w) % w, ((s.y * h + sy) % h + h) % h, s.r, s.r);
-      }
+      // cold motes nearer the camera — the depth cue that says you are INSIDE the cloud
+      ctx.globalAlpha = 0.85;
+      tile2(ctx, st.moteCv, w, h, parX(cam, D.mote) + t * 4.5, parY(cam, D.mote) + t * 1.4);
+      ctx.globalAlpha = 1;
+
       for (const s of st.near) {
-        const tw = 0.35 + 0.65 * Math.abs(Math.sin(now / (900 + s.ph * 300) + s.ph));
-        const x = ((s.x * w + t * 15 + sx) % w + w) % w, y = ((s.y * h + sy) % h + h) % h;
-        ctx.fillStyle = s.c + tw.toFixed(3) + ')';
-        ctx.fillRect(x, y, s.r, s.r);
-        if (s.glint && tw > 0.55) {
-          ctx.fillStyle = s.c + (tw * 0.30).toFixed(3) + ')';
-          ctx.fillRect(x - s.r * 2, y + (s.r >> 1), s.r * 5, 1);
-          ctx.fillRect(x + (s.r >> 1), y - s.r * 2, 1, s.r * 5);
-        }
+        const tw = 0.30 + 0.55 * Math.abs(Math.sin(now / (1100 + s.ph * 340) + s.ph));
+        ctx.fillStyle = 'rgba(214,210,240,' + tw.toFixed(3) + ')';
+        ctx.fillRect(((s.x * w + parX(cam, D.lane)) % w + w) % w,
+                     ((s.y * h + parY(cam, D.lane)) % h + h) % h, s.r, s.r);
       }
 
       drawMeteor(ctx, w, h, now);
       drawBolide(ctx, w, h, now);
     },
   };
+
 
   /* ------------------------------------------------------- shared: SURFACE backdrops ---- */
   /* Everything the station can float ABOVE (ocean, city, and whatever comes next) shares the
@@ -890,8 +893,8 @@ const SpaceBG = (() => {
 
   /* ---------------------------------------------------------------------- registry ---- */
 
-  const BACKDROPS = { void: VOID_BG, deep: DEEP_BG, ocean: OCEAN_BG, city: CITY_BG };
-  const ORDER = ['void', 'deep', 'ocean', 'city'];
+  const BACKDROPS = { void: VOID_BG, nursery: NURSERY_BG, ocean: OCEAN_BG, city: CITY_BG };
+  const ORDER = ["void", "nursery", "ocean", "city"];
   const DEFAULT_ID = 'void';
 
   const has = id => Object.prototype.hasOwnProperty.call(BACKDROPS, id);
