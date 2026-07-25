@@ -35,6 +35,9 @@ const ROUTES = {
   '/inner': () => ({ status: 200, body: PAGE('<p>Card details</p><button id=pay>Pay now</button>') }),
   '/missing': () => ({ status: 404, body: PAGE('<h1>Not found</h1><p>no such page</p>') }),
   '/form': () => ({ status: 200, body: PAGE('<select id=country><option value=us>United States</option><option value=uk>United Kingdom</option></select>') }),
+  // CROSS-ORIGIN frame: the child is served from localhost while the parent is on 127.0.0.1, which
+  // Chrome treats as a different origin and gives its own out-of-process target.
+  '/crossframe': (base) => ({ status: 200, body: PAGE('<p>Outer page</p><iframe src="' + base.replace('127.0.0.1', 'localhost') + '/inner" style="position:absolute;left:120px;top:160px;width:300px;height:200px;border:0"></iframe>') }),
   '/blank': () => ({ status: 200, body: PAGE('<a id=open href="/second" target="_blank">Open receipt</a>') }),
   '/second': () => ({ status: 200, body: PAGE('<h1>Receipt</h1><button id=print>Print receipt</button>', '<title>Receipt</title>') }),
   '/click': () => ({ status: 200, body: PAGE('<button id=go>Load</button><div id=out></div>',
@@ -50,14 +53,16 @@ const ROUTES = {
   }
   const chrome = typeof found === 'string' ? found : found.path;
 
+  let BASE = '';
   const server = http.createServer((req, res) => {
     const route = ROUTES[String(req.url).split('?')[0]];
-    const out = route ? route() : { status: 404, body: PAGE('<p>nope</p>') };
+    const out = route ? route(BASE) : { status: 404, body: PAGE('<p>nope</p>') };
     res.writeHead(out.status, { 'Content-Type': 'text/html; charset=utf-8' });
     res.end(out.body);
   });
   await new Promise(r => server.listen(0, '127.0.0.1', r));
   const base = 'http://127.0.0.1:' + server.address().port;
+  BASE = base;
   const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-gauntlet-'));
   const driver = T.makeCdpDriver({
     chrome, forceHeadless: true, syntheticInputOnly: true, cdpPort: 0, profileDir, timeoutMs: 20000
@@ -86,6 +91,51 @@ const ROUTES = {
     {
       await driver.navigate(base + '/form');
       A.eq(driver.lastResponse().status, 200, 'status does not leak from the previous 404 navigation');
+    }
+
+    /* 2b. CROSS-ORIGIN IFRAME — the regression that mattered most.
+       An out-of-process iframe has NO execution context while paused, so the old adoption path's
+       Runtime.evaluate into it ALWAYS failed, the frame never resumed, and a paused OOPIF blocks its
+       PARENT's renderer. Measured on trunk: every page carrying a cross-origin iframe (Stripe,
+       Auth0/Okta, reCAPTCHA, a consent wall, an embed) hung browser.navigate for the full CDP
+       timeout and then threw. The timing assertion is the real guard here. */
+    {
+      const t0 = Date.now();
+      await driver.navigate(base + '/crossframe');
+      const ms = Date.now() - t0;
+      A.ok(ms < 6000, 'a page with a CROSS-ORIGIN iframe navigates promptly instead of hanging on a paused OOPIF (' + ms + 'ms)');
+      A.ok(/Outer page/.test(await driver.getText()), 'the top document is still readable');
+    }
+
+    /* 2c. THE SAME PAGE ON FULL CHROME — because the binary changes the capability.
+       chrome-headless-shell (which resolveChrome prefers for headless) does NOT put a cross-origin
+       frame in its own process, so there is no target to adopt AND contentDocument is blocked: the
+       frame's content is unreachable by either path, on any harness. Full Chrome with --headless=new
+       DOES isolate it, and then adoption reads it. Asserting this here keeps the difference visible
+       rather than letting a weaker binary quietly cap what the agent can see. */
+    {
+      const full = T.resolveChrome(true);
+      const fullPath = full && full.path && !full.headless ? full.path : null;
+      if (!fullPath) {
+        console.log('   (no full Chrome on this box — cross-origin frame READ not covered)');
+      } else {
+        const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-gauntlet-oopif-'));
+        const d2 = T.makeCdpDriver({ chrome: fullPath, forceHeadless: true, syntheticInputOnly: true, cdpPort: 0, profileDir: dir2, timeoutMs: 20000 });
+        try {
+          const t0 = Date.now();
+          await d2.navigate(base + '/crossframe');
+          A.ok(Date.now() - t0 < 6000, 'full Chrome also navigates a cross-origin-iframe page promptly');
+          A.eq(await d2.testEval('(()=>{try{return !!document.querySelector("iframe").contentDocument}catch(e){return "THREW"}})()'), false,
+            'the frame really is cross-origin (contentDocument is blocked, so only target adoption can read it)');
+          const text = await d2.getText();
+          A.ok(/Card details/.test(text), 'the CROSS-ORIGIN frame content is readable via its adopted target');
+          const nodes = await d2.snapshot(40);
+          A.ok(nodes.some(n => /Pay now/.test(n.text || '')), 'an element inside the cross-origin frame is reachable');
+        } finally {
+          try { await d2.close(); } catch (_) {}
+          try { fs.rmSync(dir2, { recursive: true, force: true }); } catch (_) {}
+        }
+      }
     }
 
     // 3. IFRAME TRAVERSAL + COORDINATE TRANSLATION.

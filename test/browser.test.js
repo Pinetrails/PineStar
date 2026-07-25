@@ -668,6 +668,32 @@ function fakeDriver() {
     A.ok(/Top page/.test(text) && /Enter your card/.test(text), 'get_text reads the frame as well as the top document');
     A.ok(/--- frame 1 ---/.test(text), 'frame text is labelled rather than silently concatenated');
     A.ok(sent.some(m => m.method === 'Page.addScriptToEvaluateOnNewDocument' && m.sessionId === 'frame-1' && /__STARNET_SETTLE__/.test(m.params.source)), 'the settle marker is installed into adopted frames too');
+
+    /* THE WEDGE GUARD. An out-of-process iframe has NO execution context while paused, so a
+       Runtime.evaluate into it always fails ("Cannot find default execution context"). The old chain
+       did exactly that, rejected, closed the target, and never resumed the frame — and a paused OOPIF
+       blocks its PARENT's renderer, so every later eval on the top page timed out. Measured on trunk:
+       ANY page with a cross-origin iframe hung browser.navigate for the full CDP timeout and threw.
+       The frame must therefore be set up with preloads ONLY, and must always end up resumed. */
+    const frameMsgs = sent.filter(m => m.sessionId === 'frame-1');
+    const resumeIdx = frameMsgs.findIndex(m => m.method === 'Runtime.runIfWaitingForDebugger');
+    A.ok(resumeIdx >= 0, 'an adopted frame is ALWAYS resumed — leaving it paused wedges the parent page');
+    // Only the window BEFORE the resume is the paused window; snapshot/get_text legitimately
+    // evaluate in the frame afterwards.
+    const whilePaused = frameMsgs.slice(0, resumeIdx);
+    A.ok(!whilePaused.some(m => m.method === 'Runtime.evaluate'),
+      'a PAUSED iframe target is never Runtime.evaluate\'d — it has no execution context yet');
+    A.ok(whilePaused.length > 0 && whilePaused.every(m => m.method === 'Page.addScriptToEvaluateOnNewDocument'),
+      'only preloads precede the resume');
+
+    // A popup is the MIRROR CASE: Page.* does not ack until resume, so its preload must be sent
+    // without awaiting, while Runtime.evaluate (about:blank has a context) is the liveness check.
+    const popMsgs = sent.filter(m => m.sessionId === 'popup-session');
+    if (popMsgs.length) {
+      const addAt = popMsgs.findIndex(m => m.method === 'Page.addScriptToEvaluateOnNewDocument');
+      const runAt = popMsgs.findIndex(m => m.method === 'Runtime.runIfWaitingForDebugger');
+      A.ok(addAt >= 0 && runAt > addAt, 'a popup preload is queued before its resume');
+    }
     await d.close();
   }
 

@@ -497,10 +497,20 @@
                      the iframe path already solves: attach, inject the shim, THEN resume. Runs are
                      forceHeadless, so an adopted tab can never put a window on the user's screen.
                      If the shim fails to install we still close it: fail closed, never unshimmed. */
+                  /* A PAUSED PAGE TARGET IS THE MIRROR IMAGE OF A PAUSED IFRAME (both measured):
+                       iframe — Page.* acknowledges; Runtime.evaluate has no execution context.
+                       page   — Page.* does NOT acknowledge until resumed; Runtime.evaluate works,
+                                because a popup starts life on about:blank, which HAS a context.
+                     So the preload must be sent WITHOUT awaiting its reply — awaiting deadlocks until
+                     the CDP timeout, and the catch would then close the very tab we set out to adopt.
+                     It still takes effect; only the acknowledgement is deferred. Wire order is
+                     preserved, so it is installed before the resume that triggers the navigation. */
+                  cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP }, sid).catch(() => {});
+                  cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP }, sid).catch(() => {});
                   Promise.resolve()
-                    .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP }, sid))
+                    // Runtime.evaluate DOES answer while a page target is paused, so it both shims the
+                    // current about:blank document and proves the session is live before we resume.
                     .then(() => cdp.send('Runtime.evaluate', { expression: SYNTHETIC_INPUT_BOOTSTRAP, awaitPromise: true }, sid))
-                    .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP }, sid))
                     .then(() => cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP }, sid))
                     .then(() => { pageSessions.set(sid, info.targetId); })
                     .then(() => cdp.send('Runtime.runIfWaitingForDebugger', {}, sid))
@@ -517,17 +527,31 @@
                   Promise.resolve(cdp.send('Runtime.runIfWaitingForDebugger', {}, sid)).catch(() => {});
                   return;
                 }
+                /* AN OUT-OF-PROCESS IFRAME HAS NO EXECUTION CONTEXT WHILE PAUSED.
+                   This path used to Runtime.evaluate the bootstrap into a paused OOPIF. That call
+                   ALWAYS fails ("Cannot find default execution context") — there is no document yet
+                   to evaluate into — so the chain rejected, the catch closed the target, and the frame
+                   never resumed. A paused OOPIF blocks its PARENT's renderer, so every subsequent
+                   Runtime.evaluate on the top page timed out too: measured, any page carrying a
+                   cross-origin iframe (Stripe, Auth0/Okta, reCAPTCHA, a consent wall, an embed) made
+                   browser.navigate hang for the full CDP timeout and then throw.
+                   The preload is the ONLY thing needed and the only thing that works here:
+                   Page.addScriptToEvaluateOnNewDocument DOES acknowledge on a paused OOPIF (~1ms) and
+                   applies to the document the frame is about to load. Then resume. */
                 Promise.resolve()
                   .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP }, sid))
-                  .then(() => cdp.send('Runtime.evaluate', { expression: SYNTHETIC_INPUT_BOOTSTRAP, awaitPromise: true }, sid))
                   .then(() => cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP }, sid))
-                  .then(() => cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP }, sid))
                   // Remember the adopted frame. It was already attached and shimmed, but nothing ever
                   // recorded its session, so snapshot/get_text could never look inside it: a login form
                   // in an Auth0/Okta/Stripe iframe, or a consent banner, was simply invisible.
                   .then(() => { if (info.targetId) frameSessions.set(sid, info.targetId); })
                   .then(() => cdp.send('Runtime.runIfWaitingForDebugger', {}, sid))
-                  .catch(() => { if (cdp && info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {}); });
+                  // Fail closed: an unshimmed frame is removed rather than resumed. Leaving it PAUSED
+                  // is the one outcome we must never pick — that is what wedged the parent page.
+                  .catch(() => {
+                    frameSessions.delete(sid);
+                    if (cdp && info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {});
+                  });
               });
               cdp.on('Target.detachedFromTarget', p => {
               if (!p || !p.sessionId) return;
