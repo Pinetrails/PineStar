@@ -191,6 +191,7 @@
       const dec = new TextDecoder();
       let buf = '';
       const started = {};   // index -> true once tool_start has been emitted
+      let doneEmitted = false;   // exactly one terminal event per stream (see STREAM-END TRUTH below)
 
       // parse ONE raw SSE line into either a control signal or its JSON payload
       function parseLine(line) {
@@ -222,11 +223,15 @@
           }
         }
         if (j.usage) yield { type: 'usage', usage: j.usage };
-        if (choice && choice.finish_reason) yield { type: 'done', finishReason: normalizeFinish(choice.finish_reason) };
+        if (choice && choice.finish_reason && !doneEmitted) {
+          doneEmitted = true;
+          yield { type: 'done', finishReason: normalizeFinish(choice.finish_reason), truncated: false };
+        }
       }
 
       try {
-        while (true) {
+        let sawSentinel = false;                     // the `data: [DONE]` end-of-stream marker
+        while (!sawSentinel) {
           const { value, done } = await reader.read();
           if (done) break;
           buf += dec.decode(value, { stream: true });
@@ -235,16 +240,25 @@
             const line = buf.slice(0, nl); buf = buf.slice(nl + 1);
             const p = parseLine(line);
             if (!p) continue;
-            if (p.done) return;
+            if (p.done) { sawSentinel = true; break; }
             yield* emitFrom(p.json);
           }
         }
         // flush a final line that arrived WITHOUT a trailing newline (rare: the closing usage/done chunk)
-        buf += dec.decode();
-        if (buf.trim()) {
-          const p = parseLine(buf);
-          if (p && !p.done && p.json) yield* emitFrom(p.json);
+        if (!sawSentinel) {
+          buf += dec.decode();
+          if (buf.trim()) {
+            const p = parseLine(buf);
+            if (p && p.done) sawSentinel = true;
+            else if (p && p.json) yield* emitFrom(p.json);
+          }
         }
+        // STREAM-END TRUTH (truthful-telemetry law): always emit exactly ONE terminal event, and say honestly
+        // whether the stream really ENDED or merely stopped arriving. A complete response carries a
+        // finish_reason, a `[DONE]` sentinel, or both; a clean mid-generation FIN carries NEITHER, and the loop
+        // cannot otherwise tell it apart from a finished answer — so it shipped the fragment as a completed,
+        // $0 delivery. Requiring only ONE of the two signals keeps upstreams that send just one reading complete.
+        if (!doneEmitted) yield { type: 'done', finishReason: null, truncated: !sawSentinel };
       } catch (e) {
         if (isAbort(e, req.signal)) return;   // cancellation: end the stream cleanly so the loop reports 'cancelled'
         throw e;
