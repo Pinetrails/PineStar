@@ -227,6 +227,8 @@
     // palette uses, in-process (no self-HTTP, no api token). Injected so this module stays testable and so a
     // wire-up that has no slash layer simply reports the command as unavailable rather than crashing.
     const runSlashFn = typeof o.runSlash === 'function' ? o.runSlash : null;
+    // names of the Commander's own commands, so this hub can recognise one without owning the list
+    const userCommandNames = typeof o.userCommandNames === 'function' ? o.userCommandNames : (() => []);
     const rosterFn = typeof o.roster === 'function' ? o.roster : null;
     const setModelFn = typeof o.setModel === 'function' ? o.setModel : null;
     const modelCatalogFn = typeof o.modelCatalog === 'function' ? o.modelCatalog : null;
@@ -726,6 +728,26 @@
       // Telegram/Discord/any future adapter get identical behavior.
       const parsed = parseCommand(msg.text);
       if (parsed) { await handleCommand(chatId, parsed, boundAgentId, sec, boundRec); return; }
+
+      // COMMANDER-DEFINED commands are not in this hub's table (the sidecar owns them), so a "/standup" would
+      // otherwise fall through and be answered by the MODEL — spending a turn to say it doesn't understand.
+      // Match only against the names the sidecar actually reports, so an ordinary message that happens to start
+      // with a slash (a path, say) still reaches the agent untouched. The registry itself decides what a given
+      // command may do here: an alias resolves and runs, a shell exec is refused off-desktop.
+      const userNamed = /^\/([A-Za-z0-9_-]+)/.exec(String(msg.text || ''));
+      if (userNamed && runSlashFn && userCommandNames().indexOf(userNamed[1].toLowerCase()) !== -1) {
+        // resolve the agent the SAME way handleCommand does, so a user command is scoped to whoever this chat
+        // is actually talking to rather than a default
+        const ucAgent = currentBoundAgent(chatId, boundAgentId, sec);
+        let r;
+        try { r = await runSlashFn(String(msg.text).trim(), { agentId: ucAgent }); }
+        catch (e) { try { console.error('[' + channel + '] user command threw:', (e && e.message) || e); } catch (_) {} r = null; }
+        const body = (r && Array.isArray(r.lines) && r.lines.length)
+          ? ((r.title ? r.title + '\n' : '') + r.lines.join('\n'))
+          : String((r && r.text) || '');
+        await deliver(chatId, body || ('/' + userNamed[1] + ' had nothing to report.'), '', 'command');
+        return;
+      }
 
       // ---- a TYPED answer to a live choice keyboard ---------------------------------------------------------
       // Resolve it to the canonical option text BEFORE anything reads msg.text (routing, the classifier and the

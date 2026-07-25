@@ -50,7 +50,7 @@ const { resolveTools } = require('./capability/resolve.js');
 const { CAP_REGISTRY } = require('./capability/registry.js');
 const { toolsetRows, toggleableCaps } = require('./capability/toolsets.js');   // TOOLSETS console: capId families derived from CAP_REGISTRY
 const { makeCapCtx } = require('./capability/capGate.js');
-const { composeOffice } = require('./capability/office.js');   // THE MOAT: interactive office = compute freebie + placed caps
+const { composeOffice, stationWithObject, stationWithConnectors } = require('./capability/office.js');   // THE MOAT: interactive office = compute freebie + placed caps
 const { summarizeCapabilities } = require('./capability/capsummary.js');   // truthful "what you can/can't do" so the agent stops over-promising
 const { starnetManual } = require('./manual.js');   // truthful "how StarNet works" so the agent can guide a stuck Commander (interactive only)
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
@@ -163,19 +163,21 @@ const skillGuard = require('./skills/guard.js');            // guard scanner for
 const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
 const skillCurator = require('./skillcurator.js');          // skill lifecycle/consolidation maintenance
 const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
+const { makeUserCommands } = require('./usercommands.js');  // Commander-defined slash commands (alias/exec)
 const slashActionsMod = require('./slash-actions.js');     // server-side execution for dispatch:'server' commands
 const Recipes = require('../frontend/app/recipes.js');     // built-in mission recipes, also exposed as slash commands
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
-const { makeShellTool } = require('./tools/builtin/shell.js');      // the workbench capability: shell.exec
+const { makeShellTool, runCommand: shellRunCommand } = require('./tools/builtin/shell.js');   // the workbench capability + the shared spawn primitive
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
 const { makeProcLedger } = require('./procledger.js');              // persistent child-PID ledger — boot sweep reaps force-kill orphans
 const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
-const { enforceSyntheticOnly, enforceRunAuthority, makeRunAuthority, runInputContext, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('./inputpolicy.js'); // per-run user-control authority + synthetic CDP policy
+const { enforceSyntheticOnly, enforceRunAuthority, makeRunAuthority, runInputContext, impactOfTool, normalizeUnattendedGrants, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('./inputpolicy.js'); // per-run user-control authority + synthetic CDP policy
 const { makeEnvironmentManager } = require('./environment.js');     // execution backend boundary (reference-harness-style)
 const { foldInsights } = require('./insights.js');                  // H3.3: usage insights folded from run history
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { makeRoutineTools } = require('./tools/builtin/routines.js'); // ROUTINES: agent-created StarNet cron jobs
+const cronGuard = require('./cron-guard.js');                        // routine prompt-injection tripwire (pure, see file header)
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const loopbackListenerProbe = makeLoopbackListenerProbe({ execFile, platform: process.platform, env: process.env });
 const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
@@ -367,6 +369,9 @@ const CREDITS_URL = String(ENV('CREDITS_URL') || '').trim();
 const CREDITS_API_KEY = String(ENV('CREDITS_API_KEY') || '').trim();
 const CREDITS_ACCOUNT = String(ENV('CREDITS_ACCOUNT') || '').trim();
 const CREDITS_PURCHASE_URL = String(ENV('CREDITS_PURCHASE_URL') || '').trim();
+// Floor for the low-credit warning. The EFFECTIVE threshold is max(this, the per-run cap) — see the
+// makeCredits wiring below for why the cap is the meaningful half. 0 disables the warning outright.
+const CREDITS_LOW_USD = (() => { const n = Number(ENV('CREDITS_LOW_USD')); return Number.isFinite(n) && n >= 0 ? n : 5; })();
 // a live permission.prompt left unanswered this long auto-denies (never hangs a run). P1-9: env
 // STARNET_CONSENT_TIMEOUT_MS > a UI-saved override > the 120s default; the frozen resolve keeps it constant per boot.
 const CONSENT_TIMEOUT_MS = resolveKnob('CONSENT_TIMEOUT_MS', 'consentTimeoutMs', 120000);
@@ -563,7 +568,17 @@ const budget = makeBudget({ caps: { agent: BUDGET_CAPS.perAgent, day: BUDGET_CAP
 const credits = makeCredits({
   url: CREDITS_URL, apiKey: CREDITS_API_KEY, accountId: CREDITS_ACCOUNT, purchaseUrl: CREDITS_PURCHASE_URL,
   fetch: globalThis.fetch, clock: { now: () => Date.now() },
-  onError: (stage, err) => console.warn('[credits] ' + stage + ' failed:', (err && err.message) || err)
+  onError: (stage, err) => console.warn('[credits] ' + stage + ' failed:', (err && err.message) || err),
+  // WHY THE PER-RUN CAP IS THE THRESHOLD, not a round number: admission reserves `perRun` before a managed
+  // run starts, so once the balance drops below that cap the very next run is REFUSED. That makes it the one
+  // non-arbitrary point to warn at — "$5 left" means nothing on a station whose runs reserve $10, and the
+  // user would hit the wall with a cheerful warning still unspoken. The env floor only raises it.
+  // A GETTER, not a number: effectiveCaps is mutable (the Commander can retune perRun live from SETTINGS,
+  // and it is defined AFTER this call), so reading it per-check keeps the warning honest without a restart.
+  lowBalanceUsd: () => Math.max(CREDITS_LOW_USD, Number((effectiveCaps && effectiveCaps.perRun) || 0)),
+  // Late-bound on purpose: cronEmit is declared further down. Balance changes only ever happen after boot
+  // (refresh() resolves on a later tick), so by first call it exists — the typeof guard covers the rest.
+  emit: (name, payload) => { try { if (typeof cronEmit === 'function') cronEmit(name, payload); } catch (_) {} }
 });
 if (credits.configured()) { credits.refresh().catch(() => {}); }   // warm the balance cache at boot (fail-open)
 
@@ -3037,6 +3052,10 @@ const cronDriver = makeCronDriver({
     if (first && first.indexOf(WORKSHOP_MARK) === 0) {
       return runWorkshopShift(opts.agentId, { runId: opts.runId, emit: opts.emit, signal: opts.signal });
     }
+    // AUTOMATION: a routine whose prompt IS a slash command runs the COMMAND, not a model turn. Same redirect
+    // shape as the workshop sentinel above. Deterministic, zero spend, and the answer is the identical text
+    // every other surface prints — "/usage every morning at 9" needs no model and should not pay for one.
+    if (first && first.charAt(0) === '/') return runSlashRoutine(first, opts);
     return runOnce(opts);
   },
   emit: cronEmitNotify, newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
@@ -4344,6 +4363,7 @@ function startTelegram(token, key, model, agentCfg) {
   const hub = makeChannelHub({
     channel: 'telegram', runOnce: runOnce, store: channelStore,
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
+    userCommandNames: () => userCommandEntries().map(c => c.name),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
     chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
@@ -4524,6 +4544,7 @@ function startTelegramBot(botId) {
   const hub = makeChannelHub({
     channel: 'telegram:' + botId, runOnce: runOnce, store: makeBotScopedStore(botId),
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
+    userCommandNames: () => userCommandEntries().map(c => c.name),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     // live per-message read (same contract as the station bot). THE BOT IS ITS AGENT: identity (system prompt),
@@ -4708,6 +4729,7 @@ function getDevHub() {
   devHub = makeChannelHub({
     channel: 'dev', maxMessageLength: 4000, agentPrefix: 'dev_',
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
+    userCommandNames: () => userCommandEntries().map(c => c.name),
     runOnce: runOnce, store: channelStore,
     send: (chatId, text) => { const k = String(chatId); const arr = devReplies.get(k) || []; arr.push({ text: String(text == null ? '' : text), ts: Date.now() }); if (arr.length > 20) arr.shift(); devReplies.set(k, arr); return Promise.resolve({ ok: true }); },
     secrets: devHubSecrets,
@@ -6464,6 +6486,13 @@ async function createCronJobFromSpec(body) {
   // A tz-less body resolves under the host default exactly as before (no signature break, no behavior change for
   // existing callers); an INVALID tz is REJECTED here (400) rather than silently firing on UTC — so the routine's
   // rendered cadence label ("9:00 your local time") can never lie about when it actually fires.
+  // INJECTION TRIPWIRE (2026-07-25): refuse a routine whose prompt carries an override/exfil payload BEFORE it
+  // is ever persisted. Strict tier — this is the user-authored directive, where a bare `cat .env` is a smoking
+  // gun rather than prose. Covers POST /api/cron and the /routine slash action (both funnel through here).
+  {
+    const scan = cronGuard.scanRoutinePrompt(body.prompt);
+    if (!scan.ok) return out(400, { error: scan.error, blocked: scan.patternId });
+  }
   let schedule; try { schedule = parseCronScheduleOr400(body.schedule, Date.now(), body.tz); } catch (e) { return out(e.code || 400, { error: e.message }); }
   let agentId; try { agentId = parseCronAgentIdOr400(body.agentId); } catch (e) { return out(e.code || 400, { error: e.message }); }
   let provider; try { provider = parseCronProviderOr400(body.provider); } catch (e) { return out(e.code || 400, { error: e.message }); }
@@ -6483,6 +6512,10 @@ async function createCronJobFromSpec(body) {
       // MISFIRE POLICY (2026-07-15 audit): optional 'fire_once'|'skip'; the store normalizes anything
       // else to null (schedule-derived default: daily/cron -> fire_once, fast intervals -> skip).
       misfire: body.misfire,
+      // UNATTENDED CAPABILITY GRANT (2026-07-25): ['workbench'] when the Commander ticked "may use the terminal"
+      // on this routine. cron-store whitelists it and inputpolicy re-filters at the gate, so an arbitrary body
+      // value cannot widen a run. Absent -> [] -> the routine has no terminal, exactly as before.
+      unattendedGrants: body.unattendedGrants,
       // R3: pass through the caller-supplied provenance bag ({ recipeId } from MAKE ROUTINE). cron-store normMeta
       // keeps only a plain object; absent → null. Additive — no existing caller sends it and old jobs load fine.
       meta: body.meta
@@ -6500,6 +6533,12 @@ function handleCronUpdate(req, res) {
     const id = String(body.id || '');
     if (!cronStore.getJob(cronJobs, id)) return json(404, { error: 'no such routine' });
     const patch = Object.assign({}, body.patch || {});
+    // INJECTION TRIPWIRE — an EDIT is the same surface as a create; without this, a routine could be created
+    // clean and then patched into a payload.
+    if (Object.prototype.hasOwnProperty.call(patch, 'prompt')) {
+      const scan = cronGuard.scanRoutinePrompt(patch.prompt);
+      if (!scan.ok) return json(400, { error: scan.error, blocked: scan.patternId });
+    }
     if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
       try { patch.schedule = parseCronScheduleOr400(patch.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
     }
@@ -6592,12 +6631,47 @@ async function handleCronRun(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
   const job = cronStore.getJob(cronJobs, String(body.id || ''));
   if (!job) { res.writeHead(404, { 'Content-Type': 'application/json' }); return res.end(JSON.stringify({ error: 'no such routine' })); }
+  // INJECTION TRIPWIRE at FIRE time (defense in depth): re-scan the assembled prompt before spending anything.
+  // This is what catches a routine authored BEFORE the scanner existed, and — once skills/contextFrom get their
+  // runtime consumers — content loaded at run time that create-time scanning never saw.
+  {
+    const scan = cronGuard.scanAssembled(job.prompt, {
+      hasSkills: !!(job.skills && job.skills.length),
+      hasInjectedData: !!(job.contextFrom && job.contextFrom.length)
+    });
+    if (!scan.ok) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      return res.end(JSON.stringify({ error: scan.error, blocked: scan.patternId }));
+    }
+  }
   const model = cronModelFor(job);
   const provider = cronProviderFor(job);
   const key = cronKeyFor(provider);
   if (!model || !cronHasCredential(provider, key)) {
     res.writeHead(400, { 'Content-Type': 'application/json' });
     return res.end(JSON.stringify({ error: (!model ? 'choose a model for this routine agent first' : cronCredentialError(provider)) }));
+  }
+
+  // COMMAND ROUTINE: "Run Now" must behave exactly like the scheduled fire, which the cron driver's runOnce
+  // wrapper redirects to runSlashRoutine. This path calls runOnce DIRECTLY, so without the same redirect a
+  // routine whose prompt is "/usage" would model-run here and command-run on schedule — the same routine
+  // doing two different things depending on who started it. Placed AFTER the credential gate above so both
+  // paths gate identically (see runSlashRoutine's note on that shared limit).
+  if (String(job.prompt || '').charAt(0) === '/') {
+    res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
+    const runIdC = crypto.randomUUID();
+    const busC = { emit: (name, payload) => { try { res.write(JSON.stringify({ name, payload: redact(payload) }) + '\n'); } catch (_) {} } };
+    const emitC = wrapEmitDiag(makeEmitter(busC, e => { if (e) console.warn('[event]', e.kind, e.event, (e.errors || []).join(';')); }));
+    try { cronEmit('cron.fire', { jobId: job.id, runId: runIdC, scheduledFor: Date.now() }); } catch (_) {}
+    let out;
+    try { out = await runSlashRoutine(String(job.prompt), { agentId: job.agentId, runId: runIdC, emit: emitC }); }
+    catch (e) { out = { ok: false, text: 'that command failed: ' + ((e && e.message) || e) }; }
+    try {
+      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runIdC, status: out.ok ? 'ok' : 'error', reason: out.ok ? 'done' : 'error', error: out.ok ? undefined : out.text }, { now: Date.now() }));
+    } catch (_) {}
+    try { cronEmit('cron.result', { jobId: job.id, runId: runIdC, outcome: out.ok ? 'ok' : 'failed', reason: out.ok ? 'done' : 'error' }); } catch (_) {}
+    try { res.end(); } catch (_) {}
+    return;
   }
 
   res.writeHead(200, { 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-store', 'X-Accel-Buffering': 'no' });
@@ -6634,7 +6708,10 @@ async function handleCronRun(req, res) {
       // under the SAME per-run stream so the frontend cron-session (autosessions.js), which forms off the
       // identical cron.fire/cron.result events, can fetch the real output via /api/transcript?stream=cron-<runId>.
       // Per-run id keeps the seed empty (index.js reconstructs a stream only when messages<=1) — no behavior drift.
-      runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: true
+      runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: true,
+      // Run Now must exercise the REAL unattended posture, grant included — otherwise "test it now" would
+      // prove a capability set the scheduled fire does not get (the whole point of this route).
+      unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : []
     });
   } catch (e) {
     state.errMsg = state.errMsg || ('sidecar failure: ' + ((e && e.message) || e));
@@ -7773,7 +7850,7 @@ function placedTypesFrom(v) {
 function slashOptions(placedTypes) {
   const skills = skillsCatalog.catalog(SKILL_LIBRARY, { overrides: skillPrefs.overrides(), placedTypes: placedTypes || [] });
   const recipes = (Recipes && Recipes.builtins) ? Recipes.builtins() : [];
-  return { skills, recipes };
+  return { skills, recipes, userCommands: userCommandEntries() };
 }
 
 // GET /api/slash/catalog -- server-owned command metadata for chat palettes and future gateway surfaces.
@@ -7900,6 +7977,80 @@ const slashActions = slashActionsMod.makeSlashActions({
    The one honest difference is where `placed` comes from: a browser knows its live floor, a phone does not, so
    the agent's room objects are read from the routing plan's bay. That keeps /tools answering for the room this
    agent actually occupies. Returns { ok, text?, title?, lines? }; never throws. */
+/* ---- COMMANDER-DEFINED COMMANDS (sidecar/usercommands.js) --------------------------------------------
+   Loaded from WORKSPACES/usercommands.json — deliberately OUTSIDE any agent's fs jail, so an agent cannot
+   author one. That is the whole safety argument for the exec type: these are the Commander's own snippets,
+   never something a model wrote. Re-read on every catalog build so editing the file takes effect without a
+   restart (it is a handful of entries; the read is trivial). */
+const USER_COMMANDS_FILE = path.join(WORKSPACES, 'usercommands.json');
+const userCommandStore = makeUserCommands({
+  fs: fs, file: USER_COMMANDS_FILE,
+  onWarn: (m) => { try { console.warn('[usercommands] ' + m); } catch (_) {} }
+});
+function userCommandEntries() {
+  try { return userCommandStore.catalogEntries(userCommandStore.load()); } catch (_) { return []; }
+}
+
+/* The environment a Commander-defined exec command sees: this process's env MINUS anything key-shaped. The
+   sidecar holds provider credentials in env; a user snippet that runs `env` should not print them. Mirrors
+   the reference harness's _sanitize_subprocess_env (MIT — see NOTICE.md). */
+const EXEC_ENV_DENY_RE = /(KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|_PAT$|AUTH)/i;
+function sanitizedExecEnv() {
+  const out = {};
+  for (const k of Object.keys(process.env)) {
+    if (EXEC_ENV_DENY_RE.test(k)) continue;
+    out[k] = process.env[k];
+  }
+  return out;
+}
+
+/* runUserExec(directive) — run one Commander-defined shell snippet. Reuses the SAME spawn/timeout/kill
+   primitive shell.exec and verify.run use (shellTools.runCommand) rather than a second spawner, runs in the
+   workspaces root, sanitizes the env, bounds the output, and redacts what comes back. Never throws. */
+async function runUserExec(directive) {
+  const cmd = String((directive && directive.command) || '').trim();
+  const name = String((directive && directive.name) || 'command');
+  if (!cmd) return { ok: false, text: '/' + name + ' has no command defined.' };
+  let r;
+  try {
+    r = await shellRunCommand({
+      spawn: childSpawn, cmd: cmd, cwd: WORKSPACES,
+      timeoutMs: 30000, maxBytes: 16000, env: sanitizedExecEnv(), clock: { now: () => Date.now() }
+    });
+  } catch (e) { return { ok: false, text: '/' + name + ' could not start: ' + ((e && e.message) || e) }; }
+  const body = redact(String((r && r.out) || '')).trim();
+  if (r && r.timedOut) return { ok: false, text: '/' + name + ' timed out after 30s.' + (body ? '\n' + body : '') };
+  return { ok: true, text: body || ('/' + name + ' ran and produced no output.') };
+}
+
+/* runSlashRoutine(line, opts) — a SCHEDULED slash command. The cron driver's runOnce wrapper redirects here
+   when a routine's prompt starts with '/', so "/usage" every morning costs nothing and cannot drift from what
+   the same command prints in COMMS or on your phone: it is the same runSlashForChannel call.
+
+   It hand-emits the three run events the driver's sink assembles its record from (there is no model run to
+   emit them for us), and the numbers are the honest ones — turns 0, usd 0, model '' — because no model was
+   consulted. Never throws: a failure becomes the run's text, so the routine records an outcome either way.
+
+   KNOWN LIMIT: cron-driver.js gates every fire on a model credential (cron-driver.js:201, 'no-capability'),
+   so a command routine still needs a configured provider even though it will not call one. Lifting that
+   means teaching the shared driver about slash prompts — deliberately not done here. */
+async function runSlashRoutine(line, opts) {
+  opts = opts || {};
+  const agentId = String(opts.agentId || 'agent');
+  const runId = String(opts.runId || '');
+  const emit = (typeof opts.emit === 'function') ? opts.emit : () => {};
+  try { emit('agent.run.start', { agentId: agentId, runId: runId, trigger: 'schedule', model: '' }); } catch (_) {}
+  let r;
+  try { r = await runSlashForChannel(line, { agentId: agentId }); }
+  catch (e) { r = { ok: false, text: 'that command failed: ' + ((e && e.message) || e) }; }
+  const body = (r && Array.isArray(r.lines) && r.lines.length)
+    ? ((r.title ? r.title + '\n' : '') + r.lines.join('\n'))
+    : String((r && r.text) || '');
+  if (body) { try { emit('agent.token', { agentId: agentId, runId: runId, delta: body }); } catch (_) {} }
+  try { emit('agent.run.end', { agentId: agentId, runId: runId, reason: 'done', turns: 0, usd: 0 }); } catch (_) {}
+  return { ok: !!(r && r.ok !== false), text: body };
+}
+
 async function runSlashForChannel(input, ctx) {
   ctx = ctx || {};
   const agentId = /^[A-Za-z0-9_-]{1,40}$/.test(String(ctx.agentId || '')) ? String(ctx.agentId) : 'agent';
@@ -7912,6 +8063,12 @@ async function runSlashForChannel(input, ctx) {
   try { out = slash.dispatch(String(input || ''), slashOptions(placed)); }
   catch (e) { return { ok: false, text: 'That command could not be read.' }; }
   if (!out || !out.ok || !out.directive) return { ok: false, text: 'Unknown command.' };
+  // A Commander-defined EXEC command is a shell snippet. It runs from the desktop, but NOT from a messaging
+  // surface by default: a chat app is reachable by anyone who gets the bot token, and "remote shell" is a much
+  // larger blast radius than "read my spend". Conservative on purpose — easy to relax, impossible to un-leak.
+  if (out.directive.type === 'exec') {
+    return { ok: false, text: 'That is one of your shell commands — for safety those only run in the StarNet desktop app, not over messaging.' };
+  }
   // Only dispatch:'server' commands can answer off-browser. A client command would need the DOM, so say that
   // plainly rather than returning an empty reply that reads like a failure.
   if (out.directive.type !== 'server') return { ok: false, text: 'That command only works in the StarNet desktop app.' };
@@ -7927,6 +8084,13 @@ async function handleSlashDispatch(req, res) {
   const input = body.input != null ? body.input : ('/' + String(body.command || ''));
   const placed = placedTypesFrom(body.placed);
   const out = slash.dispatch(input, slashOptions(placed));
+  // A Commander-defined exec command runs HERE (the browser has no shell) and comes back as a say directive,
+  // so the palette prints its output like any other command result.
+  if (out.ok && out.directive && out.directive.type === 'exec') {
+    const r = await runUserExec(out.directive);
+    out.directive = { type: 'say', ok: r.ok !== false, text: r.text || '', title: '', lines: [] };
+    return json(200, out);
+  }
   if (out.ok && out.directive && out.directive.type === 'server') {
     // `placed` rides the ctx too: /tools answers "what can THIS agent call", which depends on the props on its
     // floor — the browser is the only one that knows the live floor, so it must travel with the dispatch.
@@ -8227,7 +8391,13 @@ async function runOnce(o) {
   // Missing/unknown callers are unattended until proven otherwise. Only the watched /api/run
   // path passes the exact interactive value and a live prompt channel.
   const surface = o.surface === 'interactive' ? 'interactive' : 'autonomous';
-  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt });
+  /* UNATTENDED CAPABILITY GRANT (2026-07-25): the capability families THIS run may use unattended, read off the
+     durable routine record by the caller (the cron tick driver / Run Now) — never from prompt text, model
+     output or Full Access. Interactive runs ignore it entirely: THE MOAT (floor-real placement) governs there,
+     and auto-granting a WORKBENCH would hand over a power the Commander never put on the floor. Absent on every
+     other caller, so every non-cron surface stays byte-identical. */
+  const unattendedGrants = surface === 'interactive' ? [] : Array.from(normalizeUnattendedGrants(o.unattendedGrants));
+  const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants });
   const prompt = o.prompt;
   const pathPrompt = o.pathPrompt;   // NS-5: the live "work in <root>? always/once/no" channel (browser runs only); undefined for headless/autonomous → path-trust hard-denies a new root
   const summon = o.summon;   // the live team.summon round-trip closure (browser runs only); undefined for headless/workers → tool degrades gracefully
@@ -8511,6 +8681,13 @@ async function runOnce(o) {
     normalizeProvider: normalizeProviderId,
     createRoutine: (spec) => {
       spec = spec || {};
+      // INJECTION TRIPWIRE — the agent-authored path, and the one that matters most: an agent that just read a
+      // hostile web page could otherwise persist its payload as a standing scheduled routine. Throwing here
+      // surfaces as an honest tool error (registry.dispatch wraps it) and nothing is written.
+      {
+        const scan = cronGuard.scanRoutinePrompt(spec.prompt);
+        if (!scan.ok) throw new Error(scan.error);
+      }
       // W6 MINT GATE (server authority): the target agent already runs this (or a near-identical) routine → do NOT
       // mint a second. Return the EXISTING job flagged `_duplicate` so the tool answers with the anti-retry line.
       const gate = mintGate(spec.agentId, spec.name);
@@ -8562,7 +8739,18 @@ async function runOnce(o) {
   // the moment; stripping a scheduled/delegated run's web+files would regress shipped work). Connectors are
   // account-level (both surfaces); the LEAD alone gets the orchestrator object so a delegated worker can't re-delegate.
   const defaultObjects = composeOffice({ surface, lead: o.lead, connectorIds: connectors.ids(), extraObjects: o.extraObjects });
-  const station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
+  let station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
+  // UNATTENDED CAPABILITY GRANT (2026-07-25) — the OBJECT half. The authority gate below now lets a granted
+  // unattended run keep shell.exec/verify.run, but a capability still needs its object to exist or resolveTools
+  // projects nothing: fullOffice() carries no WORKBENCH, and a bay-docked agent's explicit `station` bypasses
+  // composeOffice entirely. Add it to whichever room this run actually resolves against — non-mutating, and a
+  // no-op when the room already has one, so an ungranted run stays byte-identical.
+  if (unattendedGrants.indexOf('workbench') >= 0) station = stationWithObject(station, agentId, 'workbench');
+  // Same for CONNECTORS: composeOffice already rides every configured portal onto the default office, but a
+  // bay-docked agent's explicit station carries only its bay's objects — so a granted routine on a bay agent
+  // would otherwise resolve zero MCP tools. Adds only the portals the room is missing; a disabled connector
+  // contributes no tool defs downstream, so this never resurrects one the Commander switched off.
+  if (unattendedGrants.indexOf('connectors') >= 0) station = stationWithConnectors(station, agentId, connectors.ids());
   // TOOLSET kill-switch: a family the Commander switched OFF in the TOOLSETS console is dropped here, so the
   // next model turn reflects it live (no restart). compute is never in this set; MCP connectors are projected
   // below and keep their own per-connector enabled flag, so they are unaffected.
@@ -8630,6 +8818,13 @@ async function runOnce(o) {
         return refs.every(n => serviceKeysMod.resolveForRequest(serviceKeys, n, 'autonomous').ok);
       } catch (_) { return false; }
     },
+    // UNATTENDED TERMINAL GRANT: this routine's recorded "may use the terminal" approval. Read off the SAME
+    // host-side value the authority gate uses, so the tool list and the consent answer can never disagree —
+    // an offered shell that consent then refuses is exactly the incoherent state this closes.
+    terminalGrant: () => unattendedGrants.indexOf('workbench') >= 0,
+    // UNATTENDED CONNECTOR GRANT: same host-side source as the authority gate, so an offered MCP tool can
+    // never be refused by consent (the incoherent state the terminal lane hit before this was wired).
+    connectorGrant: () => unattendedGrants.indexOf('connectors') >= 0,
     surface: surface, prompt: prompt
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
@@ -8797,6 +8992,18 @@ async function runOnce(o) {
   const toolDefs = isTask ? registry.wireFormat(registry.list(new Set(resolved.tools))) : [];
   const fromWire = new Map();
   for (const d of toolDefs) { const real = d.function.name; const w = real.replace(/\./g, '_'); fromWire.set(w, real); d.function.name = w; }
+  // WITHHELD-vs-UNKNOWN (2026-07-25, from a user report): every tool is REGISTERED on every run; the gates
+  // decide which ones reach the wire list. A gated-away tool therefore had no fromWire entry, its name never
+  // translated back, and registry.dispatch answered "unknown tool: shell_exec" — which is false. It exists.
+  // That lie is what sent agents (and the Commanders reading their replies) hunting for a broken/missing tool
+  // instead of a withheld one, and it is the string an unattended agent saw right before fabricating success.
+  // This map covers ALL registered tools, so a call that misses fromWire but hits here is provably WITHHELD.
+  const allWire = new Map();
+  for (const t of registry.list()) allWire.set(String(t.name).replace(/\./g, '_'), t.name);
+  // The grant set is the authority on "was this withheld", NOT the absence of a fromWire entry: a model that
+  // calls a GRANTED tool by its real dotted name also misses fromWire, and must keep falling through to the
+  // ordinary capability/consent path exactly as before.
+  const grantedSet = new Set(resolved.tools || []);
 
   const seen = new Map();
   let toolBytes = 0;   // running total of tool-output chars fed back into the model this run
@@ -8808,6 +9015,36 @@ async function runOnce(o) {
   const artifactLedger = makeArtifactCollector();
   const dispatch = async (c, ctx) => {
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });   // wire -> real (dotted) name
+    else if (!grantedSet.has(c.name) && registry.get(allWire.get(c.name) || c.name)) {
+      // The tool is real but was not granted to THIS run. Name the gate that withheld it, decided by that
+      // gate's OWN predicate (userControlAuthority.project) rather than a second copy of the policy here, and
+      // tell the model what to do instead — a withheld power must never read as a broken one, and must never
+      // be reported to the Commander as done. Missing-capability is the other case: that one IS placement-fixable.
+      // A name that matches no registered tool still falls through to dispatch's honest "unknown tool".
+      const realName = allWire.get(c.name) || c.name;
+      const t = registry.get(realName);
+      const impact = impactOfTool(t);
+      const why = (impact === 'physical-input' || impact === 'visible-desktop')
+        ? 'real desktop/physical control carries no grant on ANY StarNet agent run — no attended-control lease exists'
+        : (impact === 'external-unknown')
+          ? (/^mcp:/.test(String((t && t.capability) || ''))
+              // a real connector tool: the honest remedy on an unattended run is the per-routine grant, not "wait
+              // for a human" — pointing the agent at a watched session here would be advice that never resolves.
+              ? (surface === 'interactive'
+                  ? 'a connector tool needs the Commander to confirm this exact call, and this run has no way to ask'
+                  : 'this routine was not granted your connected tools — the Commander enables that per routine in the ROUTINES panel')
+              : 'a tool with unknown external effects needs a watched session that can show the Commander a per-call confirmation')
+          : (userControlAuthority.project(t) === false)
+            ? 'this is an UNATTENDED ' + surface + ' run (scheduled/background, nobody watching) and this tool needs a watched session'
+              + ' — placing station objects cannot grant it here'
+            : 'its capability was not granted to this run';
+      return {
+        ok: false, isError: true, summary: 'withheld',
+        content: 'WITHHELD: "' + realName + '" exists but is not available to you on this run, because ' + why + '. '
+          + 'Do NOT retry it and do NOT report its work as done. Do everything you genuinely can with the tools you were given, '
+          + 'then state plainly which step you could not do and why.'
+      };
+    }
     const liveTool = registry.get(c.name);
     const internalBriefControl = internalBriefTools.indexOf(c.name) >= 0;
     if (taskBriefState && !internalBriefControl) {

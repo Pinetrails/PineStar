@@ -124,6 +124,16 @@
     'object.place': obj(['room', 'objectType', 'instanceId'], { room: str, objectType: str, instanceId: str }),
     'object.reclaim': obj(['room', 'objectType', 'instanceId'], { room: str, objectType: str, instanceId: str }),
     'budget.threshold': obj(['scope', 'usd', 'cap'], { scope: { enum: ['run', 'day', 'global'] }, usd: num, cap: num }),
+    // ADDITIVE (2026-07-25, managed credits): the account's BALANCE fell to/below the warn threshold.
+    // Deliberately NOT folded into budget.threshold — that event means "spend approached a cap you set"
+    // and carries usd/cap; this means "the money you bought is running out" and carries balance/threshold.
+    // Reusing it would have made `usd` mean two different things. Emitted once per crossing (the latch
+    // lives in credits.js), re-armed only after a top-up clears the threshold with hysteresis.
+    // `exhausted` true = balance <= 0, i.e. the next managed run WILL be refused, not merely warned about.
+    // Inert on a BYOK station: nothing emits it unless managed credits are configured.
+    'credits.low': obj(['balanceUsd', 'thresholdUsd'], {
+      balanceUsd: num, thresholdUsd: num, purchaseUrl: str, exhausted: bool
+    }),
 
     // ---- cron / scheduled routines (autonomous, unattended fires; producers in the index.js tick driver) ----
     // the scheduler tick ran: how many due jobs it planned / fired / skipped this pass (the war-room pulse).

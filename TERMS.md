@@ -1,6 +1,6 @@
 # StarNet Terms of Use
 
-_Last updated: 2026-07-03._
+_Last updated: 2026-07-25._
 
 StarNet is a free desktop application that runs AI agents on your own computer. By downloading,
 installing, or using StarNet, you agree to these terms. They are intentionally short.
@@ -18,13 +18,33 @@ To the maximum extent permitted by law, the author is **not liable** for any dam
 from your use of StarNet — including lost data, lost profits, provider charges you incurred, or
 actions taken by agents you ran.
 
-## 2. You pay your own provider costs
+## 2. Model costs — your own keys, or StarNet Credits
 
-StarNet is free. But StarNet uses **your own** AI provider accounts and API keys (or your own
-ChatGPT sign-in). **You are solely responsible for any charges, rate limits, quota usage, or
-account consequences** those providers apply to you. StarNet does not resell model access,
-does not add a markup, and has no way to bill you. Set spending caps in your provider account
+The StarNet app is free. Running models is not. There are two ways to pay for that, and you
+choose which.
+
+**Your own keys — the default, and free forever.** StarNet uses **your own** AI provider
+accounts and API keys (or your own ChatGPT sign-in), and requests go straight from your machine
+to that provider. **You are solely responsible for any charges, rate limits, quota usage, or
+account consequences** those providers apply to you. On this path StarNet does not resell model
+access, adds no markup, and has no way to bill you. Set spending caps in your provider account
 and in StarNet's own budget controls; monitor your usage.
+
+**StarNet Credits — optional.** You may instead buy StarNet Credits: a prepaid balance, sold as
+a monthly subscription or as one-off top-ups, that pays for model runs through StarNet's own
+gateway. On this path StarNet **does** resell model access — you are buying from us, at our
+price, and we pay the underlying provider. Credits are prepaid, denominated in US dollars, and
+the amount deducted for a run is the amount the app shows you for that run. Payments are
+processed by **Stripe**; StarNet never receives or stores your card details. Subscriptions renew
+monthly until you cancel, and you can cancel at any time from the billing portal — cancelling
+stops future renewals, and payments already made are non-refundable except where required by
+law. Monthly grants, rollover limits, and the post-cancellation grace period are set out on the
+[pricing page](https://starnetos.com/pricing.html), which forms part of these terms. Credits
+have no cash value, are not transferable, and cannot be redeemed for money. We may change credit
+pricing and grants for future billing periods; changes never apply retroactively to credits you
+already hold.
+
+Credits are never required. Everything StarNet does works on your own keys, for free.
 
 ## 3. You are responsible for what your agents do
 
@@ -52,7 +72,9 @@ androo.agi@gmail.com.
 ## 6. Privacy
 
 See `PRIVACY.md`. In short: StarNet runs locally, collects no telemetry, and your data stays on
-your machine except for the specific provider/channel/update requests described there.
+your machine except for the specific provider/channel/update requests described there. If you
+buy StarNet Credits, that adds a billing account and routes your model calls through our
+gateway — `PRIVACY.md` sets out exactly what we hold and what we don't.
 
 ## 7. License
 

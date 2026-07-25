@@ -201,5 +201,38 @@ function build(over) {
     await work.catch(() => {});
   }
 
+  /* ---- Commander-defined commands reach a channel too ---- */
+  {
+    // A user command is not in this hub's table, so without the fallback it would be answered by the MODEL —
+    // spending a turn just to say it does not understand.
+    const calls = [];
+    let ran = false;
+    const { hub, sends } = build({
+      runOnce: async () => { ran = true; },
+      userCommandNames: () => ['standup'],
+      runSlash: async (input, ctx) => { calls.push({ input, ctx }); return { ok: true, text: 'your standup' }; }
+    });
+    await hub.onInbound(dm('/standup today'));
+    A.eq(ran, false, 'a user command never spawns an LLM run on a channel');
+    A.eq(calls[0].input, '/standup today', 'the whole line reaches the registry');
+    A.eq(calls[0].ctx.agentId, 'ultron', 'the user command is scoped to the agent this chat is bound to');
+    A.ok(/your standup/.test(sends[0]), 'its output is delivered');
+  }
+
+  {
+    // A message that merely STARTS with a slash (a path) must still reach the agent untouched.
+    let ran = false;
+    const { hub } = build({ runOnce: async () => { ran = true; }, userCommandNames: () => ['standup'], runSlash: async () => ({ ok: true, text: 'x' }) });
+    await hub.onInbound(dm('/usr/local/bin please look at this path'));
+    A.eq(ran, true, 'an ordinary message starting with a slash still reaches the model');
+  }
+
+  {
+    let ran = false;
+    const { hub } = build({ runOnce: async () => { ran = true; }, runSlash: async () => ({ ok: true, text: 'x' }) });
+    await hub.onInbound(dm('/notacommand hello'));
+    A.eq(ran, true, 'an unknown slash word is still a normal message when no user command matches');
+  }
+
   A.report('channels.parity.test');
 })();

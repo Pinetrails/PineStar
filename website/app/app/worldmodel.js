@@ -138,6 +138,8 @@ const WorldModel = (() => {
      model never forces a colour). This catalog is the sole source: add a material here, give it
      a recipe in stationbake, and it appears in the DECK MATERIAL palette automatically. */
   const FLOOR_MATERIALS = {
+    // the hab default since 2026-07-25 — see the note above deckSpine in stationbake.js
+    spine: { label: 'SPINE',  pitch: [4, 3], suggest: null },
     plate: { label: 'PLATE',  pitch: [2, 2], suggest: null },
     panel: { label: 'PANEL',  pitch: [4, 1], suggest: null },
     tile:  { label: 'TILE',   pitch: [2, 2], suggest: null },
@@ -149,7 +151,7 @@ const WorldModel = (() => {
     plank: { label: 'PLANK',  pitch: [5, 1], suggest: 'walnut' },
     turf:  { label: 'TURF',   pitch: [1, 1], suggest: 'fern' },
   };
-  const MAT_ORDER = ['plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
+  const MAT_ORDER = ['spine', 'plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
 
   /* the WALL material catalog — the deck's opposite number. Walls carry the same two axes as the
      floor (hue × recipe) and read from the same FLOOR_STYLES hue catalog, because a room should be
@@ -159,6 +161,11 @@ const WorldModel = (() => {
      leaves those pixels transparent so the live drifting starfield behind the station shows
      through. Baked stars would be a lie; the real sky is already back there. */
   const WALL_MATERIALS = {
+    // base-wall candidates — see the note above wallBulkhead in stationbake.js
+    // the base wall since 2026-07-25 — see the note above wallBulkhead in stationbake.js
+    bulkhead: { label: 'BULKHEAD', suggest: null },
+    courses:  { label: 'COURSES',  suggest: null },
+    service:  { label: 'SERVICE',  suggest: null },
     plating:  { label: 'PLATING',  suggest: null },
     ribbed:   { label: 'RIBBED',   suggest: null },
     panelled: { label: 'PANEL',    suggest: null },
@@ -167,28 +174,42 @@ const WorldModel = (() => {
     wainscot: { label: 'WAINSCOT', suggest: 'walnut' },
     hedge:    { label: 'HEDGE',    suggest: 'fern' },
   };
-  const WALL_ORDER = ['plating', 'ribbed', 'panelled', 'viewport', 'pipework', 'wainscot', 'hedge'];
+  const WALL_ORDER = ['bulkhead', 'courses', 'service', 'plating', 'ribbed', 'panelled', 'viewport', 'pipework', 'wainscot', 'hedge'];
 
   /* room categories — a capability-zone label + a default floor (hue + material). kind drives
      nothing behavioural yet (capability mapping is a later pass); it tags the zone + seeds the
      look. `mat` is the DEFAULT deck material a room of this kind is built with — a room whose
-     floorMat is null renders at this material, which is what keeps every station built before
-     the material axis existed rendering pixel-identical. */
+     floorMat is null renders at this material.
+
+     THIS MAP IS THE AUTHORITY on a room's default deck. `MAT_BY_KIND` in stationbake.js looks like
+     a second copy but is only a fallback for geometry that arrives without `matOf` — projected
+     geometry always carries it, so editing stationbake alone changes NOTHING you can see. Change
+     both, and keep them agreeing.
+
+     2026-07-25: hab and corridor moved off `plate` onto `spine` (they must move together or a
+     corridor reads as a different floor through the doorway). This DELIBERATELY changes the look of
+     every station already built — floorMat is null on all of them — because the default deck is the
+     one surface every player sees. `plate` stays in the palette, so the old look is still choosable
+     and nothing is destroyed. It also means the Guardian goldens all shift. */
   const ROOM_KINDS = {
-    hab:      { label: 'HAB',      floor: 'hull',     mat: 'plate' },
+    hab:      { label: 'HAB',      floor: 'hull',     mat: 'spine' },
     bridge:   { label: 'BRIDGE',   floor: 'cobalt',   mat: 'panel' },
     lab:      { label: 'LAB',      floor: 'sterile',  mat: 'tile'  },
     factory:  { label: 'FOUNDRY',  floor: 'rust',     mat: 'tread' },
     quarters: { label: 'QUARTERS', floor: 'verdant',  mat: 'soft'  },
     storage:  { label: 'STORAGE',  floor: 'rust',     mat: 'tread' },
-    corridor: { label: 'CORRIDOR', floor: 'corridor', mat: 'plate' },
+    corridor: { label: 'CORRIDOR', floor: 'corridor', mat: 'spine' },
   };
   // a room's effective deck material: explicit override, else the kind default, else plate.
   const matOfRoom = rm => (rm && FLOOR_MATERIALS[rm.floorMat]) ? rm.floorMat
     : ((rm && ROOM_KINDS[rm.kind] && ROOM_KINDS[rm.kind].mat) || 'plate');
   // walls: material defaults to plating; hue defaults to FOLLOWING THE FLOOR, so every room's
   // walls harmonize with its deck without the Commander having to pick twice.
-  const wallMatOfRoom = rm => (rm && WALL_MATERIALS[rm.wallMat]) ? rm.wallMat : 'plating';
+  /* THE AUTHORITY on a room's default wall material (stationbake's `wallMatOf` fallback is only for
+     geometry arriving without one). 2026-07-25: moved off `plating` onto `bulkhead` — every room
+     carries wallMat null, so this reaches stations already built, deliberately, for the same reason
+     the deck default moved. `plating` stays in the palette as the classic. */
+  const wallMatOfRoom = rm => (rm && WALL_MATERIALS[rm.wallMat]) ? rm.wallMat : 'bulkhead';
   const wallStyleOfRoom = rm => {
     if (rm && FLOOR_STYLES[rm.wallStyle]) return rm.wallStyle;
     if (rm && FLOOR_STYLES[rm.floorStyle]) return rm.floorStyle;
@@ -849,6 +870,55 @@ const WorldModel = (() => {
         const k = lx + ',' + ly;
         return !blockedTiles.has(k) && !(extra && extra.has(k));
       };
+      /* ---------- path smoothing (string-pulling) ----------
+         path() is a 4-NEIGHBOUR BFS, so its raw output is a staircase of orthogonal tile hops: a body
+         following it pivots 90° at nearly every tile and never once moves diagonally. We pull the string —
+         from the current anchor, keep the FARTHEST later waypoint with clear line of sight and drop
+         everything between — which collapses the staircase into long straight runs and true diagonals.
+         losClear is deliberately conservative. It walks the segment one tile at a time; every touched tile
+         must be walkable; every orthogonal hop must satisfy canStep (so a shortcut can NEVER skip a zone
+         seam that a door is meant to gate); and an exact diagonal step demands BOTH corner tiles plus the
+         canStep legality of both ways around — so a shortcut can't squeeze a body through the diagonal gap
+         between two blockers. canStep is orthogonal-only, so it is never called on a diagonal pair. */
+      function losClear(x0, y0, x1, y1, extra) {
+        let x = x0, y = y0;
+        let dx = Math.abs(x1 - x0), dy = Math.abs(y1 - y0);
+        const xi = x1 > x0 ? 1 : -1, yi = y1 > y0 ? 1 : -1;
+        let err = dx - dy;
+        dx *= 2; dy *= 2;
+        let guard = dx + dy + 4;   // the walk is bounded; never trust the loop to terminate on its own
+        while ((x !== x1 || y !== y1) && guard-- > 0) {
+          if (!walkable(x, y, extra)) return false;
+          if (err > 0) {
+            if (!walkable(x + xi, y, extra) || !canStep(x, y, x + xi, y)) return false;
+            x += xi; err -= dy;
+          } else if (err < 0) {
+            if (!walkable(x, y + yi, extra) || !canStep(x, y, x, y + yi)) return false;
+            y += yi; err += dx;
+          } else {   // exact diagonal — both corners open, and legal whichever way round we go
+            if (!walkable(x + xi, y, extra) || !walkable(x, y + yi, extra)) return false;
+            if (!canStep(x, y, x + xi, y) || !canStep(x, y, x, y + yi)) return false;
+            if (!canStep(x + xi, y, x + xi, y + yi) || !canStep(x, y + yi, x + xi, y + yi)) return false;
+            x += xi; y += yi; err -= dy; err += dx;
+          }
+        }
+        return guard > 0 && walkable(x1, y1, extra);
+      }
+      function smoothPath(pts, sx, sy, extra) {
+        if (!pts || pts.length < 3) return pts;
+        const out = [];
+        let ax = sx, ay = sy, i = 0;
+        while (i < pts.length) {
+          let best = i;
+          for (let j = pts.length - 1; j > i; j--) {
+            if (losClear(ax, ay, pts[j].x, pts[j].y, extra)) { best = j; break; }
+          }
+          out.push(pts[best]);
+          ax = pts[best].x; ay = pts[best].y;
+          i = best + 1;
+        }
+        return out;
+      }
       function path(sx, sy, tx, ty, extra) {
         if (!walkable(tx, ty, extra)) return null;
         if (sx === tx && sy === ty) return [];
@@ -871,7 +941,8 @@ const WorldModel = (() => {
         if (prev[target] === -1) return null;
         const out = []; let cur = target;
         while (cur !== start) { out.push({ x: cur % COLS, y: (cur / COLS) | 0 }); cur = prev[cur]; }
-        return out.reverse();
+        out.reverse();
+        return smoothPath(out, sx, sy, extra);   // collapse the BFS staircase into straight runs + diagonals
       }
 
       return {

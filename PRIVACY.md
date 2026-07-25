@@ -1,20 +1,25 @@
 # StarNet Privacy
 
-_Last reviewed: 2026-07-09, against the shipping code._
+_Last reviewed: 2026-07-25, against the shipping code._
 
 StarNet is a **local-first desktop app**. It runs a small server (the "sidecar") on your own
-machine (`localhost`) and does the agent work there. There is **no StarNet cloud, no StarNet
-account, and no StarNet server that receives your data.** This document is written in plain
-English and is grounded in an audit of the actual code — not aspirations.
+machine (`localhost`) and does the agent work there. Out of the box there is **no StarNet
+account and nothing of yours on a StarNet server** — the app talks only to the providers you
+choose, with your own keys. There is exactly one opt-in exception: if you choose to buy
+**StarNet Credits**, that creates an account on our billing service. It is described in full
+under *StarNet Credits* below, and nothing in this document changes for you unless you buy
+them. This document is written in plain English and is grounded in an audit of the actual
+code — not aspirations.
 
 Support questions: androo.agi@gmail.com.
 
 ## The short version
 
-- **We collect nothing.** There is no telemetry, no analytics, no crash reporting, no ad SDK,
-  and no "phone home" of any kind. We verified this by searching the whole codebase for the
+- **The app collects nothing.** There is no telemetry, no analytics, no crash reporting, no ad
+  SDK, and no "phone home" of any kind. We verified this by searching the whole codebase for the
   usual suspects (Sentry, PostHog, Mixpanel, Segment, Google Analytics, Amplitude, Datadog):
-  none are present.
+  none are present. This stays true whether or not you buy credits — buying credits adds a
+  billing account, not tracking.
 - **Your data stays on your machine**, under your OS user's app-data directory —
   Windows: `%APPDATA%\ai.skynet.harness\workspaces\`; macOS:
   `~/Library/Application Support/ai.skynet.harness/workspaces/`; Linux:
@@ -150,9 +155,35 @@ Windows user account can read it. Protect your machine account accordingly.
 
 - We do **not** run analytics or telemetry of any kind.
 - We do **not** collect crash reports.
-- We do **not** have a StarNet account system or a StarNet backend that stores your data.
+- We do **not** require a StarNet account. Unless you buy credits, no account exists, and no
+  StarNet backend holds anything of yours.
 - We do **not** sell, share, or transmit your conversations, keys, or files to anyone —
   the only outbound traffic is the specific, purpose-built requests listed above.
+- We do **not** store your prompts or your agents' replies on our servers, even on the credits
+  path — see below.
+
+## StarNet Credits — only if you buy them
+
+Credits are optional and off by default. If you never buy them, skip this section: nothing in
+it applies to you, and the app behaves exactly as described above.
+
+If you do buy credits, you create an account on StarNet's billing service, and these things
+become true:
+
+- **What we hold.** Your email address, your credit balance and the ledger of grants and
+  charges behind it, an identifier for each station you link, and the customer/subscription
+  identifiers our payment processor gives us. That's the list.
+- **Card details never reach us.** Checkout runs on **Stripe**, in your browser. StarNet never
+  sees, receives, or stores a card number — the app has no payment form at all.
+- **How you sign in.** By emailed one-time link. There is no StarNet password to steal.
+- **Model runs go through our gateway.** This is the part worth being blunt about: on the
+  credits path your prompts and your agents' replies are relayed through StarNet's servers to
+  the model provider, because that is the only way we can pay for the call on your behalf. We
+  relay them; we do **not** store their contents, and we do **not** train on them. What we
+  keep is the metering — model name, token counts, cost, timestamp — which is what your balance
+  is computed from. **If you use your own key instead, none of this traffic touches us at all.**
+- **Deleting it.** Email androo.agi@gmail.com and we'll delete the account and its data. We
+  keep the minimum transaction records that tax and payment rules require us to keep.
 
 ## Deleting your data
 

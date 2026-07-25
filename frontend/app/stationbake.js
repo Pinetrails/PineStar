@@ -43,9 +43,11 @@ const StationBake = (() => {
     wallPalCache.set(z, p);
     return p;
   }
+  // FALLBACK ONLY, like MAT_BY_KIND below: projected geometry always carries wallMatOf, so this
+  // default is not what you see in game. WorldModel.wallMatOfRoom is the authority — change both.
   const wallMatOf = z => {
     const m = G && G.wallMatOf ? G.wallMatOf(z) : null;
-    return WALL_RECIPES[m] ? m : 'plating';
+    return WALL_RECIPES[m] ? m : 'bulkhead';
   };
 
   /* live-tunable WALL HEIGHT — same contract as LIGHT below: the CRT LAB writes these and
@@ -134,6 +136,31 @@ const StationBake = (() => {
       fn(py, ex, ox, ox + r, A);
     }
   }
+  /* THE COLUMN DUAL of eachCornerRow, for a TOP corner carrying a tall wall. For each integer
+     column it hands back where the eased wall face tops out, its floor contact, the cap thickness
+     there and the 0→1 position along the arc (0 = the side end, where the wall has receded to
+     nothing). Same circle, same centre-sample-and-round convention as the row walk.
+
+     THE CROWN PAINTER AND THE AMBIENT MASK BOTH DERIVE FROM THIS ONE WALK. That is the point: the
+     mask's upper edge is defined as "wherever this says the art tops out", so it cannot drift above
+     the painted pixels. It used to be a separately-computed square strip, and at a chamfer — where
+     the face eases away but the strip did not — it left ambient mask lying over bare space, which
+     reads as a shadow floating OUTSIDE the hull against the starfield. */
+  function eachTallCornerCol(kind, ax, ay, rad, up, capH, fn) {
+    const A = CORNER[kind];
+    const R = Math.round(rad);
+    const x0 = Math.round(A.cx ? ax - R : ax);
+    for (let ix = x0; ix < x0 + R; ix++) {
+      const adx = Math.abs(ix + 0.5 - ax);
+      if (adx >= R) continue;
+      const base = Math.round(ay - Math.sqrt(R * R - adx * adx));     // upper quadrant (tl/tr)
+      const tt = Math.max(0, Math.min(1, 1 - adx / R));
+      const top = Math.round(base - Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * up);
+      const capAt = Math.max(1, Math.round(capH * (0.30 + 0.70 * tt)));
+      fn(ix, top, base, capAt, tt);
+    }
+  }
+
   /* cut the hull's rounded corner. Was a clip('evenodd') + fill, which anti-aliased the station's
      whole silhouette — the soft outer fuzz that survived the interior-curve fix. */
   function eraseSpandrel(g, kind, ax, ay, rad) {
@@ -211,9 +238,17 @@ const StationBake = (() => {
        hex   — honeycomb cells on an offset lattice: advanced-tech, nothing else here is non-rectilinear.
        plank — staggered wood boards: per-board tone, grain hairlines, occasional knot.
        turf  — hydroponic growth: pure blade scatter, NO lattice at all. The absence of a grid
-               is the whole point; it is what separates a grown surface from a built one. */
-  const MAT_BY_KIND = { hab: 'plate', bridge: 'panel', lab: 'tile', factory: 'tread', storage: 'tread', quarters: 'soft' };
-  const MAT_PITCH = { plate: [2, 2], panel: [4, 1], tile: [2, 2], tread: [2, 2], soft: [3, 2], grate: [1, 1], hex: [1, 1], plank: [5, 1], turf: [1, 1] };
+               is the whole point; it is what separates a grown surface from a built one.
+
+     V5 replaces `plate` as the HAB default with `spine` (see the note above deckSpine). `plate` is
+     NOT deleted — it stays in the palette as the classic, so a station that preferred the old deck
+     can still choose it, and no existing station loses a look it was built with. Every room carries
+     `floorMat: null` (inherit), so the swap reaches stations built before it existed — which is the
+     point: the default deck is the one surface every player sees and it had aged. */
+  // FALLBACK ONLY — projected geometry always carries matOf, so this map is not what you see in
+  // game. WorldModel.ROOM_KINDS[kind].mat is the authority; keep the two in step.
+  const MAT_BY_KIND = { hab: 'spine', corridor: 'spine', bridge: 'panel', lab: 'tile', factory: 'tread', storage: 'tread', quarters: 'soft' };
+  const MAT_PITCH = { plate: [2, 2], panel: [4, 1], tile: [2, 2], tread: [2, 2], soft: [3, 2], grate: [1, 1], hex: [1, 1], plank: [5, 1], turf: [1, 1], spine: [4, 3] };
   const MAT_NO_WEAR = { tile: 1, grate: 1, turf: 1 };   // gloss, open mesh and growth don't take boot scuffs
   // the room's deck material — the model's per-room choice when it has one, else the kind default
   // (a station built before the material axis existed has none, and bakes exactly as it always did).
@@ -424,7 +459,53 @@ const StationBake = (() => {
     if ((clump % 7) === 0) { const r = hp(X, Y, 99); px(X + (r % T), Y + ((r >>> 6) % T), 1, 1, vivid(base, (cl + 0.70) * fd)); }   // seed head
   }
 
+  /* ---------- SPINE · the deck that replaces `plate` as the hab default (2026-07-25) ----------
+     `plate` was a uniform 24px grid of identical slabs with random specks dropped on it. Two things
+     dated it: EVERY MODULE WAS THE SAME SIZE, which reads as bathroom tile rather than engineering,
+     and its detail was scattered at random instead of composed — a hatch means nothing when it
+     could be anywhere. SPINE fixes both: big STAGGERED 4×3 plates (so no module lines up with its
+     neighbour above), each read as a discrete bolted panel — recess inside the joint, four corner
+     fixings, brushed grain — under a heavier TRANSVERSE structural seam every third band. That
+     seam is the hierarchy: one strong line, then joints, then surface grain.
+
+     NO LONGITUDINAL SERVICE CHANNEL. The first cut ran a recessed trench (dark inner wall, lit lip,
+     grating ticks) every 6 tiles, and it was the design's centrepiece — it gave the deck direction.
+     Andrew cut it on sight: at station scale a room shows only two or three of them, so they don't
+     read as a rhythm, they read as two black bars ruled across the floor. Do not reintroduce a
+     full-height vertical line here without looking at a whole room first — the trench looked
+     correct in every close-up and wrong in every wide shot, which is the trap this deck sets. */
+  function deckSpine(b, base, x, y, X, Y, z, n, fd) {
+    const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
+    const sh = d => U.shade(base, d * fd);
+    const sk = Math.max(0, DEPTH.deckSeam);
+    const band = Math.floor(y / 3), off = (band % 2) * 2;
+    const pcx = Math.floor((x - off) / 4);
+    const lx = ((x - off) % 4 + 4) % 4, ly = ((y % 3) + 3) % 3;
+    const pn = h2(pcx, band, z + ':sp');
+    const body = ((pn % 5) - 2) * 0.013;
+    px(X, Y, T, T, sh(body));
+    for (let i = 1; i < T; i += 3) px(X, Y + i, T, 1, sh(body + ((i & 1) ? 0.026 : -0.020)));   // brushed grain
+    // PLATE AS A PANEL — a 1px recess just inside the joint on the plate's own outer edges, so a
+    // plate reads as a discrete bolted panel instead of a cell in a grid.
+    if (lx === 0) px(X + 2, Y, 1, T, sh(body - 0.09));
+    if (lx === 3) px(X + T - 3, Y, 1, T, sh(body - 0.09));
+    if (ly === 0) px(X, Y + 2, T, 1, sh(body - 0.09));
+    if (ly === 2) px(X, Y + T - 3, T, 1, sh(body - 0.09));
+    if (lx === 0) { px(X, Y, 1, T, sh(-0.26 * sk)); px(X + 1, Y, 1, T, sh(body + 0.07 * sk)); } // plate joint
+    if (ly === 0) { px(X, Y, T, 1, sh(-0.26 * sk)); px(X, Y + 1, T, 1, sh(body + 0.07 * sk)); }
+    // bolts at EVERY plate corner, not one — four fixings is what makes it read as fastened down
+    const bolt = (bx, by) => { px(bx, by, 2, 2, sh(0.15)); px(bx, by, 1, 1, sh(0.27)); px(bx + 1, by + 1, 1, 1, sh(-0.22)); };
+    if (ly === 0 && lx === 0) bolt(X + 3, Y + 3);
+    if (ly === 0 && lx === 3) bolt(X + T - 5, Y + 3);
+    if (ly === 2 && lx === 0) bolt(X + 3, Y + T - 5);
+    if (ly === 2 && lx === 3) bolt(X + T - 5, Y + T - 5);
+    // a heavier TRANSVERSE structural seam every third band — a cross-rhythm, so the deck has two
+    // scales of line rather than one.
+    if (((y % 9) + 9) % 9 === 0) { px(X, Y, T, 1, sh(-0.34)); px(X, Y + 1, T, 1, sh(0.09)); }
+  }
+
   function paintDeck(b, mat, base, x, y, X, Y, z, n, fd) {
+    if (mat === 'spine') return deckSpine(b, base, x, y, X, Y, z, n, fd);
     if (mat === 'grate') return deckGrate(b, base, x, y, X, Y, z, n, fd);
     if (mat === 'hex') return deckHex(b, base, x, y, X, Y, z, n, fd);
     if (mat === 'plank') return deckPlank(b, base, x, y, X, Y, z, n, fd);
@@ -883,9 +964,130 @@ const StationBake = (() => {
     wallFoot(b, body, X, footY, wd);
   }
 
+  /* ---------- BASE-WALL CANDIDATES (2026-07-25) ----------
+     `plating` is dated in exactly the ways `plate` was, plus one of its own:
+       1. ONE SEAM PER TILE. A 24px cell repeated the length of the room, every cell the same
+          width — the wall reads as bathroom tile, not as a built bulkhead.
+       2. FEATURES PLACED AT RANDOM. The rivet, the vent panel and the conduit drop are all
+          `n % k` on the tile hash, so they land wherever and mean nothing.
+       3. NO DEPTH. Every mark is painted ON one flat plane. Nothing is in front of anything
+          else, so a 23px-tall face has no structure to read — one rail carries the whole wall.
+     The fixes are the deck's: rhythm at a WIDER interval than the tile, features on a LOGIC, and
+     a hierarchy — structure first, then panel, then rail, then grain. All three keep the crown,
+     the foot and the contact seam untouched (a recipe owns the face only) and scale by wallDetail.
+
+     Vertical budget is tight: h = WALL.up + NFACE = 23px, of which the bottom 4 are the foot
+     shadow. Detail finer than ~3px does not survive the ambient bake — go coarse. */
+
+  /* A · BULKHEAD — a raised STANCHION every 3 tiles instead of a seam every tile, with one wide
+     recessed infill panel spanning the bay between them. The stanchion is the wall's structure:
+     it carries the fixings (a bolt at head and foot, nowhere else), and the bumper rail BREAKS at
+     it, so the rail reads as segments held between columns rather than a stripe painted over
+     everything. Gives the wall the vertical rhythm the SPINE deck deliberately lacks. */
+  /* the pilaster every BULKHEAD variant shares: a raised column standing in front of the infill.
+     It STARTS BELOW THE CROWN and stays dimmer than it — drawn from topY with a bright edge it
+     read as a fence post standing ON the wall top at room scale, because the crown is the
+     brightest continuous line in the room and anything vertical touching it joins it. */
+  function wallPilaster(b, sh, X, topY, footY, w, bolts) {
+    const px = (a, c, wd_, ht, col) => { b.fillStyle = col; b.fillRect(a, c, wd_, ht); };
+    const sy = topY + 2, ht = footY - sy;
+    px(X, sy, w, ht, sh(0.05));                                                        // column body, in front
+    px(X, sy, 1, ht, sh(-0.32));                                                       // its cast shadow
+    px(X + w - 1, sy, 1, ht, sh(0.11));                                                // its lit edge
+    if (bolts) {
+      const bolt = (by) => { px(X + 1, by, 2, 2, sh(0.13)); px(X + 2, by + 1, 1, 1, sh(-0.24)); };
+      bolt(sy + 2); bolt(footY - 8);                                                   // head and foot only
+    }
+  }
+
+  /* BULKHEAD — the base wall since 2026-07-25, replacing `plating`. A slim pilaster every 2 tiles
+     and NOTHING between them: the bay is left flush, the rail runs unbroken, and the rhythm of the
+     columns alone carries the wall.
+
+     Three versions were built and Andrew picked this one. The other two put work INTO the bay — a
+     framed recess in one, two riveted courses in the other — and both lost to the empty bay. That
+     is the lesson worth keeping: on a face only 23px tall with a bright crown above it and a
+     shadowed foot below, the wall has room for ONE idea. Adding a second thing between the columns
+     competes with the columns instead of supporting them. If you are tempted to dress this bay,
+     render a whole room first and compare it against this. */
+  function wallBulkhead(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const px = (a, c, w, ht, col) => { b.fillStyle = col; b.fillRect(a, c, w, ht); };
+    const bay = Math.floor(e.x / 2), tx = ((e.x % 2) + 2) % 2;      // tx 0 = the pilaster tile
+    const body = U.shade(pal.face, ((h2(bay, e.y, 'bht') % 5) - 2) * 0.014 * wd);
+    const sh = d => U.shade(body, d * wd);
+    px(X, topY, T, h, body);
+    wallFoot(b, body, X, footY, wd);                                                  // seated first, marks over it
+    px(X, topY + 2, T, 1, sh(0.07));                                                  // a single lit line under the crown
+    const rail = topY + Math.round(h * 0.62);
+    px(X, rail, T, 2, sh(-0.22));
+    px(X, rail, T, 1, sh(0.11));
+    if (tx === 0) wallPilaster(b, sh, X, topY, footY, 3, false);
+  }
+
+  /* B · COURSES — riveted hull plating, all horizontal: three stacked courses, each with a lit top
+     lip over a shadowed underside, and vertical butt joints every 4 tiles STAGGERED course to
+     course so no joint runs the full height. Rivets march along each lip on a fixed 6px pitch —
+     a row of fixings, not a sprinkle. The calm option; it never competes with a prop. */
+  function wallCourses(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const px = (a, c, w, ht, col) => { b.fillStyle = col; b.fillRect(a, c, w, ht); };
+    const usable = (footY - 4) - topY;
+    const cuts = [0, Math.round(usable * 0.36), Math.round(usable * 0.70)];
+    for (let ci = 0; ci < cuts.length; ci++) {
+      const y0 = topY + cuts[ci], y1 = topY + (ci + 1 < cuts.length ? cuts[ci + 1] : usable);
+      const cn = h2(Math.floor((e.x - ci * 2) / 4), ci, 'crs');
+      const body = U.shade(pal.face, (((cn % 5) - 2) * 0.018 - ci * 0.035) * wd);     // lower courses darker
+      const sh = d => U.shade(body, d * wd);
+      px(X, y0, T, y1 - y0, body);
+      px(X, y0, T, 1, sh(0.16));                                                      // lit course lip
+      px(X, y1 - 1, T, 1, sh(-0.30));                                                 // shadowed underside
+      if ((((e.x - ci * 2) % 4) + 4) % 4 === 0) {                                     // staggered butt joint
+        px(X, y0, 1, y1 - y0, sh(-0.34));
+        px(X + 1, y0, 1, y1 - y0, sh(0.09));
+      }
+      // rivet row on the lip. Pitch 8 not 6 and lift 0.15 not 0.22: at room scale a tighter,
+      // brighter row stops reading as fixings and starts reading as perforation.
+      for (let rx = 4; rx < T; rx += 8) px(X + rx, y0 + 2, 1, 1, sh(0.15));
+    }
+    wallFoot(b, pal.face, X, footY, wd);
+  }
+
+  /* C · SERVICE — big calm panels carrying ONE composed horizontal service run: a conduit at a
+     fixed height with brackets every 2 tiles and a junction box every 4th, so a feature appears
+     because a run passes through, never because a hash said so. The wall equivalent of the deck's
+     original idea, kept HORIZONTAL — a run along the wall's length is one line the whole room
+     shares, which is what the vertical trenches on the deck failed to be. */
+  function wallService(b, pal, X, topY, h, e, n, room, footY) {
+    const wd = wallDet();
+    const px = (a, c, w, ht, col) => { b.fillStyle = col; b.fillRect(a, c, w, ht); };
+    const pan = Math.floor(e.x / 4), lx = ((e.x % 4) + 4) % 4;
+    const body = U.shade(pal.face, ((h2(pan, e.y, 'svc') % 5) - 2) * 0.015 * wd);
+    const sh = d => U.shade(body, d * wd);
+    px(X, topY, T, h, body);
+    for (let i = 4; i < h - 5; i += 5) px(X, topY + i, T, 1, sh(-0.04));              // faint grain
+    if (lx === 0) { px(X, topY, 1, h, sh(-0.30)); px(X + 1, topY, 1, h, sh(0.08)); }  // panel joint every 4 tiles
+    const run = topY + Math.round(h * 0.34);                                          // THE SERVICE RUN
+    px(X, run, T, 3, sh(-0.20));
+    px(X, run, T, 1, sh(-0.34));                                                      // its shadowed top
+    px(X, run + 2, T, 1, sh(0.15));                                                   // catch-lit underside
+    if (lx % 2 === 0) { px(X + 5, run - 1, 2, 5, sh(-0.28)); px(X + 5, run - 1, 2, 1, sh(0.12)); }  // bracket
+    if (lx === 2 && room) {                                                            // junction box ON the run
+      px(X + 9, run - 2, 7, 7, sh(0.04));                                              // 7x7, not 8x9: a 23px
+      px(X + 9, run - 2, 7, 1, sh(0.16));                                              // face cannot carry a
+      px(X + 9, run + 4, 7, 1, sh(-0.32));                                             // box a third of its height
+      px(X + 11, run + 1, 3, 1, sh(-0.24));
+    }
+    const rail = topY + Math.round(h * 0.72);                                          // bumper rail, kept
+    px(X, rail, T, 2, sh(-0.22));
+    px(X, rail, T, 1, sh(0.12));
+    wallFoot(b, body, X, footY, wd);
+  }
+
   const WALL_RECIPES = {
     plating: wallPlating, ribbed: wallRibbed, panelled: wallPanelled,
-    viewport: wallViewport, pipework: wallPipework, wainscot: wallWainscot, hedge: wallHedge
+    viewport: wallViewport, pipework: wallPipework, wainscot: wallWainscot, hedge: wallHedge,
+    bulkhead: wallBulkhead, courses: wallCourses, service: wallService
   };
 
   function bakeWalls(b) {
@@ -1154,6 +1356,31 @@ const StationBake = (() => {
       if (u > pad) mg.fillRect(r.x1 * T, r.y1 * T - u, RW, u);
     }
     for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(mg, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T + pad); }
+    /* ...and above a TOP corner the raised strip has to follow the wall's EASED top instead of
+       staying square. eraseSpandrel above only cuts the corner out of the FOOTPRINT plate; the
+       wall-height strip kept its square corner while the face it stands for eases to nothing around
+       the chamfer, so ambient mask was left lying over bare space — a shadow hanging outside the
+       hull, invisible against pure black but plain against the SpaceBG starfield. Same law as the
+       straight wall top (the mask must never cover pixels the art doesn't paint), and the reach is
+       taken from eachTallCornerCol, the very walk the crown is painted from, so the two cannot
+       disagree. Erase only ABOVE the art: the crown itself belongs under the ambient like the rest
+       of the interior. */
+    if (WALL.up > 0) {
+      const upC = Math.round(WALL.up);
+      mg.save();
+      mg.globalCompositeOperation = 'destination-out';
+      mg.fillStyle = '#000';
+      for (const [ccx, ccy, kind] of G.chamfers) {
+        if (kind !== 'tl' && kind !== 'tr') continue;
+        const A = CORNER[kind];
+        const stripTop = ccy * T - (upC + capH + 2);
+        eachTallCornerCol(kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T, upC, capH, (ix, top, base, capAt) => {
+          const artTop = top - capAt;
+          if (artTop > stripTop) mg.fillRect(ix, stripTop, 1, artTop - stripTop);
+        });
+      }
+      mg.restore();
+    }
     L.globalAlpha = LIGHT.ambient;
     L.drawImage(mask, VX, VY);
     L.globalAlpha = 1;
@@ -1349,24 +1576,25 @@ const StationBake = (() => {
            subtly different pixel staircase from the face band it is supposed to sit on — a 1px
            mismatch that wandered around the arc. Deriving both from one circle is what makes the
            crown, the face and the deck cut land on a single edge. */
-        const cols = new Map();   // ix -> { top, base }  (top = lowest y the FACE top reaches; base = floor contact)
-        const x0 = Math.round(A.cx ? ax - R : ax);
-        for (let ix = x0; ix < x0 + R; ix++) {
-          const adx = Math.abs(ix + 0.5 - ax);
-          if (adx >= R) continue;
-          const base = Math.round(ay - Math.sqrt(R * R - adx * adx));   // upper quadrant (tl/tr)
-          const tt = Math.max(0, Math.min(1, 1 - adx / R));             // 0 at the side end → 1 at the north end
-          const k = Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * up;
-          cols.set(ix, { top: Math.round(base - k), base });
-        }
-        for (const [ix, c] of cols) {
-          const faceH = c.base - c.top; if (faceH <= 0) continue;
-          b.fillStyle = cPal.face; b.fillRect(ix, c.top, 1, faceH + 1);            // face column, integer
-          // crown = opaque cap pixels stepped up the curve (pixel stairs, not a stroke)
-          b.fillStyle = cPal.cap; b.fillRect(ix, c.top - capH, 1, capH);
-          b.fillStyle = U.shade(cPal.cap, 0.30); b.fillRect(ix, c.top - capH, 1, 1); // 1px lit top edge
-          b.fillStyle = U.shade(cPal.cap, -0.45); b.fillRect(ix, c.top - 1, 1, 1);   // 1px darker seam beneath crown
-        }
+        // the column walk now lives in eachTallCornerCol, because buildLightMap has to agree with it
+        // to the pixel — see the note there.
+        /* THE CROWN MUST TAPER WITH THE WALL IT CROWNS (2026-07-25, Andrew: "the thick diagonal
+           lines"). The face height eases to zero around the chamfer — but the crown used to keep
+           its full capH AND its +0.30 lit top edge the whole way, so a wall that had receded to
+           nothing was still capped at full thickness in the brightest tone in the room. Stepped
+           along a diagonal staircase that stops reading as a wall top and reads as a thick bright
+           bar ruled across the corner. It is the same failure the deck's service channel had: a
+           mark that is correct on the straight is wrong where the geometry turns.
+           Now the cap thins 3→1px and dims as it recedes, and the lit top edge fades out with it,
+           so the corner reads as the wall going away from you. Straight walls are untouched. */
+        eachTallCornerCol(kind, ax, ay, R, up, capH, (ix, top, base, capAt, tt) => {
+          const faceH = base - top; if (faceH <= 0) return;
+          b.fillStyle = cPal.face; b.fillRect(ix, top, 1, faceH + 1);              // face column, integer
+          const cap = U.shade(cPal.cap, -0.22 * (1 - tt));
+          b.fillStyle = cap; b.fillRect(ix, top - capAt, 1, capAt);
+          if (capAt >= capH) { b.fillStyle = U.shade(cap, 0.30); b.fillRect(ix, top - capAt, 1, 1); }  // lit edge only at full thickness
+          b.fillStyle = U.shade(cPal.cap, -0.45); b.fillRect(ix, top - 1, 1, 1);     // 1px darker seam beneath crown
+        });
       }
     }
 

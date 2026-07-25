@@ -17,6 +17,31 @@
   var RELEASES_REPO = 'androoAGI/starnet-releases';
   var RELEASES_PAGE = 'https://github.com/' + RELEASES_REPO + '/releases/latest';
 
+  // StarNet Credits (managed plans). The billing service is a separate host; until it is
+  // deployed `live:false` keeps every buy button honest — no button on this site may imply
+  // a purchase we cannot actually take. Flip `live` to true once the service answers.
+  var CREDITS = {
+    live: false,
+    accountUrl: 'https://account.starnetos.com'
+  };
+  (function wireCredits(){
+    var ctas = document.querySelectorAll('[data-credits-cta]');
+    if(!ctas.length) return;
+    document.querySelectorAll('[data-credits-gate]').forEach(function(el){ el.hidden = !CREDITS.live; });
+    document.querySelectorAll('[data-credits-soon]').forEach(function(el){ el.hidden = CREDITS.live; });
+    ctas.forEach(function(a){
+      var tier = a.getAttribute('data-tier');
+      if(!CREDITS.live){
+        // Only the buttons that promise a transaction get defused; in-page nav stays usable.
+        if(tier || a.hasAttribute('data-account')){ a.textContent = '[ SOON ]'; a.href = '#get'; }
+        return;
+      }
+      if(tier) a.href = CREDITS.accountUrl + '/account?tier=' + encodeURIComponent(tier);
+      else if(a.hasAttribute('data-account')) a.href = CREDITS.accountUrl + '/login';
+      else if(a.getAttribute('href') === '#') a.href = CREDITS.accountUrl + '/login';
+    });
+  })();
+
   /* ---------- boot sequence (once per session) ---------- */
   var bootLines = [
     '> STARNET TERMLINK',
@@ -30,7 +55,7 @@
 
   function endBoot(withFlash){
     bootTimers.forEach(clearTimeout);
-    boot.classList.add('hidden');
+    if(boot) boot.classList.add('hidden');
     try{ sessionStorage.setItem('sn-booted','1'); }catch(e){}
     if(withFlash && flash){
       flash.hidden = false;
@@ -42,7 +67,10 @@
   var booted = false;
   try{ booted = sessionStorage.getItem('sn-booted') === '1'; }catch(e){}
 
-  if(booted || reduce){
+  // Subpages (pricing, etc.) reuse this script but carry no #boot overlay.
+  if(!boot){
+    /* nothing to play */
+  }else if(booted || reduce){
     boot.classList.add('hidden');
   }else{
     var linesEl = document.getElementById('boot-lines');

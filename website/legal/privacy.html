@@ -27,18 +27,23 @@
 <div class="docs-shell" style="grid-template-columns:1fr; max-width:860px;">
   <main class="docs-main">
 <h1>StarNet Privacy</h1>
-<p><em>Last reviewed: 2026-07-09, against the shipping code.</em></p>
+<p><em>Last reviewed: 2026-07-25, against the shipping code.</em></p>
 <p>StarNet is a <strong>local-first desktop app</strong>. It runs a small server (the "sidecar") on your own
-machine (<code>localhost</code>) and does the agent work there. There is <strong>no StarNet cloud, no StarNet
-account, and no StarNet server that receives your data.</strong> This document is written in plain
-English and is grounded in an audit of the actual code — not aspirations.</p>
+machine (<code>localhost</code>) and does the agent work there. Out of the box there is <strong>no StarNet
+account and nothing of yours on a StarNet server</strong> — the app talks only to the providers you
+choose, with your own keys. There is exactly one opt-in exception: if you choose to buy
+<strong>StarNet Credits</strong>, that creates an account on our billing service. It is described in full
+under <em>StarNet Credits</em> below, and nothing in this document changes for you unless you buy them.
+This document is written in plain English and is grounded in an audit of the actual code —
+not aspirations.</p>
 <p>Support questions: androo.agi@gmail.com.</p>
 <h2>The short version</h2>
 <ul>
-<li><strong>We collect nothing.</strong> There is no telemetry, no analytics, no crash reporting, no ad SDK,
-  and no "phone home" of any kind. We verified this by searching the whole codebase for the
+<li><strong>The app collects nothing.</strong> There is no telemetry, no analytics, no crash reporting, no ad
+  SDK, and no "phone home" of any kind. We verified this by searching the whole codebase for the
   usual suspects (Sentry, PostHog, Mixpanel, Segment, Google Analytics, Amplitude, Datadog):
-  none are present.</li>
+  none are present. This stays true whether or not you buy credits — buying credits adds a
+  billing account, not tracking.</li>
 <li><strong>Your data stays on your machine</strong>, under your OS user's app-data directory —
   Windows: <code>%APPDATA%\ai.skynet.harness\workspaces\</code>; macOS:
   <code>~/Library/Application Support/ai.skynet.harness/workspaces/</code>; Linux:
@@ -205,9 +210,33 @@ Windows user account can read it. Protect your machine account accordingly.</p>
 <ul>
 <li>We do <strong>not</strong> run analytics or telemetry of any kind.</li>
 <li>We do <strong>not</strong> collect crash reports.</li>
-<li>We do <strong>not</strong> have a StarNet account system or a StarNet backend that stores your data.</li>
+<li>We do <strong>not</strong> require a StarNet account. Unless you buy credits, no account exists, and no
+  StarNet backend holds anything of yours.</li>
 <li>We do <strong>not</strong> sell, share, or transmit your conversations, keys, or files to anyone —
   the only outbound traffic is the specific, purpose-built requests listed above.</li>
+<li>We do <strong>not</strong> store your prompts or your agents' replies on our servers, even on the credits
+  path — see below.</li>
+</ul>
+<h2>StarNet Credits — only if you buy them</h2>
+<p>Credits are optional and off by default. If you never buy them, skip this section: nothing in it
+applies to you, and the app behaves exactly as described above.</p>
+<p>If you do buy credits, you create an account on StarNet's billing service, and these things
+become true:</p>
+<ul>
+<li><strong>What we hold.</strong> Your email address, your credit balance and the ledger of grants and charges
+  behind it, an identifier for each station you link, and the customer/subscription identifiers our
+  payment processor gives us. That's the list.</li>
+<li><strong>Card details never reach us.</strong> Checkout runs on <strong>Stripe</strong>, in your browser. StarNet never
+  sees, receives, or stores a card number — the app has no payment form at all.</li>
+<li><strong>How you sign in.</strong> By emailed one-time link. There is no StarNet password to steal.</li>
+<li><strong>Model runs go through our gateway.</strong> This is the part worth being blunt about: on the credits
+  path your prompts and your agents' replies are relayed through StarNet's servers to the model
+  provider, because that is the only way we can pay for the call on your behalf. We relay them; we
+  do <strong>not</strong> store their contents, and we do <strong>not</strong> train on them. What we keep is the metering —
+  model name, token counts, cost, timestamp — which is what your balance is computed from.
+  <strong>If you use your own key instead, none of this traffic touches us at all.</strong></li>
+<li><strong>Deleting it.</strong> Email androo.agi@gmail.com and we'll delete the account and its data. We keep
+  the minimum transaction records that tax and payment rules require us to keep.</li>
 </ul>
 <h2>Deleting your data</h2>
 <p>Your data is just files. To wipe it, uninstall StarNet and delete the <code>ai.skynet.harness</code>

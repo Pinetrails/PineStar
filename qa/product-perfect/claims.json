@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f509e77fb71b9c36e7b072f73e0b718d8b55c2e5",
+    "sourceCommit": "818dd1255db5f92b9be7f5fa7e9f9d0441978007",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -28,8 +28,8 @@
       },
       {
         "path": "PRIVACY.md",
-        "bytes": 9593,
-        "sha256": "036ff5fe314ba7c41782d40b447ee2790ceba232584bf345e24ad0ced99bcac4"
+        "bytes": 11747,
+        "sha256": "9d10f669cc0a3e38c1b50e7aa82db4947f12430ce59e72e1ad84dbc2d4f49f64"
       },
       {
         "path": "README.md",
@@ -43,8 +43,8 @@
       },
       {
         "path": "TERMS.md",
-        "bytes": 3128,
-        "sha256": "9c4288ae8facc306c8c8f742568c7df70bc4ff62b947b73fa92f6bf831530abe"
+        "bytes": 4761,
+        "sha256": "1208e4ea16cac90d6fc1eecfdd2d1bebfc97bf00c4d5ef8f6aa6f79e2f415385"
       },
       {
         "path": "docs/DOWNLOAD_PAGE.md",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 440678,
-        "sha256": "eee144b39764c84ab89b49a349cd103e66d48dd7cb17c0d536ed619c5ace8cec"
+        "bytes": 446825,
+        "sha256": "4542ab4ae80768f9523c80869b90c561f8dcbcf4750d562b405a81be612fe08f"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -438,8 +438,8 @@
       },
       {
         "path": "frontend/app/propanchor.js",
-        "bytes": 3246,
-        "sha256": "225462acc5305e430aa6cfc58913d893effa09560771d135a3ab4463c831010d"
+        "bytes": 4107,
+        "sha256": "bcd9a97f5727b45fda78aadb1cbf82fb7b040aedef5720b3471d36559ef0de40"
       },
       {
         "path": "frontend/app/propsprites.js",
@@ -618,8 +618,8 @@
       },
       {
         "path": "frontend/app/stationbake.js",
-        "bytes": 100781,
-        "sha256": "b9d2348f80e604fcf6cec19cb6de4a4ab3711d1c31caae1b53d3a5dd378cc16c"
+        "bytes": 116916,
+        "sha256": "6aff007b24c0b4200b52ae23df6cd8ac1e6b461d9c33c3a92c65f8809c6402ff"
       },
       {
         "path": "frontend/app/stationquests.js",
@@ -773,8 +773,8 @@
       },
       {
         "path": "frontend/app/windows/routines.js",
-        "bytes": 24533,
-        "sha256": "1e43a49ff74df394982c0fd9ee0d2232e782c482898977862e5d40d63804a8a7"
+        "bytes": 29055,
+        "sha256": "a04000d0c3cee86f5e3244f5f10900b9dd15e5b680caca0de349e0a536c3c037"
       },
       {
         "path": "frontend/app/windows/trophies.js",
@@ -813,13 +813,13 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 460692,
-        "sha256": "703ee5b29c5086decc896b157296429bd91f611fe195703dc8bba5174a674fd0"
+        "bytes": 467282,
+        "sha256": "54759972d3f9f45daa3051643da7b5e72d387c3e024f4767add7d08814b1d29b"
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 65394,
-        "sha256": "1c29a93db2f6da8436ba01ea24d35c66612e768a74d9e1c93481830fbd43b600"
+        "bytes": 69905,
+        "sha256": "7bb1bf6df76dd5e1f89bf76d89496c8d1f420cc320ef7f2cace9910b4de39813"
       },
       {
         "path": "frontend/app/xp.js",
@@ -913,8 +913,8 @@
       },
       {
         "path": "frontend/js/assets.js",
-        "bytes": 11876,
-        "sha256": "7d02aaff3fc3ebad5b2f96ff1d23fd5a850f6d4fb4daeb2aa0a9d35d881f4cd9"
+        "bytes": 14517,
+        "sha256": "407f20a3b59356035d7779d2f5a9e2ed9973fc79b950a2f324ac6c1baa48eb83"
       },
       {
         "path": "frontend/js/audio.js",
@@ -1915,11 +1915,11 @@
     {
       "id": "local-first-no-account",
       "domain": "privacy",
-      "claim": "StarNet is local-first with no StarNet cloud account or data server.",
+      "claim": "StarNet is local-first: no StarNet account is required and no StarNet server holds user data, unless the user opts into managed credits.",
       "surfaceLocators": [
         {
           "path": "PRIVACY.md",
-          "needle": "no StarNet cloud, no StarNet"
+          "needle": "There is exactly one opt-in exception"
         }
       ],
       "authorityChecks": [
@@ -1937,7 +1937,7 @@
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
       "ownerWave": "W2",
-      "qualification": "The app server and stores are local; third-party provider/channel/update traffic remains qualified.",
+      "qualification": "The app server and stores are local; third-party provider/channel/update traffic remains qualified. Managed credits (optional, not yet launched) add a billing account and relay model calls through StarNet's gateway — PRIVACY.md states that carve-out explicitly.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [
@@ -2195,11 +2195,11 @@
     {
       "id": "free-no-markup-budget-caps",
       "domain": "release",
-      "claim": "The app is free/no-markup and enforces configurable spend caps.",
+      "claim": "The app is free and takes no markup on the user's own keys; managed credits are a separate opt-in paid path. Configurable spend caps are enforced.",
       "surfaceLocators": [
         {
           "path": "TERMS.md",
-          "needle": "StarNet does not resell model access"
+          "needle": "adds no markup, and has no way to bill you"
         }
       ],
       "authorityChecks": [
@@ -2217,7 +2217,7 @@
       "verdict": "SHIPPED",
       "disposition": "PROVEN",
       "ownerWave": "W6",
-      "qualification": "Budget enforcement exists; free/no-markup remains an owner business-policy claim.",
+      "qualification": "Budget enforcement exists; free/no-markup remains an owner business-policy claim, and is now scoped to the BYOK path — TERMS.md §2 states plainly that StarNet does resell model access on the optional credits path.",
       "liveProofRequired": true,
       "liveProof": "PENDING",
       "refsChecked": [

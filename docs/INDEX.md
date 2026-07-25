@@ -37,8 +37,9 @@ Other reference/design docs (subsystem analyses and design proposals):
 
 - `builder-pillar-designs.md`, `design-proposals.md`, `rpg-layer-design.md` — design proposals.
 - `BUILD_SYSTEM_V2.md`, `DOWNLOAD_PAGE.md` — build-system notes and the product landing copy.
-- `raw-builder-foundation-output.json`, `raw-harness-runtime-output.json`,
-  `raw-workflow-output.json` — raw generation outputs kept for provenance.
+- `raw-builder-foundation-output.json`, `raw-harness-runtime-output.json` — raw generation
+  outputs kept for provenance. (`raw-workflow-output.json` was removed: it was an unreviewed
+  224KB dump that quoted a specific credit markup rate, which does not belong in a public repo.)
 
 ## Plans & roadmaps
 

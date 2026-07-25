@@ -6,7 +6,7 @@ const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { makeComputerTools } = require('../sidecar/tools/builtin/computer.js');
 const { makeDesktopTools } = require('../sidecar/tools/builtin/desktop.js');
-const { enforceSyntheticOnly, enforceRunAuthority, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe } = require('../sidecar/inputpolicy.js');
+const { enforceSyntheticOnly, enforceRunAuthority, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, normalizeUnattendedGrants, isConnectorTool } = require('../sidecar/inputpolicy.js');
 
 const station = {
   agents: { ag: { id: 'ag', room: 'r' } },
@@ -49,7 +49,52 @@ const interactiveAuthority = makeRunAuthority({ surface: 'interactive', isTask: 
 const autonomousAuthority = makeRunAuthority({ surface: undefined, isTask: true, environment: { supports: { hostileCodeSandbox: false } } });
 A.eq(autonomousAuthority.surface, 'autonomous', 'missing surface fails closed to unattended');
 A.ok(interactiveAuthority.authorize({}, { name: 'shell.exec', capability: 'workbench' }).ok, 'watched workspace commands remain available behind their command/consent floors');
-A.ok(!autonomousAuthority.authorize({}, { name: 'shell.exec', capability: 'workbench' }).ok, 'unattended shell is denied above Full Access');
+A.ok(!autonomousAuthority.authorize({}, { name: 'shell.exec', capability: 'workbench' }).ok, 'UNGRANTED unattended shell is denied above Full Access');
+
+/* UNATTENDED TERMINAL GRANT (2026-07-25) — a routine the Commander explicitly granted may use the terminal
+   unattended. The grant is host-recorded (read off the durable cron job), never derivable from prompt text or
+   Full Access; these lock both directions plus the whitelist that stops it widening. */
+const grantedAuthority = makeRunAuthority({ surface: 'autonomous', isTask: true, unattendedGrants: ['workbench'] });
+A.ok(grantedAuthority.authorize({}, { name: 'shell.exec', capability: 'workbench' }).ok, 'a GRANTED unattended run may use shell');
+A.ok(grantedAuthority.authorize({}, { name: 'verify.run', capability: 'workbench' }).ok, 'the grant covers verify.run (same workspace-process class)');
+A.ok(grantedAuthority.project({ name: 'shell.exec', capability: 'workbench' }), 'a granted run is OFFERED shell in the wire list');
+A.ok(!autonomousAuthority.project({ name: 'shell.exec', capability: 'workbench' }), 'an ungranted run is not offered shell');
+// the grant is scoped: it must not leak into other denied classes
+A.ok(!grantedAuthority.authorize({}, { name: 'spotify_play', capability: 'jukebox' }).ok, 'a terminal grant does NOT unlock media-control');
+A.ok(!grantedAuthority.authorize({}, { name: 'computer.use', capability: 'physical-input' }).ok, 'a terminal grant does NOT unlock physical input');
+A.ok(!grantedAuthority.authorize({}, { name: 'future.magic', capability: 'future-cap' }).ok, 'a terminal grant does NOT unlock unknown external effects');
+// an ungrantable/bogus family name is dropped rather than honored
+const bogusGrant = makeRunAuthority({ surface: 'autonomous', isTask: true, unattendedGrants: ['jukebox', 'physical-input', '*', ''] });
+A.eq(bogusGrant.unattendedGrants.length, 0, 'non-whitelisted grant names are dropped');
+A.ok(!bogusGrant.authorize({}, { name: 'spotify_play', capability: 'jukebox' }).ok, 'a dropped grant grants nothing');
+A.eq(normalizeUnattendedGrants(['workbench', 'workbench', 'nope']).size, 1, 'grant normalization dedupes and whitelists');
+// the grant is meaningless on the watched surface (THE MOAT governs there)
+const grantedInteractive = makeRunAuthority({ surface: 'interactive', isTask: true, unattendedGrants: ['workbench'] });
+A.ok(grantedInteractive.authorize({}, { name: 'shell.exec', capability: 'workbench' }).ok, 'interactive shell is unchanged by the grant');
+
+/* UNATTENDED CONNECTOR GRANT — the Commander's own MCP servers, callable by a granted routine. The critical
+   property: external-unknown is ALSO the fail-closed default for anything the host cannot classify, so the
+   grant must reach connector tools ONLY (capability 'mcp:<id>'), never that catch-all. */
+const MCP_TOOL = { name: 'mcp__demo__lookup', capability: 'mcp:demo' };
+const UNCLASSIFIED = { name: 'future.magic', capability: 'future-cap' };
+const connGranted = makeRunAuthority({ surface: 'autonomous', isTask: true, unattendedGrants: ['connectors'] });
+A.eq(impactOfTool(MCP_TOOL), IMPACTS.EXTERNAL_UNKNOWN, 'connector tools are still classified external-unknown');
+A.ok(connGranted.authorize({}, MCP_TOOL).ok, 'a GRANTED unattended run may call a connector tool');
+A.ok(connGranted.project(MCP_TOOL), 'a granted run is OFFERED its connector tools');
+A.ok(!autonomousAuthority.project(MCP_TOOL), 'an ungranted run is not offered connector tools');
+A.ok(!autonomousAuthority.authorize({}, MCP_TOOL).ok, 'an ungranted run may not call them');
+// THE CATCH-ALL MUST STAY CLOSED — this is the assertion that stops the grant becoming "allow anything odd".
+A.ok(!connGranted.project(UNCLASSIFIED), 'a connector grant does NOT open the external-unknown catch-all');
+A.ok(!connGranted.authorize({}, UNCLASSIFIED).ok, 'an unclassifiable tool is still denied under a connector grant');
+// cross-grant isolation: each grant unlocks only its own family
+A.ok(!connGranted.authorize({}, { name: 'shell.exec', capability: 'workbench' }).ok, 'a connector grant does NOT unlock the terminal');
+A.ok(!grantedAuthority.authorize({}, MCP_TOOL).ok, 'a terminal grant does NOT unlock connectors');
+const bothGranted = makeRunAuthority({ surface: 'autonomous', isTask: true, unattendedGrants: ['workbench', 'connectors'] });
+A.ok(bothGranted.authorize({}, MCP_TOOL).ok && bothGranted.authorize({}, { name: 'shell.exec', capability: 'workbench' }).ok, 'both grants together unlock both families');
+// interactive connector behavior is UNCHANGED: still an exact per-call confirmation, never the grant
+const connInteractiveNoConfirm = makeRunAuthority({ surface: 'interactive', isTask: true, unattendedGrants: ['connectors'] });
+A.ok(!connInteractiveNoConfirm.project(MCP_TOOL), 'interactive without a confirm channel still refuses connector tools');
+A.ok(isConnectorTool(MCP_TOOL) && !isConnectorTool(UNCLASSIFIED), 'connector classification keys on the mcp: capability prefix');
 A.ok(!interactiveAuthority.authorize({}, { name: 'computer.use', capability: 'physical-input' }).ok, 'physical input has no ordinary-run authority');
 A.ok(!interactiveAuthority.authorize({}, { name: 'desktop.open', capability: 'visible-desktop' }).ok, 'visible desktop has no ordinary-run authority');
 A.eq(impactOfTool({ name: 'future.magic', capability: 'future-cap' }), IMPACTS.EXTERNAL_UNKNOWN, 'unknown future tools fail closed instead of defaulting safe');

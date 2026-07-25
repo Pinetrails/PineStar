@@ -292,6 +292,54 @@ const World = (() => {
   const specOf = t => (typeof PropSprites !== 'undefined' && PropSprites.spec) ? PropSprites.spec(t) : null;
   const dirToward = (fx, fy, tx, ty) => (Math.abs(tx - fx) > Math.abs(ty - fy)) ? (tx > fx ? 'east' : 'west') : (ty > fy ? 'south' : 'north');
 
+  /* ---------- facing & gait (sprite turn smoothness) ----------
+     A walking body's facing used to be a bare `Math.abs(dx) > Math.abs(dy)` snap on the residual-to-waypoint,
+     recomputed every frame. Two artefacts fell out of that: near a 45° heading the bucket flipped on velocity
+     noise (the body strobed between two poses), and a real turn teleported the pose 90° in a single frame.
+     Instead we keep a CONTINUOUS facing angle per body, slew it toward the heading at a capped rate, and bucket
+     THAT with hysteresis — a turn reads as a turn, and a bucket boundary can no longer chatter.
+     `dir` stays the same 4-value string every other system (glance / sit / OPP / social / dirToward) already
+     writes and reads; when one of them sets `dir` directly we resync the angle from it, so a deliberate
+     head-turn still wins instantly. `odo` is the walk odometer in world units; assets.js drawBody converts it
+     to a frame via a stride DERIVED from each skin's drawn height and frame count, so this stays skin-agnostic. */
+  const DIR_A = { east: 0, south: Math.PI / 2, west: Math.PI, north: -Math.PI / 2 };
+  const TURN_RATE = 12;      // rad/s — a 90° corner takes ~130ms (≈8 frames) instead of one
+  const DIR_HYST = 0.13;     // rad (~7.5°) a bucket holds PAST its own boundary before handing over
+  const ACCEL = 150;         // world units/s² — spools up to hero pace in ~0.23s, and brakes at the same rate
+  const CORNER_LOOK = 2.5;   // world units: hand over to the next waypoint this early (see the walk blocks)
+  const angNorm = a => Math.atan2(Math.sin(a), Math.cos(a));   // wrap to (-π, π]
+  function bucketDir(a, cur) {
+    if (cur && DIR_A[cur] != null && Math.abs(angNorm(a - DIR_A[cur])) < Math.PI / 4 + DIR_HYST) return cur;
+    let best = 'south', bd = Infinity;
+    for (const d in DIR_A) { const t = Math.abs(angNorm(a - DIR_A[d])); if (t < bd) { bd = t; best = d; } }
+    return best;
+  }
+  /* ONE call per moving body per frame. Eases the walk speed, advances the facing angle, buckets it to a
+     sprite direction, keeps the stride odometer — and returns how far to move THIS frame.
+     Speed easing: bodies used to jump 0 → full pace and back in a single frame. Because the walk cycle is
+     now DISTANCE-phased (assets.js), easing the speed automatically eases the LEG cycle too — a body visibly
+     spools up and settles instead of skating off at full tilt, for free.
+     `lastLeg` brakes into the FINAL stop only; intermediate waypoints are taken at pace so the body doesn't
+     stutter at every corner. dx,dy = the vector it is stepping along, d = its length. */
+  function stepGait(b, dx, dy, d, top, lastLeg, dt) {
+    if (b.faceA == null || b.dir !== b.faceDir) b.faceA = DIR_A[b.dir] != null ? DIR_A[b.dir] : Math.PI / 2;
+    const t = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    if (b.odo == null || t - (b.odoAt || 0) > 150) { b.odo = 0; b.spd = 0; }   // wasn't walking last frame → a NEW walk
+    b.odoAt = t;
+    const want = lastLeg ? Math.min(top, Math.sqrt(Math.max(0, d) * 2 * ACCEL)) : top;
+    const rate = ACCEL * dt / 1000, cur = b.spd || 0;
+    b.spd = cur < want ? Math.min(want, cur + rate) : Math.max(want, cur - rate);
+    const step = Math.min(d, b.spd * dt / 1000);
+    if (d > 1e-4) {
+      const turn = angNorm(Math.atan2(dy, dx) - b.faceA);
+      const cap = TURN_RATE * dt / 1000;
+      b.faceA = angNorm(b.faceA + (Math.abs(turn) <= cap ? turn : Math.sign(turn) * cap));
+      b.odo += step;
+    }
+    b.dir = b.faceDir = bucketDir(b.faceA, b.dir);
+    return step;
+  }
+
   /* ================= furniture (ported v7 sprites.js F.desk / F.chair) ================= */
   const fpx = (x, y, w, h, c) => { ctx.fillStyle = c; ctx.fillRect(x, y, w, h); };
   const fblink = (p, ph) => ((fnow / p + (ph || 0)) % 1) < 0.5;
@@ -424,7 +472,7 @@ const World = (() => {
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
         if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'place' || agent.goal === 'rounds' || agent.goal === 'post' || agent.goal === 'sleep' || agent.goal === 'mourn' || agent.goal === 'revisit' || agent.goal === 'firstwake') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.quirkKind = null; agent.placeTarget = null; agent.removeId = null; agent.roundsQueue = null; agent.wakePhase = 0; agent.glanceCd = 0; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation/quirk/placement/rounds/board-survey/sleep/grief/wake-ritual, re-decide next idle tick (firstWakeDone stays latched, so the ritual never re-arms)
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
-        if (agent.working && seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.dir = deskFace || 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
+        if (agent.working && seat) { const f = seatFoot(seat); agent.px = f.x; agent.py = f.y; agent.dir = deskFace || 'north'; }  // follow the desk (work only — a lounging agent must NOT teleport to the desk)
         ensureAgentValid();
       }
     }
@@ -478,7 +526,7 @@ const World = (() => {
     //    Uses the SAME desk+seat resolver as crew (deskPropFor/deskSeat) so the hero & crew seat identically.
     const home = agent && deskPropFor(agent.id), hs = home && deskSeat(home);
     if (home && hs) {
-      desk = { tx: home.x, ty: home.y, w: home.w || 1, h: home.h || 1 }; seat = { tx: hs.tx, ty: hs.ty };
+      desk = { tx: home.x, ty: home.y, w: home.w || 1, h: home.h || 1 }; seat = { tx: hs.tx, ty: hs.ty, cx: hs.cx };
       deskPropId = home.id; deskFace = hs.face;
       for (let dx = 0; dx < (desk.w || 1); dx++) for (let dy = 0; dy < (desk.h || 1); dy++) blocked.add((desk.tx + dx) + ',' + (desk.ty + dy));
       return;   // the placed prop + its chair are drawn by the render loop (skip the synthetic desk/chair)
@@ -490,7 +538,7 @@ const World = (() => {
     if (dtx + 1 > z.x2) dtx = Math.max(z.x1, z.x2 - 1);
     const dty = Math.min(z.y1 + 1, z.y2 - 1);
     desk = { tx: dtx, ty: dty, w: 2, h: 1 };
-    seat = { tx: dtx, ty: Math.min(dty + 1, z.y2) };
+    seat = { tx: dtx, ty: Math.min(dty + 1, z.y2), cx: dtx + 0.5 };   // 2-wide desk -> centre sits on the tile seam
     blocked.add(dtx + ',' + dty); blocked.add((dtx + 1) + ',' + dty);
   }
   // walk the hero to its work seat (or snap onto it if unreachable) + enter the 'work' goal — the shared "now sit
@@ -498,7 +546,7 @@ const World = (() => {
   function goToSeat() {
     agent.goal = 'work';
     if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) {
-      if (seat) { const f = footOf(seat.tx, seat.ty); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = deskFace || 'north'; }   // face the assigned desk (deskFace) when teleport-fallback seating
+      if (seat) { const f = seatFoot(seat); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = deskFace || 'north'; }   // face the assigned desk (deskFace) when teleport-fallback seating
     }
   }
   // G4 feature 1: resolve WHERE the permission-blocked hero waits, honestly from the live floor. Reuses the
@@ -670,7 +718,11 @@ const World = (() => {
     agent = {
       id: a.id, name: a.name, color: a.color || '#5ad0ff', skin: a.skin || DATA.DEFAULT_SKIN,
       px: 0, py: 0, dir: 'south', state: 'idle', sitting: false, working: false, unplaced: true,
-      phase: U.hash(a.id) % 6, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
+      // `phase` MUST stay an INTEGER — phaseOf() uses it as a PHASES[] index (world.js ~2660), so a float
+      // there indexes undefined and kills the whole idle/mood engine. `aph` is the separate FLOAT sprite
+      // offset: b.phase alone is a whole-frame offset, which left every body ticking its walk cycle on the
+      // SAME 100ms boundaries (the crew animated in visible lockstep). A fractional offset de-syncs them.
+      phase: U.hash(a.id) % 6, aph: (U.hash(a.id) % 600) / 100, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false,  // idle leisure: which prop the agent is at + dwell timer + pose
       watchProp: null,   // lounge: the TV the couch-sitter is watching (kept lit while it watches)
       // seat-on-couch: logical pos stays on the approach tile, but it RENDERS at seat{Px,Py} ON the couch
@@ -1325,7 +1377,7 @@ const World = (() => {
      desk pose, generalised to crew: foot on the front tile, dir north, sitting (the chair sprite y-sorts behind
      so it reads as sitting IN the chair). Returns once seated; until then it advances along a path to the seat. */
   function stepCrewToSeat(b, s, dt, now) {
-    const foot = footOf(s.tx, s.ty);
+    const foot = seatFoot(s);
     if (Math.hypot(foot.x - b.px, foot.y - b.py) < 1.1) {   // arrived → sit at the desk
       b.px = foot.x; b.py = foot.y; b.pathPts = null; b.target = null; b.state = 'idle'; b.sitting = true; b.dir = 'north';
       return;
@@ -1342,13 +1394,16 @@ const World = (() => {
     }
     if (b.target) {
       const dx = b.target.x - b.px, dy = b.target.y - b.py, d = Math.hypot(dx, dy);
-      if (d < 1.1) {
-        b.px = b.target.x; b.py = b.target.y;
-        if (b.pathPts && b.pathIdx < b.pathPts.length) crewNextWaypoint(b); else b.target = null;
+      const more = !!(b.pathPts && b.pathIdx < b.pathPts.length);
+      // CORNER LOOKAHEAD: hand over to the next waypoint EARLY, and — critically — do NOT snap onto it.
+      // The old code teleported px/py exactly onto every waypoint, which is what made the body pivot on the
+      // spot at each tile. Only the FINAL waypoint still snaps, so an arrival settles on an exact position.
+      if (d < (more ? CORNER_LOOK : 1.1)) {
+        if (more) crewNextWaypoint(b);
+        else { b.px = b.target.x; b.py = b.target.y; b.target = null; }
       } else {
-        const sp = Math.min(d, 28 * dt / 1000);
+        const sp = stepGait(b, dx, dy, d, 28, !more, dt);
         b.px += dx / d * sp; b.py += dy / d * sp; b.state = 'walk'; b.sitting = false;
-        b.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
       }
     }
   }
@@ -1388,14 +1443,13 @@ const World = (() => {
         if (self.pauseLook === 'back') self.dir = OPP[self.dir] || self.dir;
       } else {
         const dx = self.target.x - self.px, dy = self.target.y - self.py, d = Math.hypot(dx, dy);
-        if (d < 1.1) {
-          self.px = self.target.x; self.py = self.target.y;
-          if (self.pathPts && self.pathIdx < self.pathPts.length) nextWaypoint();
-          else arrive(now);
+        const more = !!(self.pathPts && self.pathIdx < self.pathPts.length);
+        if (d < (more ? CORNER_LOOK : 1.1)) {   // early hand-over, no snap — see stepCrewToSeat's note
+          if (more) nextWaypoint();
+          else { self.px = self.target.x; self.py = self.target.y; arrive(now); }
         } else {
-          const s = Math.min(d, SPEED * dt / 1000);
+          const s = stepGait(self, dx, dy, d, SPEED, !more, dt);
           self.px += dx / d * s; self.py += dy / d * s; self.state = 'walk';
-          self.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
         }
       }
     } else if (self.goal === 'social') {
@@ -1505,8 +1559,21 @@ const World = (() => {
   function deskSeat(prop) {
     if (typeof PropAnchor === 'undefined' || !geo || !prop) return null;
     const a = PropAnchor.deriveAnchor(prop, geo, { approach: 'south', sit: true, extra: blocked });
-    return a ? { tx: a.tx, ty: a.ty, face: a.face } : null;
+    // `cx` = the FRACTIONAL tile x that centres a 1-tile chair on the desk. PropAnchor picks the nearest
+    // walkable WHOLE tile (pathing needs one), but an even-width desk's centre line falls on a tile
+    // boundary — a 2-wide desk seated at either tile sits 6px off-centre, which is exactly the "chair is
+    // stuck on the left" report. Only the RENDER + the final foot snap use cx; the walk target stays tx.
+    return a ? { tx: a.tx, ty: a.ty, face: a.face, cx: seatCx(prop, a.tx) } : null;
   }
+  // centre a 1-wide seat under a prop, but never drift further than one tile from the walkable anchor
+  // (a desk whose middle is walled off keeps its chair at the tile the body can actually reach).
+  function seatCx(prop, tx) {
+    const c = prop.x + ((prop.w || 1) / 2) - 0.5;
+    return Math.abs(c - tx) <= 0.5 ? c : tx;
+  }
+  // where a seated body's foot lands: the seat's centred x, its tile's y. A function declaration (not a
+  // const) because callers above this line run before it in source order.
+  function seatFoot(s) { return { x: ((s.cx == null ? s.tx : s.cx) + 0.5) * T, y: s.ty * T + T - 1 }; }
 
   /* ---------- capability-prop resolution (G0.1: which prop does a firing tool light?) ----------
      geo.props are in the bake's LOCAL frame; station.roomAt speaks WORLD tiles — geo.origin bridges them. */
@@ -3141,14 +3208,13 @@ const World = (() => {
         else if (agent.pauseLook === 'cargo') { const b = nearestBox(); if (b) agent.dir = dirToward(agent.px, agent.py, b.x, b.y); }
       } else {
         const dx = agent.target.x - agent.px, dy = agent.target.y - agent.py, d = Math.hypot(dx, dy);
-        if (d < 1.1) {
-          agent.px = agent.target.x; agent.py = agent.target.y;
-          if (agent.pathPts && agent.pathIdx < agent.pathPts.length) nextWaypoint();
-          else arrive(now);
+        const more = !!(agent.pathPts && agent.pathIdx < agent.pathPts.length);
+        if (d < (more ? CORNER_LOOK : 1.1)) {   // early hand-over, no snap — see stepCrewToSeat's note
+          if (more) nextWaypoint();
+          else { agent.px = agent.target.x; agent.py = agent.target.y; arrive(now); }
         } else {
-          const s = Math.min(d, SPEED * dt / 1000);
+          const s = stepGait(agent, dx, dy, d, SPEED, !more, dt);
           agent.px += dx / d * s; agent.py += dy / d * s; agent.state = 'walk';
-          agent.dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'east' : 'west') : (dy > 0 ? 'south' : 'north');
         }
       }
     } else if (agent.goal === 'use') {
@@ -3329,15 +3395,16 @@ const World = (() => {
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
         // to assigned PCs so a decorative/unmanned console keeps its existing look and the chair only ever
         // appears where an agent will actually sit (chair + sitter stay in lockstep — see stepCrewToSeat).
-        if (p.agentId && isWorkstationProp(p.t)) { const s = deskSeat(p); if (s) items.push({ y: (s.ty + 1) * T, draw: () => drawSeatChair(s.tx, s.ty) }); }
+        if (p.agentId && isWorkstationProp(p.t)) { const s = deskSeat(p); if (s) items.push({ y: (s.ty + 1) * T, draw: () => drawSeatChair(s.tx, s.ty, s.cx) }); }
       }
     }
     // one chair art everywhere: seats route through the canonical prop renderer (old F_chair = fallback)
-    function drawSeatChair(tx, ty) {
+    function drawSeatChair(tx, ty, cx) {
+      const sx = (cx == null ? tx : cx);   // fractional x centres the chair on an even-width desk
       if (typeof PropSprites !== 'undefined' && PropSprites.has('chair')) {
         PropSprites.setCtx(ctx); PropSprites.setNow(now);
-        PropSprites.draw({ t: 'chair', x: tx, y: ty, w: 1, h: 1 }, false);
-      } else F_chair(tx * T, ty * T);
+        PropSprites.draw({ t: 'chair', x: sx, y: ty, w: 1, h: 1 }, false);
+      } else F_chair(sx * T, ty * T);
     }
     if (desk && !deskPropId) items.push({ y: (desk.ty + desk.h) * T, draw: () => {   // skip the synthetic desk when a PLACED workstation prop is the hero's desk (the prop draws itself)
       // one desk art everywhere: the synthetic auto-desk routes through the canonical prop renderer,
@@ -3349,7 +3416,7 @@ const World = (() => {
         PropSprites.draw({ t: 'desk', x: desk.tx, y: desk.ty, w: desk.w, h: desk.h }, work, live);
       } else F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work, heat: live ? live.heat : 0, prog: live ? live.prog : null });
     } });
-    if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
+    if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty, seat.cx) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
     for (const b of crew) items.push({ y: (b.seated ? b.seatPy : b.py), draw: () => drawAgent(now, b) });   // the other agents, at their bays (seated → sort by the cushion pos like the hero's rposY, so a couch-lounging crew body tucks just behind the back-facing couch panel, head over the cap)
     items.sort((a, b) => a.y - b.y);
@@ -5025,7 +5092,8 @@ const World = (() => {
       // across the floor in DEFAULT_LEASH hops as it strolls (A2 'bounded leash' / world.js anchor note: stable home).
       home: tileOf(fx, fy),
       px: fx, py: fy, dir: 'south', state: 'idle', sitting: false, working: false, unplaced: false,
-      phase: U.hash('' + aid) % 6, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
+      // `phase` stays an INTEGER (phaseOf indexes PHASES[] with it); `aph` is the FLOAT sprite offset — see the hero's note.
+      phase: U.hash('' + aid) % 6, aph: (U.hash('' + aid) % 600) / 100, target: null, pathPts: null, pathIdx: 0, idleUntil: 0, goal: null, say: { text: '', until: 0 },
       usingProp: null, useUntil: 0, useFace: 'south', useSit: false, watchProp: null,
       seated: false, seatPx: 0, seatPy: 0, seatKey: null, pendSeat: null,
       glance: null, glanceCd: 0, nextFidget: 0, studyUntil: 0, noticeCd: 0, studyKey: null,
@@ -5615,6 +5683,16 @@ const World = (() => {
       const money = v => U.usd(v);
       if (usd >= cap) hudNote('⛔ budget cap hit for ' + scopeWord + ' — ' + money(usd) + ' of ' + money(cap), 'warn');
       else hudNote('⚠ budget warning for ' + scopeWord + ' — ' + money(usd) + ' of ' + money(cap) + ' (' + Math.round(usd / cap * 100) + '%)', 'warn');
+    });
+    // LOW CREDITS MADE VISIBLE (2026-07-25): the balance the user BOUGHT is running out. Distinct from
+    // budget.threshold above — that is spend against a cap they set; this is money running down. Fired once
+    // per crossing by credits.js, so this can be a plain note without any de-dup of its own.
+    // Says the real number and what happens next; never a percentage bar (a balance has no denominator).
+    U.bus.on('credits.low', p => {
+      if (!p || !isFinite(+p.balanceUsd)) return;
+      const bal = U.usd(+p.balanceUsd);
+      if (p.exhausted) hudNote('⛔ out of credits — ' + bal + ' left; managed runs will refuse until you add more', 'warn');
+      else hudNote('⚠ credits running low — ' + bal + ' left, under the ' + U.usd(+p.thresholdUsd) + ' a run can reserve', 'warn');
     });
     // G0.4 CAPDENIED MADE VISIBLE: the run genuinely STOPPED at the capability gate (loop.js emits this
     // before ending the run) — flash the acting agent's desk red + say it plainly. Today this was

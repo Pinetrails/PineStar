@@ -136,4 +136,7 @@ const rejects = async (p, label) => { try { await p; A.ok(false, label + ' (did 
   }
 
   console.log('widgetfeed.test.js OK');
+  // report() settles the assertion counter — the .catch below only fires on a THROWN error, so
+  // without this a failed assertion still exits 0 and the gate scores it green.
+  A.report('widgetfeed.test');
 })().catch(e => { console.error('widgetfeed.test.js FAILED:', e); process.exit(1); });

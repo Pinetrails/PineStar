@@ -124,6 +124,10 @@ const SPRITES = (() => {
     const glancing = b.glance && b.glance.until > nowMs;   // brief look-up: overrides facing & typing
     const meeting = b.meet && b.meet.until > nowMs;        // hallway chat: stand still, face partner
     const dir = glancing ? b.glance.dir : (b.dir || 'south');
+    // per-agent animation offset. Prefer the FLOAT `aph`: `phase` is an integer (world.js needs it as a
+    // PHASES[] index for the mood engine), and a whole-frame offset ticks every body's cycle on the same
+    // 100ms boundaries — the crew animated in lockstep. Bodies without `aph` (dossier portrait) fall back.
+    const aph = (b.aph != null ? b.aph : (b.phase || 0));
     let key = null, fps = 8, bob = 0;
 
     if (meeting) {
@@ -143,11 +147,11 @@ const SPRITES = (() => {
       // a talk track keep the livelier bob + 1px head bounce so speech never reads as a frozen pose.
       key = pick(set, ['talk', 'rot'], dir); fps = 6;
       bob = (key && key.indexOf('.talk.') !== -1)
-        ? Math.sin(nowMs / 600 + b.phase) * 0.7
-        : Math.sin(nowMs / 170 + b.phase) * 1.1 - (Math.floor(nowMs / 150) % 2 ? 1 : 0);
+        ? Math.sin(nowMs / 600 + aph) * 0.7
+        : Math.sin(nowMs / 170 + aph) * 1.1 - (Math.floor(nowMs / 150) % 2 ? 1 : 0);
     } else {
       key = pick(set, ['rot'], dir);
-      bob = Math.sin(nowMs / 600 + b.phase) * 0.7;
+      bob = Math.sin(nowMs / 600 + aph) * 0.7;
     }
 
     // life-like idle blink: while standing on a 'rot' pose, briefly shut the eyes.
@@ -155,7 +159,7 @@ const SPRITES = (() => {
     if (key && key.indexOf('.rot.') !== -1 && b.state !== 'walk') {
       const bk = set + '.blink.' + dir;
       if (frames[bk]) {
-        const bt = (nowMs + (b.phase || 0) * 900) % 3300;
+        const bt = (nowMs + aph * 900) % 3300;
         if (bt < 130) key = bk;
       }
     }
@@ -163,20 +167,45 @@ const SPRITES = (() => {
 
     const fr = tintFrames(b.id, key);
     if (!fr || !fr.length) return null;
-    const f = fr.length > 1 ? fr[Math.floor(nowMs / (1000 / fps) + b.phase) % fr.length] : fr[0];
+    // WALK advances on DISTANCE TRAVELLED (b.odo, world units — stepGait in world.js keeps it), not the wall
+    // clock. A fixed-fps cycle made every body's feet skate, because pace is NOT fixed: crew temperament tilts
+    // it 0.88-1.17x and the hero (34 u/s) outruns the crew (28 u/s), so one cycle length could never fit them all.
+    //
+    // The cycle DISTANCE is DERIVED per set, never hardcoded, so it stays correct for any skin without retuning:
+    // stride length scales with leg length (≈ the character's DRAWN height), divided by however many walk frames
+    // that set actually ships. Both vary today — ULTRON walks in 4 frames at 0.60 scale while the other 38 sets
+    // use 6 frames at 0.36-0.425 — and a future skin with a different frame count or size is handled for free.
+    // Do NOT replace this with a constant units-per-frame: that silently over-spins short or oversized sets.
+    // Every other state keeps the clock; those aren't locomotion.
+    const sc = drawScaleFor(set);
+    const CYCLE_PER_HEIGHT = 0.56;   // world units of ground covered per drawn pixel of character height
+    const stride = (fr[0].height * sc * CYCLE_PER_HEIGHT) / fr.length;
+    const idx = (key.indexOf('.walk.') !== -1 && b.odo != null && stride > 0)
+      ? Math.floor(b.odo / stride + aph)
+      : Math.floor(nowMs / (1000 / fps) + aph);
+    const f = fr.length > 1 ? fr[((idx % fr.length) + fr.length) % fr.length] : fr[0];
     // footprint = native master × per-set scale → identical on-floor size as before, but f is now the
     // full-resolution master. Draw it DOWN to that size with smoothing ON so the detail survives (and
     // stays sharp if the camera zooms in, since it resamples straight from the 92px master each frame).
-    const sc = drawScaleFor(set);
-    const dw = f.width * sc, dh = f.height * sc;
-    const x = Math.round(b.px - dw / 2);
+    const dw = f.width * sc, dh = f.height * sc;   // `sc` resolved above (the stride derivation needs it)
+    // SUB-UNIT positioning. This used to be Math.round() on the raw world coordinate — i.e. a snap to integer
+    // WORLD units. But the camera scales 0.5-6x (default 2), so one unit of rounding landed as a 2-6 DEVICE-pixel
+    // jump, and at 34 u/s (~0.57 units per frame) the body held still for ~2 frames and then hopped a whole unit.
+    // That was the loudest "sprites aren't smooth" artefact, in every direction, independent of turning. Note the
+    // camera's own panX/panY were never rounded, so the world was already sub-pixel while the body alone snapped.
+    // We round to the nearest DEVICE pixel instead: still crisply pixel-aligned (no resample blur at rest), but
+    // sub-unit in world space, so motion is continuous. Do NOT put Math.round back on the world coordinate.
+    const _m = ctx.getTransform ? ctx.getTransform() : null;
+    const zs = (_m && _m.a > 0) ? _m.a : 1;
+    const snap = v => Math.round(v * zs) / zs;
+    const x = snap(b.px - dw / 2);
     // anchor the FEET (not the transparent image bottom) near the floor line so the contact shadow
     // reads as sitting under them. `fp` is the scaled padding below the feet; GROUND_BITE lifts the
     // feet a few px ABOVE the shadow so it shows just beneath them — flush (0/positive) looks sunk,
     // and the old image-bottom anchor left every skin hovering well above it.
     const GROUND_BITE = -3;
     const fp = getFootPad(set) * sc;
-    const y = Math.round(b.py - dh + GROUND_BITE + bob + fp);
+    const y = snap(b.py - dh + GROUND_BITE + bob + fp);
     // soft shadow scaled to the body's footprint (kept narrower than the body so it reads as a
     // tight contact pool under the feet, not a wide slab)
     const shw = Math.max(6, Math.round(dw * 0.26));
@@ -187,11 +216,11 @@ const SPRITES = (() => {
         // menacing red spill under the station's leader
         ctx.globalAlpha = 0.18 + 0.08 * Math.sin(nowMs / 400);
         ctx.fillStyle = '#ff4a3d';
-        ctx.fillRect(Math.round(b.px) - (shw >> 1) - 2, Math.round(b.py) - 2, shw + 4, 4);
+        ctx.fillRect(snap(b.px) - (shw >> 1) - 2, snap(b.py) - 2, shw + 4, 4);
       }
       ctx.globalAlpha = 0.24;
       ctx.fillStyle = '#000';
-      ctx.fillRect(Math.round(b.px) - (shw >> 1), Math.round(b.py) - 1, shw, 2);
+      ctx.fillRect(snap(b.px) - (shw >> 1), snap(b.py) - 1, shw, 2);
       ctx.globalAlpha = 1;
     }
     const prevSmooth = ctx.imageSmoothingEnabled;

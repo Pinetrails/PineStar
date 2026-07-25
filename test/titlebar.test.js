@@ -91,4 +91,7 @@ function fakeClassList() {
   A.eq(s3.maximized || s3.fullscreen, false, 'throwing probes -> false, never a crash');
 
   console.log('titlebar.test.js OK');
+  // report() settles the assertion counter — the .catch below only fires on a THROWN error, so
+  // without this a failed assertion still exits 0 and the gate scores it green.
+  A.report('titlebar.test');
 })().catch(err => { console.error(err); process.exit(1); });

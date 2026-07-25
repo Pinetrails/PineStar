@@ -135,4 +135,7 @@ function boot(port, workspaces, attemptsLeft) {
   } finally {
     try { child.kill(); } catch (_) {}
   }
+  // report() settles the assertion counter — the .catch below only fires on a THROWN error, so
+  // without this a failed assertion still exits 0 and the gate scores it green.
+  A.report('scout.http.test');
 })().catch(e => { console.error(e); process.exit(1); });

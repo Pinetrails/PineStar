@@ -135,6 +135,7 @@ test/skills.library.test.js
 test/slash.test.js
 test/slash-actions.test.js
 test/slash.parity.test.js
+test/usercommands.test.js
 test/slash.palette.test.js
 test/slash.config.test.js
 test/voice.button.test.js
@@ -311,6 +312,8 @@ test/cron.durability.test.js
 test/cron.lock.test.js
 test/cron.oneshot.test.js
 test/cron.run-now.test.js
+test/tool-withheld-message.test.js
+test/cron-guard.test.js
 test/routine-tools.test.js
 test/workstreams.test.js
 test/session-power-tools.test.js
@@ -332,6 +335,7 @@ test/steer-idle-honesty.test.js
 test/model-ack-honesty.test.js
 test/toolprops.test.js
 test/worldmodel.test.js
+test/path-smoothing.test.js
 test/run-truth.test.js
 test/station-authority.test.js
 test/zones.test.js

@@ -50,6 +50,13 @@
       '<div class="brief-block"><div class="brief-k">HOW IT WORKS</div>' +
         '<div class="brief-v">A routine wakes on a schedule and runs your agent <b>unattended</b>, using your connected key + model. ' +
         'With no one watching, ungranted file writes are denied silently unless you have pre-approved them. ' +
+        // TERMINAL HONESTY (2026-07-25, from a user report): web/files/memory/images/browser all work unattended,
+        // but shell.exec + verify.run need the explicit per-routine grant below (the #rt-term checkbox) — the
+        // authority gate strips them on every non-interactive surface otherwise, and placing a WORKBENCH on the
+        // floor does NOT grant them here. Users were writing "run my tests nightly" routines, getting nothing,
+        // and placing a workbench to fix it. Say both halves where the routine is actually written.
+        'Web, files, memory, images and the browser all work. The <b>terminal</b> and your <b>connected tools</b> are ' +
+        'off unless you grant them below — placing a WORKBENCH on the floor does not grant them to a routine. ' +
         '<span class="dim">(Schedules: "every 30m", "every 1h", "in 2h", "0 9 * * *", or an ISO timestamp like 2026-07-01T09:00.)</span></div></div>' +
       '<div class="mc-form">' +
         '<input id="rt-name" class="key-input" placeholder="name — e.g. Morning AI brief" maxlength="80" autocomplete="off">' +
@@ -58,6 +65,22 @@
         '<div id="rt-preview" class="dim" style="min-height:1em;font-size:.9em"></div>' +
         '<div class="rt-agent-pick" role="group" aria-label="Routine agent">' + roster.map(agentButton).join('') + '</div>' +
         '<input id="rt-agent" type="hidden" value="' + esc(routineAgentId) + '">' +
+        // UNATTENDED TERMINAL GRANT — default OFF, and it must stay a deliberate tick: this is the one control
+        // that lets a scheduled run execute commands with nobody watching. The label states the risk plainly
+        // rather than selling the feature (truthful telemetry applies to consent copy too).
+        '<label class="rt-term" for="rt-term" style="display:flex;gap:.5em;align-items:flex-start;cursor:pointer">' +
+          '<input type="checkbox" id="rt-term" style="margin-top:.25em">' +
+          '<span>Let this routine use the <b>terminal</b> ' +
+          '<span class="dim">— runs shell commands and tests unattended, with nobody watching. Only for routines you trust.</span></span>' +
+        '</label>' +
+        // UNATTENDED CONNECTOR GRANT — separate tick from the terminal: an MCP call reaches an outside service
+        // but gets no host-process capability, so the two have genuinely different blast radii and must not be
+        // bundled behind one consent. Also default OFF.
+        '<label class="rt-term" for="rt-conn" style="display:flex;gap:.5em;align-items:flex-start;cursor:pointer">' +
+          '<input type="checkbox" id="rt-conn" style="margin-top:.25em">' +
+          '<span>Let this routine use your <b>connected tools</b> ' +
+          '<span class="dim">— the MCP connectors you set up in TOOLSETS, called unattended on your behalf. Connectors you switched off stay off.</span></span>' +
+        '</label>' +
         '<button class="bb sm" id="rt-add">+ ADD ROUTINE</button>' +
       '</div>' +
       '<div id="rt-msg" class="msg"></div>';
@@ -136,14 +159,26 @@
         const rec = (typeof Recipes !== 'undefined' && Recipes.get) ? Recipes.get(recipeId) : null;
         fromRecipe = ' <span class="mc-from-recipe" title="scheduled from a recipe">❒ from recipe: ' + esc(rec ? rec.name : recipeId) + '</span>';
       }
+      // UNATTENDED TERMINAL GRANT — a standing permission to run commands with nobody watching must be VISIBLE
+      // on the row that holds it, not buried in the record. Absent/empty on every ungranted routine -> no badge.
+      const grantsOf = Array.isArray(j.unattendedGrants) ? j.unattendedGrants : [];
+      const grantBadge = (on2, label, title) => on2
+        ? ' <span class="mc-term-grant" title="' + esc(title) + '" style="color:var(--warn,var(--gold))">' + label + '</span>'
+        : '';
+      const termBadge =
+        grantBadge(grantsOf.indexOf('workbench') >= 0, '⌘ terminal', 'this routine may run shell commands unattended') +
+        grantBadge(grantsOf.indexOf('connectors') >= 0, '⧉ connected tools', 'this routine may call your MCP connectors unattended');
       return '<div class="mc-row" data-id="' + esc(j.id) + '" data-on="' + (on ? '1' : '0') + '">' +
-        '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + fromRecipe + '</div>' +
+        '<div class="mc-top"><b>' + esc(j.name || '(unnamed)') + '</b> <span class="dim">' + esc(j.scheduleDisplay || '') + '</span> ' + stateBadge + termBadge + fromRecipe + '</div>' +
         '<div class="mc-url dim">runs as ' + esc(agentLabel(j.agentId || 'agent')) + ' · next ' + next + ' · last ' + lastResult(j) + '</div>' +
         (j.lastError ? '<div class="mc-detail">' + esc(j.lastError) + '</div>' : '') +
         deliveryLine(j) +
         '<div class="mc-acts">' +
           '<button class="bb xs" data-act="run">▶ RUN NOW</button>' +
           '<button class="bb xs" data-act="toggle">' + (on ? '⏸ DISABLE' : '▶ ENABLE') + '</button>' +
+          // REVOKE — a standing unattended permission must be withdrawable without deleting the routine.
+          // Only rendered when there is something to revoke, so an ordinary routine's action row is unchanged.
+          (grantsOf.length ? '<button class="bb xs" data-act="revoke" title="stop this routine using the terminal / your connected tools">⌫ REVOKE ACCESS</button>' : '') +
           '<button class="bb xs danger" data-act="remove">✕ DELETE</button>' +
         '</div></div>';
     }
@@ -262,6 +297,13 @@
         if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = '✕ CONFIRM'; sfx('bad'); setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '✕ DELETE'; } }, 5000); return; }
         sfx('bad'); try { await post('/api/cron/remove', { id }); notify('routine deleted'); } catch (_) {} refresh(); return;
       }
+      if (act === 'revoke') {
+        // withdraw every unattended grant. Immediate and unconfirmed BY DESIGN: revoking a permission is the
+        // safe direction, so it must never be harder than granting it was (delete keeps its two-step arm).
+        sfx('click');
+        try { await post('/api/cron/update', { id, patch: { unattendedGrants: [] } }); notify('access revoked', 'good'); } catch (_) {}
+        refresh(); return;
+      }
       if (act === 'toggle') {
         sfx('click'); const on = rowEl.dataset.on === '1';
         try { await post('/api/cron/update', { id, patch: { enabled: !on } }); } catch (_) {} refresh(); return;
@@ -304,7 +346,12 @@
         // tz honesty (G4.1): send the browser's IANA timezone so a wall-clock schedule ("every morning 9:00")
         // fires in the user's LOCAL time, not the server host's. Backend validates + persists it (invalid tz 400s).
         const tz = (() => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || undefined; } catch (_) { return undefined; } })();
-        const r = await (await post('/api/cron', { name, prompt, schedule, agentId: agentId || undefined, provider, tz })).json();
+        // UNATTENDED TERMINAL GRANT: send it only when ticked, so an untouched form posts exactly the body it
+        // always did. The server whitelists the value and the authority re-filters it at the gate.
+        const grants = [];
+        if ((body.querySelector('#rt-term') || {}).checked) grants.push('workbench');
+        if ((body.querySelector('#rt-conn') || {}).checked) grants.push('connectors');
+        const r = await (await post('/api/cron', { name, prompt, schedule, agentId: agentId || undefined, provider, tz, unattendedGrants: grants.length ? grants : undefined })).json();
         if (r && r.error) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc(r.error) + '</span>'; sfx('bad'); }
         else {
           msgEl.textContent = '';
@@ -316,6 +363,7 @@
           else notify('routine "' + (name || 'unnamed') + '" scheduled for ' + agentLabel(agentId || 'agent'), 'good');
           sfx('click');
           ['#rt-name', '#rt-prompt', '#rt-sched'].forEach(s => { body.querySelector(s).value = ''; });
+          ['#rt-term', '#rt-conn'].forEach(s => { const el = body.querySelector(s); if (el) el.checked = false; });   // a grant is never sticky across creates
           pvEl.textContent = '';
         }
       } catch (e) { msgEl.innerHTML = '<span style="color:var(--bad)">✕ ' + esc((e && e.message) || 'failed to reach the sidecar') + '</span>'; sfx('bad'); }

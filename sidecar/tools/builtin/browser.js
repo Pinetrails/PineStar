@@ -358,10 +358,14 @@
         }
       });
     }
-    send(method, params, sessionId) {
+    // `timeoutMs` overrides the client default for ONE call. Navigation needs a much larger budget than an
+    // ordinary command: Page.navigate does not resolve until the navigation COMMITS, so a slow origin, a
+    // redirect chain, or an anti-bot challenge can legitimately outlast a budget sized for Runtime.evaluate.
+    send(method, params, sessionId, timeoutMs) {
       const id = ++this.id;
+      const budget = timeoutMs || this.timeoutMs;
       return new Promise((resolve, reject) => {
-        const timer = setTimeout(() => { if (this.pending.has(id)) { this.pending.delete(id); reject(new Error('CDP timeout: ' + method)); } }, this.timeoutMs);
+        const timer = setTimeout(() => { if (this.pending.has(id)) { this.pending.delete(id); reject(new Error('CDP timeout: ' + method)); } }, budget);
         if (timer && typeof timer.unref === 'function') timer.unref();
         this.pending.set(id, { resolve, reject, timer });
         const message = { id, method, params: params || {} };
@@ -402,6 +406,12 @@
     // Stale from a previous run on this profile; cleared so nothing can mistake it for live state.
     const activePortFile = P.join(profileDir, 'DevToolsActivePort');
     const timeoutMs = deps.timeoutMs || 15000;
+    // Navigation is the one command whose duration is the SITE's to decide, not ours, so it gets its own
+    // budget. Derived from timeoutMs (so an injected test rig scales with it) and floored well above it.
+    // MUST stay comfortably under the browser.navigate TOOL budget (NAV_TOOL_TIMEOUT_MS below): if the outer
+    // tool timeout fired first it would abort the run() mid-flight and the Page.stopLoading recovery would
+    // never happen - leaving exactly the wedged session that change exists to prevent.
+    const navTimeoutMs = deps.navTimeoutMs || Math.max(timeoutMs * 2, 30000);
     // Auto-wait thresholds are injectable so a test can drive the real settle loop (including the
     // budget-exhausted path) without burning the production ceilings in wall-clock time.
     const settleQuietPolls = deps.settleQuietPolls == null ? SETTLE_QUIET_POLLS : Number(deps.settleQuietPolls);
@@ -659,7 +669,9 @@
       if (!pageProxy || pageProxy.__cdp !== c) {
         pageProxy = {
           __cdp: c,
-          send: (method, params, sessionId) => c.send(method, params, sessionId !== undefined ? sessionId : (activeSession || undefined)),
+          // NOTE the 4th arg: CdpClient.send takes a per-call timeout (navigation uses it). Dropping it
+          // here would silently put navigation back on the 15s budget and re-open the stalled-session wedge.
+          send: (method, params, sessionId, timeoutMs) => c.send(method, params, sessionId !== undefined ? sessionId : (activeSession || undefined), timeoutMs),
           on: (n, fn) => c.on(n, fn)
         };
       }
@@ -714,7 +726,27 @@
       const c = await page();
       lastResponse = null;   // this navigation's status, never the previous page's
       netLog = []; netById.clear();   // the log describes THIS page, not whatever came before
-      await c.send('Page.navigate', { url });
+      /* A stalled navigation used to poison the WHOLE session. Page.navigate blocks until commit, so a slow
+         or challenge-walled origin blew the 15s command budget and threw "CDP timeout: Page.navigate" - and
+         because nothing ever cancelled it, the renderer stayed busy loading and the NEXT tool call
+         (browser.snapshot's Runtime.evaluate) queued behind it and timed out too. A user hit exactly that
+         pair on a listing page, which reads as "the browser is broken" rather than "that page did not load".
+         Now: navigation gets its own larger budget, and on timeout we ALWAYS Page.stopLoading (best-effort,
+         on a short budget of its own) so the session is usable for the very next call. */
+      try {
+        await c.send('Page.navigate', { url }, undefined, navTimeoutMs);
+      } catch (e) {
+        if (!/CDP timeout/.test(String(e && e.message))) throw e;
+        try { await c.send('Page.stopLoading', {}, undefined, Math.min(timeoutMs, 5000)); } catch (_) {}
+        let host = url;
+        try { host = new URL(url).host; } catch (_) {}
+        throw new Error('the page did not finish loading within ' + Math.round(navTimeoutMs / 1000) + 's, so the ' +
+          'navigation to ' + host + ' was stopped (the browser is still usable). The site may be slow, may be ' +
+          'refusing automated browsers, or may be holding a challenge page. Try browser.get_text to see what ' +
+          'did load, or reach the site through its API with web_request instead.');
+      }
+      // Replaces the blind 900ms sleep: wait for the page to actually go quiet, keeping the fixed sleep
+      // only as the fallback for a page whose quiescence we cannot measure.
       await waitForSettle(c, { budgetMs: settleNavBudgetMs, fallbackMs: 900 });
       const finalUrl = await evalJS('location.href');
       if (deps.syntheticInputOnly !== false) {
@@ -783,7 +815,8 @@
     }
     async function collectNodes(c, cap) {
       const expr = snapshotExpr(cap);
-      const out = (await evalIn(c, expr)) || [];
+      const raw = await evalIn(c, expr);
+      const out = Array.isArray(raw) ? raw : [];   // a non-array answer means 'nothing readable', not a crash
       let frameNo = 0;
       // Out-of-process frames are tracked per driver, not per tab, so only merge them while the
       // ORIGINAL tab is active — attributing tab 0's frames to tab 2 would be exactly the
@@ -1432,8 +1465,12 @@
     const navProps = { url: { type: 'string' } };
     if (allowVisible) navProps.visible = { type: 'boolean' };
     const localNavRequired = deps.requireOwnedServer === true ? ['url', 'serverId'] : ['url'];
+    // browser.navigate outlives the 20s every other browser tool gets: the driver allows a page up to
+    // ~30s to commit, and the tool budget must sit ABOVE that so the driver's own timeout fires first and
+    // gets to run its Page.stopLoading recovery. An outer abort here would strand the stalled navigation.
+    const NAV_TOOL_TIMEOUT_MS = 45000;
     const tools = [
-      read('browser.navigate', 'Navigate the AGENT-CONTROLLED browser to a public http(s) URL. HEADLESS in ordinary agent runs: it never opens a window or uses the user\'s input. Private, loopback, intranet, and unsafe redirects remain refused; use browser.test_navigate for a local dev server.', { type: 'object', required: ['url'], properties: navProps },
+      Object.assign(read('browser.navigate', 'Navigate the AGENT-CONTROLLED browser to a public http(s) URL. HEADLESS in ordinary agent runs: it never opens a window or uses the user\'s input. Private, loopback, intranet, and unsafe redirects remain refused; use browser.test_navigate for a local dev server.', { type: 'object', required: ['url'], properties: navProps },
         async a => {
           if (a && a.visible === true && !allowVisible) throw new Error('visible browser mode is disabled: this run is headless-only');
           const url = await session.navigate(a.url, ('visible' in (a || {})) ? { visible: a.visible === true } : undefined);
@@ -1448,7 +1485,7 @@
           // rendered nothing, and will happily read an error page back as the answer.
           const http = describeResponse(session.lastResponse && session.lastResponse());
           return { content: 'Browser navigated to ' + url + http.text + suffix, summary: 'navigated' + http.summary };
-        }),
+        }), { timeoutMs: NAV_TOOL_TIMEOUT_MS }),
       testRead('browser.test_navigate', 'Open an agent-owned local dev URL (127.0.0.1/localhost/::1 only) in the HEADLESS CDP browser for UI/game testing. In normal runs serverId must name this agent\'s running shell background server. Physical pointer/keyboard locks are emulated inside the page, so they never reach Windows.', { type: 'object', required: localNavRequired, properties: { url: { type: 'string' }, serverId: { type: 'string' } } },
         async (a, ctx) => {
           assertLoopbackUrl(a.url);

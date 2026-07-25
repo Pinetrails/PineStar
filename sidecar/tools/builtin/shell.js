@@ -614,7 +614,12 @@
     const sig = opts.signal;
     return new Promise(function (resolve, reject) {
       let child;
-      try { child = spawn(cmd, { cwd: cwd, shell: true, windowsHide: true }); }
+      // opts.env is ADDITIVE and optional: omitted (every existing caller) the child inherits this process's
+      // environment exactly as before. Commander-defined exec commands pass a sanitized copy, because the
+      // sidecar's env holds provider keys and a user snippet has no business reading them.
+      const spawnOpts = { cwd: cwd, shell: true, windowsHide: true };
+      if (opts.env) spawnOpts.env = opts.env;
+      try { child = spawn(cmd, spawnOpts); }
       catch (e) { return reject(new Error('could not start shell: ' + ((e && e.message) || e))); }
       const t0 = now();
       let out = '', total = 0, truncated = false, settled = false, timedOut = false, aborted = false;
