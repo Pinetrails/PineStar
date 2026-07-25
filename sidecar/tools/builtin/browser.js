@@ -245,6 +245,18 @@
     });
   }
   function clamp(s, n) { s = String(s == null ? '' : s); return s.length > n ? s.slice(0, n).trimEnd() + ' ...' : s; }
+  /* Render the main document's real HTTP outcome for the agent. A non-2xx is NOT an error the tool
+     throws on — the page may still be worth reading — but the agent must be told, or it will report an
+     error page's contents as the answer. A driver that cannot observe the network says nothing. */
+  function describeResponse(r) {
+    if (!r) return { text: '', summary: '' };
+    if (r.failure) return { text: ' — REQUEST FAILED (' + r.failure + ')', summary: ' (failed)' };
+    const code = Number(r.status) || 0;
+    if (!code) return { text: '', summary: '' };
+    if (code >= 200 && code < 300) return { text: ' (HTTP ' + code + ')', summary: ' ' + code };
+    return { text: ' — HTTP ' + code + (r.statusText ? ' ' + r.statusText : '') +
+             ' (the page below is the server\'s error response, not the content you asked for)', summary: ' ' + code };
+  }
   function hostOf(u) {
     let h = u.hostname.toLowerCase();
     if (h.charAt(0) === '[') h = h.slice(1, -1);
@@ -386,6 +398,12 @@
     const headed = wantHeaded && !binIsHeadlessOnly;
 
     let proc = null, procExited = false, procError = null, procClosePromise = null, cdp = null, consoleLog = [], dialog = null, attachedPort = null;
+    /* NETWORK TRUTH. navigate() used to return only location.href, so a 403, a 404 and a page that
+       simply rendered nothing were indistinguishable to the agent — it would "read" an error page and
+       report its contents as the answer. The Network domain gives the main document's real status, and
+       an in-flight request count that makes auto-wait aware of XHR that has not landed yet. */
+    let mainFrameId = null, lastResponse = null;
+    const inflight = new Set();
     async function connect() {
       if (cdp) return cdp;
       try { FS.mkdirSync(profileDir, { recursive: true }); } catch (_) {}
@@ -475,6 +493,27 @@
             // auto-wait must still work on a rig that disabled the synthetic-input isolation.
             await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP });
             await cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP });
+            await cdp.send('Network.enable');
+            // Identify the top frame so a sub-frame's document response can never be mistaken for the
+            // page's own status (an ad iframe 404 must not read as "the page 404'd").
+            try {
+              const tree = await cdp.send('Page.getFrameTree');
+              mainFrameId = (tree && tree.frameTree && tree.frameTree.frame && tree.frameTree.frame.id) || null;
+            } catch (_) { mainFrameId = null; }
+            cdp.on('Network.requestWillBeSent', p => { if (p && p.requestId) inflight.add(p.requestId); });
+            cdp.on('Network.loadingFinished', p => { if (p && p.requestId) inflight.delete(p.requestId); });
+            cdp.on('Network.responseReceived', p => {
+              if (!p || p.type !== 'Document') return;
+              if (mainFrameId && p.frameId && p.frameId !== mainFrameId) return;
+              const r = p.response || {};
+              lastResponse = { status: Number(r.status) || 0, statusText: r.statusText || '', url: r.url || '', mimeType: r.mimeType || '', failure: null };
+            });
+            cdp.on('Network.loadingFailed', p => {
+              if (!p) return;
+              if (p.requestId) inflight.delete(p.requestId);
+              // A transport-level failure (DNS, refused, cert) never produces a response at all.
+              if (p.type === 'Document') lastResponse = { status: 0, statusText: '', url: '', mimeType: '', failure: p.errorText || 'request failed' };
+            });
             cdp.on('Runtime.consoleAPICalled', p => {
               const text = (p.args || []).map(a => a.value != null ? a.value : (a.description || a.type || '')).join(' ');
               consoleLog.push({ type: p.type || 'log', text: clamp(text, 500) });
@@ -522,7 +561,11 @@
           }
           stable = (lastN !== null && probe.n === lastN) ? stable + 1 : 0;
           lastN = probe.n;
-          if (probe.ready === 'complete' && stable >= quietPolls) return true;
+          // A quiet DOM is not proof of a quiet page: an XHR can still be in flight with nothing
+          // rendered yet. Wait for the network too — but a long-poll/SSE/websocket connection never
+          // finishes, so a much longer run of DOM stillness releases us regardless.
+          const netIdle = inflight.size === 0;
+          if (probe.ready === 'complete' && stable >= quietPolls && (netIdle || stable >= quietPolls * 3)) return true;
           if (expired) return false;                  // spend the budget, then proceed with what we have
           await sleep(SETTLE_POLL_MS);
         }
@@ -530,6 +573,7 @@
     }
     async function navigate(url) {
       const c = await connect();
+      lastResponse = null;   // this navigation's status, never the previous page's
       await c.send('Page.navigate', { url });
       await waitForSettle(c, { budgetMs: settleNavBudgetMs, fallbackMs: 900 });
       const finalUrl = await evalJS('location.href');
@@ -709,7 +753,7 @@
     // actually on the user's screen. Headless mode, or a headless-only binary fallback in
     // a headed request, both read as not visible.
     function visible() { return headed; }
-    return { navigate, snapshot, click, type, press, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
+    return { navigate, snapshot, click, type, press, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
   }
 
   function makeBrowserSession(deps) {
@@ -804,6 +848,11 @@
       localOrigin = local ? u.origin : null;
       version++;
       return finalUrl || u.href;
+    }
+    // A driver predating this accessor (an injected test fake) simply reports no status.
+    function lastResponse() {
+      const d = driver;
+      return (d && typeof d.lastResponse === 'function') ? d.lastResponse() : null;
     }
     async function snapshot(limit) {
       const nodes = await ensureDriver().snapshot(limit);
@@ -928,7 +977,7 @@
       const d = driver || null;
       return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
     }
-    return { navigate, snapshot, click, type, press, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, login, close, visible, headlessFallback, attachedPort, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
+    return { navigate, snapshot, click, type, press, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, dialog, vision, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
   }
 
   function makeBrowserTools(deps) {
@@ -954,7 +1003,10 @@
             : (session.headlessFallback && session.headlessFallback()
               ? ' (headless fallback — no visible window; no full Chrome found, only a headless-shell binary)'
               : ' (headless — not visible to the user)');
-          return { content: 'Browser navigated to ' + url + suffix, summary: 'navigated' };
+          // HONEST STATUS. Without this the agent cannot tell a 403/404 from a page that simply
+          // rendered nothing, and will happily read an error page back as the answer.
+          const http = describeResponse(session.lastResponse && session.lastResponse());
+          return { content: 'Browser navigated to ' + url + http.text + suffix, summary: 'navigated' + http.summary };
         }),
       testRead('browser.test_navigate', 'Open an agent-owned local dev URL (127.0.0.1/localhost/::1 only) in the HEADLESS CDP browser for UI/game testing. In normal runs serverId must name this agent\'s running shell background server. Physical pointer/keyboard locks are emulated inside the page, so they never reach Windows.', { type: 'object', required: localNavRequired, properties: { url: { type: 'string' }, serverId: { type: 'string' } } },
         async (a, ctx) => {
@@ -1038,5 +1090,5 @@
     return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
   }
 
-  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, SETTLE_BOOTSTRAP, SETTLE_PROBE, SETTLE_QUIET_POLLS, CHROME_CANDIDATES } };
+  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, SETTLE_BOOTSTRAP, SETTLE_PROBE, SETTLE_QUIET_POLLS, describeResponse, CHROME_CANDIDATES } };
 });

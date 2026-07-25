@@ -432,6 +432,104 @@ function fakeDriver() {
     }
   }
 
+  // ---- NETWORK TRUTH: the agent is told the main document's real HTTP status ------------------
+  // Before this, navigate() returned only location.href, so a 403, a 404 and a page that rendered
+  // nothing were indistinguishable — the agent read the error page and reported it as the answer.
+  {
+    A.eq(T.describeResponse(null), { text: '', summary: '' }, 'a driver that cannot observe the network claims nothing');
+    A.eq(T.describeResponse({ status: 200 }).text, ' (HTTP 200)', 'a 2xx is reported plainly');
+    A.ok(/HTTP 403/.test(T.describeResponse({ status: 403, statusText: 'Forbidden' }).text), 'a 403 is surfaced');
+    A.ok(/error response, not the content/.test(T.describeResponse({ status: 404 }).text), 'a non-2xx warns that the body is an error page');
+    A.ok(/REQUEST FAILED/.test(T.describeResponse({ status: 0, failure: 'net::ERR_NAME_NOT_RESOLVED' }).text), 'a transport failure is distinguished from an HTTP status');
+
+    // Fake CDP that emits Network events for the page it "loads".
+    function netRig(events) {
+      const state = { sent: [], url: 'about:blank' };
+      class WS {
+        constructor() { this.handlers = {}; WS.last = this; setTimeout(() => this.fire('open', {}), 0); }
+        addEventListener(n, fn) { (this.handlers[n] = this.handlers[n] || []).push(fn); }
+        fire(n, v) { for (const fn of this.handlers[n] || []) fn(v); }
+        emit(method, params) { this.fire('message', { data: JSON.stringify({ method, params }) }); }
+        send(raw) {
+          const m = JSON.parse(raw); state.sent.push(m);
+          const expr = String((m.params && m.params.expression) || '');
+          let result = {};
+          if (m.method === 'Page.getFrameTree') result = { frameTree: { frame: { id: 'MAIN' } } };
+          else if (m.method === 'Runtime.evaluate') {
+            let value = state.url;
+            if (/return \{ready:/.test(expr)) value = { ready: true, error: null };
+            else if (/__STARNET_SETTLE__/.test(expr) && /document\.readyState/.test(expr)) value = { ok: true, ready: 'complete', n: 0 };
+            result = { result: { value } };
+          }
+          if (m.method === 'Page.navigate') { state.url = m.params.url; for (const e of events) this.emit(e[0], e[1]); }
+          setTimeout(() => this.fire('message', { data: JSON.stringify({ id: m.id, result }) }), 0);
+        }
+        close() {}
+      }
+      const driver = T.makeCdpDriver({
+        chrome: 'fake-chrome.exe', forceHeadless: true, syntheticInputOnly: true, timeoutMs: 1000, cdpPort: 9350,
+        settleQuietPolls: 1, settleNavBudgetMs: 300, settleActionBudgetMs: 300,
+        fetchImpl: async () => ({ json: async () => [{ type: 'page', webSocketDebuggerUrl: 'ws://net' }] }),
+        WebSocketImpl: WS,
+        spawn: () => ({ pid: 61, on(ev, fn) { if (ev === 'close') this._c = fn; }, kill() { if (this._c) queueMicrotask(() => this._c(0)); } })
+      });
+      return { driver, state };
+    }
+
+    // A. a 403 main document is captured and reported.
+    {
+      const rig = netRig([['Network.responseReceived', { type: 'Document', frameId: 'MAIN', response: { status: 403, statusText: 'Forbidden', url: 'https://x.test/' } }]]);
+      await rig.driver.navigate('https://x.test/');
+      A.eq(rig.driver.lastResponse().status, 403, 'main-document 403 captured from the Network domain');
+      await rig.driver.close();
+    }
+
+    // B. THE SUB-FRAME TRAP: an ad/iframe 404 must never read as the page's own status.
+    {
+      const rig = netRig([
+        ['Network.responseReceived', { type: 'Document', frameId: 'MAIN', response: { status: 200, statusText: 'OK', url: 'https://x.test/' } }],
+        ['Network.responseReceived', { type: 'Document', frameId: 'IFRAME', response: { status: 404, statusText: 'Not Found', url: 'https://ads.test/' } }]
+      ]);
+      await rig.driver.navigate('https://x.test/');
+      A.eq(rig.driver.lastResponse().status, 200, 'a sub-frame document response never overwrites the top frame status');
+      await rig.driver.close();
+    }
+
+    // C. a transport failure (DNS/refused/cert) produces no response at all.
+    {
+      const rig = netRig([['Network.loadingFailed', { requestId: 'r1', type: 'Document', errorText: 'net::ERR_NAME_NOT_RESOLVED' }]]);
+      await rig.driver.navigate('https://nope.test/');
+      A.eq(rig.driver.lastResponse().failure, 'net::ERR_NAME_NOT_RESOLVED', 'transport failure recorded');
+      A.eq(rig.driver.lastResponse().status, 0, 'a failed request has no HTTP status');
+      await rig.driver.close();
+    }
+
+    // D. status must not leak from the previous page.
+    {
+      const rig = netRig([['Network.responseReceived', { type: 'Document', frameId: 'MAIN', response: { status: 500, statusText: 'Server Error', url: 'https://x.test/' } }]]);
+      await rig.driver.navigate('https://x.test/');
+      A.eq(rig.driver.lastResponse().status, 500, 'first navigation records its status');
+      rig.state.sent.length = 0;
+      const quiet = netRig([]);                       // a second navigation that emits nothing
+      await quiet.driver.navigate('https://y.test/');
+      A.eq(quiet.driver.lastResponse(), null, 'a navigation with no observed response reports NOTHING rather than a stale status');
+      await rig.driver.close(); await quiet.driver.close();
+    }
+
+    // E. the tool text the agent actually reads carries the status.
+    {
+      const statusDriver = fakeDriver();
+      statusDriver.lastResponse = () => ({ status: 403, statusText: 'Forbidden', failure: null });
+      const B403 = makeBrowserTools({ driver: statusDriver });
+      const out = await B403.tools.find(t => t.name === 'browser.navigate').run({ url: 'https://example.com' }, {});
+      A.ok(/HTTP 403/.test(out.content), 'browser.navigate tells the agent the page was a 403');
+      A.ok(/error response, not the content/.test(out.content), 'and warns that the body is the error page');
+      // A driver with no network visibility must not invent a status.
+      const plain = await makeBrowserTools({ driver: fakeDriver() }).tools.find(t => t.name === 'browser.navigate').run({ url: 'https://example.com' }, {});
+      A.ok(!/HTTP/.test(plain.content), 'a driver without network visibility claims no status (truthful telemetry)');
+    }
+  }
+
   // ---- ATTENDED BROWSER LOGIN (browser.login): human-driven headed takeover on the persistent
   //      station profile, bracketed by two live consent asks; unattended runs refuse. ----
   {
