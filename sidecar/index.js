@@ -109,6 +109,7 @@ const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
 const connectorCatalog = require('./mcp/catalog.js');       // curated one-click MCP connector catalog (pure data + selectors)
 const serviceKeysMod = require('./servicekeys.js');         // KEYS tab: custom service API keys (pure core — env injection + masked list)
+const serviceKeysCatalog = require('./servicekeys-catalog.js');   // KEYS tab: the curated PLATFORM directory (pure data)
 const mcpOauth = require('./mcp/oauth.js');                 // generic OAuth 2.1 client for MCP connectors (discover/DCR/PKCE/refresh)
 const cron = require('./cron.js');                         // pure schedule math (parse/nextFire/planTick)
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
@@ -5015,6 +5016,7 @@ const ROUTES = [
   { m: 'GET', exact: '/api/servicekeys', h: handleServiceKeysList },
   { m: 'POST', exact: '/api/servicekeys', h: handleServiceKeyUpsert },
   { m: 'POST', exact: '/api/servicekeys/toggle', h: handleServiceKeyToggle },
+  { m: 'GET', exact: '/api/servicekeys/catalog', h: handleServiceKeysCatalog },
   { m: 'POST', exact: '/api/servicekeys/autonomy', h: handleServiceKeyAutonomy },
   { m: 'POST', exact: '/api/servicekeys/remove', h: handleServiceKeyRemove },
   { m: 'GET', prefix: '/api/toolsets', h: handleToolsetsList },
@@ -5810,6 +5812,15 @@ async function handleServiceKeyToggle(req, res) {
   applyServiceKeysEnv();
   const saved = saveServiceKeys();
   return json(saved ? 200 : 500, { ok: saved, saved, key: serviceKeysMod.toPublic(r.record) });
+}
+// The PLATFORM directory behind the KEYS picker. Pure curated data + a live `installed` cross-ref against
+// the Commander's own keys; carries no secrets (the store is consulted only for env-var NAMES).
+async function handleServiceKeysCatalog(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  try {
+    const have = (Array.isArray(serviceKeys) ? serviceKeys : []).map(r => r && r.envVar).filter(Boolean);
+    return json(200, { groups: serviceKeysCatalog.grouped(have) });
+  } catch (e) { return json(200, { groups: [], error: String((e && e.message) || e) }); }
 }
 // The UNATTENDED grant: may an agent spend this key while nobody is watching (cron / Night Shift /
 // a messaged run)? Separate from `enabled` and default OFF, so adding a key never silently widens what

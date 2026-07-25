@@ -116,8 +116,15 @@
       '<div id="ky-platforms" class="mc-list"><span class="loading pulse">loading…</span></div>' +
       '<div class="sec"><span class="sec-l">UNLISTED PLATFORM KEYS</span><span class="sec-tag" id="ky-mine-n">0</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<div id="ky-list" class="mc-list"></div>' +
-      '<div class="sec"><span class="sec-l">ADD AN UNLISTED PLATFORM</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
-      '<div class="mc-form">' +
+      // PICK A PLATFORM: most services people want to connect ship no MCP server at all (probed 2026-07-24:
+      // printify/printful/etsy/woocommerce/shopify all 404), so the generic KEYS + web_request path IS the
+      // route for them. This directory makes that route findable — it turns "paste a key for… something?"
+      // into "pick your platform", and prefills the exact name whose env var the agent will reference.
+      '<div class="sec"><span class="sec-l">PICK A PLATFORM</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
+      '<p class="set-about dim">Common platforms and where their API docs live. Picking one just fills the form below — ' +
+        'you still paste your own key. Anything not listed works too: type its name.</p>' +
+      '<div id="ky-catalog" class="cc-list"><span class="loading pulse">loading platforms…</span></div>' +
+      '<div class="sec"><span class="sec-l">ADD A PLATFORM</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +      '<div class="mc-form">' +
         '<input id="ky-name" class="key-input" placeholder="platform name — e.g. Resend" autocomplete="off" spellcheck="false" maxlength="64">' +
         '<input id="ky-key" type="password" class="key-input" placeholder="API key" autocomplete="off" spellcheck="false">' +
         '<input id="ky-docs" class="key-input" placeholder="API docs URL (optional — helps agents use the service)" autocomplete="off" spellcheck="false">' +
@@ -623,7 +630,7 @@
         if (j.saved !== false) notify('Key "' + name + '" saved', 'good');
         kyNameEl.value = ''; kyKeyEl.value = ''; kyDocsEl.value = '';
       } catch (e) { kyMsgEl.textContent = '✕ ' + ((e && e.message) || 'failed to reach the sidecar'); sfx('bad'); }
-      kyRefresh();
+      kyCatalogRefresh(); kyRefresh();
     });
     kyListEl.addEventListener('click', async ev => {
       const btn = ev.target.closest('button[data-ky-act]'); if (!btn) return;
@@ -634,7 +641,7 @@
           if (j.error && !j.ok) { kyMsgEl.classList.remove('ok'); kyMsgEl.textContent = '✕ ' + j.error; sfx('bad'); }
           else { sfx('tick'); notify('Key removed'); }
         } catch (_) { sfx('bad'); }
-        kyRefresh();
+        kyCatalogRefresh(); kyRefresh();
       }
     });
     kyListEl.addEventListener('change', async ev => {
@@ -650,14 +657,56 @@
         else sfx('tick');
       } catch (_) { cb.checked = !cb.checked; sfx('bad'); }
       cb.disabled = false;
-      kyRefresh();
+      kyCatalogRefresh(); kyRefresh();
     });
+    /* PICK A PLATFORM — curated directory from GET /api/servicekeys/catalog. Clicking a card only PREFILLS
+       the add form (name + docs URL) and focuses the key field: the Commander still pastes their own key,
+       so nothing here can create a connection on its own. A platform already keyed shows as ✓ ADDED. */
+    const kyCatEl = body.querySelector('#ky-catalog');
+    async function kyCatalogRefresh() {
+      if (!kyCatEl) return;
+      try {
+        const j = await (await fetch('/api/servicekeys/catalog')).json();
+        const groups = (j && j.groups) || [];
+        if (!groups.length) { kyCatEl.innerHTML = '<div class="mc-detail">no platform directory available.</div>'; return; }
+        kyCatEl.innerHTML = groups.map(g =>
+          '<div class="cc-group"><div class="cc-cat">' + esc(g.category) + '</div>' +
+          g.platforms.map(p =>
+            '<div class="cc-card' + (p.installed ? ' added' : '') + '" data-ky-pick="' + esc(p.id) + '">' +
+              '<div class="cc-top"><b>' + esc(p.name) + '</b>' +
+                (p.installed ? '<span class="cc-tier cc-lg-none">✓ ADDED</span>' : '<span class="cc-tier cc-lg-key">API key</span>') + '</div>' +
+              '<div class="cc-blurb dim">' + esc(p.blurb || '') + '</div>' +
+              (p.note ? '<div class="mc-hint">' + esc(p.note) + '</div>' : '') +
+              '<div class="mc-url dim"><code>' + esc(p.envVar) + '</code>' +
+                (p.docsUrl ? ' · <a class="dim" href="' + esc(p.docsUrl) + '" target="_blank" rel="noopener">docs ↗</a>' : '') + '</div>' +
+            '</div>').join('') + '</div>').join('');
+      } catch (_) { kyCatEl.innerHTML = '<div class="mc-detail">sidecar offline — start it to browse platforms.</div>'; }
+    }
+    if (kyCatEl) kyCatEl.addEventListener('click', async ev => {
+      if (ev.target.closest('a')) return;                       // the docs link is a real link, not a pick
+      const card = ev.target.closest('[data-ky-pick]'); if (!card) return;
+      try {
+        const j = await (await fetch('/api/servicekeys/catalog')).json();
+        const p = ((j && j.groups) || []).flatMap(g => g.platforms).find(x => x.id === card.dataset.kyPick);
+        if (!p) return;
+        kyNameEl.value = p.name;
+        kyDocsEl.value = p.docsUrl || '';
+        kyMsgEl.classList.remove('ok');
+        kyMsgEl.textContent = p.authHint
+          ? 'paste your ' + p.name + ' key — the agent will send it as  ' + p.authHint
+          : 'paste your ' + p.name + ' key — the agent reads ' + (p.docsUrl || 'the docs') + ' for the right header';
+        kyKeyEl.focus();
+        sfx('click');
+      } catch (_) { sfx('bad'); }
+    });
+
     kyPlatformsRefresh();
+    kyCatalogRefresh();
     kyRefresh();
     // panes mount once and tab clicks only toggle visibility — re-poll both lists when the Commander
     // lands on KEYS, so a connector keyed on the CATALOG tab moments ago shows up without a window reopen.
     const kyTab = body.querySelector('#con-tab-connectors-keys');
-    if (kyTab) kyTab.addEventListener('click', () => { kyPlatformsRefresh(); kyRefresh(); });
+    if (kyTab) kyTab.addEventListener('click', () => { kyPlatformsRefresh(); kyCatalogRefresh(); kyRefresh(); });
   }
 
   /* ---- SPOTIFY connect (OAuth PKCE): open the consent window, then poll /api/spotify/status until the
