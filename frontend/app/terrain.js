@@ -30,6 +30,20 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
   /* ---------------------------------------------------------------- shared helpers ---- */
 
   const mkCv = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
+
+  /* HARD-EDGE a sprite: snap every pixel's alpha to fully on or fully off.
+     Canvas path fills (arc, ellipse) are ALWAYS anti-aliased — there is no flag to turn it off —
+     so a canopy drawn from circles carries a soft fringe, and the world transform then blows that
+     fringe up by the zoom factor. At 2.5x a one-pixel fringe becomes a three-pixel smear, which is
+     exactly the "blurry" this fixes. Everything the sprite wants to keep must therefore be drawn
+     OPAQUE (see CAST) — anything translucent is erased by this pass, by design. */
+  function hardEdge(cv) {
+    const c = cv.getContext('2d');
+    const img = c.getImageData(0, 0, cv.width, cv.height), d = img.data;
+    for (let i = 3; i < d.length; i += 4) d[i] = d[i] >= 128 ? 255 : 0;
+    c.putImageData(img, 0, 0);
+    return cv;
+  }
   const rgba = (c, a) => 'rgba(' + c[0] + ',' + c[1] + ',' + c[2] + ',' + (+a).toFixed(3) + ')';
   const mix = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
@@ -85,12 +99,20 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
     base: '#12160f',                       // shows only in the instant before the pattern lands
     PATCH: 256,                            // world px; fine texture, so this repeat is invisible
     CELL: 72,                              // world px per scatter cell (6 station tiles)
+    LEVELS: 5,                             // flat colour bands — pixel art, not a smooth photo
+
+    /* THE VALUE SEPARATION IS THE WHOLE READ (2026-07-24, Andrew: "it just looks like an outline
+       of a forest"). The first pass had CANOPY_D [20,34,17] against GRASS_D [21,33,17] — the same
+       colour. The canopies were invisible against the ground, so the only thing left to see was
+       their lit rims and cast shadows: an outline. A tree crown from above is a DENSE DARK mass
+       sitting on lighter open ground, and that gap has to be big enough to survive the CRT pass.
+       Canopy tops out around 58; ground starts around there and runs up to 78. */
     LIGHT: {
-      SOIL_D: [26, 22, 16], SOIL_L: [44, 37, 25],
-      GRASS_D: [21, 33, 17], GRASS_L: [45, 63, 29],
-      LITTER: [58, 43, 25], STONE: [50, 50, 47],
-      CANOPY_D: [20, 34, 17], CANOPY_M: [31, 50, 24], CANOPY_L: [48, 72, 34],
-      SHADOW_A: 0.34,
+      SOIL_D: [22, 18, 12], SOIL_L: [58, 48, 30],       // wider range than before: contrast reads as detail
+      GRASS_D: [18, 28, 14], GRASS_L: [56, 78, 36],
+      LITTER: [74, 54, 30], STONE: [58, 58, 54],
+      CANOPY_D: [9, 18, 9], CANOPY_M: [17, 33, 15], CANOPY_L: [34, 58, 26],
+      CAST: [11, 15, 10],                               // opaque, so hard-edging cannot erase it
     },
 
     /* ---- the tiling floor ---- */
@@ -104,10 +126,14 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         for (let x = 0; x < P; x++) {
           const u = x / P, v = y / P;
           const n = n1(u, v) * 0.52 + n2(u, v) * 0.32 + n3(u, v) * 0.16;
-          // low noise = bare soil, high = grass. A soft threshold keeps the border organic.
-          const grass = Math.max(0, Math.min(1, (n - 0.38) * 3.1));
-          const soil = mix(LT.SOIL_D, LT.SOIL_L, n3(u, v));
-          const gr = mix(LT.GRASS_D, LT.GRASS_L, n2(u * 2, v * 2));
+          /* QUANTIZE into flat bands. Smooth interpolated noise is what made the first pass read
+             as blurry — every neighbouring pixel differed slightly, so nothing had an edge. The
+             ocean deck already learned this; the ground had not. Banding the value first means
+             the texture is made of shapes with borders, which is what pixel art is. */
+          const q = v2 => Math.round(v2 * FOREST.LEVELS) / FOREST.LEVELS;
+          const grass = q(Math.max(0, Math.min(1, (n - 0.38) * 3.1)));
+          const soil = mix(LT.SOIL_D, LT.SOIL_L, q(n3(u, v)));
+          const gr = mix(LT.GRASS_D, LT.GRASS_L, q(n2(u * 2, v * 2)));
           const col = mix(soil, gr, grass);
           D[p] = col[0]; D[p + 1] = col[1]; D[p + 2] = col[2]; D[p + 3] = 255;
           p += 4;
@@ -143,35 +169,40 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
       const LT = FOREST.LIGHT;
       const sprites = [];
 
-      // TREES — a rough mass of lobes, lit top-left, sitting on its own cast shadow
+      // TREES — a dense dark crown on its own hard cast shadow. Every fill is OPAQUE so the
+      // hard-edge pass keeps it; nothing here may rely on alpha to blend.
       for (let v = 0; v < 5; v++) {
         const R = 15 + Math.round(rnd() * 11);           // canopy radius in world px (~2-4 tiles)
-        const pad = Math.ceil(R * 0.55);
+        const pad = Math.ceil(R * 0.60);
         const S = (R + pad) * 2;
         const cv = mkCv(S, S), c = cv.getContext('2d');
         const cx = S / 2, cy = S / 2;
         // cast shadow first, offset down-right (light is top-left, consistently, everywhere)
-        c.fillStyle = 'rgba(0,0,0,' + LT.SHADOW_A + ')';
-        c.beginPath(); c.ellipse(cx + R * 0.34, cy + R * 0.40, R * 0.92, R * 0.66, 0, 0, Math.PI * 2); c.fill();
-        // the mass
+        c.fillStyle = rgba(LT.CAST, 1);
+        c.beginPath(); c.ellipse(cx + R * 0.40, cy + R * 0.46, R * 0.95, R * 0.68, 0, 0, Math.PI * 2); c.fill();
+        // the crown: a clump of lobes, dark and solid
         const lobes = 7 + Math.floor(rnd() * 4);
+        const lobeList = [];
         for (let i = 0; i < lobes; i++) {
           const a = (i / lobes) * Math.PI * 2 + rnd() * 0.5;
           const d = R * (0.20 + 0.42 * rnd());
           const lr = R * (0.44 + 0.30 * rnd());
-          const lx = cx + Math.cos(a) * d, ly = cy + Math.sin(a) * d;
-          const lit = Math.max(0, (-Math.cos(a - 2.36)));   // brightest toward the top-left
-          c.fillStyle = rgba(mix(LT.CANOPY_D, LT.CANOPY_M, 0.35 + 0.5 * rnd()), 1);
-          c.beginPath(); c.arc(lx, ly, lr, 0, Math.PI * 2); c.fill();
-          if (lit > 0.25) {                                  // the lit rim of each lobe
-            c.fillStyle = rgba(mix(LT.CANOPY_M, LT.CANOPY_L, lit), 0.85);
-            c.beginPath(); c.arc(lx - lr * 0.22, ly - lr * 0.22, lr * 0.62, 0, Math.PI * 2); c.fill();
-          }
+          lobeList.push({ x: cx + Math.cos(a) * d, y: cy + Math.sin(a) * d, r: lr, a });
         }
-        // a dark core so the crown does not read as a flat disc
-        c.fillStyle = rgba(LT.CANOPY_D, 0.5);
-        c.beginPath(); c.arc(cx + R * 0.12, cy + R * 0.14, R * 0.42, 0, Math.PI * 2); c.fill();
-        sprites.push({ cv, ox: cx, oy: cy, kind: 'tree', w: R * 2 });
+        for (const L of lobeList) {                       // base mass, uniformly dark
+          c.fillStyle = rgba(mix(LT.CANOPY_D, LT.CANOPY_M, 0.3 + 0.45 * rnd()), 1);
+          c.beginPath(); c.arc(L.x, L.y, L.r, 0, Math.PI * 2); c.fill();
+        }
+        for (const L of lobeList) {                       // the lit cap on the top-left of each lobe
+          const lit = Math.max(0, -Math.cos(L.a - 2.36));
+          if (lit <= 0.3) continue;
+          c.fillStyle = rgba(mix(LT.CANOPY_M, LT.CANOPY_L, lit), 1);
+          c.beginPath(); c.arc(L.x - L.r * 0.26, L.y - L.r * 0.26, L.r * 0.58, 0, Math.PI * 2); c.fill();
+        }
+        // a dark well toward the bottom-right so the crown has depth, not a flat disc
+        c.fillStyle = rgba(LT.CANOPY_D, 1);
+        c.beginPath(); c.arc(cx + R * 0.20, cy + R * 0.22, R * 0.34, 0, Math.PI * 2); c.fill();
+        sprites.push({ cv: hardEdge(cv), ox: cx, oy: cy, kind: 'tree', w: R * 2 });
       }
 
       // BUSHES / FERNS — smaller, flatter, no cast shadow worth the pixels
@@ -182,10 +213,10 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         const cx = S / 2, cy = S / 2;
         for (let i = 0, n = 5 + Math.floor(rnd() * 4); i < n; i++) {
           const a = rnd() * Math.PI * 2, d = R * rnd() * 0.7;
-          c.fillStyle = rgba(mix(LT.GRASS_D, LT.CANOPY_M, rnd()), 0.9);
+          c.fillStyle = rgba(mix(LT.CANOPY_M, LT.CANOPY_L, rnd()), 1);
           c.beginPath(); c.arc(cx + Math.cos(a) * d, cy + Math.sin(a) * d, R * (0.36 + 0.30 * rnd()), 0, Math.PI * 2); c.fill();
         }
-        sprites.push({ cv, ox: cx, oy: cy, kind: 'bush', w: R * 2 });
+        sprites.push({ cv: hardEdge(cv), ox: cx, oy: cy, kind: 'bush', w: R * 2 });
       }
 
       // BOULDERS — the only cool-grey mass out there, so they read as stone not foliage
@@ -194,13 +225,13 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         const S = R * 3;
         const cv = mkCv(S, S), c = cv.getContext('2d');
         const cx = S / 2, cy = S / 2;
-        c.fillStyle = 'rgba(0,0,0,' + (LT.SHADOW_A * 0.8) + ')';
-        c.beginPath(); c.ellipse(cx + R * 0.3, cy + R * 0.34, R * 0.9, R * 0.6, 0, 0, Math.PI * 2); c.fill();
+        c.fillStyle = rgba(LT.CAST, 1);
+        c.beginPath(); c.ellipse(cx + R * 0.34, cy + R * 0.38, R * 0.92, R * 0.62, 0, 0, Math.PI * 2); c.fill();
         c.fillStyle = rgba(LT.STONE, 1);
         c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.fill();
-        c.fillStyle = rgba([96, 96, 92], 0.55);           // top-left facet catching the light
+        c.fillStyle = rgba([104, 104, 98], 1);            // top-left facet catching the light
         c.beginPath(); c.arc(cx - R * 0.26, cy - R * 0.28, R * 0.55, 0, Math.PI * 2); c.fill();
-        sprites.push({ cv, ox: cx, oy: cy, kind: 'rock', w: R * 2 });
+        sprites.push({ cv: hardEdge(cv), ox: cx, oy: cy, kind: 'rock', w: R * 2 });
       }
       return sprites;
     },
