@@ -77,4 +77,21 @@ A.ok(src.indexOf('This stream is still running — stop it first') >= 0, '/retry
 A.ok(src.indexOf("'Approval mode: ' + was + ' → ' + now") >= 0, '/yolo states the approval transition, not just the resulting state');
 A.ok(src.indexOf('Approval mode unchanged: ') >= 0, '/yolo reports an explicit no-op instead of implying a change');
 
+// --- ARGUMENT-VALUE COMPLETION (design ported from the reference harness, MIT — see NOTICE.md) ---
+// Static values are DERIVED from each command's argsHint pipe pattern, so a new "[on|off]" command gets
+// completion with no per-command wiring. If this regex or its use goes, completion silently dies.
+A.ok(src.indexOf('PIPE_VALUES_RE') >= 0 && /PIPE_VALUES_RE\s*=\s*\//.test(src), 'static values are derived from the argsHint pipe pattern');
+A.ok(src.indexOf('function staticValuesFor') >= 0 && src.indexOf('function liveValuesFor') >= 0, 'both static and live value providers exist');
+A.ok(src.indexOf('function completeSlashValue') >= 0, 'a value can be completed into the composer');
+A.ok(/liveValuesFor[\s\S]{0,600}Personas\.list/.test(src), 'personalities come from the live persona list');
+A.ok(/liveValuesFor[\s\S]{0,600}Workstreams\.list/.test(src), 'workstream names complete for /resume');
+A.ok(src.indexOf('function warmModelValues') >= 0 && src.indexOf('Harness.listModels()') >= 0, '/model completes against the warmed catalog');
+// THE LOAD-BEARING CONTRACT: Enter dispatches the COMMAND, never a value row. A regressed Enter is what
+// fired "/personality direct" at the model as chat (2026-07-05); Tab is the completer instead.
+A.ok(/e\.key === 'Tab' && slashValueMode/.test(src), 'TAB is what accepts a value');
+A.ok(/e\.key === 'Enter' && slashValueMode[\s\S]{0,400}commandFromLine\(input\.value\)/.test(src),
+  'ENTER in value mode still dispatches the command resolved from the typed line, never the highlighted value');
+A.ok(src.indexOf('c.isValue ? c.name') >= 0, 'a value row renders without a leading slash (it is an argument, not a command)');
+A.ok(/closeSlash[\s\S]{0,200}slashValueMode = null/.test(src), 'closing the palette leaves value mode');
+
 A.report('slash.palette.test');
