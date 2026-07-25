@@ -224,6 +224,24 @@ const StationBake = (() => {
   /* cheap deterministic per-PIXEL hash. h2 hashes a string, which is fine at ~5 marks per tile but
      not at the ~25 turf needs. Keyed on bake-pixel coords (the same space the Bayer dither uses),
      so a pixel resolves identically no matter which chunk viewport bakes it. */
+  /* VIVID LIGHTEN — for the GROWTH materials only (turf, hedge).
+     U.shade lerps toward WHITE, so every lightening step desaturates: fern lightened by +0.4 goes
+     from saturation 0.43 to 0.11 — a grass blade lifted far enough to read as a highlight stops
+     being green and turns silver. That is why capping the lift only made the lawn duller instead of
+     greener (Andrew 2026-07-25: "grass is too white, I want Terraria grass").
+     This pushes the colour's DOMINANT channel hard and the others barely, so the ramp gains
+     lightness while GAINING saturation. Every built surface keeps U.shade — plating should wash
+     toward the light. Growth must not. Negative f falls through to U.shade: darkening toward black
+     already preserves hue. */
+  const vivid = (hex, f) => {
+    if (f <= 0) return U.shade(hex, f);
+    const n = parseInt(String(hex).slice(1), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const mx = Math.max(r, g, b) || 1;
+    const lift = c => { const s = c / mx; return Math.min(255, c + (255 - c) * f * s * s); };
+    return '#' + ((1 << 24) | (Math.round(lift(r)) << 16) | (Math.round(lift(g)) << 8) | Math.round(lift(b))).toString(16).slice(1);
+  };
+
   const hp = (a, c, k) => {
     let n = (Math.imul(a | 0, 374761393) + Math.imul(c | 0, 668265263) + Math.imul(k | 0, 1442695041)) | 0;
     n = Math.imul(n ^ (n >>> 13), 1274126177);
@@ -377,27 +395,33 @@ const StationBake = (() => {
          SPREAD — a wider tone range, so neighbouring blades actually separate from each other.
        Still no lattice in the finished read: the ticks are jittered off their sample points and the
        clump term varies density at the 2-tile scale, so a large lawn never tiles visibly. */
-    px(X, Y, T, T, sh(cl - 0.24));                               // understory: shadow between blades
-    /* Tone lifts are kept modest ON PURPOSE. U.shade brightens toward WHITE, so it desaturates as it
-       lightens — a +0.45 blade under a warm lamp pool stops being green and goes silvery/frosted.
-       Capping the brightest blade near +0.22 keeps the lawn reading as grass in the lit pools, where
-       the additive room light is already doing most of the lifting. */
-    const TONE = [-0.15, -0.05, 0.05, 0.13, 0.21];
+    /* A WIDE ramp that stays GREEN all the way up, because every lift goes through vivid() instead
+       of U.shade. Capping the lifts (the previous attempt) only made the lawn duller — the problem
+       was never the amount of lift, it was that U.shade lifts toward white, so the brightest blades
+       were the greyest pixels on the deck. Five steps shadow→bright so tufts separate at a glance. */
+    px(X, Y, T, T, U.shade(base, (cl - 0.16) * fd));             // understory: shadow between blades
+    /* The range is TIGHT on purpose. A very dark understory under bright blades reads as confetti,
+       not turf — grass in the reference is a cohesive mid-green field with blades a step or two off
+       it, not maximum contrast per pixel. Saturation does the work here, not value spread. */
+    const RAMP = [
+      U.shade(base, (cl - 0.08) * fd), vivid(base, (cl + 0.06) * fd),
+      vivid(base, (cl + 0.20) * fd), vivid(base, (cl + 0.34) * fd), vivid(base, (cl + 0.46) * fd)
+    ];
+    const TIP = vivid(base, (cl + 0.58) * fd);
     for (let cy = 0; cy < T; cy += 2) for (let cx = 0; cx < T; cx += 2) {
       const r = hp(X + cx, Y + cy, 7);
       const bx = cx + (r & 1), by = cy + ((r >>> 2) & 1);
       if (by >= T) continue;
       const hgt = Math.min(2 + ((r >>> 5) % 2), T - by);
-      const t = TONE[(r >>> 9) % 5];
-      px(X + bx, Y + by, 1, hgt, sh(cl + t));
-      if (((r >>> 14) % 3) === 0) px(X + bx, Y + by, 1, 1, sh(cl + t + 0.09));   // lit tip — what makes a blade a blade
+      px(X + bx, Y + by, 1, hgt, RAMP[(r >>> 9) % 5]);
+      if (((r >>> 14) % 3) === 0) px(X + bx, Y + by, 1, 1, TIP);   // lit tip — what makes a blade a blade
     }
     for (let i = 0; i < 2; i++) {                                // taller blades breaking the canopy
       const r = hp(X, Y, 90 + i);
       const by = (r >>> 6) % (T - 3);
-      px(X + (r % T), Y + by, 1, 4, sh(cl + 0.24));
+      px(X + (r % T), Y + by, 1, 4, vivid(base, (cl + 0.50) * fd));
     }
-    if ((clump % 7) === 0) { const r = hp(X, Y, 99); px(X + (r % T), Y + ((r >>> 6) % T), 1, 1, sh(cl + 0.32)); }   // pale seed head
+    if ((clump % 7) === 0) { const r = hp(X, Y, 99); px(X + (r % T), Y + ((r >>> 6) % T), 1, 1, vivid(base, (cl + 0.70) * fd)); }   // seed head
   }
 
   function paintDeck(b, mat, base, x, y, X, Y, z, n, fd) {
@@ -841,18 +865,21 @@ const StationBake = (() => {
      read comes from dense blade scatter alone, darker toward the base where light doesn't reach. */
   function wallHedge(b, pal, X, topY, h, e, n, room, footY) {
     const wd = wallDet();
-    const body = U.shade(pal.face, -0.06 * wd);
+    // foliage lifts go through vivid() for the same reason the TURF deck's do: U.shade would take
+    // the lit leaves toward white and the hedge would read as a grey bush.
+    const body = U.shade(pal.base, -0.34 * wd);
     b.fillStyle = body; b.fillRect(X, topY, T, h);
-    const TONE = [-0.26, -0.14, 0.08, 0.20];
-    const leaves = Math.max(8, Math.round(T * h / 7));
+    const LEAF = [U.shade(pal.base, -0.20 * wd), vivid(pal.base, 0.10 * wd), vivid(pal.base, 0.30 * wd), vivid(pal.base, 0.50 * wd)];
+    const leaves = Math.max(8, Math.round(T * h / 6));
     for (let i = 0; i < leaves; i++) {
       const r = hp(X, topY, i);
       const ly = (r >>> 5) % h;
-      const depth = -0.16 * (ly / Math.max(1, h));                                   // darker toward the base
-      b.fillStyle = U.shade(body, (TONE[(r >>> 11) & 3] + depth) * wd);
+      // darker toward the base, where light doesn't reach into the foliage
+      const k = 1 - 0.45 * (ly / Math.max(1, h));
+      b.fillStyle = U.shade(LEAF[(r >>> 11) & 3], -(1 - k) * 0.5);
       b.fillRect(X + (r % T), topY + ly, 1, Math.min(1 + ((r >>> 14) % 2), h - ly));
     }
-    b.fillStyle = U.shade(body, 0.22 * wd); b.fillRect(X + (hp(X, topY, 91) % T), topY, 1, 2);   // lit crown sprig
+    b.fillStyle = vivid(pal.base, 0.62 * wd); b.fillRect(X + (hp(X, topY, 91) % T), topY, 1, 2);   // lit crown sprig
     wallFoot(b, body, X, footY, wd);
   }
 
