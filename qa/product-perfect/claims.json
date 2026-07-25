@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "837cc964eee4811f8cf1c668f358533b0c38493e",
+    "sourceCommit": "99a8003c7bdfa0d40d1d1538d9becefb05259b43",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -773,8 +773,8 @@
       },
       {
         "path": "frontend/app/windows/routines.js",
-        "bytes": 24533,
-        "sha256": "1e43a49ff74df394982c0fd9ee0d2232e782c482898977862e5d40d63804a8a7"
+        "bytes": 29055,
+        "sha256": "a04000d0c3cee86f5e3244f5f10900b9dd15e5b680caca0de349e0a536c3c037"
       },
       {
         "path": "frontend/app/windows/trophies.js",
