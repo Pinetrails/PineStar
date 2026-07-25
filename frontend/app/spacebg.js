@@ -122,6 +122,20 @@ const SpaceBG = (() => {
 
   const mkCv = (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; };
 
+  /* Cover a w x h viewport with a tile of a DIFFERENT, fixed size, wrapping in both axes.
+     tile2() assumes the tile is exactly the viewport, which forces a rebuild on every resize —
+     and a rebuild re-lays the whole sky, because the fields are laid out in coordinates normalised
+     to the tile. For a starfield nobody notices; for a structured nebula the entire subject jumps
+     (2026-07-25: expanding COMMS produced a completely different cloud, and at the new aspect the
+     density peaked over a wide area and blew out to white). A FIXED tile plus this drawer means a
+     resize simply reveals more of the same sky, which is what "the sky is a place, not a dice
+     roll" has to mean in practice. */
+  function tileN(ctx, cv, tw, th, w, h, ox, oy) {
+    const x0 = ((Math.round(ox) % tw) + tw) % tw - tw;   // start one tile before the origin
+    const y0 = ((Math.round(oy) % th) + th) % th - th;
+    for (let y = y0; y < h; y += th) for (let x = x0; x < w; x += tw) ctx.drawImage(cv, x, y, tw, th);
+  }
+
   /* sine by lookup, indexed in TURNS rather than radians. A surface deck evaluates several waves
      per pixel across the whole tile (~3.7M calls at 720p), which is too many real Math.sin calls
      for a rebuild that must not stall a resize. Turns also make the torus exact: an integer wave
@@ -382,17 +396,33 @@ const SpaceBG = (() => {
     base: '#04040a',
     D: { star: 0.012, gas: 0.03, mote: 0.075 },
 
-    // Bayer 4x4 — the ordered threshold that turns a smooth ramp into pixel-art texture
-    BAYER: [0, 8, 2, 10, 12, 4, 14, 6, 3, 11, 1, 9, 15, 7, 13, 5],
     LEVELS: 12,
+
+    /* FIXED TILE — built once, never rebuilt on a resize. The cloud is a legible subject laid out
+       in tile-normalised coordinates, so a canvas-sized tile made every resize re-lay it: expanding
+       COMMS produced a completely different nebula, and at the new aspect the density peaked over a
+       wide area and blew out to white. Square, so aspect never enters into it. Sized to cover the
+       display's long edge where it can, which keeps the repeat off-screen at ordinary window sizes;
+       the envelope leaves a lot of dark space, so a repeat at the extremes is quiet. */
+    fixedTile: () => {
+      const scr = (typeof window !== 'undefined' && window.screen) || {};
+      const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+      const long = Math.max(Number(scr.width) || 0, Number(scr.height) || 0) || 1600;
+      return Math.max(1200, Math.min(2048, Math.round(long * Math.min(dpr, 2))));
+    },
 
     LIGHT: {
       // an emission palette with real COLOUR contrast, not one hue at nine brightnesses
-      OUT: [16, 10, 34],                   // outermost haze, barely there
-      MID: [72, 20, 74],                   // magenta body
-      HOT: [150, 46, 82],                  // H-alpha, dense
-      CORE: [242, 214, 226],               // ionized core, nearly white — the top of the range
-      TEAL: [28, 96, 116],                 // O-III, a genuinely different hue for contrast
+      OUT: [10, 7, 22],                   // outermost haze, barely there
+      MID: [47, 13, 49],                   // magenta body
+      HOT: [98, 30, 54],                  // H-alpha, dense
+      /* The top of the GAS ramp is deliberately NOT white. It was [242,214,226] over a band
+         starting at t>0.78, and when a density peak covered a wide area the result was a large
+         blown-out white patch with the CRT scanlines striping through it. True white belongs only
+         to the hot knots and the stars — small, local things. Gas is allowed to be bright; it is
+         not allowed to clip. */
+      CORE: [128, 96, 109],               // dense ionized core: bright, and still short of white
+      TEAL: [18, 63, 76],                 // O-III, a genuinely different hue for contrast
       LANE: [3, 2, 7],                     // cold dust, effectively black
     },
 
@@ -503,9 +533,11 @@ const SpaceBG = (() => {
 
           // COLOUR: a wide ramp ending near white, plus a teal region for hue contrast
           let col;
+          // the core band now opens at 0.88, not 0.78 — the brightest gas is the top TWELVE
+          // per cent of the range instead of the top fifth, so it cannot cover a wide area
           if (t < 0.40) col = mix3(LT.OUT, LT.MID, t / 0.40);
-          else if (t < 0.78) col = mix3(LT.MID, LT.HOT, (t - 0.40) / 0.38);
-          else col = mix3(LT.HOT, LT.CORE, (t - 0.78) / 0.22);
+          else if (t < 0.88) col = mix3(LT.MID, LT.HOT, (t - 0.40) / 0.48);
+          else col = mix3(LT.HOT, LT.CORE, (t - 0.88) / 0.12);
           const teal = samp(fC, fx, fy);
           if (teal > 0) col = mix3(col, LT.TEAL, Math.min(0.7, teal) * (1 - t * 0.5));
 
@@ -549,14 +581,16 @@ const SpaceBG = (() => {
 
     draw(ctx, w, h, now, cam, st) {
       const D = NURSERY_BG.D, t = now / 1000;
-      /* field first, cloud over it at the SAME offset — they are at the same distance and must
-         not slide apart. The gas plate carries alpha, so thin gas lets the field through and
-         dense gas and dust lanes occlude it, which is the depth cue that sells the cloud. */
+      /* tileN, not tile2 — the plates are a FIXED square, independent of this canvas, so they have
+         to be repeated across whatever viewport they are handed. Field first, cloud over it at the
+         SAME offset: they are at one distance and must not slide apart. The gas plate carries
+         alpha, so thin gas lets the field through and dense gas and dust lanes occlude it. */
+      const TW = st.starCv.width, TH = st.starCv.height;
       const ox = parX(cam, D.gas) + t * 1.1, oy = parY(cam, D.gas) + t * 0.3;
-      tile2(ctx, st.starCv, w, h, ox, oy);
-      tile2(ctx, st.gasCv, w, h, ox, oy);
+      tileN(ctx, st.starCv, TW, TH, w, h, ox, oy);
+      tileN(ctx, st.gasCv, TW, TH, w, h, ox, oy);
       ctx.globalAlpha = 0.8;
-      tile2(ctx, st.moteCv, w, h, parX(cam, D.mote) + t * 5, parY(cam, D.mote) + t * 1.5);
+      tileN(ctx, st.moteCv, TW, TH, w, h, parX(cam, D.mote) + t * 5, parY(cam, D.mote) + t * 1.5);
       ctx.globalAlpha = 1;
       drawMeteor(ctx, w, h, now);
       drawBolide(ctx, w, h, now);
@@ -957,9 +991,23 @@ const SpaceBG = (() => {
   let builtId = '', builtW = 0, builtH = 0;          // WHAT that state was built for
   let pendKey = '', pendAt = 0;                      // resize settling (see draw)
 
+  /* A backdrop may declare `fixedTile()` — a size to build at that ignores the canvas entirely.
+     Such a backdrop is built ONCE per session and drawn with tileN(), so a resize reveals more of
+     the same sky instead of re-laying it. Use it for anything with a legible SUBJECT (a nebula, a
+     body): those layouts are normalised to the tile, so a rebuild moves the subject and a resize
+     becomes a re-roll. Fields with no subject (a starfield, a wave deck) can stay canvas-sized —
+     re-laying them is invisible, and matching the canvas avoids any repeat. */
+  function tileOf(id, w, h) {
+    const f = BACKDROPS[id].fixedTile;
+    if (!f) return [w, h];
+    const s = f();
+    return [Math.max(64, s | 0), Math.max(64, s | 0)];
+  }
+
   function rebuild(id, w, h) {
-    st = BACKDROPS[id].build(w, h, mulberry32(SEED));
-    builtId = id; builtW = w; builtH = h;
+    const [tw, th] = tileOf(id, w, h);
+    st = BACKDROPS[id].build(tw, th, mulberry32(SEED));
+    builtId = id; builtW = tw; builtH = th;
   }
 
   /* the whole backdrop, base fill included — callers do NOT pre-fill (identity transform,
@@ -977,6 +1025,9 @@ const SpaceBG = (() => {
       // a switch is never a settle case — rebuild now, or the commander watches the old sky
       // sit there for a quarter second after picking a new one.
       rebuild(id, w, h); pendKey = '';
+    } else if (BACKDROPS[id].fixedTile) {
+      // fixed-tile backdrops never rebuild on a resize — that is the whole point of them
+      pendKey = '';
     } else if (builtW !== w || builtH !== h) {
       // a seam-drag streams ResizeObserver sizes — rebuilding the tiles per tick (8k specks +
       // gradients) would jank the drag. Draw the OLD tiles stretched until the size holds ~250ms.
