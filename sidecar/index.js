@@ -5015,6 +5015,7 @@ const ROUTES = [
   { m: 'GET', exact: '/api/servicekeys', h: handleServiceKeysList },
   { m: 'POST', exact: '/api/servicekeys', h: handleServiceKeyUpsert },
   { m: 'POST', exact: '/api/servicekeys/toggle', h: handleServiceKeyToggle },
+  { m: 'POST', exact: '/api/servicekeys/autonomy', h: handleServiceKeyAutonomy },
   { m: 'POST', exact: '/api/servicekeys/remove', h: handleServiceKeyRemove },
   { m: 'GET', prefix: '/api/toolsets', h: handleToolsetsList },
   { m: 'POST', prefix: '/api/toolsets/', h: handleToolsetToggle },
@@ -5807,6 +5808,20 @@ async function handleServiceKeyToggle(req, res) {
   if (r.error) return json(404, { error: r.error });
   serviceKeys = r.list;
   applyServiceKeysEnv();
+  const saved = saveServiceKeys();
+  return json(saved ? 200 : 500, { ok: saved, saved, key: serviceKeysMod.toPublic(r.record) });
+}
+// The UNATTENDED grant: may an agent spend this key while nobody is watching (cron / Night Shift /
+// a messaged run)? Separate from `enabled` and default OFF, so adding a key never silently widens what
+// happens overnight. No env re-apply is needed — this flag is read by web_request at call time, not baked
+// into any child environment.
+async function handleServiceKeyAutonomy(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 12)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  if (typeof body.autonomous !== 'boolean') return json(400, { error: 'autonomous must be a boolean' });
+  const r = serviceKeysMod.setAutonomous(serviceKeys, body.id, body.autonomous);
+  if (r.error) return json(404, { error: r.error });
+  serviceKeys = r.list;
   const saved = saveServiceKeys();
   return json(saved ? 200 : 500, { ok: saved, saved, key: serviceKeysMod.toPublic(r.record) });
 }
@@ -8178,7 +8193,14 @@ async function runOnce(o) {
   const managedSkills = [];
   const seenLoadedSkills = new Set();
   const openrouterToolKey = providerId === 'openrouter' ? runKey : runtimeKey;
-  makeWebTools({ openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null }).register(registry);   // web_search/web_fetch (DDG/Jina, OR fallback)
+  // web_search/web_fetch (DDG/Jina, OR fallback) + web_request. `surface` is HOST AUTHORITY here: it comes
+  // from the run, never from tool args, so an autonomous run cannot claim to be watched to unlock a key.
+  makeWebTools({
+    openrouter: openrouterToolKey ? { apiKey: openrouterToolKey, model } : null,
+    surface: surface,
+    redact: redact,
+    resolveServiceKey: (name, sfc) => serviceKeysMod.resolveForRequest(serviceKeys, name, sfc)
+  }).register(registry);
   // STUDIO media tools, built up-front so browser.vision can borrow its multimodal analyze path
   // (one provider seam, no duplication). Registered below; here we only need its vision callback.
   // STARNET_IMAGE_MODEL overrides the studio's default text->image model (image.js picks the current-gen
@@ -8407,6 +8429,18 @@ async function runOnce(o) {
     // cabinet:write / notebook:write (jail-scoped) — exec stays locked, non-jail tools unchanged. A read of the
     // live store each check keeps it honest (a toggle flip takes effect on the very next tool call, no restart).
     workshop: (call, tool) => workshopOf(agentId),
+    // UNATTENDED CREDENTIAL GRANT: every ${VAR} this call references must name a service key the Commander
+    // approved for unattended use. Read live from the store, so revoking the toggle takes effect on the very
+    // next tool call. The tool re-checks independently at send time — this tier only decides consent.
+    credentialed: (call) => {
+      try {
+        const hs = (call && call.args && call.args.headers) || {};
+        const refs = [];
+        for (const k of Object.keys(hs)) String(hs[k]).replace(/\$\{([A-Z][A-Z0-9_]*)\}/g, (m, n) => { refs.push(n); return m; });
+        if (!refs.length) return false;   // references no credential -> nothing was pre-approved; ask/deny as usual
+        return refs.every(n => serviceKeysMod.resolveForRequest(serviceKeys, n, 'autonomous').ok);
+      } catch (_) { return false; }
+    },
     surface: surface, prompt: prompt
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)

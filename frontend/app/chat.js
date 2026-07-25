@@ -4890,7 +4890,7 @@ const Chat = (() => {
   function toolRows() {
     return [
       { cap: null, label: 'compute', tools: 'model.chat' },
-      { cap: 'dish', label: 'web', tools: 'web_search, web_fetch' },
+      { cap: 'dish', label: 'web', tools: 'web_search, web_fetch, web_request' },
       { cap: 'cabinet', label: 'files', tools: 'fs.read, fs.list, fs.write/edit' },
       { cap: 'notebook', label: 'memory', tools: 'notebook.read, notebook.write' },
       { cap: 'workbench', label: 'terminal', tools: 'shell.exec, verify.run' },

@@ -96,6 +96,7 @@ scripts/lint-evidence-secrets.mjs
 test/environment.test.js
 test/servicekeys.test.js
 test/servicekeys.env.test.js
+test/web-request.test.js
 test/tools.test.js
 test/capgate.test.js
 test/capdrift.test.js

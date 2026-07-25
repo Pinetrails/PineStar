@@ -94,6 +94,7 @@
       envVar: String(r.envVar || ''),
       docsUrl: String(r.docsUrl || ''),
       enabled: r.enabled !== false,
+      autonomous: r.autonomous === true,   // shown so the panel can state the unattended grant honestly
       addedAt: (typeof r.addedAt === 'number') ? r.addedAt : 0,
       last4: mask(r.key)
     };
@@ -133,6 +134,11 @@
       id: id, name: name, envVar: envVar, key: key,
       docsUrl: input.docsUrl ? String(input.docsUrl).trim() : (prev ? String(prev.docsUrl || '') : ''),
       enabled: prev ? (prev.enabled !== false) : true,
+      // UNATTENDED GRANT — default OFF, and never inferred. `enabled` means "an agent may spend this key
+      // while you are watching"; `autonomous` additionally means "...and while you are not". A scheduled,
+      // Night-Shift, or messaged run can only spend a key carrying this flag, so adding a key never
+      // silently widens what happens overnight. Preserved across edits; only setAutonomous flips it.
+      autonomous: prev ? (prev.autonomous === true) : false,
       addedAt: prev ? (prev.addedAt || 0) : (typeof now === 'number' ? now : 0)
     };
     return { list: src.filter(r => r.id !== id).concat([record]), record: record };
@@ -144,6 +150,32 @@
     if (!prev) return { error: 'no such service key' };
     const record = Object.assign({}, prev, { enabled: !!enabled });
     return { list: src.map(r => (r.id === prev.id ? record : r)), record: record };
+  }
+
+  // Flip the unattended grant. Turning a key OFF entirely also revokes it for unattended use implicitly
+  // (resolveForRequest requires enabled AND autonomous), so there is no "granted but disabled" hole.
+  function setAutonomous(list, id, autonomous) {
+    const src = cleanList(list);
+    const prev = src.find(r => r.id === String(id || ''));
+    if (!prev) return { error: 'no such service key' };
+    const record = Object.assign({}, prev, { autonomous: !!autonomous });
+    return { list: src.map(r => (r.id === prev.id ? record : r)), record: record };
+  }
+
+  /* Resolve a `${ENV_VAR}` placeholder for an outbound request. Returns a discriminated result rather
+     than throwing, so the caller can turn each refusal into an actionable tool error:
+       { ok:true, value }                      — spend it
+       { ok:false, reason:'unknown' }          — no such key (or it is disabled)
+       { ok:false, reason:'unattended', name } — real key, but not granted for unattended runs
+     `surface` is the RUN's surface, not the user's intent: an autonomous run can never talk itself
+     into a grant, because the flag lives on the stored record and nothing in the run can write it. */
+  function resolveForRequest(list, envVar, surface) {
+    const want = String(envVar || '').trim();
+    if (!want) return { ok: false, reason: 'unknown' };
+    const row = cleanList(list).find(r => r.envVar === want && r.enabled !== false && r.key);
+    if (!row) return { ok: false, reason: 'unknown' };
+    if (surface !== 'interactive' && row.autonomous !== true) return { ok: false, reason: 'unattended', name: row.name };
+    return { ok: true, value: String(row.key), name: row.name };
   }
 
   function remove(list, id) {
@@ -221,5 +253,5 @@
       + '\n</service_keys>';
   }
 
-  return { NAME_MAX, KEY_MAX, LIST_MAX, slug, deriveEnvVar, validate, mask, toPublic, upsert, setEnabled, remove, applyEnv, runEnv, promptBlock };
+  return { NAME_MAX, KEY_MAX, LIST_MAX, slug, deriveEnvVar, validate, mask, toPublic, upsert, setEnabled, setAutonomous, remove, applyEnv, runEnv, resolveForRequest, promptBlock };
 });

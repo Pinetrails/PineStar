@@ -585,7 +585,15 @@
           '<span class="set-row mc-enable"><input type="checkbox" data-ky-act="toggle"' + (k.enabled ? ' checked' : '') + ' aria-label="Enable key ' + esc(k.name) + '"></span>' +
           '<b>' + esc(k.name) + '</b> <span class="dim">' + esc(k.last4) + '</span>' +
           '<span class="mc-state" style="color:' + (k.enabled ? 'var(--ok)' : 'var(--ph-dim)') + '">' + (k.enabled ? '● live for agents' : '○ off') + '</span></div>' +
-        '<div class="mc-url dim">shell env var <code>' + esc(k.envVar) + '</code>' + docs + '</div>' +
+        '<div class="mc-url dim">env var <code>' + esc(k.envVar) + '</code>' + docs + '</div>' +
+        // THE UNATTENDED GRANT, stated plainly. `enabled` = an agent may spend this while you watch;
+        // this second switch = ...and while you don't (cron, Night Shift, a Telegram message). Default OFF
+        // and never inferred, so pasting a key can't silently change what happens overnight.
+        '<div class="set-row ky-auto"><input type="checkbox" data-ky-act="autonomy"' + (k.autonomous ? ' checked' : '') +
+          (k.enabled ? '' : ' disabled') + ' aria-label="Allow unattended use of ' + esc(k.name) + '">' +
+          '<span class="dim">' + (k.autonomous
+            ? 'usable in scheduled &amp; messaged runs'
+            : 'watched sessions only — tick to allow scheduled &amp; messaged runs') + '</span></div>' +
         '<div class="mc-acts"><button class="bb xs danger" data-ky-act="remove">✕ REMOVE</button></div>' +
       '</div>';
     }
@@ -630,11 +638,14 @@
       }
     });
     kyListEl.addEventListener('change', async ev => {
-      const cb = ev.target.closest('input[data-ky-act="toggle"]'); if (!cb) return;
+      const cb = ev.target.closest('input[data-ky-act="toggle"], input[data-ky-act="autonomy"]'); if (!cb) return;
       const rowEl = ev.target.closest('.mc-row'); const id = rowEl && rowEl.dataset.id; if (!id) return;
+      const isAutonomy = cb.dataset.kyAct === 'autonomy';
       cb.disabled = true;
       try {
-        const j = await (await postJSON('/api/servicekeys/toggle', { id, enabled: cb.checked })).json().catch(() => ({}));
+        const j = isAutonomy
+          ? await (await postJSON('/api/servicekeys/autonomy', { id, autonomous: cb.checked })).json().catch(() => ({}))
+          : await (await postJSON('/api/servicekeys/toggle', { id, enabled: cb.checked })).json().catch(() => ({}));
         if (j.error && !j.ok) { cb.checked = !cb.checked; sfx('bad'); notify('✕ ' + j.error); }
         else sfx('tick');
       } catch (_) { cb.checked = !cb.checked; sfx('bad'); }
