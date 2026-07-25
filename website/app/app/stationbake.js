@@ -136,6 +136,31 @@ const StationBake = (() => {
       fn(py, ex, ox, ox + r, A);
     }
   }
+  /* THE COLUMN DUAL of eachCornerRow, for a TOP corner carrying a tall wall. For each integer
+     column it hands back where the eased wall face tops out, its floor contact, the cap thickness
+     there and the 0→1 position along the arc (0 = the side end, where the wall has receded to
+     nothing). Same circle, same centre-sample-and-round convention as the row walk.
+
+     THE CROWN PAINTER AND THE AMBIENT MASK BOTH DERIVE FROM THIS ONE WALK. That is the point: the
+     mask's upper edge is defined as "wherever this says the art tops out", so it cannot drift above
+     the painted pixels. It used to be a separately-computed square strip, and at a chamfer — where
+     the face eases away but the strip did not — it left ambient mask lying over bare space, which
+     reads as a shadow floating OUTSIDE the hull against the starfield. */
+  function eachTallCornerCol(kind, ax, ay, rad, up, capH, fn) {
+    const A = CORNER[kind];
+    const R = Math.round(rad);
+    const x0 = Math.round(A.cx ? ax - R : ax);
+    for (let ix = x0; ix < x0 + R; ix++) {
+      const adx = Math.abs(ix + 0.5 - ax);
+      if (adx >= R) continue;
+      const base = Math.round(ay - Math.sqrt(R * R - adx * adx));     // upper quadrant (tl/tr)
+      const tt = Math.max(0, Math.min(1, 1 - adx / R));
+      const top = Math.round(base - Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * up);
+      const capAt = Math.max(1, Math.round(capH * (0.30 + 0.70 * tt)));
+      fn(ix, top, base, capAt, tt);
+    }
+  }
+
   /* cut the hull's rounded corner. Was a clip('evenodd') + fill, which anti-aliased the station's
      whole silhouette — the soft outer fuzz that survived the interior-curve fix. */
   function eraseSpandrel(g, kind, ax, ay, rad) {
@@ -1331,6 +1356,31 @@ const StationBake = (() => {
       if (u > pad) mg.fillRect(r.x1 * T, r.y1 * T - u, RW, u);
     }
     for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(mg, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T + pad); }
+    /* ...and above a TOP corner the raised strip has to follow the wall's EASED top instead of
+       staying square. eraseSpandrel above only cuts the corner out of the FOOTPRINT plate; the
+       wall-height strip kept its square corner while the face it stands for eases to nothing around
+       the chamfer, so ambient mask was left lying over bare space — a shadow hanging outside the
+       hull, invisible against pure black but plain against the SpaceBG starfield. Same law as the
+       straight wall top (the mask must never cover pixels the art doesn't paint), and the reach is
+       taken from eachTallCornerCol, the very walk the crown is painted from, so the two cannot
+       disagree. Erase only ABOVE the art: the crown itself belongs under the ambient like the rest
+       of the interior. */
+    if (WALL.up > 0) {
+      const upC = Math.round(WALL.up);
+      mg.save();
+      mg.globalCompositeOperation = 'destination-out';
+      mg.fillStyle = '#000';
+      for (const [ccx, ccy, kind] of G.chamfers) {
+        if (kind !== 'tl' && kind !== 'tr') continue;
+        const A = CORNER[kind];
+        const stripTop = ccy * T - (upC + capH + 2);
+        eachTallCornerCol(kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T, upC, capH, (ix, top, base, capAt) => {
+          const artTop = top - capAt;
+          if (artTop > stripTop) mg.fillRect(ix, stripTop, 1, artTop - stripTop);
+        });
+      }
+      mg.restore();
+    }
     L.globalAlpha = LIGHT.ambient;
     L.drawImage(mask, VX, VY);
     L.globalAlpha = 1;
@@ -1526,16 +1576,8 @@ const StationBake = (() => {
            subtly different pixel staircase from the face band it is supposed to sit on — a 1px
            mismatch that wandered around the arc. Deriving both from one circle is what makes the
            crown, the face and the deck cut land on a single edge. */
-        const cols = new Map();   // ix -> { top, base }  (top = lowest y the FACE top reaches; base = floor contact)
-        const x0 = Math.round(A.cx ? ax - R : ax);
-        for (let ix = x0; ix < x0 + R; ix++) {
-          const adx = Math.abs(ix + 0.5 - ax);
-          if (adx >= R) continue;
-          const base = Math.round(ay - Math.sqrt(R * R - adx * adx));   // upper quadrant (tl/tr)
-          const tt = Math.max(0, Math.min(1, 1 - adx / R));             // 0 at the side end → 1 at the north end
-          const k = Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * up;
-          cols.set(ix, { top: Math.round(base - k), base, tt });
-        }
+        // the column walk now lives in eachTallCornerCol, because buildLightMap has to agree with it
+        // to the pixel — see the note there.
         /* THE CROWN MUST TAPER WITH THE WALL IT CROWNS (2026-07-25, Andrew: "the thick diagonal
            lines"). The face height eases to zero around the chamfer — but the crown used to keep
            its full capH AND its +0.30 lit top edge the whole way, so a wall that had receded to
@@ -1545,15 +1587,14 @@ const StationBake = (() => {
            mark that is correct on the straight is wrong where the geometry turns.
            Now the cap thins 3→1px and dims as it recedes, and the lit top edge fades out with it,
            so the corner reads as the wall going away from you. Straight walls are untouched. */
-        for (const [ix, c] of cols) {
-          const faceH = c.base - c.top; if (faceH <= 0) continue;
-          b.fillStyle = cPal.face; b.fillRect(ix, c.top, 1, faceH + 1);            // face column, integer
-          const capAt = Math.max(1, Math.round(capH * (0.30 + 0.70 * c.tt)));
-          const cap = U.shade(cPal.cap, -0.22 * (1 - c.tt));
-          b.fillStyle = cap; b.fillRect(ix, c.top - capAt, 1, capAt);
-          if (capAt >= capH) { b.fillStyle = U.shade(cap, 0.30); b.fillRect(ix, c.top - capAt, 1, 1); }  // lit edge only at full thickness
-          b.fillStyle = U.shade(cPal.cap, -0.45); b.fillRect(ix, c.top - 1, 1, 1);   // 1px darker seam beneath crown
-        }
+        eachTallCornerCol(kind, ax, ay, R, up, capH, (ix, top, base, capAt, tt) => {
+          const faceH = base - top; if (faceH <= 0) return;
+          b.fillStyle = cPal.face; b.fillRect(ix, top, 1, faceH + 1);              // face column, integer
+          const cap = U.shade(cPal.cap, -0.22 * (1 - tt));
+          b.fillStyle = cap; b.fillRect(ix, top - capAt, 1, capAt);
+          if (capAt >= capH) { b.fillStyle = U.shade(cap, 0.30); b.fillRect(ix, top - capAt, 1, 1); }  // lit edge only at full thickness
+          b.fillStyle = U.shade(cPal.cap, -0.45); b.fillRect(ix, top - 1, 1, 1);     // 1px darker seam beneath crown
+        });
       }
     }
 
