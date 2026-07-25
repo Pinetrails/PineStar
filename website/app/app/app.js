@@ -306,26 +306,41 @@ const App = (() => {
     return p;
   }
   // the dossier calls this when the Commander edits & saves a config file: fold the patch into the
-  // docs, recompose the live system prompt, hand it to the running chat, and persist.
-  function applyAgentConfig(patch) {
+  // docs, recompose that agent's system prompt, hand it to the running chat when it is the focused one, and persist.
+  // TARGETED (2026-07-25 config-erase fix): agentId names WHICH crew member is being re-specced. It used to be
+  // absent, so the dossier's four .md editors — alone among the per-agent controls, every one of which already
+  // passes an id (setAgentModelPin/setAgentPersona/setAgentApproval/setAgentWorkshop/setAgentName/setAgentSkin) —
+  // always wrote to the FOCUSED agent instead. Editing a specialist's context.md therefore landed on whoever COMMS
+  // was on, the dossier repainted from the agent actually on screen (still empty → "0 chars", the reported erase),
+  // and the focused agent's own doc was silently overwritten. OPTIONAL + defaulting to the focused agent, so every
+  // existing caller (the awakening's commit, deploySpecialty, the marketplace recruit path, App.applyConfig from
+  // the slash suite) keeps its exact prior behaviour.
+  function applyAgentConfig(patch, agentId) {
     if (!agent) return;
-    const d = agentDocs(agent);
+    const a = agents.get(String(agentId || '')) || agent;
+    // LIVE side effects (the running chat's system prompt, the spoken voice, the connected Telegram bot, the HUD
+    // model readout, the harness transport) belong to the FOCUSED agent only — re-speccing a bystander must not
+    // retarget the session the Commander is talking in. Mirrors setAgentPersona / setAgentModelPin exactly.
+    const focused = (a.id === agent.id);
+    const d = agentDocs(a);
     if (patch && typeof patch === 'object') {
       if (typeof patch.identity === 'string') d.identity = patch.identity;
-      if (typeof patch.purpose === 'string') { d.purpose = patch.purpose; agent.purpose = patch.purpose.trim(); }
+      if (typeof patch.purpose === 'string') { d.purpose = patch.purpose; a.purpose = patch.purpose.trim(); }
       if (typeof patch.manual === 'string') d.manual = patch.manual;
       if (typeof patch.context === 'string') d.context = patch.context;
       if (typeof patch.model === 'string' && patch.model.trim()) {
-        agent.model = patch.model.trim();
-        if (typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(agent.model);
-        const gtM = el('gt-model'); if (gtM) gtM.textContent = agent.model;
+        a.model = patch.model.trim();
+        if (focused) {
+          if (typeof Harness !== 'undefined' && Harness.setModel) Harness.setModel(a.model);
+          const gtM = el('gt-model'); if (gtM) gtM.textContent = a.model;
+        }
       }
       if (typeof patch.personaId === 'string' && typeof Personas !== 'undefined' && Personas.exists(patch.personaId)) {
-        agent.personaId = Personas.resolve ? Personas.resolve(patch.personaId) : patch.personaId;
-        if (typeof Voice !== 'undefined' && Voice.init) Voice.init({ name: agent.name, personaId: agent.personaId, resumeCue: false });
+        a.personaId = Personas.resolve ? Personas.resolve(patch.personaId) : patch.personaId;
+        if (focused && typeof Voice !== 'undefined' && Voice.init) Voice.init({ name: a.name, personaId: a.personaId, resumeCue: false });
       }
       if (typeof patch.approvalMode === 'string') {
-        agent.approvalMode = patch.approvalMode === 'full' ? 'full' : 'ask';
+        a.approvalMode = patch.approvalMode === 'full' ? 'full' : 'ask';
       }
       // REASONING EFFORT: a real per-provider dial (Harness scopes it by provider and every run payload carries
       // it). Mirrors what the model dock does when it sets model+provider+effort together — the harness store is
@@ -333,19 +348,19 @@ const App = (() => {
       if (typeof patch.reasoningEffort === 'string' && patch.reasoningEffort.trim()) {
         const eff = (typeof Harness !== 'undefined' && Harness.normalizeReasoningEffort)
           ? Harness.normalizeReasoningEffort(patch.reasoningEffort) : patch.reasoningEffort.trim();
-        if (typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(eff);
-        agent.reasoningEffort = eff;
-        const storedAgent = agents.get(agent.id); if (storedAgent) storedAgent.reasoningEffort = eff;
+        if (focused && typeof Harness !== 'undefined' && Harness.setReasoningEffort) Harness.setReasoningEffort(eff);
+        a.reasoningEffort = eff;
+        const storedAgent = agents.get(a.id); if (storedAgent) storedAgent.reasoningEffort = eff;
       }
       // Away-workshop grant (W3): a plain per-agent consent flag. NOT a system-prompt field — it only
       // changes what an autonomous run is allowed to WRITE inside its own jail. Reaches the sidecar via
       // pushRoster (below) so the consent broker can honor it; the backend lane (W1) reads it there.
-      if (typeof patch.workshop === 'boolean') agent.workshop = patch.workshop;
+      if (typeof patch.workshop === 'boolean') a.workshop = patch.workshop;
     }
     if (typeof DossierStore !== 'undefined') DossierStore.syncDocs(d);   // seed the dossier from any newly-authored onboarding doc (first-seed-wins per doc) BEFORE the recompose
-    agent.systemPrompt = composeSystemPrompt(agent);
-    if (typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(agent.systemPrompt);
-    syncChannels();   // keep a connected Telegram bot on the SAME (updated) identity — no reconnect needed
+    a.systemPrompt = composeSystemPrompt(a);
+    if (focused && typeof Chat !== 'undefined' && Chat.setSystem) Chat.setSystem(a.systemPrompt);
+    if (focused) syncChannels();   // keep a connected Telegram bot on the SAME (updated) identity — no reconnect needed
     pushRoster();     // a re-specced agent's new identity must reach the sidecar roster (for delegation)
     persist();
   }
