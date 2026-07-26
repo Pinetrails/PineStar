@@ -124,6 +124,11 @@ const WorldModel = (() => {
     oak:      { base: '#46372a', label: 'OAK' },
     ash:      { base: '#3a3630', label: 'ASH' },
     fern:     { base: '#2a3f24', label: 'FERN' },
+    // MEADOW — fern's warm twin, added for TURF (2026-07-25). Real grass is olive: red and green
+    // close together with blue well under both. FERN is a blue-leaning green, and because vivid()
+    // drives the DOMINANT channel hardest, its lifts run toward pure green rather than the
+    // yellow-green of a lawn. Raising red and dropping blue is what buys the olive.
+    meadow:   { base: '#374024', label: 'MEADOW' },
     // value poles — the bright + near-black ends of the range (stark, deliberate)
     bone:     { base: '#e7e3d9', label: 'BONE' },
     onyx:     { base: '#0e0e12', label: 'ONYX' },
@@ -149,7 +154,7 @@ const WorldModel = (() => {
     grate: { label: 'GRATE',  pitch: [1, 1], suggest: 'onyx' },
     hex:   { label: 'HEX',    pitch: [1, 1], suggest: 'sterile' },
     plank: { label: 'PLANK',  pitch: [5, 1], suggest: 'walnut' },
-    turf:  { label: 'TURF',   pitch: [1, 1], suggest: 'fern' },
+    turf:  { label: 'TURF',   pitch: [1, 1], suggest: 'meadow' },
   };
   const MAT_ORDER = ['spine', 'plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
 

@@ -420,43 +420,66 @@ const StationBake = (() => {
     const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
     const sh = d => U.shade(base, d * fd);
     const clump = h2(x >> 1, y >> 1, z + ':cl');                 // 2×2-tile patches read denser/sparser
-    const cl = ((clump % 5) - 2) * 0.022;
-    /* v2 (2026-07-25). The first pass was a flat green field with ~22 sparse 1px specks scattered on
-       it, which read as salt-and-pepper noise over paint rather than as grass. Three things fix it:
-         UNDERSTORY — the base goes DARKER than every blade, so blades read as lit tips against
-           shadow instead of light dots sitting on top of a green fill;
-         DENSITY — a jittered 2×2 lattice of short vertical blade ticks covering most of the tile,
-           rather than a handful of specks leaving big flat areas;
-         SPREAD — a wider tone range, so neighbouring blades actually separate from each other.
-       Still no lattice in the finished read: the ticks are jittered off their sample points and the
-       clump term varies density at the 2-tile scale, so a large lawn never tiles visibly. */
-    /* A WIDE ramp that stays GREEN all the way up, because every lift goes through vivid() instead
-       of U.shade. Capping the lifts (the previous attempt) only made the lawn duller — the problem
-       was never the amount of lift, it was that U.shade lifts toward white, so the brightest blades
-       were the greyest pixels on the deck. Five steps shadow→bright so tufts separate at a glance. */
-    px(X, Y, T, T, U.shade(base, (cl - 0.16) * fd));             // understory: shadow between blades
-    /* The range is TIGHT on purpose. A very dark understory under bright blades reads as confetti,
-       not turf — grass in the reference is a cohesive mid-green field with blades a step or two off
-       it, not maximum contrast per pixel. Saturation does the work here, not value spread. */
-    const RAMP = [
-      U.shade(base, (cl - 0.08) * fd), vivid(base, (cl + 0.06) * fd),
-      vivid(base, (cl + 0.20) * fd), vivid(base, (cl + 0.34) * fd), vivid(base, (cl + 0.46) * fd)
-    ];
-    const TIP = vivid(base, (cl + 0.58) * fd);
+    const cl = ((clump % 5) - 2) * 0.018;
+    /* v3 (2026-07-25, matched against a real grass reference). v2 gave every blade an INDEPENDENT
+       random tone off a 5-step ramp, and that is the whole reason it read as static rather than as
+       grass: with no correlation between neighbours, no pixel belongs to the pixel beside it, so the
+       eye finds noise where it wants tufts. Real grass is CLUMPED — a patch of blades catches the
+       light together, and the gaps between patches fall into shadow together.
+       So tone is no longer random per blade. It comes from a two-octave value FIELD sampled on
+       ABSOLUTE bake-pixel coords: a coarse octave (~8px) that mottles the lawn at tuft scale, and a
+       mid octave (~3px) that breaks each tuft into strands. Neighbouring pixels sample almost the
+       same field value, so they share a tone and read as one clump — and because the field is keyed
+       on absolute coords rather than position-in-tile, tufts continue straight across tile borders
+       and chunk↔monolithic parity still holds. */
+    /* SHEARED cells. Sampling the field on plain axis-aligned blocks made the lawn a quilt of
+       squares — the clumps were the right size but the wrong SHAPE, because every cell boundary
+       lined up with its neighbours in both axes. Offsetting x by a function of y staggers the
+       boundaries so clump edges break up and stop reading as a grid. */
+    const oct = (ax, ay, size, salt) => {                        // -1..1, constant within a sheared cell
+      const sx = ax + Math.floor(ay / size) * ((size >> 1) + 1);
+      const r = hp(Math.floor(sx / size) * size, Math.floor(ay / size) * size, salt);
+      return ((r % 7) - 3) / 3;
+    };
+    /* Every lift goes through vivid(), never U.shade — U.shade lerps toward WHITE, so the brightest
+       blades come out the greyest pixels on the deck ("the grass is too white"). The value range is
+       deliberately TIGHT: a dark understory under bright blades reads as confetti. Saturation does
+       the separating, not value. */
+    /* AMPLITUDE IS LOW ON PURPOSE (±0.13, not ±0.20). At the wider spread the lawn read as
+       camouflage blotches: the clumps were legible but they no longer belonged to one surface. The
+       reference is a cohesive mid-olive field whose tufts are a STEP off each other, and a mid-tone
+       has to dominate for the whole thing to read as one lawn. */
+    px(X, Y, T, T, vivid(base, (cl + 0.06) * fd));               // the MAT — a cohesive field, not a void
     for (let cy = 0; cy < T; cy += 2) for (let cx = 0; cx < T; cx += 2) {
-      const r = hp(X + cx, Y + cy, 7);
+      const ax = X + cx, ay = Y + cy;
+      const v = 0.56 * oct(ax, ay, 6, 'g1') + 0.44 * oct(ax, ay, 2, 'g2');   // 6px tufts, 2px strands
+      const tone = cl + 0.10 + 0.13 * v;
+      px(ax, ay, 2, 2, vivid(base, tone * fd));                  // tuft body: 2×2 so a clump has area
+      const r = hp(ax, ay, 7);
+      // strands ON the tuft, one step off ITS OWN tone (not off a global ramp) so a blade always
+      // belongs to the clump it sits in. Mixed orientation — grass is matted, not a picket fence.
       const bx = cx + (r & 1), by = cy + ((r >>> 2) & 1);
-      if (by >= T) continue;
-      const hgt = Math.min(2 + ((r >>> 5) % 2), T - by);
-      px(X + bx, Y + by, 1, hgt, RAMP[(r >>> 9) % 5]);
-      if (((r >>> 14) % 3) === 0) px(X + bx, Y + by, 1, 1, TIP);   // lit tip — what makes a blade a blade
+      if (by < T && (r >>> 4) % 7 !== 0) {                       // denser than v2: strands are the texture
+        const lit = vivid(base, (tone + 0.10) * fd);
+        if (((r >>> 7) & 3) === 0) px(X + bx, Y + by, Math.min(2, T - bx), 1, lit);  // lying flat
+        else px(X + bx, Y + by, 1, Math.min(2 + ((r >>> 9) & 1), T - by), lit);      // standing
+      }
+      if (v < -0.62) px(X + bx, Y + by, 1, 1, vivid(base, (cl - 0.09) * fd));   // shadow deep in a gap
     }
     for (let i = 0; i < 2; i++) {                                // taller blades breaking the canopy
       const r = hp(X, Y, 90 + i);
       const by = (r >>> 6) % (T - 3);
-      px(X + (r % T), Y + by, 1, 4, vivid(base, (cl + 0.50) * fd));
+      px(X + (r % T), Y + by, 1, 4, vivid(base, (cl + 0.26) * fd));
     }
-    if ((clump % 7) === 0) { const r = hp(X, Y, 99); px(X + (r % T), Y + ((r >>> 6) % T), 1, 1, vivid(base, (cl + 0.70) * fd)); }   // seed head
+    /* DRY BLADES — the one legitimate U.shade LIFT on this deck. The law is "never use U.shade to
+       lighten anything that must keep its hue", and a dead blade is precisely the thing that must
+       LOSE its hue: bleached straw is desaturated and lighter, which is exactly the direction
+       U.shade travels. Sparse — a couple of flecks per few tiles, or the lawn reads as dying. */
+    if ((clump % 3) === 0) {
+      const r = hp(X, Y, 71);
+      px(X + (r % T), Y + ((r >>> 6) % T), 1, 1 + ((r >>> 12) & 1), U.shade(base, (0.30 + cl) * fd));
+    }
+    if ((clump % 7) === 0) { const r = hp(X, Y, 99); px(X + (r % T), Y + ((r >>> 6) % T), 1, 1, vivid(base, (cl + 0.48) * fd)); }   // seed head
   }
 
   /* ---------- SPINE · the deck that replaces `plate` as the hab default (2026-07-25) ----------
