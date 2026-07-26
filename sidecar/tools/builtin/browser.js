@@ -70,12 +70,14 @@
   // a CDP click. On Windows that path calls ClipCursor and moves the REAL cursor. Install this
   // bootstrap before every navigation so game code observes a faithful logical lock while the
   // browser never reaches native pointer/keyboard lock. CDP Input.* remains fully synthetic.
-  const SYNTHETIC_INPUT_BOOTSTRAP = String.raw`(() => {
+  const SYNTHETIC_INPUT_TEMPLATE = String.raw`(() => {
     if (globalThis.__STARNET_SYNTHETIC_INPUT__) return;
+    const ALLOW_POPUPS = __STARNET_ALLOW_POPUPS__;
     const state = { pointer: null, fullscreen: null, keyboard: false, ready: false, popupBlocked: false, error: null };
     let request = null, exit = null, fullscreenRequest = null, fullscreenExit = null, blockedOpen = null, keyboardLock = null, keyboardUnlock = null, wakeRequest = null, orientationLock = null, orientationUnlock = null;
     const attestation = {};
     Object.defineProperties(attestation, {
+      allowPopups: { get: () => ALLOW_POPUPS },
       pointer: { get: () => state.pointer },
       fullscreen: { get: () => state.fullscreen },
       ready: { get: () => state.ready },
@@ -140,11 +142,17 @@
         Object.defineProperty(screen.orientation, 'lock', { configurable: false, writable: false, value: orientationLock });
         Object.defineProperty(screen.orientation, 'unlock', { configurable: false, writable: false, value: orientationUnlock });
       }
-      // A popup is a new CDP target and would not inherit a target-scoped preload. Local test
-      // sessions do not need new browsing contexts, so block them before any synthetic click
-      // can carry a user-activation token into an unshimmed page.
-      blockedOpen = function () { return null; };
-      Object.defineProperty(globalThis, 'open', { configurable: false, writable: false, value: blockedOpen });
+      /* A popup is a new CDP target and does NOT inherit a target-scoped preload, so it could run
+         unshimmed script and reach native pointer/keyboard locks. There are exactly two safe answers:
+         (a) block it here, or (b) pause every new page target before its first statement, inject the
+         same shim, and only then resume it. (b) is strictly better - it keeps _blank checkouts, SSO
+         popups and PDFs reachable - but it depends on browser-level auto-attach being armed, which is
+         a DRIVER fact this page cannot verify. So the driver decides and bakes the answer in here;
+         when it could not arm adoption it passes false and we fall back to blocking. Fail closed. */
+      if (!ALLOW_POPUPS) {
+        blockedOpen = function () { return null; };
+        Object.defineProperty(globalThis, 'open', { configurable: false, writable: false, value: blockedOpen });
+      }
       const escapesTarget = (el, override) => {
         const base=document.querySelector&&document.querySelector('base[target]');
         const t=String(override||el&&el.target||base&&base.target||'').trim().toLowerCase();
@@ -166,14 +174,17 @@
           return nativeSubmit.call(this);
         }});
       }
-      state.popupBlocked = globalThis.open === blockedOpen;
+      // When popups are ADOPTED the block is deliberately absent, so it cannot gate readiness.
+      // The guarantee moved to the driver: no page target resumes before it is shimmed.
+      state.popupBlocked = ALLOW_POPUPS ? false : (globalThis.open === blockedOpen);
+      const popupOk = ALLOW_POPUPS || state.popupBlocked;
       const aliasesReady = ['webkitRequestPointerLock','mozRequestPointerLock'].every(n => !(n in Element.prototype) || Element.prototype[n] === request)
         && ['webkitExitPointerLock','mozExitPointerLock'].every(n => !(n in Document.prototype) || Document.prototype[n] === exit);
       const keyboardReady = !navigator.keyboard || (navigator.keyboard.lock === keyboardLock && navigator.keyboard.unlock === keyboardUnlock);
       const fullscreenReady = Element.prototype.requestFullscreen === fullscreenRequest && Document.prototype.exitFullscreen === fullscreenExit;
       const wakeReady = !navigator.wakeLock || navigator.wakeLock.request === wakeRequest;
       const orientationReady = !globalThis.screen || !screen.orientation || (screen.orientation.lock === orientationLock && screen.orientation.unlock === orientationUnlock);
-      state.ready = Element.prototype.requestPointerLock === request && Document.prototype.exitPointerLock === exit && aliasesReady && fullscreenReady && keyboardReady && wakeReady && orientationReady && state.popupBlocked;
+      state.ready = Element.prototype.requestPointerLock === request && Document.prototype.exitPointerLock === exit && aliasesReady && fullscreenReady && keyboardReady && wakeReady && orientationReady && popupOk;
       if (!state.ready) throw new Error('user-control override did not stick');
     } catch (e) {
       state.ready = false;
@@ -182,6 +193,14 @@
   })();`;
   // Environment-level headless selection. Production runOnce additionally passes forceHeadless,
   // so neither model arguments nor desktop-shell presence can create a window there.
+  /* The bootstrap above is a TEMPLATE: __STARNET_ALLOW_POPUPS__ is substituted per run. The exported
+     constant keeps the fail-closed (popups blocked) form, which is also what every rig that installs
+     the raw string gets. */
+  function syntheticInputSource(allowPopups) {
+    return SYNTHETIC_INPUT_TEMPLATE.replace('__STARNET_ALLOW_POPUPS__', allowPopups === true ? 'true' : 'false');
+  }
+  const SYNTHETIC_INPUT_BOOTSTRAP = syntheticInputSource(false);
+
   function headlessRequested(env) {
     env = env || process.env;
     return /^(1|true|yes|on)$/i.test(String(env.STARNET_BROWSER_HEADLESS || env.SKYNET_BROWSER_HEADLESS || ''));
@@ -461,6 +480,14 @@
        switching is never implicit. */
     const pageSessions = new Map();    // CDP sessionId -> targetId, for every adopted extra tab
     let activeSession = null;
+    /* POPUP ADOPTION. A popup is only safe to allow if EVERY new page target is paused before its
+       first statement and shimmed. That needs auto-attach on the BROWSER connection: measured,
+       Target.setAutoAttach sent on a PAGE session covers that page's own subordinate targets
+       (out-of-process iframes, workers) and NEVER fires for a popup, even when /json/list proves the
+       target exists. So we connect to the browser endpoint; if that fails we fall back to the page
+       endpoint with popups BLOCKED, which is the old behaviour. openerSession is the original tab -
+       under browser-level auto-attach every command is session-scoped, including tab 0's. */
+    let popupsAdopted = false, openerSession = null;
     async function connect() {
       if (cdp) return cdp;
       try { FS.mkdirSync(profileDir, { recursive: true }); } catch (_) {}
@@ -502,11 +529,23 @@
           // explicit port may never write it, which would strand the loop.) A successful /json/list
           // on our own private port is the readiness proof.
           const port = launchPort;
-          const r = await fetchImpl('http://127.0.0.1:' + port + '/json/list');
-          const targets = await r.json();
-          const page = targets.find(t => t && t.type === 'page');
-          if (page && page.webSocketDebuggerUrl) {
-            const ws = new WebSocketImpl(page.webSocketDebuggerUrl);
+          // The BROWSER endpoint is what makes popup adoption possible; /json/list is still the
+          // readiness proof and the fallback when a rig exposes no browser websocket.
+          let wsUrl = null, viaBrowser = false;
+          if (deps.adoptPopups !== false) {
+            try {
+              const v = await (await fetchImpl('http://127.0.0.1:' + port + '/json/version')).json();
+              if (v && v.webSocketDebuggerUrl) { wsUrl = v.webSocketDebuggerUrl; viaBrowser = true; }
+            } catch (_) { wsUrl = null; }
+          }
+          if (!wsUrl) {
+            const r = await fetchImpl('http://127.0.0.1:' + port + '/json/list');
+            const targets = await r.json();
+            const pg = targets.find(t => t && t.type === 'page');
+            wsUrl = pg && pg.webSocketDebuggerUrl;
+          }
+          if (wsUrl) {
+            const ws = new WebSocketImpl(wsUrl);
             await new Promise((resolve, reject) => {
               ws.addEventListener('open', resolve, { once: true });
               ws.addEventListener('error', reject, { once: true });
@@ -517,10 +556,27 @@
               // New page targets do not inherit a target-scoped preload. Pause every related
               // target before its scripts run and close popups; inject the same shim into any
               // out-of-process iframe before resuming it.
+              /* Auto-attach is armed on BOTH the browser connection (so popups are seen) and the page
+                 session (so out-of-process iframes are). A target can therefore be delivered TWICE,
+                 once per connection, and the duplicate session is paused like any other — leaving it
+                 unresumed wedges the parent renderer, which is the exact failure this driver already
+                 fixed once. Adopt the first session for a target; immediately resume any duplicate. */
+              const adoptedTargets = new Set();
               cdp.on('Target.attachedToTarget', p => {
                 const info = p.targetInfo || {}, sid = p.sessionId;
                 if (!sid) return;
+                if (info.targetId && adoptedTargets.has(info.targetId)) {
+                  Promise.resolve(cdp.send('Runtime.runIfWaitingForDebugger', {}, sid)).catch(() => {});
+                  return;
+                }
+                if (info.targetId) adoptedTargets.add(info.targetId);
                 if (info.type === 'page') {
+                  if (viaBrowser && openerSession === null) {
+                    // The original tab. Its setup is finished by connect() below, which needs to
+                    // await it; recording the session is all that happens here.
+                    openerSession = sid;
+                    return;
+                  }
                   /* ADOPT, don't kill. A target=_blank link or a popup used to be closed outright
                      (Target.closeTarget while still paused), so a checkout that opens in a new tab, a
                      PDF that opens beside the page, or an SSO popup was a dead end with no explanation.
@@ -537,20 +593,22 @@
                      the CDP timeout, and the catch would then close the very tab we set out to adopt.
                      It still takes effect; only the acknowledgement is deferred. Wire order is
                      preserved, so it is installed before the resume that triggers the navigation. */
-                  cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP }, sid).catch(() => {});
+                  /* RESUME IMMEDIATELY. A same-origin popup shares its OPENER's renderer process, so a
+                     popup left paused blocks the opener's Runtime.evaluate too - the identical wedge a
+                     paused out-of-process iframe caused, just reached from the other side. Measured law:
+                     Page.* does not acknowledge on a paused page target, so awaiting the preload here
+                     would stall until the CDP timeout and take the opener down with it.
+                     The websocket is ordered, so queueing the preloads before the resume is enough for
+                     them to apply to the document the popup is about to load - nothing needs awaiting.
+                     about:blank is deliberately not shimmed: it has no content to protect, and reaching
+                     for it is what made this path block. */
+                  cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: syntheticInputSource(popupsAdopted) }, sid).catch(() => {});
                   cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP }, sid).catch(() => {});
-                  Promise.resolve()
-                    // Runtime.evaluate DOES answer while a page target is paused, so it both shims the
-                    // current about:blank document and proves the session is live before we resume.
-                    .then(() => cdp.send('Runtime.evaluate', { expression: SYNTHETIC_INPUT_BOOTSTRAP, awaitPromise: true }, sid))
-                    .then(() => cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP }, sid))
-                    .then(() => { pageSessions.set(sid, info.targetId); })
-                    .then(() => cdp.send('Runtime.runIfWaitingForDebugger', {}, sid))
-                    .catch(() => {
-                      pageSessions.delete(sid);
-                      // cdp may already be null if the driver closed mid-adoption; nothing to close then.
-                      if (cdp && info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {});
-                    });
+                  pageSessions.set(sid, info.targetId);
+                  cdp.send('Runtime.runIfWaitingForDebugger', {}, sid).catch(() => {
+                    pageSessions.delete(sid);
+                    if (cdp && info.targetId) cdp.send('Target.closeTarget', { targetId: info.targetId }).catch(() => {});
+                  });
                   return;
                 }
                 if (info.type !== 'iframe') {
@@ -593,25 +651,43 @@
               if (activeSession === p.sessionId) activeSession = null;
             });
               await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true });
+              if (viaBrowser) {
+                // auto-attach on the browser connection also attaches the EXISTING tab; wait for it.
+                for (let w = 0; w < 100 && openerSession === null; w++) await sleep(20);
+                popupsAdopted = openerSession !== null;
+              }
             }
-            await cdp.send('Page.enable');
-            await cdp.send('Runtime.enable');
+            // Popups are only unblocked once adoption is proven armed. Anything else - no browser
+            // endpoint, isolation disabled, the opener never attaching - keeps the old block.
+            const shimSource = syntheticInputSource(popupsAdopted);
+            const S = openerSession || undefined;   // under browser-level attach, even tab 0 is a session
+            await cdp.send('Page.enable', {}, S);
+            await cdp.send('Runtime.enable', {}, S);
             if (deps.syntheticInputOnly !== false) {
               // Install for all future documents AND the current about:blank. A page click can
               // now satisfy its logical pointer-lock contract without touching Win32 ClipCursor.
-              await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SYNTHETIC_INPUT_BOOTSTRAP });
-              await cdp.send('Runtime.evaluate', { expression: SYNTHETIC_INPUT_BOOTSTRAP, awaitPromise: true });
+              await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: shimSource }, S);
+              await cdp.send('Runtime.evaluate', { expression: shimSource, awaitPromise: true }, S);
             }
             // The settle marker is measurement, not a security shim, so it installs UNCONDITIONALLY —
             // auto-wait must still work on a rig that disabled the synthetic-input isolation.
-            await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP });
-            await cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP });
-            await cdp.send('Network.enable');
-            await cdp.send('DOM.enable');   // getFrameOwner/getBoxModel, for placing iframe content in the top page
+            await cdp.send('Page.addScriptToEvaluateOnNewDocument', { source: SETTLE_BOOTSTRAP }, S);
+            await cdp.send('Runtime.evaluate', { expression: SETTLE_BOOTSTRAP }, S);
+            await cdp.send('Network.enable', {}, S);
+            await cdp.send('DOM.enable', {}, S);
+            // waitForDebuggerOnStart pauses EVERY page target, the original tab included. Its setup is
+            // done, so let it run - a tab left paused wedges the whole session.
+            if (openerSession && deps.syntheticInputOnly !== false) {
+              // Browser-level auto-attach covers TOP-LEVEL targets (that is what makes popups visible);
+              // out-of-process IFRAMES hang off the page, so the page session needs its own arming or
+              // cross-origin frames stop attaching entirely.
+              try { await cdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: true }, openerSession); } catch (_) {}
+            }
+            if (openerSession) { try { await cdp.send('Runtime.runIfWaitingForDebugger', {}, openerSession); } catch (_) {} }   // getFrameOwner/getBoxModel, for placing iframe content in the top page
             // Identify the top frame so a sub-frame's document response can never be mistaken for the
             // page's own status (an ad iframe 404 must not read as "the page 404'd").
             try {
-              const tree = await cdp.send('Page.getFrameTree');
+              const tree = await cdp.send('Page.getFrameTree', {}, S);
               mainFrameId = (tree && tree.frameTree && tree.frameTree.frame && tree.frameTree.frame.id) || null;
             } catch (_) { mainFrameId = null; }
             /* DOWNLOADS INTO THE JAIL. The Chrome profile lives in OS.tmpdir(), outside WORKSPACES, so
@@ -675,7 +751,7 @@
           __cdp: c,
           // NOTE the 4th arg: CdpClient.send takes a per-call timeout (navigation uses it). Dropping it
           // here would silently put navigation back on the 15s budget and re-open the stalled-session wedge.
-          send: (method, params, sessionId, timeoutMs) => c.send(method, params, sessionId !== undefined ? sessionId : (activeSession || undefined), timeoutMs),
+          send: (method, params, sessionId, timeoutMs) => c.send(method, params, sessionId !== undefined ? sessionId : (activeSession || openerSession || undefined), timeoutMs),
           on: (n, fn) => c.on(n, fn)
         };
       }
@@ -765,7 +841,7 @@
           const ku=navigator.keyboard&&Object.getOwnPropertyDescriptor(navigator.keyboard,'unlock');
            const pointerReady=!!(s&&rd&&ed&&rd.value===s.requestPointerLock&&ed.value===s.exitPointerLock&&rd.writable===false&&ed.writable===false&&rd.configurable===false&&ed.configurable===false);
            const fullscreenReady=!!(s&&fd&&fe&&fd.value===s.requestFullscreen&&fe.value===s.exitFullscreen&&fd.writable===false&&fe.writable===false&&fd.configurable===false&&fe.configurable===false);
-           const popupReady=!!(s&&od&&od.value===s.blockedOpen&&od.writable===false&&od.configurable===false);
+           const popupReady=(s&&s.allowPopups===true)?true:!!(s&&od&&od.value===s.blockedOpen&&od.writable===false&&od.configurable===false);
            const keyboardReady=!navigator.keyboard||!!(kd&&ku&&kd.value===s.keyboardLock&&ku.value===s.keyboardUnlock&&kd.writable===false&&ku.writable===false&&kd.configurable===false&&ku.configurable===false);
            const wakeReady=!navigator.wakeLock||navigator.wakeLock.request===s.wakeRequest;
            const orientationReady=!globalThis.screen||!screen.orientation||(screen.orientation.lock===s.orientationLock&&screen.orientation.unlock===s.orientationUnlock);
@@ -825,7 +901,7 @@
       // Out-of-process frames are tracked per driver, not per tab, so only merge them while the
       // ORIGINAL tab is active — attributing tab 0's frames to tab 2 would be exactly the
       // wrong-DOM failure this design exists to avoid.
-      for (const [sid, frameId] of (activeSession ? [] : frameSessions)) {
+      for (const [sid, frameId] of ((activeSession && activeSession !== openerSession) ? [] : frameSessions)) {
         if (out.length >= cap) break;
         frameNo++;
         const off = await frameOffset(c, frameId);
@@ -971,7 +1047,7 @@
     /* Tab 0 is always the ORIGINAL target (sessionId null); adopted tabs follow in the order they
        appeared. Switching is explicit and never implicit — a multi-target driver's worst failure is
        silently reading the wrong DOM, so nothing moves the agent between tabs on its own. */
-    function tabSessions() { return [null].concat(Array.from(pageSessions.keys())); }
+    function tabSessions() { return [openerSession].concat(Array.from(pageSessions.keys())); }
     async function tabs() {
       const c = await page();
       const out = [];
@@ -983,7 +1059,7 @@
           index: i,
           url: (info && info.url) || '(unknown)',
           title: (info && info.title) || '',
-          active: (activeSession || null) === sid
+          active: (activeSession || openerSession || null) === sid
         });
       }
       return out;
@@ -1005,7 +1081,7 @@
       const sid = sessions[i];
       const targetId = pageSessions.get(sid);
       pageSessions.delete(sid);
-      if (activeSession === sid) activeSession = null;   // never leave the driver on a dead session
+      if (activeSession === sid) activeSession = null;   // never leave the driver on a dead session   // never leave the driver on a dead session
       const c = await connect();
       if (targetId) { try { await c.send('Target.closeTarget', { targetId }); } catch (_) {} }
       return 'closed tab ' + i;
