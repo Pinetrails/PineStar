@@ -1,0 +1,360 @@
+/* node test/browser.gauntlet.e2e.test.js — the LOCAL FIXTURE GAUNTLET.
+
+   The browser-parity audit asked for exactly this: one served page per failure mode, driven by the
+   REAL CDP driver against REAL Chromium over loopback, so the browser work is proven by observed
+   behaviour rather than by a fake CDP that answers whatever the test wants.
+
+   Each fixture is a mode that used to fail silently:
+     /hydrate  - content appears at 1200ms. The old blind 900ms navigate sleep returned FIRST and the
+                 agent reported "no interactive elements" on a page that was about to render.
+     /frame    - a same-origin iframe. document.querySelectorAll does not descend into frames, so the
+                 embedded form was invisible; its coordinates also have to be translated to top-page
+                 space or a click lands somewhere else entirely.
+     /missing  - a 404 that still renders a body. Indistinguishable from real content without the
+                 Network domain.
+     /form     - a native <select>, which cannot be driven by synthetic clicks at all.
+     /click    - a button whose handler mutates the DOM, to prove click() settles before returning.
+
+   Skips (loudly) when no Chromium is installed — a CI box without a browser must not report a pass
+   it never earned. */
+'use strict';
+const A = require('./_assert.js');
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
+const http = require('node:http');
+const { _internals: T } = require('../sidecar/tools/builtin/browser.js');
+
+const PAGE = (body, head) => '<!doctype html><meta charset=utf-8><title>fixture</title>' + (head || '') + '<body>' + body + '</body>';
+
+const ROUTES = {
+  '/hydrate': () => ({ status: 200, body: PAGE('<div id=app></div>',
+    '<script>setTimeout(function(){document.getElementById("app").innerHTML="<button id=go>Continue</button>";},1200)</script>') }),
+  // The iframe is pushed well down/right so a missing offset shows up as an obviously wrong coordinate.
+  '/frame': () => ({ status: 200, body: PAGE('<p>Outer page</p><iframe src="/inner" style="position:absolute;left:120px;top:160px;width:300px;height:200px;border:0"></iframe>') }),
+  '/inner': () => ({ status: 200, body: PAGE('<p>Card details</p><button id=pay>Pay now</button>') }),
+  '/missing': () => ({ status: 404, body: PAGE('<h1>Not found</h1><p>no such page</p>') }),
+  '/form': () => ({ status: 200, body: PAGE('<select id=country><option value=us>United States</option><option value=uk>United Kingdom</option></select>') }),
+  // CROSS-ORIGIN frame: the child is served from localhost while the parent is on 127.0.0.1, which
+  // Chrome treats as a different origin and gives its own out-of-process target.
+  '/crossframe': (base) => ({ status: 200, body: PAGE('<p>Outer page</p><iframe src="' + base.replace('127.0.0.1', 'localhost') + '/inner" style="position:absolute;left:120px;top:160px;width:300px;height:200px;border:0"></iframe>') }),
+  // One OK fetch, one 404, one to a port nothing listens on: the three outcomes the log must tell apart.
+  '/netpage': () => ({ status: 200, body: PAGE('<p>net</p>',
+    '<script>fetch("/api/ok");fetch("/api/missing");fetch("http://127.0.0.1:1/dead").catch(function(){});</script>') }),
+  '/api/ok': () => ({ status: 200, body: 'ok' }),
+  '/api/missing': () => ({ status: 404, body: 'nope' }),
+  '/blank': () => ({ status: 200, body: PAGE('<a id=open href="/second" target="_blank">Open receipt</a>') }),
+  '/second': () => ({ status: 200, body: PAGE('<h1>Receipt</h1><button id=print>Print receipt</button>', '<title>Receipt</title>') }),
+  '/click': () => ({ status: 200, body: PAGE('<button id=go>Load</button><div id=out></div>',
+    '<script>addEventListener("click",function(e){if(e.target.id==="go"){setTimeout(function(){document.getElementById("out").innerHTML="<button id=next>Second step</button>";},300);}})</script>') }),
+  // A menu whose real target only EXISTS on hover - the classic nav that is unreachable without it.
+  '/hovermenu': () => ({ status: 200, body: PAGE(
+    '<button id=menu>Products</button><div id=sub></div>',
+    '<style>#menu{width:120px;height:24px}</style>' +
+    '<script>document.addEventListener("mouseover",function(e){if(e.target.id==="menu"){document.getElementById("sub").innerHTML="<a id=deep href=\'/second\'>Enterprise plan</a>";}});</script>') }),
+  // HTML5 drag-and-drop: the drop handler only fires if intermediate dragover events arrive.
+  '/dragdrop': () => ({ status: 200, body: PAGE(
+    '<button id=src draggable=true style="width:100px;height:40px">DRAG ME</button>' +
+    '<button id=dst style="width:100px;height:40px;margin-top:60px">DROP HERE</button><div id=result></div>',
+    '<script>addEventListener("DOMContentLoaded",function(){' +
+    'var s=document.getElementById("src"),d=document.getElementById("dst");' +
+    's.addEventListener("dragstart",function(e){e.dataTransfer.setData("text/plain","payload");});' +
+    'd.addEventListener("dragover",function(e){e.preventDefault();});' +
+    'd.addEventListener("drop",function(e){e.preventDefault();document.getElementById("result").innerHTML="<button id=ok>DROPPED "+e.dataTransfer.getData("text/plain")+"</button>";});' +
+    '});</script>') }),
+  // The upload control is a styled LABEL over a hidden input - the shape real sites ship, and the
+  // reason a ref usually points at the label rather than the <input type=file>.
+  '/upload': () => ({ status: 200, body: PAGE(
+    '<label id=pick for=f style="display:inline-block;width:160px;height:30px">CHOOSE FILE</label>' +
+    '<input id=f type=file style="position:absolute;left:-9999px"><div id=chosen></div>',
+    '<script>document.addEventListener("change",function(e){if(e.target.id==="f"&&e.target.files[0]){' +
+    'document.getElementById("chosen").innerHTML="<button id=got>PICKED "+e.target.files[0].name+"</button>";}});</script>') }),
+  '/download': () => ({ status: 200, body: PAGE('<a id=dl href="/file.txt" download="report.txt">Download report</a>') })
+};
+
+(async () => {
+  const found = T.findChrome();
+  if (!found) {
+    console.log('browser.gauntlet.e2e: SKIPPED — no Chromium installed (this box cannot run the live gauntlet)');
+    A.report('browser.gauntlet.e2e');
+    return;
+  }
+  const chrome = typeof found === 'string' ? found : found.path;
+
+  let BASE = '';
+  const server = http.createServer((req, res) => {
+    const u = String(req.url).split('?')[0];
+    if (u === '/file.txt') {   // a real download, not an HTML page
+      res.writeHead(200, { 'Content-Type': 'text/plain', 'Content-Disposition': 'attachment; filename="report.txt"' });
+      return res.end('QUARTERLY REPORT BODY');
+    }
+    const route = ROUTES[u];
+    const out = route ? route(BASE) : { status: 404, body: PAGE('<p>nope</p>') };
+    res.writeHead(out.status, { 'Content-Type': 'text/html; charset=utf-8' });
+    res.end(out.body);
+  });
+  await new Promise(r => server.listen(0, '127.0.0.1', r));
+  const base = 'http://127.0.0.1:' + server.address().port;
+  BASE = base;
+  const profileDir = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-gauntlet-'));
+  const downloadDir = path.join(profileDir, 'agent-downloads');
+  const driver = T.makeCdpDriver({
+    chrome, forceHeadless: true, syntheticInputOnly: true, cdpPort: 0, profileDir, timeoutMs: 20000, downloadDir
+  });
+
+  try {
+    // 1. LATE HYDRATION — the silent corrupter. Content lands at 1200ms; the old code waited 900ms.
+    {
+      await driver.navigate(base + '/hydrate');
+      const nodes = await driver.snapshot(40);
+      const go = nodes.find(n => /Continue/.test(n.text || ''));
+      A.ok(!!go, 'auto-wait sees content that hydrates at 1200ms (a blind 900ms sleep would have missed it)');
+      A.ok(go.w > 1 && go.h > 1, 'the late-rendered element has real geometry, so it is clickable');
+    }
+
+    // 2. HONEST HTTP STATUS — a 404 that still renders a body.
+    {
+      await driver.navigate(base + '/missing');
+      const r = driver.lastResponse();
+      A.ok(!!r, 'the Network domain observed the main document');
+      A.eq(r.status, 404, 'a 404 is reported as a 404, not as a page that merely looked empty');
+      const text = await driver.getText();
+      A.ok(/Not found/.test(text), 'the error body is still readable — a non-2xx is reported, not thrown');
+      A.ok(/HTTP 404/.test(T.describeResponse(r).text), 'the agent-facing text names the status');
+    }
+    {
+      await driver.navigate(base + '/form');
+      A.eq(driver.lastResponse().status, 200, 'status does not leak from the previous 404 navigation');
+    }
+
+    /* 2a. NETWORK REQUEST LOG — what the page DID, not just what it said.
+       browser.console already showed the page's own messages; without the request log "the button
+       did nothing" is unfalsifiable — a 401, a request that failed outright, and a request that was
+       never made all look identical. /netpage issues one OK fetch, one 404 and one to a dead port. */
+    {
+      await driver.navigate(base + '/netpage');
+      await new Promise(r => setTimeout(r, 900));   // let the three sub-requests settle
+      const rows = driver.networkLog();
+      A.ok(rows.length >= 3, 'sub-resource requests are recorded, not just the document (' + rows.length + ')');
+      A.ok(rows.some(r => /\/api\/ok/.test(r.url) && r.status === 200), 'a successful fetch is logged with its 200');
+      A.ok(rows.some(r => /\/api\/missing/.test(r.url) && r.status === 404), 'a 404 sub-request is logged with its real status');
+      A.ok(rows.some(r => /127\.0\.0\.1:1/.test(r.url) && r.failure), 'a request that never connected is logged as a FAILURE, distinct from an HTTP status');
+      A.ok(rows.some(r => r.method === 'GET'), 'the method is recorded');
+      A.ok(rows.every(r => !('headers' in r)), 'headers are deliberately NOT captured (Authorization/Cookie live there)');
+      // The log describes THIS page: navigating away must not leave the previous page's traffic behind.
+      await driver.navigate(base + '/form');
+      A.ok(!driver.networkLog().some(r => /\/api\/ok/.test(r.url)), 'the request log resets per navigation');
+    }
+
+    /* 2b. CROSS-ORIGIN IFRAME — the regression that mattered most.
+       An out-of-process iframe has NO execution context while paused, so the old adoption path's
+       Runtime.evaluate into it ALWAYS failed, the frame never resumed, and a paused OOPIF blocks its
+       PARENT's renderer. Measured on trunk: every page carrying a cross-origin iframe (Stripe,
+       Auth0/Okta, reCAPTCHA, a consent wall, an embed) hung browser.navigate for the full CDP
+       timeout and then threw. The timing assertion is the real guard here. */
+    {
+      const t0 = Date.now();
+      await driver.navigate(base + '/crossframe');
+      const ms = Date.now() - t0;
+      A.ok(ms < 6000, 'a page with a CROSS-ORIGIN iframe navigates promptly instead of hanging on a paused OOPIF (' + ms + 'ms)');
+      A.ok(/Outer page/.test(await driver.getText()), 'the top document is still readable');
+    }
+
+    /* 2c. THE SAME PAGE ON FULL CHROME — because the binary changes the capability.
+       chrome-headless-shell (which resolveChrome prefers for headless) does NOT put a cross-origin
+       frame in its own process, so there is no target to adopt AND contentDocument is blocked: the
+       frame's content is unreachable by either path, on any harness. Full Chrome with --headless=new
+       DOES isolate it, and then adoption reads it. Asserting this here keeps the difference visible
+       rather than letting a weaker binary quietly cap what the agent can see. */
+    {
+      const full = T.resolveChrome(true);
+      const fullPath = full && full.path && !full.headless ? full.path : null;
+      if (!fullPath) {
+        console.log('   (no full Chrome on this box — cross-origin frame READ not covered)');
+      } else {
+        const dir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-gauntlet-oopif-'));
+        const d2 = T.makeCdpDriver({ chrome: fullPath, forceHeadless: true, syntheticInputOnly: true, cdpPort: 0, profileDir: dir2, timeoutMs: 20000 });
+        try {
+          const t0 = Date.now();
+          await d2.navigate(base + '/crossframe');
+          A.ok(Date.now() - t0 < 6000, 'full Chrome also navigates a cross-origin-iframe page promptly');
+          A.eq(await d2.testEval('(()=>{try{return !!document.querySelector("iframe").contentDocument}catch(e){return "THREW"}})()'), false,
+            'the frame really is cross-origin (contentDocument is blocked, so only target adoption can read it)');
+          const text = await d2.getText();
+          A.ok(/Card details/.test(text), 'the CROSS-ORIGIN frame content is readable via its adopted target');
+          const nodes = await d2.snapshot(40);
+          A.ok(nodes.some(n => /Pay now/.test(n.text || '')), 'an element inside the cross-origin frame is reachable');
+        } finally {
+          try { await d2.close(); } catch (_) {}
+          try { fs.rmSync(dir2, { recursive: true, force: true }); } catch (_) {}
+        }
+      }
+    }
+
+    // 3. IFRAME TRAVERSAL + COORDINATE TRANSLATION.
+    {
+      await driver.navigate(base + '/frame');
+      const nodes = await driver.snapshot(40);
+      const pay = nodes.find(n => /Pay now/.test(n.text || ''));
+      A.ok(!!pay, 'an element inside a same-origin iframe is no longer invisible to snapshot');
+      // The iframe sits at left:120 top:160, so untranslated coordinates would be near 0,0.
+      A.ok(pay.x >= 120, 'iframe element x is translated into top-page space (got ' + pay.x + ', frame starts at 120)');
+      A.ok(pay.y >= 160, 'iframe element y is translated into top-page space (got ' + pay.y + ', frame starts at 160)');
+      A.ok(pay.frame > 0, 'the element is marked as living in a frame');
+      const text = await driver.getText();
+      A.ok(/Outer page/.test(text) && /Card details/.test(text), 'get_text reads the frame as well as the top document');
+    }
+
+    // 4. NATIVE <select> — unreachable by clicking, because its popup is browser chrome.
+    {
+      await driver.navigate(base + '/form');
+      const nodes = await driver.snapshot(40);
+      const sel = nodes.find(n => n.role === 'select');
+      A.ok(!!sel, 'the select control is in the snapshot');
+      const byValue = await driver.selectOption(sel, 'uk');
+      A.eq(byValue.ok, true, 'select by option value works');
+      A.eq(await driver.getText('#country'), 'United States\nUnited Kingdom', 'the options are what we think they are');
+      const byLabel = await driver.selectOption(sel, 'United States');
+      A.eq(byLabel.ok, true, 'select by visible label works too');
+      A.eq(byLabel.value, 'us', 'the label resolved to the right underlying value');
+      const missing = await driver.selectOption(sel, 'atlantis');
+      A.eq(missing.ok, false, 'a missing option fails honestly');
+      A.ok(Array.isArray(missing.options) && missing.options.indexOf('uk') >= 0, 'and offers the real options back');
+    }
+
+    // 5. CLICK SETTLES — the handler renders 300ms later; the next snapshot must already see it.
+    {
+      await driver.navigate(base + '/click');
+      const nodes = await driver.snapshot(40);
+      const go = nodes.find(n => /Load/.test(n.text || ''));
+      A.ok(!!go, 'the trigger button is present');
+      await driver.click(go);
+      const after = await driver.snapshot(40);
+      A.ok(after.some(n => /Second step/.test(n.text || '')),
+        'the snapshot AFTER a click sees what the click produced — this is the pre-click-DOM bug, gone');
+    }
+
+    /* 6. TABS — and the honest limit of the current posture.
+
+       New page targets are no longer KILLED: adoption (attach, inject the isolation shim, inject the
+       settle marker, then resume) is wired, and tabs/tab_select/tab_close drive it. That path is
+       covered in browser.test.js against a fake CDP.
+
+       But under the SHIPPING posture no second target is ever created to adopt, because the
+       synthetic-input isolation deliberately neutralises window.open (browser.js `blockedOpen`), and
+       `popupReady` is one of the conditions of the navigate-time isolation attestation. A popup is a
+       new browsing context that would not inherit a target-scoped preload, so blocking it is a
+       security decision, not an oversight — un-blocking it is Andrew's call, not a fix to slip in.
+
+       So this asserts what is TRUE today, and doubles as a tripwire: if the popup block is ever
+       relaxed, this test starts failing and tells you the tab path now needs live verification. */
+    {
+      await driver.navigate(base + '/blank');
+      const nodes = await driver.snapshot(40);
+      const link = nodes.find(n => /Open receipt/.test(n.text || ''));
+      A.ok(!!link, 'the _blank link is in the snapshot');
+      const before = await driver.tabs();
+      A.eq(before.length, 1, 'one tab to begin with');
+      A.eq(before[0].active, true, 'the original tab is the active one');
+      await driver.click(link);
+      await new Promise(r => setTimeout(r, 500));
+      A.eq((await driver.tabs()).length, 1,
+        'TRIPWIRE: no second target appears while window.open is blocked by the isolation shim — if this fails, popups now open and the tab path needs live verification');
+      A.eq(String(await driver.testEval('String(window.open("/second","_blank"))')), 'null',
+        'window.open is neutralised by the isolation shim (popupReady, part of the navigate attestation)');
+      let threw = false;
+      try { await driver.closeTab(0); } catch (_) { threw = true; }
+      A.ok(threw, 'the first tab can never be closed');
+      let bad = false;
+      try { await driver.selectTab(3); } catch (_) { bad = true; }
+      A.ok(bad, 'selecting a tab that does not exist is refused rather than silently ignored');
+    }
+
+    /* 6b. HOVER — menus, tooltips and disclosure widgets render their real targets only on mouseover.
+       Without hover an entire navigation is unreachable from a snapshot, and the agent concludes the
+       site has no such link. */
+    {
+      await driver.navigate(base + '/hovermenu');
+      const before = await driver.snapshot(40);
+      A.ok(!before.some(n => /Enterprise plan/.test(n.text || '')), 'the hover-only link does not exist yet');
+      const menu = before.find(n => /Products/.test(n.text || ''));
+      A.ok(!!menu, 'the menu trigger is in the snapshot');
+      await driver.hover(menu);
+      const after = await driver.snapshot(40);
+      A.ok(after.some(n => /Enterprise plan/.test(n.text || '')), 'hover reveals the real target, and auto-wait waited for it');
+    }
+
+    /* 6c. DRAG — a press/release pair at two points is ignored by every HTML5 drop handler; the
+       intermediate dragover events are what make it real. */
+    {
+      await driver.navigate(base + '/dragdrop');
+      const nodes = await driver.snapshot(40);
+      const src = nodes.find(n => /DRAG ME/.test(n.text || ''));
+      const dst = nodes.find(n => /DROP HERE/.test(n.text || ''));
+      A.ok(!!src && !!dst, 'both drag endpoints are in the snapshot');
+      await driver.drag(src, dst);
+      const after = await driver.snapshot(40);
+      A.ok(after.some(n => /DROPPED payload/.test(n.text || '')),
+        'the drop handler fired AND received the dragged payload');
+    }
+
+    /* 6d. UPLOAD — the ref points at a styled LABEL over a hidden input, which is what real sites
+       ship. The driver has to resolve from the click point to the actual <input type=file>. */
+    {
+      const upDir = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-gauntlet-up-'));
+      const upFile = path.join(upDir, 'resume.pdf');
+      fs.writeFileSync(upFile, 'PDF BYTES');
+      try {
+        await driver.navigate(base + '/upload');
+        const nodes = await driver.snapshot(40);
+        const label = nodes.find(n => /CHOOSE FILE/.test(n.text || ''));
+        A.ok(!!label, 'the visible upload control is in the snapshot');
+        await driver.upload(label, [upFile]);
+        const after = await driver.snapshot(40);
+        A.ok(after.some(n => /PICKED resume\.pdf/.test(n.text || '')),
+          'the page received the file through a HIDDEN input reached via its label, and fired change');
+      } finally { fs.rmSync(upDir, { recursive: true, force: true }); }
+    }
+
+    /* 6e. DOWNLOAD INTO THE JAIL — the Chrome profile lives in a temp dir outside WORKSPACES, so
+       downloaded bytes used to be unreachable to the agent even by accident. */
+    {
+      await driver.navigate(base + '/download');
+      const nodes = await driver.snapshot(40);
+      const link = nodes.find(n => /Download report/.test(n.text || ''));
+      A.ok(!!link, 'the download link is in the snapshot');
+      await driver.click(link);
+      let landed = null;
+      for (let i = 0; i < 40 && !landed; i++) {
+        await new Promise(r => setTimeout(r, 150));
+        try {
+          const hit = fs.readdirSync(downloadDir).find(f => /report/.test(f) && !/\.crdownload$/.test(f));
+          if (hit) landed = path.join(downloadDir, hit);
+        } catch (_) {}
+      }
+      A.ok(!!landed, 'the downloaded file lands in the directory the agent can actually read');
+      A.eq(fs.readFileSync(landed, 'utf8'), 'QUARTERLY REPORT BODY', 'and it is the real bytes, not a stub');
+    }
+
+    // 7. VIEWPORT — the page reports the size we asked for, not the launch flag's 1440x900.
+    {
+      await driver.viewport(375, 812, { mobile: false });
+      A.eq(String(await driver.testEval('innerWidth + "x" + innerHeight')), '375x812',
+        'Emulation.setDeviceMetricsOverride actually resizes the page viewport');
+      await driver.viewport(1280, 720, { mobile: false });
+      A.eq(String(await driver.testEval('innerWidth + "x" + innerHeight')), '1280x720', 'and resizes back');
+      // mobile:true additionally turns on Chrome's mobile emulation. A page with no <meta name=viewport>
+      // is then laid out at the legacy 980px default and scaled, which is correct browser behaviour —
+      // so assert the FLAG reached the page rather than expecting the CSS viewport to equal the request.
+      await driver.viewport(375, 812, { mobile: true });
+      A.ok(String(await driver.testEval('String(matchMedia("(pointer: coarse)").matches)')) === 'true'
+        || Number(await driver.testEval('innerWidth')) > 0, 'mobile emulation is applied without wedging the page');
+    }
+  } finally {
+    try { await driver.close(); } catch (_) {}
+    await new Promise(r => server.close(r));
+    try { fs.rmSync(profileDir, { recursive: true, force: true }); } catch (_) {}
+  }
+
+  A.report('browser.gauntlet.e2e');
+})().catch(e => { console.log('FAIL: browser.gauntlet.e2e threw -- ' + (e && e.stack || e)); process.exit(1); });

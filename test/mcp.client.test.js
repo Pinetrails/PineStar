@@ -7,7 +7,7 @@
 'use strict';
 const A = require('./_assert.js');
 const { makeMcpClient } = require('../sidecar/mcp/client.js');
-const { makeMcpToolDef, mcpToolName } = require('../sidecar/mcp/translate.js');
+const { makeMcpToolDef, mcpToolName, RESULT_MAX_CHARS } = require('../sidecar/mcp/translate.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
 
 // a fake duplex transport: a request (id+method) auto-responds via the injected handle(); a handle that throws
@@ -140,6 +140,49 @@ function makeFakeTransport(handle) {
     let rThrew = false;
     try { await errDef.run({}, {}); } catch (e) { rThrew = true; A.ok(e.message.indexOf('bad input') >= 0, 'isError text surfaced in the thrown error'); }
     A.ok(rThrew, 'an MCP isError result makes run() throw (-> clean isError downstream)');
+  }
+
+  // ===== E2. RESULT CAP — the one door into context that used to be unclamped ===================
+  // Every built-in tool clamps its own output; a third-party MCP payload did not, so one `query`
+  // against a filesystem/database connector could push megabytes (~500k tokens) into the window.
+  {
+    const huge = 'X'.repeat(2 * 1024 * 1024);
+    const big = makeMcpToolDef({ connectorId: 'db', mcpTool: { name: 'query', inputSchema: { type: 'object' } },
+      call: () => Promise.resolve({ content: [{ type: 'text', text: huge }] }) });
+    const out = await big.run({}, {});
+    A.ok(out.content.length < huge.length, 'an oversized MCP payload is clamped');
+    A.ok(out.content.length < RESULT_MAX_CHARS + 500, 'clamped to the cap plus a short hint');
+    A.ok(out.content.indexOf('[truncated') >= 0, 'the model is TOLD it was truncated');
+    A.ok(out.content.indexOf((huge.length - RESULT_MAX_CHARS) + ' more characters') >= 0, 'the hint reports how much is missing');
+    A.ok(out.summary.indexOf('(truncated)') >= 0, 'the run summary records the truncation');
+
+    // A payload at or under the cap must pass through byte-identical — no hint, no summary noise.
+    const exact = 'y'.repeat(RESULT_MAX_CHARS);
+    const okDef = makeMcpToolDef({ connectorId: 'db', mcpTool: { name: 'small', inputSchema: { type: 'object' } },
+      call: () => Promise.resolve({ content: [{ type: 'text', text: exact }] }) });
+    const okOut = await okDef.run({}, {});
+    // The cap governs the SERVER's payload; the untrusted-content fence is host framing added on top (the
+    // same split web_fetch has always had — it truncates, then fences). So assert the payload is byte-identical
+    // INSIDE the fence rather than that the whole result equals the cap. The per-run tool-output budget in
+    // runOnce still bounds the fenced total, so the context protection this cap exists for is intact.
+    A.ok(okOut.content.indexOf(exact) > 0, 'a payload exactly at the cap is untouched');
+    A.ok(/\[END EXTERNAL WEB CONTENT\]$/.test(okOut.content), 'and it is still fenced');
+    A.ok(okOut.summary.indexOf('truncated') < 0, 'an untruncated result says nothing about truncation');
+
+    // A FAILING server can hand back just as much text as a succeeding one.
+    const errBig = makeMcpToolDef({ connectorId: 'db', mcpTool: { name: 'boom', inputSchema: { type: 'object' } },
+      call: () => Promise.resolve({ isError: true, content: [{ type: 'text', text: huge }] }) });
+    let msg = '';
+    try { await errBig.run({}, {}); } catch (e) { msg = e.message; }
+    A.ok(msg.length > 0 && msg.length < huge.length, 'an oversized MCP ERROR payload is clamped too');
+
+    // Per-connector override, so a connector known to return large documents can be widened.
+    const tuned = makeMcpToolDef({ connectorId: 'db', mcpTool: { name: 'q2', inputSchema: { type: 'object' } },
+      maxResultChars: 100, call: () => Promise.resolve({ content: [{ type: 'text', text: huge }] }) });
+    const tunedOut = await tuned.run({}, {});
+    // ...and the override still clamps the PAYLOAD to 100 chars; the fence wrapper rides outside it.
+    A.ok(tunedOut.content.indexOf('X'.repeat(100)) > 0, 'maxResultChars overrides the default cap');
+    A.ok(tunedOut.content.indexOf('X'.repeat(101)) < 0, 'and nothing past the override survives');
   }
 
   // ===== F. end-to-end: dispatch a translated MCP tool through the REAL registry boundary =====
