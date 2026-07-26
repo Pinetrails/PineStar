@@ -1548,8 +1548,11 @@
       read('browser.tabs', 'List the browser tabs. A link with target="_blank", a checkout popup or a PDF opens a NEW tab — it is listed here, and browser.tab_select switches to it. Tab 0 is the one you started in.', { type: 'object', properties: {} },
         async () => {
           const list = await session.tabs();
+          // FENCED: a tab TITLE is `document.title` — fully attacker-controlled, and a popup a hostile page
+          // opened can name itself anything. The URL is page-chosen too. This reads like host bookkeeping but
+          // it is page content, which is exactly why it needs the marker.
           return {
-            content: list.map(t => '[' + t.index + ']' + (t.active ? ' *' : '  ') + ' ' + (t.title || '(untitled)') + ' — ' + t.url).join('\n'),
+            content: fenceExternal(list.map(t => '[' + t.index + ']' + (t.active ? ' *' : '  ') + ' ' + (t.title || '(untitled)') + ' — ' + t.url).join('\n'), 'browser tab titles and URLs, authored by the pages themselves'),
             summary: list.length + ' tab(s)'
           };
         }),
@@ -1592,7 +1595,9 @@
             ' ' + clamp(r.url, 200) + (r.type ? ' [' + r.type + ']' : '') +
             (r.bytes ? ' ' + r.bytes + 'B' : '') + (r.failure ? ' — ' + r.failure : '');
           const bad = rows.filter(r => r.failure || (r.status && (r.status < 200 || r.status >= 300))).length;
-          return { content: rows.map(line).join('\n'), summary: rows.length + ' request(s)' + (bad ? ', ' + bad + ' failed' : '') };
+          // FENCED: every row is derived from what the PAGE chose to request — URLs and transport failure
+          // strings are attacker-shaped, and a long crafted URL is a fine place to hide a directive.
+          return { content: fenceExternal(rows.map(line).join('\n'), 'network request log from the controlled browser, driven by the page'), summary: rows.length + ' request(s)' + (bad ? ', ' + bad + ' failed' : '') };
         }),
       exec('browser.dialog', 'Accept or dismiss the current JavaScript dialog.', { type: 'object', properties: { action: { type: 'string' }, promptText: { type: 'string' } } },
         async a => {

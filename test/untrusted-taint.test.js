@@ -44,12 +44,21 @@ const root = path.resolve(__dirname, '..');
   A.ok(/require\('\.\.\/fence\.js'\)/.test(browser), 'browser tools use the SHARED fence');
   A.ok(/require\('\.\.\/tools\/fence\.js'\)/.test(translate), 'MCP results use the SHARED fence');
   A.ok(/fence\.fenceExternal|require\('\.\.\/fence\.js'\)/.test(web), 'web tools use the shared fence too (one scrub string, no drift)');
-  // every page-authored browser read must be wrapped
+  /* Every browser read whose content comes from the PAGE must be wrapped. This list grew once already: the
+     browser-parity lane added tools in parallel and `browser.tabs` (document.title — fully attacker-authored)
+     and `browser.network` (page-chosen URLs) shipped unfenced. If you add a browser tool that returns anything
+     the site authored, fence it AND add it here. The taint rule catches new tools automatically because it
+     keys on capability 'web'; the fence is per-return-site and does not. */
   for (const site of ['page snapshot from the controlled browser', 'page text from the controlled browser',
                       'browser console output from the page', 'javascript dialog text from the page',
-                      'vision description of the page on screen']) {
+                      'vision description of the page on screen',
+                      'browser tab titles and URLs, authored by the pages themselves',
+                      'network request log from the controlled browser, driven by the page']) {
     A.ok(browser.indexOf(site) > 0, 'browser fences: ' + site);
   }
+  // the two that shipped raw — pinned by their actual return expressions, not just the label
+  A.ok(/fenceExternal\(list\.map\(t =>/.test(browser), 'browser.tabs fences the page-authored titles');
+  A.ok(/fenceExternal\(rows\.map\(line\)/.test(browser), 'browser.network fences the page-driven request log');
   A.ok(/fence\.fenceExternal\(text, 'result from the ' \+ label \+ ' connector'\)/.test(translate),
     'a connector result is fenced and names which connector produced it');
 }
