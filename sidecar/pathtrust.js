@@ -123,6 +123,13 @@
 
       // REAL target (symlinks along the existing chain resolved) — the value every containment test uses.
       const real = await realpathDeepest(norm);
+      /* AND THE FLOOR IS RE-PROVEN ON IT. The hardline above only ever saw the RAW and RESOLVED strings, so a
+         symlink named innocently (notes.txt -> /proj/.env) sailed through: the name carries no `.env`, the
+         real target does. Containment was already re-proven against `real`; the protected-file floor was not,
+         which made a one-line symlink inside an ALREADY-blessed root a complete bypass of the .env/.git floor.
+         Same function, same rules, now applied to what will actually be opened. */
+      const rhr = hardlineReason(real, real);
+      if (rhr) throw new Error(rhr + ' (reached via ' + norm + ')');
 
       // 1. already under a blessed root? reads flow; the write-scope boundary is the broker's job upstream.
       for (const R of rootsFn()) {
@@ -144,18 +151,25 @@
       if (!pathInside(real, proposedReal))
         throw new Error('path escapes the proposed project root via symlink: ' + norm);
 
+      /* BLESS THE REAL PATH. The header calls the grant key "realpath (canonical)", but normalizeRoot is only
+         P.resolve — so a root reached through a symlinked ancestor (~/code -> /mnt/data/code, the ordinary
+         way people arrange a dev box) was STORED un-canonical while step 1 above compares against the
+         realpath. The two could never match, so "always" silently did nothing and the Commander was asked to
+         bless the same folder on every single call — consent fatigue that trains people to click through the
+         one prompt that widens the agent's filesystem reach. The PROMPT still names the path the Commander
+         recognizes; only the recorded key is canonical. */
       const decision = await prompt(proposed, { path: norm, scope: scope });
       if (decision === 'always') {
         if (!bless) throw new Error('path trust is not wired to persist a grant — denied');
-        const isGit = await isGitRepoOf(proposed);
-        const ok = await bless(proposed, { isGitRepo: isGit, now: now() });
+        const isGit = await isGitRepoOf(proposedReal);
+        const ok = await bless(proposedReal, { isGitRepo: isGit, now: now() });
         if (!ok) throw new Error('could not persist project trust — denied: ' + proposed);
-        touch(proposed, norm);
-        return { base: proposed, abs: norm };
+        touch(proposedReal, norm);
+        return { base: proposedReal, abs: norm };
       }
       // "once" (and the broker's "full", treated as a one-time allow here — a directory bless is deliberate,
       // never a side effect of a blanket capability grant): allow THIS access without persisting a root.
-      if (decision === 'once' || decision === 'full') return { base: proposed, abs: norm };
+      if (decision === 'once' || decision === 'full') return { base: proposedReal, abs: norm };
       throw new Error('access to ' + norm + ' was denied');
     }
 

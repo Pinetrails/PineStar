@@ -227,6 +227,78 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
     A.ok(seen.length === before, 'a relative path never reaches the guard (jail path unchanged)');
   }
 
+  /* ---- fs.search obeys the SAME jail as fs.read ----
+     resolveInside's realpath proof only covers the path the CALLER names; the walk that follows never
+     re-proved what it reached, so fs.read refused a jail-escaping symlink while fs.search grepped its
+     CONTENTS and printed the matching line. Simulated over an injected POSIX fs so it runs on a host that
+     cannot create symlinks (Windows without developer mode). ---- */
+  {
+    const P = require('node:path').posix;
+    const PM = Object.assign({}, P, { sep: '/', win32: require('node:path').win32, posix: P });
+    const LINK = '/ws/agent/leak.txt', TARGET = '/outside/.ssh/id_rsa', SECRET = 'BEGIN PRIVATE KEY SUPER_SECRET';
+    const dirent = (name, kind) => ({ name, isDirectory: () => kind === 'dir', isSymbolicLink: () => kind === 'link', isFile: () => kind === 'file' });
+    const fakeFsp = {
+      async mkdir() {},
+      async readdir(dir) { return dir === '/ws/agent' ? [dirent('leak.txt', 'link'), dirent('notes.md', 'file')] : []; },
+      async stat() { return { mtimeMs: 1, isFile: () => true, isDirectory: () => false }; },
+      async lstat() { return {}; },
+      async realpath(p) { return p === LINK ? TARGET : p; },
+      async readFile(p, enc) {
+        if (p === LINK) return enc ? SECRET : Buffer.from(SECRET);
+        if (p === '/ws/agent/notes.md') return enc ? 'hello' : Buffer.from('hello');
+        throw Object.assign(new Error('ENOENT'), { code: 'ENOENT' });
+      }
+    };
+    const T = makeFsTools({ fsp: fakeFsp, pathMod: PM, root: '/ws' });
+    const c = { agentId: 'agent' };
+    await rejects(T.readTool.run({ path: 'leak.txt' }, c), 'fs.read refuses a symlink that escapes the jail');
+    const hit = await T.searchTool.run({ query: 'SUPER_SECRET' }, c);
+    A.ok(hit.content.indexOf(SECRET) < 0, 'fs.search does NOT read through the same escaping symlink');
+    A.eq(hit.summary.indexOf('0 matches'), 0, 'and reports no match rather than the jailbroken line');
+  }
+
+  /* ---- a path-shaped file_glob must actually filter by PATH ----
+     It was built from the full pattern but tested against the basename, so "src/*.js" matched nothing and
+     returned a clean "0 matches" — indistinguishable from "the text isn't there". ---- */
+  {
+    const dir = path.join(ROOT, 'globby');
+    fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'src', 'a.js'), 'needle here\n');
+    fs.writeFileSync(path.join(dir, 'top.js'), 'needle here\n');
+    const T = makeFsTools({ fsp: require('node:fs/promises'), pathMod: path, root: ROOT });
+    const c = { agentId: 'globby' };
+    const scoped = await T.searchTool.run({ query: 'needle', file_glob: 'src/*.js' }, c);
+    A.ok(/src\/a\.js/.test(scoped.content), 'a path-shaped file_glob matches inside the named directory');
+    A.ok(!/top\.js/.test(scoped.content), 'and excludes files outside it');
+    const bare = await T.searchTool.run({ query: 'needle', file_glob: '*.js' }, c);
+    A.eq(bare.summary.indexOf('2 matches'), 0, 'a bare name glob still matches by basename everywhere');
+  }
+
+  /* ---- a model-supplied regex must never be able to freeze the station ----
+     fs.search { regex:true } compiles the MODEL's string and runs it synchronously over every line of every
+     candidate file. StarNet is ONE process — UI, API, SSE bus, every agent run — so a backtracking blow-up
+     pegged the event loop indefinitely: measured, `(a|a)+$` against a 41-character line never returned and
+     the tool's own timeoutMs could not help (withTimeout rejects the promise; it cannot stop synchronous
+     work). Only killing the process recovered. ---- */
+  {
+    const dir = path.join(ROOT, 'redos');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'a.js'), 'const x = "' + 'a'.repeat(40) + 'b";\nfunction handler() {}\n');
+    const T = makeFsTools({ fsp: require('node:fs/promises'), pathMod: path, root: ROOT });
+    const c = { agentId: 'redos' };
+    const refused = async (q) => {
+      try { await T.searchTool.run({ query: q, regex: true }, c); return false; }
+      catch (e) { return /backtrack catastrophically/.test(e.message); }
+    };
+    for (const q of ['(a|a)+$', '(\\s+)+$', '(.*)*x', '(a+)+', '(ab|abc)+'])
+      A.ok(await refused(q), 'catastrophic pattern refused (fast, not hung): ' + q);
+    // ...and the floor must not eat ordinary search patterns
+    for (const q of ['function\\s+\\w+', '(ab|cd)+', '^const\\s', 'handler|x', '(?:foo|bar)baz'])
+      A.ok(!(await refused(q)), 'ordinary pattern still allowed: ' + q);
+    const hit = await T.searchTool.run({ query: 'handler', regex: true }, c);
+    A.ok(/handler/.test(hit.content), 'a real regex search still returns its matches');
+  }
+
   try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}
   A.report('fs.jail.test');
 })();

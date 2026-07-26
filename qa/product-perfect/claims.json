@@ -2292,10 +2292,10 @@
       "id": "W2-dns-safe-navigation",
       "wave": "W2",
       "item": "Shared DNS-aware and rebinding-safe web/browser navigation.",
-      "verdict": "PARTIAL",
-      "disposition": "FIX",
+      "verdict": "SHIPPED",
+      "disposition": "PROVEN",
       "ownerWave": "W2",
-      "qualification": "web_fetch resolves DNS; browser.navigate checks URL syntax/host classes without DNS resolution.",
+      "qualification": "Both surfaces now resolve. web_fetch/web_request resolve every hop; browser.navigate resolves the requested URL, the post-redirect URL and browser.login's target through the same injectable best-effort guard, and hostOf strips the FQDN root label so a trailing dot can no longer walk past the localhost/.internal/.lan/single-label name rules.",
       "authorityChecks": [
         {
           "kind": "contains",
@@ -2303,18 +2303,26 @@
           "needle": "dns.promises.lookup"
         },
         {
-          "kind": "absent",
+          "kind": "contains",
           "path": "sidecar/tools/builtin/browser.js",
-          "needles": [
-            "dns.promises.lookup",
-            "require('node:dns')"
-          ]
+          "needle": "dns.promises.lookup"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/tools/builtin/browser.js",
+          "needle": "await assertResolvedSafe(u, doLookup)"
+        },
+        {
+          "kind": "contains",
+          "path": "sidecar/tools/builtin/browser.js",
+          "needle": "h = h.replace(/\\.+$/, '')"
         }
       ],
       "refsChecked": [
         "trunk@ef16fa087ad872f9d266ecde8b72ef813cb9ca82",
         "branches@agent/pp-browser-dns 271449d2",
-        "worktrees@git-worktree-list audited 2026-07-12"
+        "worktrees@git-worktree-list audited 2026-07-12",
+        "branch@claude/starnet-bug-hunt-5cf4c9 667e6676"
       ]
     },
     {

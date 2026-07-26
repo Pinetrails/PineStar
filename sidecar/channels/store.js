@@ -39,7 +39,12 @@
   // Oldest drops first past maxOutbox; a single reply's stored text is capped so the file can't balloon.
   const OUTBOX_DEFAULTS = { maxOutbox: 50, maxOutboxChars: 16000 };
 
-  const ROLES = { user: 1, assistant: 1, system: 1 };
+  // A Set, not an object literal: `({user:1})['constructor']` is truthy, so an object-literal allowlist
+  // silently admits every Object.prototype key. A hand-corrupted history claiming role:'constructor' or
+  // role:'toString' therefore survived the "keep only well-formed turns" filter (while a plausible-looking
+  // role:'tool' was correctly dropped) and went to the provider as an invalid role — a 400 that wedges the
+  // channel agent, which is exactly what this filter exists to prevent.
+  const ROLES = new Set(['user', 'assistant', 'system']);
 
   function trimTail(messages, maxTurns, maxChars) {
     let m = messages.slice(-maxTurns);
@@ -116,7 +121,7 @@
         const raw = readJson(historyFile(agentId));
         const msgs = raw && Array.isArray(raw.messages) ? raw.messages : [];
         // defend against a hand-corrupted file: keep only well-formed {role,content} turns
-        return msgs.filter(m => m && ROLES[m.role] && typeof m.content === 'string');
+        return msgs.filter(m => m && ROLES.has(m.role) && typeof m.content === 'string');
       },
 
       /* clearHistory — drop this agent's messaging transcript and start fresh. A browser chat can hit /new
@@ -134,10 +139,10 @@
       },
 
       appendTurn(agentId, role, text) {
-        if (!ROLES[role]) throw new Error('bad role: ' + role);
+        if (!ROLES.has(role)) throw new Error('bad role: ' + role);
         const file = historyFile(agentId);
         const raw = readJson(file);
-        const prev = raw && Array.isArray(raw.messages) ? raw.messages.filter(m => m && ROLES[m.role] && typeof m.content === 'string') : [];
+        const prev = raw && Array.isArray(raw.messages) ? raw.messages.filter(m => m && ROLES.has(m.role) && typeof m.content === 'string') : [];
         prev.push({ role: role, content: String(text == null ? '' : text), ts: clock.now() });
         const next = trimTail(prev, limits.maxTurns, limits.maxChars);
         writeJsonAtomic(file, { version: 1, messages: next });

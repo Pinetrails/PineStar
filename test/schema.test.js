@@ -67,4 +67,22 @@ okv({}, 12345, 'empty schema accepts numbers too');
 // error messages are present on failure
 A.ok(validate(person, {}).errors.length >= 2, 'reports an error per missing field');
 
+// ---- OWN properties only. `in` walks the prototype chain, so every Object.prototype key read as
+// present/declared: {q:'x',toString:1} passed additionalProperties:false and a required 'constructor' was
+// satisfied by a property nobody supplied. MCP inputSchemas reach this validator verbatim.
+{
+  const closed = { type: 'object', properties: { q: { type: 'string' } }, additionalProperties: false };
+  bad(closed, { q: 'x', evil: 1 }, 'an undeclared property is refused');
+  bad(closed, { q: 'x', toString: 1 }, 'an undeclared Object.prototype NAME is refused too');
+  bad(closed, { q: 'x', constructor: 1 }, 'including constructor');
+  okv(closed, { q: 'x' }, 'a clean payload still passes');
+
+  const needsProto = { type: 'object', required: ['toString'], properties: { toString: { type: 'string' } } };
+  bad(needsProto, {}, 'a required prototype-NAMED field is not satisfied by Object.prototype');
+  okv(needsProto, { toString: 'v' }, 'and passes when genuinely supplied');
+
+  // a payload carrying its OWN hasOwnProperty must not shadow the check
+  bad(closed, { q: 'x', hasOwnProperty: 1 }, 'a payload cannot disarm the check by shadowing hasOwnProperty');
+}
+
 A.report('schema.test');

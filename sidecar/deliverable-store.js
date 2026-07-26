@@ -7,7 +7,9 @@
 
 const { makeDurableJsonStore } = require('./durable-store.js');
 
-const STATUS = { kept: 1, discarded: 1, failed: 1 };
+// Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
+// silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
+const STATUS = new Set(['kept', 'discarded', 'failed']);
 const SOURCE_MAX = 40, TEXT_MAX = 260, ROW_CAP = 2000, UNDO_CAP = 20, FILE_CAP = 50;
 
 function text(v, n) { return String(v == null ? '' : v).slice(0, n || TEXT_MAX); }
@@ -26,7 +28,7 @@ function rowOf(v, now) {
   return {
     id,
     agentId: text(v.agentId, 40), runId: text(v.runId, 80), title: text(v.title, 200),
-    source: text(v.source || 'workshop', SOURCE_MAX), status: STATUS[v.status] ? v.status : 'failed',
+    source: text(v.source || 'workshop', SOURCE_MAX), status: STATUS.has(v.status) ? v.status : 'failed',
     kind: text(v.kind || 'files', 20), summary: text(v.summary, 1000), files: filesOf(v.files),
     createdAt: Number(v.createdAt) || Number(now) || 0, updatedAt: Number(now) || Number(v.updatedAt) || 0
   };
@@ -66,7 +68,7 @@ function makeDeliverableStore(deps) {
   }
   function previewCleanup(opts) {
     opts = opts || {};
-    const wanted = Array.isArray(opts.statuses) && opts.statuses.length ? opts.statuses.filter(s => STATUS[s]) : ['discarded', 'failed'];
+    const wanted = Array.isArray(opts.statuses) && opts.statuses.length ? opts.statuses.filter(s => STATUS.has(s)) : ['discarded', 'failed'];
     const all = list();
     const targets = all.filter(r => wanted.indexOf(r.status) >= 0);
     const protectedRows = all.filter(r => wanted.indexOf(r.status) < 0);
@@ -79,7 +81,7 @@ function makeDeliverableStore(deps) {
     let out = { ok: false, reason: 'preview-stale' };
     return durable.update(KEY, cur => {
       const s = normalize(cur);
-      const wanted = Array.isArray(preview.statuses) ? preview.statuses.filter(x => STATUS[x]) : [];
+      const wanted = Array.isArray(preview.statuses) ? preview.statuses.filter(x => STATUS.has(x)) : [];
       const current = s.rows.filter(r => wanted.indexOf(r.status) >= 0);
       if (fingerprint(current) !== String(preview.fingerprint || '')) return undefined;
       const ids = new Set(current.map(r => r.id));

@@ -68,6 +68,10 @@
   // split text into <=max-length pieces, preferring to break at the last newline/space so words/lines stay whole.
   function chunkText(text, max) {
     const s = String(text == null ? '' : text);
+    // A non-positive `max` makes `end === i` below, so the loop pushes '' forever without advancing. No
+    // caller passes one today (adapters default to 4096), but an unbounded loop is not a thing to leave
+    // one bad config away.
+    max = (typeof max === 'number' && isFinite(max) && max > 0) ? Math.floor(max) : 4096;
     if (s.length <= max) return s.length ? [s] : [];
     const out = [];
     let i = 0;

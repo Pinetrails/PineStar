@@ -552,8 +552,17 @@
     return { cwd: m[1].trim(), ec: isFinite(ec) ? ec : null, cleanOut: cleanOut };
   }
   // is `cwd` the jail root or strictly inside it? (resolve both so .. / symlinks can't sneak past)
+  // CASE-FOLD ON WINDOWS, exactly like pathInside three lines down. NTFS is case-insensitive, and the cwd
+  // compared here is routinely recovered from `%CD%` (buildMarkedCmd) rather than constructed by us — so a
+  // path that IS inside the jail but spells a segment differently read as OUTSIDE, and the whole point of
+  // H2.1's persistent session cwd (`cd` surviving between shell.exec calls) silently stopped working on the
+  // project's primary platform. Fail-closed, so it was never a security hole — just a broken feature.
   function withinJail(P, cwd, jailRoot) {
-    try { const r = P.resolve(cwd), j = P.resolve(jailRoot); return r === j || r.indexOf(j + P.sep) === 0; } catch (_) { return false; }
+    try {
+      let r = P.resolve(cwd), j = P.resolve(jailRoot);
+      if (P.sep === '\\') { r = r.toLowerCase(); j = j.toLowerCase(); }
+      return r === j || r.indexOf(j + P.sep) === 0;
+    } catch (_) { return false; }
   }
   function pathInside(P, child, parent) {
     try {

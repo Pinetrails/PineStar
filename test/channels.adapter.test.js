@@ -36,7 +36,7 @@ function fakeTransport(batches, sendResults) {
 
 // Telegram-ish normalize: an update either carries a message or a callback; a non-text update -> null (ignored).
 function normalize(ru) {
-  if (ru.cb) return { offset: ru.id, callback: { chatId: ru.cb.chat, data: ru.cb.data, callbackId: ru.cb.id } };
+  if (ru.cb) return { offset: ru.id, callback: { chatId: ru.cb.chat, userId: ru.cb.user, data: ru.cb.data, callbackId: ru.cb.id } };
   if (ru.text == null) return { offset: ru.id, message: null };   // e.g. a sticker/photo update -> drop, just advance offset
   return { offset: ru.id, message: { chatId: ru.chat, chatType: ru.type, userId: ru.user, userName: ru.uname, text: ru.text, messageId: ru.mid } };
 }
@@ -324,16 +324,41 @@ async function run() {
     await a.disconnect();
   }
 
-  // ---- G. callback updates route to onCallback (C6 consent-button plumbing) ----
+  // ---- G. callback updates route to onCallback (C6 consent-button plumbing) — OWNER ONLY ----
   {
     const cbs = [];
-    const t = fakeTransport([[{ id: 9, cb: { chat: 'c', data: 'approve:p1', id: 'q1' } }]]);
-    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram',
+    const t = fakeTransport([[{ id: 9, cb: { chat: 'c', user: 'owner1', data: 'approve:p1', id: 'q1' } }]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', ownerUserId: 'owner1',
       onInbound: () => {}, onCallback: c => cbs.push(c), clock: CLOCK, sleep: () => Promise.resolve() });
     await a.connect();
     for (let i = 0; i < 4 && !cbs.length; i++) await tick();
-    A.eq(cbs.length, 1, 'callback routed to onCallback');
-    A.eq(cbs[0], { chatId: 'c', data: 'approve:p1', callbackId: 'q1' }, 'callback payload normalized');
+    A.eq(cbs.length, 1, 'the owner\'s callback routes to onCallback');
+    A.eq(cbs[0], { chatId: 'c', userId: 'owner1', data: 'approve:p1', callbackId: 'q1' }, 'callback payload normalized');
+    await a.disconnect();
+  }
+
+  // ---- G2. a NON-owner tap never acts, and an UNCLAIMED owner is not a licence ----
+  // Ownership is claimed on the DM path alone, so a bot reachable only in a whitelisted group has
+  // owner === '' forever. `!owner ||` used to fail OPEN there, handing any group member the approve/deny
+  // buttons. A callback can never be the trust-on-first-use moment: the keyboard is on a message WE sent.
+  {
+    const cbs = [];
+    const t = fakeTransport([[{ id: 11, cb: { chat: 'g', user: 'stranger', data: 'approve:p1', id: 'q2' } }]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram', ownerUserId: 'owner1',
+      onInbound: () => {}, onCallback: c => cbs.push(c), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    await tick(); await tick(); await tick();
+    A.eq(cbs.length, 0, 'a stranger\'s tap is dropped when an owner IS claimed');
+    await a.disconnect();
+  }
+  {
+    const cbs = [];
+    const t = fakeTransport([[{ id: 12, cb: { chat: 'g', user: 'stranger', data: 'approve:p1', id: 'q3' } }]]);
+    const a = makeChannelAdapter({ transport: t, normalize, name: 'telegram',   // no ownerUserId: unclaimed
+      onInbound: () => {}, onCallback: c => cbs.push(c), clock: CLOCK, sleep: () => Promise.resolve() });
+    await a.connect();
+    await tick(); await tick(); await tick();
+    A.eq(cbs.length, 0, 'an UNCLAIMED owner fails CLOSED — no tap acts until a DM proves who the owner is');
     await a.disconnect();
   }
 

@@ -177,6 +177,55 @@ function scriptPrompt(decision) {
     A.eq(h.roots.size, 0, 'a failed bless leaves no root');
   }
 
+  /* ---- the protected-file floor is re-proven on the REAL target ----
+     It only ever saw the raw/resolved STRINGS, so a symlink named innocently inside an ALREADY-blessed root
+     (notes.txt -> /proj/.env) walked straight through it. Containment was re-proven on the realpath; the
+     floor was not. Injected fs so the case runs on a host that cannot create symlinks. ---- */
+  {
+    const PP = require('node:path').posix;
+    const PM = Object.assign({}, PP, { sep: '/' });
+    const LINK = '/proj/notes.txt', ENV = '/proj/.env';
+    const fspFake = {
+      async realpath(p) { return p === LINK ? ENV : p; },
+      async lstat(p) { if (p === LINK || p === ENV || p === '/proj') return {}; throw new Error('ENOENT'); },
+      async stat(p) { if (p === '/proj') return { isDirectory: () => true }; throw new Error('ENOENT'); }
+    };
+    const pt = makePathTrust({ fsp: fspFake, pathMod: PM, roots: () => ['/proj'] });
+    let blocked = false;
+    try { await pt.guard(ENV, { scope: 'read', surface: 'interactive' }); } catch (e) { blocked = /protected-file floor/.test(e.message); }
+    A.ok(blocked, 'the direct .env path is blocked (unchanged)');
+    blocked = false;
+    try { await pt.guard(LINK, { scope: 'read', surface: 'interactive' }); } catch (e) { blocked = /protected-file floor/.test(e.message); }
+    A.ok(blocked, 'a symlink inside a blessed root that RESOLVES to .env is blocked too');
+    // an ordinary file under the same blessed root still flows
+    const ok = await pt.guard('/proj/src/a.js', { scope: 'read', surface: 'interactive' });
+    A.eq(ok.base, '/proj', 'an ordinary in-root read is unaffected');
+  }
+
+  /* ---- "always" must actually stick when the root is reached through a symlinked ancestor ----
+     The grant was stored as P.resolve(...) while lookup compares the realpath, so ~/code -> /mnt/data/code
+     never matched again and the Commander was re-prompted on every call — consent fatigue on the one prompt
+     that widens filesystem reach. ---- */
+  {
+    const PP = require('node:path').posix;
+    const PM = Object.assign({}, PP, { sep: '/' });
+    const SYM = '/home/me/code', REALROOT = '/mnt/data/code';
+    const blessed = [];
+    const fspFake = {
+      async realpath(p) { return p.indexOf(SYM) === 0 ? REALROOT + p.slice(SYM.length) : p; },
+      async lstat() { return {}; },
+      async stat(p) { if (p === SYM || p === REALROOT) return { isDirectory: () => true }; throw new Error('ENOENT'); }
+    };
+    const pt = makePathTrust({ fsp: fspFake, pathMod: PM, roots: () => blessed.slice(),
+      bless: async (r) => { blessed.push(r); return true; } });
+    await pt.guard(SYM + '/src/a.js', { scope: 'read', surface: 'interactive', prompt: async () => 'always' });
+    A.ok(blessed[0].indexOf(REALROOT) === 0, 'the grant is recorded under the CANONICAL (realpath) root');
+    let asked = 0;
+    const second = await pt.guard(SYM + '/src/b.js', { scope: 'read', surface: 'interactive', prompt: async () => { asked++; return 'always'; } });
+    A.eq(asked, 0, 'a second file under the same root does NOT re-prompt');
+    A.ok(second.base.indexOf(REALROOT) === 0, 'and resolves against the blessed canonical root');
+  }
+
   try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}
   A.report('pathtrust.test');
 })();

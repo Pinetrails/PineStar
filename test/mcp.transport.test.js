@@ -236,5 +236,23 @@ const rpc = (id, result) => JSON.stringify({ jsonrpc: '2.0', id, result });
     A.eq(timers.length, 0, 'close() clears any pending reconnect timer');
   }
 
+  /* ---- the cleartext-token guard must not be fooled by a NAME that starts with 127. ----
+     `/^127\./` was unanchored, so http://127.0.0.1.evil.com/mcp classified as loopback and the connector's
+     bearer token went over plaintext HTTP to whoever owns that domain. ---- */
+  {
+    const { assertUrl, isLoopback } = require('../sidecar/mcp/transport.http.js')._internals;
+    const refused = (u) => { try { assertUrl(u); return false; } catch (e) { return true; } };
+    A.ok(refused('http://127.0.0.1.evil.com/mcp'), 'a public NAME beginning with 127. is not loopback');
+    A.ok(refused('http://127.evil.com/mcp'), 'nor is 127.evil.com');
+    A.ok(refused('http://localhost.evil.com/mcp'), 'nor is localhost.evil.com');
+    A.ok(refused('http://evil.com/mcp'), 'and an ordinary remote host still refuses http');
+    A.ok(!refused('http://127.0.0.1:9000/mcp'), 'a real loopback literal still allows http');
+    A.ok(!refused('http://localhost:3000/mcp'), 'so does localhost');
+    A.ok(!refused('http://[::1]:3000/mcp'), 'so does ::1');
+    A.ok(!refused('https://remote.example/mcp'), 'https to a remote host is unaffected');
+    A.eq(isLoopback('::ffff:127.0.0.1'), true, 'the IPv4-mapped IPv6 loopback form is recognized');
+    A.eq(isLoopback('localhost.'), true, 'the FQDN root label does not change the classification');
+  }
+
   A.report('mcp.transport.test');
 })();

@@ -466,7 +466,12 @@
     }
 
     async function loadCatalog() {
-      if (catalog) return catalog;
+      // ONLY a NON-EMPTY catalog is a cache hit. A failed boot probe stores [], which is TRUTHY — so this
+      // returned the empty array forever and maybeRewarmCatalog(), added precisely because "an empty catalog
+      // stays empty forever", could never re-fetch through it. One offline launch then permanently zeroed
+      // priceOf() (every turn 'unpriced' -> the ledger records $0 and the day/global caps never fire) and
+      // contextLimit() (no auto-compaction threshold). openrouter.js has always had this guard.
+      if (catalog && catalog.length) return catalog;
       if (!catalogPromise) {
         catalogPromise = (async () => {
           try {

@@ -282,8 +282,18 @@ function chatFixture() {
 
     const comp = seq.filter(e => e.name === 'agent.compact');
     A.eq(comp.length, 1, 'exactly one agent.compact when the prompt crosses the threshold');
-    A.eq(comp[0].payload.beforeTokens, 8, 'compact beforeTokens = the prior turn prompt tokens');
+    // before/after are measured with the SAME estimator, so `removed` is a real saving. beforeTokens used to
+    // be the provider's prompt_tokens while afterTokens was a local estimate — two units subtracted from each
+    // other, which both fabricated the emitted `removed` and pinned `savings` near 1.0 so the anti-thrash
+    // breaker ("two folds that each free <10% -> stop") could never fire.
+    A.ok(typeof comp[0].payload.beforeTokens === 'number' && comp[0].payload.beforeTokens > 0, 'beforeTokens is a real estimate of the pre-fold prompt');
     A.ok(typeof comp[0].payload.afterTokens === 'number' && comp[0].payload.afterTokens >= 0, 'afterTokens is a real estimate');
+    A.eq(comp[0].payload.removed, Math.max(0, comp[0].payload.beforeTokens - comp[0].payload.afterTokens),
+      'removed is before-minus-after in ONE unit, not a subtraction across two');
+    // NOTE: a fold can legitimately GROW a tiny history (the summary note outweighs the turn it replaced) —
+    // that is precisely the low-savings case the anti-thrash breaker exists to notice, and it can only notice
+    // it now that both ends are measured the same way. `removed` clamps at 0 so the event never reports a
+    // negative saving.
     A.eq(comp[0].payload.reason, 'context', 'compaction reason tagged context');
     A.eq(res.reason, 'done', 'the run completes after compacting');
     A.eq(summarizedOlder.length, 1, 'only the original user turn was folded; the assistant+tool group stayed in the tail');

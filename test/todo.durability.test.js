@@ -102,5 +102,28 @@ function memFs() {
   A.eq(await restoreDeclined(dstore, 'hero', '   '), false, 'a blank text restores nothing');
   A.eq(dstore.get('declined:hero'), ['keep this one', 'and keep this'], 'the reject-list is unchanged by no-op restores');
 
+  /* ---- every lookup here is keyed by a MODEL-SUPPLIED string, so none may be a bare object literal ----
+     `byId['constructor']` resolved to the global Object function: the merge branch wrote the todo's content
+     and status onto Object ITSELF, then dropped the item — the model asked for a task and got global
+     mutation, no task and no error. ---- */
+  {
+    const T = require('../sidecar/tools/builtin/todo.js')._internals;
+    A.eq(Object.content, undefined, 'precondition: Object carries no stray content property');
+    const merged = T.buildList([{ id: 't1', content: 'real', status: 'pending' }],
+      [{ id: 'constructor', content: 'PWNED', status: 'completed' }], true);
+    A.eq(Object.content, undefined, 'a prototype-named todo id does NOT mutate the global Object');
+    A.eq(Object.status, undefined, 'nor its status');
+    A.eq(merged.length, 2, 'and the requested todo is actually stored instead of silently dropped');
+    A.eq(merged[1].id, 'constructor', 'kept under the id the model asked for');
+    A.eq(merged[1].status, 'completed', 'with the status it asked for');
+    // the status enum is a real enum
+    A.eq(T.buildList([], [{ id: 'x', content: 'c', status: 'constructor' }], false)[0].status, 'pending',
+      'a prototype-named STATUS clamps to pending rather than being accepted');
+    A.eq(T.buildList([], [{ id: 'y', content: 'c', status: 'in_progress' }], false)[0].status, 'in_progress',
+      'a real status still round-trips');
+    A.ok(T.render([{ id: 'z', content: 'c', status: 'toString' }]).indexOf('[?]') === 0,
+      'an unknown status renders as [?] rather than reaching for a prototype value');
+  }
+
   A.report('todo.durability.test');
 })();

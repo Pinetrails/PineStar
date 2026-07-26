@@ -5476,18 +5476,25 @@ function handleBudgetStatus(req, res) {
   // caps: the EFFECTIVE (persisted-or-env) values the UI edits; `overrides` marks which were saved (vs env default),
   // so the Budget panel can show "env default" honestly. spentToday/lifetime are the real ledger reads the floor HUD
   // + cost tests already consume — never re-parsed in the frontend.
-  res.end(JSON.stringify(Object.assign({
+  /* ORDER MATTERS. budget.status() ALSO returns a `caps` key — the governor's pool-only shape
+     ({agent,day,global}) — and it was spread LAST, so it silently replaced the {perRun,perAgent,perDay,global}
+     object this route documents and the panel edits. Every consumer reading caps.perRun got undefined
+     (stationui.js carries an explicit workaround comment for exactly this). Spread the governor FIRST so the
+     documented shape wins, and expose its pool view under its own `pools` key instead of losing it. */
+  const governor = budget.status(now);
+  res.end(JSON.stringify(Object.assign({}, governor, {
     caps: {
       perRun: effectiveCaps.perRun, perAgent: effectiveCaps.perAgent,
       perDay: effectiveCaps.perDay, global: effectiveCaps.global
     },
+    pools: governor.caps,                             // the governor's own {agent,day,global} view, kept honestly
     saved: Object.assign({}, budgetOverrides),        // only the keys the user explicitly saved
     envDefaults: { perRun: BUDGET_CAPS.perRun, perAgent: BUDGET_CAPS.perAgent, perDay: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global },
     perRun: effectiveCaps.perRun,                     // back-compat: pre-existing flat field kept
     spentToday: ledger.usdForDay(now),
     lifetime: ledger.totalUsd(),
     totalUsd: ledger.totalUsd(), runs: ledger.count()
-  }, budget.status(now))));
+  })));
 }
 /* ---- GET /api/credits — the managed-credit STORE surface (balance + recent history + the external purchase URL).
    HONESTY LAW: 404s when managed credits are NOT configured, so the frontend renders no STORE card and shows no
@@ -9165,11 +9172,16 @@ async function runOnce(o) {
         });
       } catch (_) {}
     }
-    // TAINT OBSERVATION — content the Commander did not author has now entered this run's context, so the
-    // grants that would let injected text act are revoked from here on (see `taintedBy`). Latched on the FIRST
-    // such result and never cleared: context is cumulative, so a later "clean" tool does not un-read the page.
-    // Only a SUCCESSFUL result with actual content counts — a failed fetch put nothing in front of the model.
-    if (!taintedBy && r && !r.isError && typeof r.content === 'string' && r.content.length && revokedByTaint.isSource(liveTool)) {
+    /* TAINT OBSERVATION — content the Commander did not author has now entered this run's context, so the
+       grants that would let injected text act are revoked from here on (see `taintedBy`). Latched on the FIRST
+       such result and never cleared: context is cumulative, so a later "clean" tool does not un-read the page.
+       ERRORS COUNT TOO. This used to require `!r.isError` on the reasoning that "a failed fetch put nothing in
+       front of the model". That holds for web_fetch (it throws a bare `http <status>`, never the body) but is
+       FALSE for an MCP connector: its failure text IS the third-party server's payload, and registry.dispatch
+       puts it verbatim into the tool_result the model reads. So `isError: true` was a one-flag bypass that let
+       a hostile connector inject text while the run kept its terminal / credentialed / connector-write powers.
+       What actually matters is whether untrusted BYTES reached the context, not whether the call succeeded. */
+    if (!taintedBy && r && typeof r.content === 'string' && r.content.length && revokedByTaint.isSource(liveTool)) {
       taintedBy = c.name;
     }
     // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.

@@ -275,4 +275,18 @@ const redact = (t) => String(t).replace(/sk-[A-Za-z0-9]{8,}/g, '[redacted]');
   A.eq(reloaded.list('a').length + reloaded.list('b').length, 3, 'boot load after compaction sees every distinct skill');
 }
 
+/* ---- "take the WORSE of two risk levels" must not fail OPEN on a level it doesn't recognize ----
+   ORDER[unknown] is undefined and `undefined >= n` is FALSE, so an unrecognized level always LOST:
+   worse('Dangerous','safe') answered 'safe'. A typo, a casing difference, or a level a newer scanner emits
+   silently downgraded the verdict — in the one function whose entire job is to pick the worse of two. ---- */
+{
+  A.eq(skillGuard.worse('dangerous', 'safe'), 'dangerous', 'a known-worse level wins');
+  A.eq(skillGuard.worse('safe', 'dangerous'), 'dangerous', 'in either argument order');
+  A.eq(skillGuard.worse('caution', 'safe'), 'caution', 'caution beats safe');
+  A.eq(skillGuard.worse('Dangerous', 'safe'), 'Dangerous', 'a CASING difference is not a downgrade');
+  A.eq(skillGuard.worse('extreme', 'caution'), 'extreme', 'an UNKNOWN level ranks worst, never safest');
+  A.eq(skillGuard.worse(null, 'caution'), 'caution', 'a missing level defaults to safe and loses');
+  A.eq(skillGuard.worse('safe', 'safe'), 'safe', 'two safes stay safe');
+}
+
 A.report('skills.test');

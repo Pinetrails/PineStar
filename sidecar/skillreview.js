@@ -93,8 +93,10 @@
   }
 
   // Actions that CHANGE the skillbase (worth a deliverable + a COMMS aside). A pure read/list must stay silent.
-  const WRITE_ACTIONS = { create: 1, edit: 1, patch: 1, archive: 1, restore: 1, write_file: 1, remove_file: 1, saved: 1, edited: 1, manage: 1 };
-  function isWriteAction(action) { return !!WRITE_ACTIONS[String(action || '').toLowerCase()]; }
+  // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
+  // silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
+  const WRITE_ACTIONS = new Set(['create', 'edit', 'patch', 'archive', 'restore', 'write_file', 'remove_file', 'saved', 'edited', 'manage']);
+  function isWriteAction(action) { return WRITE_ACTIONS.has(String(action || '').toLowerCase()); }
 
   /* makeReviewObserver({ emit, log, now, source }) -> { onManage(skill, action) }
      The ONE testable seam that un-silences a background pass. When the quiet review/curator loop mutates a

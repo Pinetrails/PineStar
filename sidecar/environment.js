@@ -51,7 +51,12 @@
     }
     return dflt;
   }
-  const SECRET_ENV_NAME_RE = /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|PASS|AUTH|BEARER|COOKIE|CREDENTIAL)(?:_|$)/i;
+  /* The `_`-boundary requirement meant a CONCATENATED name never matched, so the ambient secrets people
+     actually have leaked straight into every task child's env: STRIPE_APIKEY, ANTHROPIC_APIKEY, GITHUB_PAT,
+     FOO_ACCESSTOKEN. (StarNet's own KEYS vars always end in _API_KEY, which is why this never showed up in
+     our own fixtures.) Keep the boundary form for the words that read as prose (PASS, AUTH, KEY) and add
+     the glued spellings that are unambiguous on their own. */
+  const SECRET_ENV_NAME_RE = /(?:^|_)(?:TOKEN|KEY|SECRET|PASSWORD|PASS|AUTH|BEARER|COOKIE|CREDENTIAL)(?:_|$)|(?:APIKEY|ACCESSTOKEN|ACCESSKEY|SECRETKEY|AUTHTOKEN|APITOKEN|PRIVATEKEY|PASSWD)|(?:^|_)PAT(?:_|$)/i;
   const INTERNAL_ENV_NAME_RE = /^(?:STARNET|SKYNET)_/i;
   const EXECUTION_HOOK_ENV_RE = /^(?:NODE_OPTIONS|NODE_PATH|npm_config_script_shell|COMSPEC)$/i;
   function sanitizeChildEnv(base) {
@@ -94,9 +99,13 @@
   function backendFromEnv(env) {
     return firstEnv(env, ['STARNET_EXEC_BACKEND', 'SKYNET_EXEC_BACKEND'], 'local').trim().toLowerCase();
   }
+  // Case-fold on Windows — the second copy of the same defect fixed in shell.js withinJail. The cwd compared
+  // here is a REMEMBERED one (getCwd/rememberCwd), so a path that IS inside the workspace but spells a segment
+  // differently was judged outside and the remembered cwd was silently dropped. Fail-closed, never a hole.
   function hostInside(P, cwd, base) {
     try {
-      const r = P.resolve(cwd), b = P.resolve(base);
+      let r = P.resolve(cwd), b = P.resolve(base);
+      if (P.sep === '\\') { r = r.toLowerCase(); b = b.toLowerCase(); }
       return r === b || r.indexOf(b + P.sep) === 0;
     } catch (_) { return false; }
   }

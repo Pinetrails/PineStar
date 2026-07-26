@@ -37,6 +37,21 @@
   const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
                      '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
   const FETCH_MAX_CHARS   = 6000;   // web_fetch truncation
+  /* RAW-BODY CEILING, applied BEFORE anything parses the response.
+     htmlToText is a chain of lazy `[\s\S]*?` replaces — quadratic in the input — and the clamp to
+     FETCH_MAX_CHARS ran AFTER it. Measured on a page of repeated "<script>": 64KB -> 55ms, 256KB -> 880ms,
+     1MB -> 14.3 SECONDS of synchronous event-loop freeze, and it grows from there. StarNet is one process,
+     so that is the whole station stopped by a page the agent was asked to read — and web_fetch is
+     read-only, no-consent, callable on any URL including one suggested by untrusted content.
+     2MB leaves the extractor far more material than the 6k it will keep, while bounding the worst case to
+     well under a second. */
+  const RAW_BODY_MAX_CHARS = 2 * 1024 * 1024;
+  function readBodyBounded(r) {
+    return Promise.resolve(r.text()).then(t => {
+      const s = String(t == null ? '' : t);
+      return s.length > RAW_BODY_MAX_CHARS ? s.slice(0, RAW_BODY_MAX_CHARS) : s;
+    });
+  }
   const SNIPPET_MAX_CHARS = 320;
   const SEARCH_TIMEOUT_MS = 12000;
   const FETCH_TIMEOUT_MS  = 15000;
@@ -99,6 +114,11 @@
   function hostOf(u) {
     let h = u.hostname.toLowerCase();
     if (h.charAt(0) === '[') h = h.slice(1, -1);                 // strip IPv6 brackets
+    // ...and the FQDN root label. WHATWG strips a trailing dot for IP literals but NOT for names, so
+    // `localhost.` / `svc.internal.` / `wiki.` kept theirs and slipped past every name rule below. The DNS
+    // guard would usually catch it downstream, but it is best-effort (a failed lookup returns silently, and
+    // deps.lookup:null disables it), so the static rule must be right on its own. Same fix as browser.js.
+    else h = h.replace(/\.+$/, '');
     return h;
   }
   function assertSafeUrl(raw) {
@@ -133,21 +153,58 @@
   }
 
   // ---------- HTML -> readable text (web_fetch fallback) ----------
+  /* HTML -> readable text, in ONE LINEAR PASS.
+     This used to be a chain of lazy `[\s\S]*?` replaces, every one of them QUADRATIC on input the fetch
+     does not control. `<script` with no `</script>` makes the lazy scan walk to end-of-input from each of
+     the N start positions; `<[^>]+>` does the same on a run of `<`. Measured on a page of repeated
+     "<script>": 64KB -> 55ms, 256KB -> 880ms, 1MB -> 14.3 SECONDS of synchronous event-loop freeze — the
+     whole station (UI, API, SSE bus, every agent run) stopped by a page an agent was asked to read, on a
+     read-only no-consent tool. Capping the input alone only moved the number; the scan itself had to stop
+     being quadratic.
+     An indexOf-driven walk is O(n) and output-equivalent for well-formed HTML: skip the contents of
+     script/style/noscript and comments, turn block-closers and <br> into newlines, and drop every other tag.
+     An UNCLOSED block or tag consumes the rest of the input exactly as the lazy regex did. */
+  const BLOCK_CLOSERS = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'tr', 'section', 'article', 'header', 'footer']);
+  const SKIP_BLOCKS = new Set(['script', 'style', 'noscript']);
+  function stripMarkup(html) {
+    const s = String(html);
+    const out = [];
+    let i = 0;
+    while (i < s.length) {
+      const lt = s.indexOf('<', i);
+      if (lt < 0) { out.push(s.slice(i)); break; }
+      if (lt > i) out.push(s.slice(i, lt));
+      if (s.startsWith('<!--', lt)) {                                  // comment: skip to the terminator
+        const end = s.indexOf('-->', lt + 4);
+        out.push(' ');
+        if (end < 0) break;
+        i = end + 3; continue;
+      }
+      const gt = s.indexOf('>', lt + 1);
+      if (gt < 0) { out.push(' '); break; }                            // unterminated tag consumes the rest
+      const inner = s.slice(lt + 1, gt);
+      const m = /^\/?\s*([a-zA-Z][a-zA-Z0-9]*)/.exec(inner);
+      const name = m ? m[1].toLowerCase() : '';
+      const closing = inner.charAt(0) === '/';
+      if (!closing && SKIP_BLOCKS.has(name)) {                         // skip the whole block's contents
+        const close = s.toLowerCase().indexOf('</' + name, gt + 1);
+        out.push(' ');
+        if (close < 0) break;                                          // unclosed block consumes the rest
+        const closeGt = s.indexOf('>', close);
+        i = closeGt < 0 ? s.length : closeGt + 1; continue;
+      }
+      if (name === 'br' || (closing && BLOCK_CLOSERS.has(name))) out.push('\n');
+      else out.push(' ');
+      i = gt + 1;
+    }
+    return out.join('');
+  }
   function htmlToText(html) {
-    let s = String(html);
-    s = s.replace(/<script[\s\S]*?<\/script>/gi, ' ')
-         .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-         .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
-         .replace(/<!--[\s\S]*?-->/g, ' ')
-         .replace(/<\/(p|div|h[1-6]|li|tr|section|article|header|footer)>/gi, '\n')
-         .replace(/<br\s*\/?>/gi, '\n')
-         .replace(/<[^>]+>/g, ' ');
-    s = decodeEntities(s)
-         .replace(/[ \t\f\v]+/g, ' ')
-         .replace(/ *\n */g, '\n')
-         .replace(/\n{3,}/g, '\n\n')
-         .trim();
-    return s;
+    return decodeEntities(stripMarkup(html))
+      .replace(/[ \t\f\v]+/g, ' ')
+      .replace(/ *\n */g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   // ======================================================================
@@ -173,9 +230,14 @@
     return status === 202 || low.includes('anomaly') || (low.includes('challenge') && !low.includes('result__a'));
   }
 
+  /* The anchor-text capture is BOUNDED. `([\s\S]*?)</a>` scans to end-of-input from every start position
+     when the closing tag is absent, so a search-engine body with many result-link OPENS and no closers is
+     quadratic: measured 1MB -> 1403ms of frozen event loop on this single-process host. A result TITLE is a
+     few dozen characters; 600 is already absurdly generous, and it turns each failed attempt into a fixed
+     cost instead of a full scan. (The snippet lookups were already windowed to a 2500-char tail.) */
   function parseDDGHtml(html) {
     const out = [];
-    const re = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    const re = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]{0,600}?)<\/a>/gi;
     let m;
     while ((m = re.exec(html)) && out.length < 12) {
       const url = unwrapDDG(m[1]);
@@ -183,8 +245,8 @@
       if (!url || !title) continue;
       // snippet lives just after the title link in a .result__snippet element
       const tail = html.slice(m.index, m.index + 2500);
-      const sm = tail.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i) ||
-                 tail.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/(div|span|td)>/i);
+      const sm = tail.match(/class="result__snippet"[^>]*>([\s\S]{0,1200}?)<\/a>/i) ||
+                 tail.match(/class="result__snippet"[^>]*>([\s\S]{0,1200}?)<\/(div|span|td)>/i);
       out.push({ title, url, snippet: sm ? clamp(stripTags(sm[1]), SNIPPET_MAX_CHARS) : '' });
     }
     return out;
@@ -193,14 +255,14 @@
   // DDG lite endpoint has a flat <table> of <a class="result-link"> + a following snippet row.
   function parseDDGLite(html) {
     const out = [];
-    const re = /<a[^>]*class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    const re = /<a[^>]*class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]{0,600}?)<\/a>/gi;
     let m;
     while ((m = re.exec(html)) && out.length < 12) {
       const url = unwrapDDG(m[1]);
       const title = stripTags(m[2]);
       if (!url || !title) continue;
       const tail = html.slice(m.index, m.index + 2500);
-      const sm = tail.match(/class="result-snippet"[^>]*>([\s\S]*?)<\/td>/i);
+      const sm = tail.match(/class="result-snippet"[^>]*>([\s\S]{0,1200}?)<\/td>/i);
       out.push({ title, url, snippet: sm ? clamp(stripTags(sm[1]), SNIPPET_MAX_CHARS) : '' });
     }
     return out;
@@ -256,7 +318,7 @@
         headers: searchHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
         body: 'q=' + encodeURIComponent(query) + '&kl=us-en',
         signal
-      }).then(async r => ({ status: r.status, body: await r.text() })), SEARCH_TIMEOUT_MS, parent);
+      }).then(async r => ({ status: r.status, body: await readBodyBounded(r) })), SEARCH_TIMEOUT_MS, parent);
       if (isDDGBlocked(html.status, html.body)) { const e = new Error('duckduckgo rate-limited (anomaly/202)'); e.__blocked = true; throw e; }
       return parser(html.body);
     }
@@ -266,7 +328,7 @@
     async function mojeekSearch(query, parent) {
       const res = await withTimeout(signal => doFetch('https://www.mojeek.com/search?q=' + encodeURIComponent(query), {
         method: 'GET', headers: searchHeaders(), signal
-      }).then(async r => ({ status: r.status, body: await r.text() })), SEARCH_TIMEOUT_MS, parent);
+      }).then(async r => ({ status: r.status, body: await readBodyBounded(r) })), SEARCH_TIMEOUT_MS, parent);
       if (res.status !== 200) throw new Error('mojeek http ' + res.status);
       return parseMojeek(res.body);
     }
@@ -343,7 +405,7 @@
       const headers = { 'Accept': 'text/plain', 'X-Return-Format': 'text', 'User-Agent': UA };
       if (deps.jinaKey) headers['Authorization'] = 'Bearer ' + deps.jinaKey;
       const res = await withTimeout(signal => doFetch('https://r.jina.ai/' + targetUrl, { headers, signal })
-        .then(async r => ({ status: r.status, body: await r.text() })), FETCH_TIMEOUT_MS, parent);
+        .then(async r => ({ status: r.status, body: await readBodyBounded(r) })), FETCH_TIMEOUT_MS, parent);
       if (res.status === 401 || res.status === 402 || res.status === 429) {
         const e = new Error('jina ' + res.status); e.__retryDirect = true; throw e;
       }
@@ -365,7 +427,7 @@
       for (let hop = 0; hop < 6; hop++) {
         const res = await withTimeout(signal => doFetch(u.href, {
           headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' }, redirect: 'manual', signal
-        }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await r.text() })), FETCH_TIMEOUT_MS, parent);
+        }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await readBodyBounded(r) })), FETCH_TIMEOUT_MS, parent);
         if (res.status >= 300 && res.status < 400 && res.loc) {
           const next = assertSafeUrl(new URL(res.loc, u.href).href);   // re-validate the redirect target
           await assertResolvedSafe(next, doLookup);
@@ -490,13 +552,27 @@
         await assertResolvedSafe(u, doLookup);
 
         const used = [];
+        /* WHICH HEADER SLOTS ACTUALLY CARRY A SECRET. The redirect guard below used to decide this by NAME
+           (authorization|cookie|x-api-key) — but the model picks the slot, and half the real API world puts
+           the key somewhere else (X-Shopify-Access-Token, Private-Token, apikey, X-Auth-Token), so an open
+           redirect on a trusted host forwarded the Commander's key to the attacker verbatim. The host does
+           not need to guess: the substitution happens right here, so record the exact keys it wrote into. */
+        const secretHeaders = new Set();
         const headers = { 'User-Agent': UA, 'Accept': 'application/json, text/plain;q=0.9, */*;q=0.8' };
         const src = (args && args.headers && typeof args.headers === 'object') ? args.headers : {};
         for (const k of Object.keys(src)) {
           if (/[\r\n]/.test(k) || /[\r\n]/.test(String(src[k]))) throw new Error('header contains a newline: ' + k);
+          const before = used.length;
           const r = resolveSecretRefs(src[k], surface, used);
           if (r.failure) throw new Error(r.failure);
+          if (used.length > before) secretHeaders.add(k.toLowerCase());   // this slot now holds a real key
           headers[k] = r.out;
+        }
+        /* A ${KEY} placeholder in the BODY is silently NOT substituted (headers only, by design) — which
+           shipped the literal text "${STRIPE_API_KEY}" to the third party and left the model debugging a
+           confusing 401. Refuse it with the same clarity the url check already uses. */
+        if (args && args.body != null && SECRET_REF_TEST.test(String(args.body))) {
+          throw new Error('a ${KEY} placeholder cannot go in the body — the host substitutes stored keys into HEADERS only. Put it in a header (or use "auth").');
         }
         /* AUTH DESCRIPTOR — for APIs that take the key as a query parameter. The model NAMES the key and the
            slot; the HOST resolves and attaches it here, after the model has finished composing the request.
@@ -519,22 +595,31 @@
           }
           used.push(keyName);
           if (where === 'query') u.searchParams.set(slot, r.value);
-          else headers[slot] = String(auth.prefix || '') + r.value;
+          else { headers[slot] = String(auth.prefix || '') + r.value; secretHeaders.add(slot.toLowerCase()); }
         }
 
         const hasBody = method !== 'GET' && method !== 'HEAD' && args && args.body != null;
         if (hasBody && !Object.keys(headers).some(k => k.toLowerCase() === 'content-type')) headers['Content-Type'] = 'application/json';
 
-        // Redirects are followed manually so every hop is re-validated against the SSRF guard. Credentials
-        // are dropped the moment the host changes — an open redirect must never forward the user's key.
+        /* Redirects are followed manually so every hop is re-validated against the SSRF guard. Credentials are
+           dropped the moment the ORIGIN changes — an open redirect must never forward the user's key.
+           TWO corrections to what "origin" and "credential" mean here:
+             · origin, not host. hostOf() ignores scheme and port, so an https -> http redirect on the SAME
+               hostname kept the Authorization header and put the key on the wire in CLEARTEXT.
+             · the slots we PROVABLY filled with a secret (secretHeaders), not a three-name denylist — plus
+               the denylist, which still covers a credential the caller supplied literally rather than via
+               ${KEY} (a pasted cookie or bearer we never resolved and therefore never recorded). */
+        const originOf = (x) => x.protocol + '//' + hostOf(x) + ':' + (x.port || (x.protocol === 'https:' ? '443' : '80'));
+        const firstOrigin = originOf(u);
+        const isCredential = (k) => secretHeaders.has(k.toLowerCase()) || /^(authorization|cookie|x-api-key)$/i.test(k);
         let target = u, res = null;
         for (let hop = 0; hop < 5; hop++) {
-          const sendHeaders = hop === 0 || hostOf(target) === hostOf(u)
+          const sendHeaders = hop === 0 || originOf(target) === firstOrigin
             ? headers
-            : Object.keys(headers).reduce((o, k) => (/^(authorization|cookie|x-api-key)$/i.test(k) ? o : (o[k] = headers[k], o)), {});
+            : Object.keys(headers).reduce((o, k) => (isCredential(k) ? o : (o[k] = headers[k], o)), {});
           res = await withTimeout(signal => doFetch(target.href, {
             method, headers: sendHeaders, body: hasBody ? String(args.body) : undefined, redirect: 'manual', signal
-          }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await r.text() })), FETCH_TIMEOUT_MS, ctx && ctx.signal);
+          }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await readBodyBounded(r) })), FETCH_TIMEOUT_MS, ctx && ctx.signal);
           if (res.status >= 300 && res.status < 400 && res.loc) {
             const next = assertSafeUrl(new URL(res.loc, target.href).href);
             await assertResolvedSafe(next, doLookup);

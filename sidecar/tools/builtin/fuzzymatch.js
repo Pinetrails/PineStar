@@ -77,6 +77,11 @@
     }
     return out + content.slice(cursor);
   }
+  // Anchor a block by its first and last meaningful lines. Matches are NON-OVERLAPPING: the scan resumes
+  // after the block it just claimed. Without that, every occurrence of the FIRST anchor before a given last
+  // anchor produced its own range ending at the SAME line — so a block occurring exactly once reported
+  // "Found 2 matches; provide more context" (e.g. two `if (a) {` lines above one `}`), and with replaceAll
+  // the overlapping ranges spliced the replacement in twice.
   function blockAnchor(content, oldText) {
     const oldLines = oldText.split('\n');
     const first = oldLines.find(l => l.trim());
@@ -92,6 +97,7 @@
         const start = starts[i];
         const end = starts[j] + fileLines[j].length;
         out.push([start, end]);
+        i = j;              // claim the block: the next scan starts AFTER it, never inside it
         break;
       }
     }

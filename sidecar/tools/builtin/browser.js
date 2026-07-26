@@ -295,9 +295,18 @@
     return { text: ' — HTTP ' + code + (r.statusText ? ' ' + r.statusText : '') +
              ' (the page below is the server\'s error response, not the content you asked for)', summary: ' ' + code };
   }
+  /* The host, normalized for COMPARISON. Two normalizations matter and both were missing:
+     · lowercase + IPv6 bracket strip (as before).
+     · TRAILING DOTS. `http://localhost./` is the FQDN-root spelling of `localhost` and every resolver
+       treats them as the same name — but WHATWG only strips the dot for IP literals, so the name kept it
+       and `h === 'localhost'`, `h.endsWith('.local')`, and the single-label `bareName` rule ALL missed.
+       Every name-based rule in assertSafeUrl was therefore one keystroke from being bypassed
+       (`localhost.`, `svc.internal.`, `router.lan.`, `wiki.` all reached the network). Strip the root
+       label here so the one comparison helper is right for every caller. */
   function hostOf(u) {
     let h = u.hostname.toLowerCase();
     if (h.charAt(0) === '[') h = h.slice(1, -1);
+    else h = h.replace(/\.+$/, '');
     return h;
   }
   function isPrivateV4(h) {
@@ -327,6 +336,25 @@
       throw new Error('refusing to navigate to private/loopback/intranet host: ' + h);
     }
     return u;
+  }
+  /* DNS-REBINDING GUARD — the half assertSafeUrl structurally cannot do. Name rules only ever see the
+     STRING; a public name that RESOLVES to 127.0.0.1 / RFC-1918 (nip.io, localtest.me, or simply an
+     attacker-controlled A record) walked straight through them. web_fetch has resolved every hop since the
+     web lane (web.js assertResolvedSafe); browser.navigate — the tool that then RUNS the page's scripts —
+     did not, so the weaker guard sat in front of the more capable tool.
+     Injectable + best-effort, byte-identical to web.js: a resolution failure is left for the navigation to
+     surface, and IP literals are already checked statically above. Pass lookup:null to disable (tests). */
+  function nodeLookup(host) { const dns = require('node:dns'); return dns.promises.lookup(host, { all: true }); }
+  async function assertResolvedSafe(u, lookup) {
+    if (!lookup) return;
+    const h = hostOf(u);
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h) || h.indexOf(':') >= 0) return;   // already a literal
+    let addrs;
+    try { addrs = await lookup(h); } catch (e) { return; }
+    for (const a of (addrs || [])) {
+      const ip = (a && a.address) || '';
+      if (isPrivateV4(ip) || isPrivateV6(ip)) throw new Error('refusing to navigate: ' + h + ' resolves to private address ' + ip);
+    }
   }
   // Separate from assertSafeUrl: public browsing retains its SSRF boundary. Only the workbench-
   // scoped browser.test_navigate tool may use this validator, and only for an agent's local dev UI.
@@ -1373,15 +1401,23 @@
       if (r.version !== version) throw new Error('stale browser ref: ' + ref + ' (refs expire after each browser.snapshot)');
       return r.node;
     }
+    // DNS-rebinding resolver for PUBLIC navigation (never for the loopback test tool, which is an explicit
+    // allowlist). Defaults to real Node DNS; deps.lookup === null disables it for rigs/tests.
+    const doLookup = ('lookup' in deps) ? deps.lookup : nodeLookup;
     async function navigate(url, opts) {
       opts = opts || {};
       const local = opts.local === true;
       const validate = local ? assertLoopbackUrl : assertSafeUrl;
       const u = validate(url);
+      if (!local) await assertResolvedSafe(u, doLookup);   // refuse names that RESOLVE private (rebinding)
       const d = ensureDriver(local ? false : ('visible' in opts ? !!opts.visible : undefined));
       const finalUrl = await d.navigate(u.href);
       if (finalUrl) {
-        try { validate(finalUrl); } catch (e) {
+        try {
+          validate(finalUrl);
+          // the post-redirect host must clear the SAME resolution bar as the one we asked for
+          if (!local) await assertResolvedSafe(new URL(finalUrl), doLookup);
+        } catch (e) {
           try { await d.navigate('about:blank'); } catch (_) {}
           throw new Error('blocked unsafe redirect: ' + e.message);
         }
@@ -1524,6 +1560,7 @@
         throw new Error('browser.login unavailable: this host pins the browser headless (STARNET_BROWSER_HEADLESS)');
       }
       const u = assertSafeUrl(url);
+      await assertResolvedSafe(u, doLookup);   // same rebinding bar as navigate — a login window is not a weaker surface
       const host = hostOf(u);
       const approved = d => !!d && d !== 'deny';
       if (!approved(await attended.prompt({ tool: 'browser.login', scope: 'execute', argsSummary: host }))) {
@@ -1821,8 +1858,8 @@
           };
         })
     ];
-    return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
+    return { tools, session, register(reg) { tools.forEach(t => reg.register(t)); return reg; }, _internals: { assertSafeUrl, assertLoopbackUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, CHROME_CANDIDATES } };
   }
 
-  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, SETTLE_BOOTSTRAP, SETTLE_PROBE, SETTLE_QUIET_POLLS, describeResponse, jsLiteral, CHROME_CANDIDATES } };
+  return { makeBrowserTools, _internals: { assertSafeUrl, assertLoopbackUrl, assertResolvedSafe, isPrivateV4, isPrivateV6, makeBrowserSession, makeCdpDriver, findChrome, resolveChrome, headlessRequested, SYNTHETIC_INPUT_BOOTSTRAP, SETTLE_BOOTSTRAP, SETTLE_PROBE, SETTLE_QUIET_POLLS, describeResponse, jsLiteral, CHROME_CANDIDATES } };
 });

@@ -144,5 +144,25 @@ function makeFakeSpawn() {
     try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {}
   }
 
+  /* ---- the child-env scrub must catch the GLUED secret spellings people actually have ----
+     The `_` boundary meant STRIPE_APIKEY / GITHUB_PAT / FOO_ACCESSTOKEN never matched and rode straight
+     into every task child's env. StarNet's own KEYS vars always end in _API_KEY, which is why our fixtures
+     never showed it. ---- */
+  {
+    const { sanitizeChildEnv: scrub } = require('../sidecar/environment.js');
+    A.eq(typeof scrub, 'function', 'sanitizeChildEnv is reachable (a silently-skipped scrub test is worse than none)');
+    {
+      const out = scrub({
+        OPENAI_API_KEY: 'a', STRIPE_APIKEY: 'b', GITHUB_PAT: 'c', FOO_ACCESSTOKEN: 'd',
+        ANTHROPIC_APIKEY: 'e', DB_PASSWORD: 'f',
+        PATH: '/usr/bin', PATHEXT: '.EXE', UPDATE_PATH: 'x', LANG: 'en', HOME: '/h'
+      });
+      for (const k of ['OPENAI_API_KEY', 'STRIPE_APIKEY', 'GITHUB_PAT', 'FOO_ACCESSTOKEN', 'ANTHROPIC_APIKEY', 'DB_PASSWORD'])
+        A.eq(out[k], undefined, 'secret-shaped ' + k + ' never reaches a task child');
+      for (const k of ['PATH', 'PATHEXT', 'UPDATE_PATH', 'LANG', 'HOME'])
+        A.ok(out[k] != null, 'ordinary ' + k + ' still survives (PAT is boundary-anchored, PATH is not a secret)');
+    }
+  }
+
   A.report('environment.test');
 })().catch(e => { console.log('FAIL: environment.test threw - ' + (e && e.stack || e)); process.exit(1); });

@@ -57,9 +57,13 @@
       }
       const available = [];
       const coolingList = [];
-      for (const k of uniq) { (coolingUntil(k) ? coolingList : available).push(k); }
-      coolingList.sort((a, b) => coolingUntil(a) - coolingUntil(b));   // soonest-available first
-      return available.concat(coolingList);
+      // Read each key's cooldown ONCE. coolingUntil() prunes expired entries as a side effect, so calling it
+      // from inside a sort comparator ran an unbounded number of mutating reads over the same map mid-sort —
+      // harmless today only because the values were just observed non-zero. Snapshot, then sort on the
+      // snapshot: the comparator becomes pure and the ordering can't depend on how many times it was called.
+      for (const k of uniq) { const until = coolingUntil(k); (until ? coolingList : available).push({ k, until }); }
+      coolingList.sort((a, b) => (a.until - b.until) || (a.k < b.k ? -1 : a.k > b.k ? 1 : 0));   // soonest-available first
+      return available.map(x => x.k).concat(coolingList.map(x => x.k));
     }
 
     // H6.1: an explicit ttlMs (e.g. derived from a Retry-After / reset_at) cools the key for EXACTLY that long —

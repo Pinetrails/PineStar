@@ -557,7 +557,13 @@ function makeOpenAiCompat(deps) {
   function handle(req, res) {
     const p = pathOf(req.url);
     const method = req.method;
-    if (p === '/health' && method === 'GET') { handleHealth(req, res); return true; }
+    if (p === '/health' && method === 'GET') {
+      // Unauthenticated by design (a liveness probe answers before auth) — but it still owes the loopback
+      // Host pin. Without it /health sat ABOVE the one defence against DNS rebinding, so a rebound page could
+      // read the station's version. index.js's isApi gate covers only /api/*, so this route must pin itself.
+      if (!isAllowedHost(((req && req.headers) || {}).host)) { res.writeHead(403); res.end('forbidden host'); return true; }
+      handleHealth(req, res); return true;
+    }
     if (p !== '/v1' && p.indexOf('/v1/') !== 0) return false;   // not ours
 
     // Host pin + bearer auth on every /v1/* request.
@@ -568,9 +574,16 @@ function makeOpenAiCompat(deps) {
     if (p === '/v1/chat/completions' && method === 'POST') { return runGuard(handleChatCompletions(req, res), res), true; }
     if (p === '/v1/runs' && method === 'POST') { return runGuard(handleRunsCreate(req, res), res), true; }
     let m;
-    if ((m = p.match(/^\/v1\/runs\/([^/]+)\/events$/)) && method === 'GET') { handleRunEvents(req, res, decodeURIComponent(m[1])); return true; }
-    if ((m = p.match(/^\/v1\/runs\/([^/]+)\/stop$/)) && method === 'POST') { handleRunStop(req, res, decodeURIComponent(m[1])); return true; }
-    if ((m = p.match(/^\/v1\/runs\/([^/]+)$/)) && method === 'GET') { handleRunStatus(req, res, decodeURIComponent(m[1])); return true; }
+    /* decodeURIComponent THROWS on a malformed escape ("%ZZ"), and handle() is called SYNCHRONOUSLY as the
+       first statement of the server's request callback — above index.js's central
+       Promise.resolve(dispatchRoute).catch(routeFailure) guard. So one bad run id became an
+       uncaughtException (which surfaceProcessError only logs) and the client waited on a socket that was
+       never answered. A path segment we cannot decode is simply not a run id we have: 404 it. */
+    const runIdOf = (raw) => { try { return decodeURIComponent(raw); } catch (_) { return null; } };
+    const notFound = () => { json(res, 404, openAiError('Run not found', { code: 'not_found' })); return true; };
+    if ((m = p.match(/^\/v1\/runs\/([^/]+)\/events$/)) && method === 'GET') { const id = runIdOf(m[1]); return id === null ? notFound() : (handleRunEvents(req, res, id), true); }
+    if ((m = p.match(/^\/v1\/runs\/([^/]+)\/stop$/)) && method === 'POST') { const id = runIdOf(m[1]); return id === null ? notFound() : (handleRunStop(req, res, id), true); }
+    if ((m = p.match(/^\/v1\/runs\/([^/]+)$/)) && method === 'GET') { const id = runIdOf(m[1]); return id === null ? notFound() : (handleRunStatus(req, res, id), true); }
 
     json(res, 404, openAiError('Unknown endpoint: ' + method + ' ' + p, { code: 'not_found' }));
     return true;

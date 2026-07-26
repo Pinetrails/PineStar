@@ -59,5 +59,32 @@ function spy(jinaStatus) {
     A.ok(JSON.stringify(r).indexOf('jina_SECRET_value') < 0, 'the Jina key never appears in the fetch result');
   }
 
+  /* ---- a hostile page must not be able to freeze the single-process station ----
+     htmlToText was a chain of lazy `[\s\S]*?` replaces, every one QUADRATIC on input the fetch does not
+     control: `<script` with no `</script>` makes the scan walk to end-of-input from each start position.
+     Measured on repeated "<script>": 64KB -> 55ms, 256KB -> 880ms, 1MB -> 14.3 SECONDS of event-loop
+     freeze, and web_fetch is read-only, no-consent, callable on any URL. Now a single linear pass. ---- */
+  {
+    const W = makeWebTools({ fetchImpl: async () => ({ status: 200, headers: { get: () => '' }, text: async () => '' }), lookup: null });
+    const H = W._internals.htmlToText;
+    // well-formed HTML is unchanged
+    A.eq(H('<h1>Title</h1><p>a <b>b</b> &amp; c</p><ul><li>x</li></ul>'), 'Title\na b & c\nx', 'ordinary HTML extracts exactly as before');
+    A.eq(H('<script>var a="</p>";</script><p>after</p>'), 'after', 'script CONTENTS never reach the text');
+    A.eq(H('<!-- c --><p>k</p>'), 'k', 'comments are dropped');
+    A.eq(H('<br><br/>x'), 'x', 'br variants become newlines');
+    // malformed input is bounded AND no longer leaks raw source as page text
+    A.eq(H('<p>a</p><script>unclosed'), 'a', 'an UNCLOSED script no longer leaks its source into the page text');
+    A.eq(H('text<!--unclosed'), 'text', 'an unterminated comment is not page text');
+    // and the cost is linear, not quadratic
+    for (const kb of [256, 1024, 4096]) {
+      const t0 = Date.now();
+      H('<script>'.repeat(kb * 128));
+      const ms = Date.now() - t0;
+      A.ok(ms < 2000, kb + 'KB of hostile markup extracts in ' + ms + 'ms (was 14290ms at 1MB)');
+    }
+    const t1 = Date.now(); H('<'.repeat(1024 * 1024));
+    A.ok(Date.now() - t1 < 2000, 'a megabyte of bare "<" is linear too');
+  }
+
   A.report('web.fetch-jina.test');
 })().catch(e => { console.log('FAIL: web.fetch-jina threw — ' + (e && e.stack || e)); process.exit(1); });

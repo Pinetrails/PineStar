@@ -1134,5 +1134,33 @@ function fakeDriver() {
     A.ok(others.every(t => t.timeoutMs < navTool.timeoutMs), 'and it is the longest of the ordinary browser tools');
   }
 
+  /* ---- SSRF parity with web_fetch. browser.navigate RUNS the page's scripts, so its guard must not be the
+     weaker of the two. Two holes, both closed: a trailing-dot FQDN walked past every NAME rule (WHATWG only
+     strips the root label for IP literals), and there was no DNS-rebinding check at all. ---- */
+  {
+    const { assertSafeUrl, assertResolvedSafe } = require('../sidecar/tools/builtin/browser.js')._internals;
+    const blocked = ['http://localhost./', 'http://myapp.local./', 'http://svc.internal./',
+      'http://router.lan./', 'http://intranet.corp./', 'http://wiki./', 'http://box.home./'];
+    for (const u of blocked) {
+      let threw = false;
+      try { assertSafeUrl(u); } catch (e) { threw = true; }
+      A.ok(threw, 'trailing-dot FQDN is refused: ' + u);
+    }
+    A.eq(assertSafeUrl('http://example.com./').hostname, 'example.com.', 'a public name with a root label still resolves normally');
+
+    const priv = async (addr) => {
+      let threw = false;
+      try { await assertResolvedSafe(new URL('http://public-name.example/'), async () => [{ address: addr }]); }
+      catch (e) { threw = true; }
+      return threw;
+    };
+    A.ok(await priv('127.0.0.1'), 'a public NAME resolving to loopback is refused (DNS rebinding)');
+    A.ok(await priv('192.168.1.10'), 'a public NAME resolving to RFC-1918 is refused');
+    A.ok(!(await priv('93.184.216.34')), 'a genuinely public address is allowed through');
+    let noLookup = true;
+    try { await assertResolvedSafe(new URL('http://public-name.example/'), null); } catch (e) { noLookup = false; }
+    A.ok(noLookup, 'with no resolver wired the guard is inert (rigs/tests keep the old behaviour)');
+  }
+
   A.report('browser.test');
 })();

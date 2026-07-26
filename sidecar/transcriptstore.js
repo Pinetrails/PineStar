@@ -31,7 +31,9 @@
   'use strict';
 
   const SID_RE = /^[A-Za-z0-9_-]{1,64}$/;   // same workstream grammar index.js validates streamId against
-  const ROLES = { user: 1, assistant: 1, tool: 1, system: 1 };
+  // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
+  // silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
+  const ROLES = new Set(['user', 'assistant', 'tool', 'system']);
   const DEFAULT_LIMIT = 400;        // a sane cap so history() never returns an unbounded transcript
   const CONTENT_MAX = 200000;       // per-turn guard against a pathological payload bloating the file
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
@@ -138,7 +140,7 @@
       const entry = {
         streamId: normStream(e.streamId),
         agentId: str(e.agentId),
-        role: ROLES[e.role] ? e.role : 'user',     // clamp to the known enum
+        role: ROLES.has(e.role) ? e.role : 'user',     // clamp to the known enum
         content: content,
         ts: num(e.ts) || clock.now()
       };
@@ -165,7 +167,7 @@
       let n = 0;
       for (let i = Math.max(0, num(fromIndex)); i < messages.length; i++) {
         const m = messages[i];
-        if (!m || !ROLES[m.role] || m.role === 'system') continue;
+        if (!m || !ROLES.has(m.role) || m.role === 'system') continue;
         append({ streamId: streamId, agentId: agentId, role: m.role, content: flattenContent(m.content), toolCalls: m.tool_calls, toolCallId: m.tool_call_id });
         n++;
       }
@@ -183,7 +185,7 @@
       for (const m of messages) {
         if (!m || typeof m !== 'object' || m[PERSISTED]) continue;
         markPersisted([m]);                                    // mark BEFORE the role filter so fences aren't re-checked
-        if (!ROLES[m.role] || m.role === 'system') continue;
+        if (!ROLES.has(m.role) || m.role === 'system') continue;
         append({ streamId: streamId, agentId: agentId, role: m.role, content: flattenContent(m.content), toolCalls: m.tool_calls, toolCallId: m.tool_call_id });
         n++;
       }

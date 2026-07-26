@@ -93,12 +93,16 @@
     // the recorded consent. Overridable via opts.workshopCaps for tests / a future capability rename.
     const JAIL_WRITE_CAPS = (opts.workshopCaps && typeof opts.workshopCaps === 'object')
       ? opts.workshopCaps : { cabinet: true, memory: true };
+    // OWN-key lookup: a bare `JAIL_WRITE_CAPS[cap]` walks the prototype chain, so capability 'constructor' /
+    // 'toString' would read as granted. No such capability exists today — this is the allowlist being an
+    // allowlist rather than a near-miss, matching the same repair in channels/store.js and shared/schema.js.
+    const jailWritableCap = (cap) => Object.prototype.hasOwnProperty.call(JAIL_WRITE_CAPS, cap) && !!JAIL_WRITE_CAPS[cap];
     function workshopWritable(call, tool) {
       if (!workshop) return false;
       if (surface !== 'autonomous') return false;               // interactive already asks a live human
       if (scopeOf(tool) !== 'write') return false;              // ONLY write; read auto-allows, execute stays locked
       const cap = tool && tool.capability;
-      if (!JAIL_WRITE_CAPS[cap]) return false;                  // must be a jail-scoped capability (files/memory)
+      if (!jailWritableCap(cap)) return false;                  // must be a jail-scoped capability (files/memory)
       try { return workshop(call, tool) === true; } catch (_) { return false; }
     }
 
