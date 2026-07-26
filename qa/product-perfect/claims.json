@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "e9a98e26e3b575cea7d7280c91a04907317a9a98",
+    "sourceCommit": "cb935e97eb219ade66b3658e23e7a6365d2b7b7e",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -453,8 +453,8 @@
       },
       {
         "path": "frontend/app/prospectstore.js",
-        "bytes": 11145,
-        "sha256": "99d1013d87b536dc4ac7183989b45610b4aea7489586a7dadecdf469f6252d6d"
+        "bytes": 11535,
+        "sha256": "a910611b213f0e7c0621c7f55c494886b557e9c4e051b51c5f0e4ad742fd91ce"
       },
       {
         "path": "frontend/app/questledgerstore.js",
@@ -523,8 +523,8 @@
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 43269,
-        "sha256": "bf2087d0b2e9589c80a67def45d864cb2bf8c30fcb14f40612ffa597283c80be"
+        "bytes": 43878,
+        "sha256": "803a0f01c39b2fec515812251e77c9262b8caff5617bef3321aa9bcf4b14f5f2"
       },
       {
         "path": "frontend/app/recruiter.js",
