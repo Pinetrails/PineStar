@@ -8,6 +8,15 @@
 >   The body through `62706fb9` was written 2026-07-25; the delta `62706fb9..10d837d0`
 >   (browser instrument, request cost, Commander commands, station defaults) was appended
 >   2026-07-26.
+> - **DELTA STILL OWED (`10d837d0..HEAD`).** Four lanes merged 2026-07-26 after the append.
+>   Only the accounting half of the security sweep has been written up (see "Runs cost less").
+>   Still unwritten and user-facing:
+>   - the **security sweep** (`starnet-bug-hunt`) — a model-supplied regex or a hostile page
+>     could hang the station; prototype-chain keys reaching the schema validator; invisible
+>     characters used to hide instructions; jail parity for `fs.search`; SSRF gaps in the MCP
+>     OAuth endpoint guard;
+>   - **idle continuity** — agents at rest keep their attention instead of reading as aimless;
+>   - **conveyor honesty** — a MERGER funnels lanes instead of faking a combine.
 > - Andrew is still merging. When new lanes land, re-run:
 >   `git log --oneline 10d837d0..feat/harness-backend --no-merges | grep -vE "^[0-9a-f]+ (qa\(|docs\(status|chore\(status)"`
 >   and append the user-facing ones to the matching section.
@@ -140,10 +149,20 @@ The agent's browser stopped being a page-loader with a screenshot button.
   all still there and still callable.
 - **The unchanging part of a request is cached** on Anthropic models rather than being re-billed
   every turn — 59.7% of a typical request stops being paid for twice.
-- **Reported spend is accurate again.** Cached tokens were being priced as if they were fresh,
-  which inflated the figure the station showed you. Both fixes shipped together, so no build
-  ever charged you the inflated number — the number simply gets smaller because the runs got
-  cheaper.
+- **Reported spend is accurate again — in both directions.** Cached tokens were being priced as
+  if they were fresh, which would have inflated the figure; that fix shipped alongside caching
+  itself, so no build ever showed you the inflated number. The under-reporting was real, though,
+  and this release ends it:
+  - **The station could record $0 for a run that genuinely cost money.** If it ever started
+    without a working connection, three of the four providers cached the failed price lookup as
+    permanent — so for the rest of that session every turn was "unpriced", the ledger logged
+    nothing, and **your daily and global spend caps never fired**. The lookup now retries.
+  - **Token counts ignored tool-call arguments**, which in an agentic run are routinely the
+    largest thing on the wire. A 40 KB file write measured as 32 tokens against roughly 10,000
+    real ones. Counting is now one shared rule everywhere.
+  - **Context-compaction savings were computed across two different units**, so the "removed"
+    figure on a fold was fabricated and the safeguard that stops a degraded run from paying for
+    a summariser every turn could never trigger.
 - **Terminal output arrives readable.** Colour codes from shell commands are stripped instead
   of being fed to the model as noise.
 - **One enormous tool result can no longer end a run.** Output that nobody bounded — including
