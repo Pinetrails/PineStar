@@ -20,8 +20,11 @@
      · Long-context tiers are not modelled. Gemini 2.5 Pro and the Claude 1M-context beta bill a higher rate
        above a prompt threshold, so a very long prompt UNDER-reports here (the cap fires later than it
        should, never earlier).
-     · Cache reads/writes bill at different rates than fresh input; normalizeUsage folds them into
-       prompt_tokens, so a heavily-cached run OVER-reports.
+     · Cache reads/writes bill at different rates than fresh input. This IS now modelled (see CACHE below)
+       for the families whose rates are published — anthropic.js asks for prompt caching, so leaving it
+       unmodelled would have overstated most of the input bill on every run. A family with no CACHE entry
+       still prices cached tokens at the fresh rate and therefore OVER-reports, never under.
+     · Anthropic's 1-hour cache TTL writes at 2.0x; only the default 5-minute (1.25x) tier is modelled.
      · Batch/priority tiers are not modelled.
    For a spend SEATBELT an approximate number is enormously better than a structural zero, which is the
    trade being made here.
@@ -75,6 +78,19 @@
 
   const TABLES = { anthropic: ANTHROPIC, gemini: GEMINI };
 
+  /* CACHE MULTIPLIERS, per family — what a cached prompt token bills relative to a fresh one. This exists
+     because anthropic.js now actually ASKS for prompt caching: until then every cached_tokens figure was
+     zero and folding cache traffic into prompt_tokens at a flat 1.0x was the harmless imprecision this
+     file's header used to describe. The moment a run caches, that flat rate stops being a rounding error and
+     starts overstating most of the input bill.
+     A family absent from here keeps the old 1.0x behaviour, so an unmodelled provider can only ever
+     OVER-report — the safe direction for a spend seatbelt, and never a silent under-count. */
+  const CACHE = {
+    anthropic: { read: 0.10, write: 1.25 },   // ephemeral 5-minute cache. The 1h TTL writes at 2.0x; not modelled.
+    gemini:    { read: 0.25, write: 1.00 }    // implicit context caching — no separate write charge published
+  };
+  const NO_CACHE = { read: 1, write: 1 };
+
   // Operator overrides, parsed ONCE and tolerant of garbage — a typo in the env must never wedge a run
   // (same discipline as SKYNET_ANTHROPIC_MAX_TOKENS in anthropic.js). Longest matching key wins, so a full
   // model id beats a family prefix.
@@ -103,11 +119,12 @@
   function priceOf(family, id) {
     const key = String(id == null ? '' : id).trim();
     if (!key) return null;
+    const cache = CACHE[family] || NO_CACHE;   // an operator override rebases in/out, never the cache ratios
     const lower = key.toLowerCase();
-    for (const o of OVERRIDES) if (lower.indexOf(o.key) === 0) return { in: o.price.in, out: o.price.out };
+    for (const o of OVERRIDES) if (lower.indexOf(o.key) === 0) return { in: o.price.in, out: o.price.out, cache };
     const table = TABLES[family];
     if (!table) return null;
-    for (const [re, price] of table) if (re.test(key)) return { in: price.in, out: price.out };
+    for (const [re, price] of table) if (re.test(key)) return { in: price.in, out: price.out, cache };
     return null;
   }
 

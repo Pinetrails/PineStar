@@ -15,6 +15,10 @@
 
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
 
+  // A family whose cache rates are not published prices cached tokens exactly like fresh ones — the
+  // pre-caching behaviour, and the direction that can only ever OVER-report a spend seatbelt.
+  const NO_CACHE = { read: 1, write: 1 };
+
   function makeCostEngine(opts) {
     opts = opts || {};
     const priceOf = opts.priceOf;
@@ -34,15 +38,31 @@
       if (!p) return 0;
       const i = num(p.in != null ? p.in : p.prompt);
       const o = num(p.out != null ? p.out : p.completion);
-      return (i || o) ? { in: i, out: o } : null;
+      const c = (p.cache && isFinite(Number(p.cache.read)) && isFinite(Number(p.cache.write)))
+        ? { read: Number(p.cache.read), write: Number(p.cache.write) } : NO_CACHE;
+      return (i || o) ? { in: i, out: o, cache: c } : null;
+    }
+    /* INPUT dollars, cache-aware. usage.prompt_tokens stays the TRUE token count — context gauges and the
+       ledger read it, and lying about tokens to fix a dollar figure would be the worse trade — so the
+       discount lives HERE in the money math and nowhere else. Anthropic bills a cache read at ~0.1x and a
+       write at ~1.25x (prices.js CACHE); an unmodelled family falls back to 1.0x, i.e. exactly the behaviour
+       from before any adapter requested caching.
+       The three buckets are clamped to sum to prompt_tokens, so a provider reporting details inconsistent
+       with its own total can never manufacture a negative charge. */
+    function inputUsd(usage, p) {
+      const total = num(usage && usage.prompt_tokens);
+      if (total <= 0) return 0;
+      const d = (usage && usage.prompt_tokens_details) || {};
+      const read = Math.max(0, Math.min(num(d.cached_tokens), total));
+      const write = Math.max(0, Math.min(num(d.cache_creation_tokens), total - read));
+      return ((total - read - write) + read * p.cache.read + write * p.cache.write) * p.in / 1e6;
     }
     function dollars(usage, model) {
       const reported = providerCostUsd(usage);
       if (reported != null) return reported;
       const p = catalogPrice(model);
       if (!p) return 0;
-      const inT = num(usage && usage.prompt_tokens), outT = num(usage && usage.completion_tokens);
-      return (inT * p.in + outT * p.out) / 1e6;
+      return inputUsd(usage, p) + num(usage && usage.completion_tokens) * p.out / 1e6;
     }
     function totalTokens(usage) {
       if (!usage) return 0;
@@ -62,7 +82,7 @@
         const price = providerCost ? null : catalogPrice(model);
         const tokensIn = num(usage && usage.prompt_tokens);
         const tokensOut = num(usage && usage.completion_tokens);
-        const usd = providerCost ? reported : (price ? (tokensIn * price.in + tokensOut * price.out) / 1e6 : 0);
+        const usd = providerCost ? reported : (price ? inputUsd(usage, price) + tokensOut * price.out / 1e6 : 0);
         return {
           usd: usd,
           tokensIn: tokensIn,

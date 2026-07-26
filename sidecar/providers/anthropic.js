@@ -199,7 +199,10 @@
       prompt_tokens: uncached + cacheCreate + cacheRead,
       completion_tokens: out,
       total_tokens: uncached + cacheCreate + cacheRead + out,
-      prompt_tokens_details: { cached_tokens: cacheRead },
+      // cache_creation_tokens is carried alongside cached_tokens so cost.js can price the three buckets at
+      // their real rates (~0.1x read, ~1.25x write). prompt_tokens stays the TRUE total — these are a
+      // breakdown OF it, never a substitute for it.
+      prompt_tokens_details: { cached_tokens: cacheRead, cache_creation_tokens: cacheCreate },
       reasoning_tokens: 0
     };
   }
