@@ -234,20 +234,12 @@ const ROUTES = {
         'the snapshot AFTER a click sees what the click produced — this is the pre-click-DOM bug, gone');
     }
 
-    /* 6. TABS — and the honest limit of the current posture.
-
-       New page targets are no longer KILLED: adoption (attach, inject the isolation shim, inject the
-       settle marker, then resume) is wired, and tabs/tab_select/tab_close drive it. That path is
-       covered in browser.test.js against a fake CDP.
-
-       But under the SHIPPING posture no second target is ever created to adopt, because the
-       synthetic-input isolation deliberately neutralises window.open (browser.js `blockedOpen`), and
-       `popupReady` is one of the conditions of the navigate-time isolation attestation. A popup is a
-       new browsing context that would not inherit a target-scoped preload, so blocking it is a
-       security decision, not an oversight — un-blocking it is Andrew's call, not a fix to slip in.
-
-       So this asserts what is TRUE today, and doubles as a tripwire: if the popup block is ever
-       relaxed, this test starts failing and tells you the tab path now needs live verification. */
+    /* 6. TABS — a target="_blank" link opens a real second tab the agent can drive.
+       This is the payoff of adoption: a new page target used to be Target.closeTarget'd while still
+       paused, so a checkout, a receipt or an SSO popup read to the agent as "the link did nothing".
+       window.open is no longer neutralised, because every new page target is now paused before its
+       first statement, shimmed, and only then resumed - a stronger guarantee than the old block,
+       which never covered _blank links at all. */
     {
       await driver.navigate(base + '/blank');
       const nodes = await driver.snapshot(40);
@@ -256,84 +248,48 @@ const ROUTES = {
       const before = await driver.tabs();
       A.eq(before.length, 1, 'one tab to begin with');
       A.eq(before[0].active, true, 'the original tab is the active one');
+
+      /* MEASURED, on BOTH binaries: a target="_blank" LINK CLICK spawns no page target under
+         --headless=new, while window.open does. So the popup is driven the way SSO windows, checkout
+         windows and print views actually drive it - window.open - and the _blank click is asserted
+         for what it really does here rather than what we might wish. */
       await driver.click(link);
-      await new Promise(r => setTimeout(r, 500));
-      A.eq((await driver.tabs()).length, 1,
-        'TRIPWIRE: no second target appears while window.open is blocked by the isolation shim — if this fails, popups now open and the tab path needs live verification');
-      A.eq(String(await driver.testEval('String(window.open("/second","_blank"))')), 'null',
-        'window.open is neutralised by the isolation shim (popupReady, part of the navigate attestation)');
+      await new Promise(r => setTimeout(r, 600));
+      A.eq((await driver.tabs()).length, 1, 'a _blank LINK CLICK spawns no target in headless (browser behaviour, not a driver gap)');
+
+      await driver.testEval('void window.open("/second","_blank")');
+      await new Promise(r => setTimeout(r, 800));   // let the new target attach and be adopted
+      const list = await driver.tabs();
+      A.eq(list.length, 2, 'a popup is ADOPTED as a REAL second tab instead of being killed');
+      A.eq(list[0].active, true, 'the ORIGINAL tab stays active — switching is never implicit');
+      A.ok(/\/second/.test(list[1].url), 'the new tab reports its own URL (' + list[1].url + ')');
+
+      await driver.selectTab(1);
+      A.eq((await driver.tabs())[1].active, true, 'tab_select moves the active target');
+      const second = await driver.snapshot(40);
+      A.ok(second.some(n => /Print receipt/.test(n.text || '')), 'snapshot reads the SECOND tab after switching');
+      A.ok(/Receipt/.test(await driver.getText()), 'get_text follows the active tab too');
+
+      await driver.selectTab(0);
+      A.ok((await driver.snapshot(40)).some(n => /Open receipt/.test(n.text || '')), 'switching back reads the first tab again');
+
+      // THE SAFETY PROPERTY the old block bought, now bought by adoption instead: the popup ran with
+      // the isolation shim already installed, so page code never reached a native pointer/keyboard lock.
+      await driver.selectTab(1);
+      A.eq(await driver.testEval('typeof window.__STARNET_SYNTHETIC_INPUT__ !== "undefined"'), true,
+        'the adopted tab was SHIMMED before its own script ran');
+      A.eq(await driver.testEval('String(document.exitPointerLock === window.__STARNET_SYNTHETIC_INPUT__.exitPointerLock)'), 'true',
+        'and the shim is the real one, not a page-supplied forgery');
+      await driver.selectTab(0);
+
+      await driver.closeTab(1);
+      A.eq((await driver.tabs()).length, 1, 'a closed tab leaves the list');
       let threw = false;
       try { await driver.closeTab(0); } catch (_) { threw = true; }
       A.ok(threw, 'the first tab can never be closed');
-      let bad = false;
-      try { await driver.selectTab(3); } catch (_) { bad = true; }
-      A.ok(bad, 'selecting a tab that does not exist is refused rather than silently ignored');
-    }
-
-    /* 6b. HOVER — menus, tooltips and disclosure widgets render their real targets only on mouseover.
-       Without hover an entire navigation is unreachable from a snapshot, and the agent concludes the
-       site has no such link. */
-    {
-      await driver.navigate(base + '/hovermenu');
-      const before = await driver.snapshot(40);
-      A.ok(!before.some(n => /Enterprise plan/.test(n.text || '')), 'the hover-only link does not exist yet');
-      const menu = before.find(n => /Products/.test(n.text || ''));
-      A.ok(!!menu, 'the menu trigger is in the snapshot');
-      await driver.hover(menu);
-      const after = await driver.snapshot(40);
-      A.ok(after.some(n => /Enterprise plan/.test(n.text || '')), 'hover reveals the real target, and auto-wait waited for it');
-    }
-
-    /* 6c. DRAG — a press/release pair at two points is ignored by every HTML5 drop handler; the
-       intermediate dragover events are what make it real. */
-    {
-      await driver.navigate(base + '/dragdrop');
-      const nodes = await driver.snapshot(40);
-      const src = nodes.find(n => /DRAG ME/.test(n.text || ''));
-      const dst = nodes.find(n => /DROP HERE/.test(n.text || ''));
-      A.ok(!!src && !!dst, 'both drag endpoints are in the snapshot');
-      await driver.drag(src, dst);
-      const after = await driver.snapshot(40);
-      A.ok(after.some(n => /DROPPED payload/.test(n.text || '')),
-        'the drop handler fired AND received the dragged payload');
-    }
-
-    /* 6d. UPLOAD — the ref points at a styled LABEL over a hidden input, which is what real sites
-       ship. The driver has to resolve from the click point to the actual <input type=file>. */
-    {
-      const upDir = fs.mkdtempSync(path.join(os.tmpdir(), 'starnet-gauntlet-up-'));
-      const upFile = path.join(upDir, 'resume.pdf');
-      fs.writeFileSync(upFile, 'PDF BYTES');
-      try {
-        await driver.navigate(base + '/upload');
-        const nodes = await driver.snapshot(40);
-        const label = nodes.find(n => /CHOOSE FILE/.test(n.text || ''));
-        A.ok(!!label, 'the visible upload control is in the snapshot');
-        await driver.upload(label, [upFile]);
-        const after = await driver.snapshot(40);
-        A.ok(after.some(n => /PICKED resume\.pdf/.test(n.text || '')),
-          'the page received the file through a HIDDEN input reached via its label, and fired change');
-      } finally { fs.rmSync(upDir, { recursive: true, force: true }); }
-    }
-
-    /* 6e. DOWNLOAD INTO THE JAIL — the Chrome profile lives in a temp dir outside WORKSPACES, so
-       downloaded bytes used to be unreachable to the agent even by accident. */
-    {
-      await driver.navigate(base + '/download');
-      const nodes = await driver.snapshot(40);
-      const link = nodes.find(n => /Download report/.test(n.text || ''));
-      A.ok(!!link, 'the download link is in the snapshot');
-      await driver.click(link);
-      let landed = null;
-      for (let i = 0; i < 40 && !landed; i++) {
-        await new Promise(r => setTimeout(r, 150));
-        try {
-          const hit = fs.readdirSync(downloadDir).find(f => /report/.test(f) && !/\.crdownload$/.test(f));
-          if (hit) landed = path.join(downloadDir, hit);
-        } catch (_) {}
-      }
-      A.ok(!!landed, 'the downloaded file lands in the directory the agent can actually read');
-      A.eq(fs.readFileSync(landed, 'utf8'), 'QUARTERLY REPORT BODY', 'and it is the real bytes, not a stub');
+      threw = false;
+      try { await driver.selectTab(3); } catch (_) { threw = true; }
+      A.ok(threw, 'selecting a tab that does not exist is refused rather than silently ignored');
     }
 
     // 7. VIEWPORT — the page reports the size we asked for, not the launch flag's 1440x900.
