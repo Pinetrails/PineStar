@@ -462,6 +462,7 @@ const World = (() => {
           if (b.home) { b.home.x += oldOrigin.tx - geo.origin.tx; b.home.y += oldOrigin.ty - geo.origin.ty; }
         }
         b.pathPts = null; b.target = null;   // the in-flight path is in the OLD frame — re-path fresh
+        b.attn = null;                       // the attention anchor is a TILE in the old frame — drop it (same treatment as the in-flight path; a stale anchor would aim strolls at a tile that is now somewhere else entirely)
         if (b.state === 'walk') { b.state = 'idle'; b.idleUntil = 0; }
       }
     }
@@ -471,6 +472,7 @@ const World = (() => {
       else {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
         agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
+        agent.attn = null;                           // ditto the attention anchor (a TILE): drop rather than shift, so a refit can never aim a stroll at a stale-frame tile
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
         if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'place' || agent.goal === 'rounds' || agent.goal === 'post' || agent.goal === 'sleep' || agent.goal === 'mourn' || agent.goal === 'revisit' || agent.goal === 'firstwake') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.quirkKind = null; agent.placeTarget = null; agent.removeId = null; agent.roundsQueue = null; agent.wakePhase = 0; agent.glanceCd = 0; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation/quirk/placement/rounds/board-survey/sleep/grief/wake-ritual, re-decide next idle tick (firstWakeDone stays latched, so the ritual never re-arms)
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
@@ -690,9 +692,22 @@ const World = (() => {
     agent.goal = null; agent.usingProp = null; agent.watchProp = null;
   }
 
+  /* TRANSIT READING (the phantom-teleport fix). A standing body's tile is its position; a WALKING body's
+     is not. footOf anchors a foot to the BOTTOM edge of its tile (ly*T + T - 1) while tileOf floors py/T,
+     so the straight segment between two perfectly legal feet passes through pixel rows that belong to the
+     tile BELOW the destination. Walk from foot(8,4) to foot(7,3) and the interpolated body reports
+     8,4 → 7,4 → 7,3 — and if 7,4 holds a blocking prop (the seed floor's bar), this backstop read a
+     healthy body as off-floor and re-homed it to the spawn tile mid-stride. That is what the "it
+     teleported out of nowhere" report was: not a body in the void, a body between two tiles.
+     So: never re-home a body that is following a path. This costs NO coverage, because every way a body
+     can actually become stranded ALSO clears its path — an origin shift drops pathPts/target in
+     rederive's re-frame block, and a floor reclaimed underfoot re-derives and does the same. A body with
+     a live target is walking a route that was validated against this very grid when it was laid, so the
+     backstop simply waits one tick for the path to be dropped and then does its job as before. */
   function ensureAgentValid() {
     const cur = tileOf(agent.px, agent.py);
     if (geo.walkable(cur.x, cur.y, blocked)) return;
+    if (agent.target) return;   // mid-walk — the tile reading is a transit artefact, not a stranded body (see TRANSIT READING)
     placeAgent();   // floor reclaimed under the agent — re-home to the spawn room
   }
 
@@ -742,6 +757,7 @@ const World = (() => {
       roundsQueue: null, roundsCd: 0,   // caretaker-lap stop queue + cooldown
       fond: new Map(), revisitCd: 0,   // SPATIAL MEMORY: tileKey -> affection; builds where it dwells, drives revisit-a-haunt + mourning
       pauseUntil: 0, pauseLook: null, pauseCd: 0, yieldCd: 0, lookBackCd: 0,   // CONSIDERED MOVEMENT: brief mid-stroll holds, belt-yield to cargo, the rare double-take
+      attn: null, drive: null, driveUntil: 0,   // CONTINUITY OF ATTENTION: the neighbourhood it is currently occupied with (attn) + the drive it is mid-way through satisfying (drive/driveUntil) — see the CONTINUITY block above decideIdle
       stilling: false,   // STILLNESS: true during a real CONTENT=STILL quiet hold (suppresses the ambient swivel + cargo body-track)
       wakePhase: 0,   // FIRST LIGHT: the wake-ritual sub-beat sequencer (driven by studyUntil; reset on exit + on a REFIT drop)
       quirkCd: 0, offbeatCd: 0   // J2: per-body quirk/off-beat gates (read/written via self in maybeQuirk/offbeat) — uniform with the crew init shape; self===agent keeps the hero byte-identical
@@ -1126,6 +1142,7 @@ const World = (() => {
     if (!p) return false;
     self.pathPts = p; self.pathIdx = 0; self.state = 'walk';
     nextWaypoint();
+    intentTell(dest);   // LEGIBILITY: an idle-life walk turns to face where it is going before the first step
     return true;
   }
   function nextWaypoint() {
@@ -1133,6 +1150,29 @@ const World = (() => {
     const wp = self.pathPts[self.pathIdx++];
     self.target = footOf(wp.x, wp.y);
     maybeStrollBeat();   // CONSIDERED MOVEMENT: a casual stroll occasionally hesitates / doubles back — not a sprite on rails
+  }
+  /* ---------- THE INTENT TELL (legibility, NOT a new beat) ----------
+     An idle body used to decide and step off in the SAME frame, so the decision was invisible: the viewer saw
+     translation, never intent, and a fully-reasoned move (the want engine always has a reason) read as drift.
+     Now the instant an idle-life walk commits, the body turns to FACE where it is going and holds a short beat
+     before the first step — "it looked at the couch, then went to the couch." It adds NO new behaviour and
+     spends NO rarity budget: it reuses the CONSIDERED-MOVEMENT hold (pauseUntil/pauseLook), which both walk
+     steppers already honour and which every seize path (summon / refit / await / encounter-break) already
+     clears — so nothing can deadlock on it that could not already deadlock on a double-take.
+     NEVER on a purposeful walk. A summon, an approval walk, a chase, or a social rendezvous must leave
+     INSTANTLY: hesitation there reads as lag, not thought. The exclusions test live plan objects
+     (self.social / self.chase) rather than self.goal, because most idle planners set `goal` only AFTER
+     setPathTo returns — a goal test here would read the PREVIOUS goal and miss. Determinism: U.irnd only. */
+  const NO_TELL = { summon: 1, fetch: 1, work: 1, awaitwalk: 1, awaiting: 1, chase: 1, social: 1, firstwake: 1 };
+  function intentTell(dest) {
+    if (!self || self.unplaced || self.working || self.social || self.chase) return;
+    if (self === agent && (activity !== 'idle' || awaitPrompt)) return;   // hero on task / blocked on approval — go now
+    if (NO_TELL[self.goal]) return;
+    const now = fnow;
+    if (now < (self.pauseUntil || 0)) return;   // a stroll beat (double-take / belt-yield) already owns this hold — never stomp it
+    self.dir = dirToward(self.px, self.py, (dest.x + 0.5) * T, (dest.y + 0.5) * T);
+    self.pauseUntil = now + U.irnd(240, 480);
+    self.pauseLook = 'intent';   // the walk steppers only re-aim the facing for 'back'/'cargo', so 'intent' simply HOLDS the facing set above
   }
   const OPP = { north: 'south', south: 'north', east: 'west', west: 'east' };
   // only while casually wandering (never a summon/goal walk): a brief considered pause, or the rare eerie double-take
@@ -1196,7 +1236,7 @@ const World = (() => {
       return;
     }
     const FOND = { lounge: 3, use: 2, gaze: 1.5, tend: 1.5, inspect: 1, watch: 1, rounds: 0.5, revisit: 0.6 };
-    if (FOND[self.goal]) noteFond(now, FOND[self.goal]);   // dwelling somewhere by choice deepens attachment to that tile
+    if (FOND[self.goal]) { noteFond(now, FOND[self.goal]); noteAttn(now); }   // dwelling somewhere by choice deepens attachment to that tile — and anchors the neighbourhood it is currently occupied with
     if (self.goal === 'work') { self.sitting = true; self.working = false; self.dir = deskFace || 'north'; self.state = 'idle'; self.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
     else if (self.goal === 'use') { self.sitting = self.useSit; self.working = false; self.dir = self.useFace; self.state = 'idle'; self.useUntil = now + U.irnd(10000, 22000); takeSeat(); if (self.useSit && self.needs.rest < 35) curiositySay(SELF_REST, 0.4, now); }
     else if (self.goal === 'lounge') {
@@ -1252,15 +1292,37 @@ const World = (() => {
     else if (self.goal === 'chase') { self.state = 'idle'; self.target = null; self.pathPts = null; }    // TIER D · D4: reached a pursuit leg — stay on goal='chase'; stepChase repaths (or enters the stare) next tick
     else { self.state = 'idle'; self.idleUntil = now + U.irnd(1600, 3600); }
   }
+  /* ---------- CONTINUITY OF ATTENTION (the anti-aimlessness fix) ----------
+     `wander` samples a UNIFORMLY RANDOM tile of the whole zone, and every idle decision re-rolls from
+     scratch — so consecutive strolls ping-ponged across the station and the body never appeared to be
+     occupied with anything. That, not a shortage of behaviours, is what reads as aimless.
+     An ATTENTION ANCHOR fixes it without adding a single beat: whenever the body chooses to dwell
+     somewhere (the same moment `fond` accrues — arrive()'s FOND table), it remembers that tile for a
+     while. While the anchor is live, a stroll stays in THAT NEIGHBOURHOOD; when it lapses the body is
+     free again and relocates. The result is "explores a corner for a bit, then moves on" instead of
+     teleport-tier target picking — one place at a time, which is what having a mind looks like.
+     Deliberately SHORT (~25-45s) and never refreshed by wandering itself, so it can't become a leash:
+     a body that stops choosing to dwell always drifts free. Determinism: U.irnd only. */
+  const ATTN_R = 5;   // tiles: the radius of the neighbourhood a live anchor holds a stroll inside
+  function noteAttn(now) {
+    if (!self) return;
+    const t = tileOf(self.px, self.py);
+    self.attn = { x: t.x, y: t.y, until: now + U.irnd(25000, 45000) };
+  }
   function wander(now) {
     const rects = geo.allRects;
     if (!rects.length) { self.idleUntil = now + 800; return; }
     const cur = tileOf(self.px, self.py);
     const avoid = beltUnion();   // desk footprint + belt tiles: an idle stroll should step AROUND the machinery
     const zone = zoneFor(self);   // P1: a stroll stays inside the body's own zone
+    const attn = (self.attn && now < self.attn.until) ? self.attn : null;   // occupied with a neighbourhood? keep the stroll there
     for (let i = 0; i < 24; i++) {
-      const r = rects[U.irnd(0, rects.length - 1)];
-      const x = U.irnd(r.x1, r.x2), y = U.irnd(r.y1, r.y2);
+      // While an anchor is live the first two-thirds of the tries sample its neighbourhood; the tail falls
+      // back to the free station-wide pick so a walled-in / exhausted anchor can NEVER strand the stroll.
+      // Out-of-bounds samples are impossible to act on — geo.walkable range-checks before anything else.
+      let x, y;
+      if (attn && i < 16) { x = attn.x + U.irnd(-ATTN_R, ATTN_R); y = attn.y + U.irnd(-ATTN_R, ATTN_R); }
+      else { const r = rects[U.irnd(0, rects.length - 1)]; x = U.irnd(r.x1, r.x2); y = U.irnd(r.y1, r.y2); }
       if (!tileInZone(zone, x, y)) continue;                 // off-zone target — never stroll out of the body's area
       if (!geo.walkable(x, y, blocked)) continue;
       if (avoid.has(x + ',' + y)) continue;                  // don't stroll to a belt tile
@@ -1491,6 +1553,7 @@ const World = (() => {
     if (b.seated || b.sitting) return;
     const t = tileOf(b.px, b.py);
     if (geo.walkable(t.x, t.y, blocked)) return;
+    if (b.target) return;   // mid-walk — a transit artefact of footOf/tileOf, not a stranded body (see TRANSIT READING above ensureAgentValid)
     seizeFromIdle(b);   // off the floor = every in-flight goal/claim is in a broken frame — drop them
     let f = null;
     for (let r = 1; r <= 6 && !f; r++) for (let dy = -r; dy <= r && !f; dy++) for (let dx = -r; dx <= r && !f; dx++) {
@@ -2972,9 +3035,18 @@ const World = (() => {
     if (maybeChase(now)) return;         // TIER D · D4 THE CHASE: ultra-rare (8-15 min station cooldown, one chaser ever, mutually exclusive with a live social beat, cursor fresh+MOVING) — breaks toward the cursor, pursues, stops+stares, walks off. Rolled FIRST but hardest-gated: most idle decisions never even reach the roll.
     if (maybeSocial(now)) return;        // TIER D · D3: a rare SILENT social encounter (huddle/watch/border/half-follow) between idle neighbors — bounded movement, one live station-wide, zone-clamped, per-pair cooldown (G3/G4/G5); selected here at the idle cadence off neighborsOf (K4 — never off observing another encounter)
     if (maybeMimic(now)) return;         // TIER D · D4 CURSOR-MIMIC: a rare quirk-band head-only follow of the moving cursor (3-6s, per-body 45-90s cooldown, station-gated); reduceMotion → a single glance
-    const wRest = (100 - n.rest) * (0.7 + 0.6 * p.homebody) * ph.rest;
-    const wStim = ((100 - n.stim) * (0.7 + 0.6 * p.curious) + Math.min(35, idleAge / 4500) * p.restless) * ph.stim;   // boredom climbs with downtime
-    const wSoc = (100 - n.social) * ph.soc;
+    /* FOLLOW-THROUGH (continuity of attention, drive half). The three drives were re-raced from scratch on
+       every re-decide, so PARTLY satisfying one could flip the winner and send the body off to an unrelated
+       category mid-thought — the same incoherence `attn` fixes spatially. The drive that most recently took
+       the wheel now keeps a small edge (x1.25) for a short window, so a thought gets finished before the next
+       one starts. It is a NUDGE, never a lock: the hold is only armed when the winner CHANGES (never extended
+       by winning again), so it always lapses and the body is re-raced free — and 1.25 is far too small to
+       out-argue a genuinely unmet need. */
+    const held = (now < (self.driveUntil || 0)) ? self.drive : null;
+    const HOLD = 1.25;
+    const wRest = (100 - n.rest) * (0.7 + 0.6 * p.homebody) * ph.rest * (held === 'rest' ? HOLD : 1);
+    const wStim = ((100 - n.stim) * (0.7 + 0.6 * p.curious) + Math.min(35, idleAge / 4500) * p.restless) * ph.stim * (held === 'stim' ? HOLD : 1);   // boredom climbs with downtime
+    const wSoc = (100 - n.social) * ph.soc * (held === 'soc' ? HOLD : 1);
     const top = Math.max(wRest, wStim, wSoc);
     if (top < 28) {                                                                    // content -> mostly STILL (the eerie calm); the old 100%-motion calm read as restless
       // (chase/social/mimic selection HOISTED above — see the TIER D SELECTION block — so it runs on every
@@ -2987,6 +3059,11 @@ const World = (() => {
       else wander(now);                                                                 //   16% a short stroll
       return;
     }
+    // a drive is about to LEAD (the content branch above returned, so none of this arms while merely content):
+    // arm the follow-through window if — and only if — the wheel has changed hands. Ties keep the branch
+    // ladder's own precedence below (rest > soc > stim) so the two can never disagree about who won.
+    const win = top === wRest ? 'rest' : top === wSoc ? 'soc' : 'stim';
+    if (win !== held) { self.drive = win; self.driveUntil = now + U.irnd(12000, 22000); }
     if (top === wRest) { if (planProp(now)) return; }                                  // tired -> lounge / couch
     else if (top === wSoc) { if (planSeekDesk(now)) return; }                          // lonely -> the desk, face the Commander
     else {                                                                             // bored / restless
@@ -5128,6 +5205,7 @@ const World = (() => {
       roundsQueue: null, roundsCd: 0,
       fond: new Map(), revisitCd: 0,   // SPATIAL MEMORY: a NEW Map per body — never shared
       pauseUntil: 0, pauseLook: null, pauseCd: 0, yieldCd: 0, lookBackCd: 0,
+      attn: null, drive: null, driveUntil: 0,   // CONTINUITY OF ATTENTION — per-body like every sibling field (never shared)
       stilling: false,
       inspectNovel: null, lookCd: 0,   // lazily-read engine fields (arrive/planInspect/maybeGlance) seeded so first read isn't undefined
       // per-body cooldown gates the engine reads via self (quirkCd/offbeatCd are now per-body in maybeQuirk/offbeat —
@@ -6051,7 +6129,7 @@ const World = (() => {
       if (level != null && !(b.say && b.say.text && b.say.until > now)) b.say = { text: 'LEVEL ' + level, until: now + 2600 };
     },
     // read-only introspection for live verification of idle behavior (no side effects)
-    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round((typeof performance !== 'undefined' ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) }, ttl: { runClocks: runStartByAgent.size, glyphs: glyphByAgent.size, serverLit: serverLit.size, runTtlMs: RUN_TTL_MS, awaitTtlMs: AWAIT_TTL_MS }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount, social: socialBeat && { kind: socialBeat.kind, aId: socialBeat.aId, bId: socialBeat.bId }, chase: chaseId != null && { id: chaseId, phase: (bodyForAgent(chaseId) && bodyForAgent(chaseId).chase && bodyForAgent(chaseId).chase.phase) || null }, chaseGateIn: Math.round(Math.max(0, chaseGateUntil - fnow)), cursorFresh: (fnow - lastCursor.t) < CURSOR_FRESH_MS, cursorMoving: (fnow - cursorMoveT) < CURSOR_MOVING_MS },
+    dbg: () => agent && { goal: agent.goal, quirkKind: agent.quirkKind, sitting: agent.sitting, state: agent.state, stilling: !!agent.stilling, firstWakeDone, wakePhase: agent.wakePhase, moving: !!agent.target, paused: fnow < (agent.pauseUntil || 0), pauseLook: agent.pauseLook, dir: agent.dir, attn: (agent.attn && fnow < agent.attn.until) ? { x: agent.attn.x, y: agent.attn.y, inMs: Math.round(agent.attn.until - fnow) } : null, drive: (fnow < (agent.driveUntil || 0)) ? agent.drive : null, tile: tileOf(agent.px, agent.py), idleUntil: Math.round((agent.idleUntil || 0) - fnow), quirkCd: Math.round(Math.max(0, (agent.quirkCd || 0) - fnow)), offbeatCd: Math.round(Math.max(0, (agent.offbeatCd || 0) - fnow)), fond: [...agent.fond.entries()], pendingMourn: pendingMourn && { tx: pendingMourn.tx, ty: pendingMourn.ty, fond: pendingMourn.fond }, decor: agentDecor.length, crew: crew.length, spendUsd: floor ? (floor.snapshot().spendUsd || 0) : 0, boxes: convey ? convey.boxCount() : 0, queueDepth: queueDepthNow(), bridge: { paused: bridgePaused, es: !!chanES, poll: !!connPollTimer, readyState: (chanES ? chanES.readyState : -1), lastEventMsAgo: (lastSseEventAt ? Math.round((typeof performance !== 'undefined' ? performance.now() : fnow) - lastSseEventAt) : null), linkDown: linkDown((typeof performance !== 'undefined') ? performance.now() : fnow) }, ttl: { runClocks: runStartByAgent.size, glyphs: glyphByAgent.size, serverLit: serverLit.size, runTtlMs: RUN_TTL_MS, awaitTtlMs: AWAIT_TTL_MS }, await: awaitPrompt ? { promptId: awaitPrompt.promptId, arrived: awaitArrived, source: awaitAnchor ? awaitAnchor.source : null, anchor: awaitAnchor ? { tx: awaitAnchor.tx, ty: awaitAnchor.ty } : null } : null, helpers: subLedger ? subLedger.count() : 0, proposalsPinned: pinnedCount, social: socialBeat && { kind: socialBeat.kind, aId: socialBeat.aId, bId: socialBeat.bId }, chase: chaseId != null && { id: chaseId, phase: (bodyForAgent(chaseId) && bodyForAgent(chaseId).chase && bodyForAgent(chaseId).chase.phase) || null }, chaseGateIn: Math.round(Math.max(0, chaseGateUntil - fnow)), cursorFresh: (fnow - lastCursor.t) < CURSOR_FRESH_MS, cursorMoving: (fnow - cursorMoveT) < CURSOR_MOVING_MS },
     // read-only camera truth for the DEV verify harness (+ the war-room HUD chip): who drives the camera
     // ('manual' | 'lock' = session follow | 'auto' = idle cinecam), which body is locked, and how long the
     // Commander has been hands-off. Pure read, no side effects — the testapi idiom.
