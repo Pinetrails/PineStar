@@ -287,4 +287,59 @@ A.eq(JSON.stringify(mr.del[0].merged.slice().sort()), JSON.stringify(mr2.del[0].
   A.eq(ride({ workitemId: 'a3', tag: 'research', agentId: 'coder' }), 'S', 'addressed routing works both ways (coder rides S despite def E)');
 }
 
+/* ---------- SOURCE BACKPRESSURE: a burst never spawns a stacked pile (2026-07-26 audit) ---------- */
+{
+  const lane = Array.from({ length: 40 }, (_, x) => ({ x, y: 0, dir: 'E' }));
+  const del = new Set();
+  const cv = Conveyor.create({ onDeliver: bx => del.add(bx.payload.workitemId) });
+  for (let i = 0; i < 12; i++) cv.enqueueAt(0, 0, { workitemId: 'burst' + i });   // ONE tick, twelve work-items
+  let t = 0; cv.tick(16, (t += 16), lane);
+  A.eq(cv.peekBoxes().length, 1, 'a burst of 12 births exactly ONE crate on the source tile (the rest queue)');
+
+  // ride the whole burst out and watch for any two crates sharing a tile inside MIN_GAP
+  let worst = Infinity;
+  for (let i = 0; i < 4000 && (del.size < 12); i++) {
+    t += 16; cv.tick(16, t, lane);
+    const bs = cv.peekBoxes().filter(b => b.sink <= 0);
+    for (let a = 0; a < bs.length; a++) for (let b = a + 1; b < bs.length; b++)
+      if (bs[a].x === bs[b].x && bs[a].y === bs[b].y) worst = Math.min(worst, Math.abs(bs[a].prog - bs[b].prog));
+  }
+  A.ok(worst === Infinity || worst >= 0.8, 'no two crates ever ride the same tile inside MIN_GAP (worst ' + (worst === Infinity ? 'n/a' : worst.toFixed(3)) + ')');
+  A.eq(del.size, 12, 'every queued work-item is still delivered — the queue delays crates, it never drops them');
+}
+
+// a busy source must not stall a DIFFERENT source's lane (per-tile FIFO, not one global queue)
+{
+  const two = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }, { x: 0, y: 4, dir: 'E' }, { x: 1, y: 4, dir: 'E' }];
+  const cv = Conveyor.create();
+  for (let i = 0; i < 5; i++) cv.enqueueAt(0, 0, { workitemId: 'a' + i });   // burst on lane A
+  cv.enqueueAt(0, 4, { workitemId: 'b0' });                                  // one item on lane B, enqueued LAST
+  cv.tick(16, 16, two);
+  A.ok(cv.peekBoxes().some(b => b.payload.workitemId === 'b0'), "lane B's crate is born immediately despite lane A's backlog");
+}
+
+// the pending queue is bounded (a runaway feed can't grow without limit)
+{
+  const lane = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }];
+  const cv = Conveyor.create();
+  for (let i = 0; i < 900; i++) cv.enqueueAt(0, 0, { workitemId: 'flood' + i });
+  let t = 0; for (let i = 0; i < 60; i++) { t += 16; cv.tick(16, t, lane); }
+  A.ok(cv.boxCount() <= 3, 'a 900-item flood still puts at most a couple of crates on a 2-tile lane');
+}
+
+// two crates at IDENTICAL progress on one tile separate instead of riding as a pile
+{
+  const lane = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' }];
+  const cv = Conveyor.create();
+  cv.enqueueAt(0, 0, { workitemId: 'tie1' });
+  let t = 0; cv.tick(16, (t += 16), lane);
+  cv.enqueueAt(0, 0, { workitemId: 'tie2' });
+  for (let i = 0; i < 120; i++) { t += 16; cv.tick(16, t, lane); }
+  const bs = cv.peekBoxes().filter(b => b.sink <= 0);
+  let overlapped = false;
+  for (let a = 0; a < bs.length; a++) for (let b = a + 1; b < bs.length; b++)
+    if (bs[a].x === bs[b].x && bs[a].y === bs[b].y && Math.abs(bs[a].prog - bs[b].prog) < 0.8) overlapped = true;
+  A.ok(!overlapped, 'crates never settle on top of each other (leaderDist breaks progress ties by id)');
+}
+
 A.report('conveyor');

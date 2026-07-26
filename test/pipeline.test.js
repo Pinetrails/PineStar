@@ -28,8 +28,42 @@ const belt = (x, y, dir) => ({ x, y, dir });
   const plan = P.compileRoutingPlan(geo(
     [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 }], [belt(8, 8, 'E')]
   ));
-  A.ok(plan.errors.some(e => e.code === 'ORPHAN_SOURCE'), 'an intake with no belt -> ORPHAN_SOURCE');
-  A.ok(!P.ok(plan), 'an orphan-source plan is not deployable');
+  A.ok(plan.errors.some(e => e.code === 'ORPHAN_SOURCE' && e.warn), 'an intake with no belt -> ORPHAN_SOURCE (warn)');
+  A.ok(P.ok(plan), 'an unbelted intake is advice, never a deploy blocker (it contributes no source at all)');
+}
+
+/* ---- an unbelted INTAKE beside a WORKING line must not condemn the line (2026-07-26 audit) ---- */
+{
+  const plan = P.compileRoutingPlan(geo(
+    [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+     { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'coder' },
+     { id: 'i2', t: 'intake', x: 12, y: 9, w: 1, h: 1 }],            // decorative: nowhere near a belt
+    [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E')]
+  ));
+  A.ok(plan.errors.some(e => e.code === 'ORPHAN_SOURCE' && e.propId === 'i2'), 'the stray intake is still flagged');
+  A.ok(P.ok(plan), 'one decorative intake does NOT make the whole floor non-deployable');
+  A.eq(P.resolveTarget(plan, { tag: 'anything' }), 'coder', 'the working line still routes');
+}
+
+/* ---- detectCycle is iterative: a long connected run must compile, not blow the call stack ---- */
+{
+  const belts = [];                                    // 71x71 connected serpentine = 5041 chained tiles
+  for (let y = 0; y < 71; y++) {
+    const ltr = y % 2 === 0;
+    for (let x = 0; x < 71; x++) {
+      const endOfRow = ltr ? (x === 70) : (x === 0);
+      belts.push({ x, y, dir: (endOfRow && y < 70) ? 'S' : (ltr ? 'E' : 'W') });
+    }
+  }
+  let threw = null, plan = null;
+  try { plan = P.compileRoutingPlan({ belts, props: [], origin: { tx: 0, ty: 0 } }); } catch (e) { threw = e; }
+  A.ok(!threw, 'a 5041-tile connected belt run compiles (no RangeError: ' + (threw && threw.message) + ')');
+  A.ok(plan && !plan.errors.some(e => e.code === 'CYCLE'), '...and is correctly seen as acyclic');
+  // and a real loop inside a long run is still caught
+  const loop = belts.slice(0, 200).concat([{ x: 0, y: 80, dir: 'E' }, { x: 1, y: 80, dir: 'S' }, { x: 1, y: 81, dir: 'W' }, { x: 0, y: 81, dir: 'N' }]);
+  const lp = P.compileRoutingPlan({ belts: loop, props: [], origin: { tx: 0, ty: 0 } });
+  A.ok(lp.errors.some(e => e.code === 'CYCLE'), 'a cycle is still detected after the iterative rewrite');
+  A.ok(!P.ok(lp), 'a cyclic plan stays non-deployable');
 }
 
 /* ---- BAY_NOT_FED (was blocking DEAD_BAY): a hooked bay whose belt serves NEITHER direction ---- */

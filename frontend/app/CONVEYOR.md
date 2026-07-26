@@ -69,7 +69,13 @@ heading change (`turn0`), and a sink that falls into the chute (slide in dir + f
 
 **Sim**: min-gap backpressure — a box never advances within `MIN_GAP` (0.82 tile) of the box ahead
 (measured pre-move so it's order-independent and overlap-free), so work-items queue behind a stalled
-one. There is **no auto-spawn** — belts carry only real work.
+one. Equal progress on one tile counts as blocked, broken by box id, so a tie can't ride as a pile.
+Backpressure reaches **into the queue**: `enqueueAt` items wait in `pending` until their source tile has
+`MIN_GAP` of clear room, then are born — a burst (a channel flurry, a cron fan-out) forms a visible line
+instead of one stack of crates drawn on top of each other, and a busy source never stalls another's lane.
+A source therefore emits at the belt's real capacity (~2 crates/sec); `pending` is capped at `MAX_PENDING`
+(240, oldest shed) for the same reason `MAX_BOXES` exists. There is **no auto-spawn** — belts carry only
+real work.
 
 **Belt tiles** (`drawBelts` classifies each tile from the belt map): source = amber feeder hatch
 (the belt's start, where an INTAKE feeds it); sink = dark chute mouth + lip shadow; corner = an elbow glyph bending

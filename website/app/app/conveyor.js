@@ -27,6 +27,7 @@ const Conveyor = (() => {
   const POP_MS = 180;       // spawn-pop settle time
   const MIN_GAP = 0.82;     // tiles of clear space a box keeps behind the one ahead (no stacking)
   const MAX_BOXES = 80;     // hard cap (a runaway loop can't explode)
+  const MAX_PENDING = 240;  // queued work-items awaiting a clear source tile (see enqueueAt)
 
   const key = (x, y) => x + ',' + y;
   const buildMap = belts => { const m = new Map(); for (const b of belts) m.set(key(b.x, b.y), b.dir); return m; };
@@ -310,8 +311,15 @@ const Conveyor = (() => {
     }
 
     /* event-driven spawn: drop ONE work-item-carrying box at a named SOURCE tile, bypassing the hash
-       auto-spawn cadence. The box is actually born inside tick() so it gets the live nowMs and belt dir. */
-    function enqueueAt(x, y, payload) { pending.push({ x, y, payload }); }
+       auto-spawn cadence. The box is actually born inside tick() so it gets the live nowMs and belt dir.
+       Now that the drain waits for MIN_GAP at the source, a source emits at the belt's real capacity
+       (~SPEED/MIN_GAP ≈ 2 crates/sec), so the queue is bounded here for the same reason boxes are: a runaway
+       feed must not grow without limit, and a crate for work that finished minutes ago is its own small lie.
+       The OLDEST overflow is shed (the line stays current); the server already ran every one of them. */
+    function enqueueAt(x, y, payload) {
+      pending.push({ x, y, payload });
+      if (pending.length > MAX_PENDING) pending.splice(0, pending.length - MAX_PENDING);
+    }
 
     /* supersede drop: early-sink the riding box whose work-item was aborted (a newer message took over the
        chat). It falls off the belt via the chute animation and — crucially — never fires onDeliver. */
@@ -324,11 +332,15 @@ const Conveyor = (() => {
       return false;
     }
 
-    /* distance (in tiles, along the path) to the nearest box ahead — for backpressure spacing */
+    /* distance (in tiles, along the path) to the nearest box ahead — for backpressure spacing.
+       TIES COUNT (2026-07-26): two boxes at the SAME progress on the same tile used to see no leader at all
+       (the test was strictly `>`), so they advanced in lockstep and rode the line permanently overlapped.
+       The older box (lower id) is the leader at a tie — deterministic, and it resolves the pile in one tick
+       because the younger one measures a 0-tile gap, freezes, and the leader pulls ahead. */
     function leaderDist(bx, tileMap) {
       let best = Infinity;
       const same = tileMap.get(key(bx.x, bx.y));
-      if (same) for (const c of same) if (c !== bx && c.sink <= 0 && c.prog > bx.prog) best = Math.min(best, c.prog - bx.prog);
+      if (same) for (const c of same) if (c !== bx && c.sink <= 0 && (c.prog > bx.prog || (c.prog === bx.prog && c.id < bx.id))) best = Math.min(best, c.prog - bx.prog);
       const v = DIRV[bx.dir], nxt = tileMap.get(key(bx.x + v[0], bx.y + v[1]));
       if (nxt) for (const c of nxt) if (c.sink <= 0) best = Math.min(best, (1 - bx.prog) + c.prog);   // a box that began sinking mid-tick no longer blocks
       return best;
@@ -356,11 +368,26 @@ const Conveyor = (() => {
       // every crate on a belt means something. The only spawn path is the enqueueAt drain below.
       // event-driven work-items (enqueueAt): born here so each gets the live nowMs + the tile's belt dir.
       // No belt under the tile → nothing rides (the server still ran the work; the world just shows no crate).
-      while (pending.length && boxes.length < MAX_BOXES) {
-        const p = pending.shift();
-        const d = map.get(key(p.x, p.y));
-        if (!d) continue;
-        boxes.push({ id: nid++, x: p.x, y: p.y, dir: d, prog: 0, sink: 0, t0: nowMs, turn0: -1e9, payload: p.payload, spawnTile: key(p.x, p.y) });
+      //
+      // SOURCE BACKPRESSURE (2026-07-26): work does not arrive one crate at a time. A Telegram flurry or a
+      // cron fan-out enqueues N items in ONE tick, and every one of them used to be born on the same tile at
+      // prog 0 — a perfect stack that MIN_GAP could never open (nothing was "ahead"), riding the whole line
+      // as one pile that DRAWS AS A SINGLE CRATE. The floor then under-reported its own queue depth, which is
+      // the one thing a conveyor exists to show. The honest place to hold a burst is the QUEUE: an item waits
+      // in `pending` until its source tile has MIN_GAP of clear room, then is born. Nothing is dropped, FIFO
+      // per source tile is preserved, and items bound for a DIFFERENT (clear) source still spawn this tick —
+      // so one busy inbox can never stall another room's line.
+      for (let i = 0; i < pending.length && boxes.length < MAX_BOXES;) {
+        const p = pending[i], k = key(p.x, p.y), d = map.get(k);
+        if (!d) { pending.splice(i, 1); continue; }         // no belt under it → nothing rides
+        const here = tileMap.get(k);
+        let clear = true;
+        if (here) for (const c of here) if (c.sink <= 0 && c.prog < MIN_GAP) { clear = false; break; }
+        if (!clear) { i++; continue; }                      // its source tile is still occupied — WAIT in the queue
+        pending.splice(i, 1);
+        const nb = { id: nid++, x: p.x, y: p.y, dir: d, prog: 0, sink: 0, t0: nowMs, turn0: -1e9, payload: p.payload, spawnTile: k };
+        boxes.push(nb);
+        (tileMap.get(k) || tileMap.set(k, []).get(k)).push(nb);   // the newborn blocks the next spawn on THIS tile
       }
 
       // advance: cap each box so it never closes within MIN_GAP of the box ahead (no stacking; backpressure)

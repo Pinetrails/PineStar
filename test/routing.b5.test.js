@@ -31,6 +31,30 @@ function planWith(objects) {
   A.ok(res.tools.indexOf('fs.read') >= 0 && res.tools.indexOf('fs.write') >= 0, 'a cabinet grants fs.*');
 }
 
+/* CAPABILITY SURVIVES A BROKEN BELT GRAPH (2026-07-26 audit). A blocking routing error used to null the stored
+   plan outright, so stationFor() returned null and the caller fell back to the DEFAULT OFFICE — quietly WIDENING
+   a bay-bound agent's reach while the world still painted "NO COMPUTE" over its bay. Routing must still refuse;
+   the bay's room objects are a fact about the placed floor and must not move. */
+{
+  const r = makeRouter();
+  r.setPlan(planWith(['computer', 'cabinet']));
+  A.ok(r.stationFor('coder'), 'baseline: a deployable plan isolates the bay');
+
+  const broken = planWith([]);                                        // an UNEQUIPPED bay...
+  broken.errors.push({ code: 'CYCLE', tile: { x: 9, y: 9 } });        // ...on a floor with a real blocker
+  const res = r.setPlan(broken);
+  A.ok(!res.ok && res.codes.indexOf('CYCLE') >= 0, 'a cyclic plan is still REFUSED for routing');
+  A.eq(r.resolveTarget({ tag: 'anything' }), null, '...and dispatch falls back (no routed target)');
+
+  const st = r.stationFor('coder');
+  A.ok(st, 'but the bay still projects a station — capability does not ride on belt validity');
+  A.eq(st.rooms.bay.objects.length, 0, 'the unequipped bay stays unequipped');
+  A.ok(!resolveTools('coder', st).hasCompute, 'a broken floor can never UPGRADE an agent to the default office');
+
+  r.clearPlan();
+  A.eq(r.stationFor('coder'), null, 'clearing the floor clears the capability view too');
+}
+
 // a workstation but NO cabinet -> compute, but no fs
 {
   const r = makeRouter();
@@ -118,10 +142,16 @@ A.eq(makeRouter().stationFor('coder'), null, 'no posted plan -> stationFor null'
   good.props.push({ id: 'bay-real', t: 'bay', x: 4, y: 0, w: 2, h: 2, agentId: 'real' });
   good.belts = { '1,0': 'E', '2,0': 'E', '3,0': 'E' };
   good._nid = 4;
+  // genuinely non-deployable = a belt CYCLE (an infinite paid runOnce). NOTE: this used to be an intake with
+  // no belt, which stopped being a blocker on 2026-07-26 — an unbelted intake contributes no source, so it can
+  // neither loop nor route into a void. Pin the transaction to a REAL blocker so the test can't pass by accident.
   const bad = WM.defaultDoc();
   bad.props.push({ id: 'intake2', t: 'intake', x: 0, y: 0, w: 1, h: 1 });
   bad.props.push({ id: 'bay-fake', t: 'bay', x: 4, y: 0, w: 2, h: 2, agentId: 'fake' });
+  bad.belts = { '1,0': 'E', '2,0': 'S', '2,1': 'W', '1,1': 'N' };   // a closed loop
   bad._nid = 4;
+  A.ok(Pipeline.compileRoutingPlan(WM.deserialize(bad).projectGeometry()).errors.some(e => e.code === 'CYCLE'),
+    'the bad fixture is non-deployable for a REAL reason (CYCLE)');
   const r = makeRouter();
   A.ok(r.setStation(good).ok, 'good Station routing installs first');
   A.ok(!r.setStation(bad).ok, 'non-deployable Station routing update is refused');

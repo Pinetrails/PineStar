@@ -12,18 +12,26 @@ const { makeStationStore } = require('../station-store.js');
 function makeRouter(o) {
   o = o || {};
   let plan = null;
+  let capsPlan = null;   // last WELL-FORMED posted plan, deployable or not — the CAPABILITY view only (see setPlan)
   let stationPlan = null;
   let rr = {};   // per-SPLITTER-tile round-robin counter so dispatch spreads work across lanes (matches the engine)
   const stationStore = o.stationStore || makeStationStore();
 
   // store a posted plan. null/empty clears it (no routing floor). A plan with BLOCKING errors is refused.
   function setPlan(p) {
-    if (!p || typeof p !== 'object') { plan = null; return { ok: true, cleared: true }; }
-    if (!Array.isArray(p.errors)) { plan = null; return { ok: false, error: 'malformed plan' }; }
+    if (!p || typeof p !== 'object') { plan = null; capsPlan = null; return { ok: true, cleared: true }; }
+    if (!Array.isArray(p.errors)) { plan = null; capsPlan = null; return { ok: false, error: 'malformed plan' }; }
+    // CAPABILITY IS NOT ROUTING (2026-07-26). Which objects a bay's room holds is a fact about the PLACED
+    // FLOOR — true whether or not the belts compile. Refusing a plan outright used to drop that fact too, so
+    // one blocking error (a loop, a dup binding, and until today a stray unbelted INTAKE) silently handed
+    // every bay-bound agent the DEFAULT OFFICE while the world still painted "NO COMPUTE" over its bay: the
+    // UI asserting a restriction the harness had stopped applying, and the looser grant of the two. Keeping
+    // the bay projection here means the claim and the grant stay one fact; ROUTING still refuses below.
+    capsPlan = p;
     if (!Pipeline.ok(p)) { plan = null; return { ok: false, error: 'plan has blocking errors', codes: p.errors.filter(e => !e.warn).map(e => e.code) }; }
     plan = p; rr = {}; return { ok: true, hash: p.hash || null, bays: (p.bays || []).length };   // new floor -> reset round-robin
   }
-  function clearPlan() { plan = null; rr = {}; }
+  function clearPlan() { plan = null; capsPlan = null; rr = {}; }
   function activePlan() { return stationPlan || plan; }
   function getPlan() { return activePlan(); }
   function hasPlan() { return !!activePlan(); }
@@ -61,7 +69,9 @@ function makeRouter(o) {
      unchanged. PURE room objects — no baseline — so an UNEQUIPPED bay grants no compute and can't spend (the
      compute gate stays shut; cost-safe), exactly mirroring resolveTools' projection of the placed floor. */
   function stationFor(agentId) {
-    const p = activePlan();
+    // the CAPABILITY view: an authoritative station wins, else the last well-formed posted plan — deployable
+    // or not (a broken belt graph must not widen an agent's reach; see the setPlan note).
+    const p = stationPlan || plan || capsPlan;
     if (!p || !agentId) return null;
     // a bay isolates its agent whether or not a belt is hooked to it: `bays` = belt-hooked dispatch targets,
     // `dockBays` = EVERY bound bay (a lone dock is a complete build — 2026-07-05 sense pass). Older plans

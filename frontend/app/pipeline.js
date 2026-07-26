@@ -47,20 +47,28 @@
     return out;
   }
 
-  // DFS along belt flow for a cycle (a back-edge to a GRAY node). Returns the offending tile, or null.
+  /* DFS along belt flow for a cycle (a back-edge to a GRAY node). Returns the offending tile, or null.
+
+     ITERATIVE (explicit stack) ON PURPOSE: the recursive version recursed once per tile along the flow and
+     blew the JS call stack at ~5k chained belt tiles — a 71x71 serpentine, well inside the 240-tile MAX_SPAN
+     a floor may span. compileRoutingPlan is called UNGUARDED from build.js rebake() (inside the REFIT render
+     loop) and world.js compileRouting(), so that RangeError took the renderer down with it. Same three-colour
+     marking, same child order, same first-back-edge answer — only the stack moved off the interpreter's. */
   function detectCycle(map, junctions) {
     const color = {};   // undefined=white, 1=gray (on stack), 2=black (done)
-    function visit(k) {
-      color[k] = 1;
-      const p = k.split(','), t = { x: +p[0], y: +p[1] };
-      for (const nt of nextTiles(map, junctions, t)) {
-        const nk = key(nt.x, nt.y);
-        if (color[nk] === 1) return { x: nt.x, y: nt.y };
-        if (!color[nk]) { const c = visit(nk); if (c) return c; }
+    for (const root in map) {
+      if (color[root]) continue;
+      color[root] = 1;
+      const stack = [{ k: root, kids: null, i: 0 }];      // kids resolved lazily, exactly when visit() would have
+      while (stack.length) {
+        const fr = stack[stack.length - 1];
+        if (fr.kids === null) { const p = fr.k.split(','); fr.kids = nextTiles(map, junctions, { x: +p[0], y: +p[1] }); }
+        if (fr.i >= fr.kids.length) { color[fr.k] = 2; stack.pop(); continue; }   // exhausted → black, unwind
+        const nt = fr.kids[fr.i++], nk = key(nt.x, nt.y);
+        if (color[nk] === 1) return { x: nt.x, y: nt.y };                         // back-edge to a node on the stack
+        if (!color[nk]) { color[nk] = 1; stack.push({ k: nk, kids: null, i: 0 }); }
       }
-      color[k] = 2; return null;
     }
-    for (const k in map) if (!color[k]) { const c = visit(k); if (c) return c; }
     return null;
   }
 
@@ -72,7 +80,12 @@
     for (const p of props) {
       if (p.t === 'intake') {
         const t = beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
-        if (!t) { errors.push({ code: 'ORPHAN_SOURCE', propId: p.id }); continue; }
+        // WARN, never a blocker (2026-07-26): an intake with no belt contributes no source, so it can neither
+        // loop nor route work into a void — the two things `ok()` exists to prevent. Blocking on it meant ONE
+        // decorative INTAKE anywhere on the floor made the whole plan non-deployable, which the sidecar
+        // refuses wholesale — taking per-bay capability isolation down with it (see router.stationFor).
+        // Same standing as its neighbours ORPHAN_BAY / BAY_NOT_FED: the floor still nags, it just isn't fatal.
+        if (!t) { errors.push({ code: 'ORPHAN_SOURCE', propId: p.id, warn: true }); continue; }
         sources.push({ propId: p.id, tile: t });
       } else if (p.t === 'splitter' || p.t === 'filter' || p.t === 'merger') {
         const t = map[key(p.x, p.y)] ? { x: p.x, y: p.y } : beltTileNear(map, p.x, p.y, p.w || 1, p.h || 1);
