@@ -15,6 +15,12 @@
 'use strict';
 
 const WorldModel = (() => {
+  /* MOUNT RULES lookup, injected once at module level (NOT per station instance) — a per-instance
+     setter would have to be re-armed at every create()/deserialize()/undo-clone site, and the one
+     that got missed would silently place wall props in open floor. Null = no rules installed, which
+     is the plain-node/test case: every prop is placeable on bare deck exactly as before. */
+  let propRules = null;
+  function setPropRules(fn) { propRules = (typeof fn === 'function') ? fn : null; }
   const TILE = 12;
   const MARGIN = 3;     // tile padding around the bounding box (hull extrusion + chamfer arcs need room)
   const MIN_ROOM = 3;   // min room floor side, in tiles
@@ -515,27 +521,70 @@ const WorldModel = (() => {
        The model stays pure: it doesn't know the prop CATALOG (that lives in propsprites.js).
        The caller supplies w,h (the footprint) from the catalog; the model only validates
        GEOMETRY — every footprint tile must sit on station floor (inside a zone), the footprint
-       must not overlap another prop, and the type tag must be a non-empty string. */
-    function checkProp(foot, ignoreId) {
+       must not overlap another prop, and the type tag must be a non-empty string.
+
+       MOUNT RULES (2026-07-26) are the one exception, and they are injected rather than imported so
+       the layering holds: setPropRules() hands the model a lookup from prop type to {mount, surface}.
+       With no lookup installed (plain node tests, older callers) nothing changes and every prop is
+       placeable on bare deck exactly as before. The rules themselves:
+         mount 'wall'    — a wall must STAND behind every footprint tile. In this station walls are not
+                           tiles; the bake raises a wall face wherever a room's north edge meets
+                           not-a-room, and corridors are explicitly flat (WALL.corUp = 0). So the test
+                           is: this tile is in a non-corridor room and the tile NORTH of it is not.
+         mount 'surface' — the footprint must lie wholly on ONE prop whose catalog row says
+                           surface:true (a table), and that host is exempt from the overlap check,
+                           because standing on a table is the entire point. */
+    const ruleOf = (t) => (propRules && t) ? (propRules(t) || {}) : {};
+    // a wall stands along this tile's north edge (see MOUNT RULES above)
+    const isCorridorRoom = (id) => !!(doc.rooms[id] && doc.rooms[id].kind === 'corridor');
+    function wallNorthOf(tx, ty) {
+      const here = roomAt(tx, ty);
+      if (!here || isCorridorRoom(here)) return false;
+      return !roomAt(tx, ty - 1);
+    }
+    // the single surface prop wholly covering `foot`, or null
+    function surfaceHostFor(foot, ignoreId) {
+      for (let i = doc.props.length - 1; i >= 0; i--) {
+        const p = doc.props[i];
+        if (p.id === ignoreId) continue;
+        if (!ruleOf(p.t).surface) continue;
+        const f = propFootprint(p);
+        if (foot.x1 >= f.x1 && foot.x2 <= f.x2 && foot.y1 >= f.y1 && foot.y2 <= f.y2) return p;
+      }
+      return null;
+    }
+    function checkProp(foot, ignoreId, type) {
       if (foot.x2 < foot.x1 || foot.y2 < foot.y1) return fail('NO_RECT', 'nothing to place');
       for (let y = foot.y1; y <= foot.y2; y++) for (let x = foot.x1; x <= foot.x2; x++) {
         if (!roomAt(x, y)) return fail('OFF_DECK', 'must sit on a deck');
       }
+      const mount = ruleOf(type).mount || null;
+      if (mount === 'wall') {
+        for (let x = foot.x1; x <= foot.x2; x++) {
+          if (!wallNorthOf(x, foot.y1)) return fail('NEEDS_WALL', 'must hang on a wall');
+        }
+      }
+      let host = null;
+      if (mount === 'surface') {
+        host = surfaceHostFor(foot, ignoreId);
+        if (!host) return fail('NEEDS_SURFACE', 'must stand on a table');
+      }
       for (const p of doc.props) {
         if (p.id === ignoreId) continue;
+        if (host && p.id === host.id) continue;             // its own table is not an obstacle
         if (rectsHit(foot, propFootprint(p))) return fail('OVERLAP', 'overlaps a prop');
       }
-      return { ok: true };
+      return { ok: true, host: host ? host.id : null };
     }
     const canPlaceProp = (t, x, y, w, h, ignoreId) =>
-      checkProp({ x1: x, y1: y, x2: x + (w || 1) - 1, y2: y + (h || 1) - 1 }, ignoreId);
+      checkProp({ x1: x, y1: y, x2: x + (w || 1) - 1, y2: y + (h || 1) - 1 }, ignoreId, t);
 
     function addProp(opts) {
       const t = String(opts.t || '').trim();
       if (!t) return fail('NO_TYPE', 'no prop type');
       const w = Math.max(1, opts.w | 0 || 1), h = Math.max(1, opts.h | 0 || 1);
       const x = opts.x | 0, y = opts.y | 0;
-      const v = checkProp({ x1: x, y1: y, x2: x + w - 1, y2: y + h - 1 });
+      const v = checkProp({ x1: x, y1: y, x2: x + w - 1, y2: y + h - 1 }, null, t);
       if (!v.ok) return v;
       snapshot();
       const id = 'p' + (doc._nid++);
@@ -566,7 +615,7 @@ const WorldModel = (() => {
       if (!p) return fail('NOT_FOUND', 'no such prop');
       if (!dTx && !dTy) return { ok: true };
       const nx = p.x + dTx, ny = p.y + dTy;
-      const v = checkProp({ x1: nx, y1: ny, x2: nx + p.w - 1, y2: ny + p.h - 1 }, id);
+      const v = checkProp({ x1: nx, y1: ny, x2: nx + p.w - 1, y2: ny + p.h - 1 }, id, p.t);
       if (!v.ok) return v;
       snapshot();
       const before = propFootprint(p);
@@ -1135,6 +1184,16 @@ const WorldModel = (() => {
       wallStyleOfRoom: id => wallStyleOfRoom(doc.rooms[id]),
       // validation (no mutation — for ghost previews)
       canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun,
+      // mount rules: injected so the model never imports the prop catalog (see MOUNT RULES).
+      // wallNorthOf/surfaceHostOf are read surfaces the world layer uses to decide whether a placed
+      // prop is ACTUALLY mounted right now — a prop that lost its wall renders back on the deck
+      // rather than floating, so no save ever needs migrating.
+      wallNorthOf,
+      surfaceHostOf: (p) => {
+        if (!p) return null;
+        const host = surfaceHostFor(propFootprint(p), p.id);
+        return host ? host.id : null;
+      },
       // mutations
       addRoom, placeHallway, removeRoom, moveRoom, setFloor, setMaterial, setDeck, setWalls, paintTiles, renameRoom,
       addProp, removeProp, moveProp, assignPropAgent, ensureWorkstation, configureJunction, bindConnector, setDoorState,
@@ -1181,6 +1240,11 @@ const WorldModel = (() => {
     // straight through them. They are solid now (catalog blocks:true; belts hook to ring tiles,
     // never under the footprint) — strip the stale flag from saved docs so old stations heal on load.
     const LEGACY_WALKABLE_DOCKS = { intake: 1, bay: 1, outbox: 1 };
+    // RETIRED PROP TYPES must be dropped, not merely left unpainted. PropSprites.draw() no-ops on an
+    // unknown type, but the doc entry keeps its footprint — so a station saved with a since-retired prop
+    // would carry an INVISIBLE obstacle that agents path around forever. Only prunes when the mount-rule
+    // lookup is installed (i.e. a real client with the catalog); plain node tests keep every prop.
+    if (propRules) doc.props = doc.props.filter(p => !(p && typeof p.t === 'string') || !!propRules(p.t));
     doc.props = doc.props.filter(p => p && typeof p === 'object' && typeof p.t === 'string')
       .map(p => { const o = { id: p.id || null, t: p.t, x: p.x | 0, y: p.y | 0, w: Math.max(1, p.w | 0 || 1), h: Math.max(1, p.h | 0 || 1) }; if (p.block === false && !LEGACY_WALKABLE_DOCKS[p.t]) o.block = false; if (typeof p.agentId === 'string' && p.agentId) o.agentId = p.agentId; applyJunctionCfg(o, p); if (cleanDoor(p.door)) o.door = p.door; if (typeof p.connectorId === 'string' && p.connectorId.trim()) o.connectorId = p.connectorId.trim(); return o; });
     // belts are additive (v1 docs predate them); keep only well-formed "int,int" -> E|W|N|S entries.
@@ -1207,6 +1271,8 @@ const WorldModel = (() => {
     defaultDoc: freshDoc,
     // pure helpers reused by the build layer
     normRect, rectW, rectH, rectsHit, inRect,
+    // install the prop-type -> {mount, surface} lookup once for every station this module makes
+    setPropRules,
     // capability legibility — prop -> plain power word (WEB/FILES/…); one owned source for the palette tile + Field Manual
     CAP_PROP_MAP, CAP_LABEL, capForProp: t => CAP_PROP_MAP[t] || null, grantLabelForProp,
   };

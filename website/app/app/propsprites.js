@@ -19,6 +19,16 @@
 
 const PropSprites = (() => {
   const TILE = 12;
+  /* MOUNT GEOMETRY — the two constants that let a prop be drawn somewhere other than the deck.
+     SURFACE_RISE: how far above the floor line every table's top plane sits. A prop whose catalog row
+       says mount:'surface' is drawn shifted up by exactly this, which is why all tables MUST agree on
+       it (see the TABLES section). One constant, no per-table lookup.
+     WALL_RISE: how far up the standing north wall face a mount:'wall' prop hangs. This MUST track
+       StationBake.WALL.up — the wall it hangs on is baked, so if the bake's height moves and this does
+       not, every wall prop floats off the wall. World.js resolves it from the bake and passes it in;
+       this value is only the fallback for callers that have no bake (palette thumbs, tests). */
+  const SURFACE_RISE = 8;
+  const WALL_RISE = 14;
   let ctx = null, now = 0;
 
   /* ---- core primitives (verbatim from v7 sprites.js) ---- */
@@ -1155,41 +1165,6 @@ const PropSprites = (() => {
     px(x + 8, y + 7, 1, 1, '#3c4a46');                           // its unlit head, read by shape not by glow
   };
 
-  F.cans = (x, y, w, h, f) => {   // v5 floor litter — TWO cans, drawn big enough to actually be cans
-    // v4 packed THREE cans into a 12px tile: a crushed one, a standing one and a tipped one, each wrapped in
-    // its own LINE outline. At that size the outlines are most of the prop, so it rendered as two dark blocks
-    // with grey speckle in them and read as small equipment, not as litter. Subtraction is the fix — one
-    // standing can with real cylinder shading, one tipped can showing its dark mouth, both bigger, and the
-    // outline carried only where a silhouette actually needs it.
-    const AL = '#8a98a8', ALL = '#aab8c8', ALD = '#5a6878', ALX = '#3d4956';
-    // deck stains first — they ARE the floor, so they go under everything and get no shading
-    px(x + 4, y + 6, 2, 1, '#3a4440'); px(x + 3, y + 7, 1, 1, '#3a4440');
-    px(x + 7, y + 10, 2, 1, '#343c3a');
-    // STANDING CAN, east — the group's only vertical, so it carries the silhouette. Six ramp columns across
-    // four pixels of width is what turns a rectangle into a cylinder.
-    ctx.globalAlpha = 0.22; px(x + 6, y + 10, 6, 1, '#000'); ctx.globalAlpha = 1;
-    px(x + 6, y + 1, 6, 10, LINE);
-    px(x + 7, y + 2, 4, 8, AL);
-    px(x + 7, y + 2, 1, 8, ALD); px(x + 8, y + 2, 1, 8, ALL);   // the turn of the cylinder, west of centre
-    px(x + 10, y + 2, 1, 8, ALX); rimEdge(x + 10, y + 2, 1, 8, 0.22);
-    px(x + 7, y + 2, 4, 1, U.shade(ALL, 0.14)); keyEdge(x + 8, y + 2, 2, 1, 0.34);   // lit top rim
-    px(x + 7, y + 2, 1, 1, ALX); px(x + 10, y + 2, 1, 1, ALX);  // the rim rolls away at both edges
-    px(x + 9, y + 3, 1, 1, U.shade(ALL, 0.30));                 // pull tab
-    px(x + 7, y + 5, 4, 2, '#16302a'); px(x + 8, y + 5, 2, 1, ACC.work);   // brand band + glyph
-    px(x + 7, y + 9, 4, 1, ALX);                                // base roll, in shadow
-    // a specular pinned where the curve turns toward the key — it says "metal" by BEING there, not by moving.
-    // Sliding it down the can on a 1.4s loop implied either the light or the litter was in motion; neither is.
-    px(x + 8, y + 4, 1, 1, U.shade(ALL, 0.26));
-    // TIPPED CAN lying E-W, west — the dark open mouth facing us is the read, not the body
-    ctx.globalAlpha = 0.20; px(x, y + 10, 7, 1, '#000'); ctx.globalAlpha = 1;
-    px(x, y + 5, 7, 5, LINE);
-    px(x + 1, y + 6, 5, 3, AL);
-    px(x + 1, y + 6, 5, 1, ALL); keyEdge(x + 2, y + 6, 3, 1, 0.26);
-    px(x + 1, y + 8, 5, 1, ALD);
-    px(x + 1, y + 6, 1, 3, '#141a1e'); px(x + 1, y + 6, 1, 1, '#4e5c6c');   // the open mouth, and its rim
-    px(x + 3, y + 6, 2, 3, '#16302a'); px(x + 3, y + 7, 2, 1, ACC.work);    // brand stripe, wrapping the body
-    px(x + 6, y + 6, 1, 3, ALX); rimEdge(x + 6, y + 6, 1, 3, 0.20);         // the closed base end
-  };
 
   /* ---- DECOR EXPANSION (2026-07-15): theming set, same v2 oblique kit ---- */
 
@@ -1411,7 +1386,9 @@ const PropSprites = (() => {
     px(x + 4, y + 1, 1, 10, U.shade('#28343a', -0.22));              // two soft folds so it hangs like cloth
     px(x + 7, y + 1, 1, 10, U.shade('#28343a', -0.16));
     px(x + 2 + sway, y + 10, 8, 2, '#28343a');                       // hem sways
-    px(x + 2 + sway, y + 12, 2, 1, '#28343a'); px(x + 8 + sway, y + 12, 2, 1, '#28343a');   // swallow tails
+    // swallow tails pulled INSIDE the footprint: hung on a wall, a row below the tile dangles past the
+    // base of the wall face and back onto the deck
+    px(x + 2 + sway, y + 11, 2, 1, '#28343a'); px(x + 8 + sway, y + 11, 2, 1, '#28343a');
     px(x + 2, y + 8, 8, 1, '#8a7434'); px(x + 2, y + 7, 8, 1, U.shade('#8a7434', -0.4));   // gold hem stripe
     // the sigil — the one accent, big enough to read at a glance
     px(x + 4, y + 2, 4, 1, ACC.work); px(x + 5, y + 3, 2, 2, ACC.work);
@@ -1451,27 +1428,6 @@ const PropSprites = (() => {
 
   /* ---- DECOR EXPANSION wave 2 (2026-07-15): grime + machinery + glow ---- */
 
-  F.graffiti = (x, y, w, h, f) => {   // v4 deck tag — PURE paint in the ground plane, walk-over, zero rise
-    const G = '#2a7a4e', H = '#41ff8a', D = '#1d5236';
-    // Paint lies IN the floor, so it is drawn WIDE and squat: anything that rises reads as a standing object
-    // an agent then walks through. No contact shadow, no north overdraw, nothing above the deck.
-    ctx.globalAlpha = 0.13; px(x + 1, y + 3, 10, 7, G); ctx.globalAlpha = 1;   // overspray haze
-    ctx.globalAlpha = 0.08; px(x + 2, y + 2, 8, 1, G); px(x + 2, y + 10, 8, 1, G); ctx.globalAlpha = 1;
-    // ONE bold glyph: a fat wayfinder chevron, flattened by the ground plane
-    px(x + 4, y + 3, 4, 1, G);
-    px(x + 3, y + 4, 6, 1, G);
-    px(x + 2, y + 5, 8, 1, G);
-    px(x + 1, y + 6, 4, 1, G); px(x + 7, y + 6, 4, 1, G);            // the arms open out, wider than tall
-    px(x + 4, y + 6, 4, 2, G);                                      // squat stem
-    px(x + 3, y + 8, 6, 1, D);
-    px(x + 4, y + 4, 4, 1, H); px(x + 5, y + 6, 2, 1, H);            // heavier second coat, the accent
-    px(x + 2, y + 5, 2, 1, D); px(x + 8, y + 5, 2, 1, D);            // ragged stencil edges
-    px(x + 1, y + 9, 3, 1, D); px(x + 8, y + 9, 2, 1, D);            // tag underline dashes
-    keyEdge(x + 1, y + 3, 5, 1, 0.09);                              // the deck's own two-tone light, read
-    rimEdge(x + 6, y + 9, 5, 1, 0.09);                              // through the paint rather than over it
-    wear(x + 2, y + 3, 8, 7, 5, '#242c30');                         // deck scuff chewing the paint back
-    bloom(x + 4, y + 4, 4, 3, H, 0.05);                             // dried paint: a steady sheen, it does not shimmer
-  };
 
   F.holopet = (x, y, w, h, f) => {   // v4 holo jellyfish — FLUSH deck emitter, walk-over; nothing solid at all
     const ph = (f && f.x) || 0;
@@ -1505,61 +1461,41 @@ const PropSprites = (() => {
     if (blink(180, ph + x)) px(x + 3 + ((now >> 6) % 6), by, 1, 1, '#0e2a36');   // hologram dropout scanline
   };
 
-  F.plasmaglobe = (x, y, w, h, f) => {   // v4 wall sconce — plasma orb in a bracket cradle, walk-past
+  F.plasmaglobe = (x, y, w, h, f) => {   // v5 TABLE globe — plasma orb on a weighted base, mount:'surface'
     const r = RAMP.steel, ph = (f && f.x) || 0;
-    // Non-blocking, so the orb rides a bulkhead bracket instead of a floor pedestal: no deck contact, and the
-    // round glass gets to be the entire silhouette.
-    px(x + 3, y + 2, 6, 2, LINE); px(x + 4, y + 2, 4, 1, r.top); keyEdge(x + 4, y + 2, 3, 1, 0.24);
-    px(x + 4, y + 3, 4, 1, U.shade(r.face, -0.34));                  // cradle ring the sphere seats into
-    px(x + 5, y + 4, 1, 2, r.lit); px(x + 6, y + 4, 1, 2, r.dk);     // short stub arm back to the wall plate
-    px(x + 4, y + 6, 4, 1, r.dk);
-    const cxp = x + 5.5, cyp = y - 2.5;
-    for (let q = y - 8; q <= y + 3; q++) for (let p = x + 1; p <= x + 10; p++) {
+    // v4 was a wall sconce: cradle ring, stub arm, bulkhead plate, and deliberately no deck contact. That
+    // is a fine object but it hung in mid-air wherever it was placed, because nothing checked for a wall
+    // behind it — the same mid-air failure the hanging monstera had. It is a TABLE object now, which is
+    // what it always wanted to be, so the bracket becomes a real weighted base and the paint runs all the
+    // way to the footprint bottom (mount:'surface' seats a prop by its own contact line — see draw()).
+    px(x + 3, y + 9, 6, 3, LINE);                                    // base disc, sitting ON the surface
+    px(x + 4, y + 10, 4, 1, r.top); keyEdge(x + 4, y + 10, 3, 1, 0.24);
+    px(x + 4, y + 11, 4, 1, U.shade(r.face, -0.34));
+    rimEdge(x + 7, y + 10, 1, 2, 0.18);
+    px(x + 5, y + 6, 2, 4, LINE); px(x + 5, y + 7, 1, 3, r.lit); px(x + 6, y + 7, 1, 3, r.dk);   // stem
+    px(x + 3, y + 5, 6, 2, LINE); px(x + 4, y + 5, 4, 1, r.top); keyEdge(x + 4, y + 5, 3, 1, 0.22);
+    px(x + 4, y + 6, 4, 1, U.shade(r.face, -0.34));                  // cradle ring the sphere seats into
+    // the sphere seats DOWN into the cradle now (it used to float two rows clear of the old stub arm)
+    const cxp = x + 5.5, cyp = y - 0.5;
+    for (let q = y - 6; q <= y + 5; q++) for (let p = x + 1; p <= x + 10; p++) {
       const dx = p + 0.5 - cxp, dy = q + 0.5 - cyp, d = Math.sqrt(dx * dx + dy * dy);
       if (d > 4.9) continue;
       px(p, q, 1, 1, d > 4.2 ? LINE : d > 3.6 ? '#1e1830' : '#140f1e');   // glass shell over a dark interior
     }
-    px(x + 2, y - 4, 1, 3, '#3d3059'); px(x + 3, y - 6, 1, 1, '#4b3c69');   // NW glint on the glass
-    rimEdge(x + 8, y - 2, 1, 4, 0.22);                               // cool sky bounce on the shade side
-    px(x + 5, y - 3, 2, 2, '#b47aff'); px(x + 5, y - 3, 1, 1, '#f2e6ff');   // electrode core
+    px(x + 2, y - 2, 1, 3, '#3d3059'); px(x + 3, y - 4, 1, 1, '#4b3c69');   // NW glint on the glass
+    rimEdge(x + 8, y, 1, 4, 0.22);                                   // cool sky bounce on the shade side
+    px(x + 5, y - 1, 2, 2, '#b47aff'); px(x + 5, y - 1, 1, 1, '#f2e6ff');   // electrode core
     const a1 = Math.floor((now / 130) + ph + x) % 4, a2 = Math.floor((now / 190) + (ph + x) * 3) % 4;
-    const TIP = [[x + 2, y - 4], [x + 9, y - 3], [x + 3, y], [x + 8, y + 1]];
+    const TIP = [[x + 2, y - 2], [x + 9, y - 1], [x + 3, y + 2], [x + 8, y + 3]];
     for (const pair of [[a1, 1], [a2, 0]]) {                         // two arcs re-rooting on their own clocks
-      const t = TIP[pair[0]], mx = (t[0] + x + 5) >> 1, my = (t[1] + y - 3) >> 1;
+      const t = TIP[pair[0]], mx = (t[0] + x + 5) >> 1, my = (t[1] + y - 1) >> 1;
       px(mx, my, 1, 1, pair[1] ? '#b47aff' : '#8a4ae0');
       px(t[0], t[1], 1, 1, '#f2e6ff');                               // hot tip kissing the glass
     }
-    bloom(x + 3, y - 5, 6, 7, '#8a4ae0', 0.15 + 0.07 * (flick(300, ph + x) * 0.5 + 0.5));
-    spill(x + 4, y + 2, 4, '#8a4ae0', 0.16, 3);                      // violet pooling down the bracket
+    bloom(x + 3, y - 3, 6, 7, '#8a4ae0', 0.15 + 0.07 * (flick(300, ph + x) * 0.5 + 0.5));
+    spill(x + 4, y + 6, 4, '#8a4ae0', 0.16, 3);                      // violet pooling down the stem and base
   };
 
-  F.zapper = (x, y, w, h, f) => {   // v4 wall zapper — caged violet tube on the bulkhead; rare hard discharge
-    const r = RAMP.steel, ph = (f && f.x) || 0;
-    const zap = flick(60, ph + x) > 0.93;                            // kept: rare, sharp discharge
-    // Was a tripod lamp standing in a walk-through tile. Bug lamps hang; hanging also gets it off the deck.
-    // ANCHOR: the mount plate bolts to the bulkhead at the top of the PLACED tile and the cage + catch tray
-    // fill that tile — hung a tile north, the lamp read as belonging to the row above it.
-    px(x + 4, y - 3, 4, 2, LINE); px(x + 5, y - 3, 2, 1, r.top);     // wall mount plate
-    px(x + 5, y - 1, 2, 1, r.dk);
-    chamf(x + 1, y - 1, 10, 13, LINE, 2);
-    chamf(x + 2, y, 8, 11, r.face, 1);
-    px(x + 2, y, 8, 2, r.top); px(x + 3, y, 6, 1, r.sheen);          // hood we look up under
-    keyEdge(x + 3, y, 5, 1, 0.28);
-    px(x + 2, y + 2, 8, 1, U.shade(r.top, -0.34));                   // hood underside AO
-    px(x + 2, y + 3, 1, 7, r.lit); px(x + 9, y + 3, 1, 7, r.dk); rimEdge(x + 9, y + 3, 1, 7, 0.22);
-    px(x + 3, y + 3, 6, 7, '#12101c');                               // the dark cage interior
-    px(x + 5, y + 4, 2, 6, zap ? '#f2e6ff' : '#8a4ae0');             // the tube
-    px(x + 5, y + 6, 2, 1, zap ? '#ffffff' : '#b47aff');             // hot band at the tube's middle
-    for (let i = 0; i < 4; i++) px(x + 3 + i * 2, y + 3, 1, 7, '#1e1a2c');   // cage bars IN FRONT of the tube
-    bloom(x + 5, y + 4, 2, 6, '#8a4ae0', zap ? 0.42 : 0.15);         // the flash stays on the tube, not the tile
-    if (zap) {                                                       // one bent arc jumping to the cage
-      px(x + 4, y + 5, 1, 1, '#f2e6ff'); px(x + 4, y + 7, 1, 1, '#f2e6ff'); px(x + 7, y + 6, 1, 1, '#f2e6ff');
-      bloom(x + 4, y + 5, 4, 3, '#b47aff', 0.22);
-    }
-    spill(x + 3, y + 10, 6, '#8a4ae0', zap ? 0.30 : 0.12, 3);        // light pooling down into the catch tray
-    px(x + 2, y + 10, 8, 2, r.dk); px(x + 2, y + 10, 8, 1, U.shade(r.face, 0.10));   // catch tray
-    px(x + 4, y + 11, 2, 1, '#1a1420'); px(x + 7, y + 11, 1, 1, '#1a1420');    // ash of the fallen
-  };
 
   F.gachapon = (x, y, w, h, f) => {   // v4 capsule machine (BLOCKS) — steel cabinet, DOME of bright capsules
     const r = RAMP.steel, ph = (f && f.x) || 0;
@@ -4543,6 +4479,95 @@ const PropSprites = (() => {
     px(x + 10, y + 4, 2, 1, r.dk); rimEdge(x + 10, y + 3, 1, 2, 0.22);
   };
 
+  /* ============ TABLES (2026-07-26) ============
+     The catalog had big hero surfaces (holotable, wartable, bar, bench) and nothing in between, so
+     every small object — a plasma globe, a lava lamp, a terrarium — had to be parked on the deck,
+     where it reads as litter. These three exist to be SAT ON: each carries `surface: true`, and a
+     prop whose catalog row says `mount: 'surface'` may be placed on their tiles.
+
+     THE ONE RULE THAT MAKES STACKING WORK: every table presents its top plane at the SAME height,
+     SURFACE_RISE px above the floor line, so a mounted prop is drawn by shifting it up one constant
+     and lands convincingly on ANY table. If you author a new table, its top face must straddle that
+     plane — otherwise objects float above it or sink into it. There is no per-table offset and there
+     should never be one: the moment tables disagree on height, every mounted prop needs a lookup. */
+  F.sidetable = (x, y, w, h, f) => {
+    // 1x1 ROUND pedestal side table — the "put ONE thing here" surface. Round on purpose: the other
+    // two are rectangular, so at 12px the silhouette alone says which table you placed.
+    const r = RAMP.steel, top = y + h - 1 - SURFACE_RISE;    // = y+3 at h:1
+    shadow2(x + 2, y + h - 1, 8);
+    px(x + 4, top + 4, 4, 5, LINE);                               // turned column
+    px(x + 5, top + 4, 1, 5, '#5a4a3a'); px(x + 6, top + 4, 1, 5, '#3a2e24');
+    keyEdge(x + 5, top + 4, 1, 3, 0.18); rimEdge(x + 6, top + 4, 1, 5, 0.16);
+    px(x + 5, top + 6, 2, 1, '#6a5744');                          // one collar
+    chamf(x + 2, y + h - 4, 8, 3, LINE, 1);                  // small splayed foot
+    px(x + 3, y + h - 3, 6, 1, '#4a3c2e'); keyEdge(x + 3, y + h - 3, 3, 1, 0.16);
+    px(x + 3, y + h - 2, 6, 1, '#0a0d10');
+    underAO(x + 3, top + 3, 6, 2);
+    // the ROUND top: a 5-row disc whose row insets trace a circle, so it never reads as a lozenge
+    const dsk = [3, 1, 0, 0, 1];
+    dsk.forEach((i, j) => px(x + i - 1, top - 2 + j, 12 - i * 2 + 2, 1, LINE));
+    dsk.forEach((i, j) => {
+      px(x + i, top - 2 + j, 12 - i * 2, 1, j === 0 ? '#7a6448' : (j < 3 ? '#63513a' : '#4a3c2c'));
+    });
+    px(x + 3, top - 2, 6, 1, '#8a7154'); keyEdge(x + 4, top - 2, 3, 1, 0.24);   // lit back arc
+    px(x + 1, top + 2, 10, 1, U.shade('#4a3c2c', -0.30));         // the top's front lip, in its own shade
+    rimEdge(x + 10, top - 1, 1, 2, 0.18);
+  };
+
+  F.loungetable = (x, y, w, h, f) => {
+    // 2x1 low COFFEE TABLE — chamfered smoked-glass top over a steel frame, with a real under-shelf.
+    // The shelf is what separates it from the long table at a glance: two horizontal planes, not one.
+    const r = RAMP.steel, top = y + h - 1 - SURFACE_RISE;
+    shadow2(x + 1, y + h - 1, w - 2);
+    for (const lx of [x + 2, x + w - 4]) {                        // front leg pair
+      px(lx - 1, top + 3, 4, 6, LINE);
+      px(lx, top + 3, 1, 6, r.lit); px(lx + 1, top + 3, 1, 6, r.dk);
+      rimEdge(lx + 1, top + 3, 1, 6, 0.18);
+      px(lx, top + 8, 2, 1, r.ao);
+    }
+    underAO(x + 4, top + 3, w - 8, 5);
+    px(x + 2, top + 5, w - 4, 2, LINE);                           // UNDER-SHELF
+    px(x + 3, top + 5, w - 6, 1, U.shade(r.face, 0.06)); keyEdge(x + 3, top + 5, 5, 1, 0.14);
+    px(x + 3, top + 6, w - 6, 1, r.dk);
+    px(x + 6, top + 4, 6, 1, '#8a8272'); px(x + 6, top + 4, 3, 1, '#a39a88');   // a datapad left on the shelf
+    // SMOKED GLASS top — dark, but with a bright leading edge, which is how glass reads at this size
+    chamf(x, top - 3, w, 6, LINE, 2);
+    chamf(x + 1, top - 2, w - 2, 4, '#2b3540', 1);
+    px(x + 2, top - 2, w - 4, 1, '#4a5a68'); keyEdge(x + 3, top - 2, 8, 1, 0.26);
+    px(x + 2, top - 1, 7, 1, '#38454f');                          // one broad reflection streak, static
+    px(x + 1, top + 1, w - 2, 1, '#1b2228');
+    px(x + 2, top + 2, w - 4, 1, U.shade('#2b3540', -0.44));      // the glass edge's own thickness
+    rimEdge(x + w - 2, top - 1, 1, 3, 0.20);
+  };
+
+  F.longtable = (x, y, w, h, f) => {
+    // 3x1 TRESTLE table — heavy warm timber on two A-frame trestles with a stretcher between them.
+    // This is the mess/briefing table: the cross-braces are the silhouette and they read at any zoom.
+    const WD = '#5c4732', WD_LIT = '#7a6044', WD_DK = '#3a2c1e';
+    const top = y + h - 1 - SURFACE_RISE;
+    shadow2(x + 2, y + h - 1, w - 4);
+    for (const tx of [x + 4, x + w - 7]) {                        // two trestles, splayed
+      px(tx, top + 3, 1, 6, LINE); px(tx + 2, top + 3, 1, 6, LINE);
+      px(tx, top + 3, 1, 6, WD_DK); px(tx + 2, top + 3, 1, 6, WD_DK);
+      px(tx - 1, top + 8, 5, 1, LINE);
+      px(tx - 1, top + 8, 4, 1, WD); keyEdge(tx - 1, top + 8, 2, 1, 0.14);   // foot rail
+      px(tx, top + 5, 3, 1, WD_LIT);                              // the trestle's own cross-brace
+    }
+    px(x + 5, top + 6, w - 11, 1, WD_DK);                         // stretcher tying the trestles together
+    px(x + 5, top + 6, 4, 1, U.shade(WD_DK, 0.16));
+    underAO(x + 6, top + 3, w - 12, 4);
+    // PLANK top — the plank seams are what say timber; they run the length, never across
+    px(x - 1, top - 3, w + 2, 6, LINE);
+    px(x, top - 2, w, 4, WD);
+    px(x, top - 2, w, 1, WD_LIT); keyEdge(x + 1, top - 2, 10, 1, 0.24);
+    px(x, top, w, 1, U.shade(WD, -0.14));                         // seam between the two planks
+    px(x, top + 1, w, 1, U.shade(WD, -0.06));
+    px(x, top + 2, w, 1, WD_DK);                                  // the top's front edge thickness
+    px(x, top - 2, 1, 4, WD_LIT); px(x + w - 1, top - 2, 1, 4, WD_DK);
+    rimEdge(x + w - 1, top - 2, 1, 4, 0.20);
+    for (let i = 0; i < 4; i++) px(x + 4 + i * 9, top - 1, 3, 1, U.shade(WD, 0.08));   // grain
+  };
+
   /* ============ DETAIL-PASS PROPS (auto-generated) ============ */
   F.bridge_tacscreen = (x, y, w, h, f) => {   // v4 TAC SCREEN (2x1) — the bridge's HOODED wireframe monitor
     // The three bridge props share the room's red and must still be told apart in silhouette alone:
@@ -7373,36 +7398,38 @@ const PropSprites = (() => {
     // DECOR — small dressing & plain seating.
     { id: "coffee", label: "COFFEE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "plant", label: "PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "cans", label: "CANS", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "poster", label: "POSTER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "poster", label: "POSTER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     { id: "rug", label: "RUG", cat: "decor", tier: "cosmetic", w: 4, h: 3, animated: true, blocks: false },
     { id: "treasury_pnl_holo", label: "PNL HOLO", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_floorlight", label: "FLOOR LIGHT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_ladder", label: "LADDER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "stool", label: "STOOL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     { id: "chair", label: "CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    // TABLES (2026-07-26) — the catalog had hero surfaces and nothing in between, so every small object
+    // had to be parked on the deck. `surface: true` is what a mount:"surface" prop may be placed ON.
+    { id: "sidetable", label: "SIDE TABLE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, surface: true },
+    { id: "loungetable", label: "LOUNGE TABLE", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, surface: true },
+    { id: "longtable", label: "LONG TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, surface: true },
     // DECOR EXPANSION (2026-07-15) — theming set. Flat paint/looms walk-over; solid bodies block.
-    { id: "neonsign", label: "NEON SIGN", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "lavalamp", label: "LAVA LAMP", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "neonsign", label: "NEON SIGN", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
+    { id: "lavalamp", label: "LAVA LAMP", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "surface" },
     { id: "crt_pile", label: "CRT PILE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     { id: "cablerun", label: "CABLE RUN", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
     { id: "hazardpad", label: "HAZARD PAD", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
     { id: "tallplant", label: "TALL PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
-    { id: "banner", label: "BANNER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "banner", label: "BANNER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     { id: "terrarium", label: "TERRARIUM", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     // DECOR EXPANSION wave 2 (2026-07-15, recurated) — fun/glow set. Flat holo/paint walk-over; cabinets block.
-    { id: "graffiti", label: "GRAFFITI", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "zapper", label: "ZAPPER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "starchart", label: "STAR CHART", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "starchart", label: "STAR CHART", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     { id: "holopet", label: "HOLO PET", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "plasmaglobe", label: "PLASMA GLOBE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "plasmaglobe", label: "PLASMA GLOBE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "surface" },
     { id: "gachapon", label: "GACHAPON", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
-    { id: "dartboard", label: "DART BOARD", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "rocketmodel", label: "ROCKET MODEL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "dartboard", label: "DART BOARD", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
+    { id: "rocketmodel", label: "ROCKET MODEL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     // DECOR EXPANSION wave 3 (2026-07-15) — greenery + lounge picks.
-    { id: "bonsai", label: "BONSAI", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "bonsai", label: "BONSAI", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     { id: "monstera", label: "MONSTERA", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "flytrap", label: "FLYTRAP", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "flytrap", label: "FLYTRAP", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     { id: "fishtank", label: "FISH TANK", cat: "lounge", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     { id: "pokertable", label: "POKER TABLE", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true },
   ];
@@ -7497,7 +7524,14 @@ const PropSprites = (() => {
      fraction or null (live harness runs have none). Only ever passed for a lit assigned workstation. */
   function draw(f, work, live) {
     const fn = F[f.t]; if (!fn) return;
-    const X = f.x * TILE, Y = f.y * TILE, W = (f.w || 1) * TILE, H = (f.h || 1) * TILE;
+    // MOUNT LIFT. A wall-hung or surface-standing prop is the SAME art as a floor prop, drawn higher:
+    // every prop function anchors its contact to its own footprint bottom, so lifting the origin lifts
+    // the whole thing and keeps every internal offset valid. This is deliberately the only place the
+    // lift is applied — a prop function must never bake its own mount height, or the two definitions of
+    // "how high is the wall" drift apart the first time the bake is retuned.
+    const lift = f.mount === 'wall' ? (f.wallRise == null ? WALL_RISE : f.wallRise)
+      : f.mount === 'surface' ? SURFACE_RISE : 0;
+    const X = f.x * TILE, Y = f.y * TILE - lift, W = (f.w || 1) * TILE, H = (f.h || 1) * TILE;
     const o = { x: f.x, work: !!work, agentId: f.agentId || null, door: f.door || null };
     if (live) { o.heat = +live.heat || 0; o.prog = (live.prog == null) ? null : Math.max(0, Math.min(1, +live.prog || 0)); }
     if (f.t === 'connector_portal') {                 // a bound portal rides its connector's live state

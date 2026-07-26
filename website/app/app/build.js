@@ -1751,7 +1751,12 @@ const Build = (() => {
   function propCardHTML(c, placed) {
     const fn = c.tier === 'functional';
     const tier = fn ? '<span class="pc-tier fn">⚙ SYSTEMS</span>' : '<span class="pc-tier">✦ DECOR</span>';
-    const foot = c.w + '×' + c.h + (c.blocks === false ? ' · walkable' : ' · solid');
+    // MOUNT is a placement RULE, so it belongs on the footprint line next to the other placement facts —
+    // a player who only meets it as a red ghost has been told "no" without being told "why".
+    const mount = c.mount === 'wall' ? ' · hangs on a wall'
+      : c.mount === 'surface' ? ' · stands on a table'
+      : (c.surface ? ' · things can stand on it' : '');
+    const foot = c.w + '×' + c.h + (c.blocks === false ? ' · walkable' : ' · solid') + mount;
     const desc = c.desc || (fn ? '' : 'Decor — looks only. Sets the mood; no effect on how the station runs.');
     let assign = '';
     if (placed && WORKSTATION_TYPES[placed.t]) {
