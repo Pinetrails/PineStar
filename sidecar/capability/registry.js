@@ -75,6 +75,21 @@
       { capId: 'web', tool: 'browser.dialog', scope: 'execute', requiresConsent: true, network: true },
       { capId: 'web', tool: 'browser.scroll', scope: 'execute', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.back', scope: 'execute', requiresConsent: false, network: true },
+      // A tool that exists in browser.js but is absent HERE is withheld from every real agent, however
+      // well it is tested elsewhere — this list, not the tool module, is what resolveTools grants.
+      // browser.tool-parity.test.js pins the two together so the next addition cannot go dark.
+      { capId: 'web', tool: 'browser.forward', scope: 'execute', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.hover', scope: 'execute', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.viewport', scope: 'execute', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.screenshot', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.network', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.tabs', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.tab_select', scope: 'execute', requiresConsent: false, network: true },
+      // consent-gated: these change page/form state, post a file, or destroy a tab.
+      { capId: 'web', tool: 'browser.select', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'web', tool: 'browser.drag', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'web', tool: 'browser.upload', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'web', tool: 'browser.tab_close', scope: 'execute', requiresConsent: true, network: true },
       // Real-screen desktop.open is not an ordinary run capability. The implementation remains
       // registered inertly for a future separate attended host channel, never a placed dish.
     ],
