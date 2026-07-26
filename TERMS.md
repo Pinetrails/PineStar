@@ -80,6 +80,10 @@ gateway — `PRIVACY.md` sets out exactly what we hold and what we don't.
 
 The StarNet source code is licensed under the MIT License; see the `LICENSE` file at the
 repository root. These terms cover use of the app; the MIT License governs the code itself.
+Third-party components remain under their original licenses (see `NOTICE.md`).
+
+The license does not grant any rights to the StarNet name, logo, or station artwork. Forks and
+derivatives must not present themselves as StarNet or use its branding.
 
 ## 8. Contact
 
