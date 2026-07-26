@@ -68,10 +68,65 @@ async function collect(provider, req) { const out = []; for await (const e of pr
     A.eq(captured.url, 'https://anthropic.test/v1/messages', 'POSTs to /messages');
     A.eq(captured.headers['x-api-key'], 'KEY', 'api key sent as x-api-key');
     A.eq(captured.headers['anthropic-version'], '2023-06-01', 'Anthropic API version header set');
-    A.eq(captured.body.system, 'sys', 'leading system lifted');
+    A.eq(captured.body.system, [{ type: 'text', text: 'sys', cache_control: { type: 'ephemeral' } }],
+      'leading system lifted — block form, carrying the cache breakpoint');
     A.eq(captured.body.tools[0], { name: 'web', description: 'd', input_schema: { type: 'object' } }, 'OpenAI tool -> Anthropic tool');
     A.eq(captured.body.messages[0].content[1], { type: 'tool_use', id: 'call_7', name: 'web', input: { q: 1 } }, 'assistant tool_call -> tool_use block');
-    A.eq(captured.body.messages[1].content[0], { type: 'tool_result', tool_use_id: 'call_7', content: 'result text' }, 'tool result -> tool_result block');
+    A.eq(captured.body.messages[1].content[0], { type: 'tool_result', tool_use_id: 'call_7', content: 'result text', cache_control: { type: 'ephemeral' } },
+      'tool result -> tool_result block (last block of the last turn carries the conversation breakpoint)');
+  }
+
+  /* C2. PROMPT CACHING. Anthropic caches by PREFIX over tools -> system -> messages, so the breakpoint has to
+     land on the last block of the STATIC prefix or the 59.7% of the request that is tool schemas is re-billed
+     every turn. These pin the placement rules, the kill switch, and the aliasing trap. */
+  {
+    const cap = async (req, patch) => {
+      let captured = null;
+      const fetchImpl = async (url, init) => {
+        captured = JSON.parse(init.body);
+        return new Response([line({ type: 'message_stop' }), ''].join('\n'), { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+      };
+      const prev = process.env.SKYNET_ANTHROPIC_CACHE;
+      if (patch !== undefined) process.env.SKYNET_ANTHROPIC_CACHE = patch;
+      // the flag is resolved at module load, so re-require through a cache bust to observe the OFF path.
+      const mod = patch === undefined ? { makeAnthropicProvider }
+        : (delete require.cache[require.resolve('../sidecar/providers/anthropic.js')], require('../sidecar/providers/anthropic.js'));
+      await collect(mod.makeAnthropicProvider({ fetch: fetchImpl, key: 'k' }), req);
+      if (patch !== undefined) {
+        if (prev === undefined) delete process.env.SKYNET_ANTHROPIC_CACHE; else process.env.SKYNET_ANTHROPIC_CACHE = prev;
+        delete require.cache[require.resolve('../sidecar/providers/anthropic.js')];
+      }
+      return captured;
+    };
+    const TOOLS = [{ type: 'function', function: { name: 'a', parameters: { type: 'object' } } }];
+
+    // With a system prompt, SYSTEM is the anchor — it renders after tools, so one breakpoint caches both.
+    const withSys = await cap({ model: 'm', messages: [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }], tools: TOOLS });
+    A.eq(withSys.system[0].cache_control, { type: 'ephemeral' }, 'system block carries the static-prefix breakpoint');
+    A.ok(!withSys.tools[0].cache_control, 'no redundant breakpoint on tools when system already covers them');
+
+    // With NO system prompt the last tool is the only anchor that still covers the tool catalogue.
+    const noSys = await cap({ model: 'm', messages: [{ role: 'user', content: 'u' }], tools: TOOLS });
+    A.ok(!noSys.system, 'no system block invented when the caller sent none');
+    A.eq(noSys.tools[0].cache_control, { type: 'ephemeral' }, 'tools anchor the breakpoint when there is no system prompt');
+
+    // The conversation breakpoint rides the LAST block of the LAST turn, and only there.
+    const convo = await cap({ model: 'm', messages: [{ role: 'user', content: 'one' }, { role: 'assistant', content: 'two' }, { role: 'user', content: 'three' }] });
+    A.ok(!convo.messages[0].content[0].cache_control, 'earlier turns are read points, not write points');
+    A.eq(convo.messages[2].content[0].cache_control, { type: 'ephemeral' }, 'last block of the last turn carries the conversation breakpoint');
+
+    // ALIASING TRAP: native image blocks pass through by reference, so stamping in place would mutate the
+    // caller's own message array and leak cache_control back into harness state.
+    const img = { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'x' } };
+    const msgs = [{ role: 'user', content: [img] }];
+    await cap({ model: 'm', messages: msgs });
+    A.eq(img, { type: 'image', source: { type: 'base64', media_type: 'image/png', data: 'x' } }, 'caller image block is NOT mutated by the breakpoint');
+
+    // Kill switch: billing-affecting behaviour must be disableable without a code change.
+    const off = await cap({ model: 'm', messages: [{ role: 'system', content: 's' }, { role: 'user', content: 'u' }], tools: TOOLS }, '0');
+    A.ok(!off.system[0].cache_control, 'SKYNET_ANTHROPIC_CACHE=0 drops the system breakpoint');
+    A.ok(!off.tools[0].cache_control, 'SKYNET_ANTHROPIC_CACHE=0 drops every breakpoint');
+    A.eq(off.system[0].text, 's', 'system content survives with caching off');
   }
 
   // D. model catalog parses /models.

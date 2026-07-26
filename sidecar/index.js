@@ -32,6 +32,7 @@ const { makeDesktopTools } = require('./tools/builtin/desktop.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
+const { makeToolSearchTool } = require('./tools/builtin/toolsearch.js');   // tool.search: reach a granted-but-unadvertised (deferred) tool
 const { makeSkillTools } = require('./tools/builtin/skills.js');    // H4: the agent's reusable skill library tools
 const Todo = require('./tools/builtin/todo.js');
 const { makeImageTools } = require('./tools/builtin/image.js');           // STUDIO: image_generate / image_analyze (OpenRouter multimodal)
@@ -8657,6 +8658,7 @@ async function runOnce(o) {
     }
   }).register(registry);   // H4: skill.write/list/view/manage — the agent's reusable procedure library (memory capability)
   Todo.makeTodoTool({ store: notebookStore }).register(registry);   // in-session task plan — shares the notebook's per-agent kv store ('todo:'+agentId)
+  makeToolSearchTool({ registry }).register(registry);   // tool.search — finds a GRANTED but unadvertised tool (CAP_REGISTRY `deferred: true`) and reveals it for the rest of the run; rides the computer object so no surface is stranded
   makeQuestTools({ store: questStore, clock: { now: () => Date.now() } }).register(registry);   // QUEST V2 §B: quest.update (progress/attest/mint) — the 'quest' freebie capability, granted by the computer object (CAP_REGISTRY) so it rides EVERY task surface
   // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
@@ -9012,9 +9014,24 @@ async function runOnce(o) {
   // ---- per-call tool list (task runs only). Internal names are dotted (fs.write, notebook.read) but the
   //      OpenAI/OpenRouter function-name grammar is ^[A-Za-z0-9_-]{1,64}$ — a '.' 400s the request — so on
   //      the WIRE we expose underscored names and translate the model's call name back before dispatch. ----
-  const toolDefs = isTask ? registry.wireFormat(registry.list(new Set(resolved.tools))) : [];
+  /* CORE vs DEFERRED (tool-schema cost pass). Both lists are GRANTED — `resolved.tools` is unchanged and is
+     still what the gate consults — but only the core list is advertised in every request. The deferred wire
+     defs are handed to the loop and stay out of the request until tool.search reveals one. Measured at the
+     wire, the full list was 37.7KB = 59.7% of every request, re-sent every turn. */
+  // KILL SWITCH. Deferral is model-dependent in a way byte counts are not: a model that does not think to
+  // search loses the capability outright, and a weak one may claim it did the work anyway. SKYNET_TOOL_SEARCH=0
+  // advertises everything, exactly as before this feature — the escape hatch for an operator whose model is
+  // one of those, and the A/B control for measuring whether deferral (rather than the model) caused a miss.
+  const deferralOff = String((process.env && process.env.SKYNET_TOOL_SEARCH) || '').trim() === '0';
+  const deferredNames = new Set(deferralOff ? [] : (resolved.deferred || []));
+  const coreNames = resolved.tools.filter(n => !deferredNames.has(n));
+  const toolDefs = isTask ? registry.wireFormat(registry.list(new Set(coreNames))) : [];
+  const deferredToolDefs = isTask ? registry.wireFormat(registry.list(deferredNames)) : [];
   const fromWire = new Map();
-  for (const d of toolDefs) { const real = d.function.name; const w = real.replace(/\./g, '_'); fromWire.set(w, real); d.function.name = w; }
+  // BOTH lists go through the SAME dotted -> underscored translation. A deferred def that skipped this would
+  // be advertised as `browser.screenshot` the moment it was revealed, which 400s the request outright (the
+  // OpenAI function-name grammar forbids '.'), and would have no fromWire entry to translate the call back.
+  for (const d of toolDefs.concat(deferredToolDefs)) { const real = d.function.name; const w = real.replace(/\./g, '_'); fromWire.set(w, real); d.function.name = w; }
   // WITHHELD-vs-UNKNOWN (2026-07-25, from a user report): every tool is REGISTERED on every run; the gates
   // decide which ones reach the wire list. A gated-away tool therefore had no fromWire entry, its name never
   // translated back, and registry.dispatch answered "unknown tool: shell_exec" — which is false. It exists.
@@ -9210,6 +9227,21 @@ async function runOnce(o) {
     ? '\n\n[HARNESS] You are running in a REAL agent harness on the Commander\'s machine, at a workstation with '
       + 'these LIVE tools: ' + wireNames.join(', ') + '. '
       + 'Actually use the listed tools when relevant; never claim a listed tool is unavailable. '
+      /* THE LIST IS PARTIAL, AND THE MODEL HAS TO BE TOLD SO HERE. tool_search's own description says it, but a
+         model plans from the tool LIST, not from the descriptions of tools it has not decided to call — so
+         that is the one place it will never look. Measured against real models on a task needing one deferred
+         tool: Sonnet 4.5 searched and succeeded, but gpt-4.1-mini never searched and then CLAIMED it had taken
+         the screenshot, and gemini-2.5-flash reported the capability did not exist. Silence here turns a byte
+         saving into a capability regression on weaker models, and into a fabricated result on one of them —
+         hence the explicit count (vague "more tools exist" reads as boilerplate) and the explicit ban on
+         claiming unfinished work. Cheap: this rides the CACHED prefix, the schemas it replaces did not. */
+      + (deferredToolDefs.length
+        ? 'This list is PARTIAL: ' + deferredToolDefs.length + ' more granted tools are not shown, including extra '
+          + 'browser controls (screenshots, tabs, network inspection, file upload, form selects) and local UI test controls. '
+          + 'Call tool_search with a plain description of the capability you want ("take a screenshot", "upload a file") '
+          + 'to load them; anything it returns becomes callable immediately. You MUST search before saying you cannot '
+          + 'do something, and you must never report an action as done that you had no tool to perform. '
+        : '')
       + taskDoctrineNote
       + (wireNames.indexOf('routine_create') >= 0
         ? 'When the Commander asks for a cron, routine, scheduled/recurring task, reminder, or standing job, use routine_create/routine_list in StarNet ROUTINES; do not use shell_exec, crontab, Windows Task Scheduler, Python scripts, or OS schedulers. '
@@ -9441,6 +9473,8 @@ async function runOnce(o) {
   try {
     result = await runAgentLoop({
       messages: msgs, provider, emit: loopEmit, cost, tools: toolDefs, dispatch, capCtx,
+      // Granted but unadvertised: held out of the request until tool.search reveals one (see loop.js).
+      deferredTools: deferredToolDefs,
       hiddenTools: ['brief_ask', 'brief_proceed'],
       // Real backoff for the loop's bounded mid-stream retry: without an injected sleep the loop retries a
       // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).

@@ -26,6 +26,7 @@ const { makeNotebookTools } = require('../sidecar/tools/builtin/notebook.js');
 const { makeWidgetTools } = require('../sidecar/tools/builtin/widgets.js');
 const { makeTodoTool } = require('../sidecar/tools/builtin/todo.js');
 const { makeRecallTool } = require('../sidecar/tools/builtin/recall.js');
+const { makeToolSearchTool } = require('../sidecar/tools/builtin/toolsearch.js');
 const { makeTranscriptStore } = require('../sidecar/transcriptstore.js');
 const { makeSkillTools } = require('../sidecar/tools/builtin/skills.js');
 const { makeSkillStore } = require('../sidecar/skillstore.js');
@@ -94,6 +95,7 @@ const fixture = {
   makeNotebookTools({ store: new Map(), clock: { now: () => 0 } }).register(registry);
   makeWidgetTools({ store: new Map(), clock: { now: () => 0 } }).register(registry);   // WIDGET RAILS Phase 2: widget.set rides the notebook (memory) grant
   makeTodoTool({ store: new Map() }).register(registry);
+  makeToolSearchTool({ registry }).register(registry);   // tool.search — rides the computer object, so it is in every office
   makeRecallTool({ transcriptStore: makeTranscriptStore({ io: { readAll() { return []; }, append() {} }, clock: { now: () => 0 } }) }).register(registry);
   makeSkillTools({ store: makeSkillStore({ io: { readAll() { return []; }, append() {} }, clock: { now: () => 0 } }) }).register(registry);
   // QUEST V2 §B: quest.update rides the COMPUTER (the 'quest' freebie), present in this office. In-memory questStore
@@ -119,14 +121,33 @@ const fixture = {
   const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: 5000 });
 
   // ---- DRIFT GUARDS (these alone would have caught both default-path showstoppers) ----
-  const EXPECTED = ['browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.drag', 'browser.eval', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect', 'browser.login', 'browser.navigate', 'browser.network', 'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot', 'browser.tab_close', 'browser.tab_select', 'browser.tabs', 'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision', 'fs.append', 'fs.edit', 'fs.list', 'fs.patch', 'fs.read', 'fs.search', 'fs.write', 'notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'web_fetch', 'web_request', 'web_search', 'widget.set'];
+  const EXPECTED = ['browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.drag', 'browser.eval', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect', 'browser.login', 'browser.navigate', 'browser.network', 'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot', 'browser.tab_close', 'browser.tab_select', 'browser.tabs', 'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision', 'fs.append', 'fs.edit', 'fs.list', 'fs.patch', 'fs.read', 'fs.search', 'fs.write', 'notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'tool.search', 'web_fetch', 'web_request', 'web_search', 'widget.set'];
   A.eq(resolved.tools.slice().sort(), EXPECTED.slice().sort(), 'office objects resolve to the full toolset (object=capability is real)');
   for (const name of EXPECTED) A.ok(registry.get(name), 'tool registered: ' + name);
 
-  const toolDefs = registry.wireFormat(registry.list(new Set(resolved.tools)));
+  /* DEFERRAL IS ADVERTISING, NOT CAPABILITY: `resolved.tools` above is the full GRANT set and is what the gate
+     reads, so it must still list every deferred tool. Only the wire list narrows. */
+  A.ok(resolved.deferred.length > 0, 'this office defers part of its toolset');
+  for (const n of resolved.deferred) A.ok(resolved.tools.indexOf(n) >= 0, 'a deferred tool is still granted: ' + n);
+  A.ok(resolved.deferred.indexOf('tool.search') < 0, 'tool.search is never itself deferred — the finder cannot be the thing that must be found');
+  A.ok(resolved.deferred.indexOf('browser.navigate') < 0, 'the core browsing path stays advertised');
+  // Measured with real models (2026-07-26): deferring browser.screenshot made gpt-4.1-mini report a
+  // screenshot it never took. A headline capability the model may CLAIM to have performed stays advertised;
+  // only the specialist tail is deferred.
+  A.ok(resolved.deferred.indexOf('browser.screenshot') < 0, 'a headline capability is never deferred (fabrication risk)');
+  A.ok(resolved.deferred.indexOf('browser.vision') < 0, 'nor the other half of "look at the page"');
+  A.ok(resolved.deferred.indexOf('browser.network') >= 0, 'the specialist tail IS deferred');
+  A.ok(resolved.deferred.indexOf('browser.upload') >= 0, 'and so is the rest of it');
+
+  const deferredNames = new Set(resolved.deferred);
+  const coreNames = resolved.tools.filter(n => !deferredNames.has(n));
+  const toolDefs = registry.wireFormat(registry.list(new Set(coreNames)));
+  const deferredToolDefs = registry.wireFormat(registry.list(deferredNames));
+  A.ok(toolDefs.length < resolved.tools.length, 'the advertised list is smaller than the granted list');
   const fromWire = new Map();
-  for (const d of toolDefs) { const real = d.function.name; const w = real.replace(/\./g, '_'); fromWire.set(w, real); d.function.name = w; }
-  for (const d of toolDefs) A.ok(/^[A-Za-z0-9_-]{1,64}$/.test(d.function.name), 'wire tool name is provider-legal: ' + d.function.name);
+  // BOTH lists translate: a revealed tool still has to carry a provider-legal name.
+  for (const d of toolDefs.concat(deferredToolDefs)) { const real = d.function.name; const w = real.replace(/\./g, '_'); fromWire.set(w, real); d.function.name = w; }
+  for (const d of toolDefs.concat(deferredToolDefs)) A.ok(/^[A-Za-z0-9_-]{1,64}$/.test(d.function.name), 'wire tool name is provider-legal: ' + d.function.name);
 
   const dispatch = async (c, ctx) => {
     if (fromWire.has(c.name)) c = Object.assign({}, c, { name: fromWire.get(c.name) });

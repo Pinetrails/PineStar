@@ -28,7 +28,15 @@
       // in every consumer — it has no TOOLSETS_META row (toolsets.js) so it is never a toggleable family (correct: a
       // freebie, like compute), it is not in capsummary's CAPS list so it is never advertised/nagged, and capdrift
       // keys on objectTypes (unchanged) so the prop⇄cap seam is intact. (see tools/builtin/quests.js)
-      { capId: 'quest', tool: 'quest.update', scope: 'write', requiresConsent: false, network: false }
+      { capId: 'quest', tool: 'quest.update', scope: 'write', requiresConsent: false, network: false },
+      // TOOL SEARCH: how the agent reaches a DEFERRED tool. Rides `computer` for the same reason quest.update
+      // does — it is the ONE object in both the compute-only interactive office and fullOffice, so a deferred
+      // tool is never stranded on a surface that cannot look it up. capId is 'toolsearch', NOT 'compute'
+      // (resolve.js treats a 'compute' grant as the COMPUTE GATE and never emits it as a callable tool, which
+      // would make this permanently absent — the exact trap quest.update hit). No TOOLSETS_META row, so it is
+      // not a toggleable family: switching it off would strand every deferred tool behind a tool that no
+      // longer exists. It is never itself deferred — the finder cannot be the thing that must be found.
+      { capId: 'toolsearch', tool: 'tool.search', scope: 'read', requiresConsent: false, network: false }
     ],
     notebook: [
       { capId: 'memory', tool: 'notebook.write', scope: 'write', requiresConsent: false, network: false },   // private sandboxed memory — no consent gate (see notebook.js)
@@ -61,38 +69,51 @@
       // web_request calls a third-party API AS the Commander (it spends a stored key), so unlike the two
       // keyless readers above it always asks. Its unattended use is additionally gated per-key.
       { capId: 'web', tool: 'web_request', scope: 'execute', requiresConsent: true, network: true },
+      // DEFERRED (`deferred: true`) — still GRANTED, just not advertised in every request. The browser family
+      // alone is 29 tools / ~10.2KB of the 37.7KB of schemas re-sent on EVERY turn (measured at the wire), and
+      // an agent needs about six of them to drive a page. A deferred tool stays fully dispatchable; the model
+      // finds it with tool.search, which reveals it for the rest of the run. Deferral is NOT a capability
+      // decision — resolveTools still returns it in `tools`, so the gate, consent, and toolset kill-switch all
+      // behave exactly as before. Core is the DEFAULT: omitting the flag advertises the tool, so a new tool can
+      // never go silently unreachable, only make requests slightly fatter.
       { capId: 'web', tool: 'browser.navigate', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.snapshot', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.get_text', scope: 'read', requiresConsent: false, network: true },
-      { capId: 'web', tool: 'browser.console', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.console', scope: 'read', requiresConsent: false, network: true, deferred: true },
+      // NOT deferred, and this was measured rather than reasoned. "Show me the page" is a headline request,
+      // and a model that cannot see the tool does not always go looking: with browser.screenshot deferred,
+      // gpt-4.1-mini never searched and then REPORTED TAKING A SCREENSHOT IT NEVER TOOK; with the same tool
+      // advertised it called it and reported honestly. A byte saving that buys a fabricated result is not a
+      // saving. vision rides the same rule — it is the other half of "look at the page".
+      // The line: defer SPECIALIST tools, never a headline capability the model may claim it performed.
       { capId: 'web', tool: 'browser.vision', scope: 'read', requiresConsent: false, network: true },
       // requiresConsent:false is NOT a free pass — browser.login runs its OWN two-phase live consent
       // (open-window ask + done-wait) inside the tool; the generic broker card would double-prompt.
-      { capId: 'web', tool: 'browser.login', scope: 'execute', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.login', scope: 'execute', requiresConsent: false, network: true, deferred: true },
       { capId: 'web', tool: 'browser.click', scope: 'execute', requiresConsent: true, network: true },
       { capId: 'web', tool: 'browser.type', scope: 'execute', requiresConsent: true, network: true },
       { capId: 'web', tool: 'browser.press', scope: 'execute', requiresConsent: true, network: true },
-      { capId: 'web', tool: 'browser.dialog', scope: 'execute', requiresConsent: true, network: true },
-      { capId: 'web', tool: 'browser.scroll', scope: 'execute', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.dialog', scope: 'execute', requiresConsent: true, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.scroll', scope: 'execute', requiresConsent: false, network: true, deferred: true },
       { capId: 'web', tool: 'browser.back', scope: 'execute', requiresConsent: false, network: true },
       // A tool that exists in browser.js but is absent HERE is withheld from every real agent, however
       // well it is tested elsewhere — this list, not the tool module, is what resolveTools grants.
       // browser.tool-parity.test.js pins the two together so the next addition cannot go dark.
-      { capId: 'web', tool: 'browser.forward', scope: 'execute', requiresConsent: false, network: true },
-      { capId: 'web', tool: 'browser.hover', scope: 'execute', requiresConsent: false, network: true },
-      { capId: 'web', tool: 'browser.viewport', scope: 'execute', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.forward', scope: 'execute', requiresConsent: false, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.hover', scope: 'execute', requiresConsent: false, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.viewport', scope: 'execute', requiresConsent: false, network: true, deferred: true },
       { capId: 'web', tool: 'browser.screenshot', scope: 'read', requiresConsent: false, network: true },
-      { capId: 'web', tool: 'browser.network', scope: 'read', requiresConsent: false, network: true },
-      { capId: 'web', tool: 'browser.inspect', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.network', scope: 'read', requiresConsent: false, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.inspect', scope: 'read', requiresConsent: false, network: true, deferred: true },
       // Page eval is consent-gated AND refused outright on the signed-in station profile (see browser.js).
-      { capId: 'web', tool: 'browser.eval', scope: 'execute', requiresConsent: true, network: true },
-      { capId: 'web', tool: 'browser.tabs', scope: 'read', requiresConsent: false, network: true },
-      { capId: 'web', tool: 'browser.tab_select', scope: 'execute', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.eval', scope: 'execute', requiresConsent: true, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.tabs', scope: 'read', requiresConsent: false, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.tab_select', scope: 'execute', requiresConsent: false, network: true, deferred: true },
       // consent-gated: these change page/form state, post a file, or destroy a tab.
-      { capId: 'web', tool: 'browser.select', scope: 'execute', requiresConsent: true, network: true },
-      { capId: 'web', tool: 'browser.drag', scope: 'execute', requiresConsent: true, network: true },
-      { capId: 'web', tool: 'browser.upload', scope: 'execute', requiresConsent: true, network: true },
-      { capId: 'web', tool: 'browser.tab_close', scope: 'execute', requiresConsent: true, network: true },
+      { capId: 'web', tool: 'browser.select', scope: 'execute', requiresConsent: true, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.drag', scope: 'execute', requiresConsent: true, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.upload', scope: 'execute', requiresConsent: true, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.tab_close', scope: 'execute', requiresConsent: true, network: true, deferred: true },
       // Real-screen desktop.open is not an ordinary run capability. The implementation remains
       // registered inertly for a future separate attended host channel, never a placed dish.
     ],
@@ -112,10 +133,12 @@
       { capId: 'workbench', tool: 'verify.run', scope: 'execute', requiresConsent: true, network: true },
       // Local UI/game verification stays inside StarNet's headless CDP session. Pointer/keyboard
       // lock is emulated in-page, and coordinate/key input is synthetic — never Win32 input.
-      { capId: 'workbench', tool: 'browser.test_navigate', scope: 'read', requiresConsent: false, network: true },
-      { capId: 'workbench', tool: 'browser.test_snapshot', scope: 'read', requiresConsent: false, network: false },
-      { capId: 'workbench', tool: 'browser.test_input', scope: 'execute', requiresConsent: false, network: false },
-      { capId: 'workbench', tool: 'browser.test_state', scope: 'read', requiresConsent: false, network: false },
+      // Deferred: a run that places the workbench is usually there to run shell, not to drive the local UI
+      // harness. Still granted and dispatchable — tool.search reveals the set when a UI check is what's needed.
+      { capId: 'workbench', tool: 'browser.test_navigate', scope: 'read', requiresConsent: false, network: true, deferred: true },
+      { capId: 'workbench', tool: 'browser.test_snapshot', scope: 'read', requiresConsent: false, network: false, deferred: true },
+      { capId: 'workbench', tool: 'browser.test_input', scope: 'execute', requiresConsent: false, network: false, deferred: true },
+      { capId: 'workbench', tool: 'browser.test_state', scope: 'read', requiresConsent: false, network: false, deferred: true },
       { capId: 'workbench', tool: 'shell.bg.status', scope: 'read', requiresConsent: false, network: false },   // H2.2: inspect your background processes
       { capId: 'workbench', tool: 'shell.bg.kill', scope: 'write', requiresConsent: false, network: false }      // H2.2: stop a background process you started
     ],

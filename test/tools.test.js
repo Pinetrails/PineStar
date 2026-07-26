@@ -209,5 +209,57 @@ const call = (name, args, id) => ({ id: id || 'c1', name, args, argsRaw: JSON.st
     A.eq(messages[messages.length - 1].role, 'tool', 'a tool result is still appended (pairing held)');
   }
 
+  /* CENTRAL OUTPUT CAP. Every builtin clamps itself, so the protection was a convention a NEW tool inherited
+     nothing from — one unbounded result blows the context window and ends the run. This pins the backstop at
+     the single seam every result passes through. */
+  {
+    const { makeRegistry } = require('../sidecar/tools/registry.js');
+    const reg = makeRegistry();
+    const HUGE = 'x'.repeat(500000);
+    reg.register({
+      name: 'flood', capability: 'compute', scope: 'read', requiresConsent: false,
+      description: 'returns far too much', schema: { type: 'object', properties: {} },
+      run: async () => ({ content: HUGE, summary: 'ok' })
+    });
+    reg.register({
+      name: 'polite', capability: 'compute', scope: 'read', requiresConsent: false,
+      description: 'returns a sane amount', schema: { type: 'object', properties: {} },
+      run: async () => ({ content: 'short and useful', summary: 'ok' })
+    });
+    const ctx = { timeoutMs: 5000 };
+
+    const big = await reg.dispatch({ id: 'c1', name: 'flood', args: {} }, ctx);
+    A.ok(big.ok, 'an over-long result is still a SUCCESS — capping is not failing');
+    A.ok(big.content.length < HUGE.length, 'the unbounded result was capped');
+    A.ok(big.content.length <= 81000, 'capped to the host limit, not merely trimmed');
+    A.ok(/output cap/.test(big.content), 'the model is told the host cut it, not left to wonder');
+    A.ok(/narrow it|filter, page/.test(big.content), 'the note names a NEXT ACTION so the model does not just retry the same call');
+
+    // Head AND tail: the answer in command output usually lives at the end.
+    reg.register({
+      name: 'trace', capability: 'compute', scope: 'read', requiresConsent: false,
+      description: 'head and tail matter', schema: { type: 'object', properties: {} },
+      run: async () => ({ content: 'FIRSTLINE\n' + 'p'.repeat(300000) + '\nEXIT CODE 1', summary: 'ok' })
+    });
+    const t = await reg.dispatch({ id: 'c2', name: 'trace', args: {} }, ctx);
+    A.ok(t.content.indexOf('FIRSTLINE') >= 0, 'the head survives');
+    A.ok(t.content.indexOf('EXIT CODE 1') >= 0, 'and so does the TAIL — a head-only cut hides the answer');
+
+    // The common case must be untouched, and the cap must sit ABOVE the per-tool clamps so a result that
+    // already carries its own honest "truncated" note is never re-cut.
+    const small = await reg.dispatch({ id: 'c3', name: 'polite', args: {} }, ctx);
+    A.eq(small.content, 'short and useful', 'ordinary output passes through byte-identical');
+
+    // An error result is capped too — a stack trace or an API error body can be just as large.
+    reg.register({
+      name: 'blowup', capability: 'compute', scope: 'read', requiresConsent: false,
+      description: 'throws hugely', schema: { type: 'object', properties: {} },
+      run: async () => { throw new Error('E'.repeat(400000)); }
+    });
+    const boom = await reg.dispatch({ id: 'c4', name: 'blowup', args: {} }, ctx);
+    A.ok(boom.isError, 'a throw is still an error result');
+    A.ok(boom.content.length <= 81000, 'a huge error message is capped on the same path');
+  }
+
   A.report('tools.test');
 })();

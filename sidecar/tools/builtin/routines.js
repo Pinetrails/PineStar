@@ -176,7 +176,12 @@
 
     const createTool = {
       name: 'routine.create', capability: 'orchestrator', scope: 'write', requiresConsent: true, timeoutMs: 15000,
-      description: 'Create a StarNet ROUTINES scheduled job in the built-in harness scheduler. Use this whenever the Commander asks for a cron, routine, recurring task, reminder, standing job, or scheduled research. Do NOT use shell.exec, crontab, Windows Task Scheduler, Python scripts, or OS schedulers for this. If agentId is omitted, this tool routes the routine to the best matching station agent from the live roster (research/news/latest -> research/scout/analyst agents). arm defaults to true so saved routines actually fire. Before creating, check routine.list — do NOT create a routine that already exists; the server rejects a duplicate name and tells you it already exists.',
+      /* Trimmed 2026-07-26 (tool-schema cost pass). Re-sent every turn, so it keeps only what changes a
+         decision and lives nowhere better: what this is, the trigger words that route work HERE instead of
+         to a shell, and the check-first rule. Dropped: the agentId auto-routing and `arm` default, both of
+         which the schema below already states at the point of use, and the explanation that the server
+         rejects a duplicate name — it says so itself, at call time, more precisely than a remembered note. */
+      description: 'Create a StarNet ROUTINES scheduled job in the built-in harness scheduler. Use this whenever the Commander asks for a cron, routine, recurring task, reminder, standing job, or scheduled research — never shell.exec, crontab, Windows Task Scheduler, or any OS scheduler. Check routine.list first and do not re-create a routine that already exists.',
       schema: {
         type: 'object',
         required: ['prompt', 'schedule'],

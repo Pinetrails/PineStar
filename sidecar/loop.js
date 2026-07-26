@@ -159,7 +159,24 @@
     const messages = o.messages;
     let provider = o.provider;
     const emit = o.emit;
-    const tools = o.tools || [];
+    // COPIED, not aliased: a tool.search reveal APPENDS here, and the caller's array is built once per run and
+    // must not grow underneath it.
+    const tools = (o.tools || []).slice();
+    /* TOOL SEARCH: wire declarations for tools this agent was GRANTED but that are not advertised (CAP_REGISTRY
+       `deferred: true`). They are held here, out of the request, until tool.search reveals one. The loop owns
+       this rather than the tool because the model can only ever emit a tool_use for a DECLARED tool — so
+       revealing is necessarily an act on the request, not something a tool can do to itself. */
+    /* Keyed by the WIRE name, because that is the one form both sides can agree on. The caller renames
+       dotted tool names to underscores before handing them over (the OpenAI function-name grammar forbids
+       '.'), while a reveal signal carries the registry's REAL dotted name — so a raw lookup misses every
+       time and the reveal silently does nothing. Underscoring is idempotent, so normalising both sides
+       through it is safe whether or not the caller renamed anything. */
+    const wireKey = n => String(n == null ? '' : n).replace(/\./g, '_');
+    const deferredDefs = new Map();
+    for (const d of (o.deferredTools || [])) {
+      const n = d && d.function && d.function.name;
+      if (n) deferredDefs.set(wireKey(n), d);
+    }
     const limits = o.limits || {};
     const maxIters = limits.maxIters || 40;
     // GRACE TURN (P0.3): when a run hits the iteration ceiling, give it ONE final no-tools turn to deliver its
@@ -591,6 +608,27 @@
         return end('error');
       }
       for (const r of results) messages.push(toolResultMsg(r.callId, r.isError, r.content));
+
+      /* TOOL SEARCH reveal — the one thing in a run that changes the advertised tool set, and it only ever
+         APPENDS. A revealed tool is callable from the NEXT model call onward; it was already granted, so
+         nothing here widens capability (the gate, consent broker and kill-switch never consulted this list).
+         A name that is missing from the map was already revealed or was never deferred — skipping is correct
+         in both cases and keeps a repeated search idempotent.
+         COST NOTE: a provider renders tools BEFORE system, so growing this array invalidates the cached prefix
+         for exactly one turn and it re-warms on the next (see providers/anthropic.js). Searches are rare and
+         the saving is per-turn, so that trade is strongly positive — but it is why reveals append in one
+         batch here rather than trickling one tool at a time. */
+      for (const r of results) {
+        const reveal = r.control && r.control.revealTools;
+        if (!Array.isArray(reveal)) continue;
+        for (const name of reveal) {
+          const key = wireKey(name);
+          const def = deferredDefs.get(key);
+          if (!def) continue;
+          deferredDefs.delete(key);
+          tools.push(def);
+        }
+      }
 
       const finalControl = results.map(r => r.control).find(c => c && c.final);
       if (finalControl) {

@@ -26,6 +26,14 @@
       return (Number.isFinite(n) && n > 0) ? Math.floor(n) : 0;
     } catch (_) { return 0; }
   })();
+  // Prompt caching is ON by default (see the breakpoint() note below for why it pays). This is the kill
+  // switch: it changes what Anthropic BILLS, so there has to be a way to turn it off without a code change.
+  const CACHE_OFF = (function () {
+    try {
+      const raw = (typeof process !== 'undefined' && process.env) ? process.env.SKYNET_ANTHROPIC_CACHE : '';
+      return String(raw == null ? '' : raw).trim() === '0';
+    } catch (_) { return false; }
+  })();
 
   function isAbort(e, signal) { return !!((signal && signal.aborted) || (e && e.name === 'AbortError')); }
   function abortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
@@ -191,7 +199,10 @@
       prompt_tokens: uncached + cacheCreate + cacheRead,
       completion_tokens: out,
       total_tokens: uncached + cacheCreate + cacheRead + out,
-      prompt_tokens_details: { cached_tokens: cacheRead },
+      // cache_creation_tokens is carried alongside cached_tokens so cost.js can price the three buckets at
+      // their real rates (~0.1x read, ~1.25x write). prompt_tokens stays the TRUE total — these are a
+      // breakdown OF it, never a substitute for it.
+      prompt_tokens_details: { cached_tokens: cacheRead, cache_creation_tokens: cacheCreate },
       reasoning_tokens: 0
     };
   }
@@ -258,6 +269,34 @@
       return FALLBACK_MAX_TOKENS;
     }
 
+    /* PROMPT CACHING (2026-07-26). Anthropic renders a request as tools -> system -> messages and caches by
+       PREFIX, so ONE breakpoint on the last system block also covers the entire tool catalogue sitting in
+       front of it — which is where the bytes actually are. Measured at the wire on a fully placed floor:
+       72 tools = 37.7KB = 59.7% of the request, re-sent on every turn of a run.
+
+       What makes it work is that the prefix is stable for a run's lifetime, and that is not an accident of
+       this file: loop.js resolves `tools` ONCE (loop.js:162) and re-sends the same array every turn, and
+       extractLeadingSystem hoists only the LEADING system run — the mid-run <steering_note>/<loop_guard>/
+       <continuation> injections land as user turns at the END, so they never shift the cached prefix.
+       BEFORE ADDING ANYTHING TO THE SYSTEM PROMPT: a clock, a turn counter, or a remaining-budget line would
+       be a fresh prefix every turn and would silently reduce this to a pure 1.25x surcharge.
+
+       The second breakpoint rides the last message block, extending the cache over the conversation as it
+       grows — which is where the bytes migrate late in a long run, once tool results outweigh the schemas.
+
+       Economics: a cache READ bills ~0.1x input, a WRITE ~1.25x, so this pays from the second request on.
+       A run that ends in ONE turn pays the 1.25x for nothing — the right trade when the ceiling is 40
+       iterations. Under a model's minimum cacheable prefix Anthropic simply declines to cache; that is a
+       silent no-op rather than an error, so there is nothing to feature-detect per model. */
+    function breakpoint(blocks) {
+      if (CACHE_OFF || !Array.isArray(blocks) || !blocks.length) return blocks;
+      const i = blocks.length - 1;
+      const last = blocks[i];
+      // COPY, never stamp in place: userContentToBlocks passes native image blocks through BY REFERENCE, so
+      // mutating the last block here would reach back into the CALLER's message array and persist.
+      if (last && typeof last === 'object') blocks[i] = Object.assign({}, last, { cache_control: { type: 'ephemeral' } });
+      return blocks;
+    }
     function buildBody(req) {
       const converted = messagesToAnthropic(req.messages || []);
       const body = {
@@ -266,9 +305,14 @@
         messages: converted.messages,
         stream: true
       };
-      if (converted.system) body.system = converted.system;
       const tools = toAnthropicTools(req.tools);
       if (tools) body.tools = tools;
+      // One breakpoint for the whole static prefix. System is the preferred anchor because it sits AFTER the
+      // tools and so caches both; with no system prompt the last tool is the only anchor that covers them.
+      if (converted.system) body.system = breakpoint([{ type: 'text', text: converted.system }]);
+      else if (tools) breakpoint(tools);
+      const lastMsg = converted.messages[converted.messages.length - 1];
+      if (lastMsg) breakpoint(lastMsg.content);
       return body;
     }
 

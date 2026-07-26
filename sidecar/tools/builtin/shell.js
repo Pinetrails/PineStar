@@ -601,6 +601,33 @@
     } catch (_) {}
   }
 
+  /* ANSI/VT control sequences, stripped before any shell output reaches the model (Hermes parity: it has an
+     ansi_strip; StarNet had nothing, so escapes arrived raw). npm, git, cargo, pytest and friends emit colour
+     whenever they believe a TTY is attached, and the model reads the control bytes as TOKENS — '[32m'
+     is billed content that means "green" to nobody, and on a long build log it is a large fraction of the
+     output. Three shapes are handled: OSC strings (window titles, hyperlinks — ESC ] … BEL or ST), CSI
+     sequences (colour and cursor motion — ESC [ … final byte), and lone two-character escapes.
+
+     Applied HERE, in the shared primitive, so shell.exec and the background tail (shellbg.js reads r.out)
+     are both covered by one strip rather than two that can drift.
+
+     Applied at finish() rather than per chunk on purpose: an escape sequence can straddle a chunk boundary,
+     and a per-chunk strip would leave the halves behind. The trailing-fragment rule catches the one case the
+     whole-string pass cannot — the byte cap slicing through a sequence at the very end. */
+  // Every control byte AND the regex-escaping backslash come from String.fromCharCode, so this source line
+  // contains no backslash and no invisible ESC at all. Both bite here: a literal ESC in a regex literal is
+  // invisible in review, and a backslash makes the meaning depend on how many escaping layers a tool applied
+  // (this block silently compiled to an unterminated group twice before being written this way).
+  const ESC = String.fromCharCode(27), BEL = String.fromCharCode(7), BS = String.fromCharCode(92);
+  const ANSI_RE = new RegExp(
+    ESC + BS + '[[0-?]*[ -/]*[@-~]'                    // CSI: colour and cursor motion, the 99% case
+    + '|' + ESC + BS + '][^' + BEL + ']*' + BEL + '?'  // OSC: window titles / hyperlinks, up to BEL
+    + '|' + ESC + '.', 'g');                           // any other two-char escape, including an ST
+  const ANSI_TAIL_RE = new RegExp(ESC + BS + '[?[0-?]*[ -/]*$');
+  function stripAnsi(s) {
+    return String(s == null ? '' : s).replace(ANSI_RE, '').replace(ANSI_TAIL_RE, '');
+  }
+
   /* runCommand — the shared execution primitive: spawn `cmd` in `cwd` (shell:true), capture combined stdout/stderr
      up to maxBytes, enforce the per-call timeout + abort signal by KILLING the child tree, and resolve a plain
      result. Never rejects on a non-zero exit (that is a RESULT); rejects ONLY if the process can't be started.
@@ -638,7 +665,9 @@
         if (settled) return; settled = true;
         clearTimeout(timer);
         if (sig) { try { sig.removeEventListener('abort', onAbort); } catch (_) {} }
-        resolve({ exitCode: (typeof code === 'number') ? code : -1, out: out, ms: Math.max(0, now() - t0), truncated: truncated, timedOut: timedOut, aborted: aborted });
+        // Stripped HERE, at the single exit of the shared primitive, so shell.exec and the background tail
+        // (shellbg.js reads r.out) are both covered by one strip that cannot drift into two.
+        resolve({ exitCode: (typeof code === 'number') ? code : -1, out: stripAnsi(out), ms: Math.max(0, now() - t0), truncated: truncated, timedOut: timedOut, aborted: aborted });
       }
       child.on('error', function (e) { if (settled) return; settled = true; clearTimeout(timer); if (sig) { try { sig.removeEventListener('abort', onAbort); } catch (_) {} } reject(new Error('shell error: ' + ((e && e.message) || e))); });
       child.on('close', function (code) { finish(timedOut || aborted ? null : code); });
@@ -663,14 +692,18 @@
     const execTool = {
       name: 'shell.exec', capability: 'workbench', impact: 'workspace-process', scope: 'execute', requiresConsent: true,
       timeoutMs: MAX_MS + 10000,   // registry backstop ABOVE our own kill logic, so withTimeout never preempts the child-kill
-      description: 'Run a shell command in your workspace directory and get back its combined stdout/stderr + exit code. '
-        + 'Use it to run tests, builds, git, scripts — anything you would type in a terminal. Commands must NOT change the '
-        + 'user\'s machine or screen: opening a window (start/explorer/headed browser), shutting down/rebooting, killing '
-        + 'processes, scheduled tasks, registry/service/firewall edits, and all-interfaces (0.0.0.0) binds are refused. '
-        + 'If a visible app/window is genuinely needed, ask the Commander to open it themselves; ordinary agent runs have no real-screen tool. Commands run INSIDE your own '
-        + 'workspace folder, and your working directory PERSISTS across calls (a `cd` carries over). Absolute and parent (..) '
-        + 'paths are refused in cmd; pass cwd to run from a specific existing folder instead. On Windows local shells, cwd accepts C:\\Users\\...; /c/Users/... is normalized for compatibility, but prefer the exact path the Commander gave you. Commands use cmd.exe syntax. Optional timeoutMs (default 30s, max 120s). Set background:true for a long-running process '
-        + '(e.g. a dev server) — it returns immediately with a handle; check it with shell.bg.status, stop it with shell.bg.kill.',
+      /* Trimmed 2026-07-26 (tool-schema cost pass). This text is re-sent on EVERY turn, so it may only
+         carry what CHANGES A DECISION. The old version enumerated each refused command class; the guard
+         already answers that at call time with the specific reason, and far more accurately than a
+         remembered list — so it is stated once as a rule instead of itemised. Same for the Windows path
+         normalization note: it altered no choice the model makes. */
+      description: 'Run a shell command in your workspace directory; returns combined stdout/stderr + exit code. '
+        + 'Tests, builds, git, scripts — anything you would type in a terminal. cmd.exe syntax. '
+        + 'Your working directory PERSISTS across calls (a `cd` carries over). Absolute and `..` paths are '
+        + 'refused in cmd — pass cwd to run from a specific existing folder. Commands that would change the '
+        + 'user\'s machine or screen are refused with a reason; if a visible app is genuinely needed, ask the '
+        + 'Commander to open it. Optional timeoutMs (default 30s, max 120s). background:true returns a handle '
+        + 'immediately for long-running processes (dev servers) — check shell.bg.status, stop shell.bg.kill.',
       schema: { type: 'object', required: ['cmd'], properties: { cmd: { type: 'string' }, cwd: { type: 'string' }, timeoutMs: { type: 'number' }, background: { type: 'boolean' } } },
       run: function (args, ctx) {
         ctx = ctx || {};

@@ -23,8 +23,38 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (schema, toolMod) {
   'use strict';
 
-  const okResult = (content, summary, control) => ({ ok: true, isError: false, content: content, summary: summary || 'ok', control: control || null });
-  const errResult = (content, summary) => ({ ok: false, isError: true, content: content, summary: summary || 'error' });
+  /* CENTRAL TOOL-OUTPUT CAP (Hermes parity: tool_output_limits). Every builtin clamps its own output today,
+     which means the protection is a CONVENTION — a new tool, or an MCP server behind a new connector,
+     inherits none of it, and one unbounded result is enough to blow the context window and end a run.
+     This is the backstop at the single point every result already passes through, so it cannot be forgotten.
+
+     Deliberately ABOVE the per-tool clamps (shell's maxBytes and the MCP door both sit at 64k) so those stay
+     authoritative and this only ever fires for output nobody bounded — no double-truncation of a result that
+     already carries its own honest "truncated" note.
+
+     HEAD AND TAIL, not head alone: a stack trace, a test summary and an exit line all live at the END of
+     command output, and a head-only cut throws away the part that answers the question. */
+  const OUTPUT_MAX = (function () {
+    try {
+      const raw = (typeof process !== 'undefined' && process.env) ? process.env.SKYNET_TOOL_OUTPUT_MAX : '';
+      const n = Number(String(raw == null ? '' : raw).trim());
+      return (Number.isFinite(n) && n > 0) ? Math.floor(n) : 80000;
+    } catch (_) { return 80000; }
+  })();
+  function clampOutput(content) {
+    if (typeof content !== 'string' || content.length <= OUTPUT_MAX) return content;
+    const head = Math.floor(OUTPUT_MAX * 0.7), tail = OUTPUT_MAX - head;
+    const dropped = content.length - head - tail;
+    // The note names a NEXT ACTION. "truncated" alone invites the model to run the identical call again.
+    return content.slice(0, head)
+      + '\n\n[... ' + dropped + ' characters removed by the host output cap. Do not repeat this call as-is — '
+      + 'narrow it: filter, page, request a smaller range, or write the full output to a file and read it back '
+      + 'in parts. The end of the output follows ...]\n\n'
+      + content.slice(content.length - tail);
+  }
+
+  const okResult = (content, summary, control) => ({ ok: true, isError: false, content: clampOutput(content), summary: summary || 'ok', control: control || null });
+  const errResult = (content, summary) => ({ ok: false, isError: true, content: clampOutput(content), summary: summary || 'error' });
 
   // Race a promise against a timeout. onTimeout (if given) fires BEFORE the reject so the caller can abort the
   // underlying work — otherwise a timed-out tool keeps running and SPENDING (worst case: a team.dispatch fan-out

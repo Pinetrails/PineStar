@@ -55,4 +55,44 @@ A.eq(ce.estimate(null, 'm').usd, 0, 'null usage estimate -> 0');
 A.eq(ce.estimate(null, 'm').tokens, 0, 'null usage tokens -> 0');
 A.eq(ce.reconcile(null, 'm').tokensIn, 0, 'null usage reconcile -> 0');
 
+/* CACHE-AWARE INPUT PRICING. anthropic.js asks for prompt caching, so cached prompt tokens are a majority of
+   the input bill on a real run — pricing them at the fresh rate would overstate every cached run. The token
+   COUNT stays whole (context gauges read it); only the dollars are discounted. */
+{
+  // $1/M in, $2/M out, reads at 0.1x and writes at 1.25x.
+  const cached = makeCostEngine({ priceOf: id => id === 'c' ? { in: 1, out: 2, cache: { read: 0.1, write: 1.25 } } : null });
+
+  // 1000 in = 200 fresh + 700 read + 100 write -> 200 + 70 + 125 = 395 billable-equivalent.
+  const u = { prompt_tokens: 1000, completion_tokens: 500, prompt_tokens_details: { cached_tokens: 700, cache_creation_tokens: 100 } };
+  const r = cached.reconcile(u, 'c');
+  A.ok(Math.abs(r.usd - (395 + 1000) / 1e6) < 1e-12, 'cache reads bill 0.1x and writes 1.25x');
+  A.eq(r.tokensIn, 1000, 'the TOKEN count stays whole — only the dollars are discounted');
+  A.eq(r.cachedTokens, 700, 'cachedTokens still reported for the ledger');
+  A.ok(Math.abs(cached.estimate(u, 'c').usd - (395 + 1000) / 1e6) < 1e-12, 'estimate applies the same discount as reconcile');
+
+  // Same usage priced WITHOUT published cache rates must be unchanged from the pre-caching behaviour.
+  const flat = makeCostEngine({ priceOf: () => ({ in: 1, out: 2 }) });
+  A.ok(Math.abs(flat.reconcile(u, 'x').usd - (1000 + 1000) / 1e6) < 1e-12, 'an unmodelled family still prices cached tokens at the fresh rate (over-reports, never under)');
+
+  // A provider contradicting its own total must not be able to manufacture a negative charge.
+  const bogus = { prompt_tokens: 100, completion_tokens: 0, prompt_tokens_details: { cached_tokens: 9999, cache_creation_tokens: 9999 } };
+  A.ok(Math.abs(cached.reconcile(bogus, 'c').usd - 10 / 1e6) < 1e-12, 'detail fields are clamped to prompt_tokens — no negative charge');
+  A.ok(cached.reconcile(bogus, 'c').usd >= 0, 'billed dollars are never negative');
+
+  // A real billed figure from the provider still outranks all of this.
+  A.eq(cached.reconcile({ prompt_tokens: 1000, completion_tokens: 500, cost: 0.042, prompt_tokens_details: { cached_tokens: 900 } }, 'c').usd,
+    0.042, 'provider-reported cost still wins over cache-aware catalog math');
+
+  // Zero-cache usage prices exactly as it did before caching existed.
+  A.ok(Math.abs(cached.reconcile({ prompt_tokens: 1000, completion_tokens: 500 }, 'c').usd - 2000 / 1e6) < 1e-12, 'usage with no cache details is unaffected');
+}
+
+/* The rates have to actually reach cost.js through the real catalog, not just through a test stub. */
+{
+  const prices = require('../sidecar/providers/prices.js');
+  A.eq(prices.priceOf('anthropic', 'claude-opus-4-5').cache, { read: 0.10, write: 1.25 }, 'anthropic prices carry cache rates');
+  A.eq(prices.priceOf('gemini', 'gemini-2.5-pro').cache, { read: 0.25, write: 1.00 }, 'gemini prices carry cache rates');
+  A.eq(prices.priceOf('anthropic', 'nope-not-a-model'), null, 'an unmatched id is still honestly unpriced');
+}
+
 A.report('cost.test');

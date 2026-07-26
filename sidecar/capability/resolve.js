@@ -37,7 +37,7 @@
     const room = roomId && station.rooms && station.rooms[roomId];
     const objects = (room && room.objects) || [];
 
-    const tools = [], grants = [], approvalRules = {}, networkCaps = {};
+    const tools = [], deferred = [], grants = [], approvalRules = {}, networkCaps = {};
     let hasCompute = false;
     const seen = {};
 
@@ -49,13 +49,18 @@
         if (seen[g.tool]) continue;
         seen[g.tool] = true;
         tools.push(g.tool);
+        // DEFERRED is an ADVERTISING decision, never a capability one: the tool stays in `tools`, so the gate,
+        // consent broker, approvalRules and the toolset kill-switch all see it exactly as before. Only the
+        // caller's WIRE list narrows — see index.js, which advertises tools minus deferred and hands the rest
+        // to tool.search. Keeping the two apart is what stops a deferred tool becoming an ungranted one.
+        if (g.deferred) deferred.push(g.tool);
         grants.push(g);
         approvalRules[g.tool] = { requiresConsent: !!g.requiresConsent, scope: g.scope, network: !!g.network };
         networkCaps[g.tool] = !!g.network;
       }
     }
 
-    return { agentId, room: roomId || null, hasCompute, tools, grants, approvalRules, networkCaps };
+    return { agentId, room: roomId || null, hasCompute, tools, deferred, grants, approvalRules, networkCaps };
   }
 
   return { resolveTools };
