@@ -18,13 +18,6 @@ const World = (() => {
 
   /* ---------- station + bake cache ---------- */
   let station = null, geo = null, cache = null, geoDirty = true, bakeDirty = true, unsub = null;
-  /* How far up the standing north wall a mount:'wall' prop hangs. Read from the BAKE, never copied:
-     the wall it hangs on is drawn by StationBake at WALL.up, and the CRT lab retunes that live. A
-     duplicated constant here would silently peel every wall prop off the wall the first time it moved. */
-  const wallRisePx = () => {
-    const up = (typeof StationBake !== 'undefined' && StationBake.WALL) ? StationBake.WALL.up : 14;
-    return Math.max(4, (up | 0) - 1);          // one px of clearance so the prop's base clears the floor seam
-  };
   let desk = null, seat = null, blocked = new Set();   // desk footprint (local tiles) blocks pathing
   let deskPropId = null, deskFace = 'north';           // set when the hero's desk is a PLACED workstation prop assigned to it (its id + the seat's facing)
   let convey = null;   // live conveyor transport sim (boxes riding the belts)
@@ -3399,23 +3392,18 @@ const World = (() => {
         const sitter = (agent && agent.seated && agent.usingProp === p.id) ? agent
           : crew.find(b => b.seated && b.usingProp === p.id);
         let sy = sitter ? sitter.seatPy + 1 : (p.y + (p.h || 1)) * T;
-        // MOUNT LIFT, resolved per FRAME rather than stored on the prop: a wall prop only rides the wall
-        // while a wall is actually behind it, and a table-top prop only rides the table while the table is
-        // actually under it. Reclaim the wall or the table and the prop drops back to the deck instead of
-        // floating — which is why no saved station ever needs migrating for this.
+        // MOUNT LIFT, resolved per FRAME rather than stored on the prop: a table-top prop only rides the
+        // table while the table is actually under it. Reclaim the table and the prop drops back to the
+        // deck instead of floating — which is why no saved station ever needs migrating for this.
         const mspec = (PropSprites.spec && PropSprites.spec(p.t)) || null;
         let mounted = null;
-        if (mspec && mspec.mount === 'wall' && station && station.wallNorthOf) {
-          let all = true;
-          for (let mx = p.x; mx < p.x + (p.w || 1); mx++) if (!station.wallNorthOf(mx, p.y)) { all = false; break; }
-          if (all) mounted = 'wall';
-        } else if (mspec && mspec.mount === 'surface' && station && station.surfaceHostOf) {
+        if (mspec && mspec.mount === 'surface' && station && station.surfaceHostOf) {
           if (station.surfaceHostOf(p)) mounted = 'surface';
         }
         // a table-top object must draw AFTER its table: both occupy the same tiles, so their sort keys are
         // equal and array order would decide it — which is whichever the player happened to place first
         if (mounted === 'surface') sy += 0.5;
-        const dp = mounted ? Object.assign({}, p, { mount: mounted, wallRise: wallRisePx() }) : p;
+        const dp = mounted ? Object.assign({}, p, { mount: mounted }) : p;
         items.push({ y: sy, draw: () => PropSprites.draw(dp, work, live) });
         // an ASSIGNED workstation is the hero's desk with another name: give it the same chair, in front,
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped

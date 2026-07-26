@@ -19,16 +19,10 @@
 
 const PropSprites = (() => {
   const TILE = 12;
-  /* MOUNT GEOMETRY — the two constants that let a prop be drawn somewhere other than the deck.
-     SURFACE_RISE: how far above the floor line every table's top plane sits. A prop whose catalog row
-       says mount:'surface' is drawn shifted up by exactly this, which is why all tables MUST agree on
-       it (see the TABLES section). One constant, no per-table lookup.
-     WALL_RISE: how far up the standing north wall face a mount:'wall' prop hangs. This MUST track
-       StationBake.WALL.up — the wall it hangs on is baked, so if the bake's height moves and this does
-       not, every wall prop floats off the wall. World.js resolves it from the bake and passes it in;
-       this value is only the fallback for callers that have no bake (palette thumbs, tests). */
+  /* MOUNT GEOMETRY — how far above the floor line every table's top plane sits. A prop whose catalog
+     row says mount:'surface' is drawn shifted up by exactly this, which is why all tables MUST agree
+     on it (see the TABLES section). One constant, no per-table lookup. */
   const SURFACE_RISE = 8;
-  const WALL_RISE = 14;
   let ctx = null, now = 0;
 
   /* ---- core primitives (verbatim from v7 sprites.js) ---- */
@@ -1168,32 +1162,6 @@ const PropSprites = (() => {
 
   /* ---- DECOR EXPANSION (2026-07-15): theming set, same v2 oblique kit ---- */
 
-  F.neonsign = (x, y, w, h, f) => {   // v4 WALL neon — shallow flush-mounted tube; no pole, no floor contact
-    // v3 stood this on a weighted pole in the middle of the deck, which is wrong for a blocks:false prop:
-    // agents walked through the pole. It is now bolted flat to the wall. All the presence comes from the
-    // tube and its spill, and light does not collide with anybody.
-    const on = flick(90, x) > -0.92;                            // mains buzz with an eerie dropout (kept)
-    const tube = on ? ACC.lounge : '#3a2434';
-    px(x + 1, y - 1, 10, 13, '#070a0c');                        // sign edge — 1px of depth, that is all it gets
-    px(x + 2, y, 8, 11, '#101418');                             // dark face
-    px(x + 2, y, 8, 1, '#232d33'); keyEdge(x + 2, y, 4, 1, 0.22);   // frame crown takes the ceiling strip
-    px(x + 2, y + 1, 1, 9, '#1a2228'); px(x + 9, y + 1, 1, 9, '#0a0e11');
-    rimEdge(x + 9, y + 1, 1, 9, 0.16);
-    px(x + 3, y - 1, 1, 1, '#39454d'); px(x + 8, y - 1, 1, 1, '#39454d');   // wall lugs
-    px(x + 5, y - 2, 2, 1, '#1a2228');                          // supply conduit into the wall
-    // the tube: a BOLT glyph, drawn big. Emissive AREA beats emissive brightness at this size.
-    px(x + 6, y + 1, 3, 1, tube); px(x + 5, y + 2, 3, 1, tube); px(x + 4, y + 3, 3, 1, tube);
-    px(x + 3, y + 4, 6, 1, tube);
-    px(x + 5, y + 5, 3, 1, tube); px(x + 4, y + 6, 3, 1, tube); px(x + 3, y + 7, 3, 1, tube);
-    if (on) {
-      px(x + 7, y + 1, 1, 1, '#ffc4ee'); px(x + 4, y + 4, 1, 1, '#ffc4ee');   // hot spots inside the glass
-      bloom(x + 3, y + 1, 6, 7, ACC.lounge, 0.20);              // real falloff instead of one flat rect
-      spill(x + 3, y + 8, 6, ACC.lounge, 0.16, 4);              // light running DOWN the wall under the sign
-    } else {
-      px(x + 3, y + 4, 6, 1, '#2a1a28');                        // a dead tube still catches a reflection
-    }
-    px(x + 8, y + 9, 1, 1, blink(1300, x) ? '#2a1414' : ACC.alert);   // tired ballast LED (kept)
-  };
 
   F.lavalamp = (x, y, w, h, f) => {   // v4 lava lamp — tall tapered glass, wax lit from INSIDE with falloff
     const r = RAMP.steel;
@@ -1366,35 +1334,6 @@ const PropSprites = (() => {
     // earns, because air handling is a mechanism that actually exists here.
   };
 
-  F.banner = (x, y, w, h, f) => {   // v4 wall banner — hangs off the bulkhead; shallow, flush, never touches deck
-    const r = RAMP.fabric, ph = (f && f.x) || 0;
-    const sway = flick(1600, ph + x) > 0 ? 1 : 0;                    // kept: the hem breathes
-    // Walk-PAST prop: no base shoe, no pole to the deck, no contact shadow. The rod is the only hardware.
-    // ANCHOR: the rod hangs at the TOP of the placed tile and the cloth fills it — the sweep had the whole
-    // banner floating a tile north of the tile the player clicked, so the art and the collision box parted.
-    px(x, y - 2, 12, 2, LINE);
-    px(x + 1, y - 2, 10, 1, r.top); keyEdge(x + 1, y - 2, 6, 1, 0.28);
-    px(x + 1, y - 1, 10, 1, U.shade(r.face, -0.35));
-    px(x, y - 3, 1, 2, '#caa84a'); px(x + 11, y - 3, 1, 2, '#caa84a');   // finial caps on the rod ends
-    // the cloth: one bold hanging slab with a swallow-tail hem — the silhouette does all the work
-    px(x + 1, y, 10, 12, LINE);
-    px(x + 2, y, 8, 11, '#28343a');
-    px(x + 2, y, 1, 11, U.shade('#28343a', 0.30));                   // lit west selvage
-    px(x + 9, y, 1, 11, U.shade('#28343a', -0.38));
-    rimEdge(x + 9, y, 1, 11, 0.18);                                  // cool sky down the shade edge
-    keyEdge(x + 2, y, 4, 1, 0.20);                                   // warm catch where it folds over the rod
-    px(x + 4, y + 1, 1, 10, U.shade('#28343a', -0.22));              // two soft folds so it hangs like cloth
-    px(x + 7, y + 1, 1, 10, U.shade('#28343a', -0.16));
-    px(x + 2 + sway, y + 10, 8, 2, '#28343a');                       // hem sways
-    // swallow tails pulled INSIDE the footprint: hung on a wall, a row below the tile dangles past the
-    // base of the wall face and back onto the deck
-    px(x + 2 + sway, y + 11, 2, 1, '#28343a'); px(x + 8 + sway, y + 11, 2, 1, '#28343a');
-    px(x + 2, y + 8, 8, 1, '#8a7434'); px(x + 2, y + 7, 8, 1, U.shade('#8a7434', -0.4));   // gold hem stripe
-    // the sigil — the one accent, big enough to read at a glance
-    px(x + 4, y + 2, 4, 1, ACC.work); px(x + 5, y + 3, 2, 2, ACC.work);
-    px(x + 4, y + 5, 4, 1, ACC.work); px(x + 3, y + 3, 1, 1, ACC.work); px(x + 8, y + 4, 1, 1, ACC.work);
-    bloom(x + 4, y + 2, 4, 4, ACC.work, 0.13);                       // phosphor weave, falls off into the cloth
-  };
 
   F.terrarium = (x, y, w, h, f) => {   // v4 sealed tank (BLOCKS) — glass box on a stand, a moss colony breathing
     const r = RAMP.steel, ph = (f && f.x) || 0;
@@ -1535,126 +1474,11 @@ const PropSprites = (() => {
     }
   };
 
-  F.dartboard = (x, y, w, h, f) => {   // v4 wall board — a genuinely ROUND disc hung on the bulkhead, walk-past
-    const r = RAMP.gun;
-    // No A-frame, no feet, no contact shadow: this tile is walked THROUGH, so the board hangs clear of the deck.
-    // ANCHOR: the disc is centred ON the placed tile with only the hook poking north — the sweep had the whole
-    // board hanging a tile above the tile it was placed on.
-    px(x + 5, y - 1, 2, 2, LINE); px(x + 5, y - 1, 2, 1, r.top);     // wall hook
-    const cxp = x + 5.5, cyp = y + 5.5;
-    for (let q = y; q <= y + 11; q++) for (let p = x; p <= x + 11; p++) {
-      const dx = p + 0.5 - cxp, dy = q + 0.5 - cyp, d = Math.sqrt(dx * dx + dy * dy);
-      if (d > 5.6) continue;
-      // A dartboard is named by CREAM-vs-BLACK alternating beds with a red/green double ring, and v4 had
-      // neither: the beds were dull gold on near-black (barely a value apart, so the wedges vanished) and
-      // the double ring was plain black. Restoring both is what makes this legible as a dartboard rather
-      // than as a dark disc with specks on it.
-      const seg = Math.floor((Math.atan2(dy, dx) + Math.PI) / (Math.PI / 5)) % 2;
-      let c;
-      if (d > 4.7) c = LINE;                                         // heavy rim wire = the silhouette
-      else if (d > 3.9) c = r.face;
-      else if (d > 3.1) c = seg ? '#2a7a3c' : '#a33228';             // double ring — green on cream, red on black
-      else if (d > 1.9) c = seg ? '#c9b98c' : '#161c1a';             // the beds
-      else if (d > 1.0) c = '#2a7a3c';                               // outer bull
-      else c = '#a83a2e';                                            // the bull — painted cork, not a warning light
-      px(p, q, 1, 1, c);
-    }
-    keyEdge(x + 2, y + 1, 4, 1, 0.20); keyEdge(x + 1, y + 2, 1, 3, 0.16);   // warm key on the NW of the disc
-    rimEdge(x + 9, y + 7, 1, 3, 0.20); rimEdge(x + 6, y + 9, 4, 1, 0.16);   // cool sky bounce on the SE
-    px(x + 2, y + 4, 3, 1, '#c8d4e0'); px(x + 1, y + 3, 1, 1, ACC.work);    // three stuck darts, lit flights
-    px(x + 7, y + 2, 1, 2, '#c8d4e0'); px(x + 7, y + 1, 1, 1, ACC.data);
-    px(x + 6, y + 8, 2, 1, '#c8d4e0'); px(x + 8, y + 9, 1, 1, ACC.flow);
-    px(x + 1, y + 10, 2, 1, '#2b353b'); px(x + 1, y + 11, 3, 1, '#39454d');   // chalk score stub on the wall
-  };
 
-  F.rocketmodel = (x, y, w, h, f) => {   // v4 shelf model — chrome rocket in a display ring on a wall shelf
-    const r = RAMP.steel;
-    // Walk-past tile: the model sits on a bulkhead shelf, so nothing in the silhouette touches the deck.
-    px(x + 1, y + 3, 10, 2, LINE);
-    px(x + 2, y + 3, 8, 1, r.top); keyEdge(x + 2, y + 3, 5, 1, 0.26);
-    px(x + 2, y + 4, 8, 1, U.shade(r.face, -0.30));
-    px(x + 3, y + 5, 1, 2, r.dk); px(x + 8, y + 5, 1, 2, r.dk);      // two shelf brackets
-    px(x + 2, y + 5, 8, 1, r.ao); rimEdge(x + 9, y + 3, 1, 2, 0.20);
-    px(x + 4, y + 1, 5, 2, LINE); px(x + 5, y + 1, 3, 1, '#2b353b'); // display ring stand
-    // TAPERED chrome fuselage — the taper is the silhouette; a straight pipe reads as a pole, not a rocket
-    for (let j = 0; j <= 10; j++) {
-      const hw = j < 1 ? 0 : j < 3 ? 1 : 2, q = y - 9 + j;
-      px(x + 5 - hw - 1, q, hw * 2 + 3, 1, LINE);
-      px(x + 5 - hw, q, hw * 2 + 1, 1, r.lit);
-      px(x + 5 - hw, q, 1, 1, r.sheen); px(x + 5 + hw, q, 1, 1, r.dk);
-    }
-    keyEdge(x + 4, y - 7, 1, 6, 0.20); rimEdge(x + 7, y - 5, 1, 5, 0.22);   // warm key W, cool sky E
-    px(x + 3, y - 3, 5, 1, '#a03448'); px(x + 3, y - 2, 5, 1, U.shade('#a03448', -0.45));   // hull band
-    px(x + 5, y, 1, 1, '#101a1e');                                   // porthole = dark glass; nobody is aboard a toy
-    px(x + 4, y - 10, 3, 1, '#a03448'); px(x + 5, y - 11, 1, 1, '#7a2434');   // nose cone
-    px(x + 5, y - 12, 1, 1, '#7a2434');                              // beacon tip, PAINTED — an unpowered model
-    px(x + 1, y - 2, 3, 4, LINE); px(x + 2, y - 1, 2, 3, '#a03448'); px(x + 2, y - 1, 1, 3, '#c05060');
-    px(x + 8, y - 2, 3, 4, LINE); px(x + 8, y - 1, 2, 3, '#7a2434'); px(x + 9, y - 1, 1, 3, '#5a1a28');
-    px(x + 4, y + 1, 3, 1, '#0a0e11');                               // nozzle, cold — this rocket is bolted to a ring
-    // The "idle thruster flicker" burned amber exhaust out of a display model sitting in a stand on a wall
-    // shelf. Nothing here is flying: the object is a souvenir, so every emissive on it was fiction.
-  };
 
-  F.starchart = (x, y, w, h, f) => {   // v4 wall chart — a backlit framed sky, flush to the bulkhead, walk-past
-    const r = RAMP.steel, ph = (f && f.x) || 0;
-    // The old deck projector put a puck and five loose pixels on the floor of a NON-blocking tile, so agents
-    // walked straight through it. Framed wall art is shallow, hangs clear of the deck, and reads at a glance.
-    // ANCHOR: the frame hangs ON the placed tile (2px of frame crown pokes north, the bottom rail clears the
-    // deck by one row) instead of floating a whole tile above the tile the player clicked.
-    chamf(x, y - 2, 12, 14, LINE, 1);
-    chamf(x + 1, y - 1, 10, 12, r.face, 1);
-    px(x + 1, y - 1, 10, 1, r.top); keyEdge(x + 1, y - 1, 6, 1, 0.28);
-    px(x + 1, y, 1, 10, r.lit); px(x + 10, y, 1, 10, r.dk);
-    rimEdge(x + 10, y, 1, 10, 0.22);                                 // cool sky down the shade edge of the frame
-    px(x + 1, y + 10, 10, 1, U.shade(r.face, -0.42));                // bottom rail
-    px(x + 2, y, 1, 1, r.sheen); px(x + 9, y, 1, 1, r.sheen);        // mounting screws
-    inset(x + 2, y, 8, 10, '#0a1420');                               // glass well
-    px(x + 3, y + 1, 6, 8, '#0c1c2c');                               // deep-field ground, never dead black
-    px(x + 3, y + 1, 6, 1, '#12283c');                               // the field lightens toward the horizon
-    for (let i = 0; i < 6; i += 2) px(x + 3 + i, y + 7, 1, 1, '#14314a');   // faint ecliptic dashes
-    // the constellation still WHEELS on its old ~17s clock — the behaviour is the prop, only its housing moved
-    for (let i = 0; i < 5; i++) {
-      const a = now / 3400 + i * 1.257 + ph + x, rad = 2 + (i % 2);
-      const sx = Math.max(x + 3, Math.min(x + 8, x + 5 + Math.round(Math.cos(a) * rad)));
-      const sy = Math.max(y + 1, Math.min(y + 8, y + 4 + Math.round(Math.sin(a) * 2)));
-      px(sx, sy, 1, 1, (i === 2) ? '#dff4ff' : ACC.data);
-      if (i === 2) bloom(sx, sy, 1, 1, ACC.data, 0.34);              // one bright primary carries the read
-    }
-    px(x + 4, y + 4, 3, 1, '#1c4a5e');                               // a joining line, drawn — not a 160ms strobe
-    scanl(x + 3, y + 1, 6, 8, 0.16);
-    bloom(x + 3, y + 1, 6, 8, ACC.data, 0.09);                       // backlight, falling off into the frame
-    px(x + 9, y + 9, 1, 1, U.shade(ACC.data, -0.30));                // power pip: the panel IS lit, so it stays lit
-  };
 
   /* ---- DECOR EXPANSION wave 3 (2026-07-15): greenery + lounge ---- */
 
-  F.bonsai = (x, y, w, h, f) => {   // v4 shelf bonsai — WIDE flat cloud pads on a gnarled trunk, walk-past
-    const r = RAMP.steel, ph = (f && f.x) || 0;
-    const tick = blink(2400, ph + x) ? 1 : 0;
-    // Its identity against the other four plants is HORIZONTAL mass: flat stacked pads over a shallow tray,
-    // where tallplant is a vertical column and monstera hangs. Shelf-mounted, so no deck contact.
-    px(x + 1, y + 4, 10, 2, LINE);
-    px(x + 2, y + 4, 8, 1, r.top); keyEdge(x + 2, y + 4, 5, 1, 0.26);
-    px(x + 2, y + 5, 8, 1, U.shade(r.face, -0.30));
-    px(x + 3, y + 6, 1, 2, r.dk); px(x + 8, y + 6, 1, 2, r.dk);      // shelf brackets
-    px(x + 2, y + 6, 8, 1, r.ao); rimEdge(x + 9, y + 4, 1, 2, 0.20);
-    px(x + 2, y + 1, 8, 3, LINE);                                    // shallow glazed tray
-    px(x + 3, y + 2, 6, 1, '#8a3a46'); px(x + 3, y + 3, 6, 1, '#5e1c26');
-    px(x + 3, y + 1, 6, 1, '#1d1812');                               // soil bed
-    px(x + 4, y + 1, 1, 1, '#1d5c34'); px(x + 7, y + 1, 1, 1, '#1d5c34');   // moss caps
-    px(x + 5, y - 1, 1, 2, '#3a2c20'); px(x + 4, y - 3, 1, 2, '#3a2c20');   // S-curve trunk
-    px(x + 5, y - 4, 1, 1, '#4e3a28'); px(x + 4, y - 5, 1, 2, '#3a2c20');
-    px(x + 7, y - 3, 1, 1, '#8a8070');                               // bleached jin (deadwood) stub
-    px(x + 1, y - 2, 5, 2, '#256032'); px(x + 1, y - 2, 5, 1, '#2e7a3e');   // low west pad
-    px(x + 2, y - 2, 1, 1, '#5ec46e');
-    px(x + 6, y - 5, 5, 2, '#1f5228'); px(x + 6, y - 5, 5, 1, '#256032');   // east pad
-    px(x + 10, y - 5, 1, 1, '#4aa45a');
-    px(x + 2, y - 8 + tick, 7, 2, '#2e7a3e');                        // the CROWN pad — widest, wind-ticks
-    px(x + 2, y - 8 + tick, 7, 1, '#3a9a4e'); px(x + 3, y - 8 + tick, 2, 1, '#5ec46e');
-    keyEdge(x + 2, y - 8 + tick, 4, 1, 0.18); rimEdge(x + 8, y - 7 + tick, 1, 1, 0.20);
-    const lt = ((now / 5200) + (ph + x) * 0.3) % 1;                  // a leaf detaches and drifts (kept)
-    if (lt < 0.30) px(x + 3 + Math.floor(lt * 10), y - 5 + Math.floor(lt * 26), 1, 1, '#4aa45a');
-  };
 
   F.monstera = (x, y, w, h, f) => {   // v5 FLOOR planter — three split paddle leaves standing over a heavy pot
     const ph = (f && f.x) || 0;
@@ -1691,42 +1515,6 @@ const PropSprites = (() => {
     px(x + 3, y + 2 + nod, 6, 1, SLIT);                                     // its shadow, cast onto the two below
   };
 
-  F.flytrap = (x, y, w, h, f) => {   // v4 shelf flytrap — three jaw heads on curling stalks; one snaps shut
-    const r = RAMP.steel, ph = (f && f.x) || 0;
-    const shut = ((now / 3800) + (ph + x) * 0.41) % 1 < 0.34;        // kept: the snap cycle
-    // Walk-past tile, so it lives on a bulkhead shelf. Its shape signature is the SPIKY jaw heads on splayed
-    // stalks — nothing else in the plant batch has a lumpy, many-headed outline.
-    px(x + 1, y + 4, 10, 2, LINE);
-    px(x + 2, y + 4, 8, 1, r.top); keyEdge(x + 2, y + 4, 5, 1, 0.26);
-    px(x + 2, y + 5, 8, 1, U.shade(r.face, -0.30));
-    px(x + 3, y + 6, 1, 2, r.dk); px(x + 8, y + 6, 1, 2, r.dk);      // shelf brackets
-    px(x + 2, y + 6, 8, 1, r.ao); rimEdge(x + 9, y + 4, 1, 2, 0.20);
-    chamf(x + 2, y - 1, 8, 6, LINE, 1);                              // ribbed bog pot
-    px(x + 3, y, 6, 4, '#4e5c3a');
-    px(x + 3, y, 6, 1, '#66784c'); keyEdge(x + 3, y, 4, 1, 0.20);
-    px(x + 3, y, 1, 4, '#66784c'); px(x + 8, y, 1, 4, '#38422a'); rimEdge(x + 8, y, 1, 4, 0.20);
-    px(x + 5, y + 1, 1, 3, '#38422a'); px(x + 7, y + 1, 1, 3, '#38422a');   // ribs
-    px(x + 3, y - 1, 6, 1, '#141a10');                               // boggy soil
-    px(x + 3, y + 3, 6, 1, U.shade('#38422a', -0.35));
-    px(x + 3, y - 3, 1, 3, '#3a9a4e'); px(x + 2, y - 4, 1, 2, '#3a9a4e');   // stalks curling outward
-    px(x + 6, y - 5, 1, 5, '#256032');
-    px(x + 8, y - 2, 1, 2, '#3a9a4e'); px(x + 9, y - 4, 1, 3, '#3a9a4e');
-    px(x, y - 6, 4, 2, '#2e7a3e'); px(x + 1, y - 5, 2, 1, '#a03448');       // west head, open jaw
-    px(x, y - 7, 1, 1, '#5ec46e'); px(x + 2, y - 7, 1, 1, '#5ec46e'); px(x + 3, y - 5, 1, 1, '#5ec46e');
-    if (shut) {                                                      // centre head — the snapper
-      px(x + 4, y - 7, 4, 2, '#256032'); px(x + 4, y - 7, 4, 1, '#3a9a4e');
-      if (blink(300, ph + x)) px(x + 6, y - 6, 1, 1, '#5ec46e');     // something struggling inside
-    } else {
-      px(x + 4, y - 8, 4, 2, '#2e7a3e'); px(x + 5, y - 7, 2, 1, '#a03448');
-      px(x + 4, y - 9, 1, 1, '#5ec46e'); px(x + 6, y - 9, 1, 1, '#5ec46e'); px(x + 7, y - 8, 1, 1, '#5ec46e');
-    }
-    px(x + 8, y - 5, 4, 2, '#2e7a3e'); px(x + 9, y - 4, 2, 1, '#a03448');   // east head, open jaw
-    px(x + 8, y - 6, 1, 1, '#5ec46e'); px(x + 10, y - 6, 1, 1, '#5ec46e');
-    if (!shut) {                                                     // the fly, gone while the trap is shut
-      const fa = now / 500 + ph + x;
-      px(x + 5 + Math.round(Math.cos(fa) * 4), y - 10 + Math.round(Math.sin(fa) * 2), 1, 1, '#8a8a8a');
-    }
-  };
 
   F.fishtank = (x, y, w, h, f) => {
     // v4 LOUNGE AQUARIUM (2x1) — the point of this prop is WATER LIGHT. v3 painted the tank as one flat
@@ -3037,30 +2825,6 @@ const PropSprites = (() => {
     px(x + cw - 6, floorY, 3, 1, U.shade(RAMP.steel.face, -0.22));     // floor scuff
   };
 
-  F.poster = (x, y, w, h, f) => {   // v4 WALL poster — flat pinned sheet. No body, no legs, no floor shadow.
-    // v3 drew this as a freestanding A-board standee, which was wrong for a blocks:false prop: agents walk
-    // straight through where its legs were. A poster is paper ON A WALL — it gets thickness (1px of edge)
-    // and nothing else. Everything below is in the wall plane.
-    const paper = '#1a2620';
-    px(x + 1, y, 10, 12, '#080d0a');                            // paper edge — the entire "body" of this prop
-    px(x + 2, y, 8, 11, paper);
-    px(x + 2, y, 8, 1, U.shade(paper, 0.26)); keyEdge(x + 2, y, 5, 1, 0.22);   // top edge takes the ceiling strip
-    px(x + 2, y + 1, 1, 10, U.shade(paper, 0.12));              // west lit
-    px(x + 9, y + 1, 1, 10, U.shade(paper, -0.30));             // east shade
-    rimEdge(x + 9, y + 1, 1, 10, 0.14);
-    // CONTENT — one bold glyph and a text block. At 12px a poster gets exactly one idea.
-    px(x + 4, y + 2, 4, 3, ACC.work); px(x + 5, y + 3, 2, 1, paper);   // ring logo glyph
-    px(x + 4, y + 2, 1, 1, '#c7ffe0');
-    bloom(x + 4, y + 2, 4, 3, ACC.work, 0.14);                  // ink on paper: it can catch light, never pulse
-    px(x + 3, y + 6, 6, 1, '#9adcb0');                          // headline
-    px(x + 3, y + 8, 5, 1, '#5f8a6c'); px(x + 3, y + 9, 6, 1, '#5f8a6c');   // body copy
-    px(x + 8, y + 8, 1, 1, ACC.flow);                           // one accent tick
-    // fixings + a peeling SE corner: the only thing that keeps a flat rectangle from reading as a UI panel
-    px(x + 3, y + 1, 1, 1, '#caa84a'); px(x + 8, y + 1, 1, 1, '#caa84a');   // tape tabs
-    px(x + 7, y + 10, 3, 1, U.shade(paper, -0.5));              // curl shadow ON the poster, not on the floor
-    px(x + 8, y + 10, 2, 1, '#2c3a32'); px(x + 9, y + 9, 1, 1, '#3a4a40');   // lifted corner catching light
-    wear(x + 3, y + 2, 6, 8, 3, '#141e18');
-  };
 
   F.djbooth = (x, y, w, h, f) => {   // v4 DJ console (4x2) — chamfered deck + tied-down EQ riser; lounge light, freestanding
     const r = RAMP.steel, ph = (f && f.x) || 0, on = !!(f && f.work);
@@ -7398,7 +7162,6 @@ const PropSprites = (() => {
     // DECOR — small dressing & plain seating.
     { id: "coffee", label: "COFFEE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "plant", label: "PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "poster", label: "POSTER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     { id: "rug", label: "RUG", cat: "decor", tier: "cosmetic", w: 4, h: 3, animated: true, blocks: false },
     { id: "treasury_pnl_holo", label: "PNL HOLO", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_floorlight", label: "FLOOR LIGHT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
@@ -7411,25 +7174,18 @@ const PropSprites = (() => {
     { id: "loungetable", label: "LOUNGE TABLE", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, surface: true },
     { id: "longtable", label: "LONG TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, surface: true },
     // DECOR EXPANSION (2026-07-15) — theming set. Flat paint/looms walk-over; solid bodies block.
-    { id: "neonsign", label: "NEON SIGN", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     { id: "lavalamp", label: "LAVA LAMP", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "surface" },
     { id: "crt_pile", label: "CRT PILE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     { id: "cablerun", label: "CABLE RUN", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
     { id: "hazardpad", label: "HAZARD PAD", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
     { id: "tallplant", label: "TALL PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
-    { id: "banner", label: "BANNER", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     { id: "terrarium", label: "TERRARIUM", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     // DECOR EXPANSION wave 2 (2026-07-15, recurated) — fun/glow set. Flat holo/paint walk-over; cabinets block.
-    { id: "starchart", label: "STAR CHART", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     { id: "holopet", label: "HOLO PET", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "plasmaglobe", label: "PLASMA GLOBE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "surface" },
     { id: "gachapon", label: "GACHAPON", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
-    { id: "dartboard", label: "DART BOARD", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
-    { id: "rocketmodel", label: "ROCKET MODEL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     // DECOR EXPANSION wave 3 (2026-07-15) — greenery + lounge picks.
-    { id: "bonsai", label: "BONSAI", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     { id: "monstera", label: "MONSTERA", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "flytrap", label: "FLYTRAP", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "wall" },
     { id: "fishtank", label: "FISH TANK", cat: "lounge", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     { id: "pokertable", label: "POKER TABLE", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true },
   ];
@@ -7524,13 +7280,11 @@ const PropSprites = (() => {
      fraction or null (live harness runs have none). Only ever passed for a lit assigned workstation. */
   function draw(f, work, live) {
     const fn = F[f.t]; if (!fn) return;
-    // MOUNT LIFT. A wall-hung or surface-standing prop is the SAME art as a floor prop, drawn higher:
-    // every prop function anchors its contact to its own footprint bottom, so lifting the origin lifts
-    // the whole thing and keeps every internal offset valid. This is deliberately the only place the
-    // lift is applied — a prop function must never bake its own mount height, or the two definitions of
-    // "how high is the wall" drift apart the first time the bake is retuned.
-    const lift = f.mount === 'wall' ? (f.wallRise == null ? WALL_RISE : f.wallRise)
-      : f.mount === 'surface' ? SURFACE_RISE : 0;
+    // MOUNT LIFT. A surface-standing prop is the SAME art as a floor prop, drawn higher: every prop
+    // function anchors its contact to its own footprint bottom, so lifting the origin lifts the whole
+    // thing and keeps every internal offset valid. This is deliberately the only place the lift is
+    // applied — a prop function must never bake its own mount height.
+    const lift = f.mount === 'surface' ? SURFACE_RISE : 0;
     const X = f.x * TILE, Y = f.y * TILE - lift, W = (f.w || 1) * TILE, H = (f.h || 1) * TILE;
     const o = { x: f.x, work: !!work, agentId: f.agentId || null, door: f.door || null };
     if (live) { o.heat = +live.heat || 0; o.prog = (live.prog == null) ? null : Math.max(0, Math.min(1, +live.prog || 0)); }

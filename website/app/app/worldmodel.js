@@ -526,22 +526,16 @@ const WorldModel = (() => {
        MOUNT RULES (2026-07-26) are the one exception, and they are injected rather than imported so
        the layering holds: setPropRules() hands the model a lookup from prop type to {mount, surface}.
        With no lookup installed (plain node tests, older callers) nothing changes and every prop is
-       placeable on bare deck exactly as before. The rules themselves:
-         mount 'wall'    — a wall must STAND behind every footprint tile. In this station walls are not
-                           tiles; the bake raises a wall face wherever a room's north edge meets
-                           not-a-room, and corridors are explicitly flat (WALL.corUp = 0). So the test
-                           is: this tile is in a non-corridor room and the tile NORTH of it is not.
+       placeable on bare deck exactly as before. There is exactly ONE rule:
          mount 'surface' — the footprint must lie wholly on ONE prop whose catalog row says
                            surface:true (a table), and that host is exempt from the overlap check,
-                           because standing on a table is the entire point. */
+                           because standing on a table is the entire point.
+
+       There was briefly a mount 'wall' rule too (hang a prop on the face the bake raises along a
+       room's north edge). Andrew rejected the look outright and every wall-only prop was retired with
+       it, so the rule is gone rather than left dormant: a placement constraint with no props subject
+       to it is dead code that still has to be reasoned about on every read of this function. */
     const ruleOf = (t) => (propRules && t) ? (propRules(t) || {}) : {};
-    // a wall stands along this tile's north edge (see MOUNT RULES above)
-    const isCorridorRoom = (id) => !!(doc.rooms[id] && doc.rooms[id].kind === 'corridor');
-    function wallNorthOf(tx, ty) {
-      const here = roomAt(tx, ty);
-      if (!here || isCorridorRoom(here)) return false;
-      return !roomAt(tx, ty - 1);
-    }
     // the single surface prop wholly covering `foot`, or null
     function surfaceHostFor(foot, ignoreId) {
       for (let i = doc.props.length - 1; i >= 0; i--) {
@@ -559,11 +553,6 @@ const WorldModel = (() => {
         if (!roomAt(x, y)) return fail('OFF_DECK', 'must sit on a deck');
       }
       const mount = ruleOf(type).mount || null;
-      if (mount === 'wall') {
-        for (let x = foot.x1; x <= foot.x2; x++) {
-          if (!wallNorthOf(x, foot.y1)) return fail('NEEDS_WALL', 'must hang on a wall');
-        }
-      }
       let host = null;
       if (mount === 'surface') {
         host = surfaceHostFor(foot, ignoreId);
@@ -1185,10 +1174,9 @@ const WorldModel = (() => {
       // validation (no mutation — for ghost previews)
       canPlaceRoom, canPlaceHallway, canPlaceProp, canPlaceBeltRun,
       // mount rules: injected so the model never imports the prop catalog (see MOUNT RULES).
-      // wallNorthOf/surfaceHostOf are read surfaces the world layer uses to decide whether a placed
-      // prop is ACTUALLY mounted right now — a prop that lost its wall renders back on the deck
-      // rather than floating, so no save ever needs migrating.
-      wallNorthOf,
+      // surfaceHostOf is the read surface the world layer uses to decide whether a placed prop is
+      // ACTUALLY standing on a table right now — a prop whose table was reclaimed renders back on the
+      // deck rather than floating, so no save ever needs migrating.
       surfaceHostOf: (p) => {
         if (!p) return null;
         const host = surfaceHostFor(propFootprint(p), p.id);
