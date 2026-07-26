@@ -601,6 +601,33 @@
     } catch (_) {}
   }
 
+  /* ANSI/VT control sequences, stripped before any shell output reaches the model (Hermes parity: it has an
+     ansi_strip; StarNet had nothing, so escapes arrived raw). npm, git, cargo, pytest and friends emit colour
+     whenever they believe a TTY is attached, and the model reads the control bytes as TOKENS — '[32m'
+     is billed content that means "green" to nobody, and on a long build log it is a large fraction of the
+     output. Three shapes are handled: OSC strings (window titles, hyperlinks — ESC ] … BEL or ST), CSI
+     sequences (colour and cursor motion — ESC [ … final byte), and lone two-character escapes.
+
+     Applied HERE, in the shared primitive, so shell.exec and the background tail (shellbg.js reads r.out)
+     are both covered by one strip rather than two that can drift.
+
+     Applied at finish() rather than per chunk on purpose: an escape sequence can straddle a chunk boundary,
+     and a per-chunk strip would leave the halves behind. The trailing-fragment rule catches the one case the
+     whole-string pass cannot — the byte cap slicing through a sequence at the very end. */
+  // Every control byte AND the regex-escaping backslash come from String.fromCharCode, so this source line
+  // contains no backslash and no invisible ESC at all. Both bite here: a literal ESC in a regex literal is
+  // invisible in review, and a backslash makes the meaning depend on how many escaping layers a tool applied
+  // (this block silently compiled to an unterminated group twice before being written this way).
+  const ESC = String.fromCharCode(27), BEL = String.fromCharCode(7), BS = String.fromCharCode(92);
+  const ANSI_RE = new RegExp(
+    ESC + BS + '[[0-?]*[ -/]*[@-~]'                    // CSI: colour and cursor motion, the 99% case
+    + '|' + ESC + BS + '][^' + BEL + ']*' + BEL + '?'  // OSC: window titles / hyperlinks, up to BEL
+    + '|' + ESC + '.', 'g');                           // any other two-char escape, including an ST
+  const ANSI_TAIL_RE = new RegExp(ESC + BS + '[?[0-?]*[ -/]*$');
+  function stripAnsi(s) {
+    return String(s == null ? '' : s).replace(ANSI_RE, '').replace(ANSI_TAIL_RE, '');
+  }
+
   /* runCommand — the shared execution primitive: spawn `cmd` in `cwd` (shell:true), capture combined stdout/stderr
      up to maxBytes, enforce the per-call timeout + abort signal by KILLING the child tree, and resolve a plain
      result. Never rejects on a non-zero exit (that is a RESULT); rejects ONLY if the process can't be started.
@@ -638,7 +665,9 @@
         if (settled) return; settled = true;
         clearTimeout(timer);
         if (sig) { try { sig.removeEventListener('abort', onAbort); } catch (_) {} }
-        resolve({ exitCode: (typeof code === 'number') ? code : -1, out: out, ms: Math.max(0, now() - t0), truncated: truncated, timedOut: timedOut, aborted: aborted });
+        // Stripped HERE, at the single exit of the shared primitive, so shell.exec and the background tail
+        // (shellbg.js reads r.out) are both covered by one strip that cannot drift into two.
+        resolve({ exitCode: (typeof code === 'number') ? code : -1, out: stripAnsi(out), ms: Math.max(0, now() - t0), truncated: truncated, timedOut: timedOut, aborted: aborted });
       }
       child.on('error', function (e) { if (settled) return; settled = true; clearTimeout(timer); if (sig) { try { sig.removeEventListener('abort', onAbort); } catch (_) {} } reject(new Error('shell error: ' + ((e && e.message) || e))); });
       child.on('close', function (code) { finish(timedOut || aborted ? null : code); });

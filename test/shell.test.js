@@ -61,6 +61,31 @@ const SLEEP = process.platform === 'win32' ? 'ping -n 5 127.0.0.1 > NUL' : 'slee
     const r5 = await small.run({ cmd: 'echo hello world this is long' }, ctx());
     A.ok(/truncated/.test(r5.content), 'oversized output truncated');
 
+    /* ---- 5b. ANSI STRIP (Hermes parity). npm/git/cargo/pytest emit colour whenever they think a TTY is
+       attached, and the model reads the control bytes as tokens — '[32m' is billed content meaning
+       "green" to nobody. Driven through a REAL child process so this proves the actual pipe, not a helper. ---- */
+    const ESC = String.fromCharCode(27), BEL = String.fromCharCode(7);
+    /* Driven through a REAL child process reading a REAL file, so this proves the actual pipe rather than a
+       helper in isolation. `type` rather than a `node -e` one-liner on purpose: the shell floor refuses
+       commands that launch a native runtime, and a backslash in the command string trips the UNC-path guard —
+       both would fail the test for reasons having nothing to do with ANSI. */
+    // shell.exec runs in the AGENT's jail (root/<agentId>), not the root itself — `type` resolves relative
+    // to that cwd, so the fixture has to land there.
+    fs.mkdirSync(path.join(root, 'a1'), { recursive: true });
+    fs.writeFileSync(path.join(root, 'a1', 'ansi.txt'),
+      ESC + '[32mBUILD OK' + ESC + '[0m' + '\n' +
+      ESC + ']0;window title' + BEL + ESC + '[2KPROGRESS' + ESC + '[1A' + '\n' +
+      'array[32m] and a [0m literal' + '\n');
+    const rAnsi = await tool.run({ cmd: 'type ansi.txt' }, ctx());
+    A.ok(rAnsi.content.indexOf('BUILD OK') >= 0, 'the actual text survives the strip');
+    A.ok(rAnsi.content.indexOf(ESC) < 0, 'no raw ESC byte reaches the model');
+    A.ok(!/\[32m\b|\[0m\b/.test(rAnsi.content.split('array')[0]), 'the colour codes are gone, not just the ESC');
+    A.ok(rAnsi.content.indexOf('PROGRESS') >= 0, 'text between an OSC title and a cursor move survives');
+    A.ok(rAnsi.content.indexOf('window title') < 0, 'the OSC payload is stripped, not left behind as prose');
+    // Text that merely LOOKS like an escape must be left alone — eating real output would be worse than
+    // leaving colour in.
+    A.ok(rAnsi.content.indexOf('array[32m] and a [0m literal') >= 0, 'bracket text with no real ESC is NOT stripped');
+
     // ---- 6. the per-call timeout KILLS the child ----
     const t0 = Date.now();
     const r6 = await tool.run({ cmd: SLEEP, timeoutMs: 600 }, ctx());
