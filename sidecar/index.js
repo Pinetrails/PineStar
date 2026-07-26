@@ -8691,6 +8691,11 @@ async function runOnce(o) {
     perWorker: ORCH_PER_WORKER, workerMaxIters: ORCH_WORKER_MAX_ITERS, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS,   // minutes, not the 30s fast-tool cap (see constant)
     now: () => Date.now(),   // the dispatch wall clock divides this budget across sequential workers (injected: lint-determinism)
+    // FAN-OUT CAPACITY: how many NEW distinct agents the admission gate can still accept. A parallel dispatch runs
+    // in waves of this size instead of firing all workers at once — the lead holds a slot for the whole dispatch, so
+    // at the default cap of 3 a 4-worker parallel dispatch used to run 2 and hand back two never-retried 'refused'
+    // rows. null = no cap configured (gate unlimited) -> the tool fans out all at once, as before.
+    freeSlots: () => { const m = concurrencyGate.max(); return m > 0 ? Math.max(0, m - concurrencyGate.active()) : null; },
     // Cross-provider dispatch: resolve a WORKER's own roster provider to the station's server-held credential
     // (BYOK keys / codex OAuth). null when the station holds none -> orchestration falls back to the lead's
     // provider+model honestly instead of 400ing the worker's model down the wrong wire.

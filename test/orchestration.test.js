@@ -180,7 +180,9 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'x' }] }, { agentId: 'agent', emit: () => {} });
   const parsed = JSON.parse(out.content);
   A.eq(parsed[0].reason, 'refused', 'a child that could not start is reported as refused (null-guarded)');
-  A.ok(/concurrency cap/.test(parsed[0].result), 'the refusal explains the likely cause');
+  A.ok(/concurrent-agent cap/.test(parsed[0].result), 'the refusal explains the likely cause');
+  A.ok(parsed[0].retried === true, 'a refusal is retried once before it is reported as lost work');
+  A.eq(ro.calls.length, 2, 'the retry is exactly ONE extra attempt (a refused worker did no work and cost nothing)');
 }
 
 // ---- parallel mode dispatches all workers ----
@@ -640,6 +642,71 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     A.eq(ro.calls.length, 1, 'the background worker started');
     A.ok(ro.calls[0].signal === undefined || ro.calls[0].signal !== null, 'background worker runs on the subagent registry signal');
   } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+}
+
+// ---- THE ESCAPE (2026-07-26 audit finding B): a parallel dispatch of 4 at the shipped defaults
+//      (MAX_CONCURRENT_AGENTS 3, and the LEAD holds a slot for the whole dispatch) fanned out all at once, the
+//      admission gate refused the last two, and NOTHING retried them — half the crew silently never worked.
+//      Driven against the REAL concurrency gate, modelling the shipped admission path (index.js: tryEnter ->
+//      `return` undefined on refusal, leave() in a finally). ----
+{
+  const { makeConcurrencyGate } = require('../sidecar/concurrency.js');
+  const run = async (opts) => {
+    const gate = makeConcurrencyGate({ max: 3 });
+    gate.tryEnter('agent');                                  // the LEAD occupies a slot for the whole dispatch
+    let peak = 0;
+    const runOnce = async (o) => {
+      if (!gate.tryEnter(o.agentId)) return undefined;        // shipped refusal shape
+      peak = Math.max(peak, gate.active());
+      try { await new Promise(r => setTimeout(r, 15)); return { reason: 'done', messages: [{ role: 'assistant', content: 'ok:' + o.agentId }], usd: 0.01 }; }
+      finally { gate.leave(o.agentId); }
+    };
+    const roster = new Map([['w1', {}], ['w2', {}], ['w3', {}], ['w4', {}]]);
+    const { dispatchTool } = makeOrchestrationTools(Object.assign({
+      runOnce, roster: () => roster, key: 'k', model: 'm', newId: counter(), dispatchTimeoutMs: 20000, now: () => 0
+    }, opts(gate)));
+    const out = await dispatchTool.run({ workers: ['w1', 'w2', 'w3', 'w4'].map(a => ({ agentId: a, prompt: 'p' })), parallel: true }, { agentId: 'agent', emit: () => {} });
+    return { rows: JSON.parse(out.content), summary: out.summary, peak };
+  };
+
+  // WITH the capacity wired (how the host wires it): every worker runs, and the gate is never over-subscribed.
+  const wired = await run(gate => ({ freeSlots: () => { const m = gate.max(); return m > 0 ? Math.max(0, m - gate.active()) : null; } }));
+  A.eq(wired.rows.length, 4, 'all four parallel workers are accounted for');
+  A.eq(wired.rows.filter(r => r.reason === 'done').length, 4, 'ALL FOUR actually ran (the escape: two used to be refused and dropped)');
+  A.eq(wired.rows.filter(r => r.reason === 'refused').length, 0, 'no worker is left refused');
+  A.ok(wired.peak <= 3, 'the concurrency cap is still respected — waves never over-subscribe the gate (peak ' + wired.peak + ')');
+  A.ok(/4 done/.test(wired.summary), 'the summary reports four done');
+
+  // WITHOUT it wired, a refusal is still retried once rather than surfacing as lost work.
+  const bare = await run(() => ({}));
+  A.eq(bare.rows.length, 4, 'unwired hosts still account for every worker');
+  A.ok(bare.rows.filter(r => r.reason === 'done').length >= 3, 'the retry pass recovers refusals even with no capacity hint');
+}
+
+// ---- a genuinely saturated gate still fails HONESTLY (never silently), and says what to do ----
+{
+  const ro = fakeRunOnce(() => undefined);            // every admission refused
+  const roster = new Map([['w1', {}], ['w2', {}]]);
+  const { dispatchTool } = makeOrchestrationTools({
+    runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(),
+    dispatchTimeoutMs: 5000, now: () => 0, freeSlots: () => 0
+  });
+  const out = await dispatchTool.run({ workers: [{ agentId: 'w1', prompt: 'p' }, { agentId: 'w2', prompt: 'p' }], parallel: true }, { agentId: 'agent', emit: () => {} });
+  const rows = JSON.parse(out.content);
+  A.eq(rows.length, 2, 'both workers are reported even when the gate is saturated');
+  A.ok(rows.every(r => r.reason === 'refused'), 'a saturated gate yields refused rows, not fabricated results');
+  A.ok(rows.every(r => r.retried === true), 'each refusal was retried once before being reported');
+  A.ok(/MAX_CONCURRENT_AGENTS in SETTINGS/.test(rows[0].result), 'the refusal names the control the Commander can actually change');
+  A.ok(ro.calls.length === 4, 'two workers x (first attempt + one retry) = four admission attempts');
+}
+
+// the host must wire the gate's live free capacity (the tool cannot see the gate itself)
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+  A.ok(/freeSlots: \(\) => \{ const m = concurrencyGate\.max\(\); return m > 0 \? Math\.max\(0, m - concurrencyGate\.active\(\)\) : null; \}/.test(src),
+    'the run host wires concurrencyGate free capacity into makeOrchestrationTools');
+  A.ok(/now: \(\) => Date\.now\(\)/.test(src.slice(src.indexOf('makeOrchestrationTools({'), src.indexOf('makeOrchestrationTools({') + 3000)),
+    'the run host injects the real clock for the dispatch wall clock');
 }
 
 A.report('orchestration.test');

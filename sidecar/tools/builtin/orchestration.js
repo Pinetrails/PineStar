@@ -137,6 +137,18 @@
     // shares; that keeps the shares summing to the budget instead of each worker seeing a full, never-shrinking one.
     const hasClock = (typeof deps.now === 'function');
     const now = hasClock ? deps.now : (() => 0);
+    /* freeSlots() -> how many NEW distinct agents the station's admission gate can accept right now, or null for
+       "no cap wired". A parallel dispatch runs in WAVES of this size instead of firing everything at once and
+       letting the gate refuse the excess (2026-07-26 audit finding B). Read fresh per dispatch: the free capacity
+       depends on what else is running (another COMMS session, a cron beat) at that moment. */
+    const freeSlots = (typeof deps.freeSlots === 'function') ? deps.freeSlots : null;
+    function waveSize(n) {
+      if (!freeSlots) return n;                        // no gate wired -> fan out all at once (pre-2026-07-26 shape)
+      let f = null;
+      try { f = freeSlots(); } catch (_) { f = null; }
+      if (f == null || !isFinite(f)) return n;         // unbounded gate
+      return Math.max(1, Math.min(n, Math.floor(f))); // at least 1 (a full gate still tries, then the retry pass)
+    }
 
     const dispatchTool = {
       // The registry timeout is now only a BACKSTOP: it sits a minute above the dispatch's own budget so the
@@ -255,7 +267,7 @@
             if (timer) clearTimeout(timer);
           }
           if (timedOut) return timeoutRow(result);   // keep whatever partial text the aborted run did produce
-          if (!result) return { agentId: job.agentId, reason: 'refused', result: 'worker could not start — the concurrency cap (STARNET_MAX_CONCURRENT_AGENTS) is full or a sign-in is needed. Try fewer at once, or run sequentially.', usd: 0 };
+          if (!result) return { agentId: job.agentId, reason: 'refused', result: 'worker could not start — the station\'s concurrent-agent cap was full at that instant, or a provider sign-in is needed. A parallel dispatch already runs in waves sized to the free capacity and retries a refusal once, so a refusal that survives means the cap is genuinely saturated: raise MAX_CONCURRENT_AGENTS in SETTINGS, or dispatch these workers in a follow-up call.', usd: 0 };
           const row = {
             agentId: job.agentId,
             reason: result.reason || 'done',
@@ -286,30 +298,45 @@
           return { content: JSON.stringify(startedRows), summary: 'started ' + started.filter(r => r && r.id).length + ' background worker(s)' + overflowNote };
         }
 
-        // THE DISPATCH WALL CLOCK. `dispatchBudgetMs` is the budget for the WHOLE call; the tool's registry
-        // timeoutMs sits a minute above it (see the tool's timeoutMs) so this path — which always resolves with
-        // rows — is what actually fires. Parallel workers overlap, so each may use the whole budget; SEQUENTIAL
-        // workers share it, and each gets a fair share of what is LEFT (a fast early worker donates its unused
-        // time to the ones behind it) instead of the old "first slow worker eats everything" behaviour.
+        /* WAVES — one code path for both modes (2026-07-26 audit findings A + B).
+           SEQUENTIAL is waves of 1: legible, one box at a time (the default).
+           PARALLEL is waves sized to the station's REAL free fan-out capacity. It used to fan out all at once and
+           let the concurrency gate REFUSE the excess: at the shipped defaults (MAX_CONCURRENT_AGENTS 3, and the
+           lead holds a slot for the whole dispatch) a 4-worker parallel dispatch ran 2 and handed the lead two
+           'refused' rows that nothing ever retried — half the crew silently didn't work. Waves run every worker,
+           just not all in the same instant.
+           THE WALL CLOCK divides across waves the same way it divides across sequential workers: each wave gets a
+           fair share of what is LEFT, so an early fast wave donates its unused time to the ones behind it. */
         const startedAt = now();
+        const size = args.parallel ? waveSize(jobs.length) : 1;
+        const waves = [];
+        for (let i = 0; i < jobs.length; i += size) waves.push(jobs.slice(i, i + size));
+        const leftAt = (w) => hasClock
+          ? dispatchBudgetMs - (now() - startedAt)
+          : dispatchBudgetMs - Math.floor(dispatchBudgetMs * w / waves.length);   // no clock: fixed even shares
+        const notStartedRow = (job) => ({
+          agentId: job.agentId, reason: 'not-dispatched', usd: 0,
+          result: 'NOT RUN — this dispatch ran out of wall clock before reaching this worker. The results above are real; '
+            + 'dispatch this subtask in a follow-up call, and do not report it as done.'
+        });
         let out = [];
-        if (args.parallel) {
-          out = await Promise.all(jobs.map(j => runWorker(j, { wallMs: dispatchBudgetMs })));   // fan out (bounded by the concurrency gate)
-        } else {
-          for (let i = 0; i < jobs.length; i++) {                                   // sequential: legible, one box at a time
-            const left = hasClock
-              ? dispatchBudgetMs - (now() - startedAt)
-              : dispatchBudgetMs - Math.floor(dispatchBudgetMs * i / jobs.length);   // no clock: fixed even shares
-            if (left <= 0) {
-              out.push({
-                agentId: jobs[i].agentId, reason: 'not-dispatched', usd: 0,
-                result: 'NOT RUN — this dispatch ran out of wall clock before reaching this worker. The results above are real; '
-                  + 'dispatch this subtask in a follow-up call, and do not report it as done.'
-              });
-              continue;
-            }
-            out.push(await runWorker(jobs[i], { wallMs: Math.max(1, Math.floor(left / (jobs.length - i))) }));
-          }
+        for (let w = 0; w < waves.length; w++) {
+          const left = leftAt(w);
+          if (left <= 0) { for (const j of waves[w]) out.push(notStartedRow(j)); continue; }
+          const share = Math.max(1, Math.floor(left / (waves.length - w)));
+          const done = await Promise.all(waves[w].map(j => runWorker(j, { wallMs: share })));
+          for (const r of done) out.push(r);
+        }
+        /* ONE RETRY PASS for a refusal. A 'refused' row means the admission gate was full at that instant — a
+           sibling wave, another agent's run, or a cron beat holding the last slot. Waves make that rare instead of
+           systematic, but a race can still lose one, and a refused worker did NO work and cost NOTHING, so
+           retrying it is free. `out` is built in job order, so out[i] pairs with jobs[i] (overflow is appended after). */
+        for (let i = 0; i < out.length && i < jobs.length; i++) {
+          if (out[i].reason !== 'refused') continue;
+          const left = hasClock ? dispatchBudgetMs - (now() - startedAt) : Math.floor(dispatchBudgetMs / jobs.length);
+          if (left <= 0) break;
+          const retried = await runWorker(jobs[i], { wallMs: left });
+          out[i] = (retried.reason === 'refused') ? Object.assign(retried, { retried: true }) : retried;
         }
         out = out.concat(overflowRows());
 
