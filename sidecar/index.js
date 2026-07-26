@@ -2081,6 +2081,12 @@ function channelResolveConsent(runId, promptId, decision) {
 }
 // unconditional hardline floor: protected files no flag (not even Full Access) can write. The authoritative
 // resolved-abs-path floor belongs in dispatch AFTER resolveInside; this catches the reachable relative cases.
+// UNTRUSTED-CONTENT TAINT (2026-07-25) — the classifier lives in sidecar/taint.js (pure + unit-tested); see
+// that file's header for the threat model and the deliberate v1 boundaries. ONE definition, shared by the
+// dispatch gate and the consent-broker predicates so the two can never disagree about what a taint revokes.
+const taintPolicy = require('./taint.js');
+const revokedByTaint = { ok: taintPolicy.allowedWhenTainted, isSource: taintPolicy.isUntrustedSource };
+
 function hardlineFloor(call) {
   const p = call && call.args && call.args.path;
   if (typeof p === 'string' && (/(^|[\\/])\.env(\.|$)/i.test(p) || /(^|[\\/])\.git([\\/]|$)/i.test(p)))
@@ -8397,6 +8403,20 @@ async function runOnce(o) {
      and auto-granting a WORKBENCH would hand over a power the Commander never put on the floor. Absent on every
      other caller, so every non-cron surface stays byte-identical. */
   const unattendedGrants = surface === 'interactive' ? [] : Array.from(normalizeUnattendedGrants(o.unattendedGrants));
+  /* UNTRUSTED-CONTENT TAINT (2026-07-25) — the structural half of the tool-result injection defence.
+     Fencing tells the model that fetched text is data; it cannot MAKE the model obey. So the host removes the
+     payoff instead of trying to detect the payload: once content the Commander did not author has entered this
+     run's context, the unattended grants that make such content dangerous are revoked FOR THE REST OF THE RUN.
+     It does not matter what the injected text says — the powers it would need are gone.
+
+     Deliberately narrow, because over-tainting would gut the feature: revoked = the host process (shell/verify),
+     connector WRITES/EXECUTES, and credential-spending requests. Connector READS stay allowed, or a routine
+     whose whole job is "read three things from Notion" would break on its second call. Reading more untrusted
+     data can't be turned into an outward action; acting on it can.
+
+     Holds the FIRST tainting tool name, so the refusal can name the actual cause. Autonomous only: a watched
+     run has a human and live consent prompts, and taking powers away mid-conversation there would be hostile. */
+  let taintedBy = null;
   const userControlAuthority = makeRunAuthority({ surface, isTask, environment: executionEnvironment, confirm: o.prompt, unattendedGrants });
   const prompt = o.prompt;
   const pathPrompt = o.pathPrompt;   // NS-5: the live "work in <root>? always/once/no" channel (browser runs only); undefined for headless/autonomous → path-trust hard-denies a new root
@@ -8821,10 +8841,13 @@ async function runOnce(o) {
     // UNATTENDED TERMINAL GRANT: this routine's recorded "may use the terminal" approval. Read off the SAME
     // host-side value the authority gate uses, so the tool list and the consent answer can never disagree —
     // an offered shell that consent then refuses is exactly the incoherent state this closes.
-    terminalGrant: () => unattendedGrants.indexOf('workbench') >= 0,
+    // The taint check is repeated here, not just at dispatch, so consent and the dispatch gate can never
+    // disagree: a tool the gate will refuse must not be one consent says yes to (the incoherent state the
+    // terminal lane hit). Same predicate source (`revokedByTaint`) on both sides.
+    terminalGrant: (call, tool) => unattendedGrants.indexOf('workbench') >= 0 && (!taintedBy || revokedByTaint.ok(tool)),
     // UNATTENDED CONNECTOR GRANT: same host-side source as the authority gate, so an offered MCP tool can
     // never be refused by consent (the incoherent state the terminal lane hit before this was wired).
-    connectorGrant: () => unattendedGrants.indexOf('connectors') >= 0,
+    connectorGrant: (call, tool) => unattendedGrants.indexOf('connectors') >= 0 && (!taintedBy || revokedByTaint.ok(tool)),
     surface: surface, prompt: prompt
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
@@ -9046,6 +9069,19 @@ async function runOnce(o) {
       };
     }
     const liveTool = registry.get(c.name);
+    // TAINT ENFORCEMENT — see `taintedBy`. Runs before consent/dispatch so a revoked power never executes, and
+    // returns an honest refusal naming the source rather than a silent failure, so the agent can report what it
+    // could not finish instead of pretending. The tool STAYS in the wire list on purpose: consent-not-absence.
+    if (taintedBy && surface !== 'interactive' && !revokedByTaint.ok(liveTool)) {
+      return {
+        ok: false, isError: true, summary: 'untrusted-content-lockout',
+        content: 'BLOCKED: "' + c.name + '" is no longer available on this run. This run has already read '
+          + 'outside content (via ' + taintedBy + '), which could contain instructions from whoever wrote it. '
+          + 'An unattended run therefore gives up its terminal, credentialed requests, and connector actions '
+          + 'once that happens — reading more is still fine. This is not a failure of the tool and retrying will '
+          + 'not help: finish what you can, then state plainly that this step needs a watched session.'
+      };
+    }
     const internalBriefControl = internalBriefTools.indexOf(c.name) >= 0;
     if (taskBriefState && !internalBriefControl) {
       const gate = TaskBriefPolicy.canMutate(taskBriefState.brief, liveTool);
@@ -9100,6 +9136,13 @@ async function runOnce(o) {
           assumptions: Array.isArray(s.assumptions) ? s.assumptions.slice(0, 8) : []
         });
       } catch (_) {}
+    }
+    // TAINT OBSERVATION — content the Commander did not author has now entered this run's context, so the
+    // grants that would let injected text act are revoked from here on (see `taintedBy`). Latched on the FIRST
+    // such result and never cleared: context is cumulative, so a later "clean" tool does not un-read the page.
+    // Only a SUCCESSFUL result with actual content counts — a failed fetch put nothing in front of the model.
+    if (!taintedBy && r && !r.isError && typeof r.content === 'string' && r.content.length && revokedByTaint.isSource(liveTool)) {
+      taintedBy = c.name;
     }
     // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.
     if (!internalBriefControl) try { artifactLedger.observe({ toolName: c.name, args: c.args, result: r }); } catch (_) { /* never breaks a run */ }

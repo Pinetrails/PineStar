@@ -93,8 +93,8 @@ A.ok(/connectorAutonomy\(call, tool\)\) return \{ allow: true/.test(perms), 'the
 A.ok(perms.indexOf('connectorAutonomy(call, tool)) return { allow: true') <
      perms.indexOf("surface === 'autonomous' && scope === 'execute'"),
   'the connector tier also sits ABOVE the exec lockout (a non-read MCP tool is scope execute)');
-A.ok(/connectorGrant: \(\) => unattendedGrants\.indexOf\('connectors'\) >= 0/.test(src),
-  'consent and the tool list read the SAME host value for connectors too');
+A.ok(/connectorGrant: \(call, tool\) => unattendedGrants\.indexOf\('connectors'\) >= 0 && \(!taintedBy \|\| revokedByTaint\.ok\(tool\)\)/.test(src),
+  'consent and the tool list read the SAME host value for connectors too, taint included');
 A.ok(/stationWithConnectors\(station, agentId, connectors\.ids\(\)\)/.test(src),
   'connector portals are injected into a bay-docked room too (composeOffice is bypassed there)');
 // the capability note must not re-assert the old blanket "no connectors unattended" lie
@@ -110,8 +110,8 @@ A.ok(perms.indexOf('terminalAutonomy(call, tool)) return { allow: true') <
      perms.indexOf("surface === 'autonomous' && scope === 'execute'"),
   'the grant tier sits ABOVE the exec lockout');
 // the grant must never be derivable from anything the model can influence
-A.ok(/terminalGrant: \(\) => unattendedGrants\.indexOf\('workbench'\) >= 0/.test(src),
-  'consent and the tool list read the SAME host-side value (they can never disagree)');
+A.ok(/terminalGrant: \(call, tool\) => unattendedGrants\.indexOf\('workbench'\) >= 0 && \(!taintedBy \|\| revokedByTaint\.ok\(tool\)\)/.test(src),
+  'consent and the tool list read the SAME host-side value, taint included (they can never disagree)');
 A.ok(/surface === 'interactive' \? \[\] : Array\.from\(normalizeUnattendedGrants\(o\.unattendedGrants\)\)/.test(src),
   'the grant is ignored on the watched surface, where floor placement governs');
 

@@ -14,10 +14,10 @@
    external-unknown effect that requires an exact, live, non-cacheable per-call confirmation. */
 'use strict';
 (function (root, factory) {
-  const api = factory();
+  const api = factory(typeof require === 'function' ? require('../tools/fence.js') : (root.SK && root.SK.fence));
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else { root.SK = root.SK || {}; (root.SK.mcp = root.SK.mcp || {}).translate = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (fence) {
   'use strict';
 
   const NAME_MAX = 64;   // the OpenRouter/OpenAI function-name grammar is ^[A-Za-z0-9_-]{1,64}$
@@ -126,8 +126,14 @@
         // an MCP-level error (isError:true) is surfaced by THROWING — registry.dispatch turns any throw into a
         // clean isError tool_result, so the model sees the failure text without us inventing a result shape.
         if (res && res.isError) { const e = new Error(text || ('MCP tool ' + mcpTool.name + ' reported an error')); e.__mcpToolError = true; throw e; }
+        // UNTRUSTED-CONTENT FENCE (2026-07-25): a connector result is authored by a THIRD-PARTY SERVER, not by
+        // the Commander — the same trust level as a fetched web page, and now reachable unattended by a granted
+        // routine. Fenced with the shared marker pair so the model gets one contract across web/browser/MCP.
+        // ORDER MATTERS: fence the ALREADY-CLAMPED text. Clamping a fenced string would slice the closing
+        // marker off a long result and hand the model an unterminated fence. The clamp governs the SERVER's
+        // payload; the fence is host framing added on top, exactly as web_fetch has always done.
         return {
-          content: text,
+          content: fence.fenceExternal(text, 'result from the ' + label + ' connector'),
           summary: 'mcp:' + connectorId + ' ' + mcpTool.name + (clamped.truncated ? ' (truncated)' : '')
         };
       }

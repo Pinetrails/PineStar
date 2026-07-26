@@ -125,7 +125,11 @@ function makeFakeTransport(handle) {
 
     const out = await def.run({ title: 'hi' }, {});
     A.eq(calls[0][0], 'create_issue', 'run() calls the MCP tool by its ORIGINAL (un-namespaced) name');
-    A.eq(out.content, 'created #1', 'text content blocks are rendered to plain text');
+    // A connector result is THIRD-PARTY-authored, so since 2026-07-25 it arrives inside the shared
+    // untrusted-content fence (sidecar/tools/fence.js) — the rendered text is preserved verbatim INSIDE it.
+    A.ok(out.content.indexOf('created #1') > 0, 'text content blocks are rendered to plain text');
+    A.ok(/^\[BEGIN EXTERNAL WEB CONTENT/.test(out.content), 'an MCP result is fenced as untrusted content');
+    A.ok(/\[END EXTERNAL WEB CONTENT\]$/.test(out.content), 'the fence is closed');
 
     const ro = makeMcpToolDef({ connectorId: 'gh', mcpTool: { name: 'list_issues', annotations: { readOnlyHint: true }, inputSchema: { type: 'object' } }, call: () => Promise.resolve({ content: [] }) });
     A.eq(ro.scope, 'read', 'readOnlyHint -> read scope');
@@ -157,7 +161,12 @@ function makeFakeTransport(handle) {
     const okDef = makeMcpToolDef({ connectorId: 'db', mcpTool: { name: 'small', inputSchema: { type: 'object' } },
       call: () => Promise.resolve({ content: [{ type: 'text', text: exact }] }) });
     const okOut = await okDef.run({}, {});
-    A.eq(okOut.content.length, RESULT_MAX_CHARS, 'a payload exactly at the cap is untouched');
+    // The cap governs the SERVER's payload; the untrusted-content fence is host framing added on top (the
+    // same split web_fetch has always had — it truncates, then fences). So assert the payload is byte-identical
+    // INSIDE the fence rather than that the whole result equals the cap. The per-run tool-output budget in
+    // runOnce still bounds the fenced total, so the context protection this cap exists for is intact.
+    A.ok(okOut.content.indexOf(exact) > 0, 'a payload exactly at the cap is untouched');
+    A.ok(/\[END EXTERNAL WEB CONTENT\]$/.test(okOut.content), 'and it is still fenced');
     A.ok(okOut.summary.indexOf('truncated') < 0, 'an untruncated result says nothing about truncation');
 
     // A FAILING server can hand back just as much text as a succeeding one.
@@ -171,7 +180,9 @@ function makeFakeTransport(handle) {
     const tuned = makeMcpToolDef({ connectorId: 'db', mcpTool: { name: 'q2', inputSchema: { type: 'object' } },
       maxResultChars: 100, call: () => Promise.resolve({ content: [{ type: 'text', text: huge }] }) });
     const tunedOut = await tuned.run({}, {});
-    A.ok(tunedOut.content.indexOf('X'.repeat(100)) === 0 && tunedOut.content.length < 400, 'maxResultChars overrides the default cap');
+    // ...and the override still clamps the PAYLOAD to 100 chars; the fence wrapper rides outside it.
+    A.ok(tunedOut.content.indexOf('X'.repeat(100)) > 0, 'maxResultChars overrides the default cap');
+    A.ok(tunedOut.content.indexOf('X'.repeat(101)) < 0, 'and nothing past the override survives');
   }
 
   // ===== F. end-to-end: dispatch a translated MCP tool through the REAL registry boundary =====
@@ -194,7 +205,8 @@ function makeFakeTransport(handle) {
 
     const okr = await reg.dispatch(mk({ path: '/etc/hosts' }), { authorize: exactAuthority, canUse: () => ({ ok: true }) });
     A.eq(okr.ok, true, 'a granted, valid MCP dispatch succeeds');
-    A.eq(okr.content, 'FILE:/etc/hosts', 'dispatch returns the MCP tool output');
+    A.ok(okr.content.indexOf('FILE:/etc/hosts') > 0, 'dispatch returns the MCP tool output');
+    A.ok(/^\[BEGIN EXTERNAL WEB CONTENT/.test(okr.content), 'and it stays fenced through dispatch');
   }
 
   A.report('mcp.client.test');
