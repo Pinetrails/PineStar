@@ -1155,42 +1155,40 @@ const PropSprites = (() => {
     px(x + 8, y + 7, 1, 1, '#3c4a46');                           // its unlit head, read by shape not by glow
   };
 
-  F.cans = (x, y, w, h, f) => {   // v4 floor litter — aluminium takes a warm rim + a cold sky flank; stays LOW
-    const AL = '#8a98a8', ALL = '#aab8c8', ALD = '#5a6878';
+  F.cans = (x, y, w, h, f) => {   // v5 floor litter — TWO cans, drawn big enough to actually be cans
+    // v4 packed THREE cans into a 12px tile: a crushed one, a standing one and a tipped one, each wrapped in
+    // its own LINE outline. At that size the outlines are most of the prop, so it rendered as two dark blocks
+    // with grey speckle in them and read as small equipment, not as litter. Subtraction is the fix — one
+    // standing can with real cylinder shading, one tipped can showing its dark mouth, both bigger, and the
+    // outline carried only where a silhouette actually needs it.
+    const AL = '#8a98a8', ALL = '#aab8c8', ALD = '#5a6878', ALX = '#3d4956';
     // deck stains first — they ARE the floor, so they go under everything and get no shading
-    px(x + 4, y + 5, 2, 1, '#3a4440'); px(x + 3, y + 6, 1, 1, '#3a4440');
-    px(x + 6, y + 6, 1, 1, '#3a4440'); px(x + 4, y + 7, 2, 1, '#3a4440');
-    // crushed can, flattened NW — the flat one is what makes the group read as LITTER and not as stock
-    px(x + 1, y + 2, 6, 3, LINE);
-    px(x + 2, y + 2, 3, 1, U.shade(AL, -0.16));                 // folded rim
-    px(x + 2, y + 3, 4, 1, AL);
-    px(x + 4, y + 3, 1, 1, ALD);                                // crush crease
-    keyEdge(x + 2, y + 3, 2, 1, 0.30);                          // warm catch along the fold
-    ctx.globalAlpha = 0.18; px(x + 1, y + 5, 6, 1, '#000'); ctx.globalAlpha = 1;
-    // standing can, east — the only vertical in the group, so it carries the silhouette. Kept SHORT:
-    // this prop is blocks:false and agents walk right past it.
-    chamf(x + 7, y + 2, 5, 8, LINE, 1);
-    px(x + 8, y + 3, 3, 6, AL);
-    px(x + 8, y + 3, 1, 6, ALL); px(x + 10, y + 3, 1, 6, ALD);
-    rimEdge(x + 10, y + 3, 1, 6, 0.24);                         // cold sky down the shade side
-    px(x + 8, y + 3, 3, 1, U.shade(ALL, 0.10)); keyEdge(x + 8, y + 3, 2, 1, 0.34);   // lit top rim
+    px(x + 4, y + 6, 2, 1, '#3a4440'); px(x + 3, y + 7, 1, 1, '#3a4440');
+    px(x + 7, y + 10, 2, 1, '#343c3a');
+    // STANDING CAN, east — the group's only vertical, so it carries the silhouette. Six ramp columns across
+    // four pixels of width is what turns a rectangle into a cylinder.
+    ctx.globalAlpha = 0.22; px(x + 6, y + 10, 6, 1, '#000'); ctx.globalAlpha = 1;
+    px(x + 6, y + 1, 6, 10, LINE);
+    px(x + 7, y + 2, 4, 8, AL);
+    px(x + 7, y + 2, 1, 8, ALD); px(x + 8, y + 2, 1, 8, ALL);   // the turn of the cylinder, west of centre
+    px(x + 10, y + 2, 1, 8, ALX); rimEdge(x + 10, y + 2, 1, 8, 0.22);
+    px(x + 7, y + 2, 4, 1, U.shade(ALL, 0.14)); keyEdge(x + 8, y + 2, 2, 1, 0.34);   // lit top rim
+    px(x + 7, y + 2, 1, 1, ALX); px(x + 10, y + 2, 1, 1, ALX);  // the rim rolls away at both edges
     px(x + 9, y + 3, 1, 1, U.shade(ALL, 0.30));                 // pull tab
-    px(x + 8, y + 5, 3, 2, '#16302a'); px(x + 9, y + 5, 1, 1, ACC.work);   // brand band + glyph
-    px(x + 8, y + 8, 3, 1, ALD);
+    px(x + 7, y + 5, 4, 2, '#16302a'); px(x + 8, y + 5, 2, 1, ACC.work);   // brand band + glyph
+    px(x + 7, y + 9, 4, 1, ALX);                                // base roll, in shadow
     // a specular pinned where the curve turns toward the key — it says "metal" by BEING there, not by moving.
     // Sliding it down the can on a 1.4s loop implied either the light or the litter was in motion; neither is.
-    px(x + 8, y + 5, 1, 1, U.shade(ALL, 0.22));
-    ctx.globalAlpha = 0.20; px(x + 7, y + 10, 5, 1, '#000'); ctx.globalAlpha = 1;
-    // tipped can lying E-W, southwest — the dark open mouth is the read, not the body
-    chamf(x, y + 7, 7, 4, LINE, 1);
-    px(x + 1, y + 8, 5, 2, AL);
-    px(x + 1, y + 8, 5, 1, ALL); px(x + 1, y + 9, 5, 1, ALD);
-    keyEdge(x + 2, y + 8, 3, 1, 0.26);
-    px(x + 1, y + 8, 1, 2, '#4e5c6c'); px(x + 1, y + 8, 1, 1, '#141a1e');   // rim end + dark opening
-    px(x + 3, y + 8, 2, 2, '#16302a'); px(x + 3, y + 9, 2, 1, ACC.work);    // brand stripe
-    px(x + 5, y + 8, 1, 1, U.shade(ALL, 0.24));                 // tab glint
-    px(x + 1, y + 11, 3, 1, '#343c3a');                         // stale spill out of the mouth
-    ctx.globalAlpha = 0.18; px(x, y + 11, 7, 1, '#000'); ctx.globalAlpha = 1;
+    px(x + 8, y + 4, 1, 1, U.shade(ALL, 0.26));
+    // TIPPED CAN lying E-W, west — the dark open mouth facing us is the read, not the body
+    ctx.globalAlpha = 0.20; px(x, y + 10, 7, 1, '#000'); ctx.globalAlpha = 1;
+    px(x, y + 5, 7, 5, LINE);
+    px(x + 1, y + 6, 5, 3, AL);
+    px(x + 1, y + 6, 5, 1, ALL); keyEdge(x + 2, y + 6, 3, 1, 0.26);
+    px(x + 1, y + 8, 5, 1, ALD);
+    px(x + 1, y + 6, 1, 3, '#141a1e'); px(x + 1, y + 6, 1, 1, '#4e5c6c');   // the open mouth, and its rim
+    px(x + 3, y + 6, 2, 3, '#16302a'); px(x + 3, y + 7, 2, 1, ACC.work);    // brand stripe, wrapping the body
+    px(x + 6, y + 6, 1, 3, ALX); rimEdge(x + 6, y + 6, 1, 3, 0.20);         // the closed base end
   };
 
   /* ---- DECOR EXPANSION (2026-07-15): theming set, same v2 oblique kit ---- */
@@ -1290,13 +1288,18 @@ const PropSprites = (() => {
   F.cablerun = (x, y, w, h, f) => {   // v4 taped floor loom (2x1) — FLAT paint, walk-over, zero rise
     // Agents cross this constantly, so the whole prop lives in the ground plane: no oblique body, no front
     // face, no contact shadow. Depth comes from the strands separating and the tape lying on top of them.
-    const HI = '#2c383f', MD = '#161d21', LO = '#080c0e';
+    // v4's three strands were #2c383f / #161d21 / #080c0e — the lower two sit within a couple of values of
+    // the deck itself, so two thirds of the bundle was invisible and the prop read as a lone taped box with a
+    // blue light on it. Each strand now has its own JACKET COLOUR (that is also what a real loom looks like:
+    // you bundle cables so you can still tell them apart) and every one clears the plating.
+    const HI = '#7d8b96', MD = '#4a5a54', LO = '#5c4436';
     // three strands, each sagging on its own line so the bundle reads as rope rather than a painted bar
     for (let i = 0; i < 3; i++) {
-      const yy = y + 5 + i;
+      const yy = y + 5 + i, c = i === 0 ? HI : (i === 1 ? MD : LO);
       for (let sx = 0; sx < w; sx++) {
         const s = Math.round(Math.sin((sx / w) * Math.PI) * 1.6);
-        px(x + sx, yy + s, 1, 1, i === 0 ? HI : (i === 1 ? MD : LO));
+        px(x + sx, yy + s, 1, 1, c);
+        px(x + sx, yy + s + 1, 1, 1, U.shade(c, -0.52));         // each strand's own underside shadow
       }
     }
     // gaffer tape crossings pinning the loom to the deck — painted flat, with a peeling corner
@@ -1319,22 +1322,31 @@ const PropSprites = (() => {
   F.hazardpad = (x, y, w, h, f) => {   // v4 hazard decal (2x1) — pure deck PAINT, walk-over, zero rise
     // This is paint on plating and nothing else: no body, no shadow, no lip. Its job is to say "keep clear"
     // and then get walked over without an agent ever appearing to clip through it.
-    const Y = '#9a8038', K = '#141a1e';
-    for (let i = -h; i < w; i += 6) {                           // diagonal caution bands, clipped to the pad
+    // v4 painted the stripes onto BARE DECK: there was no pad body, and the alternating band was #141a1e —
+    // within a couple of values of the floor itself. So only every other stripe rendered, over nothing, and
+    // the prop read as three loose yellow scribbles lying on the plating. The decal now has a real painted
+    // ground, and both stripe colours sit clear of the deck's value.
+    const Y = '#9a8038', YD = '#6b5827', K = '#232b31';
+    px(x + 1, y + 1, w - 2, h - 2, '#1b2227');                  // the painted ground — this is what was missing
+    // Parity comes off a COUNTER, never off (i / step): the loop starts negative and only lands on integer
+    // multiples when the step happens to divide h, so deriving it from i silently drops every yellow band.
+    for (let i = -h, k = 0; i < w; i += 5, k++) {               // diagonal caution bands, clipped to the pad
+      const lit = k % 2 === 0;
       for (let j = 2; j < h - 2; j++) {
         const sx = x + i + j, L = Math.max(x + 1, sx), R = Math.min(x + w - 1, sx + 3);
-        if (R > L) px(L, y + j, R - L, 1, ((i / 6) % 2 === 0) ? Y : K);
+        if (R > L) px(L, y + j, R - L, 1, lit ? (j < h / 2 ? Y : YD) : K);
       }
     }
-    px(x + 1, y + 1, w - 2, 1, K); px(x + 1, y + h - 2, w - 2, 1, K);   // border rails
+    px(x + 1, y + 1, w - 2, 1, '#2f3940'); px(x + 1, y + h - 2, w - 2, 1, '#10161a');   // border rails
+    px(x + 1, y + 1, 1, h - 2, '#2a343a'); px(x + w - 2, y + 1, 1, h - 2, '#10161a');
     // flat two-temperature split: the ceiling strips fall on the north half, the cold bounce fills the south.
     // On a decal this is the ONLY light cue there is — there are no facets to shade.
     keyEdge(x + 2, y + 2, w - 4, 2, 0.10);
     rimEdge(x + 2, y + h - 5, w - 4, 2, 0.08);
     // WEAR is the whole story of a hazard pad: the stripes get walked off first down the middle
     wear(x + 1, y + 2, w - 2, h - 4, 14, '#242c30');
-    ctx.globalAlpha = 0.26; px(x + 4, y + 4, w - 8, 3, '#0c1013'); ctx.globalAlpha = 1;   // traffic scuff track
-    ctx.globalAlpha = 0.16; px(x + 6, y + 3, w - 12, 1, '#0c1013'); px(x + 7, y + 7, w - 14, 1, '#0c1013'); ctx.globalAlpha = 1;
+    ctx.globalAlpha = 0.18; px(x + 4, y + 4, w - 8, 3, '#0c1013'); ctx.globalAlpha = 1;   // traffic scuff track
+    ctx.globalAlpha = 0.11; px(x + 6, y + 3, w - 12, 1, '#0c1013'); px(x + 7, y + 7, w - 14, 1, '#0c1013'); ctx.globalAlpha = 1;
     px(x + 2, y + 2, 2, 1, '#242c30'); px(x + w - 4, y + h - 3, 2, 1, '#242c30');   // chipped corners
     px(x + 1, y + 5, 1, 2, '#2a3236'); px(x + w - 2, y + 6, 1, 2, '#2a3236');       // rails scuffed through
   };
@@ -1597,13 +1609,18 @@ const PropSprites = (() => {
     for (let q = y; q <= y + 11; q++) for (let p = x; p <= x + 11; p++) {
       const dx = p + 0.5 - cxp, dy = q + 0.5 - cyp, d = Math.sqrt(dx * dx + dy * dy);
       if (d > 5.6) continue;
+      // A dartboard is named by CREAM-vs-BLACK alternating beds with a red/green double ring, and v4 had
+      // neither: the beds were dull gold on near-black (barely a value apart, so the wedges vanished) and
+      // the double ring was plain black. Restoring both is what makes this legible as a dartboard rather
+      // than as a dark disc with specks on it.
+      const seg = Math.floor((Math.atan2(dy, dx) + Math.PI) / (Math.PI / 5)) % 2;
       let c;
       if (d > 4.7) c = LINE;                                         // heavy rim wire = the silhouette
       else if (d > 3.9) c = r.face;
-      else if (d > 3.1) c = '#0c1013';                               // double-ring channel
-      else if (d > 1.9) c = (Math.floor((Math.atan2(dy, dx) + Math.PI) / (Math.PI / 5)) % 2) ? '#8a7434' : '#1d2723';
-      else if (d > 1.0) c = '#1f5228';                               // outer bull
-      else c = '#8c2f28';                                            // the bull — painted cork, not a warning light
+      else if (d > 3.1) c = seg ? '#2a7a3c' : '#a33228';             // double ring — green on cream, red on black
+      else if (d > 1.9) c = seg ? '#c9b98c' : '#161c1a';             // the beds
+      else if (d > 1.0) c = '#2a7a3c';                               // outer bull
+      else c = '#a83a2e';                                            // the bull — painted cork, not a warning light
       px(p, q, 1, 1, c);
     }
     keyEdge(x + 2, y + 1, 4, 1, 0.20); keyEdge(x + 1, y + 2, 1, 3, 0.16);   // warm key on the NW of the disc
@@ -1703,33 +1720,39 @@ const PropSprites = (() => {
     if (lt < 0.30) px(x + 3 + Math.floor(lt * 10), y - 5 + Math.floor(lt * 26), 1, 1, '#4aa45a');
   };
 
-  F.monstera = (x, y, w, h, f) => {   // v4 HANGING planter — split leaves cascading under a slung basket
+  F.monstera = (x, y, w, h, f) => {   // v5 FLOOR planter — three split paddle leaves standing over a heavy pot
     const ph = (f && f.x) || 0;
-    const nod = blink(2000, ph + x) ? 1 : 0;
-    // Non-blocking: agents walk UNDER it. Hanging also hands this plant its own unmistakable silhouette —
-    // top-hung pot with a wide leafy skirt, where tallplant is a column and bonsai is flat stacked pads.
-    // ANCHOR: the basket sits in the top half of the PLACED tile and the leaf skirt fills the bottom half,
-    // with only short cord stubs reaching north into the overhead.
-    for (const cx0 of [x + 3, x + 6, x + 9]) {                       // three cords into the overhead
-      cable(cx0, y - 6, x + 5 + Math.round((cx0 - x - 6) * 0.4), y, 0.6, '#2a3238');
-    }
-    chamf(x + 1, y - 1, 10, 7, LINE, 1);                             // woven basket
-    px(x + 2, y, 8, 5, '#5e4a34');
-    px(x + 2, y, 8, 1, '#7a6044'); keyEdge(x + 2, y, 5, 1, 0.22);
-    px(x + 2, y, 1, 5, '#7a6044'); px(x + 9, y, 1, 5, '#3a2c1c'); rimEdge(x + 9, y, 1, 5, 0.20);
-    px(x + 2, y + 2, 8, 1, '#443422'); px(x + 2, y + 4, 8, 1, '#443422');   // weave bands
-    px(x + 3, y - 1, 6, 1, '#1d1812');                               // soil
-    px(x + 4, y + 5, 4, 1, U.shade('#443422', -0.35));               // basket underside AO
-    px(x + 4, y + 5, 1, 4, '#256032'); px(x + 7, y + 5, 1, 3, '#1f5228');   // stems spilling out of the pot
-    px(x, y + 6, 5, 3, '#2e7a3e'); px(x + 2, y + 7, 1, 2, '#12301e');       // west leaf + fenestration
-    px(x, y + 6, 1, 1, '#5ec46e'); px(x, y + 9, 3, 1, '#256032');
-    px(x + 7, y + 5, 5, 3, '#256032'); px(x + 9, y + 6, 1, 2, '#12301e');   // east leaf + slit
-    px(x + 11, y + 5, 1, 1, '#4aa45a'); px(x + 8, y + 8, 4, 1, '#1f5228');
-    px(x + 3, y + 9 + nod, 6, 3, '#3a9a4e');                         // the big low CROWN leaf, nodding
-    px(x + 5, y + 10 + nod, 1, 2, '#12301e'); px(x + 7, y + 9 + nod, 1, 2, '#12301e');   // two slits
-    px(x + 3, y + 9 + nod, 2, 1, '#5ec46e');
-    keyEdge(x + 3, y + 9 + nod, 3, 1, 0.16); rimEdge(x + 11, y + 5, 1, 3, 0.18);
-    px(x + 8, y + 1, 1, 1, '#1a3a34');                              // probe head, unlit — a planter has no telemetry
+    const nod = blink(2000, ph + x) ? 1 : 0;                          // air handling moving the crown leaf
+    // v4 hung this from the overhead: basket in the top half, leaf skirt filling the bottom, cords reaching
+    // north into nothing. Two things killed it. The cords terminated MID-AIR — this projection draws no
+    // ceiling, so there was never anything up there to hang off — and the reading order came out inverted
+    // (container above, foliage below), which at 12px is a box with a green beard, not a plant. It stands on
+    // the deck now, which is also simply what a monstera is. It still owns a silhouette none of the other
+    // greenery has: tallplant is a column of blades, bonsai is flat stacked pads, plant is thin sprigs —
+    // this one is BIG PADDLES, and the fenestration slits are what name the species at any size.
+    const LF_DK = '#1c4a2a', LF = '#2e7a3e', LF_LIT = '#4aa45a', LF_HI = '#6cc97c', SLIT = '#12301e';
+    ctx.globalAlpha = 0.20; px(x + 1, y + 11, 10, 1, '#000'); ctx.globalAlpha = 1;   // contact shadow
+    // POT — tapered, so the pot reads as a vessel and not as a crate
+    chamf(x + 2, y + 6, 8, 6, LINE, 1);
+    for (let j = 0; j < 4; j++) px(x + 3 + (j >> 1), y + 7 + j, 6 - (j >> 1) * 2, 1, '#5e4a34');
+    px(x + 3, y + 7, 6, 1, '#7a6044'); keyEdge(x + 3, y + 7, 3, 1, 0.22);
+    px(x + 3, y + 7, 1, 3, '#6d5540'); px(x + 8, y + 7, 1, 3, '#3a2c1c'); rimEdge(x + 8, y + 7, 1, 3, 0.20);
+    px(x + 2, y + 6, 8, 1, '#3a2c1c'); px(x + 3, y + 6, 6, 1, '#241d14');    // rim, then soil inside it
+    px(x + 4, y + 10, 4, 1, '#2a2016');
+    // STEMS — two petioles leaning apart out of the soil; a monstera never grows straight up in one line
+    px(x + 5, y + 3, 1, 3, LF_DK); px(x + 6, y + 2, 1, 4, LF_DK);
+    px(x + 4, y + 5, 1, 1, LF_DK); px(x + 7, y + 5, 1, 1, LF_DK);
+    // THREE PADDLES, each cut by a fenestration slit — west, east, then the crown standing above both
+    // The three are drawn back-to-front and each is separated by a hard dark edge — without that they merge
+    // into one green mass and the prop reads as a hedge, which is the same fusing failure the poker board had.
+    px(x, y + 2, 5, 4, LF); px(x, y + 2, 5, 1, LF_LIT); keyEdge(x, y + 2, 3, 1, 0.24);
+    px(x + 2, y + 3, 1, 2, SLIT); px(x, y + 5, 4, 1, LF_DK); px(x + 4, y + 3, 1, 3, SLIT);
+    px(x + 7, y + 3, 5, 4, LF_DK); px(x + 7, y + 3, 5, 1, LF); px(x + 6, y + 3, 1, 4, SLIT);
+    px(x + 9, y + 4, 1, 2, SLIT); px(x + 11, y + 3, 1, 3, LF_DK); rimEdge(x + 11, y + 3, 1, 3, 0.18);
+    chamf(x + 2, y - 1 + nod, 8, 4, LF_LIT, 1);                             // the CROWN paddle, leaf-shaped
+    px(x + 3, y - 1 + nod, 6, 1, LF_HI); keyEdge(x + 3, y - 1 + nod, 3, 1, 0.20);
+    px(x + 4, y + nod, 1, 2, SLIT); px(x + 7, y + nod, 1, 2, SLIT);         // the crown's two slits
+    px(x + 3, y + 2 + nod, 6, 1, SLIT);                                     // its shadow, cast onto the two below
   };
 
   F.flytrap = (x, y, w, h, f) => {   // v4 shelf flytrap — three jaw heads on curling stalks; one snaps shut
@@ -6788,13 +6811,19 @@ const PropSprites = (() => {
     rimEdge(x + 9, y + 4, 1, 4, 0.22);                          // cold bounce on the east arc
     px(x + 3, y + 4, 1, 1, '#48544c'); px(x + 8, y + 4, 1, 1, '#48544c');   // bezel bolts
     px(x + 3, y + 7, 1, 1, '#1f2622'); px(x + 8, y + 7, 1, 1, '#1f2622');
-    // lens: slow breath (kept). Idle is never dead — a floor light that goes black reads as a hole in the deck.
-    const pulse = 0.62 + 0.38 * (0.5 + 0.5 * Math.sin(now / 1300));
+    // LENS. v4 filled the well with a 6x4 slab of neutral #dfe2e0 and two blooms, which is a white pill
+    // lying on the deck — no colour to say "lamp" and no internal structure to say "lens". Two changes fix
+    // it: the light is COOL (this deck's own aisle lighting, not paper), and the lens carries FRESNEL RIBS,
+    // which is the one detail that reads as an optic at any size.
+    // Also STEADY. It used to breathe on a 1300ms clock, and an aisle lamp has no mechanism that breathes —
+    // idle is not "dead" here, it is simply a lamp that is on.
+    const LENS = '#79b4cc';
     const lens = [[4, 4], [3, 6], [3, 6], [4, 4]];
-    lens.forEach((s, j) => px(x + s[0], y + 4 + j, s[1], 1, U.shade('#dfe2e0', -0.42 + 0.24 * pulse)));
-    px(x + 4, y + 5, 2, 1, U.shade('#dfe2e0', 0.16));           // hot inner glint, west-biased
-    bloom(x + 3, y + 5, 6, 2, '#eef2f2', 0.16 + 0.26 * pulse);  // real falloff onto the surrounding plating
-    bloom(x + 4, y + 6, 4, 1, '#cfe0e2', 0.10 + 0.14 * pulse);
+    lens.forEach((s, j) => px(x + s[0], y + 4 + j, s[1], 1, U.shade(LENS, -0.30)));
+    px(x + 3, y + 5, 6, 1, U.shade(LENS, 0.22)); px(x + 3, y + 6, 6, 1, U.shade(LENS, -0.52));  // fresnel ribs
+    px(x + 4, y + 5, 2, 1, U.shade(LENS, 0.50));                // hot inner glint, west-biased
+    bloom(x + 3, y + 4, 6, 4, LENS, 0.16);                      // real falloff onto the surrounding plating
+    px(x + 4, y + 7, 4, 1, U.shade(LENS, -0.10));               // the lens's south face, back toward the bezel
     px(cx - 2, y + 10, 1, 1, '#56706e'); px(cx + 1, y + 10, 1, 1, '#56706e');   // aisle chevron (kept)
     px(cx - 1, y + 11, 2, 1, '#56706e');
   };
