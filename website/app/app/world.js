@@ -690,9 +690,22 @@ const World = (() => {
     agent.goal = null; agent.usingProp = null; agent.watchProp = null;
   }
 
+  /* TRANSIT READING (the phantom-teleport fix). A standing body's tile is its position; a WALKING body's
+     is not. footOf anchors a foot to the BOTTOM edge of its tile (ly*T + T - 1) while tileOf floors py/T,
+     so the straight segment between two perfectly legal feet passes through pixel rows that belong to the
+     tile BELOW the destination. Walk from foot(8,4) to foot(7,3) and the interpolated body reports
+     8,4 → 7,4 → 7,3 — and if 7,4 holds a blocking prop (the seed floor's bar), this backstop read a
+     healthy body as off-floor and re-homed it to the spawn tile mid-stride. That is what the "it
+     teleported out of nowhere" report was: not a body in the void, a body between two tiles.
+     So: never re-home a body that is following a path. This costs NO coverage, because every way a body
+     can actually become stranded ALSO clears its path — an origin shift drops pathPts/target in
+     rederive's re-frame block, and a floor reclaimed underfoot re-derives and does the same. A body with
+     a live target is walking a route that was validated against this very grid when it was laid, so the
+     backstop simply waits one tick for the path to be dropped and then does its job as before. */
   function ensureAgentValid() {
     const cur = tileOf(agent.px, agent.py);
     if (geo.walkable(cur.x, cur.y, blocked)) return;
+    if (agent.target) return;   // mid-walk — the tile reading is a transit artefact, not a stranded body (see TRANSIT READING)
     placeAgent();   // floor reclaimed under the agent — re-home to the spawn room
   }
 
@@ -1538,6 +1551,7 @@ const World = (() => {
     if (b.seated || b.sitting) return;
     const t = tileOf(b.px, b.py);
     if (geo.walkable(t.x, t.y, blocked)) return;
+    if (b.target) return;   // mid-walk — a transit artefact of footOf/tileOf, not a stranded body (see TRANSIT READING above ensureAgentValid)
     seizeFromIdle(b);   // off the floor = every in-flight goal/claim is in a broken frame — drop them
     let f = null;
     for (let r = 1; r <= 6 && !f; r++) for (let dy = -r; dy <= r && !f; dy++) for (let dx = -r; dx <= r && !f; dx++) {

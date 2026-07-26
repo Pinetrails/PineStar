@@ -58,4 +58,24 @@ A.ok(/containBody\(b, now\);/.test(src.slice(src.indexOf('function stepCrew(')))
 A.ok(/if \(!agent\.sitting && !agent\.seated\) ensureAgentValid\(\);/.test(src),
   'the HERO gets the same per-tick backstop (ensureAgentValid was rederive-only before)');
 
+/* ---- layer 4: the backstop must NOT fire on a body that is mid-walk (phantom-teleport lock) ----
+   footOf anchors a foot to the BOTTOM edge of its tile while tileOf floors py/T, so the segment between
+   two legal feet reports the tile BELOW the destination in passing. Where that tile holds a blocking prop
+   the backstop used to read a healthy walker as off-floor and re-home it to the spawn tile mid-stride —
+   observed live as a 5.7-tile "teleport" on the seed floor (bar at local 4..7,4). Re-homing is now gated
+   on the body NOT following a path. No coverage is lost: every real stranding (origin shift, floor
+   reclaimed underfoot) drops pathPts/target in rederive first, so the backstop still fires the next tick. */
+const eav = src.slice(src.indexOf('function ensureAgentValid('), src.indexOf('function spawn('));
+A.ok(eav.length > 0, 'ensureAgentValid() and spawn() both exist (slice is non-empty)');
+A.ok(/if \(agent\.target\) return;/.test(eav),
+  'the HERO backstop skips a body that is mid-walk (transit tile readings are not strandings)');
+A.ok(eav.indexOf('if (agent.target) return;') < eav.indexOf('placeAgent()'),
+  'the hero mid-walk guard runs BEFORE the re-home (else it would re-home first and never reach the guard)');
+A.ok(/if \(b\.target\) return;/.test(cb),
+  'the CREW backstop skips a body that is mid-walk, exactly like the hero');
+A.ok(cb.indexOf('if (b.target) return;') < cb.indexOf('seizeFromIdle(b);'),
+  'the crew mid-walk guard runs BEFORE seizeFromIdle (a healthy walker must not lose its goal either)');
+A.ok(/TRANSIT READING/.test(src),
+  'the TRANSIT READING rationale stays in the source (why the guard exists, so it is not "simplified" away)');
+
 A.report('crew-containment.test');
