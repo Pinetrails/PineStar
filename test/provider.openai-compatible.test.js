@@ -213,5 +213,30 @@ module.exports = (async () => {
     A.eq(fromLive.map(m => m.id).join(','), 'real-model', 'a live catalog always wins over the static roster');
   }
 
+  /* ---- a FAILED boot probe must not become a permanent cache hit ----
+     `if (catalog) return catalog` treated the [] a failure stores as a hit, so maybeRewarmCatalog — added
+     precisely because "an empty catalog stays empty forever" — called straight into that early return. One
+     offline launch then zeroed priceOf() for the life of the process (every turn 'unpriced', the ledger
+     recording $0 for real spend, the day/global caps never firing) and contextLimit() (no compaction
+     threshold). Asserted here for the generic adapter; gemini.js and anthropic.js share the exact shape. ---- */
+  {
+    let calls = 0, healthy = false, t = 0;
+    const fetchImpl = async (url) => {
+      if (!String(url).endsWith('/models')) throw new Error('unexpected ' + url);
+      calls++;
+      if (!healthy) return { ok: false, status: 500, statusText: 'boom', json: async () => ({}), text: async () => '' };
+      return { ok: true, status: 200, json: async () => ({ data: [{ id: 'gpt-x', context_length: 128000, pricing: { prompt: '0.000003', completion: '0.000015' } }] }) };
+    };
+    const p = makeOpenAICompatibleProvider({ fetch: fetchImpl, key: 'k', clock: { now: () => t } });
+    A.eq((await p.listModels()).length, 0, 'a failed boot probe yields an empty catalog');
+    A.eq(p.contextLimit('gpt-x'), 0, 'and no context limit');
+    A.eq(p.priceOf('gpt-x'), null, 'and no price — every turn would be unpriced');
+    healthy = true; t = 10 * 60 * 1000;                 // endpoint recovers, the rewarm throttle expires
+    A.eq((await p.listModels()).length, 1, 'a later call RE-FETCHES instead of returning the cached empty array');
+    A.ok(calls >= 2, 'the /models endpoint was actually probed again');
+    A.eq(p.contextLimit('gpt-x'), 128000, 'the context limit recovers');
+    A.eq(p.priceOf('gpt-x').in, 3, 'and so does pricing, so the ledger stops recording $0');
+  }
+
   A.report('provider.openai-compatible.test');
 })();

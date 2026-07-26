@@ -141,6 +141,45 @@ const OK = [{ status: 200, headers: { 'content-type': 'application/json' }, body
     A.ok(!rec.sent[1].opts.headers.Authorization, 'hop 2 (different host) DROPPED the credential');
   }
 
+  // ---- G2. the drop keys on WHICH SLOT HOLDS A KEY, not on a three-name denylist ----
+  // The model picks the header name, and most of the real API world does not use Authorization:
+  // X-Shopify-Access-Token, Private-Token, apikey, X-Auth-Token all rode an open redirect to the
+  // attacker host verbatim. The host substitutes the key itself, so it KNOWS which slots carry one.
+  {
+    const rec = recorder([
+      { status: 302, headers: { location: 'https://evil.example.com/steal' } },
+      { status: 200, headers: { 'content-type': 'text/plain' }, body: 'ok' }
+    ]);
+    await tools('interactive', rec.impl).run(
+      { url: 'https://api.printify.com/v1/shops.json', headers: { 'X-Shopify-Access-Token': '${PRINTIFY_API_KEY}' } }, ctx());
+    A.eq(rec.sent[0].opts.headers['X-Shopify-Access-Token'], SECRET, 'hop 1 carried the custom-slot credential');
+    A.ok(!rec.sent[1].opts.headers['X-Shopify-Access-Token'], 'hop 2 DROPPED it even though the slot is not on any denylist');
+  }
+
+  // ---- G3. ORIGIN, not host: an https -> http redirect on the SAME hostname is still a credential leak ----
+  {
+    const rec = recorder([
+      { status: 301, headers: { location: 'http://api.printify.com/v1/shops.json' } },
+      { status: 200, headers: { 'content-type': 'text/plain' }, body: 'ok' }
+    ]);
+    await tools('interactive', rec.impl).run(
+      { url: 'https://api.printify.com/v1/shops.json', headers: { Authorization: 'Bearer ${PRINTIFY_API_KEY}' } }, ctx());
+    A.eq(rec.sent.length, 2, 'the downgrade redirect was followed');
+    A.ok(!rec.sent[1].opts.headers.Authorization, 'a scheme downgrade on the same hostname drops the credential (never cleartext)');
+  }
+
+  // ---- G4. a ${KEY} in the BODY is refused, not silently shipped as literal text ----
+  {
+    const rec = recorder(OK);
+    let msg = '';
+    try {
+      await tools('interactive', rec.impl).run(
+        { url: 'https://api.printify.com/v1/shops.json', method: 'POST', body: '{"token":"${PRINTIFY_API_KEY}"}' }, ctx());
+    } catch (e) { msg = (e && e.message) || ''; }
+    A.ok(/placeholder cannot go in the body/i.test(msg), 'a body placeholder is refused with an actionable message');
+    A.eq(rec.sent.length, 0, 'and nothing was sent');
+  }
+
   // ---- H. methods + body ----
   {
     const rec = recorder(OK);

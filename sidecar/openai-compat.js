@@ -557,7 +557,13 @@ function makeOpenAiCompat(deps) {
   function handle(req, res) {
     const p = pathOf(req.url);
     const method = req.method;
-    if (p === '/health' && method === 'GET') { handleHealth(req, res); return true; }
+    if (p === '/health' && method === 'GET') {
+      // Unauthenticated by design (a liveness probe answers before auth) — but it still owes the loopback
+      // Host pin. Without it /health sat ABOVE the one defence against DNS rebinding, so a rebound page could
+      // read the station's version. index.js's isApi gate covers only /api/*, so this route must pin itself.
+      if (!isAllowedHost(((req && req.headers) || {}).host)) { res.writeHead(403); res.end('forbidden host'); return true; }
+      handleHealth(req, res); return true;
+    }
     if (p !== '/v1' && p.indexOf('/v1/') !== 0) return false;   // not ours
 
     // Host pin + bearer auth on every /v1/* request.

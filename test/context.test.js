@@ -287,4 +287,25 @@ A.eq(JSON.stringify(compactionMemoryBlock(memRecs, 'replies', { now: 1000 })), J
   for (const s of COMPACTION_SECTIONS) A.ok(m.indexOf('## ' + s) >= 0, 'merge template keeps section: ' + s);
 }
 
+/* ---- tool_calls are part of the prompt. They were not counted at all, and in an agentic loop the call
+   ARGUMENTS are routinely the largest thing on the wire (an fs.write turn carries the whole file body). ---- */
+{
+  const ctx = makeContext({ contextLimit: 200000 });
+  const bigArgs = JSON.stringify({ path: 'report.md', content: 'x'.repeat(40000) });
+  const withCall = { role: 'assistant', content: '', tool_calls: [{ id: 'c1', type: 'function', function: { name: 'fs.write', arguments: bigArgs } }] };
+  const msgs = [{ role: 'system', content: 'sys' }, { role: 'user', content: 'write it' }, withCall,
+    { role: 'tool', tool_call_id: 'c1', content: 'Wrote report.md.' }];
+  const est = ctx.estimateMessages(msgs);
+  const wire = msgs.reduce((n, m) => n + String(m.content || '').length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0);
+  A.ok(est > wire / 8, 'the estimate is the same ORDER as the real payload, not a 300x undercount');
+  A.ok(ctx.estimateMessages([withCall]) > 9000, 'a 40KB tool-call argument is counted, not ignored');
+  A.eq(ctx.estimateMessages([{ role: 'assistant', content: '' }]), 4, 'a bare turn is unchanged (overhead only)');
+
+  // fit() had its OWN inline copy of the per-message arithmetic, which is how the two came to disagree.
+  const kept = ctx.fit(msgs, { maxTokens: 2000 });
+  const keptWire = kept.reduce((n, m) => n + String(m.content || '').length + (m.tool_calls ? JSON.stringify(m.tool_calls).length : 0), 0);
+  A.ok(kept.length < msgs.length, 'fit() drops the oversized tool-call turn instead of keeping everything');
+  A.ok(Math.ceil(keptWire / 4) <= 2000, 'and what it keeps actually fits the budget it was given');
+}
+
 A.report('context.test');

@@ -283,4 +283,23 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(B(new Error('no model selected')).kind, 'auth', 'browser: "no model selected" -> auth');
 }
 
+/* ---- a TRANSPORT status beats a policy WORD in the message ----
+   The content-policy regex ran against the whole message before the status was consulted, so any retryable
+   failure whose text merely CONTAINED "moderation"/"safety"/"content_filter" was rewritten as a fatal policy
+   block: no retry, no failover, and agent.run.error.transient reporting false. A real policy refusal never
+   arrives as 429/5xx. */
+{
+  const t = R(httpErr(503, 'No instances available for openai/omni-moderation-latest'));
+  A.eq(t.reason, 'overloaded', 'a 503 naming a moderation MODEL is still overloaded');
+  A.eq(t.retryable, true, 'and stays retryable');
+  A.eq(t.shouldFallback, true, 'and can still fail over');
+  A.eq(R(httpErr(429, 'rate limit exceeded on the safety-tier endpoint')).reason, 'rate_limit', 'a 429 mentioning "safety" is still a rate limit');
+  A.eq(R(httpErr(500, 'content_filter pipeline crashed')).reason, 'server_error', 'a 500 naming a content_filter component is still a server error');
+  A.eq(R(httpErr(408, 'safety check timed out')).reason, 'timeout', 'a 408 mentioning safety is still a timeout');
+  // ...and a genuine refusal is unchanged
+  A.eq(R(httpErr(400, 'your request was blocked by our content policy')).reason, 'content_policy_blocked', 'a 400 policy refusal still classifies as policy');
+  A.eq(R(httpErr(403, 'flagged by moderation')).reason, 'content_policy_blocked', 'so does a 403');
+  A.eq(R(new Error('the model refused: content_filter triggered')).reason, 'content_policy_blocked', 'and so does a status-less refusal');
+}
+
 A.report('errorclass.test');

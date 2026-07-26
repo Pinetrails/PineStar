@@ -126,6 +126,24 @@ function patch(body) {
     A.ok(!res.ok && /provide more context/.test(res.error), 'fuzzy matcher uniqueness guard is direct-testable');
   }
 
+  /* ---- blockAnchor must not report a single block as ambiguous ----
+     It paired EVERY occurrence of the first anchor with the same last anchor, producing overlapping ranges,
+     so a block occurring exactly once answered "Found 2 matches; provide more context" and the hunk was
+     refused. (With replaceAll the overlap spliced the replacement in twice.) ---- */
+  {
+    const { fuzzyFindAndReplace, _internals } = require('../sidecar/tools/builtin/fuzzymatch.js');
+    const NL = String.fromCharCode(10);
+    const content = ['if (a) {', 'if (a) {', '  body();', '}'].join(NL);
+    const oldText = ['if (a) {', '  CHANGED();', '}'].join(NL);
+    A.eq(_internals.blockAnchor(content, oldText).length, 1, 'the repeated opening anchor yields ONE block, not two overlapping ones');
+    const r = fuzzyFindAndReplace(content, oldText, 'X');
+    A.ok(r.ok, 'and the hunk applies instead of being refused as ambiguous');
+    A.eq(r.strategy, 'block_anchor', 'via the block_anchor strategy');
+    // two genuinely DISTINCT blocks are still ambiguous
+    const twice = ['start', '  x', 'end', 'pad', 'start', '  y', 'end'].join(NL);
+    A.ok(!fuzzyFindAndReplace(twice, ['start', '  z', 'end'].join(NL), 'X').ok, 'two distinct blocks are still reported ambiguous');
+  }
+
   try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}
   A.report('fs.patch.test');
 })();
