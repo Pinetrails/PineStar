@@ -274,6 +274,31 @@ async function rejects(promise, msg) { try { await promise; A.ok(false, msg + ' 
     A.eq(bare.summary.indexOf('2 matches'), 0, 'a bare name glob still matches by basename everywhere');
   }
 
+  /* ---- a model-supplied regex must never be able to freeze the station ----
+     fs.search { regex:true } compiles the MODEL's string and runs it synchronously over every line of every
+     candidate file. StarNet is ONE process — UI, API, SSE bus, every agent run — so a backtracking blow-up
+     pegged the event loop indefinitely: measured, `(a|a)+$` against a 41-character line never returned and
+     the tool's own timeoutMs could not help (withTimeout rejects the promise; it cannot stop synchronous
+     work). Only killing the process recovered. ---- */
+  {
+    const dir = path.join(ROOT, 'redos');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'a.js'), 'const x = "' + 'a'.repeat(40) + 'b";\nfunction handler() {}\n');
+    const T = makeFsTools({ fsp: require('node:fs/promises'), pathMod: path, root: ROOT });
+    const c = { agentId: 'redos' };
+    const refused = async (q) => {
+      try { await T.searchTool.run({ query: q, regex: true }, c); return false; }
+      catch (e) { return /backtrack catastrophically/.test(e.message); }
+    };
+    for (const q of ['(a|a)+$', '(\\s+)+$', '(.*)*x', '(a+)+', '(ab|abc)+'])
+      A.ok(await refused(q), 'catastrophic pattern refused (fast, not hung): ' + q);
+    // ...and the floor must not eat ordinary search patterns
+    for (const q of ['function\\s+\\w+', '(ab|cd)+', '^const\\s', 'handler|x', '(?:foo|bar)baz'])
+      A.ok(!(await refused(q)), 'ordinary pattern still allowed: ' + q);
+    const hit = await T.searchTool.run({ query: 'handler', regex: true }, c);
+    A.ok(/handler/.test(hit.content), 'a real regex search still returns its matches');
+  }
+
   try { fs.rmSync(ROOT, { recursive: true, force: true }); } catch (e) {}
   A.report('fs.jail.test');
 })();

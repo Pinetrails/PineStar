@@ -99,6 +99,11 @@
   function hostOf(u) {
     let h = u.hostname.toLowerCase();
     if (h.charAt(0) === '[') h = h.slice(1, -1);                 // strip IPv6 brackets
+    // ...and the FQDN root label. WHATWG strips a trailing dot for IP literals but NOT for names, so
+    // `localhost.` / `svc.internal.` / `wiki.` kept theirs and slipped past every name rule below. The DNS
+    // guard would usually catch it downstream, but it is best-effort (a failed lookup returns silently, and
+    // deps.lookup:null disables it), so the static rule must be right on its own. Same fix as browser.js.
+    else h = h.replace(/\.+$/, '');
     return h;
   }
   function assertSafeUrl(raw) {

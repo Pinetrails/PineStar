@@ -64,5 +64,13 @@ async function rejectsAsync(p, msg) { try { await p; A.ok(false, msg + ' — did
   const got = await good.webFetch('http://example.com/article');
   A.ok(/real content here/.test(got.text) && got.source === 'direct', 'direct fallback returns cleaned text for a public page');
 
+  // ---- the FQDN root label is not an escape hatch ----
+  // WHATWG strips a trailing dot for IP literals but NOT for names, so `localhost.` kept its dot and slipped
+  // past every name rule. The DNS guard usually catches it downstream, but it is best-effort (a failed lookup
+  // returns silently, deps.lookup:null disables it), so the static rule has to be right on its own.
+  for (const u of ['http://localhost./', 'http://svc.internal./', 'http://router.lan./', 'http://wiki./', 'http://myapp.local./'])
+    rejects(() => assertSafeUrl(u), 'trailing-dot FQDN refused: ' + u);
+  A.eq(assertSafeUrl('https://example.com./').protocol, 'https:', 'a PUBLIC name with a root label is still allowed');
+
   A.report('web.ssrf.test');
 })();

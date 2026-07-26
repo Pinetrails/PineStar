@@ -320,6 +320,58 @@
     // Jailed + bounded like every fs.* tool: skips hidden entries (rg default) + node_modules, oversized +
     // binary files, caps files scanned; redacts secrets out of every surfaced line (§5.6).
     const SEARCH_MAX_FILE_BYTES = 512 * 1024, SEARCH_MAX_FILES = 4000, SEARCH_LINE_CHARS = 500, SEARCH_DENSIFY_MIN = 5;
+    // Longest line handed to a MODEL-SUPPLIED regex, and the wall-clock ceiling for the whole content scan.
+    const SEARCH_MATCH_CHARS = 2000, SEARCH_TIME_BUDGET_MS = 8000;
+
+    /* CATASTROPHIC-BACKTRACKING FLOOR (measured 2026-07-26).
+       `fs.search { regex: true }` compiles the MODEL's string and runs it synchronously over every line of
+       every candidate file. StarNet is ONE process — UI, API, SSE bus and every agent run — and a
+       backtracking blow-up pegs the event loop, so a single call froze the entire station indefinitely:
+       `(a|a)+$` against a 41-character line never returned, and the tool's own timeoutMs could not help
+       (registry withTimeout REJECTS the promise; it cannot stop synchronous work). Only killing the process
+       recovered. This needs no adversary — `(\s+)+$` or `(.*)*foo` are patterns a model writes by accident
+       when searching code.
+
+       Two bounds, and one honest limit. (1) refuse the shapes that actually blow up: an unbounded quantifier
+       applied to a group whose body itself contains an unbounded quantifier, or an alternation with
+       overlapping branches. (2) cap the input any one match sees, since blow-up scales with input length.
+       LIMIT: this is a heuristic, exactly like shell.js's command floor — a determined pattern outside these
+       shapes can still be slow. The durable fix is to run the match off the main loop (a worker with
+       terminate(), the same "killable child" posture shell.exec already uses); until then the floor catches
+       the realistic cases and the time budget below bounds everything polynomial. */
+    const UNBOUNDED_Q = /[+*]|\{\d+,\}/;
+    function groupBodies(src) {
+      const out = [];
+      for (let i = 0; i < src.length; i++) {
+        if (src[i] === '\\') { i++; continue; }
+        if (src[i] !== '(') continue;
+        let depth = 1, j = i + 1;
+        for (; j < src.length && depth > 0; j++) {
+          if (src[j] === '\\') { j++; continue; }
+          if (src[j] === '(') depth++;
+          else if (src[j] === ')') depth--;
+        }
+        if (depth !== 0) break;                                   // unbalanced — the RegExp ctor will reject it
+        const body = src.slice(i + 1, j - 1);
+        const after = src.slice(j);                               // what follows the closing paren
+        if (/^(?:[+*]|\{\d+,\})/.test(after)) out.push(body);     // this group is under an unbounded quantifier
+      }
+      return out;
+    }
+    function catastrophicRegex(src) {
+      for (const body of groupBodies(String(src))) {
+        const inner = body.replace(/^\?[:=!<][a-zA-Z]*/, '');     // drop a (?: (?= (?! (?<= prefix
+        if (UNBOUNDED_Q.test(inner)) return 'a repeated group that itself repeats';
+        const alts = inner.split('|');
+        if (alts.length > 1) {
+          for (let a = 0; a < alts.length; a++) for (let b = a + 1; b < alts.length; b++) {
+            const x = alts[a], y = alts[b];
+            if (x && y && (x === y || x.indexOf(y) === 0 || y.indexOf(x) === 0)) return 'a repeated group whose alternatives overlap';
+          }
+        }
+      }
+      return null;
+    }
 
     // glob -> RegExp over a whole string. `*` = any run except '/', `**` = any run, `?` = one non-'/'.
     function globToRe(glob, ic) {
@@ -365,8 +417,10 @@
         stats.files++; acc.push({ rel, abs, mtimeMs: st.mtimeMs || 0 });
       }
     }
-    function searchHint(truncated, offset, limit, total) {
-      return truncated ? ('\n\n[truncated — ' + total + '+ results shown so far; pass offset=' + (offset + limit) + ' for the next page, or narrow with file_glob / a more specific query]') : '';
+    // `note` (optional) carries an honest reason the result set is partial for a reason OTHER than paging —
+    // today, the scan hitting its wall-clock budget. Never silently truncate.
+    function searchHint(truncated, offset, limit, total, note) {
+      return (note || '') + (truncated ? ('\n\n[truncated — ' + total + '+ results shown so far; pass offset=' + (offset + limit) + ' for the next page, or narrow with file_glob / a more specific query]') : '');
     }
     function clipLine(s) { s = redact(String(s == null ? '' : s)).replace(/\s+$/, ''); return s.length > SEARCH_LINE_CHARS ? s.slice(0, SEARCH_LINE_CHARS) + '…' : s; }
 
@@ -411,8 +465,12 @@
         // ---- target 'content': grep ----
         let matcher;
         if (args.regex) {
+          const risk = catastrophicRegex(q);
+          if (risk) throw new Error('that regex can backtrack catastrophically (' + risk + ') and would stall the station — ' +
+            'rewrite it without nesting one repeat inside another (e.g. "\\s+" instead of "(\\s+)+"), or drop "regex" and search for a plain substring');
           let re; try { re = new RegExp(q, ic ? 'i' : ''); } catch (e) { throw new Error('invalid regex: ' + ((e && e.message) || e)); }
-          matcher = (line) => re.test(line);
+          // blow-up scales with input length, so a model-supplied pattern never sees a whole long line
+          matcher = (line) => re.test(line.length > SEARCH_MATCH_CHARS ? line.slice(0, SEARCH_MATCH_CHARS) : line);
         } else if (ic) { const n = q.toLowerCase(); matcher = (line) => line.toLowerCase().indexOf(n) >= 0; }
         else { matcher = (line) => line.indexOf(q) >= 0; }
 
@@ -432,27 +490,41 @@
 
         const fileHits = [];   // { rel, idxs:[lineIdx…], lines:[…] }
         let totalMatches = 0;
+        /* Ceiling for the whole scan. The pattern floor above catches the exponential shapes; this bounds
+           everything merely SLOW (a polynomial pattern over a large tree), so fs.search can never be the
+           reason the station stops answering. A TIMER, not a clock read — the determinism law bans ambient
+           time in backend logic, and browser.js's waitForSettle already sets this precedent. It works here
+           because the check sits between files, with an `await fsp.readFile` in between, so the loop turns
+           and the timer can fire. A partial answer that SAYS it is partial beats a frozen process. */
+        let expired = false;
+        const budgetTimer = setTimeout(() => { expired = true; }, SEARCH_TIME_BUDGET_MS);
+        if (budgetTimer && typeof budgetTimer.unref === 'function') budgetTimer.unref();
+        let timedOut = false;
         for (const f of candidates) {
+          if (expired) { timedOut = true; stats.truncated = true; break; }
           let buf; try { buf = await fsp.readFile(f.abs); } catch (e) { continue; }
           if (buf.length > SEARCH_MAX_FILE_BYTES || buf.indexOf(0) >= 0) continue;   // skip oversized / binary
           const lines = buf.toString('utf8').split(/\r?\n/), idxs = [];
           for (let i = 0; i < lines.length; i++) if (matcher(lines[i])) idxs.push(i);
           if (idxs.length) { fileHits.push({ rel: f.rel, idxs, lines }); totalMatches += idxs.length; }
         }
+        clearTimeout(budgetTimer);
+        if (timedOut) stats.timedOutNote = '\n\n[search stopped at the ' + Math.round(SEARCH_TIME_BUDGET_MS / 1000) +
+          's budget — these are the matches found so far; narrow with file_glob or a more specific query]';
 
         const omode = args.output_mode || 'content';
         if (omode === 'count') {
           if (!fileHits.length) return { content: '(no matches for ' + q + ')', summary: '0 matches' };
           const total = fileHits.length, page = fileHits.slice(offset, offset + limit);
           const truncated = stats.truncated || total > offset + limit;
-          return { content: page.map(h => h.rel + ': ' + h.idxs.length).join('\n') + searchHint(truncated, offset, limit, total),
+          return { content: page.map(h => h.rel + ': ' + h.idxs.length).join('\n') + searchHint(truncated, offset, limit, total, stats.timedOutNote),
                    summary: totalMatches + ' match' + (totalMatches === 1 ? '' : 'es') + ' across ' + total + ' file(s)' };
         }
         if (omode === 'files_only') {
           if (!fileHits.length) return { content: '(no matches for ' + q + ')', summary: '0 files' };
           const total = fileHits.length, page = fileHits.slice(offset, offset + limit);
           const truncated = stats.truncated || total > offset + limit;
-          return { content: page.map(h => h.rel).join('\n') + searchHint(truncated, offset, limit, total),
+          return { content: page.map(h => h.rel).join('\n') + searchHint(truncated, offset, limit, total, stats.timedOutNote),
                    summary: total + ' file' + (total === 1 ? '' : 's') + ' with matches' };
         }
 
@@ -489,7 +561,7 @@
           }
           body = lines.join('\n');
         }
-        return { content: body + searchHint(truncated, offset, limit, total),
+        return { content: body + searchHint(truncated, offset, limit, total, stats.timedOutNote),
                  summary: total + ' match' + (total === 1 ? '' : 'es') + ' in ' + fileHits.length + ' file(s)' + (truncated ? ' (showing ' + pageRefs.length + ')' : '') };
       }
     };
