@@ -30,6 +30,20 @@
 - 2026-07-21 · claude/maximize-border-pc-58234b -> trunk 2e784db3 — titlebar unified 2px-SVG glyphs (maximized chrome weight-match, 3rd Andrew report), W0 surface re-stamped in-branch; gate 374 green.
 # QA STATION — dashboard
 
+**2026-07-26 merge digest (turf reads as grass):** `agent/turf-grass-mat` → `feat/harness-backend`, fast-forward to `f5bde64e` (snapshot `7eb53949`), claims re-lock `f5bde64e` carried from the lane and still valid (source `f1294c2b` ≠ HEAD). Gate **test:fast 399 green (exit 0) ON TRUNK**. Frontend-only → no test:http owed. Rides the next cut. Fast-forward, so no auto-merge touched the `worldmodel.js` hotfile; `node --check` + symbol counts verified anyway.
+
+**The ask:** Andrew supplied a grass reference photo — "lets make our grass turf look more like the top left reference".
+
+**The real defect was not the art, it was the RANDOMNESS.** v2 gave every blade an independent random tone off a 5-step ramp, so no pixel belonged to the pixel beside it — which is exactly why a field of grass read as static. Real grass clumps: a patch lights together and the gaps shadow together. Tone now comes from a two-octave value FIELD (~6px tufts over ~2px strands) sampled on ABSOLUTE bake-pixel coords, so neighbours share a tone, tufts continue across tile borders, and chunk↔monolithic parity still holds. Strands are lit one step off THEIR OWN tuft's tone rather than off a global ramp, so a blade always belongs to its clump. This generalises to any organic surface we add next (moss, sand, water, rust): **correlate, don't scatter.**
+
+**Two tuning findings, both invisible without a render:** plain axis-aligned noise cells produced a QUILT OF SQUARES — right clump size, wrong shape, because every cell boundary lined up in both axes (cells are now sheared, x offset by a function of y); and amplitude ±0.20 read as camouflage blotches, legible clumps that stopped belonging to one surface (±0.13 with a dominant mid-tone reads as one lawn).
+
+**Hue was fighting the material, and it was fixed by MEASUREMENT not by eye.** Grass is olive: red near green, blue well under both. `fern` (#2a3f24) is blue-leaning, and since `vivid()` drives the dominant channel hardest its lifts ran toward PURE green. Sampled channel ratios — reference ≈ R/G 0.83 · B/G 0.48; fern 0.62 · 0.51; new **`meadow` (#374024)** 0.83 · 0.50. A first cut at `#37401e` hit 0.83 · **0.41** and read as mustard: the blue channel is what separates grass from straw. TURF now `suggest`s meadow; existing rooms keep the hue they were built with, and HEDGE stays on fern (a bush is not a lawn).
+
+**One deliberate law inversion:** dry blades use `U.shade`. The standing rule is never to `U.shade` anything that must KEEP its hue — a dead blade must LOSE it, and bleached straw is precisely desaturated-and-lighter, the direction `U.shade` travels.
+
+This commit also carries a one-line Guardian dashboard row refresh (GREEN cycle 2026-07-26 06:06Z @ `7eb53949`) that was sitting uncommitted in the integration tree — same benign automated row that has ridden along with previous merges. That cycle is independent confirmation that trunk with the SPINE/BULKHEAD defaults boots and looks right.
+
 **2026-07-25 merge digest (tool-RESULT injection defence):** `claude/routine-scheduled-runs-terminal-d179ff` -> `feat/harness-backend` merge `b64a875c` (snapshot `f622620c`). Gate **test:fast 398 green (exit 0) + test:http green (exit 0) ON TRUNK**, all three lanes re-proven live against the merged tree (taint 9/9, grant 14/14, prompt-guard 15/15).
 
 **The gap.** The cron prompt scanner covers text the Commander wrote. It cannot see content the agent FETCHES mid-run — a hostile page, a compromised MCP server, a poisoned upstream result — and a granted routine auto-approves the terminal and connectors. Pattern-matching fetched content is the WRONG tool: it is arbitrary, and legitimate work constantly quotes attack commands (the exact false positive the cron-guard two-tier split exists to avoid).
@@ -379,7 +393,7 @@ own runner (Q1 Guardian, Q2 Beginner Run, Q4 Janitor) or the Overseer digest; th
 
 | Crew member | Question it answers | Last run | Result | Open findings |
 | --- | --- | --- | --- | --- |
-| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-26 03:07Z @ 3674b5c1 | GREEN | 0 |
+| Green Guardian | Is trunk green and does the app still boot + look right? | 2026-07-26 06:06Z @ 7eb53949 | GREEN | 0 |
 | Beginner Run | Can a brand-new user reach first value, unassisted? | 2026-07-25T17:31:17.018Z · ui-only · 98789ms | PASS | 0 |
 | Truth Auditor | Does the UI show what actually happened? | 2026-07-01 23:28Z (in Guardian cycle) | GREEN | 0 |
 | Visual Auditor | Is the rendered game coherent? (needs eyes) | — (local /loop; not headless) | — | 0 |
