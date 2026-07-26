@@ -39,6 +39,21 @@
   // posture — so a worker has the same reach as the orchestrator, gated by the same approvals.
   const WORKER_KIT = [{ instanceId: 'wb_worker', objectType: 'workbench' }];
 
+  // abort without ever throwing out of a timer callback (AbortController.abort(reason) is not universal).
+  function abort(ac) { try { ac.abort(new Error('worker wall clock')); } catch (_) { try { ac.abort(); } catch (_) {} } }
+  /* A fresh AbortController CHAINED to a parent signal: aborting the parent (E-STOP, the lead's run ending, the
+     registry's own per-call timeout) still cascades down, but aborting the child stops ONE worker without
+     touching its siblings or the lead. Mirrors registry.js's childAbort; kept local because this file is a
+     dep-free UMD. Tolerates a non-AbortSignal parent (unit stubs) by simply not chaining. */
+  function childAbort(parent) {
+    const ac = new AbortController();
+    if (parent) {
+      if (parent.aborted) abort(ac);
+      else if (typeof parent.addEventListener === 'function') parent.addEventListener('abort', () => abort(ac), { once: true });
+    }
+    return ac;
+  }
+
   function lastAssistant(messages) {
     if (!Array.isArray(messages)) return '';
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -116,11 +131,18 @@
     // the lead then abandons delegation and does the job solo while the orphaned worker keeps spending. So the
     // dispatch tool carries its OWN generous wall-clock backstop. Real runaway is already bounded per-worker by
     // the cost cap (perWorker) + the worker's own maxIters/per-tool timeouts; this is just the outer ceiling.
-    const dispatchTimeoutMs = (typeof deps.dispatchTimeoutMs === 'number' && deps.dispatchTimeoutMs > 0) ? deps.dispatchTimeoutMs : 600000;
+    const dispatchBudgetMs = (typeof deps.dispatchTimeoutMs === 'number' && deps.dispatchTimeoutMs > 0) ? deps.dispatchTimeoutMs : 600000;
+    // injected clock (lint-determinism: no ambient Date.now in backend logic) — only used to divide the wall clock.
+    // Without one (bare unit callers) elapsed time is UNKNOWABLE, so the sequential path falls back to fixed even
+    // shares; that keeps the shares summing to the budget instead of each worker seeing a full, never-shrinking one.
+    const hasClock = (typeof deps.now === 'function');
+    const now = hasClock ? deps.now : (() => 0);
 
     const dispatchTool = {
-      // own wall-clock (minutes, not the 30s fast-tool default) — see dispatchTimeoutMs above.
-      timeoutMs: dispatchTimeoutMs,
+      // The registry timeout is now only a BACKSTOP: it sits a minute above the dispatch's own budget so the
+      // in-tool wall clock (which returns partial rows) always fires first. Letting the registry's timeout be the
+      // primary mechanism is what threw away every completed worker's result (2026-07-26 audit finding A).
+      timeoutMs: dispatchBudgetMs + 60000,
       // CONSENT-GATED (2026-07-14, closes the parked P1): delegation fans out REAL autonomous agent loops that
       // spend budget — if untrusted content in the lead's context (a fetched page, a channel message) injects
       // "dispatch a worker to do X", the human must get a say first. Same semantics as team.summon: the APPROVAL
@@ -177,6 +199,29 @@
           o2 = o2 || {};
           if (job.error) return { agentId: job.agentId, reason: 'error', result: job.error, usd: 0 };
           const wire = workerWire(job.ident);   // the worker's OWN provider+model when resolvable (see workerWire)
+          // PER-WORKER WALL CLOCK (2026-07-26 audit finding A). Before this, the ONLY clock was the registry's
+          // tool timeout over the WHOLE dispatch: one slow worker ate the shared budget, the registry rejected, and
+          // every ALREADY-COMPLETED worker's result was thrown away — the lead received the string "team.dispatch
+          // timed out" and nothing else, after the Commander had paid for all of them. Each foreground worker now
+          // gets its own slice on its OWN abort controller (chained to the parent, so E-STOP still cascades), so a
+          // straggler is stopped ALONE and comes back as one honest `timeout` row while its siblings' work survives.
+          // Background workers pass no wallMs — outliving the tool call is the whole point of background:true.
+          const parentSignal = o2.signal || (ctx && ctx.signal);
+          const wallMs = (typeof o2.wallMs === 'number' && isFinite(o2.wallMs) && o2.wallMs > 0) ? o2.wallMs : 0;
+          const ac = wallMs ? childAbort(parentSignal) : null;
+          let timedOut = false, timer = null;
+          if (ac) timer = setTimeout(() => { timedOut = true; abort(ac); }, wallMs);
+          const timeoutRow = (res) => {
+            const partial = res ? (lastAssistant(res.messages) || '') : '';
+            return {
+              agentId: job.agentId, reason: 'timeout',
+              result: (partial ? partial + '\n\n' : '')
+                + '[STOPPED — this worker used up its ' + Math.round(wallMs / 1000) + 's slice of the dispatch wall clock'
+                + (partial ? '; the text above is its PARTIAL work' : ' before returning any text')
+                + '. Do not present it as complete: either re-dispatch this subtask alone, or tell the Commander this part is unfinished.]',
+              usd: (res && res.usd) || 0
+            };
+          };
           let result;
           try {
             result = await runOnce({
@@ -189,7 +234,7 @@
               messages: [{ role: 'user', content: job.prompt }],
               agentId: job.agentId, isTask: true,
               emit: o2.emit || childEmit,      // lifecycle/cost ride the lead/global stream -> the floor lights the worker
-              signal: o2.signal || (ctx && ctx.signal),
+              signal: ac ? ac.signal : parentSignal,   // own controller when this worker has a wall clock (see above)
               runId: o2.runId || newId(), trigger: 'directive', surface: 'autonomous',
               // Share the lead's consent broker so a worker's WRITES follow the lead's APPROVAL posture
               // (full-auto bypass, or a prompt forwarded to the watched lead) instead of the headless default-deny.
@@ -204,8 +249,12 @@
               maxIters: workerMaxIters         // a runaway worker can't burn the lead's full iteration budget
             });
           } catch (e) {
+            if (timedOut) return timeoutRow(null);   // the abort we fired surfaced as a throw — still an honest timeout
             return { agentId: job.agentId, reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };
+          } finally {
+            if (timer) clearTimeout(timer);
           }
+          if (timedOut) return timeoutRow(result);   // keep whatever partial text the aborted run did produce
           if (!result) return { agentId: job.agentId, reason: 'refused', result: 'worker could not start — the concurrency cap (STARNET_MAX_CONCURRENT_AGENTS) is full or a sign-in is needed. Try fewer at once, or run sequentially.', usd: 0 };
           const row = {
             agentId: job.agentId,
@@ -224,8 +273,6 @@
           return row;
         };
 
-        const runJob = async (job) => runWorker(job);
-
         if (args.background) {
           if (!subagents || typeof subagents.start !== 'function') return { content: 'background subagents unavailable (no subagent manager)', summary: 'error' };
           const started = jobs.map(job => {
@@ -239,13 +286,43 @@
           return { content: JSON.stringify(startedRows), summary: 'started ' + started.filter(r => r && r.id).length + ' background worker(s)' + overflowNote };
         }
 
-        let out;
-        if (args.parallel) out = await Promise.all(jobs.map(runJob));   // fan out (bounded by the concurrency gate)
-        else { out = []; for (const j of jobs) out.push(await runJob(j)); }   // sequential: legible, one box at a time
+        // THE DISPATCH WALL CLOCK. `dispatchBudgetMs` is the budget for the WHOLE call; the tool's registry
+        // timeoutMs sits a minute above it (see the tool's timeoutMs) so this path — which always resolves with
+        // rows — is what actually fires. Parallel workers overlap, so each may use the whole budget; SEQUENTIAL
+        // workers share it, and each gets a fair share of what is LEFT (a fast early worker donates its unused
+        // time to the ones behind it) instead of the old "first slow worker eats everything" behaviour.
+        const startedAt = now();
+        let out = [];
+        if (args.parallel) {
+          out = await Promise.all(jobs.map(j => runWorker(j, { wallMs: dispatchBudgetMs })));   // fan out (bounded by the concurrency gate)
+        } else {
+          for (let i = 0; i < jobs.length; i++) {                                   // sequential: legible, one box at a time
+            const left = hasClock
+              ? dispatchBudgetMs - (now() - startedAt)
+              : dispatchBudgetMs - Math.floor(dispatchBudgetMs * i / jobs.length);   // no clock: fixed even shares
+            if (left <= 0) {
+              out.push({
+                agentId: jobs[i].agentId, reason: 'not-dispatched', usd: 0,
+                result: 'NOT RUN — this dispatch ran out of wall clock before reaching this worker. The results above are real; '
+                  + 'dispatch this subtask in a follow-up call, and do not report it as done.'
+              });
+              continue;
+            }
+            out.push(await runWorker(jobs[i], { wallMs: Math.max(1, Math.floor(left / (jobs.length - i))) }));
+          }
+        }
         out = out.concat(overflowRows());
 
         const ok = out.filter(r => r.reason === 'done').length;
-        return { content: JSON.stringify(out), summary: 'dispatched ' + jobs.length + ' worker(s), ' + ok + ' done' + overflowNote };
+        const late = out.filter(r => r.reason === 'timeout').length;
+        const unrun = out.filter(r => r.reason === 'not-dispatched').length - overflow.length;
+        return {
+          content: JSON.stringify(out),
+          summary: 'dispatched ' + jobs.length + ' worker(s), ' + ok + ' done'
+            + (late ? ', ' + late + ' out of time' : '')
+            + (unrun > 0 ? ', ' + unrun + ' never started (wall clock)' : '')
+            + overflowNote
+        };
       }
     };
 
@@ -258,7 +335,10 @@
     // a clone is handed the WORKBENCH but NOT the orchestrator object, so team.spawn/dispatch are never EXPOSED to it
     // → it cannot spawn its own sub-agents. The SAME gating that already stops a delegated worker re-delegating.
     const spawnTool = {
-      timeoutMs: dispatchTimeoutMs,
+      // Spawn's foreground clones run in PARALLEL and are each bounded by workerMaxIters, so this budget applies to
+      // the slowest single clone rather than a sum — it keeps the registry timeout it always had. (The per-worker
+      // wall clock that saves partial results was added to team.dispatch, whose sequential default shares one budget.)
+      timeoutMs: dispatchBudgetMs,
       // CONSENT-GATED like team.dispatch (see its note): spawning clones fans out autonomous budget-spending
       // loops off text in the lead's context — 'ask' mode gets the APPROVAL beat, Full Access bypasses.
       name: 'team.spawn', capability: 'orchestrator', scope: 'execute', requiresConsent: true,

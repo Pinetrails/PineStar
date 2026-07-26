@@ -8690,6 +8690,7 @@ async function runOnce(o) {
     approvalPosture: () => (FULL_ACCESS || ((agentRoster.get(agentId) || {}).approvalMode === 'full')) ? 'full' : 'ask',
     perWorker: ORCH_PER_WORKER, workerMaxIters: ORCH_WORKER_MAX_ITERS, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS,   // minutes, not the 30s fast-tool cap (see constant)
+    now: () => Date.now(),   // the dispatch wall clock divides this budget across sequential workers (injected: lint-determinism)
     // Cross-provider dispatch: resolve a WORKER's own roster provider to the station's server-held credential
     // (BYOK keys / codex OAuth). null when the station holds none -> orchestration falls back to the lead's
     // provider+model honestly instead of 400ing the worker's model down the wrong wire.
