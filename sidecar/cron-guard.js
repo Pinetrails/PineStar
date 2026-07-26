@@ -24,8 +24,10 @@
         a stray zero-width char in a copy-pasted code sample must not permanently kill a routine.
 
    WHAT THIS DOES NOT COVER — stated plainly so nobody mistakes it for complete: this scans PROMPT text. It does
-   not scan tool RESULTS mid-run, so a granted routine that fetches a hostile web page and then acts on it is
-   NOT protected by this file. Neither harness solves that; it needs turn-level provenance, not a tripwire.
+   not scan tool RESULTS mid-run. That surface is defended separately and structurally, NOT by pattern-matching:
+   sidecar/tools/fence.js marks untrusted results as data, and sidecar/taint.js revokes an unattended run's
+   terminal / credentialed / connector-write powers once such content lands. Do not extend these regexes over
+   fetched content — that is exactly the false-positive trap the two-tier split above exists to avoid.
 
    Pure: no clock, no rng, no I/O — safe under lint-determinism and directly unit-testable. */
 'use strict';
