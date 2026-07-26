@@ -2053,12 +2053,13 @@
       "kind": "prop",
       "area": "props",
       "name": "MERGER [functional/workflow] 1x1",
-      "purpose": "Buffers K incoming boxes then emits one combined box — a join / map-reduce barrier.",
-      "promise": "Compiles into a RoutingPlan junction with a real bufferSize; the router holds K items then emits one. Sits ON a belt tile (blocks:false). Renders at 1x1, foot-anchored.",
+      "purpose": "A lane funnel: several belt lanes converge into one. Every crate rides straight through.",
+      "promise": "Compiles into a RoutingPlan junction of kind \"merge\" and carries no config. Crates are CONSERVED — K in, K out — because the harness dispatches every work-item independently; a merger tidies lanes, it never combines the jobs on them. Sits ON a belt tile (blocks:false). Renders at 1x1, foot-anchored.",
       "wiring": {
         "files": [
           "frontend/app/worldmodel.js",
           "frontend/app/pipeline.js",
+          "frontend/app/conveyor.js",
           "sidecar/routing/router.js",
           "frontend/app/build.js",
           "frontend/app/propsprites.js"
@@ -2066,6 +2067,10 @@
         "events": []
       },
       "coverage": [
+        {
+          "kind": "test",
+          "ref": "conveyor.test"
+        },
         {
           "kind": "test",
           "ref": "routing.b5.test"
@@ -2079,7 +2084,7 @@
           "ref": "qa-cartographer.test"
         }
       ],
-      "status": "audited",
+      "status": "mapped",
       "auditedAt": {
         "sha": "c06bdef7b3ac60daab6e1b9516c290264b2cec90",
         "date": "2026-07-18T02:15:26.725Z"
@@ -2088,7 +2093,7 @@
       "firstSeen": "2026-07-10T05:18:57.443Z",
       "lastSeen": "2026-07-18T00:54:02.711Z",
       "missing": false,
-      "notes": "AUDITED-BY-TRACE: seam traced emitter→store→renderer and guarded by green machine tests (routing.b5.test, worldmodel.test, qa-cartographer.test) at HEAD c06bdef7. Not present in the default dev seed (only the overseer desk is placed), so not individually live-placed — WORKS is by-trace + machine assertion, not a per-prop live placement. KNOWN: cap-prop id→objectType is only per-id locked for studio (finding e08db5b6)."
+      "notes": "CORRECTED 2026-07-26 (conveyor audit): the previous promise — \"a real bufferSize; the router holds K items then emits one\" — was FALSE. No router ever buffered; sidecar/routing/router.js and Pipeline.resolveTarget dispatch each work-item on its own, so K messages were always K paid runs. The engine meanwhile absorbed K-1 crates (they vanished, never delivered) and emitted a `merged` id list no consumer read; below-threshold work was swallowed outright. The merger is now a truthful lane funnel and its REFIT \"combine K\" control is gone. Status dropped audited->mapped: the by-trace audit at c06bdef7 certified the false promise, so this entry needs a fresh audit against the corrected behaviour. Prior note kept below.\nPRIOR: AUDITED-BY-TRACE at HEAD c06bdef7; not in the default dev seed, so WORKS was by-trace + machine assertion, not per-prop live placement. KNOWN: cap-prop id->objectType is only per-id locked for studio (finding e08db5b6)."
     },
     {
       "id": "prop/missionboard",

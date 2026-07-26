@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "be65b8c2342ed426b857fa36d56ee68eae5e8c61",
+    "sourceCommit": "78f3f724744dc0cc2fa4b1477d159dc1bc3cde20",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -123,8 +123,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 115194,
-        "sha256": "a8357322ea5b26a3a10a78134f8072ee442d30cda8e71f3f78f8bb523395192c"
+        "bytes": 114717,
+        "sha256": "9c3a2b6c264b3702f6fb993c484a30ba83285806a85723c96b8d955369010bb1"
       },
       {
         "path": "frontend/app/channels.js",
@@ -173,8 +173,8 @@
       },
       {
         "path": "frontend/app/conveyor.js",
-        "bytes": 36548,
-        "sha256": "8e6c0df75eb0a6e31eea6b1e87e0aa06de406d6bf73462d77fef945ff197ce31"
+        "bytes": 37996,
+        "sha256": "c547719fe6c28c37c9f701aa90355c344687243c991c2c7afe298b6c12de2bfa"
       },
       {
         "path": "frontend/app/crtlab.js",
@@ -398,8 +398,8 @@
       },
       {
         "path": "frontend/app/pipeline.js",
-        "bytes": 21734,
-        "sha256": "236969a2fb7ba8e886d35954d6f4b19da97a16bd353ba048b23a0629b650d94c"
+        "bytes": 23731,
+        "sha256": "2293673ff766e7bae1fc57c9d24f09bd4be62078657f85a26a27bfd22999fc95"
       },
       {
         "path": "frontend/app/pitch.js",

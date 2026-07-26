@@ -662,9 +662,12 @@ const Build = (() => {
     try { input.focus(); input.select(); } catch (_) {}
   }
 
-  /* ---------- FILTER/MERGER junction editor (Polish P1): make content-routing reachable from the UI.
+  /* ---------- FILTER junction editor (Polish P1): make content-routing reachable from the UI.
      A FILTER needs routes (tag -> out-lane) + a default lane or it's non-deployable (FILTER_NO_DEFAULT);
-     a MERGER just needs its buffer size K. Both call station.configureJunction. Opens on place/click. */
+     it calls station.configureJunction. Opens on place/click.
+     A MERGER has NO editor — like the splitter, it is pure topology. It used to offer a "combine K" field
+     for a hold-K-then-emit-one barrier the harness never performed (see conveyor.js chooseExit), so the
+     control was authoring a promise nothing could keep. A merger clicks through to the flow card instead. */
   const J_DIRV = { E: [1, 0], W: [-1, 0], S: [0, 1], N: [0, -1] };
   const J_OPP = { E: 'W', W: 'E', S: 'N', N: 'S' };
   const J_LANES = ['E', 'S', 'W', 'N'];   // fixed order — mirrors pipeline.js / conveyor.js
@@ -690,12 +693,18 @@ const Build = (() => {
     if (!root || root.querySelector('.refit-flow-card')) return;
     const p = station.propById(propId); if (!p) return;
     const hot = p.t === 'intake' ? 'intake' : p.t === 'outbox' ? 'outbox' : (p.t === 'filter' || p.t === 'splitter' || p.t === 'merger') ? 'junction' : 'bay';
-    const line = p.t === 'intake'
-      ? 'This is where OUTSIDE work — a channel DM, a scheduled routine — physically arrives on the floor. No feed connected? It says so, and clicking it opens CHANNELS.'
-      : 'Every job the crew actually FINISHES ships a green crate here; the pallet is today’s output. Click it (when quiet) for the LOGBOOK.';
+    const TITLE = { intake: 'INBOX — WORK IN', outbox: 'OUTBOX — RESULTS OUT', merger: 'MERGER — LANES JOIN' };
+    const LINE = {
+      intake: 'This is where OUTSIDE work — a channel DM, a scheduled routine — physically arrives on the floor. No feed connected? It says so, and clicking it opens CHANNELS.',
+      outbox: 'Every job the crew actually FINISHES ships a green crate here; the pallet is today’s output. Click it (when quiet) for the LOGBOOK.',
+      // honest by construction: the harness runs each work-item on its own, so the floor must show each
+      // one arriving. A merger tidies several lanes into one — it never combines the JOBS riding them.
+      merger: 'Where several belt lanes join into one. Every crate rides straight through — a merger tidies the LANES, it does not combine the jobs on them (each still runs on its own). Nothing to configure.'
+    };
+    const line = LINE[p.t] || LINE.outbox;
     const g = document.createElement('div');
     g.className = 'refit-guide refit-flow-card';
-    g.innerHTML = '<div class="refit-guide-card"><h3>▮ ' + (p.t === 'intake' ? 'INBOX — WORK IN' : 'OUTBOX — RESULTS OUT') + '</h3>'
+    g.innerHTML = '<div class="refit-guide-card"><h3>▮ ' + (TITLE[p.t] || TITLE.outbox) + '</h3>'
       + flowStripHTML(hot)
       + '<ul><li>' + line + '</li></ul>'
       + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="flow-ok">✓ GOT IT</button></div></div>';
@@ -708,27 +717,12 @@ const Build = (() => {
 
   function openJunctionEditor(propId, ev) {
     if (!root || root.querySelector('.refit-junction-editor')) return;
-    const p = station.propById(propId); if (!p || (p.t !== 'filter' && p.t !== 'merger')) return;
+    const p = station.propById(propId); if (!p || p.t !== 'filter') return;
     const g = document.createElement('div');
     g.className = 'refit-guide refit-junction-editor';
     const closeP = () => { if (g.parentNode) g.parentNode.removeChild(g); };
 
-    if (p.t === 'merger') {
-      const k = Math.max(2, p.bufferSize | 0 || 2);
-      g.innerHTML = '<div class="refit-guide-card"><h3>▮ MERGER</h3>' + flowStripHTML('junction')
-        + '<ul><li>Buffers <b>K</b> inbound boxes, then emits ONE combined box (a map-reduce barrier).</li></ul>'
-        + '<label class="refit-field">combine K = '
-        + '<input id="mrg-k" class="refit-num" type="number" min="2" max="9" value="' + k + '"/></label>'
-        + '<div class="refit-actions"><button type="button" class="btn-sm refit-primary" id="j-ok">▸ SET</button><button type="button" class="btn-sm" id="j-cancel">CANCEL</button></div></div>';
-      root.appendChild(g);
-      requestAnimationFrame(() => g.classList.add('refit-swap'));
-      g.querySelector('#j-ok').onclick = () => {
-        const v = Math.max(2, Math.min(9, parseInt(g.querySelector('#mrg-k').value, 10) || 2));
-        const res = station.configureJunction(propId, { bufferSize: v });
-        if (res && res.ok) { sfx('click'); flashTip(ev, 'merger K=' + v, true); } else { sfx('bad'); }
-        closeP();
-      };
-    } else {
+    {
       const lanes = junctionOutLanes(p.x, p.y);
       const cur = { routes: (p.routes && typeof p.routes === 'object') ? Object.assign({}, p.routes) : {}, def: p.def || null };
       const selOf = tag => (tag === '__def__' ? cur.def : cur.routes[tag]);
@@ -1112,8 +1106,9 @@ const Build = (() => {
   // open the right editor for a logistics prop that carries config (BAY = agent, FILTER/MERGER = routing, AIRLOCK = seal)
   // a workstation (PC/desk) opens the dedicated WORKSTATION picker; bays/junctions/etc. keep their editors.
   // (Trunk's PC-binding via the BAY picker is unified into the workstation picker — same agentId field, richer UX.)
-  const openPropEditor = (id, t, ev) => { if (WORKSTATION_TYPES[t]) openWorkstationPicker(id, ev); else if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter' || t === 'merger') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); else if (t === 'connector_portal') openConnectorEditor(id, ev); else if (t === 'intake' || t === 'outbox') openFlowCard(id); };
-  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, airlock: 1, connector_portal: 1, intake: 1, outbox: 1 };
+  // a MERGER has no config (pure topology, like the splitter) — it explains itself via the flow card.
+  const openPropEditor = (id, t, ev) => { if (WORKSTATION_TYPES[t]) openWorkstationPicker(id, ev); else if (t === 'bay') openBayPicker(id, ev); else if (t === 'filter') openJunctionEditor(id, ev); else if (t === 'airlock') openDoorPicker(id, ev); else if (t === 'connector_portal') openConnectorEditor(id, ev); else if (t === 'intake' || t === 'outbox' || t === 'merger') openFlowCard(id); };
+  const PROP_EDITABLE = { bay: 1, filter: 1, merger: 1, airlock: 1, connector_portal: 1, intake: 1, outbox: 1 };   // merger = flow card only (no config)
   const isEditableProp = t => !!PROP_EDITABLE[t] || !!WORKSTATION_TYPES[t];   // a workstation binds an agent + opens its picker on place/click
   function commitPropStamp(d, ev) {
     // a click (no drag) on an existing editable logistics prop re-opens its editor instead of stamping a duplicate
@@ -1218,7 +1213,7 @@ const Build = (() => {
     else { flashTip(ev, (res && res.msg) || 'blocked'); sfx('bad'); }
   }
   /* ---------- DUPE tool: copy a room or prop, then stamp repeats — the symmetry workflow.
-     Props copy their type/footprint + carried config (filter routes, merger K, airlock seal) but NEVER an
+     Props copy their type/footprint + carried config (filter routes, airlock seal) but NEVER an
      agent/connector binding: two bays on one agent is a routing error (DUP_AGENT) and a portal bind is a
      live server relationship, not geometry. Rooms copy their full multi-rect shape + kind + deck style. */
   function pickupDupe(w, ev) {
@@ -1230,8 +1225,7 @@ const Build = (() => {
                rects: [{ x1: 0, y1: 0, x2: (p.w || 1) - 1, y2: (p.h || 1) - 1 }], label: (s.label || p.t).toUpperCase() };
       if (p.routes && typeof p.routes === 'object') dupe.cfg.routes = Object.assign({}, p.routes);
       if (p.def) dupe.cfg.def = p.def;
-      if (p.bufferSize) dupe.cfg.bufferSize = p.bufferSize;
-      if (p.door) dupe.cfg.door = p.door;
+      if (p.door) dupe.cfg.door = p.door;   // (a merger's legacy bufferSize is NOT copied — it configures nothing)
     } else {
       const rid = station.roomAt(w.tx, w.ty);
       const rm = rid && station.roomById(rid);
