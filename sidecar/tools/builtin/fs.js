@@ -333,9 +333,15 @@
       }
       return new RegExp('^' + re + '$', ic ? 'i' : '');
     }
-    // recursive file walk -> acc of { rel, abs, mtimeMs }; rel is workspace-root-relative (feeds fs.read).
-    // Skips hidden entries + node_modules; never leaves the jailed base; bounded by SEARCH_MAX_FILES.
-    async function collectFiles(absDir, prefix, acc, stats) {
+    /* recursive file walk -> acc of { rel, abs, mtimeMs }; rel is workspace-root-relative (feeds fs.read).
+       Skips hidden entries + node_modules; never leaves the jailed base; bounded by SEARCH_MAX_FILES.
+
+       SYMLINKS ARE RE-PROVEN HERE. resolveInside's realpath proof only covers the path the CALLER named —
+       it says nothing about what the walk then reaches. So fs.read correctly refused a symlink pointing at
+       ~/.ssh/id_rsa while fs.search happily grepped its CONTENTS and printed the matching line: the same
+       jail, enforced on one tool and not its sibling. A link is cheap to check and rare, so only links pay
+       the realpath (an ordinary file costs nothing extra); one that resolves outside is skipped entirely. */
+    async function collectFiles(absDir, prefix, acc, stats, baseReal) {
       if (stats.files >= SEARCH_MAX_FILES) { stats.truncated = true; return; }
       let entries;
       try { entries = await fsp.readdir(absDir, { withFileTypes: true }); }
@@ -346,8 +352,16 @@
         if (ent.name.charAt(0) === '.') continue;                 // hidden (matches ripgrep's default)
         const rel = prefix ? (prefix + '/' + ent.name) : ent.name;
         const abs = P.join(absDir, ent.name);
-        if (ent.isDirectory()) { if (ent.name !== 'node_modules') await collectFiles(abs, rel, acc, stats); continue; }
+        // a link (or a Windows junction) must PROVE it still lands inside the jail before we read or descend
+        if (typeof ent.isSymbolicLink === 'function' && ent.isSymbolicLink()) {
+          if (baseReal && !pathInside(await realpathOrSelf(abs), baseReal)) { stats.skippedLinks = (stats.skippedLinks || 0) + 1; continue; }
+        }
+        if (ent.isDirectory()) { if (ent.name !== 'node_modules') await collectFiles(abs, rel, acc, stats, baseReal); continue; }
         let st; try { st = await fsp.stat(abs); } catch (e) { continue; }
+        if (st.isDirectory && st.isDirectory()) {   // an in-jail symlinked DIRECTORY reads as a file in readdir
+          if (ent.name !== 'node_modules') await collectFiles(abs, rel, acc, stats, baseReal);
+          continue;
+        }
         stats.files++; acc.push({ rel, abs, mtimeMs: st.mtimeMs || 0 });
       }
     }
@@ -379,7 +393,7 @@
         const target = ({ grep: 'content', find: 'files' })[args.target] || args.target || 'content';
 
         const all = [], stats = { files: 0, truncated: false };
-        await collectFiles(abs, startPrefix, all, stats);
+        await collectFiles(abs, startPrefix, all, stats, await realpathOrSelf(base));
 
         // ---- target 'files': glob over names, newest first ----
         if (target === 'files') {
@@ -402,9 +416,18 @@
         } else if (ic) { const n = q.toLowerCase(); matcher = (line) => line.toLowerCase().indexOf(n) >= 0; }
         else { matcher = (line) => line.indexOf(q) >= 0; }
 
-        let globRe = null;
-        if (args.file_glob) { let fg = String(args.file_glob); if (fg.indexOf('/') < 0 && fg.charAt(0) !== '*') fg = '*' + fg; globRe = globToRe(fg, ic); }
-        const candidates = all.filter(f => !globRe || globRe.test(f.rel.split('/').pop()))
+        // file_glob was built from the FULL pattern but tested against the BASENAME only, so any path-shaped
+        // glob (e.g. "src/" + star + ".js") matched nothing and returned a clean "0 matches" — indistinguishable
+        // from "the text isn't there". Match on the same rule target:'files' already uses: a pattern containing
+        // a slash is a PATH pattern, everything else is a name pattern.
+        let globRe = null, globPath = false;
+        if (args.file_glob) {
+          let fg = String(args.file_glob);
+          globPath = fg.indexOf('/') >= 0;
+          if (!globPath && fg.charAt(0) !== '*') fg = '*' + fg;
+          globRe = globToRe(fg, ic);
+        }
+        const candidates = all.filter(f => !globRe || globRe.test(globPath ? f.rel : f.rel.split('/').pop()))
           .sort((a, b) => (a.rel < b.rel ? -1 : a.rel > b.rel ? 1 : 0));   // path order = deterministic, rg-like grouping
 
         const fileHits = [];   // { rel, idxs:[lineIdx…], lines:[…] }

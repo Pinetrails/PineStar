@@ -40,18 +40,24 @@
     }
     const t = typeOf(value);
     if (t === 'object') {
+      // OWN properties only. The `in` operator walks the PROTOTYPE CHAIN, so every Object.prototype key was
+      // treated as present/declared: {q:'x', toString:1} passed additionalProperties:false, and a required
+      // 'constructor' was satisfied by a property nobody supplied. Third-party MCP inputSchemas reach this
+      // validator verbatim, so the tightening matters beyond the built-ins. hasOwnProperty is called off
+      // Object.prototype so a payload carrying its own `hasOwnProperty` key can't shadow the check.
+      const has = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
       if (Array.isArray(schema.required)) {
         for (const k of schema.required) {
-          if (!(k in value) || value[k] === undefined) errors.push(path + '.' + k + ': required');
+          if (!has(value, k) || value[k] === undefined) errors.push(path + '.' + k + ': required');
         }
       }
       if (schema.properties) {
-        for (const k in schema.properties) {
-          if (k in value && value[k] !== undefined) check(schema.properties[k], value[k], path + '.' + k, errors);
+        for (const k of Object.keys(schema.properties)) {
+          if (has(value, k) && value[k] !== undefined) check(schema.properties[k], value[k], path + '.' + k, errors);
         }
       }
       if (schema.additionalProperties === false && schema.properties) {
-        for (const k in value) if (!(k in schema.properties)) errors.push(path + '.' + k + ': additional property not allowed');
+        for (const k of Object.keys(value)) if (!has(schema.properties, k)) errors.push(path + '.' + k + ': additional property not allowed');
       }
     }
     if (t === 'array' && schema.items) {
