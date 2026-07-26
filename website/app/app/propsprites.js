@@ -1151,14 +1151,11 @@ const PropSprites = (() => {
     px(x + 3, y, 2, 2, '#256032'); px(x + 3, y + 2, 1, 2, '#256032');       // west drooper over the rim
     px(x + 8, y, 2, 2, '#1f5228'); px(x + 9, y + 2, 1, 2, '#1f5228');       // east drooper
     px(x + 5, y - 3, 1, 1, '#1f5228'); px(x + 6, y, 1, 3, '#1f5228');       // stem shadows into the pot
-    px(x + 8, y + 7, 1, 2, '#56645c');                          // moisture probe
-    const wet = blink(2000, x);                                 // kept: probe heartbeat
-    px(x + 8, y + 7, 1, 1, wet ? '#2ee6c8' : '#1a3a34');
-    if (wet) bloom(x + 8, y + 7, 1, 1, '#2ee6c8', 0.22);
+    px(x + 8, y + 7, 1, 2, '#56645c');                          // moisture probe — a dead metal stake, never a lamp
+    px(x + 8, y + 7, 1, 1, '#3c4a46');                           // its unlit head, read by shape not by glow
   };
 
   F.cans = (x, y, w, h, f) => {   // v4 floor litter — aluminium takes a warm rim + a cold sky flank; stays LOW
-    const ph = (f && f.x) || 0;
     const AL = '#8a98a8', ALL = '#aab8c8', ALD = '#5a6878';
     // deck stains first — they ARE the floor, so they go under everything and get no shading
     px(x + 4, y + 5, 2, 1, '#3a4440'); px(x + 3, y + 6, 1, 1, '#3a4440');
@@ -1180,9 +1177,9 @@ const PropSprites = (() => {
     px(x + 9, y + 3, 1, 1, U.shade(ALL, 0.30));                 // pull tab
     px(x + 8, y + 5, 3, 2, '#16302a'); px(x + 9, y + 5, 1, 1, ACC.work);   // brand band + glyph
     px(x + 8, y + 8, 3, 1, ALD);
-    // a slow specular travelling the curved wall — the cheapest possible "this is metal, not plastic"
-    const g = 3 + Math.floor(((now / 1400 + ph) % 1) * 5);
-    px(x + 8, y + g, 1, 1, U.shade(ALL, 0.22));
+    // a specular pinned where the curve turns toward the key — it says "metal" by BEING there, not by moving.
+    // Sliding it down the can on a 1.4s loop implied either the light or the litter was in motion; neither is.
+    px(x + 8, y + 5, 1, 1, U.shade(ALL, 0.22));
     ctx.globalAlpha = 0.20; px(x + 7, y + 10, 5, 1, '#000'); ctx.globalAlpha = 1;
     // tipped can lying E-W, southwest — the dark open mouth is the read, not the body
     chamf(x, y + 7, 7, 4, LINE, 1);
@@ -1375,10 +1372,11 @@ const PropSprites = (() => {
     keyEdge(x + 4, y - 13, 2, 4, 0.14);                              // warm key down the sunward blades
     rimEdge(x + 9, y - 7, 1, 6, 0.14);                               // cool sky on the shade side of the tower
     px(x + 9, y + 2, 2, 2, '#1f5228'); px(x + 10, y + 4, 1, 2, '#1f5228');   // one tendril flopping over the rim
-    if (blink(1800, ph + x)) {                                       // bioluminescent bud (kept behaviour)
-      px(x + 5 + sway, y - 15, 1, 1, '#9dffe6');
-      bloom(x + 5 + sway, y - 15, 1, 1, '#2ee6c8', 0.34);
-    }
+    // NO status lamp. A blinking cyan "bioluminescent bud" floated one pixel clear of the tallest blade, so it
+    // read as a free-standing indicator light hovering over a houseplant. Emissive blinks are this station's
+    // TELEMETRY vocabulary (connector state, workbench pulse, cap surges) — spending it on a pot plant both
+    // lies about the object and dilutes the lamps that carry real state. The sway is the only motion a planter
+    // earns, because air handling is a mechanism that actually exists here.
   };
 
   F.banner = (x, y, w, h, f) => {   // v4 wall banner — hangs off the bulkhead; shallow, flush, never touches deck
@@ -1433,14 +1431,16 @@ const PropSprites = (() => {
     spill(x + 2, y + 6, 7, ACC.work, 0.14, 3);                       // its light pooling on the tank floor
     const sy = y + 3 - Math.floor(((now / 800) + ph + x) % 7);       // one spore drifting up (kept behaviour)
     px(x + 3 + Math.floor(((now / 1300) + ph + x) % 5), sy, 1, 1, '#7dffb0');
-    if (blink(2600, ph + x)) px(x + 8, y - 1, 1, 2, '#3a4a52');      // condensation streak on the east pane
-    px(x + 8, y - 3, 1, 1, blink(1400, ph + x) ? ACC.work : '#16302a');   // lid seal lamp (kept)
+    px(x + 8, y - 1, 1, 2, '#3a4a52');                               // condensation on the east pane — it sits, it
+    px(x + 8, y - 3, 1, 1, '#16302a');                               // does not flash. Seal fitting, unlit: the
+    // colony's own glow (the bloom + spore drift above) is this tank's life. A green seal LAMP on top of it was a
+    // second, fake voice claiming the lid had a sensor — keep the biology, drop the instrumentation.
   };
 
   /* ---- DECOR EXPANSION wave 2 (2026-07-15): grime + machinery + glow ---- */
 
   F.graffiti = (x, y, w, h, f) => {   // v4 deck tag — PURE paint in the ground plane, walk-over, zero rise
-    const ph = (f && f.x) || 0, G = '#2a7a4e', H = '#41ff8a', D = '#1d5236';
+    const G = '#2a7a4e', H = '#41ff8a', D = '#1d5236';
     // Paint lies IN the floor, so it is drawn WIDE and squat: anything that rises reads as a standing object
     // an agent then walks through. No contact shadow, no north overdraw, nothing above the deck.
     ctx.globalAlpha = 0.13; px(x + 1, y + 3, 10, 7, G); ctx.globalAlpha = 1;   // overspray haze
@@ -1458,7 +1458,7 @@ const PropSprites = (() => {
     keyEdge(x + 1, y + 3, 5, 1, 0.09);                              // the deck's own two-tone light, read
     rimEdge(x + 6, y + 9, 5, 1, 0.09);                              // through the paint rather than over it
     wear(x + 2, y + 3, 8, 7, 5, '#242c30');                         // deck scuff chewing the paint back
-    if (blink(2200, ph + x)) bloom(x + 4, y + 4, 4, 3, H, 0.07);    // faint phosphor shimmer, falls off
+    bloom(x + 4, y + 4, 4, 3, H, 0.05);                             // dried paint: a steady sheen, it does not shimmer
   };
 
   F.holopet = (x, y, w, h, f) => {   // v4 holo jellyfish — FLUSH deck emitter, walk-over; nothing solid at all
@@ -1588,8 +1588,7 @@ const PropSprites = (() => {
   };
 
   F.dartboard = (x, y, w, h, f) => {   // v4 wall board — a genuinely ROUND disc hung on the bulkhead, walk-past
-    const r = RAMP.gun, ph = (f && f.x) || 0;
-    const hot = blink(800, ph + x);
+    const r = RAMP.gun;
     // No A-frame, no feet, no contact shadow: this tile is walked THROUGH, so the board hangs clear of the deck.
     // ANCHOR: the disc is centred ON the placed tile with only the hook poking north — the sweep had the whole
     // board hanging a tile above the tile it was placed on.
@@ -1604,12 +1603,11 @@ const PropSprites = (() => {
       else if (d > 3.1) c = '#0c1013';                               // double-ring channel
       else if (d > 1.9) c = (Math.floor((Math.atan2(dy, dx) + Math.PI) / (Math.PI / 5)) % 2) ? '#8a7434' : '#1d2723';
       else if (d > 1.0) c = '#1f5228';                               // outer bull
-      else c = hot ? '#e0705c' : '#8c2f28';                          // the bull, pulsing
+      else c = '#8c2f28';                                            // the bull — painted cork, not a warning light
       px(p, q, 1, 1, c);
     }
     keyEdge(x + 2, y + 1, 4, 1, 0.20); keyEdge(x + 1, y + 2, 1, 3, 0.16);   // warm key on the NW of the disc
     rimEdge(x + 9, y + 7, 1, 3, 0.20); rimEdge(x + 6, y + 9, 4, 1, 0.16);   // cool sky bounce on the SE
-    if (hot) bloom(x + 5, y + 5, 2, 2, '#e0705c', 0.26);
     px(x + 2, y + 4, 3, 1, '#c8d4e0'); px(x + 1, y + 3, 1, 1, ACC.work);    // three stuck darts, lit flights
     px(x + 7, y + 2, 1, 2, '#c8d4e0'); px(x + 7, y + 1, 1, 1, ACC.data);
     px(x + 6, y + 8, 2, 1, '#c8d4e0'); px(x + 8, y + 9, 1, 1, ACC.flow);
@@ -1617,7 +1615,7 @@ const PropSprites = (() => {
   };
 
   F.rocketmodel = (x, y, w, h, f) => {   // v4 shelf model — chrome rocket in a display ring on a wall shelf
-    const r = RAMP.steel, ph = (f && f.x) || 0;
+    const r = RAMP.steel;
     // Walk-past tile: the model sits on a bulkhead shelf, so nothing in the silhouette touches the deck.
     px(x + 1, y + 3, 10, 2, LINE);
     px(x + 2, y + 3, 8, 1, r.top); keyEdge(x + 2, y + 3, 5, 1, 0.26);
@@ -1634,17 +1632,14 @@ const PropSprites = (() => {
     }
     keyEdge(x + 4, y - 7, 1, 6, 0.20); rimEdge(x + 7, y - 5, 1, 5, 0.22);   // warm key W, cool sky E
     px(x + 3, y - 3, 5, 1, '#a03448'); px(x + 3, y - 2, 5, 1, U.shade('#a03448', -0.45));   // hull band
-    px(x + 5, y, 1, 1, blink(2000, ph + x) ? ACC.data : '#101a1e');  // porthole with a cabin light
+    px(x + 5, y, 1, 1, '#101a1e');                                   // porthole = dark glass; nobody is aboard a toy
     px(x + 4, y - 10, 3, 1, '#a03448'); px(x + 5, y - 11, 1, 1, '#7a2434');   // nose cone
-    px(x + 5, y - 12, 1, 1, blink(600, ph + x) ? '#ff8a6a' : '#3a1418');      // beacon (kept)
-    if (blink(600, ph + x)) bloom(x + 5, y - 12, 1, 1, '#ff8a6a', 0.30);
+    px(x + 5, y - 12, 1, 1, '#7a2434');                              // beacon tip, PAINTED — an unpowered model
     px(x + 1, y - 2, 3, 4, LINE); px(x + 2, y - 1, 2, 3, '#a03448'); px(x + 2, y - 1, 1, 3, '#c05060');
     px(x + 8, y - 2, 3, 4, LINE); px(x + 8, y - 1, 2, 3, '#7a2434'); px(x + 9, y - 1, 1, 3, '#5a1a28');
-    px(x + 4, y + 1, 3, 1, '#0a0e11');                               // nozzle
-    if (flick(140, ph + x) > 0.2) {                                  // idle thruster flicker (kept)
-      px(x + 4, y + 2, 3, 1, '#ffd34a');
-      bloom(x + 4, y + 2, 3, 1, ACC.flow, 0.26);
-    }
+    px(x + 4, y + 1, 3, 1, '#0a0e11');                               // nozzle, cold — this rocket is bolted to a ring
+    // The "idle thruster flicker" burned amber exhaust out of a display model sitting in a stand on a wall
+    // shelf. Nothing here is flying: the object is a souvenir, so every emissive on it was fiction.
   };
 
   F.starchart = (x, y, w, h, f) => {   // v4 wall chart — a backlit framed sky, flush to the bulkhead, walk-past
@@ -1672,10 +1667,10 @@ const PropSprites = (() => {
       px(sx, sy, 1, 1, (i === 2) ? '#dff4ff' : ACC.data);
       if (i === 2) bloom(sx, sy, 1, 1, ACC.data, 0.34);              // one bright primary carries the read
     }
-    if (blink(160, ph + x)) px(x + 4, y + 4, 3, 1, '#1c4a5e');       // a joining line, weak-signal flicker
+    px(x + 4, y + 4, 3, 1, '#1c4a5e');                               // a joining line, drawn — not a 160ms strobe
     scanl(x + 3, y + 1, 6, 8, 0.16);
     bloom(x + 3, y + 1, 6, 8, ACC.data, 0.09);                       // backlight, falling off into the frame
-    px(x + 9, y + 9, 1, 1, blink(1400, ph + x) ? ACC.data : '#16302a');   // backlight lamp (kept eye behaviour)
+    px(x + 9, y + 9, 1, 1, U.shade(ACC.data, -0.30));                // power pip: the panel IS lit, so it stays lit
   };
 
   /* ---- DECOR EXPANSION wave 3 (2026-07-15): greenery + lounge ---- */
@@ -1734,7 +1729,7 @@ const PropSprites = (() => {
     px(x + 5, y + 10 + nod, 1, 2, '#12301e'); px(x + 7, y + 9 + nod, 1, 2, '#12301e');   // two slits
     px(x + 3, y + 9 + nod, 2, 1, '#5ec46e');
     keyEdge(x + 3, y + 9 + nod, 3, 1, 0.16); rimEdge(x + 11, y + 5, 1, 3, 0.18);
-    px(x + 8, y + 1, 1, 1, blink(2600, ph + x) ? '#2ee6c8' : '#1a3a34');    // moisture probe wink (kept)
+    px(x + 8, y + 1, 1, 1, '#1a3a34');                              // probe head, unlit — a planter has no telemetry
   };
 
   F.flytrap = (x, y, w, h, f) => {   // v4 shelf flytrap — three jaw heads on curling stalks; one snaps shut
@@ -3063,7 +3058,7 @@ const PropSprites = (() => {
     // CONTENT — one bold glyph and a text block. At 12px a poster gets exactly one idea.
     px(x + 4, y + 2, 4, 3, ACC.work); px(x + 5, y + 3, 2, 1, paper);   // ring logo glyph
     px(x + 4, y + 2, 1, 1, '#c7ffe0');
-    bloom(x + 4, y + 2, 4, 3, ACC.work, 0.14 + 0.05 * Math.sin(now / 900));   // kept pulse, now with falloff
+    bloom(x + 4, y + 2, 4, 3, ACC.work, 0.14);                  // ink on paper: it can catch light, never pulse
     px(x + 3, y + 6, 6, 1, '#9adcb0');                          // headline
     px(x + 3, y + 8, 5, 1, '#5f8a6c'); px(x + 3, y + 9, 6, 1, '#5f8a6c');   // body copy
     px(x + 8, y + 8, 1, 1, ACC.flow);                           // one accent tick
@@ -3768,7 +3763,7 @@ const PropSprites = (() => {
     cable(tx + 6, tb - 4, tx + 8, tb - 1, 1.2, '#6a6256');             // tag string off the top corner
     px(tx + 8, tb - 1, 2, 3, '#c9c2b0'); px(tx + 8, tb - 1, 2, 1, '#e4dcc8');   // the manifest tag itself
     px(tx + 8, tb + 1, 2, 1, '#8a8474');
-    if (blink(1400, x)) px(x + (cw >> 1), floorY - 11, 1, 1, U.shade('#fff4c8', -0.15));  // strap glint down the stack
+    px(x + (cw >> 1), floorY - 11, 1, 1, U.shade('#fff4c8', -0.35));   // strap buckle — a still stack cannot glint
     px(x + (cw >> 1) - 1, floorY, 3, 1, U.shade(RAMP.steel.face, -0.22));                 // base scuff
   };
 
@@ -3851,16 +3846,16 @@ const PropSprites = (() => {
       inset(bx, y + 4, 6, h - 8, U.shade(r.face, -0.20));             // bin recess
       px(bx + 1, y + 5, 4, 1, U.shade(r.face, 0.10)); keyEdge(bx + 1, y + 5, 3, 1, 0.13);
       px(bx + 2, y + 6, 2, 1, U.shade(r.face, -0.42));                // recessed pull
-      const lit = blink(700 + i * 90, i);                             // per-bin status label (kept)
-      px(bx + 1, y + h - 4, 3, 1, lit ? ACC.work : U.shade(ACC.work, -0.6));
-      if (lit) bloom(bx + 1, y + h - 4, 3, 1, ACC.work, 0.18);
+      // Label strips, not lamps. These were per-bin blinkers on staggered 700-970ms clocks — a wall of
+      // shelving strobing out of sync, asserting per-bin state the shelf has no way to know.
+      px(bx + 1, y + h - 4, 3, 1, U.shade(ACC.work, -0.45));
     }
     const bx2 = x + 2 + pull * 7;                                     // the pulled bin: proud lip + files glowing inside
     px(bx2 - 1, y + 3, 8, 1, LINE);
     px(bx2 - 1, y + 4, 8, 2, U.shade(r.face, 0.16)); px(bx2 - 1, y + 4, 8, 1, r.lit);
     keyEdge(bx2, y + 4, 6, 1, 0.20);
-    px(bx2, y + 6, 6, 1, blink(700) ? '#c7ffe0' : ACC.work);          // file edges catching the light
-    bloom(bx2, y + 6, 6, 1, ACC.work, 0.20 + 0.06 * Math.sin(now / 600));
+    px(bx2, y + 6, 6, 1, ACC.work);                                   // file edges catching the light — steadily
+    bloom(bx2, y + 6, 6, 1, ACC.work, 0.20);
     spill(bx2, y + 7, 6, ACC.work, 0.18, 3);
     px(bx2 - 1, y + 7, 8, 1, r.ao);
     px(x, y + h - 3, w, 1, r.ao);                                     // floor-line AO
@@ -4374,7 +4369,7 @@ const PropSprites = (() => {
     px(x + 2, y - 7, 3, 1, '#ffd9a0');                         // lit mouth of the shade, aimed down at the pillow
     bloom(x + 2, y - 7, 3, 1, KEY, 0.30);
     spill(x + 1, y - 1, 7, KEY, 0.20, 5);                      // warm pool falling down onto the pillow
-    glow(x + 4, y, 9, 4, '#ffd34a', 0.09 + 0.04 * Math.sin(now / 1300 + ph));   // slow lamp breathe (kept)
+    glow(x + 4, y, 9, 4, '#ffd34a', 0.11);                     // a reading lamp burns steady; it does not breathe
   };
 
   F.rug = (x, y, w, h, f) => {   // v4 lounge rug (4x3) — the station's biggest FLOOR DECAL. Zero rise, ever.
@@ -4441,9 +4436,9 @@ const PropSprites = (() => {
       px(x + 1, y + 4, 2, 5, '#4a1c1c'); px(x + 9, y + 4, 2, 5, '#4a1c1c');  // armrests
       px(x + 1, y + 4, 2, 1, '#5e2626'); px(x + 9, y + 4, 2, 1, '#5e2626');
       px(x + 1, y + 8, 2, 1, '#320e0e'); px(x + 9, y + 8, 2, 1, '#320e0e');
-      px(x + 2, y + 8, 1, 1, blink(800) ? ACC.alert : '#5a1a14');   // console button (kept)
+      px(x + 2, y + 8, 1, 1, '#5a1a14');                            // armrest stud, dark — a chair has no console
       px(x + 9, y + 5, 1, 2, '#1c0a0a');
-      bloom(x + 9, y + 5, 1, 2, ACC.alert, 0.22 + 0.10 * Math.sin(now / 600));   // throne power line (kept)
+      bloom(x + 9, y + 5, 1, 2, ACC.alert, 0.16);                   // steady piping glow, no fake power heartbeat
       px(x + 5, y + 2, 2, 1, '#8a6a2a'); px(x + 5, y + 2, 1, 1, '#b8924a');      // gold trim
       px(x + 5, y + 10, 2, 1, '#1c0a0a');
       return;
@@ -6802,8 +6797,9 @@ const PropSprites = (() => {
     px(x + 7, y + 3, 1, 2, '#39434b');                          // hazard tag on a string
     px(x + 6, y + 5, 3, 3, '#caa84a'); px(x + 6, y + 5, 3, 1, '#ffd34a');
     px(x + 7, y + 6, 1, 1, '#3a3020');
-    const gi = 2 + (Math.floor(now / 700) % (rows - 3));        // kept: chrome glint crawling up the west rail
-    bloom(x + 1 + xoAt(gi), foot - gi, 1, 1, '#eaf2f2', 0.18 + 0.16 * Math.sin(now / 1400));
+    // A specular is the ceiling strip reflected in the rail. Both the ladder and the strip are bolted down, so
+    // the highlight CANNOT crawl — it sat on a 700ms clock climbing 15 rungs, which read as a scanning sensor.
+    bloom(x + 1 + xoAt(9), foot - 9, 1, 1, '#eaf2f2', 0.20);        // one fixed catch mid-rail
     px(x + 1 + xoAt(rows - 4), foot - rows + 4, 1, 1, '#c9d4d4');   // fixed catch near the head
   };
   F.quarters_pooltable = (x, y, w, h, f) => {
@@ -6998,7 +6994,7 @@ const PropSprites = (() => {
     // doors, which at 3x is a fence rather than a locker bank. Now the CENTRE door hangs open with kit
     // spilling out (the silhouette break), the louvres are real slot-and-blade pairs instead of flat
     // scratches, and the crown carries stowed gear so the top isn't a bare shelf.
-    const r = RAMP.gun, ph = (f && f.x) || 0;
+    const r = RAMP.gun;
     shadow2(x + 1, y + h - 1, w - 2);
     for (const lx of [x + 2, x + (w >> 1) - 1, x + w - 5]) {  // three feet along the long footprint
       px(lx, y + 8, 3, 4, LINE); px(lx, y + 9, 1, 3, r.lit); px(lx + 1, y + 9, 1, 3, r.dk);
@@ -7052,7 +7048,7 @@ const PropSprites = (() => {
     px(dx1 + 3, y + 7, 4, 2, U.shade('#8f8674', -0.24));      // ... hanging past the sill, breaking the base line
     px(dx1 + 4, y + 9, 2, 1, U.shade('#8f8674', -0.44));
     px(dx1 + 1, y + 5, 1, 1, ACC.data);                       // a datachit forgotten on the shelf
-    bloom(dx1 + 1, y + 5, 1, 1, ACC.data, 0.20 + 0.08 * Math.sin(now / 800 + ph));
+    bloom(dx1 + 1, y + 5, 1, 1, ACC.data, 0.24);              // it is a dropped chit, not a device on standby
     px(dx1 - 4, y - 1, 4, 10, LINE);                          // the leaf, swung west across its neighbour
     px(dx1 - 3, y, 3, 8, U.shade(r.face, 0.22));
     px(dx1 - 3, y, 3, 1, U.shade(r.face, 0.38)); keyEdge(dx1 - 3, y, 3, 1, 0.22);
@@ -7060,11 +7056,11 @@ const PropSprites = (() => {
     px(dx1 - 3, y + 3, 1, 3, '#7d8a84');                      // handle riding round with the leaf
     ctx.globalAlpha = 0.26; px(dx1 - 6, y + 1, 2, 7, '#000'); ctx.globalAlpha = 1;   // the leaf's cast shadow
     px(x + 3, y + 5, 3, 2, '#b56a78'); px(x + 3, y + 5, 3, 1, '#c98592');    // door 0: worn pink sticker (kept)
-    // door 2: amber name-tag lamp, slow pulse (clock kept; moved off the door that now hangs open)
-    const tp = 0.45 + 0.35 * (0.5 + 0.5 * Math.sin(now / 1100 + ph));
+    // door 2: amber name-tag, BACKLIT AND STEADY. A name plate has nothing to report, so pulsing it was the
+    // locker bank pretending to be an instrument panel.
     inset(x + 27, y + 4, 5, 3, '#10161a');
     px(x + 28, y + 5, 3, 1, U.shade('#ffb84d', 0.10));
-    bloom(x + 28, y + 5, 3, 1, '#ffb84d', 0.30 + 0.30 * tp);
+    bloom(x + 28, y + 5, 3, 1, '#ffb84d', 0.48);
     spill(x + 27, y + 7, 5, '#ffb84d', 0.14, 3);
     px(x, y + 8, w, 1, r.ao);                                 // floor-line AO
     wear(x + 1, y + 1, w - 2, 6, 5, U.shade(r.face, -0.12));
