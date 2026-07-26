@@ -25,10 +25,12 @@
   'use strict';
 
   const str = (v) => (v == null ? '' : String(v));
-  const PROTECTED = { main: 1, master: 1, HEAD: 1, trunk: 1 };
+  // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
+  // silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
+  const PROTECTED = new Set(['main', 'master', 'head', 'trunk']);
 
   // never mutate a protected ref beyond branch creation. Case-insensitive.
-  function isProtectedRef(name) { return !!PROTECTED[str(name).trim().toLowerCase()]; }
+  function isProtectedRef(name) { return PROTECTED.has(str(name).trim().toLowerCase()); }
 
   // slugify a title into a branch-safe segment: lowercase, non-alphanumerics → '-', collapse, trim, cap length.
   function slugify(title) {

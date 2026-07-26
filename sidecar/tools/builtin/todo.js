@@ -17,8 +17,15 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const STATUSES = { pending: 1, in_progress: 1, completed: 1, cancelled: 1 };
+  /* EVERY lookup in this file is keyed by a MODEL-SUPPLIED string (a todo id, a status), so none of them may
+     be a bare object literal — `({})['constructor']` is truthy, and `byId[id]` for id 'constructor' resolves
+     to the global Object function. Measured before the fix: a todo with id "constructor" took the
+     update-an-existing-item branch, wrote its content and status onto `Object` ITSELF (Object.content =
+     'PWNED'), and was then dropped from the list — so the model asked for a task and got global mutation,
+     no task, and no error. A Set for membership; a null-prototype map for anything keyed by an id. */
+  const STATUSES = new Set(['pending', 'in_progress', 'completed', 'cancelled']);
   const MARK = { pending: '[ ]', in_progress: '[>]', completed: '[x]', cancelled: '[~]' };
+  const bag = () => Object.create(null);   // a map that cannot inherit a key from Object.prototype
   // Bounds: the list rides through context compaction (formatForInjection), so an oversized item or a
   // runaway count would defeat the very compression it survives. Generous vs real plans (a handful of items).
   const MAX_ITEMS = 256, MAX_CONTENT = 4000, TRUNC = '… [truncated]';
@@ -32,12 +39,12 @@
   function validate(t) {
     const id = String((t && t.id) != null ? t.id : '').trim() || '?';
     let status = String((t && t.status) || 'pending').trim().toLowerCase();
-    if (!STATUSES[status]) status = 'pending';
+    if (!STATUSES.has(status)) status = 'pending';
     return { id, content: capContent(t && t.content), status };
   }
   // collapse duplicate ids, keeping the LAST occurrence in its first position (parity with the reference harness)
   function dedupeById(todos) {
-    const lastIndex = {};
+    const lastIndex = bag();
     todos.forEach((t, i) => { const id = String((t && t.id) != null ? t.id : '').trim() || '?'; lastIndex[id] = i; });
     return Object.keys(lastIndex).map(k => lastIndex[k]).sort((a, b) => a - b).map(i => todos[i]);
   }
@@ -50,16 +57,16 @@
       items = dedupeById(todos).map(validate);
     } else {
       items = Array.isArray(current) ? current.map(validate) : [];
-      const byId = {}; items.forEach(it => { byId[it.id] = it; });
+      const byId = bag(); items.forEach(it => { byId[it.id] = it; });
       for (const raw of dedupeById(todos)) {
         const id = String((raw && raw.id) != null ? raw.id : '').trim();
         if (!id) continue;                                   // can't merge without an id
         if (byId[id]) {                                      // update only the fields the model actually sent
           if (raw.content) byId[id].content = capContent(raw.content);
-          if (raw.status) { const s = String(raw.status).trim().toLowerCase(); if (STATUSES[s]) byId[id].status = s; }
+          if (raw.status) { const s = String(raw.status).trim().toLowerCase(); if (STATUSES.has(s)) byId[id].status = s; }
         } else { const v = validate(raw); byId[id] = v; items.push(v); }   // new item -> append
       }
-      const seen = {};
+      const seen = bag();
       items = items.filter(it => (seen[it.id] ? false : (seen[it.id] = 1))).map(it => byId[it.id] || it);
     }
     if (items.length > MAX_ITEMS) items = items.slice(0, MAX_ITEMS);   // keep the highest-priority head
@@ -78,7 +85,7 @@
   }
 
   function render(items) {
-    return items.map(it => (MARK[it.status] || '[?]') + ' ' + it.id + '. ' + it.content + ' (' + it.status + ')').join('\n');
+    return items.map(it => (Object.prototype.hasOwnProperty.call(MARK, it.status) ? MARK[it.status] : '[?]') + ' ' + it.id + '. ' + it.content + ' (' + it.status + ')').join('\n');
   }
   function summarize(items) {
     const c = { pending: 0, in_progress: 0, completed: 0, cancelled: 0 };
@@ -94,7 +101,7 @@
     const items = listOf(store, aid).filter(it => it.status === 'pending' || it.status === 'in_progress');
     if (!items.length) return null;
     return '[Your active task list was preserved across context compaction]\n'
-      + items.map(it => '- ' + (MARK[it.status] || '[?]') + ' ' + it.id + '. ' + it.content + ' (' + it.status + ')').join('\n');
+      + items.map(it => '- ' + (Object.prototype.hasOwnProperty.call(MARK, it.status) ? MARK[it.status] : '[?]') + ' ' + it.id + '. ' + it.content + ' (' + it.status + ')').join('\n');
   }
 
   function makeTodoTool(deps) {

@@ -82,7 +82,17 @@
     if (action === 'ask' && opts.allowAsk !== false) return { allow: true, action, reason: scan.summary || 'requires review' };
     return { allow: false, action, reason: scan.summary || 'blocked by skill guard' };
   }
-  function worse(a, b) { return ORDER[a || 'safe'] >= ORDER[b || 'safe'] ? a : b; }
+  /* "take the WORSE of two risk levels" — which failed OPEN on anything it did not recognize. ORDER[unknown]
+     is undefined, and `undefined >= n` is FALSE, so an unrecognized level always LOST: worse('Dangerous',
+     'safe') returned 'safe', and so did any typo, casing difference, or level a newer scanner emits. An
+     unknown risk is the one thing that must never be treated as the safer option — rank it above every known
+     level so it wins, and normalize case so a spelling difference is not a downgrade. */
+  function rankOf(v) {
+    const k = String(v == null ? '' : v).trim().toLowerCase();
+    if (!k) return ORDER.safe;
+    return Object.prototype.hasOwnProperty.call(ORDER, k) ? ORDER[k] : Infinity;   // unknown = worst
+  }
+  function worse(a, b) { return rankOf(a) >= rankOf(b) ? a : b; }
 
   return { scanText, scanSkillRecord, shouldAllow, worse, TRUST };
 });

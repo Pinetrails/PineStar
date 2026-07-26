@@ -21,8 +21,10 @@
     : function (deps, file, data) { const f = deps.fs; const tmp = file + '.' + (typeof process !== 'undefined' ? process.pid : 'p') + '.tmp'; f.writeFileSync(tmp, data); f.renameSync(tmp, file); };
 
   const ID_RE = /^[A-Za-z0-9_-]{1,80}$/;
-  const TERMINAL = { done: 1, error: 1, refused: 1, interrupted: 1, stale: 1 };
-  const WATCH_EVENTS = { 'agent.run.start': 1, 'agent.run.end': 1, 'agent.run.error': 1, 'agent.cost': 1, 'checkpoint.created': 1, 'verify.result': 1, 'shell.exec': 1 };
+  // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
+  // silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
+  const TERMINAL = new Set(['done', 'error', 'refused', 'interrupted', 'stale']);
+  const WATCH_EVENTS = new Set(['agent.run.start', 'agent.run.end', 'agent.run.error', 'agent.cost', 'checkpoint.created', 'verify.result', 'shell.exec']);
 
   function safeId(id, label) {
     id = String(id || '');
@@ -106,7 +108,7 @@
       return records[i];
     }
     function appendEvent(id, name, payload) {
-      if (!WATCH_EVENTS[name]) return;
+      if (!WATCH_EVENTS.has(name)) return;
       const i = findIndex(id);
       if (i < 0) return;
       const r = records[i];
@@ -191,7 +193,7 @@
       if (leadId && rec.leadId !== String(leadId)) return { ok: false, error: 'subagent belongs to another lead' };
       const ac = controllers.get(id);
       if (ac) { try { ac.abort(); } catch (_) {} controllers.delete(id); }
-      if (TERMINAL[rec.status] && rec.status !== 'running') return { ok: true, alreadyDone: true, record: rec };
+      if (TERMINAL.has(rec.status) && rec.status !== 'running') return { ok: true, alreadyDone: true, record: rec };
       const next = patch(id, { status: 'interrupted', reason: 'interrupted', completedAt: now(), canResume: true });
       publishTask(next || rec, 'failed');
       return { ok: true, record: view(next || rec) };

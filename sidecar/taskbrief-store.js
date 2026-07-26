@@ -10,7 +10,9 @@ const Policy = require('./taskbrief-policy.js');
 
 const STORE_KEY = 'task-briefs';
 const CAP = 500;
-const STATES = { ready: 1, clarifying: 1, executing: 1, done: 1, cancelled: 1 };
+// Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
+// silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
+const STATES = new Set(['ready', 'clarifying', 'executing', 'done', 'cancelled']);
 
 function bounded(s, n) { return String(s == null ? '' : s).trim().slice(0, n); }
 function normalizeQuestion(q) {
@@ -30,7 +32,7 @@ function normalizeBrief(b) {
     id: bounded(x.id, 100), key: bounded(x.key, 160), streamId: bounded(x.streamId, 80),
     agentId: bounded(x.agentId || 'agent', 40), source: bounded(x.source || 'interactive', 24),
     originalDirective: bounded(x.originalDirective, 4000), currentInput: bounded(x.currentInput, 4000),
-    status: STATES[x.status] ? x.status : 'ready',
+    status: STATES.has(x.status) ? x.status : 'ready',
     questions: Array.isArray(x.questions) ? x.questions.map(normalizeQuestion).filter(Boolean).slice(-8) : [],
     assumptions: Array.isArray(x.assumptions) ? x.assumptions.map(v => bounded(v, 300)).filter(Boolean).slice(-12) : [],
     settled: x.settled && typeof x.settled === 'object' ? {

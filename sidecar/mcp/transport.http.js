@@ -20,10 +20,20 @@
 
   const JSONRPC = '2.0';
 
+  /* `/^127\./` was UNANCHORED, so it matched the public hostname `127.0.0.1.evil.com` — and this predicate is
+     the module's ONE guard ("refuse http:// for a non-local host, so a bearer token is never sent in
+     cleartext"). A connector URL of http://127.0.0.1.evil.com/mcp therefore shipped the Commander's OAuth
+     bearer over plaintext HTTP to whoever owns that domain. An IPv4 loopback literal is four numeric octets
+     and nothing else; anything with a trailing label is a NAME. Also folds the FQDN root label so
+     `localhost.` classifies the same as `localhost`, and recognizes the IPv4-mapped IPv6 form Node renders
+     for [::ffff:127.0.0.1]. */
   function isLoopback(host) {
     host = String(host).toLowerCase();
     if (host.charAt(0) === '[') host = host.slice(1, -1);
-    return host === 'localhost' || host === '::1' || /^127\./.test(host) || host.endsWith('.localhost');
+    else host = host.replace(/\.+$/, '');
+    if (host === 'localhost' || host === '::1' || host.endsWith('.localhost')) return true;
+    const m = host.match(/^(?:::ffff:)?(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);   // a LITERAL v4, whole-string
+    return !!m && Number(m[1]) === 127;
   }
 
   function assertUrl(raw) {

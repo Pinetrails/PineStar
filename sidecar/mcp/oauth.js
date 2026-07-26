@@ -56,14 +56,32 @@
   // private / cloud-metadata) by its literal hostname. redirect:'manual' turns any 3xx into a non-2xx the callers
   // already reject, so a metadata URL can't 302-bounce the fetch to an internal target. (Literal-host guard; if OAuth
   // is ever opened to user-provided — non-catalog — server URLs, add DNS-resolution guarding like tools/web.js.)
+  /* Four gaps, all reachable because these URLs come partly from a SERVER-supplied WWW-Authenticate pointer
+     and PRM body, and the token endpoint is where the authorization code is redeemed:
+       · a trailing-dot FQDN (`localhost.`) missed every NAME rule — WHATWG only strips the root label for IP
+         literals, so the name kept it;
+       · the IPv4-mapped IPv6 form ([::ffff:127.0.0.1], which Node renders as ::ffff:7f00:1) matched nothing;
+       · `.local` / `.internal` / the cloud-metadata names were absent, though 169.254.169.254 was covered;
+       · CGNAT 100.64.0.0/10 was absent.
+     The v4 patterns were also unanchored, so `10.example.com` classified as internal — harmless (fail-closed)
+     but wrong. An IPv4 literal is now matched whole-string and its octets compared numerically. */
   function assertSafeUrl(raw, label) {
     let u; try { u = new URL(raw); } catch (e) { throw new Error((label || 'oauth') + ': invalid url ' + raw); }
     if (u.protocol !== 'https:') throw new Error((label || 'oauth') + ': url must be https (' + raw + ')');
-    let h = u.hostname.toLowerCase(); if (h.charAt(0) === '[') h = h.slice(1, -1);
-    const internal = h === 'localhost' || h.endsWith('.localhost') || h === '::1' || h === '::' || h === '0.0.0.0'
-      || /^127\./.test(h) || /^0\./.test(h) || /^169\.254\./.test(h) || /^10\./.test(h) || /^192\.168\./.test(h)
-      || /^172\.(1[6-9]|2\d|3[01])\./.test(h) || /^fe80:/i.test(h) || /^f[cd][0-9a-f]{2}:/i.test(h);
-    if (internal) throw new Error((label || 'oauth') + ': refusing an endpoint on an internal host (' + h + ')');
+    let h = u.hostname.toLowerCase();
+    if (h.charAt(0) === '[') h = h.slice(1, -1); else h = h.replace(/\.+$/, '');
+    const v4 = h.match(/^(?:::ffff:)?(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    let privateV4 = false;
+    if (v4) {
+      const a = Number(v4[1]), b = Number(v4[2]);
+      privateV4 = a === 0 || a === 127 || a === 10 || (a === 192 && b === 168) || (a === 169 && b === 254)
+        || (a === 172 && b >= 16 && b <= 31) || (a === 100 && b >= 64 && b <= 127) || a > 255 || b > 255;
+    }
+    const internalName = h === 'localhost' || h === '0.0.0.0' || h.endsWith('.localhost') || h.endsWith('.local')
+      || h.endsWith('.internal') || h.endsWith('.lan') || h.endsWith('.intranet') || h.endsWith('.home')
+      || h.endsWith('.corp') || h === 'metadata.goog' || h.endsWith('.metadata.goog') || h.indexOf('.') < 0;
+    const internalV6 = h === '::1' || h === '::' || /^::ffff:/i.test(h) || /^fe[89ab][0-9a-f]:/i.test(h) || /^f[cd][0-9a-f]{2}:/i.test(h);
+    if (privateV4 || internalName || internalV6) throw new Error((label || 'oauth') + ': refusing an endpoint on an internal host (' + h + ')');
     return u;
   }
 

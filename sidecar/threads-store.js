@@ -33,7 +33,9 @@ const { makeDurableJsonStore } = require('./durable-store.js');
 const STORE_KEY = 'threads';
 const THREADS_CAP = 500;    // FIFO cap on live threads (oldest drop off if the ledger floods)
 const DECLINED_CAP = 1000;  // FIFO cap on the permanent declined-fingerprint denylist
-const STATES = { open: 1, picked: 1, delivered: 1, declined: 1 };
+// Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
+// silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
+const STATES = new Set(['open', 'picked', 'delivered', 'declined']);
 
 // a stable FINGERPRINT of an idea title — ported verbatim from suggeststore.js so reordered / padded restatements
 // of the same idea collapse to one key: lowercase, keep alphanumeric tokens >= 3 chars, unique, sorted, joined.
@@ -45,7 +47,7 @@ function fingerprint(title) {
 // normalize a stored/legacy/absent record into a full, safe shape (never throws on a partial file).
 function normalizeThread(t) {
   const s = (t && typeof t === 'object') ? t : {};
-  const state = STATES[s.state] ? s.state : 'open';
+  const state = STATES.has(s.state) ? s.state : 'open';
   return {
     id: String(s.id || ''),
     title: String(s.title == null ? '' : s.title).slice(0, 200),
@@ -163,7 +165,7 @@ function makeThreadsStore(deps) {
   // TRANSITION a thread's state (open→picked→delivered). Never resurrects a declined thread. now stamps updatedAt.
   function setState(id, state, now) {
     const key = String(id || '');
-    if (!key || !STATES[state] || state === 'declined') return Promise.resolve(null);
+    if (!key || !STATES.has(state) || state === 'declined') return Promise.resolve(null);
     let changed = null;
     return durable.update(STORE_KEY, (cur) => {
       const rec = normalize(cur);

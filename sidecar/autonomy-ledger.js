@@ -34,8 +34,10 @@
   // the known vocab — kept as ALLOW-lists so a garbage/foreign write can't poison the log, but tolerant: an
   // unknown source/kind is clamped to 'other'/'note' rather than dropped (we never want to LOSE a real decision
   // just because a new lane added a verb before this enum caught up — additive-friendly, like runstore's reason).
-  const SOURCES = { cron: 1, nightshift: 1, loop: 1, reflection: 1, channel: 1, other: 1 };
-  const KINDS = { fire: 1, skip: 1, defer: 1, act: 1, earn: 1, decline: 1, note: 1 };
+  // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
+  // silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
+  const SOURCES = new Set(['cron', 'nightshift', 'loop', 'reflection', 'channel', 'other']);
+  const KINDS = new Set(['fire', 'skip', 'defer', 'act', 'earn', 'decline', 'note']);
   const DEFAULT_LIMIT = 200;
   const STR_MAX = 200;            // a reason/binding is a short label, never a blob
   const DETAIL_KEYS_MAX = 20;     // a detail bag is small structured context, not a document
@@ -80,8 +82,8 @@
       e = e || {};
       const entry = {
         ts: num(e.ts) || clock.now(),
-        source: SOURCES[e.source] ? e.source : 'other',
-        kind: KINDS[e.kind] ? e.kind : 'note'
+        source: SOURCES.has(e.source) ? e.source : 'other',
+        kind: KINDS.has(e.kind) ? e.kind : 'note'
       };
       // optional identity / cause fields — only stored when present so a row stays compact.
       if (e.jobId != null && str(e.jobId)) entry.jobId = clampStr(e.jobId, STR_MAX);

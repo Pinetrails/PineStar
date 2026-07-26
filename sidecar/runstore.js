@@ -33,11 +33,13 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const REASONS = { done: 1, max_iters: 1, budget: 1, cancelled: 1, error: 1, refusal: 1 };
+  // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
+  // silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
+  const REASONS = new Set(['done', 'max_iters', 'budget', 'cancelled', 'error', 'refusal']);
   const DEFAULT_LIMIT = 200;        // a sane cap so list() never returns an unbounded history
   const TITLE_MAX = 120;
   const UNKNOWN_MODEL = '(unknown)';
-  const ARTIFACT_KINDS = { file: 1, image: 1, message: 1 };
+  const ARTIFACT_KINDS = new Set(['file', 'image', 'message']);
   const ARTIFACTS_MAX = 50;         // a run that writes 500 files still records a bounded row
   const ARTIFACT_STR_MAX = 260;     // classic MAX_PATH — a path/target is a display label, not a blob
   function num(v) { return (typeof v === 'number' && isFinite(v)) ? v : 0; }
@@ -50,7 +52,7 @@
     const out = [];
     for (const a of v) {
       if (out.length >= ARTIFACTS_MAX) break;
-      if (!a || typeof a !== 'object' || !ARTIFACT_KINDS[a.kind]) continue;
+      if (!a || typeof a !== 'object' || !ARTIFACT_KINDS.has(a.kind)) continue;
       const rec = { kind: a.kind };
       if (a.path != null && str(a.path)) rec.path = str(a.path).slice(0, ARTIFACT_STR_MAX);
       if (a.target != null && str(a.target)) rec.target = str(a.target).slice(0, ARTIFACT_STR_MAX);
@@ -84,7 +86,7 @@
       e = e || {};
       const entry = {
         runId: str(e.runId), agentId: str(e.agentId),
-        reason: REASONS[e.reason] ? e.reason : 'done',     // clamp to the known enum (matches agent.run.end)
+        reason: REASONS.has(e.reason) ? e.reason : 'done',     // clamp to the known enum (matches agent.run.end)
         turns: num(e.turns), tokens: num(e.tokens), usd: num(e.usd),
         title: str(e.title).slice(0, TITLE_MAX),
         streamId: str(e.streamId),     // H3.2: the run's workstream — joins this outcome row to its transcript (GET /api/transcript?stream=)

@@ -24,7 +24,9 @@
 
   const NAME_MAX = 80, SUMMARY_MAX = 280, CATEGORY_MAX = 80, BODY_MAX = 20000;
   const DEFAULT_MAX_PER_AGENT = 100, SUPPORT_FILE_MAX = 64000;
-  const STATES = { active: 1, stale: 1, archived: 1 };
+  // Sets, not object literals: `({a:1})['constructor']` is truthy, so an object-literal allowlist
+  // silently admits every Object.prototype key — and these keys come off persisted/model-supplied data.
+  const STATES = new Set(['active', 'stale', 'archived']);
   const ALLOWED_SUPPORT_DIRS = ['references', 'templates', 'scripts', 'assets'];
 
   function str(v) { return v == null ? '' : String(v); }
@@ -43,7 +45,7 @@
   }
   function stateOf(v) {
     const s = str(v || 'active').toLowerCase();
-    return STATES[s] ? s : 'active';
+    return STATES.has(s) ? s : 'active';
   }
   function cleanName(v) {
     const name = str(v).trim().replace(/\s+/g, ' ').slice(0, NAME_MAX);
