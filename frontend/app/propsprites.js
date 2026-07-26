@@ -1847,110 +1847,144 @@ const PropSprites = (() => {
     glow(x + 3, y + 10, w - 6, 2, cold, 0.07 + 0.03 * Math.sin(now / 900 + ph));  // faint cold wash on the deck
   };
 
-  F.pokertable = (x, y, w, h, f) => {
-    // v4 POKER (4x2) — TOP-BIAS OBLIQUE, and the deliberate OPPOSITE of F.quarters_pooltable on every
-    // axis they could otherwise be confused on: a genuine OVAL rail (row insets off a half-ellipse, not
-    // rr()'s corner nibble), padded black leather with brass studs, INDIGO felt, one turned pedestal on a
-    // splayed cross foot, and no overhead lamp at all — the light here is a low warm ambient the felt sits
-    // under, so the two tables never share a light either. Freestanding: no deckplate, no floor socket.
-    const ph = (f && f.x) || 0;
-    const rail = '#241c20', railLit = '#3a2d32', felt = '#1e2f5c', feltLit = '#2b4480';
-    const RH = 17, rtop = y - 3;
-    const inw = j => {                                        // rail row inset — a real oval end, 8px deep
-      const t = (j - (RH - 1) / 2) / ((RH - 1) / 2);
-      return Math.round(8 * (1 - Math.sqrt(Math.max(0, 1 - t * t))));
+  F.pokertable = (x, y, w, h) => {
+    // v5 POKER (4x2) — TOP-BIAS OBLIQUE. It stays the deliberate OPPOSITE of F.quarters_pooltable on the
+    // four axes v4 locked (oval vs rectangle · one pedestal vs four legs · studded black leather vs
+    // mahogany-and-diamonds · indigo under low ambient vs green under tungsten), but the art is rebuilt,
+    // because v4 lost the read completely — in-game it scanned as a monitor on a mic stand. Four causes:
+    //   1. The rail roll was EIGHT px deep on a 48px table, so felt — the one thing that says "card
+    //      table" — survived only as a slot. The roll is now a 4px PERPENDICULAR offset off a true
+    //      RACETRACK capsule (semicircular ends, straight sides), which is the plan shape of a real
+    //      poker table, and felt owns the top surface again.
+    //   2. The pedestal was drawn with U.shade(rail, +0.46). Lightening a NEAR-BLACK desaturates it
+    //      toward grey, so the base rendered as brushed steel under a black oval. Dark materials need
+    //      AUTHORED lit tones (LEA_MID/LEA_LIT below) — never a large positive shade().
+    //   3. Five near-white board cards, two seat stacks, a five-colour chip tray and four pot stacks all
+    //      landed inside the middle 20px and fused into one pale block. There are now exactly TWO bright
+    //      clusters (board, pot); the seats are gone and everything else is held under the felt's value.
+    //   4. There was no front face at all, so the oval floated. A short APRON now carries the table's
+    //      edge thickness down to the pedestal, per the top-bias oblique law.
+    // NEW: the betting line. A 1px cream racetrack ring printed on the felt is the cheapest unmistakable
+    // "poker" signifier there is and it costs no brightness — and it lets the composition be honest, with
+    // community cards INSIDE the line and the rail outside it, which is where they actually belong.
+    // STATIC by law: nothing here has a mechanism (no dealer, no motor, no emitter), so v4's river-flip
+    // clock, its blinking mid-toss chip and its pulsing "ambient" are gone — a lit room does not throb.
+    const LEA_DK = '#120d10', LEA = '#1e1519', LEA_MID = '#2b2025', LEA_LIT = '#3a2b31';
+    const feltDk = '#101c39', felt = '#1b2c55', feltLit = '#26406f';
+    const RH = 18, rtop = y - 4, R = (RH - 1) / 2;
+    // Racetrack capsule: horizontal inset of the outline lying `o` px (perpendicular) inside the rail's
+    // outer edge. Returns null on rows the shape does not reach, which is what lets the ring/band helper
+    // below know it is on a flat cap row.
+    // The +0.5 on the radius inside the root is not slop: with a true semicircular end the extreme row
+    // sits exactly on the pole, so its inset jumps 9px in one row and the outline breaks into a black
+    // staircase notch. Half a pixel of extra radius flattens the cap to a 6,4,2,1,1,0 ramp — the same
+    // oval, drawn as pixel art rather than as sampled geometry.
+    const cap = (o) => {
+      const rr = R - o;
+      return (j) => {
+        const dy = j - R;
+        if (Math.abs(dy) > rr) return null;
+        return o + Math.round(rr - Math.sqrt(Math.max(0, (rr + 0.5) * (rr + 0.5) - dy * dy)));
+      };
     };
-    shadow2(x + 6, y + h - 1, w - 12);
-    // ONE turned PEDESTAL on a splayed cross foot — drawn first so the rail overhangs it
+    // paint the band between two capsule offsets: the west run, the mirrored east run, or — on a row the
+    // inner capsule cannot reach — the full span, which is what closes the top and bottom of a ring.
+    // A colour may be a function of the row, which is how the roll takes the key on its north crown and
+    // stays in shadow on the south one under a single high light.
+    const band = (o0, o1, cWest, cEast) => {
+      const a = cap(o0), b = cap(o1);
+      const cw = typeof cWest === 'function' ? cWest : () => cWest;
+      const ce = cEast == null ? cw : (typeof cEast === 'function' ? cEast : () => cEast);
+      for (let j = 0; j < RH; j++) {
+        const i0 = a(j); if (i0 == null) continue;
+        const i1 = b(j);
+        if (i1 == null) { px(x + i0, rtop + j, w - i0 * 2, 1, cw(j)); continue; }
+        const t = Math.max(1, i1 - i0);
+        px(x + i0, rtop + j, t, 1, cw(j));
+        px(x + w - i1, rtop + j, t, 1, ce(j));
+      }
+    };
+    const north = (j) => j < R;                              // which half of the roll the light reaches
+    const outer = cap(0), inner = cap(4);
     const pcx = x + (w >> 1);
-    chamf(pcx - 11, y + 20, 22, 4, LINE, 3);
-    chamf(pcx - 10, y + 21, 20, 3, U.shade(rail, 0.26), 2);
-    px(pcx - 9, y + 21, 18, 1, U.shade(rail, 0.46)); keyEdge(pcx - 8, y + 21, 8, 1, 0.16);
-    px(pcx - 10, y + 23, 20, 1, '#0a0d10');
-    rimEdge(pcx + 8, y + 21, 1, 2, 0.18);
-    underAO(pcx - 8, y + 19, 16, 2);
-    px(pcx - 5, y + 11, 10, 10, LINE);
-    px(pcx - 4, y + 12, 8, 8, U.shade(rail, 0.30));
-    px(pcx - 4, y + 12, 8, 1, U.shade(rail, 0.54)); keyEdge(pcx - 4, y + 12, 4, 1, 0.18);
-    px(pcx - 4, y + 13, 1, 7, U.shade(rail, 0.42)); px(pcx + 3, y + 13, 1, 7, U.shade(rail, 0.04));
-    rimEdge(pcx + 3, y + 13, 1, 7, 0.20);
-    for (let i = 0; i < 3; i++) px(pcx - 3, y + 14 + i * 2, 6, 1, U.shade(rail, 0.16));   // turned collars
-    // PADDED OVAL RAIL
+    shadow2(pcx - 12, y + h - 1, 24);
+    // PEDESTAL — drawn first so the apron and the rail overhang it. The stack under the bed reads in three
+    // steps: apron (the table's own edge thickness) -> turned column -> splayed cross foot. v4 had none of
+    // the first two, which is why its oval hovered over a stand instead of being a table.
+    chamf(pcx - 12, y + 20, 24, 4, LINE, 3);                   // splayed cross foot
+    chamf(pcx - 11, y + 21, 22, 3, LEA_MID, 2);
+    px(pcx - 10, y + 21, 20, 1, LEA_LIT); keyEdge(pcx - 10, y + 21, 8, 1, 0.16);
+    px(pcx - 11, y + 23, 22, 1, '#0a0d10');
+    rimEdge(pcx + 9, y + 21, 1, 2, 0.16);
+    underAO(pcx - 9, y + 19, 18, 2);
+    px(pcx - 5, y + 14, 10, 8, LINE);                          // turned column, tucked up under the apron
+    px(pcx - 4, y + 15, 8, 6, LEA_MID);
+    px(pcx - 4, y + 15, 1, 6, LEA_LIT); keyEdge(pcx - 4, y + 15, 1, 4, 0.20);
+    px(pcx + 3, y + 15, 1, 6, LEA_DK); rimEdge(pcx + 3, y + 16, 1, 4, 0.18);
+    px(pcx - 3, y + 17, 6, 1, LEA); px(pcx - 3, y + 19, 6, 1, LEA);   // turned collars
+    // APRON — narrow, so it reads as the boss under the bed and not as a shelf the table is standing on
+    const ax = pcx - 10, aw = 20;
+    chamf(ax - 1, y + 14, aw + 2, 4, LINE, 2);
+    chamf(ax, y + 15, aw, 3, LEA, 1);
+    px(ax + 1, y + 15, aw - 2, 1, LEA_MID); keyEdge(ax + 2, y + 15, 7, 1, 0.14);
+    px(ax + 1, y + 17, aw - 2, 1, '#0a0d10');
+    // PADDED OVAL RAIL — silhouette halo, base roll, then the roll modelled as three concentric bands:
+    // outer wall, lit crown, inner slope falling to the felt.
     for (let j = -1; j <= RH; j++) {
-      const i = inw(Math.max(0, Math.min(RH - 1, j)));
+      const i = outer(Math.max(0, Math.min(RH - 1, j)));
       px(x + i - 1, rtop + j, w - i * 2 + 2, 1, LINE);
     }
+    band(0, 4, LEA);                                           // the roll's body
+    band(0, 1, (j) => north(j) ? LEA_MID : LEA_DK, LEA_DK);    // outer wall
+    band(1, 2, (j) => north(j) ? LEA_LIT : LEA_MID,            // the crown of the padding — 1px, and the
+              (j) => north(j) ? LEA_MID : LEA);                // south crown never takes the full key
+    band(3, 4, LEA_DK);                                        // inner slope, dropping into the bed
+    keyEdge(x + 12, rtop + 1, 14, 1, 0.16);                    // the key lands on the north-west crown
+    for (let i = 0; i < 6; i++) {                              // brass upholstery studs — the leather's tell
+      px(x + 11 + i * 5, rtop + 1, 1, 1, '#6e5830');
+      px(x + 11 + i * 5, rtop + RH - 2, 1, 1, '#3f331d');
+    }
+    // FELT BED — an inner capsule, ringed by the rail's shadow and lit from the north-west
     for (let j = 0; j < RH; j++) {
-      const i = inw(j);
-      px(x + i, rtop + j, w - i * 2, 1, rail);
-      px(x + i, rtop + j, 1, 1, railLit);
-      px(x + w - i - 1, rtop + j, 1, 1, U.shade(rail, -0.36));
-      rimEdge(x + w - i - 1, rtop + j, 1, 1, 0.18);            // cool sky bounce round the shade side of the roll
+      const i = inner(j); if (i == null) continue;
+      px(x + i - 1, rtop + j, w - i * 2 + 2, 1, feltDk);       // rail shadow ringing the bed
+      px(x + i, rtop + j, w - i * 2, 1, felt);
+      const lw = Math.round((w - i * 2) * (0.86 - (j - 4) / 6));  // NW nap, falling off to the south-east
+      if (lw > 0) px(x + i, rtop + j, lw, 1, feltLit);
+      if (j >= 11) px(x + i, rtop + j, w - i * 2, 1, U.shade(felt, -0.20));   // bed darkens into the near rail
     }
-    px(x + 8, rtop, w - 16, 1, U.shade(railLit, 0.22)); keyEdge(x + 9, rtop, 12, 1, 0.26);   // padded crown
-    px(x + 8, rtop + RH - 1, w - 16, 1, U.shade(rail, -0.44));                                // roll's near shade
-    for (let i = 0; i < 9; i++) {                              // brass upholstery studs — the leather's tell
-      px(x + 8 + i * 4, rtop + 1, 1, 1, '#a8894a');
-      px(x + 8 + i * 4, rtop + RH - 2, 1, 1, '#6d5a33');
-    }
-    // FELT BED — an inner oval, lit from the north-west
-    const FH = 11, ftop = y;
-    const finw = j => {
-      const t = (j - (FH - 1) / 2) / ((FH - 1) / 2);
-      return 6 + Math.round(9 * (1 - Math.sqrt(Math.max(0, 1 - t * t))));
-    };
-    for (let j = 0; j < FH; j++) {
-      const i = finw(j);
-      px(x + i - 1, ftop + j, w - i * 2 + 2, 1, U.shade(felt, -0.48));   // rail shadow ringing the bed
-      px(x + i, ftop + j, w - i * 2, 1, felt);
-      if (j < 4) px(x + i, ftop + j, Math.max(1, w - i * 2 - j * 6), 1, feltLit);
-    }
-    px(x + 16, ftop, w - 32, 1, U.shade(feltLit, 0.18));       // nap sheen along the back arc
-    // DEALER'S CHIP TRAY recessed into the north rail — nothing on a pool table looks like this
-    inset(x + 19, rtop + 1, 11, 4, '#12100e');
+    // NO betting line. It was tried and cut: the felt is ten rows deep, so an inner ring degenerates into
+    // two long horizontal bars across the bed that out-shout the cards — and the racetrack read is already
+    // carried, completely, by the rail's own silhouette.
+    // THE BOARD — five community cards, inside the betting line where they belong. Two rules earn the
+    // read at 48px. (1) Cards are BONE, never white — v4's #f0ece0 blew the felt out of the composition.
+    // (2) NO per-card outline: at a 4px pitch the LINE boxes butt together into one continuous black
+    // strip and the board turns into a filmstrip. The dark felt is already the separator; each card gets
+    // only its own drop shadow, and the gap between them stays felt.
+    const cy = y + 2;
     for (let i = 0; i < 5; i++) {
-      const c = ['#a8442e', '#2f5f8f', '#c9b05a', '#6a6f78', '#3d7a52'][i];
-      px(x + 20 + i * 2, rtop + 2, 2, 2, U.shade(c, -0.20));
-      px(x + 20 + i * 2, rtop + 2, 2, 1, U.shade(c, 0.20));
+      const cxp = x + 14 + i * 4;
+      px(cxp, cy + 1, 3, 4, feltDk);                           // the card's shadow, cast south-east
+      px(cxp, cy, 2, 4, '#9c9583');
+      px(cxp, cy, 2, 1, '#b2ab98');
+      // one pip each, alternating suit colour and riding a different row per card — five identical faces
+      // in a row read as piano keys, and the variation costs nothing
+      px(cxp, cy + 1 + (i % 3 ? 1 : 0), 1, 1, i % 2 ? '#8e3040' : '#1a1e22');
     }
-    // the board, dealt across the middle; the river turns over on the long clock (kept 3000ms)
-    const cy = y + 4, riverUp = ((now / 3000) + ph * 0.2) % 1 < 0.5;
-    for (let i = 0; i < 5; i++) {
-      const cxp = x + 15 + i * 4, up = i < 4 || riverUp;
-      px(cxp - 1, cy - 1, 5, 6, LINE);
-      if (up) {
-        px(cxp, cy, 3, 4, '#ded9cc'); px(cxp, cy, 3, 1, '#f0ece0');
-        px(cxp, cy + 1, 1, 1, i % 2 ? '#a03448' : '#161a1e');
-        px(cxp + 1, cy + 2, 1, 1, i % 2 ? '#c05468' : '#2a3138');
-      } else {
-        px(cxp, cy, 3, 4, '#2b3f66'); px(cxp, cy, 3, 1, '#3d568a');
-        px(cxp + 1, cy + 1, 1, 2, '#1c2b48');                   // patterned back
-      }
-      px(cxp, cy + 4, 3, 1, U.shade(felt, -0.38));              // card shadow
+    // THE POT — three chip stacks east of the board: the second bright cluster, and the only warm one
+    for (let s = 0; s < 3; s++) {
+      const pxx = x + 35 + s * 3, hgt = [3, 4, 2][s], base = y + 6;
+      const c = s === 1 ? '#8e4433' : '#a08a4e';
+      px(pxx, base - hgt + 1, 3, hgt, feltDk);
+      px(pxx, base - hgt, 2, hgt, U.shade(c, -0.16));
+      px(pxx, base - hgt, 2, 1, U.shade(c, 0.26));
+      px(pxx, base - 1, 2, 1, U.shade(c, -0.40));
     }
-    // two seats in play: hole cards face down, a short stack in front of each
-    for (const sx0 of [x + 7, x + w - 12]) {
-      px(sx0, y + 6, 3, 4, '#2b3f66'); px(sx0, y + 6, 3, 1, '#3d568a');
-      px(sx0 + 2, y + 5, 3, 4, '#24365a'); px(sx0 + 2, y + 5, 3, 1, '#354c7c');
-      for (let s = 0; s < 3; s++) {
-        const c = ['#a8442e', '#2f5f8f', '#c9b05a'][s];
-        px(sx0 + s * 2, y + 2, 2, 3 - s, U.shade(c, -0.18));
-        px(sx0 + s * 2, y + 2, 2, 1, U.shade(c, 0.22));
-      }
-    }
-    // THE POT — four real stacks in the middle, tall enough to read as a pile at 3x
-    for (let s = 0; s < 4; s++) {
-      const pxx = x + 22 + (s % 2) * 4, pyy = y + 9 - (s >> 1) * 2, hgt = 2 + (s & 1);
-      const c = s % 2 ? '#c9b05a' : '#a8442e';
-      px(pxx, pyy - hgt, 3, hgt, U.shade(c, -0.14));
-      px(pxx, pyy - hgt, 3, 1, U.shade(c, 0.30));
-      px(pxx, pyy - 1, 3, 1, U.shade(c, -0.38));
-    }
-    if (blink(1600, ph)) { px(x + 20, y + 3, 2, 1, '#e8d488'); px(x + 20, y + 4, 2, 1, '#a8894a'); }  // a chip mid-toss (kept)
-    px(x + 12, y + 9, 2, 2, '#ded9cc'); px(x + 12, y + 9, 2, 1, '#f0ece0');   // dealer button
-    // LIGHT: no pendant here on purpose. A low warm ambient sits on the bed and the pot pulls the eye.
-    glow(x + 14, y + 1, w - 28, 9, '#ffb84d', 0.07 + 0.03 * Math.sin(now / 1900 + ph));
-    bloom(x + 22, y + 4, 7, 5, '#ffd34a', 0.10);
+    px(x + 10, y + 5, 3, 2, feltDk);
+    px(x + 10, y + 4, 2, 1, '#b0a996'); px(x + 10, y + 5, 2, 1, '#7d7768');   // dealer button, west of the board
+    // LIGHT: no pendant here on purpose (that silhouette belongs to the pool table). What lands on the
+    // felt is the room's own low warm ambient — steady, because the room's lamps are steady.
+    glow(x + 10, y + 1, w - 20, 7, '#ffb84d', 0.05);
     spill(x + 12, rtop + RH, w - 24, KEY, 0.09, 3);            // room light catching under the rail's overhang
   };
 
