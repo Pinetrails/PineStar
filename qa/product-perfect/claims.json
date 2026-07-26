@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "1b8e4fbe6860d652eb7d1d349c5cf64e7cbf3b49",
+    "sourceCommit": "53a6b2d431d7f1ac7ad6ea09d08d4da74649add6",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 286573,
-        "sha256": "30779fca313e68a488ba6aafacc396d7fb8d5800382d7d1f5d34e0b89f707c18"
+        "bytes": 287139,
+        "sha256": "6d55569f698c02541eb3fd678bf0c4437e38acb3d25caad40696b06b3a8ed920"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -123,8 +123,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 114861,
-        "sha256": "ded33910a50abe5dea8de23cc0e79239b8bc9efa560c21f8a852aa65cf04e43a"
+        "bytes": 115245,
+        "sha256": "58a2cef2674466cfbde40198b0f4db499c73aa69edf94cfdfa18e76fdfe74a02"
       },
       {
         "path": "frontend/app/channels.js",
@@ -443,8 +443,8 @@
       },
       {
         "path": "frontend/app/propsprites.js",
-        "bytes": 526800,
-        "sha256": "a55e288d1295c365850edb89ee1f5e4e74c11089893ea1f4451e187b925f6da3"
+        "bytes": 528623,
+        "sha256": "dd3d4aa2c1b86cde79583ffcdb8dae2780175e3c3100c2b03b9781af20e09b4e"
       },
       {
         "path": "frontend/app/prospect.js",
@@ -813,13 +813,13 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 467282,
-        "sha256": "54759972d3f9f45daa3051643da7b5e72d387c3e024f4767add7d08814b1d29b"
+        "bytes": 469261,
+        "sha256": "2f43822ff6f8069824ea3f6214b420ab7143e03cdb1a777fa3c4f3d157fdb84b"
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 70335,
-        "sha256": "957d4c09ae19937c4fefe53053f24afe2a1f1dd6db1e6d2dbeb55e2b10aeb89c"
+        "bytes": 74489,
+        "sha256": "f41e98419e7bf6ba5c2a6227b9df133f27ad97cfdb06d8cedc321ec89b4061ab"
       },
       {
         "path": "frontend/app/xp.js",
