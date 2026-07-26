@@ -125,8 +125,15 @@
   }
 
   function pickReason(status, code, low, err, ctx) {
-    // 1. content / policy (most specific intent)
-    if (/content[ _]?policy|moderation|flagged|safety|content_filter/.test(low)) return 'content_policy_blocked';
+    /* 1. content / policy (most specific intent) — but a TRANSPORT status wins over a text match.
+       This ran against the whole message before the status was consulted, so any retryable failure whose
+       text merely CONTAINED one of these words was rewritten as a fatal policy block: a 503 naming
+       `openai/omni-moderation-latest`, a 429 on a "safety" tier, a 500 from a content_filter component.
+       The classifier then reported retryable:false / shouldFallback:false and the loop killed the run
+       instead of retrying or failing over — and agent.run.error.transient lied about why. A real policy
+       refusal never arrives as 429/5xx; it comes as 400/403/422 or with no status at all. */
+    const transportStatus = status === 429 || (status >= 500 && status < 600) || status === 408;
+    if (!transportStatus && /content[ _]?policy|moderation|flagged|safety|content_filter/.test(low)) return 'content_policy_blocked';
     // 2. HTTP status
     if (status) {
       if (status === 401 || status === 403) return 'auth';

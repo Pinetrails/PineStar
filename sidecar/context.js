@@ -260,9 +260,25 @@
     const keepTail = opts.keepTail || 6;
     const estimateTokens = opts.estimateTokens || defaultEstimate;
 
+    /* COUNT THE TOOL CALLS. This summed `content` alone — but in an agentic loop the tool-call ARGUMENTS are
+       routinely the largest thing on the wire (an fs.write turn carries the whole file body), and they live on
+       `tool_calls`, not `content`. A 40KB write turn estimated at 32 tokens against ~10,000 real ones: a 300x
+       undercount that made fit() overshoot its budget and agent.compact report a fabricated `removed`.
+       ONE per-message rule, used by BOTH estimateMessages and fit — the two had their own inline arithmetic,
+       which is how they came to disagree in the first place. */
+    function estimateMessage(m) {
+      let t = estimateTokens(m && m.content) + MSG_OVERHEAD;
+      if (m && Array.isArray(m.tool_calls)) {
+        for (const c of m.tool_calls) {
+          const fn = (c && c.function) || {};
+          t += estimateTokens(fn.name) + estimateTokens(fn.arguments) + MSG_OVERHEAD;
+        }
+      }
+      return t;
+    }
     function estimateMessages(messages) {
       let t = 0;
-      for (const m of messages) t += estimateTokens(m && m.content) + MSG_OVERHEAD;
+      for (const m of messages) t += estimateMessage(m);
       return t;
     }
 
@@ -295,7 +311,7 @@
       let budget = maxTokens - estimateMessages(prefix.concat([newest]));
       const middle = [];
       for (let j = rest.length - 2; j >= 0; j--) {
-        const t = estimateTokens(rest[j] && rest[j].content) + MSG_OVERHEAD;
+        const t = estimateMessage(rest[j]);   // same rule as estimateMessages — tool_calls included
         if (budget - t < 0) break;
         budget -= t;
         middle.unshift(rest[j]);

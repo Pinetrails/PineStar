@@ -5475,18 +5475,25 @@ function handleBudgetStatus(req, res) {
   // caps: the EFFECTIVE (persisted-or-env) values the UI edits; `overrides` marks which were saved (vs env default),
   // so the Budget panel can show "env default" honestly. spentToday/lifetime are the real ledger reads the floor HUD
   // + cost tests already consume — never re-parsed in the frontend.
-  res.end(JSON.stringify(Object.assign({
+  /* ORDER MATTERS. budget.status() ALSO returns a `caps` key — the governor's pool-only shape
+     ({agent,day,global}) — and it was spread LAST, so it silently replaced the {perRun,perAgent,perDay,global}
+     object this route documents and the panel edits. Every consumer reading caps.perRun got undefined
+     (stationui.js carries an explicit workaround comment for exactly this). Spread the governor FIRST so the
+     documented shape wins, and expose its pool view under its own `pools` key instead of losing it. */
+  const governor = budget.status(now);
+  res.end(JSON.stringify(Object.assign({}, governor, {
     caps: {
       perRun: effectiveCaps.perRun, perAgent: effectiveCaps.perAgent,
       perDay: effectiveCaps.perDay, global: effectiveCaps.global
     },
+    pools: governor.caps,                             // the governor's own {agent,day,global} view, kept honestly
     saved: Object.assign({}, budgetOverrides),        // only the keys the user explicitly saved
     envDefaults: { perRun: BUDGET_CAPS.perRun, perAgent: BUDGET_CAPS.perAgent, perDay: BUDGET_CAPS.perDay, global: BUDGET_CAPS.global },
     perRun: effectiveCaps.perRun,                     // back-compat: pre-existing flat field kept
     spentToday: ledger.usdForDay(now),
     lifetime: ledger.totalUsd(),
     totalUsd: ledger.totalUsd(), runs: ledger.count()
-  }, budget.status(now))));
+  })));
 }
 /* ---- GET /api/credits — the managed-credit STORE surface (balance + recent history + the external purchase URL).
    HONESTY LAW: 404s when managed credits are NOT configured, so the frontend renders no STORE card and shows no

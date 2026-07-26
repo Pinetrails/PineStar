@@ -316,7 +316,14 @@
       const prefix = working.slice(0, i);
       const plan = context.planCompaction(working.slice(i));
       if (!plan.older.length) return false;                               // nothing safely foldable yet (no paid call)
-      const beforeTokens = (lastUsage && (lastUsage.prompt_tokens || lastUsage.promptTokens)) || context.estimateMessages(messages);
+      /* MEASURE BOTH SIDES WITH THE SAME RULER. `before` used to be the provider's real prompt_tokens while
+         `after` is a local estimate, so `removed` mixed two units: the emitted agent.compact reported a
+         fabricated saving (truthful-telemetry law), and `savings` below sat near 1.0 forever, which meant the
+         anti-thrash breaker — "two folds in a row that each freed <10% -> stop compacting" — could never fire
+         and a degraded run kept paying for a summarizer call every single turn. The provider's count is the
+         honest one for DECIDING to compact (shouldCompact still uses it); for measuring what a fold SAVED,
+         both ends must come from the same estimator. */
+      const beforeTokens = context.estimateMessages(messages);
       let r;
       try { r = summarize ? await summarize(plan.older, prevSummary) : ''; }   // prevSummary => the summarizer MERGE-updates it (H5.2)
       catch (e) { if (++compactionFails >= 2) compactionOff = true; lastUsage = null; return false; }   // summarizer threw -> skip
