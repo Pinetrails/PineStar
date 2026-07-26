@@ -22,10 +22,13 @@ Every loop obeys AGENTS.md (worktree protocol) and appends a terse dated digest 
 | L8 | Security Sweep | security-sweep.md | weekly | own worktree | leaked secrets/PII, unsafe surfaces |
 | L9 | Perfectionist | perfectionist.md | self-paced | own worktree | un-mapped/imperfect surface (drives the Station Atlas to `perfected`) |
 | L10 | Dogfood | dogfood.md | daily / self-paced (RC-soak driver) | own worktree | seam bugs that only appear when the product is USED like a real user (recruit→assign→interrupt→restart→open); the reason Andrew is the first tester |
+| L11 | Red→Green Closer | red-green-closer.md | self-paced (per open finding) | own worktree | the gap between DETECTED and FIXED — fans repair agents at one red finding and crowns only the patch a script proved on a clean tree |
 
 ## Priority if running fewer sessions
 Minimum viable set: **L1 + L3** (nothing merges wrong, nothing stays broken).
 Add **L2 + L6** next (honesty + adversarial depth). L4/L5/L7/L8 are the daily/weekly tier.
+**L11 is the only loop that repairs** — it is worth running the moment L3 has a standing red,
+and pointless when the ledger is empty.
 
 ## Rules common to every loop (read before executing any file)
 1. **Grep trunk first.** Before "fixing" anything from a plan/audit/memory claim, grep trunk
