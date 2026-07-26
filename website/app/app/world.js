@@ -288,7 +288,9 @@ const World = (() => {
   let placeCd = 0;
   const agentDecor = [];   // ids of decor THIS agent placed — the ONLY props it will ever move or remove
   const ownPlaced = new Set();   // every id it has EVER placed — so it never grieves its own artifacts (survives the agentDecor splice)
-  const AGENT_DECOR = ['plant', 'coffee', 'cans', 'poster'];   // 1x1, blocks:false (never obstructs the agent or the Commander)
+  // 1x1, blocks:false (never obstructs the agent or the Commander), and FLOOR-placeable: an agent picks
+  // its own tile, so anything needing a wall behind it or a table under it can never be on this list.
+  const AGENT_DECOR = ['plant', 'coffee', 'monstera'];
   const specOf = t => (typeof PropSprites !== 'undefined' && PropSprites.spec) ? PropSprites.spec(t) : null;
   const dirToward = (fx, fy, tx, ty) => (Math.abs(tx - fx) > Math.abs(ty - fy)) ? (tx > fx ? 'east' : 'west') : (ty > fy ? 'south' : 'north');
 
@@ -3389,8 +3391,20 @@ const World = (() => {
         // share one seatPy ((couch.y+h)*T-2), so any sitter's seatPy+1 places the couch in front of them all.
         const sitter = (agent && agent.seated && agent.usingProp === p.id) ? agent
           : crew.find(b => b.seated && b.usingProp === p.id);
-        const sy = sitter ? sitter.seatPy + 1 : (p.y + (p.h || 1)) * T;
-        items.push({ y: sy, draw: () => PropSprites.draw(p, work, live) });
+        let sy = sitter ? sitter.seatPy + 1 : (p.y + (p.h || 1)) * T;
+        // MOUNT LIFT, resolved per FRAME rather than stored on the prop: a table-top prop only rides the
+        // table while the table is actually under it. Reclaim the table and the prop drops back to the
+        // deck instead of floating — which is why no saved station ever needs migrating for this.
+        const mspec = (PropSprites.spec && PropSprites.spec(p.t)) || null;
+        let mounted = null;
+        if (mspec && mspec.mount === 'surface' && station && station.surfaceHostOf) {
+          if (station.surfaceHostOf(p)) mounted = 'surface';
+        }
+        // a table-top object must draw AFTER its table: both occupy the same tiles, so their sort keys are
+        // equal and array order would decide it — which is whichever the player happened to place first
+        if (mounted === 'surface') sy += 0.5;
+        const dp = mounted ? Object.assign({}, p, { mount: mounted }) : p;
+        items.push({ y: sy, draw: () => PropSprites.draw(dp, work, live) });
         // an ASSIGNED workstation is the hero's desk with another name: give it the same chair, in front,
         // y-sorted exactly like the hero's (one row below the desk) so its agent reads as sitting IN it. Scoped
         // to assigned PCs so a decorative/unmanned console keeps its existing look and the chair only ever

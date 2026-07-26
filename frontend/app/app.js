@@ -2393,6 +2393,15 @@ const App = (() => {
     // the canonical station the builder edits — restored from the save, or a fresh starter room. LOAD it
     // BEFORE World.start() so the first painted frame renders THIS agent's floor — a NEW AGENT must never
     // flash the previous agent's built station (start() paints synchronously off the live geo/cache).
+    // MOUNT RULES: teach the station model which prop types hang on a wall / stand on a table, and which
+    // types ARE tables. The model deliberately never imports the catalog, so this injection is the single
+    // seam between the two — installed before the station exists so the very first placement is validated.
+    if (typeof PropSprites !== 'undefined' && WorldModel.setPropRules) {
+      WorldModel.setPropRules((t) => {
+        const s = PropSprites.spec(t);
+        return s ? { mount: s.mount || null, surface: !!s.surface } : null;
+      });
+    }
     station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();
     pendingStationDoc = null;
     // THE OVERSEER'S DESK IS A REAL PROP: materialize the starter workstation the world used to merely
