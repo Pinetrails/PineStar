@@ -514,6 +514,40 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
 }
 
+// ---- EFFECTIVE APPROVAL POSTURE (2026-07-26 audit finding E): a worker shares the LEAD's consent broker, so a
+//      worker whose OWN roster identity says "FULL ACCESS — never wait for a go-ahead" was lying to it whenever the
+//      lead was in ask mode (every write actually paused). The delegated prompt must state the EFFECTIVE posture,
+//      after (and explicitly superseding) the identity's own clause. ----
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([['engineer', { system: 'E-SYS\n\nAPPROVAL — FULL ACCESS: run your tools directly.' }]]);
+  const mk = posture => makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), approvalPosture: posture });
+
+  await mk('ask').dispatchTool.run({ workers: [{ agentId: 'engineer', prompt: 'p' }] }, { agentId: 'lead', emit: () => {} });
+  const askSys = ro.calls[0].system;
+  A.ok(/E-SYS/.test(askSys), "the worker keeps its own composed roster identity");
+  A.ok(/DELEGATED APPROVAL/.test(askSys), 'a delegated worker is told its EFFECTIVE approval posture');
+  A.ok(/SUPERSEDES ANY APPROVAL SECTION ABOVE/.test(askSys), "the note explicitly overrides the identity's own clause");
+  A.ok(/ASK FIRST/.test(askSys), "an ask-mode lead's worker is told to expect approval pauses");
+  A.ok(askSys.indexOf('DELEGATED APPROVAL') > askSys.indexOf('APPROVAL — FULL ACCESS'), 'the effective posture lands AFTER the identity clause (later wins)');
+
+  await mk('full').dispatchTool.run({ workers: [{ agentId: 'engineer', prompt: 'p' }] }, { agentId: 'lead', emit: () => {} });
+  const fullSys = ro.calls[1].system;
+  A.ok(/FULL ACCESS\. Run your tools directly/.test(fullSys), "a full-access lead's worker is told to act without asking");
+  A.ok(!/ASK FIRST/.test(fullSys), 'no contradictory ask-first instruction on the full-access path');
+
+  // a host that wires NO posture stays byte-identical to the pre-fix prompt (back-compat for bare unit callers)
+  await mk(undefined).dispatchTool.run({ workers: [{ agentId: 'engineer', prompt: 'p' }] }, { agentId: 'lead', emit: () => {} });
+  A.eq(ro.calls[2].system, 'E-SYS\n\nAPPROVAL — FULL ACCESS: run your tools directly.', 'no posture wired -> the identity is passed through untouched');
+}
+
+// the host's own posture thunk must be wired at the call site (the tool cannot read the roster itself)
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+  A.ok(/approvalPosture: \(\) => \(FULL_ACCESS \|\| \(\(agentRoster\.get\(agentId\) \|\| \{\}\)\.approvalMode === 'full'\)\) \? 'full' : 'ask'/.test(src),
+    'the run host wires the EFFECTIVE (lead) approval posture into makeOrchestrationTools');
+}
+
 A.report('orchestration.test');
 
 })();

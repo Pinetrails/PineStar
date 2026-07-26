@@ -8683,6 +8683,11 @@ async function runOnce(o) {
     classes: SPECIALIST_CLASSES,   // Class Loadouts S1: the summon-tool class list, composed from the shared catalog (no hardcoded prose)
     selfSystem: system,   // team.spawn clones the LEAD's OWN base identity into each ephemeral subagent (Meeseeks)
     taskContext: taskContextBlock,   // workers inherit settled task decisions without re-questioning the Commander
+    // A worker shares the LEAD's consent broker (see the `consent` note below), so its own roster APPROVAL clause is
+    // the wrong one whenever the two postures differ. Hand orchestration the EFFECTIVE posture so the delegated
+    // prompt states what will actually happen. A thunk read off the live roster: computed at dispatch time, and
+    // deliberately NOT reusing `agentFullAccess` (declared further down) so this stays order-independent.
+    approvalPosture: () => (FULL_ACCESS || ((agentRoster.get(agentId) || {}).approvalMode === 'full')) ? 'full' : 'ask',
     perWorker: ORCH_PER_WORKER, workerMaxIters: ORCH_WORKER_MAX_ITERS, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS,   // minutes, not the 30s fast-tool cap (see constant)
     // Cross-provider dispatch: resolve a WORKER's own roster provider to the station's server-held credential

@@ -62,8 +62,28 @@
     // string when absent → a spawned subagent still runs, just without an inherited persona.
     const selfSystem = (typeof deps.selfSystem === 'string') ? deps.selfSystem : '';
     const taskContext = (typeof deps.taskContext === 'string') ? deps.taskContext.trim() : '';
+    // The EFFECTIVE approval posture of a delegated run — 'full' | 'ask' — read from the host as a thunk so it
+    // reflects the live roster at dispatch time. A worker SHARES the lead's consent broker (see runWorker), so the
+    // posture baked into its own roster identity ("APPROVAL — FULL ACCESS…" / "ASK FIRST…") is the WRONG one
+    // whenever the two differ: an engineer the Commander granted full access, dispatched by an ask-mode overseer,
+    // was told "never wait for a go-ahead" while every write actually paused for a prompt. Truthful telemetry
+    // applies to the prompt too, so the effective posture is appended LAST and explicitly supersedes it.
+    const approvalPosture = () => {
+      const v = (typeof deps.approvalPosture === 'function') ? deps.approvalPosture() : deps.approvalPosture;
+      return v === 'full' ? 'full' : (v === 'ask' ? 'ask' : '');
+    };
+    function postureNote() {
+      const p = approvalPosture();
+      if (!p) return '';   // host wired no posture -> byte-identical to the pre-2026-07-26 prompt
+      return '\n\n[DELEGATED APPROVAL — THIS SUPERSEDES ANY APPROVAL SECTION ABOVE] You are running as a delegated '
+        + 'worker, so you inherit the LEAD agent\'s approval posture, not your own: '
+        + (p === 'full'
+          ? 'FULL ACCESS. Run your tools directly — do not pause to ask, and never request approval in text.'
+          : 'ASK FIRST. Writes, commands, and network calls are shown to the Commander for approval when you call the '
+            + 'tool — so still just make the tool call, but expect a pause, and carry on without it if it is declined.');
+    }
     function workerSystem(base) {
-      const identity = String(base || '');
+      const identity = String(base || '') + postureNote();
       if (!taskContext) return identity;
       return identity + '\n\n' + taskContext
         + '\n\n[DELEGATED EXECUTION] Treat the task context above as settled input from the Commander. Do not ask the Commander another discovery question. If a truly blocking gap remains, report that gap to the lead agent.';
