@@ -83,6 +83,9 @@
       { capId: 'web', tool: 'browser.viewport', scope: 'execute', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.screenshot', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.network', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.inspect', scope: 'read', requiresConsent: false, network: true },
+      // Page eval is consent-gated AND refused outright on the signed-in station profile (see browser.js).
+      { capId: 'web', tool: 'browser.eval', scope: 'execute', requiresConsent: true, network: true },
       { capId: 'web', tool: 'browser.tabs', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.tab_select', scope: 'execute', requiresConsent: false, network: true },
       // consent-gated: these change page/form state, post a file, or destroy a tab.

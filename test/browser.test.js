@@ -71,8 +71,8 @@ function fakeDriver() {
   const names = B.tools.map(t => t.name).sort();
   A.eq(names, [
     'browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.drag',
-    'browser.forward', 'browser.get_text', 'browser.hover', 'browser.login', 'browser.navigate',
-    'browser.network',
+    'browser.eval', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect',
+    'browser.login', 'browser.navigate', 'browser.network',
     'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot',
     'browser.tab_close', 'browser.tab_select', 'browser.tabs',
     'browser.test_input', 'browser.test_navigate', 'browser.test_snapshot', 'browser.test_state',
@@ -606,6 +606,45 @@ function fakeDriver() {
     A.eq(after.length, 1, 'a detached tab drops out of the list');
     A.eq(after[0].active, true, 'and the driver falls back to the original tab rather than a dead session');
     await d.close();
+  }
+
+  // ---- PAGE EVAL IS GATED ON WHICH PROFILE IS LIVE ------------------------------------------
+  // The loopback-only gate cost real capability (computed style, data-*, shadow DOM). Lifting it
+  // outright is not safe either: browser.login puts REAL signed-in sessions in the persistent
+  // profile, so arbitrary eval THERE plus web_request is an account-takeover primitive. The line is
+  // not "eval is dangerous", it is "eval is dangerous where the credentials are".
+  {
+    const ephemeral = fakeDriver();
+    ephemeral.evalPublic = async e => ({ ok: true, value: 'ran:' + e });
+    ephemeral.usingPersistentProfile = () => false;
+    const E = makeBrowserTools({ driver: ephemeral });
+    const out = await E.tools.find(t => t.name === 'browser.eval').run({ expression: '1+1' }, {});
+    A.ok(/ran:1\+1/.test(out.content), 'eval RUNS on the ephemeral profile — there are no credentials to steal there');
+
+    const signedIn = fakeDriver();
+    signedIn.evalPublic = async () => { throw new Error('should never reach the driver'); };
+    signedIn.usingPersistentProfile = () => true;
+    const S2 = makeBrowserTools({ driver: signedIn });
+    await rejects(S2.tools.find(t => t.name === 'browser.eval').run({ expression: 'document.cookie' }, {}),
+      /refused|signed-in station profile/i, 'eval is REFUSED while the signed-in station profile is live');
+    await rejects(S2.session.evalPublic('document.cookie'), /cookies and storage/i,
+      'and the refusal says WHY, and names the tools that do work there');
+
+    A.eq(E.tools.find(t => t.name === 'browser.eval').requiresConsent, true, 'eval is consent-gated even when allowed');
+    A.eq(E.tools.find(t => t.name === 'browser.inspect').requiresConsent, false, 'inspect is a read, so it is not consent-gated');
+
+    // inspect must work REGARDLESS of profile - it is the whole point of having a bounded reader.
+    const insp = fakeDriver();
+    insp.usingPersistentProfile = () => true;
+    insp.inspect = async () => ({ ok: true, tag: 'button', role: '', text: 'Buy', disabled: true, checked: null,
+      box: { x: 1, y: 2, w: 3, h: 4 }, styles: { display: 'none' }, attrs: { id: 'buy' }, data: { sku: 'X1' },
+      shadow: [{ tag: 'input', type: 'text', text: '' }] });
+    const I = makeBrowserTools({ driver: insp });
+    const ins = await I.tools.find(t => t.name === 'browser.inspect').run({ ref: (await I.session.snapshot())[0].ref }, {});
+    A.ok(/display=none/.test(ins.content), 'inspect reports computed style — the concrete thing the eval gate cost');
+    A.ok(/sku=X1/.test(ins.content), 'inspect reports data-* attributes');
+    A.ok(/shadow DOM controls/.test(ins.content), 'inspect reaches into shadow DOM');
+    A.ok(/DISABLED/.test(ins.content), 'inspect explains why a control will not respond');
   }
 
   // ---- IFRAME TRAVERSAL ----------------------------------------------------------------------
