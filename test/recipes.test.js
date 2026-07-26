@@ -441,4 +441,17 @@ const oAlone = R.rankRecipes(items, { launches: { 'summarize': { n: 0, rated: { 
 const oCold = R.rankRecipes(items, { score: () => 0, goalText: '', limit: 5 });
 A.eq(oAlone.map(r => r.id).join(','), oCold.map(r => r.id).join(','), 'ratings without launches do not flip anySignal (cold-start spread unchanged)');
 
+/* THE SINK MUST NEVER EMPTY THE SHELF. First-session shape: no profile affinity, no goal text, ONE recipe
+   launched and rated 👎. anySignal flips on the launch, but the negative outcome term scores every candidate
+   <= 0 — so the positive filter finds nothing. The row must fall back to the honest cold-start spread, never
+   render blank (marketplace.js drops the whole "FOR YOU" section on an empty return, so honest feedback would
+   silently delete the flagship shelf). */
+const sinkAll = R.rankRecipes(items, { launches: { 'summarize': { n: 1, rated: { great: 0, ok: 0, miss: 1 } } }, score: () => 0, goalText: '', limit: 5 });
+A.ok(sinkAll.length === 5, 'an all-negative signal still fills the FOR-YOU row (never a blank shelf): got ' + sinkAll.length);
+A.eq(sinkAll.map(r => r.id).join(','), oCold.map(r => r.id).join(','), 'the all-sunk case falls back to the SAME honest cold-start spread');
+// …and the sink still works whenever anything positive survives (the honest-sink law above is unchanged).
+const sinkSome = R.rankRecipes(items, { launches: { 'summarize': { n: 2, rated: { miss: 3 } }, 'fix-bug': { n: 2 } }, score: () => 0, goalText: '', limit: 4 });
+A.ok(!sinkSome.some(r => r.id === 'summarize'), 'a miss-heavy recipe still sinks OUT while a positive one survives');
+A.eq(sinkSome[0].id, 'fix-bug', 'the surviving positive recipe still leads the row');
+
 A.report('recipes');

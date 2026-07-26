@@ -162,7 +162,10 @@ const ProspectStore = (() => {
       if (cache) {
         cache.usage = cache.usage || { launches: {} };
         const cur = cache.usage.launches[recipe.id];
-        cache.usage.launches[recipe.id] = { name: recipe.name || (cur && cur.name) || '', n: (cur && cur.n || 0) + 1, lastAt: now() };
+        // `rated` RIDES THROUGH: a launch never erases the outcome counters (the same law Scout.noteLaunch holds
+        // server-side). Dropping them here made the local mirror disagree with the server until the next refresh,
+        // silently zeroing the outcome term that rankRecipes had just used to rank this very recipe.
+        cache.usage.launches[recipe.id] = { name: recipe.name || (cur && cur.name) || '', n: (cur && cur.n || 0) + 1, lastAt: now(), rated: (cur && cur.rated) || { great: 0, ok: 0, miss: 0 } };
       }
       api('/api/scout/telemetry', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ kind: 'recipe.launch', id: recipe.id, name: recipe.name || '' }) }).catch(() => {});
     } catch (_) {}

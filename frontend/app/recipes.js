@@ -657,11 +657,17 @@
       return { r, idx, s: aff * 4 + goal * 2 + use + outcomeScore(r.id) };
     });
     if (anySignal) {
-      return scored
+      const top = scored
         .filter(x => x.s > 0)
         .sort((a, b) => (b.s - a.s) || (a.idx - b.idx))
         .slice(0, limit)
         .map(x => x.r);
+      // …unless the SINK TOOK EVERYTHING. The outcome term is negative-heavy on purpose, so a station whose only
+      // engagement on record is a 👎 (launched one recipe, rated it miss — the exact first-session shape: no
+      // profile affinity, no goal text) scores every candidate <= 0 and this filter returns NOTHING. The caller
+      // renders no row at all, so honest feedback would DELETE the FOR YOU shelf. Fall through to the cold-start
+      // spread instead: "nothing has earned the row yet" is the same honest state as never having launched one.
+      if (top.length) return top;
     }
     // honest cold-start fallback: a category spread (first recipe of each distinct category, catalog order), topped
     // up with the next recipes in order if there aren't enough distinct categories to fill the row.
