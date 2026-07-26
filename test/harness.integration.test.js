@@ -131,7 +131,13 @@ const fixture = {
   for (const n of resolved.deferred) A.ok(resolved.tools.indexOf(n) >= 0, 'a deferred tool is still granted: ' + n);
   A.ok(resolved.deferred.indexOf('tool.search') < 0, 'tool.search is never itself deferred — the finder cannot be the thing that must be found');
   A.ok(resolved.deferred.indexOf('browser.navigate') < 0, 'the core browsing path stays advertised');
-  A.ok(resolved.deferred.indexOf('browser.screenshot') >= 0, 'the browser long tail is deferred');
+  // Measured with real models (2026-07-26): deferring browser.screenshot made gpt-4.1-mini report a
+  // screenshot it never took. A headline capability the model may CLAIM to have performed stays advertised;
+  // only the specialist tail is deferred.
+  A.ok(resolved.deferred.indexOf('browser.screenshot') < 0, 'a headline capability is never deferred (fabrication risk)');
+  A.ok(resolved.deferred.indexOf('browser.vision') < 0, 'nor the other half of "look at the page"');
+  A.ok(resolved.deferred.indexOf('browser.network') >= 0, 'the specialist tail IS deferred');
+  A.ok(resolved.deferred.indexOf('browser.upload') >= 0, 'and so is the rest of it');
 
   const deferredNames = new Set(resolved.deferred);
   const coreNames = resolved.tools.filter(n => !deferredNames.has(n));

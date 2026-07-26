@@ -9018,7 +9018,12 @@ async function runOnce(o) {
      still what the gate consults — but only the core list is advertised in every request. The deferred wire
      defs are handed to the loop and stay out of the request until tool.search reveals one. Measured at the
      wire, the full list was 37.7KB = 59.7% of every request, re-sent every turn. */
-  const deferredNames = new Set(resolved.deferred || []);
+  // KILL SWITCH. Deferral is model-dependent in a way byte counts are not: a model that does not think to
+  // search loses the capability outright, and a weak one may claim it did the work anyway. SKYNET_TOOL_SEARCH=0
+  // advertises everything, exactly as before this feature — the escape hatch for an operator whose model is
+  // one of those, and the A/B control for measuring whether deferral (rather than the model) caused a miss.
+  const deferralOff = String((process.env && process.env.SKYNET_TOOL_SEARCH) || '').trim() === '0';
+  const deferredNames = new Set(deferralOff ? [] : (resolved.deferred || []));
   const coreNames = resolved.tools.filter(n => !deferredNames.has(n));
   const toolDefs = isTask ? registry.wireFormat(registry.list(new Set(coreNames))) : [];
   const deferredToolDefs = isTask ? registry.wireFormat(registry.list(deferredNames)) : [];
@@ -9222,6 +9227,21 @@ async function runOnce(o) {
     ? '\n\n[HARNESS] You are running in a REAL agent harness on the Commander\'s machine, at a workstation with '
       + 'these LIVE tools: ' + wireNames.join(', ') + '. '
       + 'Actually use the listed tools when relevant; never claim a listed tool is unavailable. '
+      /* THE LIST IS PARTIAL, AND THE MODEL HAS TO BE TOLD SO HERE. tool_search's own description says it, but a
+         model plans from the tool LIST, not from the descriptions of tools it has not decided to call — so
+         that is the one place it will never look. Measured against real models on a task needing one deferred
+         tool: Sonnet 4.5 searched and succeeded, but gpt-4.1-mini never searched and then CLAIMED it had taken
+         the screenshot, and gemini-2.5-flash reported the capability did not exist. Silence here turns a byte
+         saving into a capability regression on weaker models, and into a fabricated result on one of them —
+         hence the explicit count (vague "more tools exist" reads as boilerplate) and the explicit ban on
+         claiming unfinished work. Cheap: this rides the CACHED prefix, the schemas it replaces did not. */
+      + (deferredToolDefs.length
+        ? 'This list is PARTIAL: ' + deferredToolDefs.length + ' more granted tools are not shown, including extra '
+          + 'browser controls (screenshots, tabs, network inspection, file upload, form selects) and local UI test controls. '
+          + 'Call tool_search with a plain description of the capability you want ("take a screenshot", "upload a file") '
+          + 'to load them; anything it returns becomes callable immediately. You MUST search before saying you cannot '
+          + 'do something, and you must never report an action as done that you had no tool to perform. '
+        : '')
       + taskDoctrineNote
       + (wireNames.indexOf('routine_create') >= 0
         ? 'When the Commander asks for a cron, routine, scheduled/recurring task, reminder, or standing job, use routine_create/routine_list in StarNet ROUTINES; do not use shell_exec, crontab, Windows Task Scheduler, Python scripts, or OS schedulers. '

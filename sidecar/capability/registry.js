@@ -80,7 +80,13 @@
       { capId: 'web', tool: 'browser.snapshot', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.get_text', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.console', scope: 'read', requiresConsent: false, network: true, deferred: true },
-      { capId: 'web', tool: 'browser.vision', scope: 'read', requiresConsent: false, network: true, deferred: true },
+      // NOT deferred, and this was measured rather than reasoned. "Show me the page" is a headline request,
+      // and a model that cannot see the tool does not always go looking: with browser.screenshot deferred,
+      // gpt-4.1-mini never searched and then REPORTED TAKING A SCREENSHOT IT NEVER TOOK; with the same tool
+      // advertised it called it and reported honestly. A byte saving that buys a fabricated result is not a
+      // saving. vision rides the same rule — it is the other half of "look at the page".
+      // The line: defer SPECIALIST tools, never a headline capability the model may claim it performed.
+      { capId: 'web', tool: 'browser.vision', scope: 'read', requiresConsent: false, network: true },
       // requiresConsent:false is NOT a free pass — browser.login runs its OWN two-phase live consent
       // (open-window ask + done-wait) inside the tool; the generic broker card would double-prompt.
       { capId: 'web', tool: 'browser.login', scope: 'execute', requiresConsent: false, network: true, deferred: true },
@@ -96,7 +102,7 @@
       { capId: 'web', tool: 'browser.forward', scope: 'execute', requiresConsent: false, network: true, deferred: true },
       { capId: 'web', tool: 'browser.hover', scope: 'execute', requiresConsent: false, network: true, deferred: true },
       { capId: 'web', tool: 'browser.viewport', scope: 'execute', requiresConsent: false, network: true, deferred: true },
-      { capId: 'web', tool: 'browser.screenshot', scope: 'read', requiresConsent: false, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.screenshot', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.network', scope: 'read', requiresConsent: false, network: true, deferred: true },
       { capId: 'web', tool: 'browser.inspect', scope: 'read', requiresConsent: false, network: true, deferred: true },
       // Page eval is consent-gated AND refused outright on the signed-in station profile (see browser.js).
