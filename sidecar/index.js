@@ -9137,11 +9137,16 @@ async function runOnce(o) {
         });
       } catch (_) {}
     }
-    // TAINT OBSERVATION — content the Commander did not author has now entered this run's context, so the
-    // grants that would let injected text act are revoked from here on (see `taintedBy`). Latched on the FIRST
-    // such result and never cleared: context is cumulative, so a later "clean" tool does not un-read the page.
-    // Only a SUCCESSFUL result with actual content counts — a failed fetch put nothing in front of the model.
-    if (!taintedBy && r && !r.isError && typeof r.content === 'string' && r.content.length && revokedByTaint.isSource(liveTool)) {
+    /* TAINT OBSERVATION — content the Commander did not author has now entered this run's context, so the
+       grants that would let injected text act are revoked from here on (see `taintedBy`). Latched on the FIRST
+       such result and never cleared: context is cumulative, so a later "clean" tool does not un-read the page.
+       ERRORS COUNT TOO. This used to require `!r.isError` on the reasoning that "a failed fetch put nothing in
+       front of the model". That holds for web_fetch (it throws a bare `http <status>`, never the body) but is
+       FALSE for an MCP connector: its failure text IS the third-party server's payload, and registry.dispatch
+       puts it verbatim into the tool_result the model reads. So `isError: true` was a one-flag bypass that let
+       a hostile connector inject text while the run kept its terminal / credentialed / connector-write powers.
+       What actually matters is whether untrusted BYTES reached the context, not whether the call succeeded. */
+    if (!taintedBy && r && typeof r.content === 'string' && r.content.length && revokedByTaint.isSource(liveTool)) {
       taintedBy = c.name;
     }
     // observe BEFORE the tool-output budget clip below, so the collector parses the tool's REAL result text.

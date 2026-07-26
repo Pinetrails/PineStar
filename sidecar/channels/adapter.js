@@ -151,7 +151,13 @@
         if (m.mediaGroupId != null && m.mediaGroupId !== '') im.mediaGroupId = String(m.mediaGroupId);
         onInbound(im);
       } else if (n.callback && onCallback) {
-        if (!owner || String(n.callback.userId) === owner) onCallback(n.callback);   // only the owner's taps act
+        /* Only the owner's taps act — and an UNCLAIMED owner is not a licence, it is the absence of one.
+           `!owner ||` made this fail OPEN, and ownership is claimed on the DM path alone (a group message
+           never calls ownerOk), so a bot reachable only in a whitelisted group had owner === '' forever and
+           ANY member's tap counted — including approve/deny on the /approvals keyboards. A callback can
+           never be the trust-on-first-use moment either: the keyboard is on a message WE sent, so it proves
+           nothing about who is talking. Fail closed, exactly like the empty-userId DM case. */
+        if (owner && String(n.callback.userId) === owner) onCallback(n.callback);
       }
     }
 

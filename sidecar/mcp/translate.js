@@ -36,13 +36,27 @@
     return String(s == null ? '' : s).replace(/[^A-Za-z0-9_-]+/g, '_').replace(/^[_-]+|[_-]+$/g, '');
   }
 
-  // "mcp__<connectorId>__<toolName>" — sanitized to the wire grammar and length-capped. The "mcp__" prefix
-  // namespaces every connector tool so it never collides with a built-in (web_search, fs_write, …); the
-  // connectorId segment keeps two connectors that expose the same tool name distinct.
+  /* FNV-1a over the full pre-truncation name -> 6 base36 chars. Pure, dependency-free (this module is also
+     loaded in the browser build, so no node:crypto), deterministic across engines and runs. */
+  function shortHash(s) {
+    let h = 2166136261;
+    for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return (h >>> 0).toString(36).slice(0, 6).padStart(6, '0');
+  }
+
+  /* "mcp__<connectorId>__<toolName>" — sanitized to the wire grammar and length-capped. The "mcp__" prefix
+     namespaces every connector tool so it never collides with a built-in (web_search, fs_write, …); the
+     connectorId segment keeps two connectors that expose the same tool name distinct.
+
+     TRUNCATION MUST DISAMBIGUATE. A bare slice(0, 64) mapped two tools of one connector onto the SAME wire
+     name whenever their names shared a prefix — and registry.register() overwrites by name, so one tool
+     vanished from the registry and calls to the surviving name executed the OTHER server tool (measured:
+     a `…_read` wire name running the `…_write` MCP tool, with the surviving def's scope/readOnly/consent).
+     Truncating now reserves the tail for a hash of the FULL name, so distinct tools stay distinct. */
   function mcpToolName(connectorId, toolName) {
-    let name = 'mcp__' + sanitizePart(connectorId) + '__' + sanitizePart(toolName);
-    if (name.length > NAME_MAX) name = name.slice(0, NAME_MAX);
-    return name;
+    const full = 'mcp__' + sanitizePart(connectorId) + '__' + sanitizePart(toolName);
+    if (full.length <= NAME_MAX) return full;
+    return full.slice(0, NAME_MAX - 7) + '_' + shortHash(full);
   }
 
   // schema-lite (shared/schema.js) understands type/enum/properties/required/items/additionalProperties and
@@ -123,9 +137,17 @@
         // megabyte of stack trace as a succeeding one.
         const clamped = clampResult(renderContent(res && res.content), o.maxResultChars);
         const text = clamped.text;
-        // an MCP-level error (isError:true) is surfaced by THROWING — registry.dispatch turns any throw into a
-        // clean isError tool_result, so the model sees the failure text without us inventing a result shape.
-        if (res && res.isError) { const e = new Error(text || ('MCP tool ' + mcpTool.name + ' reported an error')); e.__mcpToolError = true; throw e; }
+        /* an MCP-level error (isError:true) is surfaced by THROWING — registry.dispatch turns any throw into a
+           clean isError tool_result, so the model sees the failure text without us inventing a result shape.
+           FENCE IT TOO. The error text is the SERVER's payload, exactly as untrusted as the success payload,
+           and it lands in the model's context the same way — so shipping it raw made `isError: true` a
+           one-flag bypass of the whole untrusted-content fence. (The taint half is closed in index.js: a
+           failed result from an untrusted source now latches the run's taint as well.) */
+        if (res && res.isError) {
+          const body = text || ('MCP tool ' + mcpTool.name + ' reported an error');
+          const e = new Error(fence.fenceExternal(body, 'ERROR from the ' + label + ' connector'));
+          e.__mcpToolError = true; throw e;
+        }
         // UNTRUSTED-CONTENT FENCE (2026-07-25): a connector result is authored by a THIRD-PARTY SERVER, not by
         // the Commander — the same trust level as a fetched web page, and now reachable unattended by a granted
         // routine. Fenced with the shared marker pair so the model gets one contract across web/browser/MCP.

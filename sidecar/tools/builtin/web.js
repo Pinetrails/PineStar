@@ -490,13 +490,27 @@
         await assertResolvedSafe(u, doLookup);
 
         const used = [];
+        /* WHICH HEADER SLOTS ACTUALLY CARRY A SECRET. The redirect guard below used to decide this by NAME
+           (authorization|cookie|x-api-key) — but the model picks the slot, and half the real API world puts
+           the key somewhere else (X-Shopify-Access-Token, Private-Token, apikey, X-Auth-Token), so an open
+           redirect on a trusted host forwarded the Commander's key to the attacker verbatim. The host does
+           not need to guess: the substitution happens right here, so record the exact keys it wrote into. */
+        const secretHeaders = new Set();
         const headers = { 'User-Agent': UA, 'Accept': 'application/json, text/plain;q=0.9, */*;q=0.8' };
         const src = (args && args.headers && typeof args.headers === 'object') ? args.headers : {};
         for (const k of Object.keys(src)) {
           if (/[\r\n]/.test(k) || /[\r\n]/.test(String(src[k]))) throw new Error('header contains a newline: ' + k);
+          const before = used.length;
           const r = resolveSecretRefs(src[k], surface, used);
           if (r.failure) throw new Error(r.failure);
+          if (used.length > before) secretHeaders.add(k.toLowerCase());   // this slot now holds a real key
           headers[k] = r.out;
+        }
+        /* A ${KEY} placeholder in the BODY is silently NOT substituted (headers only, by design) — which
+           shipped the literal text "${STRIPE_API_KEY}" to the third party and left the model debugging a
+           confusing 401. Refuse it with the same clarity the url check already uses. */
+        if (args && args.body != null && SECRET_REF_TEST.test(String(args.body))) {
+          throw new Error('a ${KEY} placeholder cannot go in the body — the host substitutes stored keys into HEADERS only. Put it in a header (or use "auth").');
         }
         /* AUTH DESCRIPTOR — for APIs that take the key as a query parameter. The model NAMES the key and the
            slot; the HOST resolves and attaches it here, after the model has finished composing the request.
@@ -519,19 +533,28 @@
           }
           used.push(keyName);
           if (where === 'query') u.searchParams.set(slot, r.value);
-          else headers[slot] = String(auth.prefix || '') + r.value;
+          else { headers[slot] = String(auth.prefix || '') + r.value; secretHeaders.add(slot.toLowerCase()); }
         }
 
         const hasBody = method !== 'GET' && method !== 'HEAD' && args && args.body != null;
         if (hasBody && !Object.keys(headers).some(k => k.toLowerCase() === 'content-type')) headers['Content-Type'] = 'application/json';
 
-        // Redirects are followed manually so every hop is re-validated against the SSRF guard. Credentials
-        // are dropped the moment the host changes — an open redirect must never forward the user's key.
+        /* Redirects are followed manually so every hop is re-validated against the SSRF guard. Credentials are
+           dropped the moment the ORIGIN changes — an open redirect must never forward the user's key.
+           TWO corrections to what "origin" and "credential" mean here:
+             · origin, not host. hostOf() ignores scheme and port, so an https -> http redirect on the SAME
+               hostname kept the Authorization header and put the key on the wire in CLEARTEXT.
+             · the slots we PROVABLY filled with a secret (secretHeaders), not a three-name denylist — plus
+               the denylist, which still covers a credential the caller supplied literally rather than via
+               ${KEY} (a pasted cookie or bearer we never resolved and therefore never recorded). */
+        const originOf = (x) => x.protocol + '//' + hostOf(x) + ':' + (x.port || (x.protocol === 'https:' ? '443' : '80'));
+        const firstOrigin = originOf(u);
+        const isCredential = (k) => secretHeaders.has(k.toLowerCase()) || /^(authorization|cookie|x-api-key)$/i.test(k);
         let target = u, res = null;
         for (let hop = 0; hop < 5; hop++) {
-          const sendHeaders = hop === 0 || hostOf(target) === hostOf(u)
+          const sendHeaders = hop === 0 || originOf(target) === firstOrigin
             ? headers
-            : Object.keys(headers).reduce((o, k) => (/^(authorization|cookie|x-api-key)$/i.test(k) ? o : (o[k] = headers[k], o)), {});
+            : Object.keys(headers).reduce((o, k) => (isCredential(k) ? o : (o[k] = headers[k], o)), {});
           res = await withTimeout(signal => doFetch(target.href, {
             method, headers: sendHeaders, body: hasBody ? String(args.body) : undefined, redirect: 'manual', signal
           }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await r.text() })), FETCH_TIMEOUT_MS, ctx && ctx.signal);
