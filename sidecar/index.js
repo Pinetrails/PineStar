@@ -9235,12 +9235,18 @@ async function runOnce(o) {
          saving into a capability regression on weaker models, and into a fabricated result on one of them —
          hence the explicit count (vague "more tools exist" reads as boilerplate) and the explicit ban on
          claiming unfinished work. Cheap: this rides the CACHED prefix, the schemas it replaces did not. */
+      /* NAME the hidden tools, do not merely count them. Measured across an 8-model panel: a bare count left
+         gpt-4o-mini and llama-3.3-70b unable to reach a deferred tool at all (0/2 runs each), while the same
+         two used it immediately when it was advertised — and gpt-4o-mini's failure mode was to CLAIM the
+         answer it never measured. A count asks the model to first imagine a capability might exist and then
+         go looking; a name list removes that step entirely, which is the actual barrier. ~400 B of names
+         against the ~8.5KB of schemas they stand in for, and it rides the CACHED prefix. */
       + (deferredToolDefs.length
-        ? 'This list is PARTIAL: ' + deferredToolDefs.length + ' more granted tools are not shown, including extra '
-          + 'browser controls (screenshots, tabs, network inspection, file upload, form selects) and local UI test controls. '
-          + 'Call tool_search with a plain description of the capability you want ("take a screenshot", "upload a file") '
-          + 'to load them; anything it returns becomes callable immediately. You MUST search before saying you cannot '
-          + 'do something, and you must never report an action as done that you had no tool to perform. '
+        ? 'This list is PARTIAL. You have ' + deferredToolDefs.length + ' more granted tools that are not loaded yet. '
+          + 'These exist and you CAN use them: ' + deferredToolDefs.map(d => d.function.name).join(', ') + '. '
+          + 'To use one, call tool_search with the capability you want ("take a screenshot", "read network responses") '
+          + 'and it becomes callable immediately. You MUST do that before saying you cannot do something, and you must '
+          + 'never report an action as done when you had no tool to perform it. '
         : '')
       + taskDoctrineNote
       + (wireNames.indexOf('routine_create') >= 0
