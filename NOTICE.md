@@ -112,3 +112,15 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
+
+## StarNet's own name and artwork
+
+The credits above cover third-party work bundled with StarNet. StarNet's own code is released
+under the MIT License (see `LICENSE`) and may be forked, modified, and redistributed, including
+commercially.
+
+That license covers the code only. The **StarNet** name, the logo, the station artwork and
+sprites, and the rest of the project's brand identity are owned by Andrew Sims and are not
+licensed with the code. No trademark or other brand right is granted, expressly or by
+implication. A fork or derivative must ship under its own name, logo, and artwork, and must not
+present itself as StarNet or as endorsed by it.

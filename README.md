@@ -158,6 +158,11 @@ reporting instructions.
 StarNet is open source under the [MIT License](LICENSE). Third-party components remain
 under their original licenses — see [NOTICE.md](NOTICE.md).
 
-The license covers the code only. The **StarNet** name, logo, and station artwork are the
-branding of Andrew Sims and are **not** licensed for reuse — forks and derivatives (which the
-license permits for noncommercial use) must ship under their own name and identity.
+**The MIT License covers the code only.** The **StarNet** name, the logo, the station artwork
+and sprites, and the rest of the project's brand identity are owned by Andrew Sims and are
+**not** licensed with it — no trademark or other brand rights are granted, expressly or by
+implication.
+
+MIT means you may fork, modify, and redistribute the code, including commercially. What you
+may not do is ship it as StarNet: forks and derivatives must use their own name, logo, and
+artwork, and must not present themselves as this project or as endorsed by it.
