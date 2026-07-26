@@ -230,9 +230,14 @@
     return status === 202 || low.includes('anomaly') || (low.includes('challenge') && !low.includes('result__a'));
   }
 
+  /* The anchor-text capture is BOUNDED. `([\s\S]*?)</a>` scans to end-of-input from every start position
+     when the closing tag is absent, so a search-engine body with many result-link OPENS and no closers is
+     quadratic: measured 1MB -> 1403ms of frozen event loop on this single-process host. A result TITLE is a
+     few dozen characters; 600 is already absurdly generous, and it turns each failed attempt into a fixed
+     cost instead of a full scan. (The snippet lookups were already windowed to a 2500-char tail.) */
   function parseDDGHtml(html) {
     const out = [];
-    const re = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    const re = /<a[^>]*class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]{0,600}?)<\/a>/gi;
     let m;
     while ((m = re.exec(html)) && out.length < 12) {
       const url = unwrapDDG(m[1]);
@@ -240,8 +245,8 @@
       if (!url || !title) continue;
       // snippet lives just after the title link in a .result__snippet element
       const tail = html.slice(m.index, m.index + 2500);
-      const sm = tail.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i) ||
-                 tail.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/(div|span|td)>/i);
+      const sm = tail.match(/class="result__snippet"[^>]*>([\s\S]{0,1200}?)<\/a>/i) ||
+                 tail.match(/class="result__snippet"[^>]*>([\s\S]{0,1200}?)<\/(div|span|td)>/i);
       out.push({ title, url, snippet: sm ? clamp(stripTags(sm[1]), SNIPPET_MAX_CHARS) : '' });
     }
     return out;
@@ -250,14 +255,14 @@
   // DDG lite endpoint has a flat <table> of <a class="result-link"> + a following snippet row.
   function parseDDGLite(html) {
     const out = [];
-    const re = /<a[^>]*class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    const re = /<a[^>]*class="result-link"[^>]*href="([^"]+)"[^>]*>([\s\S]{0,600}?)<\/a>/gi;
     let m;
     while ((m = re.exec(html)) && out.length < 12) {
       const url = unwrapDDG(m[1]);
       const title = stripTags(m[2]);
       if (!url || !title) continue;
       const tail = html.slice(m.index, m.index + 2500);
-      const sm = tail.match(/class="result-snippet"[^>]*>([\s\S]*?)<\/td>/i);
+      const sm = tail.match(/class="result-snippet"[^>]*>([\s\S]{0,1200}?)<\/td>/i);
       out.push({ title, url, snippet: sm ? clamp(stripTags(sm[1]), SNIPPET_MAX_CHARS) : '' });
     }
     return out;

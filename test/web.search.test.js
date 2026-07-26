@@ -74,5 +74,23 @@ function stubFetch(routes) {
   try { await wAllDown.webSearch('anthropic', {}); } catch (e) { threw = !!e.__allFailed; }
   A.ok(threw, 'web_search throws __allFailed when every keyless source is down and there is no OpenRouter key');
 
+  /* ---- a hostile search-engine body must not stall the single-process host ----
+     `([\s\S]*?)</a>` scans to end-of-input from every start position when the closer is absent, so a body
+     with many result-link OPENS and no closers was quadratic: measured 1MB -> 1403ms of frozen event loop
+     (and web_search reaches DDG whenever Mojeek is throttled). ---- */
+  {
+    const { parseDDGHtml } = makeWebTools({ fetchImpl: async () => ({ status: 200, text: async () => '', headers: { get: () => '' } }), lookup: null })._internals;
+    const unit = '<a class="result__a" href="http://x">';
+    const evil = unit.repeat(Math.floor(1024 * 1024 / unit.length));
+    const t0 = Date.now();
+    parseDDGHtml(evil);
+    const ms = Date.now() - t0;
+    A.ok(ms < 500, 'a megabyte of unclosed result anchors parses in ' + ms + 'ms (was 1403ms)');
+    const rows = parseDDGHtml('<a class="result__a" href="http://e.com/a">Title</a><div class="result__snippet">Snip</div>');
+    A.eq(rows.length, 1, 'an ordinary DDG body still yields its result');
+    A.eq(rows[0].title, 'Title', 'with its title');
+    A.eq(rows[0].snippet, 'Snip', 'and its snippet');
+  }
+
   A.report('web.search.test');
 })();
