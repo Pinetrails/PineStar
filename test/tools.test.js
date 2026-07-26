@@ -259,6 +259,26 @@ const call = (name, args, id) => ({ id: id || 'c1', name, args, argsRaw: JSON.st
     const boom = await reg.dispatch({ id: 'c4', name: 'blowup', args: {} }, ctx);
     A.ok(boom.isError, 'a throw is still an error result');
     A.ok(boom.content.length <= 81000, 'a huge error message is capped on the same path');
+
+    /* THE KILL SWITCH MUST ACTUALLY WORK. A documented env override that silently does nothing is worse
+       than not offering one — an operator would trust it. Re-required with a cache bust because the limit
+       is resolved once at module load (same discipline as SKYNET_ANTHROPIC_CACHE). */
+    const prev = process.env.SKYNET_TOOL_OUTPUT_MAX;
+    process.env.SKYNET_TOOL_OUTPUT_MAX = '500';
+    delete require.cache[require.resolve('../sidecar/tools/registry.js')];
+    const tiny = require('../sidecar/tools/registry.js').makeRegistry();
+    tiny.register({
+      name: 'flood', capability: 'compute', scope: 'read', requiresConsent: false,
+      description: 'x', schema: { type: 'object', properties: {} },
+      run: async () => ({ content: 'y'.repeat(50000), summary: 'ok' })
+    });
+    const capped = await tiny.dispatch({ id: 'c5', name: 'flood', args: {} }, ctx);
+    A.ok(capped.content.length < 1200, 'SKYNET_TOOL_OUTPUT_MAX is honoured (' + capped.content.length + ' B)');
+    // The cap governs RETAINED CONTENT; the explanatory note rides on top at a fixed ~240 B. Pinned as
+    // intentional — making the note eat the content budget would be the worse trade.
+    A.ok(capped.content.length > 500, 'the note is additive to the cap, not carved out of it');
+    if (prev === undefined) delete process.env.SKYNET_TOOL_OUTPUT_MAX; else process.env.SKYNET_TOOL_OUTPUT_MAX = prev;
+    delete require.cache[require.resolve('../sidecar/tools/registry.js')];
   }
 
   A.report('tools.test');
