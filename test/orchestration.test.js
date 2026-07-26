@@ -477,6 +477,43 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
 }
 
+// ---- NO SILENT CAPS (2026-07-26 audit finding C): asking for MORE than maxWorkers used to slice(0,4) and say
+//      nothing — "dispatched 4 worker(s), 4 done" for a 6-worker decomposition, so the lead reported on two
+//      subtasks that never ran. The overflow must come back as explicit rows AND be named in the summary. ----
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([1, 2, 3, 4, 5, 6].map(i => ['w' + i, { system: 'S' + i }]));
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter() });
+  const out = await dispatchTool.run({ workers: [1, 2, 3, 4, 5, 6].map(i => ({ agentId: 'w' + i, prompt: 'p' + i })) }, { agentId: 'agent', emit: () => {} });
+  A.eq(ro.calls.length, 4, 'the per-call worker cap still bounds how many child runs start');
+  const rows = JSON.parse(out.content);
+  A.eq(rows.length, 6, 'EVERY requested worker is accounted for in the result (4 run + 2 not-dispatched)');
+  const nd = rows.filter(r => r.reason === 'not-dispatched');
+  A.eq(nd.length, 2, 'the two workers past the cap come back as not-dispatched rows');
+  A.eq(nd[0].agentId, 'w5', 'a not-dispatched row names the worker that was skipped');
+  A.ok(/NOT RUN/.test(nd[0].result) && /follow-up call/.test(nd[0].result), 'the not-dispatched row tells the lead to re-dispatch it');
+  A.ok(/NOT dispatched/.test(out.summary), 'the SUMMARY names the drop (the model reads this line first)');
+  A.ok(/4 worker\(s\), 4 done/.test(out.summary), 'the summary still reports what actually ran');
+}
+
+// ---- same rule for team.spawn overflow ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-spawn-cap2-'));
+  try {
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'sub.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
+    const ro = fakeRunOnce();
+    const { spawnTool } = makeOrchestrationTools({ runOnce: ro, roster: () => new Map(), key: 'k', model: 'm', selfSystem: 'S', newId: counter(), subagents });
+    const out = await spawnTool.run({ tasks: [1, 2, 3, 4, 5].map(i => ({ prompt: 'p' + i, label: 'L' + i })) }, { agentId: 'agent', emit: () => {} });
+    const rows = JSON.parse(out.content);
+    A.eq(ro.calls.length, 4, 'spawn still starts at most maxWorkers clones');
+    A.eq(rows.length, 5, 'every requested subtask is accounted for');
+    const ns = rows.filter(r => r.reason === 'not-spawned');
+    A.eq(ns.length, 1, 'the subtask past the cap comes back as a not-spawned row');
+    A.eq(ns[0].label, 'L5', 'the not-spawned row keeps the label the lead gave it');
+    A.ok(/NOT spawned/.test(out.summary), 'the spawn summary names the drop');
+  } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+}
+
 A.report('orchestration.test');
 
 })();

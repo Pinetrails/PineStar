@@ -125,8 +125,21 @@
         if (typeof runOnce !== 'function') return { content: 'orchestration unavailable (no run host)', summary: 'error' };
         const leadId = (ctx && ctx.agentId) || 'agent';
         const crew = roster() || new Map();
-        const reqs = Array.isArray(args.workers) ? args.workers.slice(0, maxWorkers) : [];
+        // NO SILENT CAPS (2026-07-26 orchestration audit): the cap used to `slice(0, maxWorkers)` and say nothing,
+        // so a 6-worker decomposition became a 4-worker dispatch reporting "4 done" — and the lead then wrote the
+        // Commander a confident final answer covering two subtasks that never ran. The overflow now comes BACK as
+        // explicit not-dispatched rows (see overflowRows) so the model can see, and re-dispatch, exactly what it lost.
+        const asked = Array.isArray(args.workers) ? args.workers : [];
+        const reqs = asked.slice(0, maxWorkers);
+        const overflow = asked.slice(maxWorkers);
         if (!reqs.length) return { content: 'No workers specified.', summary: 'noop' };
+        const overflowRows = () => overflow.map(w => ({
+          agentId: String((w && w.agentId) || '(unnamed)'),
+          reason: 'not-dispatched',
+          result: 'NOT RUN — one team.dispatch call carries at most ' + maxWorkers + ' workers. This subtask was not started; dispatch it in a follow-up call before you report.',
+          usd: 0
+        }));
+        const overflowNote = overflow.length ? ' — ' + overflow.length + ' NOT dispatched (max ' + maxWorkers + ' per call; dispatch the rest in a follow-up call)' : '';
 
         // forward ONLY lifecycle/cost from children onto the lead's bus (the floor animation reads agent.run.start).
         const childEmit = (name, payload) => { if (FORWARD[name] && ctx && typeof ctx.emit === 'function') { try { ctx.emit(name, payload); } catch (_) {} } };
@@ -202,15 +215,17 @@
               return { status: r.reason === 'done' ? 'done' : 'error', reason: r.reason, result: r.result, usd: r.usd || 0 };
             });
           });
-          return { content: JSON.stringify(started), summary: 'started ' + started.filter(r => r && r.id).length + ' background worker(s)' };
+          const startedRows = started.concat(overflowRows());
+          return { content: JSON.stringify(startedRows), summary: 'started ' + started.filter(r => r && r.id).length + ' background worker(s)' + overflowNote };
         }
 
         let out;
         if (args.parallel) out = await Promise.all(jobs.map(runJob));   // fan out (bounded by the concurrency gate)
         else { out = []; for (const j of jobs) out.push(await runJob(j)); }   // sequential: legible, one box at a time
+        out = out.concat(overflowRows());
 
         const ok = out.filter(r => r.reason === 'done').length;
-        return { content: JSON.stringify(out), summary: 'dispatched ' + jobs.length + ' worker(s), ' + ok + ' done' };
+        return { content: JSON.stringify(out), summary: 'dispatched ' + jobs.length + ' worker(s), ' + ok + ' done' + overflowNote };
       }
     };
 
@@ -243,8 +258,19 @@
         if (typeof runOnce !== 'function') return { content: 'orchestration unavailable (no run host)', summary: 'error' };
         if (!subagents || typeof subagents.start !== 'function') return { content: 'ephemeral subagents unavailable (no subagent manager)', summary: 'unavailable' };
         const leadId = (ctx && ctx.agentId) || 'agent';
-        const reqs = Array.isArray(args.tasks) ? args.tasks.slice(0, maxWorkers) : [];
+        // NO SILENT CAPS — same rule as team.dispatch (see its note): the tasks past the cap come back as
+        // explicit not-spawned rows instead of vanishing from a "N done" summary.
+        const askedTasks = Array.isArray(args.tasks) ? args.tasks : [];
+        const reqs = askedTasks.slice(0, maxWorkers);
+        const overflow = askedTasks.slice(maxWorkers);
         if (!reqs.length) return { content: 'No tasks specified.', summary: 'noop' };
+        const overflowRows = () => overflow.map((t, i) => ({
+          label: String((t && t.label) || ('subagent ' + (maxWorkers + i + 1))).slice(0, 60),
+          reason: 'not-spawned',
+          result: 'NOT RUN — one team.spawn call carries at most ' + maxWorkers + ' subtasks. This one was not started; spawn it in a follow-up call before you report.',
+          usd: 0
+        }));
+        const overflowNote = overflow.length ? ' — ' + overflow.length + ' NOT spawned (max ' + maxWorkers + ' per call; spawn the rest in a follow-up call)' : '';
 
         // forward ONLY lifecycle/cost onto the lead's bus so the floor materializes/pops the Meeseeks live; the
         // durable record (via h.emit) keeps the full watch tail for team.subagents/interrupt/resume.
@@ -294,11 +320,12 @@
 
         const spawned = reqs.map(spawnOne);
         if (args.background) {
-          return { content: JSON.stringify(spawned.map(s => Object.assign({ label: s.label }, s.view))), summary: 'spawned ' + spawned.length + ' subagent(s)' };
+          const rows = spawned.map(s => Object.assign({ label: s.label }, s.view)).concat(overflowRows());
+          return { content: JSON.stringify(rows), summary: 'spawned ' + spawned.length + ' subagent(s)' + overflowNote };
         }
-        const results = await Promise.all(spawned.map(s => s.done));
+        const results = (await Promise.all(spawned.map(s => s.done))).concat(overflowRows());
         const ok = results.filter(r => r.reason === 'done').length;
-        return { content: JSON.stringify(results), summary: 'spawned ' + results.length + ' subagent(s), ' + ok + ' done' };
+        return { content: JSON.stringify(results), summary: 'spawned ' + spawned.length + ' subagent(s), ' + ok + ' done' + overflowNote };
       }
     };
 
