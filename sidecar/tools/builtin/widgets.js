@@ -62,15 +62,18 @@
       // NO consent gate: a widget record is a sandboxed local write to the station's OWN chrome
       // (no filesystem reach, no network, no outward effect) — the same trust class as notebook.write.
       name: 'widget.set', capability: 'memory', scope: 'write', requiresConsent: false,
+      /* Trimmed 2026-07-26 (tool-schema cost pass; widest tool in the harness at 2,361 B on the wire). This
+         text is re-sent on EVERY turn, so it may only carry what CHANGES A DECISION *and* has nowhere better
+         to live. The old version narrated value/sub/list/tone/spark/progress/clear one by one — every one of
+         which the `schema` below already describes at the point of use, and more precisely (it carries the
+         max lengths this prose did not). What survives is what a per-field description structurally cannot
+         say: what the instrument IS, the cross-turn freshness contract, the cross-field "only when the data
+         has that shape" rule, and SKIP — which has no runtime guard behind it, so it stays spelled out. */
       description: 'Publish or update a small named readout on the station’s widget rails — a live instrument the Commander can pin ' +
-        'on screen (e.g. app revenue, top AI headlines, subscriber count). The display always shows YOUR name and when you set it, ' +
-        'so keep it fresh: re-set the same id whenever you have a newer figure (a routine is the natural driver). ' +
-        'Use a stable `id` per readout; setting an existing id overwrites it. `value` is the big number/figure ' +
-        '(short — "$​1,240", "+7"); `sub` is an optional small caption ("today", "▲ +$180"); `list` (up to 5 short lines) makes a ' +
-        'ticker instead of a number — right for headlines. Optional dressing: `tone` ("ok"|"warn"|"bad") tints the figure, ' +
-        '`spark` (2-24 numbers, oldest first) draws a tiny trend line, `progress` (0-100) draws a small bar — use them when the ' +
-        'data genuinely carries that shape (a trend series, a completion fraction), never as decoration. ' +
-        'Pass `clear: true` to retire a readout you no longer maintain. ' +
+        'on screen (e.g. app revenue, top AI headlines, subscriber count). The display always carries YOUR name and the time you ' +
+        'set it, so a stale figure is attributable to you: re-set the same id whenever you have a newer one (a routine is the ' +
+        'natural driver), and setting an existing id overwrites it. Reach for tone/spark/progress only when the data genuinely ' +
+        'has that shape — a real trend series, a real completion fraction — never as decoration. ' +
         'SKIP: secrets, walls of text, anything you cannot back with a real source when asked.',
       schema: {
         type: 'object', required: ['id'],
