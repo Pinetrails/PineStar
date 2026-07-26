@@ -460,6 +460,7 @@ const World = (() => {
           if (b.home) { b.home.x += oldOrigin.tx - geo.origin.tx; b.home.y += oldOrigin.ty - geo.origin.ty; }
         }
         b.pathPts = null; b.target = null;   // the in-flight path is in the OLD frame — re-path fresh
+        b.attn = null;                       // the attention anchor is a TILE in the old frame — drop it (same treatment as the in-flight path; a stale anchor would aim strolls at a tile that is now somewhere else entirely)
         if (b.state === 'walk') { b.state = 'idle'; b.idleUntil = 0; }
       }
     }
@@ -469,6 +470,7 @@ const World = (() => {
       else {
         if (oldOrigin) { const dx = (oldOrigin.tx - geo.origin.tx) * T, dy = (oldOrigin.ty - geo.origin.ty) * T; agent.px += dx; agent.py += dy; }
         agent.pathPts = null; agent.target = null;   // the in-flight path is in the OLD frame — re-path fresh
+        agent.attn = null;                           // ditto the attention anchor (a TILE): drop rather than shift, so a refit can never aim a stroll at a stale-frame tile
         if (agent.state === 'walk') { agent.state = 'idle'; agent.idleUntil = 0; }  // target's gone — never leave the agent stuck in the walk pose, or it moonwalks in place forever (tick's idle re-decision is gated on state!=='walk')
         if (agent.goal === 'use' || agent.goal === 'lounge' || agent.goal === 'inspect' || agent.goal === 'watch' || agent.goal === 'tend' || agent.goal === 'gaze' || agent.goal === 'quirk' || agent.goal === 'stare' || agent.goal === 'place' || agent.goal === 'rounds' || agent.goal === 'post' || agent.goal === 'sleep' || agent.goal === 'mourn' || agent.goal === 'revisit' || agent.goal === 'firstwake') { releaseSeat(); agent.goal = null; agent.usingProp = null; agent.watchProp = null; agent.studyKey = null; agent.quirkKind = null; agent.placeTarget = null; agent.removeId = null; agent.roundsQueue = null; agent.wakePhase = 0; agent.glanceCd = 0; agent.sitting = false; }  // the prop/belt list may have changed — drop leisure/observation/quirk/placement/rounds/board-survey/sleep/grief/wake-ritual, re-decide next idle tick (firstWakeDone stays latched, so the ritual never re-arms)
         if (agent.goal === 'work' && !agent.working) agent.goal = null;  // was mid-walk to the desk — drop it so tick's summon logic re-paths in the new frame
