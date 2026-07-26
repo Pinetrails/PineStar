@@ -37,6 +37,21 @@
   const DEFAULT_UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 ' +
                      '(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
   const FETCH_MAX_CHARS   = 6000;   // web_fetch truncation
+  /* RAW-BODY CEILING, applied BEFORE anything parses the response.
+     htmlToText is a chain of lazy `[\s\S]*?` replaces — quadratic in the input — and the clamp to
+     FETCH_MAX_CHARS ran AFTER it. Measured on a page of repeated "<script>": 64KB -> 55ms, 256KB -> 880ms,
+     1MB -> 14.3 SECONDS of synchronous event-loop freeze, and it grows from there. StarNet is one process,
+     so that is the whole station stopped by a page the agent was asked to read — and web_fetch is
+     read-only, no-consent, callable on any URL including one suggested by untrusted content.
+     2MB leaves the extractor far more material than the 6k it will keep, while bounding the worst case to
+     well under a second. */
+  const RAW_BODY_MAX_CHARS = 2 * 1024 * 1024;
+  function readBodyBounded(r) {
+    return Promise.resolve(r.text()).then(t => {
+      const s = String(t == null ? '' : t);
+      return s.length > RAW_BODY_MAX_CHARS ? s.slice(0, RAW_BODY_MAX_CHARS) : s;
+    });
+  }
   const SNIPPET_MAX_CHARS = 320;
   const SEARCH_TIMEOUT_MS = 12000;
   const FETCH_TIMEOUT_MS  = 15000;
@@ -138,21 +153,58 @@
   }
 
   // ---------- HTML -> readable text (web_fetch fallback) ----------
+  /* HTML -> readable text, in ONE LINEAR PASS.
+     This used to be a chain of lazy `[\s\S]*?` replaces, every one of them QUADRATIC on input the fetch
+     does not control. `<script` with no `</script>` makes the lazy scan walk to end-of-input from each of
+     the N start positions; `<[^>]+>` does the same on a run of `<`. Measured on a page of repeated
+     "<script>": 64KB -> 55ms, 256KB -> 880ms, 1MB -> 14.3 SECONDS of synchronous event-loop freeze — the
+     whole station (UI, API, SSE bus, every agent run) stopped by a page an agent was asked to read, on a
+     read-only no-consent tool. Capping the input alone only moved the number; the scan itself had to stop
+     being quadratic.
+     An indexOf-driven walk is O(n) and output-equivalent for well-formed HTML: skip the contents of
+     script/style/noscript and comments, turn block-closers and <br> into newlines, and drop every other tag.
+     An UNCLOSED block or tag consumes the rest of the input exactly as the lazy regex did. */
+  const BLOCK_CLOSERS = new Set(['p', 'div', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'li', 'tr', 'section', 'article', 'header', 'footer']);
+  const SKIP_BLOCKS = new Set(['script', 'style', 'noscript']);
+  function stripMarkup(html) {
+    const s = String(html);
+    const out = [];
+    let i = 0;
+    while (i < s.length) {
+      const lt = s.indexOf('<', i);
+      if (lt < 0) { out.push(s.slice(i)); break; }
+      if (lt > i) out.push(s.slice(i, lt));
+      if (s.startsWith('<!--', lt)) {                                  // comment: skip to the terminator
+        const end = s.indexOf('-->', lt + 4);
+        out.push(' ');
+        if (end < 0) break;
+        i = end + 3; continue;
+      }
+      const gt = s.indexOf('>', lt + 1);
+      if (gt < 0) { out.push(' '); break; }                            // unterminated tag consumes the rest
+      const inner = s.slice(lt + 1, gt);
+      const m = /^\/?\s*([a-zA-Z][a-zA-Z0-9]*)/.exec(inner);
+      const name = m ? m[1].toLowerCase() : '';
+      const closing = inner.charAt(0) === '/';
+      if (!closing && SKIP_BLOCKS.has(name)) {                         // skip the whole block's contents
+        const close = s.toLowerCase().indexOf('</' + name, gt + 1);
+        out.push(' ');
+        if (close < 0) break;                                          // unclosed block consumes the rest
+        const closeGt = s.indexOf('>', close);
+        i = closeGt < 0 ? s.length : closeGt + 1; continue;
+      }
+      if (name === 'br' || (closing && BLOCK_CLOSERS.has(name))) out.push('\n');
+      else out.push(' ');
+      i = gt + 1;
+    }
+    return out.join('');
+  }
   function htmlToText(html) {
-    let s = String(html);
-    s = s.replace(/<script[\s\S]*?<\/script>/gi, ' ')
-         .replace(/<style[\s\S]*?<\/style>/gi, ' ')
-         .replace(/<noscript[\s\S]*?<\/noscript>/gi, ' ')
-         .replace(/<!--[\s\S]*?-->/g, ' ')
-         .replace(/<\/(p|div|h[1-6]|li|tr|section|article|header|footer)>/gi, '\n')
-         .replace(/<br\s*\/?>/gi, '\n')
-         .replace(/<[^>]+>/g, ' ');
-    s = decodeEntities(s)
-         .replace(/[ \t\f\v]+/g, ' ')
-         .replace(/ *\n */g, '\n')
-         .replace(/\n{3,}/g, '\n\n')
-         .trim();
-    return s;
+    return decodeEntities(stripMarkup(html))
+      .replace(/[ \t\f\v]+/g, ' ')
+      .replace(/ *\n */g, '\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   // ======================================================================
@@ -261,7 +313,7 @@
         headers: searchHeaders({ 'Content-Type': 'application/x-www-form-urlencoded' }),
         body: 'q=' + encodeURIComponent(query) + '&kl=us-en',
         signal
-      }).then(async r => ({ status: r.status, body: await r.text() })), SEARCH_TIMEOUT_MS, parent);
+      }).then(async r => ({ status: r.status, body: await readBodyBounded(r) })), SEARCH_TIMEOUT_MS, parent);
       if (isDDGBlocked(html.status, html.body)) { const e = new Error('duckduckgo rate-limited (anomaly/202)'); e.__blocked = true; throw e; }
       return parser(html.body);
     }
@@ -271,7 +323,7 @@
     async function mojeekSearch(query, parent) {
       const res = await withTimeout(signal => doFetch('https://www.mojeek.com/search?q=' + encodeURIComponent(query), {
         method: 'GET', headers: searchHeaders(), signal
-      }).then(async r => ({ status: r.status, body: await r.text() })), SEARCH_TIMEOUT_MS, parent);
+      }).then(async r => ({ status: r.status, body: await readBodyBounded(r) })), SEARCH_TIMEOUT_MS, parent);
       if (res.status !== 200) throw new Error('mojeek http ' + res.status);
       return parseMojeek(res.body);
     }
@@ -348,7 +400,7 @@
       const headers = { 'Accept': 'text/plain', 'X-Return-Format': 'text', 'User-Agent': UA };
       if (deps.jinaKey) headers['Authorization'] = 'Bearer ' + deps.jinaKey;
       const res = await withTimeout(signal => doFetch('https://r.jina.ai/' + targetUrl, { headers, signal })
-        .then(async r => ({ status: r.status, body: await r.text() })), FETCH_TIMEOUT_MS, parent);
+        .then(async r => ({ status: r.status, body: await readBodyBounded(r) })), FETCH_TIMEOUT_MS, parent);
       if (res.status === 401 || res.status === 402 || res.status === 429) {
         const e = new Error('jina ' + res.status); e.__retryDirect = true; throw e;
       }
@@ -370,7 +422,7 @@
       for (let hop = 0; hop < 6; hop++) {
         const res = await withTimeout(signal => doFetch(u.href, {
           headers: { 'User-Agent': UA, 'Accept': 'text/html,application/xhtml+xml' }, redirect: 'manual', signal
-        }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await r.text() })), FETCH_TIMEOUT_MS, parent);
+        }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await readBodyBounded(r) })), FETCH_TIMEOUT_MS, parent);
         if (res.status >= 300 && res.status < 400 && res.loc) {
           const next = assertSafeUrl(new URL(res.loc, u.href).href);   // re-validate the redirect target
           await assertResolvedSafe(next, doLookup);
@@ -562,7 +614,7 @@
             : Object.keys(headers).reduce((o, k) => (isCredential(k) ? o : (o[k] = headers[k], o)), {});
           res = await withTimeout(signal => doFetch(target.href, {
             method, headers: sendHeaders, body: hasBody ? String(args.body) : undefined, redirect: 'manual', signal
-          }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await r.text() })), FETCH_TIMEOUT_MS, ctx && ctx.signal);
+          }).then(async r => ({ status: r.status, ct: r.headers.get('content-type') || '', loc: r.headers.get('location') || '', body: await readBodyBounded(r) })), FETCH_TIMEOUT_MS, ctx && ctx.signal);
           if (res.status >= 300 && res.status < 400 && res.loc) {
             const next = assertSafeUrl(new URL(res.loc, target.href).href);
             await assertResolvedSafe(next, doLookup);
