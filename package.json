@@ -100,6 +100,8 @@
     "qa:atlas:status": "node scripts/qa/cartographer.mjs --status",
     "qa:guardian": "node scripts/qa/guardian.mjs",
     "qa:guardian:watch": "node scripts/qa/guardian.mjs --watch",
+    "qa:closer": "node scripts/qa/closer.mjs",
+    "qa:closer:list": "node scripts/qa/closer.mjs --list",
     "qa:ready": "node scripts/qa/ready.mjs",
     "qa:product-perfect": "node scripts/qa/product-perfect.mjs --run",
     "qa:smoke:installed": "node scripts/qa/installed-smoke.mjs",

@@ -157,6 +157,7 @@ test/deliverables-ui.test.js
 test/work-recap.test.js
 test/qa-ledger.test.js
 test/qa-guardian.test.js
+test/qa-closer.test.js
 test/qa-ready.test.js
 test/qa-product-perfect.test.js
 test/qa-product-perfect-claims.test.js
