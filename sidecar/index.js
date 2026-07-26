@@ -8683,8 +8683,19 @@ async function runOnce(o) {
     classes: SPECIALIST_CLASSES,   // Class Loadouts S1: the summon-tool class list, composed from the shared catalog (no hardcoded prose)
     selfSystem: system,   // team.spawn clones the LEAD's OWN base identity into each ephemeral subagent (Meeseeks)
     taskContext: taskContextBlock,   // workers inherit settled task decisions without re-questioning the Commander
+    // A worker shares the LEAD's consent broker (see the `consent` note below), so its own roster APPROVAL clause is
+    // the wrong one whenever the two postures differ. Hand orchestration the EFFECTIVE posture so the delegated
+    // prompt states what will actually happen. A thunk read off the live roster: computed at dispatch time, and
+    // deliberately NOT reusing `agentFullAccess` (declared further down) so this stays order-independent.
+    approvalPosture: () => (FULL_ACCESS || ((agentRoster.get(agentId) || {}).approvalMode === 'full')) ? 'full' : 'ask',
     perWorker: ORCH_PER_WORKER, workerMaxIters: ORCH_WORKER_MAX_ITERS, newId: () => crypto.randomUUID(),
     dispatchTimeoutMs: ORCH_DISPATCH_TIMEOUT_MS,   // minutes, not the 30s fast-tool cap (see constant)
+    now: () => Date.now(),   // the dispatch wall clock divides this budget across sequential workers (injected: lint-determinism)
+    // FAN-OUT CAPACITY: how many NEW distinct agents the admission gate can still accept. A parallel dispatch runs
+    // in waves of this size instead of firing all workers at once — the lead holds a slot for the whole dispatch, so
+    // at the default cap of 3 a 4-worker parallel dispatch used to run 2 and hand back two never-retried 'refused'
+    // rows. null = no cap configured (gate unlimited) -> the tool fans out all at once, as before.
+    freeSlots: () => { const m = concurrencyGate.max(); return m > 0 ? Math.max(0, m - concurrencyGate.active()) : null; },
     // Cross-provider dispatch: resolve a WORKER's own roster provider to the station's server-held credential
     // (BYOK keys / codex OAuth). null when the station holds none -> orchestration falls back to the lead's
     // provider+model honestly instead of 400ing the worker's model down the wrong wire.

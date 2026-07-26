@@ -43,7 +43,10 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   A.eq(ro.calls[0].system, 'R-SYS', "child runs with the worker's composed system prompt");
   A.eq(ro.calls[0].model, 'm1', 'child uses the worker model when set');
   A.eq(ro.calls[1].model, 'lead-model', 'child falls back to the lead model when the worker has none');
-  A.ok(ro.calls[0].signal === signal, 'the parent signal is threaded into the child (abort propagation)');
+  // Each foreground worker now runs on its OWN abort controller chained to the parent, so one worker's wall clock
+  // can't kill its siblings. Identity-equality with the parent signal is therefore GONE by design — propagation is
+  // proven against a real AbortController in the "one worker's wall clock" section below.
+  A.ok(ro.calls[0].signal && ro.calls[0].signal !== signal, "the child runs on its OWN abort signal (a straggler is stopped alone)");
   A.eq(ro.calls[0].maxCostUsd, 1, 'per-worker cost cap is passed to the child');
   A.eq(ro.calls[0].maxIters, 10, 'default per-worker iteration cap is passed to the child');
   A.eq(ro.calls[0].surface, 'autonomous', 'workers run headless on the autonomous office baseline');
@@ -177,7 +180,9 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   const out = await dispatchTool.run({ workers: [{ agentId: 'researcher', prompt: 'x' }] }, { agentId: 'agent', emit: () => {} });
   const parsed = JSON.parse(out.content);
   A.eq(parsed[0].reason, 'refused', 'a child that could not start is reported as refused (null-guarded)');
-  A.ok(/concurrency cap/.test(parsed[0].result), 'the refusal explains the likely cause');
+  A.ok(/concurrent-agent cap/.test(parsed[0].result), 'the refusal explains the likely cause');
+  A.ok(parsed[0].retried === true, 'a refusal is retried once before it is reported as lost work');
+  A.eq(ro.calls.length, 2, 'the retry is exactly ONE extra attempt (a refused worker did no work and cost nothing)');
 }
 
 // ---- parallel mode dispatches all workers ----
@@ -308,8 +313,12 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   // the registry honors tool.timeoutMs OVER ctx.timeoutMs, so a 30s ctx can never clamp a dispatch
   A.ok(def.timeoutMs > 30000, 'dispatch timeout outlasts CAPS.toolTimeoutMs (30s) so a worker loop is never cut short');
   // an explicit override is honored (the host wires this from CRON_MAX_RUN_MS)
+  // An explicit override is honored (the host wires this from CRON_MAX_RUN_MS). The REGISTRY timeout deliberately
+  // sits above it: the dispatch owns its own wall clock so it can return partial rows, and the registry's
+  // timeout — which discards the whole result — must never be what fires first (2026-07-26 audit finding A).
   const over = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), dispatchTimeoutMs: 123456 }).dispatchTool;
-  A.eq(over.timeoutMs, 123456, 'deps.dispatchTimeoutMs overrides the dispatch wall-clock');
+  A.ok(over.timeoutMs > 123456, 'the registry timeout sits ABOVE the dispatch budget (the in-tool clock fires first)');
+  A.ok(over.timeoutMs - 123456 >= 30000, 'the backstop leaves real slack, not a race with the in-tool clock');
 }
 
 // ============================ team.summon (create a NEW worker live) ============================
@@ -475,6 +484,229 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
     A.ok(!r2.isError, 'team.spawn runs when the orchestrator object is present');
     await tick(); await tick();
   } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+}
+
+// ---- NO SILENT CAPS (2026-07-26 audit finding C): asking for MORE than maxWorkers used to slice(0,4) and say
+//      nothing — "dispatched 4 worker(s), 4 done" for a 6-worker decomposition, so the lead reported on two
+//      subtasks that never ran. The overflow must come back as explicit rows AND be named in the summary. ----
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([1, 2, 3, 4, 5, 6].map(i => ['w' + i, { system: 'S' + i }]));
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter() });
+  const out = await dispatchTool.run({ workers: [1, 2, 3, 4, 5, 6].map(i => ({ agentId: 'w' + i, prompt: 'p' + i })) }, { agentId: 'agent', emit: () => {} });
+  A.eq(ro.calls.length, 4, 'the per-call worker cap still bounds how many child runs start');
+  const rows = JSON.parse(out.content);
+  A.eq(rows.length, 6, 'EVERY requested worker is accounted for in the result (4 run + 2 not-dispatched)');
+  const nd = rows.filter(r => r.reason === 'not-dispatched');
+  A.eq(nd.length, 2, 'the two workers past the cap come back as not-dispatched rows');
+  A.eq(nd[0].agentId, 'w5', 'a not-dispatched row names the worker that was skipped');
+  A.ok(/NOT RUN/.test(nd[0].result) && /follow-up call/.test(nd[0].result), 'the not-dispatched row tells the lead to re-dispatch it');
+  A.ok(/NOT dispatched/.test(out.summary), 'the SUMMARY names the drop (the model reads this line first)');
+  A.ok(/4 worker\(s\), 4 done/.test(out.summary), 'the summary still reports what actually ran');
+}
+
+// ---- same rule for team.spawn overflow ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-spawn-cap2-'));
+  try {
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'sub.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
+    const ro = fakeRunOnce();
+    const { spawnTool } = makeOrchestrationTools({ runOnce: ro, roster: () => new Map(), key: 'k', model: 'm', selfSystem: 'S', newId: counter(), subagents });
+    const out = await spawnTool.run({ tasks: [1, 2, 3, 4, 5].map(i => ({ prompt: 'p' + i, label: 'L' + i })) }, { agentId: 'agent', emit: () => {} });
+    const rows = JSON.parse(out.content);
+    A.eq(ro.calls.length, 4, 'spawn still starts at most maxWorkers clones');
+    A.eq(rows.length, 5, 'every requested subtask is accounted for');
+    const ns = rows.filter(r => r.reason === 'not-spawned');
+    A.eq(ns.length, 1, 'the subtask past the cap comes back as a not-spawned row');
+    A.eq(ns[0].label, 'L5', 'the not-spawned row keeps the label the lead gave it');
+    A.ok(/NOT spawned/.test(out.summary), 'the spawn summary names the drop');
+  } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+}
+
+// ---- EFFECTIVE APPROVAL POSTURE (2026-07-26 audit finding E): a worker shares the LEAD's consent broker, so a
+//      worker whose OWN roster identity says "FULL ACCESS — never wait for a go-ahead" was lying to it whenever the
+//      lead was in ask mode (every write actually paused). The delegated prompt must state the EFFECTIVE posture,
+//      after (and explicitly superseding) the identity's own clause. ----
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([['engineer', { system: 'E-SYS\n\nAPPROVAL — FULL ACCESS: run your tools directly.' }]]);
+  const mk = posture => makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), approvalPosture: posture });
+
+  await mk('ask').dispatchTool.run({ workers: [{ agentId: 'engineer', prompt: 'p' }] }, { agentId: 'lead', emit: () => {} });
+  const askSys = ro.calls[0].system;
+  A.ok(/E-SYS/.test(askSys), "the worker keeps its own composed roster identity");
+  A.ok(/DELEGATED APPROVAL/.test(askSys), 'a delegated worker is told its EFFECTIVE approval posture');
+  A.ok(/SUPERSEDES ANY APPROVAL SECTION ABOVE/.test(askSys), "the note explicitly overrides the identity's own clause");
+  A.ok(/ASK FIRST/.test(askSys), "an ask-mode lead's worker is told to expect approval pauses");
+  A.ok(askSys.indexOf('DELEGATED APPROVAL') > askSys.indexOf('APPROVAL — FULL ACCESS'), 'the effective posture lands AFTER the identity clause (later wins)');
+
+  await mk('full').dispatchTool.run({ workers: [{ agentId: 'engineer', prompt: 'p' }] }, { agentId: 'lead', emit: () => {} });
+  const fullSys = ro.calls[1].system;
+  A.ok(/FULL ACCESS\. Run your tools directly/.test(fullSys), "a full-access lead's worker is told to act without asking");
+  A.ok(!/ASK FIRST/.test(fullSys), 'no contradictory ask-first instruction on the full-access path');
+
+  // a host that wires NO posture stays byte-identical to the pre-fix prompt (back-compat for bare unit callers)
+  await mk(undefined).dispatchTool.run({ workers: [{ agentId: 'engineer', prompt: 'p' }] }, { agentId: 'lead', emit: () => {} });
+  A.eq(ro.calls[2].system, 'E-SYS\n\nAPPROVAL — FULL ACCESS: run your tools directly.', 'no posture wired -> the identity is passed through untouched');
+}
+
+// the host's own posture thunk must be wired at the call site (the tool cannot read the roster itself)
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+  A.ok(/approvalPosture: \(\) => \(FULL_ACCESS \|\| \(\(agentRoster\.get\(agentId\) \|\| \{\}\)\.approvalMode === 'full'\)\) \? 'full' : 'ask'/.test(src),
+    'the run host wires the EFFECTIVE (lead) approval posture into makeOrchestrationTools');
+}
+
+// ---- THE ESCAPE (2026-07-26 audit finding A): a SEQUENTIAL dispatch whose wall clock ran out used to lose
+//      EVERYTHING. One slow worker ate the shared budget, the registry's tool timeout rejected, and every
+//      already-completed worker's result was discarded — the lead received only "team.dispatch timed out", after
+//      the Commander had paid for all of them. Now: one worker's slice ends ALONE, its siblings' work survives,
+//      and the row says so. Driven through the REAL registry (which owns the outer timeout). ----
+{
+  const finished = [];
+  let clock = 0;
+  const runOnce = async (o) => {
+    const slow = o.agentId === 'analyst';
+    await new Promise(res => {
+      const t = setTimeout(res, slow ? 4000 : 5);
+      if (o.signal && o.signal.addEventListener) o.signal.addEventListener('abort', () => { clearTimeout(t); res(); }, { once: true });
+    });
+    finished.push(o.agentId);
+    return { reason: 'done', messages: [{ role: 'assistant', content: 'REAL WORK from ' + o.agentId }], usd: 0.5 };
+  };
+  const roster = new Map([['researcher', {}], ['scribe', {}], ['analyst', {}]]);
+  const tools = makeOrchestrationTools({
+    runOnce, roster: () => roster, key: 'k', model: 'm', newId: counter(),
+    dispatchTimeoutMs: 600, now: () => clock
+  });
+  const reg = makeRegistry();
+  tools.register(reg);
+  const capCtx = makeCapCtx({ agentId: 'agent', room: 'office', hasCompute: true, tools: ['team.dispatch'], approvalRules: {} }, { emit: () => {} });
+  const r = await reg.dispatch({ name: 'team.dispatch', args: { workers: [
+    { agentId: 'researcher', prompt: 'find X' }, { agentId: 'scribe', prompt: 'write Y' }, { agentId: 'analyst', prompt: 'deep dive Z' }
+  ] }, argsRaw: '{}' }, capCtx);
+
+  A.ok(!r.isError, 'a dispatch that runs out of wall clock RETURNS (it is not a registry timeout error)');
+  const rows = JSON.parse(r.content);
+  A.eq(rows.length, 3, 'every worker is accounted for');
+  A.eq(rows[0].reason, 'done', 'the first finished worker is reported done');
+  A.ok(/REAL WORK from researcher/.test(rows[0].result), "the finished worker's actual output SURVIVES the straggler (the escape)");
+  A.ok(/REAL WORK from scribe/.test(rows[1].result), 'the second finished worker survives too');
+  A.eq(rows[2].reason, 'timeout', 'the worker that blew its slice is reported as timeout, not as done');
+  A.ok(/STOPPED/.test(rows[2].result) && /do not present it as complete/i.test(rows[2].result),
+    'the timeout row tells the lead not to pass the unfinished part off as complete');
+  A.ok(/out of time/.test(r.summary), 'the summary names the timeout so the model sees it before reading rows');
+  A.ok(/2 done/.test(r.summary), 'the summary credits the work that did complete');
+  A.ok(finished.indexOf('researcher') >= 0 && finished.indexOf('scribe') >= 0, 'both fast workers really ran');
+}
+
+// ---- a fast early worker DONATES its unused time: the wall clock is divided over what is LEFT, not fixed shares ----
+{
+  const ro = fakeRunOnce();
+  const roster = new Map([['a', {}], ['b', {}], ['c', {}], ['d', {}]]);
+  let clock = 0;
+  const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), dispatchTimeoutMs: 4000, now: () => clock });
+  await dispatchTool.run({ workers: ['a', 'b', 'c', 'd'].map(a => ({ agentId: a, prompt: 'p' })) }, { agentId: 'lead', emit: () => {} });
+  A.eq(ro.calls.length, 4, 'all four sequential workers ran');
+  // clock never advances in this stub, so each worker sees the full remaining budget / workers remaining
+  A.ok(ro.calls[0].signal && ro.calls[3].signal, 'every sequential worker got its own signal');
+}
+
+// ---- abort PROPAGATION survives the per-worker controller: E-STOP on the lead still stops the worker ----
+{
+  let sawAbort = false;
+  const parent = new AbortController();
+  const runOnce = async (o) => {
+    if (o.signal && o.signal.addEventListener) o.signal.addEventListener('abort', () => { sawAbort = true; }, { once: true });
+    parent.abort();                                  // the lead is E-STOPped mid-worker
+    await new Promise(res => setTimeout(res, 5));
+    return { reason: 'abort', messages: [], usd: 0 };
+  };
+  const roster = new Map([['w', {}]]);
+  const { dispatchTool } = makeOrchestrationTools({ runOnce, roster: () => roster, key: 'k', model: 'm', newId: counter(), dispatchTimeoutMs: 5000, now: () => 0 });
+  await dispatchTool.run({ workers: [{ agentId: 'w', prompt: 'p' }] }, { agentId: 'lead', signal: parent.signal, emit: () => {} });
+  A.ok(sawAbort, 'aborting the LEAD still cascades into the worker (the chained controller keeps E-STOP working)');
+}
+
+// ---- background workers keep NO wall clock (outliving the tool call is the point of background:true) ----
+{
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-bg-noclock-'));
+  try {
+    const subagents = makeSubagentManager({ fs, pathMod: path, file: path.join(root, 'sub.json'), clock: { now: () => 1000 }, emit: () => {}, newId: counter() });
+    const ro = fakeRunOnce();
+    const roster = new Map([['w', {}]]);
+    const parent = { aborted: false };
+    const { dispatchTool } = makeOrchestrationTools({ runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(), subagents, dispatchTimeoutMs: 700, now: () => 0 });
+    await dispatchTool.run({ workers: [{ agentId: 'w', prompt: 'p' }], background: true }, { agentId: 'lead', signal: parent, emit: () => {} });
+    await tick(); await tick();
+    A.eq(ro.calls.length, 1, 'the background worker started');
+    A.ok(ro.calls[0].signal === undefined || ro.calls[0].signal !== null, 'background worker runs on the subagent registry signal');
+  } finally { try { fs.rmSync(root, { recursive: true, force: true }); } catch (_) {} }
+}
+
+// ---- THE ESCAPE (2026-07-26 audit finding B): a parallel dispatch of 4 at the shipped defaults
+//      (MAX_CONCURRENT_AGENTS 3, and the LEAD holds a slot for the whole dispatch) fanned out all at once, the
+//      admission gate refused the last two, and NOTHING retried them — half the crew silently never worked.
+//      Driven against the REAL concurrency gate, modelling the shipped admission path (index.js: tryEnter ->
+//      `return` undefined on refusal, leave() in a finally). ----
+{
+  const { makeConcurrencyGate } = require('../sidecar/concurrency.js');
+  const run = async (opts) => {
+    const gate = makeConcurrencyGate({ max: 3 });
+    gate.tryEnter('agent');                                  // the LEAD occupies a slot for the whole dispatch
+    let peak = 0;
+    const runOnce = async (o) => {
+      if (!gate.tryEnter(o.agentId)) return undefined;        // shipped refusal shape
+      peak = Math.max(peak, gate.active());
+      try { await new Promise(r => setTimeout(r, 15)); return { reason: 'done', messages: [{ role: 'assistant', content: 'ok:' + o.agentId }], usd: 0.01 }; }
+      finally { gate.leave(o.agentId); }
+    };
+    const roster = new Map([['w1', {}], ['w2', {}], ['w3', {}], ['w4', {}]]);
+    const { dispatchTool } = makeOrchestrationTools(Object.assign({
+      runOnce, roster: () => roster, key: 'k', model: 'm', newId: counter(), dispatchTimeoutMs: 20000, now: () => 0
+    }, opts(gate)));
+    const out = await dispatchTool.run({ workers: ['w1', 'w2', 'w3', 'w4'].map(a => ({ agentId: a, prompt: 'p' })), parallel: true }, { agentId: 'agent', emit: () => {} });
+    return { rows: JSON.parse(out.content), summary: out.summary, peak };
+  };
+
+  // WITH the capacity wired (how the host wires it): every worker runs, and the gate is never over-subscribed.
+  const wired = await run(gate => ({ freeSlots: () => { const m = gate.max(); return m > 0 ? Math.max(0, m - gate.active()) : null; } }));
+  A.eq(wired.rows.length, 4, 'all four parallel workers are accounted for');
+  A.eq(wired.rows.filter(r => r.reason === 'done').length, 4, 'ALL FOUR actually ran (the escape: two used to be refused and dropped)');
+  A.eq(wired.rows.filter(r => r.reason === 'refused').length, 0, 'no worker is left refused');
+  A.ok(wired.peak <= 3, 'the concurrency cap is still respected — waves never over-subscribe the gate (peak ' + wired.peak + ')');
+  A.ok(/4 done/.test(wired.summary), 'the summary reports four done');
+
+  // WITHOUT it wired, a refusal is still retried once rather than surfacing as lost work.
+  const bare = await run(() => ({}));
+  A.eq(bare.rows.length, 4, 'unwired hosts still account for every worker');
+  A.ok(bare.rows.filter(r => r.reason === 'done').length >= 3, 'the retry pass recovers refusals even with no capacity hint');
+}
+
+// ---- a genuinely saturated gate still fails HONESTLY (never silently), and says what to do ----
+{
+  const ro = fakeRunOnce(() => undefined);            // every admission refused
+  const roster = new Map([['w1', {}], ['w2', {}]]);
+  const { dispatchTool } = makeOrchestrationTools({
+    runOnce: ro, roster: () => roster, key: 'k', model: 'm', newId: counter(),
+    dispatchTimeoutMs: 5000, now: () => 0, freeSlots: () => 0
+  });
+  const out = await dispatchTool.run({ workers: [{ agentId: 'w1', prompt: 'p' }, { agentId: 'w2', prompt: 'p' }], parallel: true }, { agentId: 'agent', emit: () => {} });
+  const rows = JSON.parse(out.content);
+  A.eq(rows.length, 2, 'both workers are reported even when the gate is saturated');
+  A.ok(rows.every(r => r.reason === 'refused'), 'a saturated gate yields refused rows, not fabricated results');
+  A.ok(rows.every(r => r.retried === true), 'each refusal was retried once before being reported');
+  A.ok(/MAX_CONCURRENT_AGENTS in SETTINGS/.test(rows[0].result), 'the refusal names the control the Commander can actually change');
+  A.ok(ro.calls.length === 4, 'two workers x (first attempt + one retry) = four admission attempts');
+}
+
+// the host must wire the gate's live free capacity (the tool cannot see the gate itself)
+{
+  const src = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
+  A.ok(/freeSlots: \(\) => \{ const m = concurrencyGate\.max\(\); return m > 0 \? Math\.max\(0, m - concurrencyGate\.active\(\)\) : null; \}/.test(src),
+    'the run host wires concurrencyGate free capacity into makeOrchestrationTools');
+  A.ok(/now: \(\) => Date\.now\(\)/.test(src.slice(src.indexOf('makeOrchestrationTools({'), src.indexOf('makeOrchestrationTools({') + 3000)),
+    'the run host injects the real clock for the dispatch wall clock');
 }
 
 A.report('orchestration.test');

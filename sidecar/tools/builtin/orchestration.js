@@ -39,6 +39,21 @@
   // posture — so a worker has the same reach as the orchestrator, gated by the same approvals.
   const WORKER_KIT = [{ instanceId: 'wb_worker', objectType: 'workbench' }];
 
+  // abort without ever throwing out of a timer callback (AbortController.abort(reason) is not universal).
+  function abort(ac) { try { ac.abort(new Error('worker wall clock')); } catch (_) { try { ac.abort(); } catch (_) {} } }
+  /* A fresh AbortController CHAINED to a parent signal: aborting the parent (E-STOP, the lead's run ending, the
+     registry's own per-call timeout) still cascades down, but aborting the child stops ONE worker without
+     touching its siblings or the lead. Mirrors registry.js's childAbort; kept local because this file is a
+     dep-free UMD. Tolerates a non-AbortSignal parent (unit stubs) by simply not chaining. */
+  function childAbort(parent) {
+    const ac = new AbortController();
+    if (parent) {
+      if (parent.aborted) abort(ac);
+      else if (typeof parent.addEventListener === 'function') parent.addEventListener('abort', () => abort(ac), { once: true });
+    }
+    return ac;
+  }
+
   function lastAssistant(messages) {
     if (!Array.isArray(messages)) return '';
     for (let i = messages.length - 1; i >= 0; i--) {
@@ -62,8 +77,28 @@
     // string when absent → a spawned subagent still runs, just without an inherited persona.
     const selfSystem = (typeof deps.selfSystem === 'string') ? deps.selfSystem : '';
     const taskContext = (typeof deps.taskContext === 'string') ? deps.taskContext.trim() : '';
+    // The EFFECTIVE approval posture of a delegated run — 'full' | 'ask' — read from the host as a thunk so it
+    // reflects the live roster at dispatch time. A worker SHARES the lead's consent broker (see runWorker), so the
+    // posture baked into its own roster identity ("APPROVAL — FULL ACCESS…" / "ASK FIRST…") is the WRONG one
+    // whenever the two differ: an engineer the Commander granted full access, dispatched by an ask-mode overseer,
+    // was told "never wait for a go-ahead" while every write actually paused for a prompt. Truthful telemetry
+    // applies to the prompt too, so the effective posture is appended LAST and explicitly supersedes it.
+    const approvalPosture = () => {
+      const v = (typeof deps.approvalPosture === 'function') ? deps.approvalPosture() : deps.approvalPosture;
+      return v === 'full' ? 'full' : (v === 'ask' ? 'ask' : '');
+    };
+    function postureNote() {
+      const p = approvalPosture();
+      if (!p) return '';   // host wired no posture -> byte-identical to the pre-2026-07-26 prompt
+      return '\n\n[DELEGATED APPROVAL — THIS SUPERSEDES ANY APPROVAL SECTION ABOVE] You are running as a delegated '
+        + 'worker, so you inherit the LEAD agent\'s approval posture, not your own: '
+        + (p === 'full'
+          ? 'FULL ACCESS. Run your tools directly — do not pause to ask, and never request approval in text.'
+          : 'ASK FIRST. Writes, commands, and network calls are shown to the Commander for approval when you call the '
+            + 'tool — so still just make the tool call, but expect a pause, and carry on without it if it is declined.');
+    }
     function workerSystem(base) {
-      const identity = String(base || '');
+      const identity = String(base || '') + postureNote();
       if (!taskContext) return identity;
       return identity + '\n\n' + taskContext
         + '\n\n[DELEGATED EXECUTION] Treat the task context above as settled input from the Commander. Do not ask the Commander another discovery question. If a truly blocking gap remains, report that gap to the lead agent.';
@@ -96,11 +131,30 @@
     // the lead then abandons delegation and does the job solo while the orphaned worker keeps spending. So the
     // dispatch tool carries its OWN generous wall-clock backstop. Real runaway is already bounded per-worker by
     // the cost cap (perWorker) + the worker's own maxIters/per-tool timeouts; this is just the outer ceiling.
-    const dispatchTimeoutMs = (typeof deps.dispatchTimeoutMs === 'number' && deps.dispatchTimeoutMs > 0) ? deps.dispatchTimeoutMs : 600000;
+    const dispatchBudgetMs = (typeof deps.dispatchTimeoutMs === 'number' && deps.dispatchTimeoutMs > 0) ? deps.dispatchTimeoutMs : 600000;
+    // injected clock (lint-determinism: no ambient Date.now in backend logic) — only used to divide the wall clock.
+    // Without one (bare unit callers) elapsed time is UNKNOWABLE, so the sequential path falls back to fixed even
+    // shares; that keeps the shares summing to the budget instead of each worker seeing a full, never-shrinking one.
+    const hasClock = (typeof deps.now === 'function');
+    const now = hasClock ? deps.now : (() => 0);
+    /* freeSlots() -> how many NEW distinct agents the station's admission gate can accept right now, or null for
+       "no cap wired". A parallel dispatch runs in WAVES of this size instead of firing everything at once and
+       letting the gate refuse the excess (2026-07-26 audit finding B). Read fresh per dispatch: the free capacity
+       depends on what else is running (another COMMS session, a cron beat) at that moment. */
+    const freeSlots = (typeof deps.freeSlots === 'function') ? deps.freeSlots : null;
+    function waveSize(n) {
+      if (!freeSlots) return n;                        // no gate wired -> fan out all at once (pre-2026-07-26 shape)
+      let f = null;
+      try { f = freeSlots(); } catch (_) { f = null; }
+      if (f == null || !isFinite(f)) return n;         // unbounded gate
+      return Math.max(1, Math.min(n, Math.floor(f))); // at least 1 (a full gate still tries, then the retry pass)
+    }
 
     const dispatchTool = {
-      // own wall-clock (minutes, not the 30s fast-tool default) — see dispatchTimeoutMs above.
-      timeoutMs: dispatchTimeoutMs,
+      // The registry timeout is now only a BACKSTOP: it sits a minute above the dispatch's own budget so the
+      // in-tool wall clock (which returns partial rows) always fires first. Letting the registry's timeout be the
+      // primary mechanism is what threw away every completed worker's result (2026-07-26 audit finding A).
+      timeoutMs: dispatchBudgetMs + 60000,
       // CONSENT-GATED (2026-07-14, closes the parked P1): delegation fans out REAL autonomous agent loops that
       // spend budget — if untrusted content in the lead's context (a fetched page, a channel message) injects
       // "dispatch a worker to do X", the human must get a say first. Same semantics as team.summon: the APPROVAL
@@ -125,8 +179,21 @@
         if (typeof runOnce !== 'function') return { content: 'orchestration unavailable (no run host)', summary: 'error' };
         const leadId = (ctx && ctx.agentId) || 'agent';
         const crew = roster() || new Map();
-        const reqs = Array.isArray(args.workers) ? args.workers.slice(0, maxWorkers) : [];
+        // NO SILENT CAPS (2026-07-26 orchestration audit): the cap used to `slice(0, maxWorkers)` and say nothing,
+        // so a 6-worker decomposition became a 4-worker dispatch reporting "4 done" — and the lead then wrote the
+        // Commander a confident final answer covering two subtasks that never ran. The overflow now comes BACK as
+        // explicit not-dispatched rows (see overflowRows) so the model can see, and re-dispatch, exactly what it lost.
+        const asked = Array.isArray(args.workers) ? args.workers : [];
+        const reqs = asked.slice(0, maxWorkers);
+        const overflow = asked.slice(maxWorkers);
         if (!reqs.length) return { content: 'No workers specified.', summary: 'noop' };
+        const overflowRows = () => overflow.map(w => ({
+          agentId: String((w && w.agentId) || '(unnamed)'),
+          reason: 'not-dispatched',
+          result: 'NOT RUN — one team.dispatch call carries at most ' + maxWorkers + ' workers. This subtask was not started; dispatch it in a follow-up call before you report.',
+          usd: 0
+        }));
+        const overflowNote = overflow.length ? ' — ' + overflow.length + ' NOT dispatched (max ' + maxWorkers + ' per call; dispatch the rest in a follow-up call)' : '';
 
         // forward ONLY lifecycle/cost from children onto the lead's bus (the floor animation reads agent.run.start).
         const childEmit = (name, payload) => { if (FORWARD[name] && ctx && typeof ctx.emit === 'function') { try { ctx.emit(name, payload); } catch (_) {} } };
@@ -144,6 +211,29 @@
           o2 = o2 || {};
           if (job.error) return { agentId: job.agentId, reason: 'error', result: job.error, usd: 0 };
           const wire = workerWire(job.ident);   // the worker's OWN provider+model when resolvable (see workerWire)
+          // PER-WORKER WALL CLOCK (2026-07-26 audit finding A). Before this, the ONLY clock was the registry's
+          // tool timeout over the WHOLE dispatch: one slow worker ate the shared budget, the registry rejected, and
+          // every ALREADY-COMPLETED worker's result was thrown away — the lead received the string "team.dispatch
+          // timed out" and nothing else, after the Commander had paid for all of them. Each foreground worker now
+          // gets its own slice on its OWN abort controller (chained to the parent, so E-STOP still cascades), so a
+          // straggler is stopped ALONE and comes back as one honest `timeout` row while its siblings' work survives.
+          // Background workers pass no wallMs — outliving the tool call is the whole point of background:true.
+          const parentSignal = o2.signal || (ctx && ctx.signal);
+          const wallMs = (typeof o2.wallMs === 'number' && isFinite(o2.wallMs) && o2.wallMs > 0) ? o2.wallMs : 0;
+          const ac = wallMs ? childAbort(parentSignal) : null;
+          let timedOut = false, timer = null;
+          if (ac) timer = setTimeout(() => { timedOut = true; abort(ac); }, wallMs);
+          const timeoutRow = (res) => {
+            const partial = res ? (lastAssistant(res.messages) || '') : '';
+            return {
+              agentId: job.agentId, reason: 'timeout',
+              result: (partial ? partial + '\n\n' : '')
+                + '[STOPPED — this worker used up its ' + Math.round(wallMs / 1000) + 's slice of the dispatch wall clock'
+                + (partial ? '; the text above is its PARTIAL work' : ' before returning any text')
+                + '. Do not present it as complete: either re-dispatch this subtask alone, or tell the Commander this part is unfinished.]',
+              usd: (res && res.usd) || 0
+            };
+          };
           let result;
           try {
             result = await runOnce({
@@ -156,7 +246,7 @@
               messages: [{ role: 'user', content: job.prompt }],
               agentId: job.agentId, isTask: true,
               emit: o2.emit || childEmit,      // lifecycle/cost ride the lead/global stream -> the floor lights the worker
-              signal: o2.signal || (ctx && ctx.signal),
+              signal: ac ? ac.signal : parentSignal,   // own controller when this worker has a wall clock (see above)
               runId: o2.runId || newId(), trigger: 'directive', surface: 'autonomous',
               // Share the lead's consent broker so a worker's WRITES follow the lead's APPROVAL posture
               // (full-auto bypass, or a prompt forwarded to the watched lead) instead of the headless default-deny.
@@ -171,9 +261,13 @@
               maxIters: workerMaxIters         // a runaway worker can't burn the lead's full iteration budget
             });
           } catch (e) {
+            if (timedOut) return timeoutRow(null);   // the abort we fired surfaced as a throw — still an honest timeout
             return { agentId: job.agentId, reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), usd: 0 };
+          } finally {
+            if (timer) clearTimeout(timer);
           }
-          if (!result) return { agentId: job.agentId, reason: 'refused', result: 'worker could not start — the concurrency cap (STARNET_MAX_CONCURRENT_AGENTS) is full or a sign-in is needed. Try fewer at once, or run sequentially.', usd: 0 };
+          if (timedOut) return timeoutRow(result);   // keep whatever partial text the aborted run did produce
+          if (!result) return { agentId: job.agentId, reason: 'refused', result: 'worker could not start — the station\'s concurrent-agent cap was full at that instant, or a provider sign-in is needed. A parallel dispatch already runs in waves sized to the free capacity and retries a refusal once, so a refusal that survives means the cap is genuinely saturated: raise MAX_CONCURRENT_AGENTS in SETTINGS, or dispatch these workers in a follow-up call.', usd: 0 };
           const row = {
             agentId: job.agentId,
             reason: result.reason || 'done',
@@ -191,8 +285,6 @@
           return row;
         };
 
-        const runJob = async (job) => runWorker(job);
-
         if (args.background) {
           if (!subagents || typeof subagents.start !== 'function') return { content: 'background subagents unavailable (no subagent manager)', summary: 'error' };
           const started = jobs.map(job => {
@@ -202,15 +294,62 @@
               return { status: r.reason === 'done' ? 'done' : 'error', reason: r.reason, result: r.result, usd: r.usd || 0 };
             });
           });
-          return { content: JSON.stringify(started), summary: 'started ' + started.filter(r => r && r.id).length + ' background worker(s)' };
+          const startedRows = started.concat(overflowRows());
+          return { content: JSON.stringify(startedRows), summary: 'started ' + started.filter(r => r && r.id).length + ' background worker(s)' + overflowNote };
         }
 
-        let out;
-        if (args.parallel) out = await Promise.all(jobs.map(runJob));   // fan out (bounded by the concurrency gate)
-        else { out = []; for (const j of jobs) out.push(await runJob(j)); }   // sequential: legible, one box at a time
+        /* WAVES — one code path for both modes (2026-07-26 audit findings A + B).
+           SEQUENTIAL is waves of 1: legible, one box at a time (the default).
+           PARALLEL is waves sized to the station's REAL free fan-out capacity. It used to fan out all at once and
+           let the concurrency gate REFUSE the excess: at the shipped defaults (MAX_CONCURRENT_AGENTS 3, and the
+           lead holds a slot for the whole dispatch) a 4-worker parallel dispatch ran 2 and handed the lead two
+           'refused' rows that nothing ever retried — half the crew silently didn't work. Waves run every worker,
+           just not all in the same instant.
+           THE WALL CLOCK divides across waves the same way it divides across sequential workers: each wave gets a
+           fair share of what is LEFT, so an early fast wave donates its unused time to the ones behind it. */
+        const startedAt = now();
+        const size = args.parallel ? waveSize(jobs.length) : 1;
+        const waves = [];
+        for (let i = 0; i < jobs.length; i += size) waves.push(jobs.slice(i, i + size));
+        const leftAt = (w) => hasClock
+          ? dispatchBudgetMs - (now() - startedAt)
+          : dispatchBudgetMs - Math.floor(dispatchBudgetMs * w / waves.length);   // no clock: fixed even shares
+        const notStartedRow = (job) => ({
+          agentId: job.agentId, reason: 'not-dispatched', usd: 0,
+          result: 'NOT RUN — this dispatch ran out of wall clock before reaching this worker. The results above are real; '
+            + 'dispatch this subtask in a follow-up call, and do not report it as done.'
+        });
+        let out = [];
+        for (let w = 0; w < waves.length; w++) {
+          const left = leftAt(w);
+          if (left <= 0) { for (const j of waves[w]) out.push(notStartedRow(j)); continue; }
+          const share = Math.max(1, Math.floor(left / (waves.length - w)));
+          const done = await Promise.all(waves[w].map(j => runWorker(j, { wallMs: share })));
+          for (const r of done) out.push(r);
+        }
+        /* ONE RETRY PASS for a refusal. A 'refused' row means the admission gate was full at that instant — a
+           sibling wave, another agent's run, or a cron beat holding the last slot. Waves make that rare instead of
+           systematic, but a race can still lose one, and a refused worker did NO work and cost NOTHING, so
+           retrying it is free. `out` is built in job order, so out[i] pairs with jobs[i] (overflow is appended after). */
+        for (let i = 0; i < out.length && i < jobs.length; i++) {
+          if (out[i].reason !== 'refused') continue;
+          const left = hasClock ? dispatchBudgetMs - (now() - startedAt) : Math.floor(dispatchBudgetMs / jobs.length);
+          if (left <= 0) break;
+          const retried = await runWorker(jobs[i], { wallMs: left });
+          out[i] = (retried.reason === 'refused') ? Object.assign(retried, { retried: true }) : retried;
+        }
+        out = out.concat(overflowRows());
 
         const ok = out.filter(r => r.reason === 'done').length;
-        return { content: JSON.stringify(out), summary: 'dispatched ' + jobs.length + ' worker(s), ' + ok + ' done' };
+        const late = out.filter(r => r.reason === 'timeout').length;
+        const unrun = out.filter(r => r.reason === 'not-dispatched').length - overflow.length;
+        return {
+          content: JSON.stringify(out),
+          summary: 'dispatched ' + jobs.length + ' worker(s), ' + ok + ' done'
+            + (late ? ', ' + late + ' out of time' : '')
+            + (unrun > 0 ? ', ' + unrun + ' never started (wall clock)' : '')
+            + overflowNote
+        };
       }
     };
 
@@ -223,7 +362,10 @@
     // a clone is handed the WORKBENCH but NOT the orchestrator object, so team.spawn/dispatch are never EXPOSED to it
     // → it cannot spawn its own sub-agents. The SAME gating that already stops a delegated worker re-delegating.
     const spawnTool = {
-      timeoutMs: dispatchTimeoutMs,
+      // Spawn's foreground clones run in PARALLEL and are each bounded by workerMaxIters, so this budget applies to
+      // the slowest single clone rather than a sum — it keeps the registry timeout it always had. (The per-worker
+      // wall clock that saves partial results was added to team.dispatch, whose sequential default shares one budget.)
+      timeoutMs: dispatchBudgetMs,
       // CONSENT-GATED like team.dispatch (see its note): spawning clones fans out autonomous budget-spending
       // loops off text in the lead's context — 'ask' mode gets the APPROVAL beat, Full Access bypasses.
       name: 'team.spawn', capability: 'orchestrator', scope: 'execute', requiresConsent: true,
@@ -243,8 +385,19 @@
         if (typeof runOnce !== 'function') return { content: 'orchestration unavailable (no run host)', summary: 'error' };
         if (!subagents || typeof subagents.start !== 'function') return { content: 'ephemeral subagents unavailable (no subagent manager)', summary: 'unavailable' };
         const leadId = (ctx && ctx.agentId) || 'agent';
-        const reqs = Array.isArray(args.tasks) ? args.tasks.slice(0, maxWorkers) : [];
+        // NO SILENT CAPS — same rule as team.dispatch (see its note): the tasks past the cap come back as
+        // explicit not-spawned rows instead of vanishing from a "N done" summary.
+        const askedTasks = Array.isArray(args.tasks) ? args.tasks : [];
+        const reqs = askedTasks.slice(0, maxWorkers);
+        const overflow = askedTasks.slice(maxWorkers);
         if (!reqs.length) return { content: 'No tasks specified.', summary: 'noop' };
+        const overflowRows = () => overflow.map((t, i) => ({
+          label: String((t && t.label) || ('subagent ' + (maxWorkers + i + 1))).slice(0, 60),
+          reason: 'not-spawned',
+          result: 'NOT RUN — one team.spawn call carries at most ' + maxWorkers + ' subtasks. This one was not started; spawn it in a follow-up call before you report.',
+          usd: 0
+        }));
+        const overflowNote = overflow.length ? ' — ' + overflow.length + ' NOT spawned (max ' + maxWorkers + ' per call; spawn the rest in a follow-up call)' : '';
 
         // forward ONLY lifecycle/cost onto the lead's bus so the floor materializes/pops the Meeseeks live; the
         // durable record (via h.emit) keeps the full watch tail for team.subagents/interrupt/resume.
@@ -294,11 +447,12 @@
 
         const spawned = reqs.map(spawnOne);
         if (args.background) {
-          return { content: JSON.stringify(spawned.map(s => Object.assign({ label: s.label }, s.view))), summary: 'spawned ' + spawned.length + ' subagent(s)' };
+          const rows = spawned.map(s => Object.assign({ label: s.label }, s.view)).concat(overflowRows());
+          return { content: JSON.stringify(rows), summary: 'spawned ' + spawned.length + ' subagent(s)' + overflowNote };
         }
-        const results = await Promise.all(spawned.map(s => s.done));
+        const results = (await Promise.all(spawned.map(s => s.done))).concat(overflowRows());
         const ok = results.filter(r => r.reason === 'done').length;
-        return { content: JSON.stringify(results), summary: 'spawned ' + results.length + ' subagent(s), ' + ok + ' done' };
+        return { content: JSON.stringify(results), summary: 'spawned ' + spawned.length + ' subagent(s), ' + ok + ' done' + overflowNote };
       }
     };
 
