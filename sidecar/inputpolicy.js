@@ -33,7 +33,11 @@ const IMPACT_SET = new Set(Object.keys(IMPACTS).map(k => IMPACTS[k]));
 // bookkeeping against a host-side store with zero external effect. Without it they fell through to
 // EXTERNAL_UNKNOWN and the host demanded a per-call confirmation for the tool whose whole job is
 // asking the Commander a question (live-caught 2026-07-16: three approval cards to ask one question).
-const SAFE_BUILTIN_CAPS = new Set(['compute', 'cabinet', 'memory', 'quest', 'studio', 'orchestrator', 'taskbrief']);
+// 'toolsearch' = tool.search: reads the in-process tool registry and returns names. Zero external effect —
+// it cannot even call what it finds, it only makes it advertisable. Same live-caught failure as 'taskbrief'
+// above: without an entry here it fell through to EXTERNAL_UNKNOWN and the authority layer refused it, so
+// every DEFERRED tool became permanently unreachable while looking, from the outside, merely "not found".
+const SAFE_BUILTIN_CAPS = new Set(['compute', 'cabinet', 'memory', 'quest', 'studio', 'orchestrator', 'taskbrief', 'toolsearch']);
 
 function impactOfTool(tool) {
   tool = tool || {};

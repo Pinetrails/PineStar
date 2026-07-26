@@ -354,6 +354,7 @@ test/routing.b5.test.js
 test/propanchor.test.js
 test/waitanchor.test.js
 test/harness.integration.test.js
+test/toolsearch.test.js
 test/consent.interactive.test.js
 test/consentwait.test.js
 test/consent-visibility.test.js

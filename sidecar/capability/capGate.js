@@ -20,7 +20,14 @@
 
   function attenuate(resolved, allowedSubset) {
     const allow = allowedSubset instanceof Set ? allowedSubset : new Set(allowedSubset || []);
-    return Object.assign({}, resolved, { tools: resolved.tools.filter(t => allow.has(t)) });
+    // `deferred` is filtered by the SAME subset as `tools`, and that is load-bearing: it is the list
+    // tool.search offers, so an unfiltered copy would let a delegated worker discover — and be told it may now
+    // call — a tool the gate then denies. Monotonic attenuation has to hold for what the agent can FIND, not
+    // just for what it may run.
+    return Object.assign({}, resolved, {
+      tools: resolved.tools.filter(t => allow.has(t)),
+      deferred: (resolved.deferred || []).filter(t => allow.has(t))
+    });
   }
 
   function makeCapCtx(resolved, extra) {
@@ -30,7 +37,8 @@
       canRun: () => !!resolved.hasCompute,
       computeReason: 'no compute capability — place a computer in the room',
       canUse: (call) => canAgentUse(resolved, call.name),
-      approvalRules: resolved.approvalRules
+      approvalRules: resolved.approvalRules,
+      deferred: resolved.deferred || []   // granted-but-unadvertised names; tool.search searches exactly this
     }, extra || {});
   }
 
