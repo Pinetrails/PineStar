@@ -1044,6 +1044,57 @@
       await waitForSettle(c, { budgetMs: settleActionBudgetMs });
       return Math.round(Number(width) || 0) + 'x' + Math.round(Number(height) || 0);
     }
+    /* INSPECT — the bounded half of "page eval".
+       The audit's real complaint about the loopback-only eval gate was concrete: no computed style, no
+       data-* attributes, no shadow DOM. Those are READS, and they do not need arbitrary code. This
+       returns them as structured data from a FIXED expression, so it is available on any page with no
+       eval gate at all - and it can never reach cookies or storage, which is where the risk actually
+       lives. */
+    async function inspect(node) {
+      const p = center(node);
+      return evalJS(`(() => {
+        const el = document.elementFromPoint(${p.x}, ${p.y});
+        if (!el) return { ok: false, reason: 'nothing at this ref (take a fresh browser.snapshot)' };
+        const cs = getComputedStyle(el);
+        const want = ['display','visibility','opacity','position','color','backgroundColor','fontSize',
+          'fontWeight','width','height','zIndex','overflow','pointerEvents','cursor','textAlign','border'];
+        const styles = {}; for (const k of want) styles[k] = cs[k];
+        const attrs = {}; for (const a of el.attributes) attrs[a.name] = String(a.value).slice(0, 300);
+        const data = {}; for (const k of Object.keys(el.dataset || {})) data[k] = String(el.dataset[k]).slice(0, 300);
+        const r = el.getBoundingClientRect();
+        // Shadow DOM is the other thing the gate cost us; expose its interactive contents, not a handle.
+        let shadow = null;
+        if (el.shadowRoot) {
+          shadow = Array.from(el.shadowRoot.querySelectorAll('a,button,input,textarea,select'))
+            .slice(0, 20).map(x => ({ tag: x.tagName.toLowerCase(), type: x.type || '', text: (x.innerText || x.value || '').trim().slice(0, 80) }));
+        }
+        return { ok: true, tag: el.tagName.toLowerCase(),
+          role: el.getAttribute('role') || '', text: (el.innerText || el.value || '').trim().slice(0, 400),
+          disabled: !!el.disabled, checked: el.checked === undefined ? null : !!el.checked,
+          box: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+          styles, attrs, data, shadow };
+      })()`);
+    }
+    /* PUBLIC PAGE EVAL — allowed only while the EPHEMERAL profile is in use.
+       Keeping the loopback-only gate forever costs real capability, but lifting it outright is not
+       safe either: browser.login puts REAL signed-in sessions in the persistent profile, so arbitrary
+       eval there plus web_request is an account-takeover primitive on a prompt-injected run. The
+       honest line is not "eval is dangerous" - it is "eval is dangerous WHERE THE CREDENTIALS ARE".
+       So the driver reports which profile is live and the session refuses accordingly.
+       Results come back JSON-serialized: an object graph (a Window, a DOM node) would either blow up
+       CDP serialization or hand the model a reference it cannot use. */
+    async function evalPublic(expression) {
+      const lit = jsLiteral(String(expression == null ? '' : expression));
+      const r = await evalJS(`(() => {
+        try {
+          const v = (0, eval)(${lit});
+          if (v === undefined) return { ok: true, value: '(undefined)' };
+          try { return { ok: true, value: JSON.stringify(v) === undefined ? String(v) : JSON.parse(JSON.stringify(v)) }; }
+          catch (e) { return { ok: true, value: String(v) }; }
+        } catch (e) { return { ok: false, error: String(e && e.message || e) }; }
+      })()`);
+      return r;
+    }
     /* Tab 0 is always the ORIGINAL target (sessionId null); adopted tabs follow in the order they
        appeared. Switching is explicit and never implicit — a multi-target driver's worst failure is
        silently reading the wrong DOM, so nothing moves the agent between tabs on its own. */
@@ -1248,7 +1299,7 @@
     // actually on the user's screen. Headless mode, or a headless-only binary fallback in
     // a headed request, both read as not visible.
     function visible() { return headed; }
-    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), networkLog: () => netLog.map(r => Object.assign({}, r)), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
+    return { navigate, snapshot, click, type, press, hover, drag, selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, usingPersistentProfile: () => !!deps.profileIsPersistent, testInput, testEval, testState, scroll, back, getText, handleDialog, screenshot, close, consoleLog: () => consoleLog.slice(), networkLog: () => netLog.map(r => Object.assign({}, r)), lastDialog: () => dialog, lastResponse: () => lastResponse, visible, headed, headlessFallback: wantHeaded && binIsHeadlessOnly, attachedPort: () => attachedPort, profileDir };
   }
 
   function makeBrowserSession(deps) {
@@ -1275,7 +1326,7 @@
     }
     function profileDeps() {
       // cleanupProfile:false is load-bearing — the durable profile must never ride the ephemeral rm on close.
-      return acquirePersistent() ? { profileDir: deps.persistentProfile.dir, cleanupProfile: false } : {};
+      return acquirePersistent() ? { profileDir: deps.persistentProfile.dir, cleanupProfile: false, profileIsPersistent: true } : { profileIsPersistent: false };
     }
     function releasePersistent() {
       const pp = deps.persistentProfile;
@@ -1375,6 +1426,27 @@
     }
     async function forward() { const d = ensureDriver(); version++; return driverFn(d, 'forward')(); }
     async function upload(ref, absPaths) { const d = ensureDriver(); return driverFn(d, 'upload')(requireRef(ref), absPaths); }
+    async function inspect(ref) { const d = ensureDriver(); return driverFn(d, 'inspect')(requireRef(ref)); }
+    /* THE GATE. Refuse page eval whenever this run is driving the PERSISTENT profile, because that
+       profile carries the Commander's real logged-in sessions (browser.login put them there). On the
+       ephemeral profile there is nothing to steal, so the same call is fine. */
+    function evalAllowed() {
+      if (leaseHeld) return { ok: false, reason: 'this run is using the signed-in station profile' };
+      const d = driver;
+      if (d && typeof d.usingPersistentProfile === 'function' && d.usingPersistentProfile()) {
+        return { ok: false, reason: 'this run is using the signed-in station profile' };
+      }
+      return { ok: true };
+    }
+    async function evalPublic(expression) {
+      const gate = evalAllowed();
+      if (!gate.ok) throw new Error('browser.eval is refused: ' + gate.reason + ', and arbitrary page ' +
+        'script there could read the cookies and storage of accounts you are signed into. Use ' +
+        'browser.inspect for computed styles/attributes/shadow DOM, browser.get_text for content, or ' +
+        'browser.test_eval on your own localhost server.');
+      const d = ensureDriver();
+      return driverFn(d, 'evalPublic')(expression);
+    }
     async function tabs() { const d = ensureDriver(); return driverFn(d, 'tabs')(); }
     // Switching tabs points every subsequent tool at a DIFFERENT document, so refs from the old one
     // must die — a ref silently re-aimed at another page is the worst outcome available here.
@@ -1503,7 +1575,7 @@
       const d = driver || null;
       return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
     }
-    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, tabs, selectTab, closeTab, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, networkLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
+    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, evalAllowed, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, networkLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
   }
 
   function makeBrowserTools(deps) {
@@ -1660,6 +1732,26 @@
         async a => {
           const rows = await session.consoleLog(a.limit || 40);
           return { content: fenceExternal(rows.map(r => '[' + r.type + '] ' + r.text).join('\n') || 'No console messages.', 'browser console output from the page'), summary: rows.length + ' console row(s)' };
+        }),
+      read('browser.inspect', 'Inspect one element by ref from the latest browser.snapshot: computed styles, every attribute, data-* values, aria/role, disabled/checked state, its box, and any shadow-DOM controls inside it. Use this when a page LOOKS wrong or a control will not respond - it answers "why" without running page script.', { type: 'object', required: ['ref'], properties: { ref: { type: 'string' } } },
+        async a => {
+          const r = await session.inspect(a.ref);
+          if (!r || r.ok !== true) return { content: 'Could not inspect: ' + ((r && r.reason) || 'unknown'), summary: 'not inspected' };
+          const lines = ['<' + r.tag + '>' + (r.role ? ' role=' + r.role : '') + (r.disabled ? ' DISABLED' : '') + (r.checked === true ? ' CHECKED' : ''),
+            'text: ' + (r.text || '(none)'),
+            'box: ' + r.box.x + ',' + r.box.y + ' ' + r.box.w + 'x' + r.box.h,
+            'styles: ' + Object.keys(r.styles).map(k => k + '=' + r.styles[k]).join('; '),
+            'attrs: ' + (Object.keys(r.attrs).length ? Object.keys(r.attrs).map(k => k + '=' + r.attrs[k]).join('; ') : '(none)')];
+          if (Object.keys(r.data || {}).length) lines.push('data-*: ' + Object.keys(r.data).map(k => k + '=' + r.data[k]).join('; '));
+          if (r.shadow) lines.push('shadow DOM controls: ' + (r.shadow.length ? r.shadow.map(x => x.tag + (x.type ? '[' + x.type + ']' : '') + ' "' + x.text + '"').join(', ') : '(none)'));
+          return { content: lines.join('\n'), summary: 'inspected ' + r.tag };
+        }),
+      exec('browser.eval', 'Run a JavaScript expression in the CURRENT page and get its value back as JSON. Refused while the browser is using your signed-in station profile, because page script there could read the cookies and storage of accounts you are logged into - browser.inspect and browser.get_text work everywhere and cover most of what this is for.', { type: 'object', required: ['expression'], properties: { expression: { type: 'string' } } },
+        async a => {
+          const r = await session.evalPublic(a.expression);
+          if (r && r.ok === false) return { content: 'The expression threw: ' + r.error, summary: 'eval threw' };
+          const v = r && r.value;
+          return { content: typeof v === 'string' ? v : JSON.stringify(v), summary: 'eval' };
         }),
       read('browser.network', 'List the network requests the CURRENT page made — method, URL, type, HTTP status, size, and any transport failure. Use this when a page "did nothing": it separates a 401/403, a request that failed outright, and a request that was never made. "filter" matches the URL; "failedOnly" shows just errors and non-2xx.', { type: 'object', properties: { limit: { type: 'number' }, filter: { type: 'string' }, failedOnly: { type: 'boolean' } } },
         async a => {

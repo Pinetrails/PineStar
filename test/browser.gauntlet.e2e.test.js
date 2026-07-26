@@ -292,6 +292,30 @@ const ROUTES = {
       A.ok(threw, 'selecting a tab that does not exist is refused rather than silently ignored');
     }
 
+    /* 6f. INSPECT + EVAL against a real page. inspect is the bounded reader that makes the eval gate
+       affordable; eval is the escape hatch, allowed here because this driver runs an EPHEMERAL profile. */
+    {
+      await driver.navigate(base + '/form');
+      const sel = (await driver.snapshot(40)).find(n => n.role === 'select');
+      const r = await driver.inspect(sel);
+      A.eq(r.ok, true, 'inspect answers for a real element');
+      A.eq(r.tag, 'select', 'inspect names the real tag');
+      A.ok(typeof r.styles.display === 'string' && r.styles.display.length > 0, 'computed style comes back (' + r.styles.display + ')');
+      A.ok(r.box.w > 0 && r.box.h > 0, 'the box is real geometry');
+      A.ok('id' in r.attrs, 'attributes come back');
+
+      const ev = await driver.evalPublic('1 + 1');
+      A.eq(ev.ok, true, 'eval runs on a public page under the ephemeral profile');
+      A.eq(ev.value, 2, 'and returns the real value');
+      const obj = await driver.evalPublic('({a:1,b:[2,3]})');
+      A.eq(obj.value, { a: 1, b: [2, 3] }, 'an object result round-trips as JSON');
+      const boom = await driver.evalPublic('does.not.exist');
+      A.eq(boom.ok, false, 'a throwing expression is reported, not swallowed');
+      // A Window/DOM node would blow up CDP serialization; it must degrade to a string, not hang.
+      const win = await driver.evalPublic('window');
+      A.ok(win.ok === true || win.ok === false, 'a non-serializable result does not wedge the call');
+    }
+
     // 7. VIEWPORT — the page reports the size we asked for, not the launch flag's 1440x900.
     {
       await driver.viewport(375, 812, { mobile: false });
