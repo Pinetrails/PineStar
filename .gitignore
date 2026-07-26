@@ -72,6 +72,14 @@ design/minion_backup_preset/
 # these does not affect them. Keep the dir itself (via .gitkeep) + the README (a .md, not matched).
 qa/findings/*.json
 
+# Red-Green Closer run evidence — one dir per run, written at RUN TIME by scripts/qa/closer.mjs.
+# Same class as qa/findings/ above: MACHINE-LOCAL. manifest.json/verdict.json bake absolute
+# candidate-worktree paths, and the gate logs are per-run detector spew (the same reason
+# .bugloops/ is ignored). The durable record of a closed finding is the digest line + the
+# qa/STATUS.md entry the L11 loop writes, and the winning patch is handed to the merge ritual
+# rather than archived here. The script creates run dirs physically via fs, never from git.
+qa/closer/
+
 # QA READY-GATE machine stamps (EL-7) — last-run state each crew runner writes at RUN TIME for
 # scripts/qa/ready.mjs to read. Same class as qa/findings: machine-local, ephemeral, regenerated
 # every cycle (carry local trunk shas + timestamps), read via fs never from git.
