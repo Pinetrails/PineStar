@@ -173,17 +173,25 @@ const belt = (x, y, dir) => ({ x, y, dir });
     'a filter route to a missing lane falls back to the default lane (resolveTarget mirrors the engine — work never dropped)');
 }
 
-/* ---- MERGER: bufferSize (K) threaded into the plan junction; a box still resolves through it ---- */
+/* ---- MERGER: a CONFIGLESS lane funnel; a box resolves straight through it (2026-07-26 audit) ----
+   `bufferSize` used to be threaded in as a hold-K-then-combine barrier. Nothing in the harness batches, so
+   that config could only ever animate a lie; it is no longer compiled, and a legacy K on a saved prop must
+   be inert rather than resurrect the old behaviour. */
 {
   const plan = P.compileRoutingPlan(geo(
     [{ id: 'i1', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
-     { id: 'm1', t: 'merger', x: 2, y: 0, w: 1, h: 1, bufferSize: 3 },
+     { id: 'm1', t: 'merger', x: 2, y: 0, w: 1, h: 1, bufferSize: 3 },   // a legacy K from an old save
      { id: 'b1', t: 'bay', x: 5, y: 0, w: 2, h: 2, agentId: 'a' }],
     [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(4, 0, 'E')]
   ));
   const j = plan.junctions['2,0'];
-  A.ok(j && j.kind === 'merge' && j.bufferSize === 3, 'a merger compiles to a merge junction carrying its bufferSize (K)');
-  A.eq(P.resolveTarget(plan, { tag: 'x' }), 'a', 'a box still resolves through a merge to the downstream bay');
+  A.ok(j && j.kind === 'merge', 'a merger compiles to a merge junction');
+  A.eq(j.bufferSize, undefined, 'a legacy bufferSize is NOT compiled into the plan (a merger has no config)');
+  A.eq(P.resolveTarget(plan, { tag: 'x' }), 'a', 'a box resolves straight through a merge to the downstream bay');
+  // the round-robin picker belongs to SPLITTERS: a merge has one exit, and must never burn a lane tick
+  const picks = [];
+  P.resolveTarget(plan, { tag: 'x' }, (k, n) => { picks.push(k); return 0; });
+  A.eq(picks.length, 0, 'walking through a merger never consults the splitter round-robin picker');
 }
 
 /* ---- FILTER_NO_DEFAULT ---- */

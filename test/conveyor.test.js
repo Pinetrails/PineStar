@@ -211,30 +211,55 @@ cva.enqueueAt(0, 0, { workitemId: 'a1', tag: 'code' });
 let at = 0; for (let i = 0; i < 200 && !adv.length; i++) { at += 16; cva.tick(16, at, fbelts, fj); }
 A.ok(adv.some(i => i.kind === 'filter' && i.lane === 'S' && i.tag === 'code'), 'onAdvance reports a filter routing decision (telemetry seam)');
 
-/* ---------- Stage 5b: MERGER junction (buffer K, emit ONE combined work-item) ---------- */
-// straight line (0,0)→(3,0) with a K=2 MERGER at (2,0): the first inbound box is absorbed, the K-th rides
-// on carrying the combined work-item list and delivers ONCE at the open end.
+/* ---------- Stage 5b: MERGER junction = a LANE FUNNEL, never a combiner (2026-07-26 audit) ----------
+   It used to buffer K crates, ABSORB the first K-1 and send the K-th on with a combined `merged` id list.
+   No consumer ever read that list, and the harness has no batching concept — resolveTarget dispatches every
+   work-item on its own, so K messages were always K paid runs. The floor was animating a barrier the server
+   never performed, and work below the threshold was swallowed outright. It must now conserve crates. */
 const mbelts = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' }, { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' }];
-const mj = new Map([['2,0', { kind: 'merge', bufferSize: 2 }]]);
-function mergeRun() {
+const mj = new Map([['2,0', { kind: 'merge', bufferSize: 2 }]]);   // a legacy K rides along; it must be ignored
+function mergeRun(junc) {
   const del = [];
   const cv = Conveyor.create({ onDeliver: bx => del.push(bx.payload) });
   cv.enqueueAt(0, 0, { workitemId: 'm1' });
-  let t = 0; for (let i = 0; i < 30; i++) { t += 16; cv.tick(16, t, mbelts, mj); }  // m1 leads
+  let t = 0; for (let i = 0; i < 30; i++) { t += 16; cv.tick(16, t, mbelts, junc); }  // m1 leads
   cv.enqueueAt(0, 0, { workitemId: 'm2' });
-  for (let i = 0; i < 300; i++) { t += 16; cv.tick(16, t, mbelts, mj); }
+  for (let i = 0; i < 400; i++) { t += 16; cv.tick(16, t, mbelts, junc); }
   return { del, remaining: cv.boxCount() };
 }
-const mr = mergeRun();
-A.eq(mr.del.length, 1, 'a K=2 MERGER emits exactly ONE delivery for two inbound boxes (the other is absorbed)');
-A.ok(mr.del[0] && mr.del[0].merged && mr.del[0].merged.indexOf('m1') >= 0 && mr.del[0].merged.indexOf('m2') >= 0,
-  'the single merged delivery carries BOTH inbound work-item ids');
-A.eq(mr.del[0].mergeCount, 2, 'the merged delivery records its K (mergeCount)');
-A.eq(mr.remaining, 0, 'the belt drains fully (absorbed box sinks, carrier delivers, both despawn)');
-// replay-stable: same combined set every run
-const mr2 = mergeRun();
-A.eq(JSON.stringify(mr.del[0].merged.slice().sort()), JSON.stringify(mr2.del[0].merged.slice().sort()),
-  'MERGER is replay-stable (identical combined set across runs)');
+const mr = mergeRun(mj);
+A.eq(mr.del.length, 2, 'a MERGER delivers BOTH inbound work-items — it never eats one');
+A.eq(mr.del.map(p => p.workitemId).sort().join(','), 'm1,m2', '...each arriving as itself');
+A.ok(!mr.del.some(p => p.merged || p.mergeCount), 'no crate claims a combine the harness never performed');
+A.eq(mr.remaining, 0, 'the belt drains fully');
+// a legacy bufferSize must change NOTHING (old saves carry K; it configures nothing now)
+const mrNoK = mergeRun(new Map([['2,0', { kind: 'merge' }]]));
+A.eq(JSON.stringify(mr.del.map(p => p.workitemId).sort()), JSON.stringify(mrNoK.del.map(p => p.workitemId).sort()),
+  'a merger with a legacy K behaves identically to one without');
+// a merger is behaviourally a plain belt tile: same deliveries as no junction at all
+const mrPlain = mergeRun(null);
+A.eq(JSON.stringify(mr.del.map(p => p.workitemId).sort()), JSON.stringify(mrPlain.del.map(p => p.workitemId).sort()),
+  'a merger conserves crates exactly like an unjunctioned tile (it funnels LANES, not jobs)');
+
+// the real shape: two lanes converging on one merge tile — every crate from both lanes gets through
+{
+  const yb = [{ x: 0, y: 0, dir: 'E' }, { x: 1, y: 0, dir: 'E' },       // lane A east into (2,0)
+              { x: 2, y: 2, dir: 'N' }, { x: 2, y: 1, dir: 'N' },       // lane B north into (2,0)
+              { x: 2, y: 0, dir: 'E' }, { x: 3, y: 0, dir: 'E' }, { x: 4, y: 0, dir: 'E' }];
+  const yj = new Map([['2,0', { kind: 'merge' }]]);
+  const del = [];
+  const cv = Conveyor.create({ onDeliver: bx => del.push(bx.payload.workitemId) });
+  for (let i = 0; i < 3; i++) { cv.enqueueAt(0, 0, { workitemId: 'A' + i }); cv.enqueueAt(2, 2, { workitemId: 'B' + i }); }
+  let t = 0, worst = Infinity;
+  for (let i = 0; i < 3000 && del.length < 6; i++) {
+    t += 16; cv.tick(16, t, yb, yj);
+    const bs = cv.peekBoxes().filter(b => b.sink <= 0);
+    for (let a = 0; a < bs.length; a++) for (let b = a + 1; b < bs.length; b++)
+      if (bs[a].x === bs[b].x && bs[a].y === bs[b].y) worst = Math.min(worst, Math.abs(bs[a].prog - bs[b].prog));
+  }
+  A.eq(del.slice().sort().join(','), 'A0,A1,A2,B0,B1,B2', 'six crates converge through a merger and all six arrive');
+  A.ok(worst === Infinity || worst >= 0.8, 'converging crates never overlap on the merge tile (worst ' + (worst === Infinity ? 'n/a' : worst.toFixed(3)) + ')');
+}
 
 /* ---------- DOCK STOPS (crate-physics truth): inbound crates are consumed at their dock ---------- */
 {

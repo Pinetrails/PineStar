@@ -68,7 +68,8 @@ bob-coupled contact shadow, spawn-pop (easeOutBack lift + alpha ramp via `t0`), 
 heading change (`turn0`), and a sink that falls into the chute (slide in dir + fade + shrink shadow).
 
 **Sim**: min-gap backpressure — a box never advances within `MIN_GAP` (0.82 tile) of the box ahead
-(measured pre-move so it's order-independent and overlap-free), so work-items queue behind a stalled
+(the occupancy index is kept LIVE across tile crossings, so two lanes converging on one tile in the same
+tick can't both claim it — the second holds at its lane head), so work-items queue behind a stalled
 one. Equal progress on one tile counts as blocked, broken by box id, so a tie can't ride as a pile.
 Backpressure reaches **into the queue**: `enqueueAt` items wait in `pending` until their source tile has
 `MIN_GAP` of clear room, then are born — a burst (a channel flurry, a cron fan-out) forms a visible line
@@ -92,4 +93,11 @@ economy accent — keeps cyan/green meaningful) + a small drive LED.
   (`dropWorkitem`). The decorative auto-spawn was **removed** — every crate now means real work.
   Additive events: `workitem.placed/delivered/superseded`, `queue.status`. Plan:
   `docs/CONVEYOR_PIPELINE_PLAN.md`.
-- **Later:** outbound belt (reply rides desk→OUTBOX); merge/split/filter junctions; RPG economy.
+- **Junctions (done):** SPLITTER round-robins across its out-lanes; FILTER routes by the work-item's
+  content tag (`routes[tag] || def`, never dropping); MERGER is a **lane funnel** — several lanes
+  converge, every crate rides straight on. A merger has no config and combines nothing: the harness
+  dispatches each work-item independently, so K crates in must be K crates out or the floor is lying.
+  (It once buffered K and absorbed K−1 for a map-reduce barrier the server never performed — removed
+  2026-07-26.) Real batching would need a defined reply target for a run merged from several chats;
+  that is an open product question, not a belt feature.
+- **Later:** outbound belt (reply rides desk→OUTBOX); RPG economy.
