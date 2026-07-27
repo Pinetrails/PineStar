@@ -1201,8 +1201,15 @@ const StationBake = (() => {
     const outX = A.cx ? -1 : 1, outY = A.cy ? -1 : 1;      // which way is "away from the room"
     // the ring may hang past the tile into the VOID (that is where every wall's height lives) but
     // never into the tile behind it, which is this room's own walkable floor.
-    const xLo = outX < 0 ? Math.round(ax - HR) : X, xHi = outX < 0 ? X + T : Math.round(ax + HR) + 1;
-    const yLo = outY < 0 ? Math.round(cy - HR) : Y, yHi = outY < 0 ? Y + T : Math.round(cy + HR) + 1;
+    /* HALF-OPEN VS INCLUSIVE — the one-pixel jog. A footprint plate spans [c - pad, c + pad), so its
+       LAST painted row/column is `c + pad - 1`, while the circle crossing `round(centre + HR)` is
+       the first pixel PAST the art. On the -ve side (west/north) `centre - HR` already lands on the
+       first painted pixel and the two agree; on the +ve side (east/south) the ring sat one pixel
+       proud of the plate and its whole ladder shifted with it, so a bottom corner met the south
+       straight's crown one row low. The hull rim walk has always carried the same `ex - 1`
+       correction — the ring simply did not. Keep them together. */
+    const xLo = outX < 0 ? Math.round(ax - HR) : X, xHi = outX < 0 ? X + T : Math.round(ax + HR);
+    const yLo = outY < 0 ? Math.round(cy - HR) : Y, yHi = outY < 0 ? Y + T : Math.round(cy + HR);
     const lit = U.shade(pal.cap, 0.30), seam = U.shade(pal.cap, -0.45);
     const put = (x, y, w, h, c) => {
       const x0 = Math.max(xLo, x), x1 = Math.min(xHi, x + w);
@@ -1239,7 +1246,7 @@ const StationBake = (() => {
       if (t > K) continue;                                        // shallow — the column dual owns it
       // below the arc's widest point the outline is simply the straight run at the e/w wall's edge
       const off = t <= 0 ? HR : Math.sqrt(HR * HR - t * t);
-      const ex = outX < 0 ? Math.round(ax - off) : Math.round(ax + off);
+      const ex = outX < 0 ? Math.round(ax - off) : Math.round(ax + off) - 1;   // -1: see the half-open note above
       const w = crownEase(Math.max(0, t) / HR, capW, capFar);
       const dx = deckXAt(py), inner = dx == null ? (outX < 0 ? X + T : X - 1) : dx;
       if (outX < 0) {
@@ -1261,7 +1268,7 @@ const StationBake = (() => {
       const adx = Math.abs(ix + 0.5 - ax);
       if (adx >= K) continue;                                     // steep — the row dual owns it
       const s = Math.sqrt(HR * HR - adx * adx);
-      const ey = outY < 0 ? Math.round(cy - s) : Math.round(cy + s);
+      const ey = outY < 0 ? Math.round(cy - s) : Math.round(cy + s) - 1;       // -1: see the half-open note above
       const w = crownEase(s / HR, capW, capFar);
       const dy = deckYAt(ix), inner = dy == null ? (outY < 0 ? Y + T : Y - 1) : dy;
       if (outY < 0) {

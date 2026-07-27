@@ -118,12 +118,21 @@ const PROBE = `(() => {
   /* THE ACCEPTANCE TEST for the crown cut: the DIMMEST crown pixel anywhere on the ring must beat
      the BRIGHTEST hull-skirt pixel. The skirt hangs outside the ambient plate at flat raw tones, so
      it is the thing the wall has to out-shine, and the corners are where the two meet. */
+  /* THE JOIN TEST — for every column across the bottom-left corner and into the south straight,
+     which row carries the crown's LIT edge. A clean join is a flat run of one number: any step is
+     the ring and the straight disagreeing about where the wall's outer edge is. */
+  const litRow = [];
+  for (let x = x1 - 2; x < x1 + 46; x++) {
+    let best = -1, bestY = -1;
+    for (let y = y2 - 4; y < y2 + 12; y++) { const v = at(x, y); if (v != null && v > best) { best = v; bestY = y; } }
+    litRow.push(bestY < 0 ? -99 : bestY - y2);
+  }
   let skirtMax = 0;
   for (let y = y2 + 6; y < Math.min(H, y2 + 44); y++)
     for (let x = x1 + 60; x < x2 - 60; x++) { const v = at(x, y); if (v != null && v > skirtMax) skirtMax = v; }
 
   return JSON.stringify({
-    W, H, T, room: [x1, y1, x2, y2], leak, skirtMax,
+    W, H, T, room: [x1, y1, x2, y2], leak, skirtMax, litRow,
     westScan: scanH(midY, x1 - 20, x1 + 12),
     eastScan: scanH(midY, x2 - 12, x2 + 20),
     northScan: scanV(midX, y1 - 24, y1 + 14),
