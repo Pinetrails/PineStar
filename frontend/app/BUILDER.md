@@ -64,8 +64,8 @@ Validation error codes: `OVERLAP`, `TOO_SMALL`, `TOO_SHORT`, `TOO_FAR`, `BAD_STY
 
 ## Extending
 
-- **New floor style (HUE)** → add to `WorldModel.FLOOR_STYLES` (`{ base, label }`). It appears in the PAINT palette's COLOUR row automatically.
-- **New floor material (RECIPE)** → add to `WorldModel.FLOOR_MATERIALS` (`{ label, pitch, suggest }`) + `MAT_ORDER`, then give it a painter in `stationbake.js` (`deck*` + a `paintDeck` branch). It appears in the PAINT palette's MATERIAL row automatically, previewed through `StationBake.sampleMaterial` — i.e. by the real bake.
+- **New floor style (HUE)** → add to `WorldModel.FLOOR_STYLES` (`{ base, label }`). It appears in the SURFACE palette's COLOUR row automatically.
+- **New floor material (RECIPE)** → add to `WorldModel.FLOOR_MATERIALS` (`{ label, pitch, suggest }`) + `MAT_ORDER`, then give it a painter in `stationbake.js` (`deck*` + a `paintDeck` branch). It appears in the SURFACE palette's MATERIAL row automatically, previewed through `StationBake.sampleMaterial` — i.e. by the real bake.
 - **New room kind** → add to `WorldModel.ROOM_KINDS` + `KIND_ORDER` (give it a `floor` hue and a `mat` material). It appears in the ROOM palette automatically.
 - **New tool** → add to `TOOLS` in `build.js` and a `commit*` branch.
 
