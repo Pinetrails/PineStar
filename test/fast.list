@@ -385,6 +385,7 @@ test/channels.parity.test.js
 test/channels.buttons.test.js
 test/channels.sse.test.js
 test/mcp.client.test.js
+test/mcp.resources-prompts.test.js
 test/mcp.transport.test.js
 test/mcp.stdio.test.js
 test/mcp.catalog.test.js
