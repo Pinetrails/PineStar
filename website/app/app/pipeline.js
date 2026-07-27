@@ -209,7 +209,12 @@
     // runs, which is exactly the bar `ok()` sets for a wholesale refusal ("a blocking error must genuinely be
     // able to loop or void work").
     const cc = chainCycle(plan.chains);
-    if (cc) errors.push({ code: 'CHAIN_CYCLE', agents: cc });
+    if (cc) {
+      // carry a propId so the REFIT/world overlay can ANCHOR the finding on a dock the loop runs through —
+      // an error the Commander can't see on the floor is an error they can't fix. First agent, sorted: stable.
+      const onLoop = bays.find(b => b.agentId === cc[0]);
+      errors.push(onLoop ? { code: 'CHAIN_CYCLE', agents: cc, propId: onLoop.propId } : { code: 'CHAIN_CYCLE', agents: cc });
+    }
 
     plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));   // hash excludes the legibility extras: same dispatch topology, same hash
     return plan;

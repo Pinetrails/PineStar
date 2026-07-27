@@ -3133,7 +3133,35 @@ const cronDriver = makeCronDriver({
   placeWorkitem: placeCronWorkitem,
   // persona is a GETTER so each fire folds in the LIVE Commander dossier (it changes as the user edits it);
   // withDossier is a no-op when the dossier is empty, so this is byte-identical to CRON_PERSONA until one exists.
-  persona: (agentId) => cronSystemFor(agentId)
+  persona: (agentId) => cronSystemFor(agentId),
+  /* THE WORK LINE for a scheduled fire: run the stages drawn downstream of the routine's dock. Same executor,
+     same caps, same per-hop crates as a channel message — only the way a hop is executed differs (a routine has
+     no chat transcript; its hops ride the routine's own stream so the session shows the whole line). */
+  advanceChain: (o) => chainRunner.advance({
+    agentId: o.agentId, text: o.text, originalText: o.originalText, signal: o.signal,
+    runAgent: async (h) => {
+      if (o.onHop) { try { o.onHop(); } catch (_) {} }
+      const hs = { buf: '', errMsg: null, usd: 0 };
+      const sink = (name, payload) => {
+        const p = payload || {};
+        if (name === 'agent.token') { hs.buf += (p.delta || ''); return; }
+        if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
+        else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
+        else if (name === 'agent.run.end' && typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd;
+        try { const view = runTeeView(name, p); if (view) cronEmitNotify(name, view); } catch (_) {}
+      };
+      try {
+        await runOnce({
+          key: o.key, model: o.model, provider: o.provider, system: cronSystemFor(h.agentId),
+          messages: [{ role: 'user', content: h.text }], agentId: h.agentId, isTask: true,
+          emit: sink, signal: h.signal, runId: crypto.randomUUID(), streamId: o.streamId,
+          surface: 'autonomous', trigger: 'schedule', reflect: true,
+          station: router.stationFor(h.agentId) || undefined
+        });
+      } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
+      return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
+    }
+  })
 });
 let cronTimer = null;
 // TICKER HEALTH (2026-07-15 reliability audit): "armed" only proves a timer EXISTS — not that ticks are

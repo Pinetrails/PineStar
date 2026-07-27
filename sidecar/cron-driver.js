@@ -116,6 +116,12 @@
     // injected host tz (G4.1): a tz-LESS cron schedule is planned on this LOCAL wall-clock; a schedule's
     // own tz always wins. A string dep — the pure cron-math owns the Intl formatting, so this stays clean.
     const defaultTz = d.defaultTz != null ? d.defaultTz : null;
+    /* THE WORK LINE, for scheduled work. A routine fires at ONE dock; if the Commander drew stages past that
+       dock, those stages are the routine — "every morning research it, then write it up" is the shape people
+       actually want from a floor. Optional: absent, a fire is a single run exactly as before. Called AFTER the
+       job's own run settles but BEFORE finishFire, so the routine's recorded outcome and its session transcript
+       carry the LINE's answer, not stage one's raw material. */
+    const advanceChain = typeof d.advanceChain === 'function' ? d.advanceChain : null;
     if (typeof getJobs !== 'function' || typeof setJobs !== 'function') throw new Error('cron-driver: getJobs/setJobs are required');
     if (typeof runOnce !== 'function') throw new Error('cron-driver: runOnce is required');
     if (typeof newId !== 'function' || typeof newAbort !== 'function' || typeof now !== 'function') throw new Error('cron-driver: newId/newAbort/now are required');
@@ -292,7 +298,21 @@
         });
       } catch (e) { p = Promise.reject(e); }
       Promise.resolve(p).then(
-        function () { finishFire(job.id, runId, state, null); },
+        function () {
+          if (!advanceChain || state.errMsg || !String(state.buf || '').trim()) { finishFire(job.id, runId, state, null); return; }
+          // hops ride the ROUTINE'S OWN stream so its session reads as one multi-stage job, and each hop renews
+          // the lease — a line that outran the heartbeat would be declared a zombie and re-fired mid-work.
+          Promise.resolve(advanceChain({
+            agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''),
+            signal: ac.signal, streamId: 'cron-' + runId, key: key, model: model, provider: provider,
+            onHop: function () { renewLease(job.id, runId); }
+          })).then(
+            function (line) { if (line && String(line.text || '').trim()) state.buf = line.text; finishFire(job.id, runId, state, null); },
+            // A CHAIN FAILURE NEVER CHANGES THE ROUTINE'S OUTCOME: stage one really did run and really did
+            // produce work. Same law the channel path holds — the line is never a gate on the answer.
+            function () { finishFire(job.id, runId, state, null); }
+          );
+        },
         function (e) { finishFire(job.id, runId, state, e || new Error('run rejected')); }
       );
       return true;
