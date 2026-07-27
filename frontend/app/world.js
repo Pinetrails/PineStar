@@ -1237,7 +1237,12 @@ const World = (() => {
     }
     const FOND = { lounge: 3, use: 2, gaze: 1.5, tend: 1.5, inspect: 1, watch: 1, rounds: 0.5, revisit: 0.6 };
     if (FOND[self.goal]) { noteFond(now, FOND[self.goal]); noteAttn(now); }   // dwelling somewhere by choice deepens attachment to that tile — and anchors the neighbourhood it is currently occupied with
-    if (self.goal === 'work') { self.sitting = true; self.working = false; self.dir = deskFace || 'north'; self.state = 'idle'; self.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
+    // SIT ON THE CHAIR, NOT ON THE TILE. The walk target is the seat's whole TILE (pathing needs one),
+    // but on an even-width desk the chair is rendered on the CENTRED fractional x (seat.cx) — so a body
+    // that merely finished its walk stands at the tile centre, half a tile off the chair it is supposed
+    // to be sitting in. Snap onto seatFoot here, the same anchor drawSeatChair uses, so arriving on foot
+    // lands exactly where the teleport-fallback seating already did. Body moves; the chair does not.
+    if (self.goal === 'work') { if (self === agent && seat) { const f = seatFoot(seat); self.px = f.x; self.py = f.y; } self.sitting = true; self.working = false; self.dir = deskFace || 'north'; self.state = 'idle'; self.settleUntil = now + U.irnd(450, 900); }   // sit a beat (loading context) before the screens light + typing starts
     else if (self.goal === 'use') { self.sitting = self.useSit; self.working = false; self.dir = self.useFace; self.state = 'idle'; self.useUntil = now + U.irnd(10000, 22000); takeSeat(); if (self.useSit && self.needs.rest < 35) curiositySay(SELF_REST, 0.4, now); }
     else if (self.goal === 'lounge') {
       // settled ON the couch, watching the paired TV — sit, face the screen, a longer dwell than a one-off prop
@@ -3507,7 +3512,8 @@ const World = (() => {
         PropSprites.draw({ t: 'desk', x: desk.tx, y: desk.ty, w: desk.w, h: desk.h }, work, live);
       } else F_desk(desk.tx * T, desk.ty * T, desk.w * T, desk.h * T, { x: desk.tx, work, heat: live ? live.heat : 0, prog: live ? live.prog : null });
     } });
-    if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty, seat.cx) });   // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
+    if (seat && !deskPropId) items.push({ y: (seat.ty + 1) * T, draw: () => drawSeatChair(seat.tx, seat.ty, seat.cx) });
+  // a PLACED hero desk's chair is drawn by the workstation loop above; draw here only for the synthetic auto-desk
     if (agent && !agent.unplaced) items.push({ y: rposY(), draw: () => drawAgent(now) });
     for (const b of crew) items.push({ y: (b.seated ? b.seatPy : b.py), draw: () => drawAgent(now, b) });   // the other agents, at their bays (seated → sort by the cushion pos like the hero's rposY, so a couch-lounging crew body tucks just behind the back-facing couch panel, head over the cap)
     items.sort((a, b) => a.y - b.y);
