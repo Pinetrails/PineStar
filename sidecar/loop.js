@@ -85,11 +85,17 @@
     return { text: t.replace(/\n{3,}/g, '\n\n').trim() };
   }
 
-  function assistantTurn(text, calls) {
+  // REASONING RIDES THE TURN IT CAME FROM. When a provider signs its thinking blocks (Anthropic does), the
+  // NEXT request must replay them unedited alongside that turn's tool_calls or the signature check fails and
+  // the run dies. The loop stays provider-agnostic: it parks whatever opaque blocks the adapter handed over
+  // and hands them straight back. Adapters that emit no 'reasoning' event leave the field absent, so every
+  // other provider's message shape is byte-identical to before.
+  function assistantTurn(text, calls, reasoning) {
     const msg = { role: 'assistant', content: text || '' };
     if (calls.length) {
       msg.tool_calls = calls.map(c => ({ id: c.id, type: 'function', function: { name: c.name, arguments: c.argsRaw || '{}' } }));
     }
+    if (Array.isArray(reasoning) && reasoning.length) msg.reasoning = reasoning.slice();
     return msg;
   }
 
@@ -418,7 +424,7 @@
       // (2) STREAM one model call — with classified RECOVERY (compress on overflow / fall back on a failover) so a
       //     transient backend failure retries the SAME turn instead of killing the run. Bounded: at most one
       //     compaction plus one switch per fallback entry, so a degraded backend can't spin.
-      const acc = { text: '', toolCalls: {} };
+      const acc = { text: '', toolCalls: {}, reasoning: [] };
       let usage = null, fatal = null;
       let recoveries = 0;
       const maxRecoveries = 1 + fallbacks.length;
@@ -429,7 +435,7 @@
       let truncRetries = 0;
       const MAX_TRUNC_RETRIES = 1;
       while (true) {
-        acc.text = ''; acc.toolCalls = {}; usage = null; lastFinishReason = null;
+        acc.text = ''; acc.toolCalls = {}; acc.reasoning = []; usage = null; lastFinishReason = null;
         let streamErr = null;
         let sawTruncation = false;
         try {
@@ -437,6 +443,7 @@
           for await (const ev of provider.stream(req)) {
             if (signal.aborted) break;
             if (ev.type === 'text') { acc.text += ev.delta; emit('agent.token', { agentId, runId, delta: ev.delta }); }
+            else if (ev.type === 'reasoning') { if (ev.block) acc.reasoning.push(ev.block); }
             else if (ev.type === 'tool_start') { acc.toolCalls[ev.index] = { id: ev.id, name: ev.name, args: '' }; }
             else if (ev.type === 'tool_args') { if (acc.toolCalls[ev.index]) acc.toolCalls[ev.index].args += (ev.chunk || ''); }
             else if (ev.type === 'usage') { usage = ev.usage; if (cost) emit('cost.estimate', Object.assign({ agentId, runId }, cost.estimate(usage, model))); }
@@ -520,7 +527,7 @@
       }
 
       // cancellation mid-stream: keep partial text, then stop
-      if (signal.aborted) { messages.push(assistantTurn(acc.text, [])); return end('cancelled'); }
+      if (signal.aborted) { messages.push(assistantTurn(acc.text, [], acc.reasoning)); return end('cancelled'); }
 
       // (3) RECONCILE cost (authoritative; overwrites the estimate)
       const final = cost ? cost.reconcile(usage, model) : { usd: 0, tokensIn: 0, tokensOut: 0, reasoningTokens: 0, cachedTokens: 0 };
@@ -547,7 +554,7 @@
         if (scrubbed) { textMarkup = true; acc.text = scrubbed.text; }
       }
       repairCalls(calls, emit, agentId, runId);   // L2: fix broken tool-call JSON before it is used or discarded
-      messages.push(assistantTurn(acc.text, calls));
+      messages.push(assistantTurn(acc.text, calls, acc.reasoning));
 
       // (5) STOP iff no tool calls accumulated. A no-op turn (no tool call + no NEW assistant content) is refunded
       //     so it doesn't burn the iteration budget — bounded by REFUND_MAX (the hard floor guaranteeing termination).

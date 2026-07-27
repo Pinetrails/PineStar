@@ -35,6 +35,82 @@
     } catch (_) { return false; }
   })();
 
+  /* THINKING + EFFORT (2026-07-27). Claude's headline capability, previously unreachable through this adapter:
+     reasoningEfforts() returned ['none'] and buildBody emitted no thinking parameter at all, so a Commander on
+     their own Anthropic key ran a NON-THINKING Claude while the SAME model reached through OpenRouter got
+     `reasoning:{effort}`. Two wire contracts exist and the model decides which:
+
+       MODERN (Claude 4.6 and everything after)  ->  thinking:{type:'adaptive'} + output_config:{effort}
+       LEGACY (Claude 3.x / 4.0 / 4.1 / 4.5)     ->  thinking:{type:'enabled', budget_tokens:N}
+
+     UNKNOWN CLAUDE MODELS DEFAULT TO MODERN, with an explicit LEGACY list — the same "default to newest" shape
+     resolveMaxTokens already uses. An allowlist of modern versions goes stale the moment Anthropic ships a name
+     carrying no recognizable version number, and that failure is SILENT: a new flagship quietly routed down the
+     deprecated budget path, which now answers 400 on every model past 4.6.
+
+     A NON-Claude model reached through an Anthropic-compatible baseUrl gets NOTHING. Those endpoints are third
+     party and a thinking parameter they never implemented is a hard 400, not a degrade (provider-compat law). */
+  const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+  // Legacy manual-thinking budgets. Each must land BELOW max_tokens (the wire rejects budget >= max_tokens)
+  // and at or above Anthropic's 1024 floor; applyThinking clamps both ends against the resolved ceiling.
+  const LEGACY_BUDGET = { minimal: 1024, low: 4000, medium: 8000, high: 16000, xhigh: 32000, max: 32000 };
+  const LEGACY_MIN_BUDGET = 1024;
+  // Substring-matched in BOTH the dashed and dotted spellings: catalog ids arrive dashed, hand-typed model
+  // fields and imported agent dossiers arrive dotted, and both reach this adapter.
+  const LEGACY_CLAUDE = [
+    'claude-3',
+    'claude-opus-4-0', 'claude-opus-4.0', 'claude-opus-4-1', 'claude-opus-4.1',
+    'claude-sonnet-4-0', 'claude-sonnet-4.0',
+    'claude-opus-4-2025', 'claude-sonnet-4-2025',
+    'claude-opus-4-5', 'claude-opus-4.5',
+    'claude-sonnet-4-5', 'claude-sonnet-4.5',
+    'claude-haiku-4-5', 'claude-haiku-4.5'
+  ];
+  // The 4.6 family predates the `xhigh` level (low/medium/high/max only) — offering it there is a 400.
+  const NO_XHIGH_CLAUDE = ['claude-opus-4-6', 'claude-opus-4.6', 'claude-sonnet-4-6', 'claude-sonnet-4.6'];
+  // Thinking is ALWAYS ON for these: an explicit {type:'disabled'} is refused at any effort, so 'none' is never
+  // offered and the thinking key is OMITTED rather than sent disabled.
+  const ALWAYS_THINKING_CLAUDE = ['claude-fable', 'claude-mythos'];
+
+  const modelKey = (id) => String(id == null ? '' : id).toLowerCase();
+  function hasAny(id, list) { const k = modelKey(id); for (const s of list) if (k.indexOf(s) >= 0) return true; return false; }
+  function isClaude(id) { return modelKey(id).indexOf('claude') >= 0; }
+  function alwaysThinks(id) { return hasAny(id, ALWAYS_THINKING_CLAUDE); }
+  function normalizeEffort(v) {
+    const k = String(v == null ? '' : v).trim().toLowerCase().replace(/[\s_-]+/g, '');
+    const map = {
+      off: 'none', none: 'none', no: 'none', disabled: 'none',
+      min: 'minimal', minimal: 'minimal',
+      low: 'low', med: 'medium', mid: 'medium', medium: 'medium', high: 'high',
+      extra: 'xhigh', xtra: 'xhigh', extrahigh: 'xhigh', xhigh: 'xhigh', max: 'max'
+    };
+    return map[k] || 'medium';
+  }
+  // The levels this model actually accepts, ascending. Legacy models publish the BUDGET tiers under the same
+  // vocabulary so one Commander-facing control drives both contracts.
+  function effortsFor(id) {
+    if (!isClaude(id)) return ['none'];
+    if (hasAny(id, LEGACY_CLAUDE)) return ['none', 'low', 'medium', 'high', 'xhigh', 'max'];
+    const out = ['low', 'medium', 'high'];
+    if (!hasAny(id, NO_XHIGH_CLAUDE)) out.push('xhigh');
+    out.push('max');
+    if (!alwaysThinks(id)) out.unshift('none');
+    return out;
+  }
+  // A level this model does not publish is CLAMPED to its nearest neighbour, never dropped: asking a 4.6 model
+  // for 'xhigh' means "as hard as you can", and 'max' is the honest answer. Ties resolve UPWARD (the list is
+  // ascending and the comparison is <=), so 'minimal' becomes 'low' rather than silently switching thinking OFF.
+  function clampEffort(want, allowed) {
+    const i = EFFORT_ORDER.indexOf(want);
+    if (i < 0) return allowed.indexOf('medium') >= 0 ? 'medium' : allowed[allowed.length - 1];
+    let best = allowed[0], bestD = Infinity;
+    for (const a of allowed) {
+      const d = Math.abs(EFFORT_ORDER.indexOf(a) - i);
+      if (d <= bestD) { bestD = d; best = a; }
+    }
+    return best;
+  }
+
   function isAbort(e, signal) { return !!((signal && signal.aborted) || (e && e.name === 'AbortError')); }
   function abortError() { const e = new Error('aborted'); e.name = 'AbortError'; return e; }
   function delay(ms, signal) {
@@ -148,6 +224,22 @@
     }
     return blocks;
   }
+  // Replay-safe thinking blocks: only the two shapes the wire defines, only when they carry the field that
+  // makes them verifiable. A half-captured block is worse than none (it fails validation and ends the run),
+  // so anything unrecognized is dropped rather than guessed at.
+  function thinkingBlocks(reasoning) {
+    if (!Array.isArray(reasoning)) return [];
+    const out = [];
+    for (const b of reasoning) {
+      if (!b || typeof b !== 'object') continue;
+      if (b.type === 'thinking' && typeof b.signature === 'string' && b.signature) {
+        out.push({ type: 'thinking', thinking: String(b.thinking == null ? '' : b.thinking), signature: b.signature });
+        continue;
+      }
+      if (b.type === 'redacted_thinking' && typeof b.data === 'string' && b.data) out.push({ type: 'redacted_thinking', data: b.data });
+    }
+    return out;
+  }
   function messagesToAnthropic(messages) {
     const picked = extractLeadingSystem(messages || []);
     const out = [];
@@ -163,7 +255,15 @@
         continue;
       }
       if (role === 'assistant') {
-        appendMessage(out, 'assistant', contentToTextBlocks(msg.content).concat(assistantToolBlocks(msg.tool_calls)));
+        // THINKING BLOCKS RIDE FIRST, VERBATIM. When thinking is on, Anthropic signs each block and validates
+        // that signature on replay — an assistant turn that thought and then called a tool must carry the
+        // thinking block AHEAD of the tool_use on the next request, unedited. Dropping them is not a graceful
+        // degrade: it fails the ordering/signature check and kills the turn. loop.js parks whatever this
+        // adapter emitted on `msg.reasoning`, so a replay is a passthrough, never a reconstruction. Absent
+        // (every other provider, every pre-thinking transcript) = byte-identical to the old behavior.
+        appendMessage(out, 'assistant', thinkingBlocks(msg.reasoning)
+          .concat(contentToTextBlocks(msg.content))
+          .concat(assistantToolBlocks(msg.tool_calls)));
         continue;
       }
       appendMessage(out, 'user', userContentToBlocks(msg.content));
@@ -218,10 +318,13 @@
       // the wire. Same {prompt, completion} per-token shape every other adapter publishes, so listModels()
       // and priceOf() can never disagree. Unknown model -> null -> honestly 'unpriced'.
       pricing: prices.pricingBlock('anthropic', id),
-      supported_parameters: ['tools'],
+      // Reasoning is now REAL on this adapter (see the THINKING + EFFORT note above), so the catalog must say
+      // so — the model dock renders its effort control off exactly these three fields, and publishing an empty
+      // list is what kept the control hidden while the capability sat there unused.
+      supported_parameters: isClaude(id) ? ['tools', 'reasoning'] : ['tools'],
       supportsTools: true,
-      supportsReasoning: null,
-      reasoningEfforts: []
+      supportsReasoning: isClaude(id),
+      reasoningEfforts: effortsFor(id)
     };
   }
 
@@ -232,6 +335,10 @@
     const key = opts.key || '';
     const baseUrl = cleanBaseUrl(opts.baseUrl);
     const defaultContext = Number(opts.defaultContext || DEFAULT_CONTEXT) || DEFAULT_CONTEXT;
+    // The composition root already resolves this (registry profile `defaultReasoningEffort: 'medium'` for
+    // anthropic) and has been handing it to this adapter since the provider seam existed — the adapter simply
+    // dropped it on the floor. 'medium' is the fallback for a caller that passes nothing, matching the profile.
+    const defaultEffort = normalizeEffort(opts.reasoningEffort || 'medium');
     const clock = (opts.clock && typeof opts.clock.now === 'function') ? opts.clock : null;
     let catalog = null;
     let catalogPromise = null;
@@ -297,6 +404,36 @@
       if (last && typeof last === 'object') blocks[i] = Object.assign({}, last, { cache_control: { type: 'ephemeral' } });
       return blocks;
     }
+    /* Put the model's thinking contract on the wire. Per-request `reasoningEffort` wins over the construction
+       default, mirroring the openrouter adapter, so a single agent can be dialled without a new provider.
+       CACHE NOTE: everything written here is a TOP-LEVEL key. Anthropic renders tools -> system -> messages
+       and caches by prefix, so these keys never shift the cached prefix — but they DO invalidate it when they
+       CHANGE, which is why effort is resolved once per request from a value that is stable for a run's life
+       rather than recomputed per turn. */
+    function applyThinking(body, req) {
+      const model = body.model;
+      if (!isClaude(model)) return;                        // third-party Anthropic-compatible endpoint: send nothing
+      const allowed = effortsFor(model);
+      const want = normalizeEffort(req.reasoningEffort || defaultEffort);
+      const effort = (allowed.indexOf(want) >= 0) ? want : clampEffort(want, allowed);
+
+      if (hasAny(model, LEGACY_CLAUDE)) {
+        if (effort === 'none') return;                     // legacy has no disable switch — omitting IS the off state
+        const cap = Number(body.max_tokens || 0);
+        let budget = LEGACY_BUDGET[effort] || LEGACY_BUDGET.medium;
+        // budget_tokens must be strictly BELOW max_tokens, and a budget that eats the whole ceiling starves the
+        // answer into a truncation. Three quarters leaves the reply real room on a small-ceiling model.
+        if (cap > 0) budget = Math.min(budget, Math.floor(cap * 0.75));
+        if (budget < LEGACY_MIN_BUDGET) return;            // no room to think without starving the answer -> don't ask
+        body.thinking = { type: 'enabled', budget_tokens: budget };
+        return;
+      }
+      // MODERN. A disable is sent WITHOUT an effort: the wire refuses `{type:'disabled'}` above `high`, and an
+      // omitted effort leaves the server default — the one value a disable is always accepted alongside.
+      if (effort === 'none') { body.thinking = { type: 'disabled' }; return; }
+      body.thinking = { type: 'adaptive' };
+      body.output_config = Object.assign({}, body.output_config, { effort });
+    }
     function buildBody(req) {
       const converted = messagesToAnthropic(req.messages || []);
       const body = {
@@ -305,6 +442,7 @@
         messages: converted.messages,
         stream: true
       };
+      applyThinking(body, req);   // must run BEFORE the breakpoints: it can add top-level keys, never blocks
       const tools = toAnthropicTools(req.tools);
       if (tools) body.tools = tools;
       // One breakpoint for the whole static prefix. System is the preferred anchor because it sits AFTER the
@@ -327,6 +465,11 @@
       const dec = new TextDecoder();
       let buf = '';
       const toolIndexOf = new Map();
+      // In-flight thinking blocks, keyed by the wire's block index. A thinking block streams as
+      // content_block_start -> thinking_delta* -> signature_delta -> content_block_stop, and only the
+      // COMPLETED block (text + signature together) is worth handing back — an unsigned fragment fails
+      // validation on replay, so it is assembled here and emitted once, at stop.
+      const thinkingAt = new Map();
       let nextToolIndex = 0;
       let doneEmitted = false;
       let lastStopReason = '';
@@ -350,6 +493,15 @@
             return;
           case 'content_block_start': {
             const block = ev.content_block || {};
+            if (block.type === 'thinking') {
+              thinkingAt.set(ev.index, { type: 'thinking', thinking: String(block.thinking || ''), signature: String(block.signature || '') });
+              return;
+            }
+            if (block.type === 'redacted_thinking') {
+              // Arrives whole — there are no deltas for an encrypted block.
+              if (block.data) thinkingAt.set(ev.index, { type: 'redacted_thinking', data: String(block.data) });
+              return;
+            }
             if (block.type !== 'tool_use') return;
             const idx = nextToolIndex++;
             toolIndexOf.set(ev.index, idx);
@@ -363,6 +515,16 @@
               yield { type: 'text', delta: d.text };
               return;
             }
+            // Reasoning NEVER becomes assistant text. The loop concatenates every 'text' event into the answer
+            // it delivers, so routing a thinking_delta there would ship the model's scratchpad as the reply.
+            if (d.type === 'thinking_delta' || d.type === 'signature_delta') {
+              const acc = thinkingAt.get(ev.index);
+              if (acc && acc.type === 'thinking') {
+                if (d.type === 'thinking_delta' && typeof d.thinking === 'string') acc.thinking += d.thinking;
+                else if (typeof d.signature === 'string' && d.signature) acc.signature += d.signature;
+              }
+              return;
+            }
             if (d.type === 'input_json_delta') {
               const idx = toolIndexOf.get(ev.index);
               if (idx != null && typeof d.partial_json === 'string' && d.partial_json) yield { type: 'tool_args', index: idx, chunk: d.partial_json };
@@ -370,6 +532,14 @@
             return;
           }
           case 'content_block_stop': {
+            const think = thinkingAt.get(ev.index);
+            if (think) {
+              thinkingAt.delete(ev.index);
+              // An unsigned thinking block cannot be replayed (the wire validates the signature), so it is
+              // dropped here rather than handed to the loop to fail on the NEXT turn — a late, confusing error.
+              if (think.type === 'redacted_thinking' || think.signature) yield { type: 'reasoning', block: think };
+              return;
+            }
             const idx = toolIndexOf.get(ev.index);
             if (idx != null) yield { type: 'tool_done', index: idx };
             return;
@@ -496,7 +666,9 @@
     // the cap works from the first turn; an unrecognized model still returns null and stays 'unpriced'.
     function priceOf(id) { return prices.priceOf('anthropic', id); }
     function supportsTools(id) { const m = findModel(id); return m ? m.supportsTools : true; }
-    function reasoningEfforts() { return ['none']; }
+    // Resolved from the model NAME, not the warm catalog: /v1/models publishes no capability data, and the
+    // dock asks this before a catalog fetch has necessarily landed.
+    function reasoningEfforts(id) { return effortsFor(id); }
 
     return { stream, listModels, contextLimit, priceOf, supportsTools, reasoningEfforts };
   }
