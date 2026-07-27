@@ -215,6 +215,7 @@ test/wakemind.test.js
 test/curiosity.test.js
 test/dossierinject.test.js
 test/recipes.test.js
+test/loop-templates.test.js
 test/launchmemory.test.js
 test/starters.test.js
 test/routinenudgestore.test.js
@@ -311,6 +312,9 @@ test/cron.tick.test.js
 test/cron.dst.test.js
 test/cron.durability.test.js
 test/cron.lock.test.js
+test/loopjob.test.js
+test/loopjob-check.test.js
+test/loopjob-driver.test.js
 test/cron.oneshot.test.js
 test/cron.run-now.test.js
 test/tool-withheld-message.test.js

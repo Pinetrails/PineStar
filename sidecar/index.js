@@ -117,6 +117,10 @@ const cron = require('./cron.js');                         // pure schedule math
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const mintLedger = require('./mint-ledger.js');            // W6: pure dedup gate + per-agent mint ledger (never re-create what exists)
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
+const loopjob = require('./loopjob.js');                   // LOOPS: pure gate + ledger digest for standing objectives
+const loopjobStore = require('./loopjob-store.js');        // LOOPS: pure LoopJob lifecycle reducer (iterations, verdicts)
+const { makeLoopDriver } = require('./loopjob-driver.js'); // LOOPS: the verdict-triggered tick driver
+const loopcheck = require('./loopjob-check.js');           // LOOPS: pure host-check verdict + tamper guard
 const nightshift = require('./nightshift.js');            // NS-1: pure planner for the server-owned night-shift driver
 const { makeNightshiftDriver } = require('./nightshift-driver.js'); // NS-1: the restart-safe idle-autonomy tick driver
 const contextpack = require('./contextpack.js');          // NS-2: pure recency-weighted context pack for the propose step
@@ -169,7 +173,7 @@ const { makeUserCommands } = require('./usercommands.js');  // Commander-defined
 const slashActionsMod = require('./slash-actions.js');     // server-side execution for dispatch:'server' commands
 const Recipes = require('../frontend/app/recipes.js');     // built-in mission recipes, also exposed as slash commands
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
-const { makeShellTool, runCommand: shellRunCommand } = require('./tools/builtin/shell.js');   // the workbench capability + the shared spawn primitive
+const { makeShellTool, runCommand: shellRunCommand } = require('./tools/builtin/shell.js');   // the workbench capability: shell.exec (+ the shared spawn primitive the LOOP host-check reuses verbatim)
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
 const { makeProcLedger } = require('./procledger.js');              // persistent child-PID ledger — boot sweep reaps force-kill orphans
 const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
@@ -4131,6 +4135,632 @@ function disarmCron() {
   return true;
 }
 
+/* ==== LOOPS — standing objectives (S1). The ambient half of the loopjob subsystem. ========================
+
+   A LOOP is the Commander's standing objective, iterated server-side, with each iteration parked for review;
+   the NEXT iteration is triggered by the Commander's VERDICT, not by a clock. That is what distinguishes it
+   from a routine (WHEN) and from the night shift (IDLE). The pure halves are loopjob.js (the gate + the
+   ledger digest) and loopjob-store.js (the record lifecycle); loopjob-driver.js owns the tick orchestration.
+   Everything ambient — this file, the timer, Date.now, crypto.randomUUID, the fs — lives ONLY here.
+
+   NO ARM CEREMONY. Unlike cron (which is inert behind SKYNET_CRON_ENABLED because a routine is a background
+   surprise), CREATING a loop IS the arming action: the Commander explicitly said "keep doing this". Gating it
+   behind a second switch would be exactly the permission wall the product forbids. The timer therefore arms
+   itself whenever a live loop exists and stands itself down when none does — so a station with no loops pays
+   no timer, and there is no state where a loop exists but silently never runs.
+
+   The E-STOP still owns it: `loopsHalted` is a DURABLE stand-down (survives restart) engaged by POST /api/halt
+   alongside the cron/night-shift halts, and lifted only by an explicit POST /api/loops/resume. ============= */
+const LOOPS_FILE = path.join(WORKSPACES, 'loops.json');
+const LOOPS_HALT_FILE = path.join(WORKSPACES, 'loops.halt.json');
+// 20s, not cron's 60s: after the Commander rules on a candidate the next iteration should start while they are
+// still looking at the screen. A loop with nothing to do costs one gate evaluation per tick — no model call.
+// ENV() already prefixes STARNET_/SKYNET_ — pass the bare suffix, never the prefixed name.
+const LOOP_TICK_MS = Math.max(5000, parseInt(ENV('LOOP_TICK_MS') || '20000', 10) || 20000);
+const LOOP_MAX_PARALLEL = Math.max(1, parseInt(ENV('LOOP_MAX_PARALLEL') || '2', 10) || 2);
+const LOOP_MAX_RUN_MS = Math.max(60000, parseInt(ENV('LOOP_MAX_RUN_MS') || '1800000', 10) || 1800000);
+
+function loadLoops() {
+  try { return loopjobStore.loadEnvelope(loadResilient(LOOPS_FILE, 'loops')).loops; }
+  catch (e) { console.warn('[loops] load failed:', (e && e.message) || e); return []; }
+}
+let loopJobs = loadLoops();
+function saveLoops() { saveResilient(LOOPS_FILE, loopjobStore.toEnvelope(loopJobs)); }   // throws; CRUD routes surface it
+function loadLoopsHalted() {
+  try { const raw = loadResilient(LOOPS_HALT_FILE, 'loops-halt'); return !!(raw && raw.halted); } catch (_) { return false; }
+}
+let loopsHalted = loadLoopsHalted();
+function saveLoopsHalted(v) { try { saveResilient(LOOPS_HALT_FILE, { halted: !!v }); } catch (e) { console.warn('[loops] halt persist failed:', (e && e.message) || e); } }
+
+/* loopPrecheck — the PURELY-LOCAL readiness gate, evaluated BEFORE any spend (the night shift's NS-2
+   cold-leash discipline: a stand-down no model call could have avoided must cost neither money nor an
+   iteration slot).
+
+   It is a NAMED function, not an inline dep, because BOTH the driver and GET /api/loops must run it. Live
+   proof caught why: with no credential the driver correctly refused to spend, but the UI projection still
+   reported binding:null / wouldFire:true — so the LOOPS window would have shown a loop as "ready" while the
+   autonomy ledger recorded a stand-down every single tick. Anything that stops a loop from firing has to be
+   visible to the same gate the UI renders from, or the panel is asserting state the harness contradicts. */
+function loopPrecheck(loop) {
+  try {
+    if (!loop || !loop.objective || !String(loop.objective).trim()) return { ok: false, reason: 'this loop has no objective' };
+    if (loop.workdir && !fs.existsSync(loop.workdir)) return { ok: false, reason: 'the project folder is gone: ' + loop.workdir };
+    /* THE APPROVAL MUST HOLD BEFORE WE SPEND. A dogfood run burned three passes and $0.33 against a folder
+       whose grant did not match, because the loop fired first and discovered the problem inside the model
+       call. Nothing a model does can fix a missing folder approval, so it belongs here — where standing down
+       costs nothing and states the real reason. */
+    if (loop.workdir && !isBlessedRoot(loop.workdir)) {
+      return { ok: false, reason: 'the project folder is not approved for this station — re-approve "' + loop.workdir + '" and resume' };
+    }
+    const provider = cronProviderFor(loop);
+    if (!cronHasCredential(provider, cronKeyFor(provider))) {
+      return { ok: false, reason: 'no credential for ' + (provider || 'the selected provider') + ' — add a key in the KEYS tab' };
+    }
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: 'precheck error: ' + ((e && e.message) || e) }; }
+}
+
+/* ---- THE HOST-RUN CHECK (S2). This is the only place in the product that executes a NON-git command at a
+   blessed project root, and the trust story is what makes that defensible:
+
+     · the command is authored by the HUMAN when they create the loop (POST /api/loops `checkCmd`);
+     · it is never placed in the iteration prompt, never exposed as a tool, and no model can read or edit it;
+     · it only ever runs at a root that `isBlessedRoot` still approves, re-checked every single iteration;
+     · the agent's own `verify.run` tool stays jailed exactly as it was — this is a separate, host-side gate.
+
+   The agent's job is to make the check pass. It has no say in what the check IS. Everything about whether a
+   pass can be BELIEVED lives in the pure loopcheck.js. ---- */
+const LOOP_CHECK_MAX_BYTES = 64000;
+
+/* captureLoopDiff — the real unified diff for the files a pass touched, captured AT SETTLE TIME.
+
+   WHY AT SETTLE, AND WHY BOUNDED TO THIS PASS'S FILES. A loop does not commit between passes, so `git diff`
+   later shows the CUMULATIVE working-tree change, not what any one pass did. Capturing when the pass ends,
+   restricted to the paths that pass introduced, is the most faithful attribution available without snapshotting
+   file contents — and it is what makes a review card show the change rather than the agent's description of it.
+
+   HONESTY: the label the UI shows says "against your last commit", because that is literally what this is. If
+   an earlier un-approved pass also touched one of these files, its lines are in here too — the panel says so.
+   A non-git project yields '' and the card offers the file list alone rather than inventing a diff. */
+const LOOP_DIFF_MAX = 12000;
+async function captureLoopDiff(root, files) {
+  if (!root || !files || !files.length) return '';
+  try {
+    // `--` then explicit pathspecs: never a whole-tree dump, and a path that looks like a flag cannot be one.
+    const r = await runGit(root, ['diff', '--unified=3', '--no-color', '--'].concat(files.slice(0, 40)), 15000);
+    if (!r.ok && !r.stdout) return '';
+    let out = String(r.stdout || '');
+    if (out.length > LOOP_DIFF_MAX) out = out.slice(0, LOOP_DIFF_MAX) + '\n… (diff truncated — open the folder to read the rest)';
+    return out;
+  } catch (_) { return ''; }
+}
+
+/* detectCheckCommand — what "run this project's tests" actually MEANS for this folder. Without it every
+   project is offered `npm test`, which is wrong the moment someone points a loop at a python or rust repo —
+   and it is wrong on their very first try, on the hero template. Reads real files only; never guesses a
+   command for a toolchain whose manifest is not present. */
+function detectCheckCommand(root) {
+  const has = (f) => { try { return fs.existsSync(path.join(root, f)); } catch (_) { return false; } };
+  try {
+    if (has('package.json')) {
+      let scripts = {};
+      try { scripts = (JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) || {}).scripts || {}; } catch (_) {}
+      if (scripts.test) return { cmd: 'npm test', why: 'package.json defines a "test" script' };
+      if (scripts.check) return { cmd: 'npm run check', why: 'package.json defines a "check" script' };
+      return { cmd: 'npm test', why: 'this is an npm project (no "test" script found — check it runs)' };
+    }
+    if (has('pyproject.toml') || has('pytest.ini') || has('tox.ini') || has('conftest.py')) return { cmd: 'pytest', why: 'a pytest layout was found' };
+    if (has('Cargo.toml')) return { cmd: 'cargo test', why: 'Cargo.toml was found' };
+    if (has('go.mod')) return { cmd: 'go test ./...', why: 'go.mod was found' };
+    if (has('Makefile') || has('makefile')) return { cmd: 'make test', why: 'a Makefile was found' };
+    if (has('Gemfile')) return { cmd: 'bundle exec rspec', why: 'a Gemfile was found' };
+  } catch (_) {}
+  return { cmd: '', why: 'no familiar test setup here — type the command you run yourself' };
+}
+
+/* loopProjectFiles — a bounded, absolute-path listing of what is actually in the project. Deliberately NOT
+   projectScan's job: that answers "what changed lately", this answers "what IS there", and a loop pointed at
+   a clean repo needs the second one to orient at all. Skips the usual noise, caps breadth and depth so a huge
+   monorepo cannot flood the prompt, and never throws. */
+function loopProjectFiles(root, cap) {
+  const SKIP = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'target', '.next', 'vendor', '__pycache__', '.venv', 'coverage']);
+  const MAX = cap || 60, MAX_DEPTH = 4;
+  const out = [];
+  let truncated = false;
+  (function walk(dir, depth) {
+    if (out.length >= MAX || depth > MAX_DEPTH) { if (out.length >= MAX) truncated = true; return; }
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+    for (const e of entries) {
+      if (out.length >= MAX) { truncated = true; return; }
+      if (e.name.startsWith('.') && e.name !== '.env.example') continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) { if (!SKIP.has(e.name)) walk(full, depth + 1); }
+      else out.push(full);
+    }
+  })(root, 0);
+  out.truncated = truncated;
+  return out;
+}
+
+// the changed-file list at a blessed root, and whether we could establish it at all. `gitProven:false` is not
+// an error — it is the honest "we cannot enumerate what changed here", which loopcheck treats as unsafe.
+async function loopChangedFiles(root) {
+  try {
+    const r = await runGit(root, ['status', '--porcelain'], 15000);
+    if (!r.ok) return { gitProven: false, files: [] };
+    return { gitProven: true, files: loopcheck.parseChangedFiles(r.stdout) };
+  } catch (_) { return { gitProven: false, files: [] }; }
+}
+
+/* runLoopCheck — run the loop's human-authored check at its blessed root and judge the result.
+   `before` is the pre-iteration changed-file snapshot, so the paths attributed to THIS iteration are the ones
+   that appeared during it — not every uncommitted edit left by earlier iterations. */
+async function runLoopCheck(loop, before) {
+  if (!loop || !loop.workdir) return loopcheck.verdict({ result: null });
+  /* NO CHECK COMMAND still means we can say WHAT CHANGED. A sweep or research loop runs no check, but its
+     candidates are just as unreviewable without a file list — "Deliverable = OPEN, not read" applies to every
+     shape, not only the one with a test suite. So compute the changed files and return a verdict that ran
+     nothing (ran:false keeps it out of the check state machine) but still carries them. */
+  if (!loop.checkCmd) {
+    const v0 = loopcheck.verdict({ result: null });
+    try {
+      const after = await loopChangedFiles(loop.workdir);
+      const beforeSet0 = new Set((before && before.files) || []);
+      v0.changedFiles = after.files.filter(f => !beforeSet0.has(f)).slice(0, 40);
+      v0.diff = await captureLoopDiff(loop.workdir, v0.changedFiles);
+    } catch (_) { v0.changedFiles = []; }
+    return v0;
+  }
+  // RE-CHECK THE BLESSING EVERY ITERATION. A root blessed yesterday may have been revoked since, and a loop
+  // grinding unattended is exactly the case where a stale grant would go unnoticed.
+  if (!isBlessedRoot(loop.workdir)) {
+    // Say it in the SUMMARY, not only the note — the summary is what the panel and the ledger render, and a
+    // refusal that reads as "check failed (exit 1)" sends everyone hunting for a code defect that isn't there.
+    const why = 'the check did NOT run — "' + loop.workdir + '" is not an approved project folder';
+    return Object.assign(loopcheck.verdict({ result: { exitCode: 1, out: why } }), {
+      mustReview: true, summary: why, note: why + ' (approve it from a watched session, then resume this loop)'
+    });
+  }
+  const res = await shellRunCommand({
+    spawn: childSpawn, cmd: loop.checkCmd, cwd: loop.workdir,
+    timeoutMs: loop.checkTimeoutMs || 120000, maxBytes: LOOP_CHECK_MAX_BYTES,
+    clock: { now: () => Date.now() }, isWin: process.platform === 'win32'
+  });
+  const after = await loopChangedFiles(loop.workdir);
+  /* TRUST IS THE FULL UNCOMMITTED STATE, NOT THIS ITERATION'S DELTA.
+
+     The first version of this diffed after-minus-before, so it only flagged check files THIS iteration
+     touched. A live walk caught the hole: anything modified between iterations (or already dirty when the
+     loop started) was attributed to "pre-existing" and never flagged again — so a tampered test file only had
+     to survive one settlement to become invisible, and a loop started on an already-weakened tree would trust
+     every green it ever saw.
+
+     The question that decides trust is not "who changed the tests" but "are the tests currently in a state
+     git has not recorded". So the verdict reads the WHOLE dirty set. `before` is kept only to say whether
+     this iteration introduced it, which is a message detail, never the trust decision. */
+  const beforeSet = new Set((before && before.files) || []);
+  const introduced = after.files.filter(f => !beforeSet.has(f));
+  const v = loopcheck.verdict({
+    result: res,
+    changed: after.files,
+    gitProven: after.gitProven,
+    extraPaths: loop.checkPaths
+  });
+  // the files this pass actually touched, so the review card can show WHAT CHANGED rather than only the
+  // agent's prose about it. "Deliverable = OPEN, not read" — you cannot judge work you cannot see.
+  v.changedFiles = introduced.slice(0, 40);
+  v.diff = await captureLoopDiff(loop.workdir, v.changedFiles);
+  if (v.tampered) {
+    const fresh = v.tamperedPaths.filter(p => introduced.indexOf(p) >= 0);
+    v.note = v.note + (fresh.length
+      ? ' (this iteration changed ' + fresh.length + ' of them)'
+      : ' (already modified before this iteration — commit or revert them so the loop can vouch for a pass)');
+  }
+  return v;
+}
+
+/* the LOOP tick driver — pure orchestration, every ambient dep injected here. Deliberately reuses the cron
+   credential/identity/station resolvers: a loop iteration is the same kind of unattended run a routine fires,
+   so it must resolve provider, key and station identically or the two paths would drift. */
+const loopDriver = makeLoopDriver({
+  getLoops: () => loopJobs,
+  // TRANSACTIONAL DISPATCH: an honest false receipt means the durable write did NOT land, and the driver then
+  // launches nothing (firing over an unpersisted fire-claim is the crash-restart double-spend window). On
+  // failure we roll the RAM mirror back to disk so the loop stays eligible and retries, rather than living as
+  // a RAM-only advance a restart would forget. Same shape as the cron setJobs receipt.
+  setLoops: (next) => {
+    try { loopJobs = next; saveLoops(); return true; }
+    catch (e) {
+      console.warn('[loops] persist failed:', (e && e.message) || e);
+      try { loopJobs = loadLoops(); } catch (_) { /* disk unreadable too — keep the RAM mirror */ }
+      return false;
+    }
+  },
+  runOnce: (opts) => runOnce(opts),
+  newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
+  isHalted: () => loopsHalted,
+  // the same-agent run mutex. A loop must never elbow past an interactive run the Commander is watching.
+  concurrencyFree: (agentId) => { try { return concurrencyGate.inFlight(agentId) === 0; } catch (_) { return true; } },
+  // DELETED-AGENT GUARD, mirroring cron's: fail-OPEN on an empty roster (a boot before the first push must
+  // never reap a legitimate loop on missing data); the hero 'agent' is undeletable and always passes.
+  agentExists: (agentId) => { const id = String(agentId || ''); return !id || id === 'agent' || agentRoster.size === 0 || agentRoster.has(id); },
+  // PURELY-LOCAL readiness, evaluated BEFORE any spend (the night shift's NS-2 cold-leash fix): a stand-down
+  // that no model call could have avoided must not cost money or an iteration slot.
+  precheck: ({ loop }) => loopPrecheck(loop),
+  getKey: (provider) => cronKeyFor(provider),
+  providerForLoop: (loop) => cronProviderFor(loop),
+  hasCredential: (provider, key) => cronHasCredential(provider, key),
+  identityForAgent: (agentId) => cronIdentityFor(agentId),
+  stationFor: (agentId) => router.stationFor(agentId),
+  persona: () => cronSystemFor('agent'),
+  defaultModel: CRON_DEFAULT_MODEL,
+  maxParallel: LOOP_MAX_PARALLEL,
+  maxRunMs: LOOP_MAX_RUN_MS,
+  // the pre-iteration changed-file snapshot, so the check attributes files to THIS iteration only.
+  // Tell the agent WHERE the project is. Reuses the interactive path's own helper AND its live blessing
+  // check, so a revoked grant injects nothing rather than asserting folder access we cannot prove.
+  // A loop pass is a REAL run and must appear in the run registry like every other one: the reconnect
+  // snapshot is built from it, and the world darkens any agent missing from that snapshot.
+  trackRun: (runId, agentId, ac) => {
+    try { runs.set(runId, ac); runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'loop' }); } catch (_) {}
+  },
+  untrackRun: (runId) => { try { runs.delete(runId); runsMeta.delete(runId); } catch (_) {} },
+  projectLine: (loop) => (loop && loop.workdir && isBlessedRoot(loop.workdir)) ? projectScopeLine(loop.workdir, true) : '',
+  /* THE PROJECT SNAPSHOT. Reuses sidecar/projectscan.js (already used by the night shift) to put the real
+     absolute root and what is actually in it in front of the agent. It does two jobs at once:
+       · ANCHOR — the agent stops guessing at relative paths inside its own jail;
+       · PROOF — a scan that returns nothing means the pass would run BLIND, and `reachable:false` stops the
+         iteration before a model call. Without this a soft loop could report "0 findings" having looked only
+         at its empty jail, and the loop would count that as CONVERGENCE — the system asserting "nothing left
+         to do" about a project it never opened. */
+  context: async (loop) => {
+    if (!loop || !loop.workdir) return { text: '', reachable: true };
+    try {
+      // THE FILE LISTING IS THE LOAD-BEARING PART. projectScan reports git status / recent commits / TODO
+      // markers, which on a CLEAN repo is almost nothing — a dogfood sweep read that, ran a jailed fs_list,
+      // saw its own empty workspace and concluded "nothing to sweep". The agent must be shown the actual
+      // files, with absolute paths, or it has no way to know the project is even there.
+      const files = loopProjectFiles(loop.workdir);
+      if (!files.length) return { text: '', reachable: false, why: 'no readable files were found in ' + loop.workdir };
+      let scanText = '';
+      try { const r = await projectScan.scan(loop.workdir, {}); if (r && r.ok) scanText = String(r.text || '').trim(); } catch (_) {}
+      const lines = ['<project_snapshot root="' + loop.workdir + '">',
+        'These files really exist right now. Read and edit them at these ABSOLUTE paths — a bare relative path',
+        'resolves inside your own scratch workspace, NOT this project.', ''];
+      for (const f of files) lines.push('  ' + f);
+      if (files.truncated) lines.push('  … (listing truncated)');
+      if (scanText) lines.push('', scanText);
+      lines.push('</project_snapshot>');
+      return { text: lines.join('\n'), reachable: true };
+    } catch (e) { return { text: '', reachable: false, why: 'project scan failed: ' + ((e && e.message) || e) }; }
+  },
+  snapshot: (loop) => (loop && loop.workdir) ? loopChangedFiles(loop.workdir) : Promise.resolve(null),
+  check: (loop, ctx) => runLoopCheck(loop, ctx && ctx.before),
+  /* A LOOP THAT NEEDS YOU SAYS SO — on the channel you already use. The dock badge and toast only exist while
+     the app is open, which is exactly the case that does NOT matter for a loop that runs while you are away.
+     Reuses the SAME opt-in gate and chat map as cron notifications (channelSecrets.notifyAutonomous, default
+     OFF — the anti-spam law), so nobody is messaged who did not ask to be. Fire-and-forget: a dead ping must
+     never touch the loop pipeline, and it is edge-triggered in the driver so it cannot repeat.
+  */
+  onStopped: (loop, prevState) => {
+    try {
+      if (!(channelSecrets && channelSecrets.notifyAutonomous)) return;
+      const map = channelStore.loadChatMap();
+      const chats = Object.keys((map && map.chats) || {})
+        .filter(cid => map.chats[cid] && map.chats[cid].agentId === loop.agentId)
+        .map(cid => ({ chatId: (map.chats[cid] && map.chats[cid].chatId) || cid, channel: (map.chats[cid] && map.chats[cid].channel) || 'telegram' }));
+      if (!chats.length) return;
+      const name = loop.name || 'a loop';
+      const pend = loopjob.pendingReviews(loop).length;
+      // say the TRUE reason it stopped; never imply work is waiting when the loop simply finished or converged.
+      const line = loop.state === 'waiting' ? (name + ' has ' + pend + ' result' + (pend === 1 ? '' : 's') + ' waiting for your review.')
+        : loop.state === 'done' ? (name + ' finished — ' + (loop.stopReason || 'objective met') + '.')
+        : loop.state === 'dormant' ? (name + ' stopped — ' + (loop.stopReason || 'nothing left to do') + '.')
+        : (name + ' paused — ' + (loop.stopReason || 'needs your attention') + '.');
+      for (const c of chats) {
+        const ch = (c.channel === 'discord') ? discord
+          : (typeof c.channel === 'string' && c.channel.indexOf('telegram:') === 0) ? telegramBots.get(c.channel.slice('telegram:'.length))
+          : (!c.channel || c.channel === 'telegram') ? telegram : genericChannels[c.channel];
+        if (!(ch && ch.adapter)) continue;
+        Promise.resolve(ch.adapter.send(c.chatId, redact(line)))
+          .then(r => { if (r && r.ok === false) console.warn('[loops] notify failed:', r.error); })
+          .catch(e => console.warn('[loops] notify failed:', (e && e.message) || e));
+      }
+    } catch (e) { console.warn('[loops] notify error:', (e && e.message) || e); }
+  },
+  ledger: (entry) => { try { autonomyLedger.record(entry); } catch (_) {} },
+  // VISIBILITY: forward each iteration's run events to the floor through the SAME redacted egress the routed
+  // and scheduled lanes use (runTeeView: tool_call name-only, tool_result outcome-only, metadata whole,
+  // everything else dropped). A loop iteration is unattended work, so it must be observable live in the one
+  // shape the station already speaks — and these are existing agent.* contract events, not new ones.
+  tee: (name, payload) => {
+    try { const view = require('./channels/sse.js').runTeeView(name, payload); if (view) cronEmit(name, view); } catch (_) {}
+  },
+  // NOTE: no bus emit. shared/events.js is the FROZEN, OWNED contract and carries no loop.* family, so S1 adds
+  // none — the LOOPS window polls GET /api/loops exactly as the ROUTINES window polls /api/cron. A loop.*
+  // event family is a later ADDITIVE request to the contract owner, not something this lane invents.
+  // (no bus emit — see the "NO loop.* BUS EVENTS" note in loopjob-driver.js)
+});
+
+let loopTimer = null;
+// a loop is "live" if it could ever fire again; a stopped/dormant/paused one cannot, so it must not hold a timer.
+function anyLiveLoop() { return (loopJobs || []).some(l => l && l.enabled !== false && l.state !== 'stopped' && l.state !== 'dormant'); }
+function loopTick() {
+  try { loopDriver.applyTick(Date.now()); } catch (e) { console.warn('[loops] tick error:', (e && e.message) || e); }
+  // stand the timer down once nothing can fire — a station with no live loops pays nothing.
+  if (!anyLiveLoop() && loopDriver.leases.size === 0) disarmLoops();
+}
+function armLoops(quiet) {
+  if (loopTimer) return false;                       // idempotent — a second arm must not stack two timers
+  if (loopsHalted) return false;                     // durable E-STOP: nothing arms until explicitly resumed
+  if (!anyLiveLoop()) return false;
+  if (!quiet) console.log('  · loops armed — ' + loopJobs.filter(l => l && l.enabled !== false).length + ' standing objective(s), ' + Math.round(LOOP_TICK_MS / 1000) + 's tick');
+  loopTimer = setInterval(loopTick, LOOP_TICK_MS);
+  if (loopTimer.unref) loopTimer.unref();            // the http server keeps the process alive; the ticker alone shouldn't
+  return true;
+}
+function disarmLoops() {
+  if (!loopTimer) return false;
+  try { clearInterval(loopTimer); } catch (_) {}
+  loopTimer = null;
+  return true;
+}
+
+/* ---- LOOPS API. The pure reducers own the record math; these handlers are the ambient glue (mint an id,
+   stamp the clock, persist through the throwing saveLoops so a failed write surfaces as a 500, re-arm the
+   timer whenever a mutation could have made a loop live again).
+
+   Every mutating route ends by calling armLoops(true): creating a loop, resuming one, or ruling on a
+   candidate can all make a previously-quiet loop eligible, and the VERDICT case is the whole product —
+   the Commander's click is what starts the next iteration. ---- */
+const loopJson = (res) => (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+
+// GET /api/loops — the LOOPS window's poll. Every field is a durable record value or a pure derivation of
+// one (loopjob.summarize), including the BINDING that names why a quiet loop is quiet.
+function handleLoopsList(req, res) {
+  const json = loopJson(res);
+  const now = Date.now();
+  const rows = (loopJobs || []).map(l => loopjob.summarize(l, {
+    now: now,
+    staleMs: LOOP_MAX_RUN_MS,
+    // the SAME inputs the driver's gate sees, so the panel can never claim a loop is ready when the driver is
+    // standing it down (see loopPrecheck).
+    inp: {
+      halted: loopsHalted,
+      inFlight: loopDriver.leases.has(l.id),
+      agentBusy: (() => { try { return concurrencyGate.inFlight(l.agentId) !== 0; } catch (_) { return false; } })(),
+      precheck: loopPrecheck(l)
+    }
+  }));
+  json(200, {
+    loops: rows,
+    halted: loopsHalted,
+    // TRUTHFUL TELEMETRY: `armed` is whether a timer is genuinely running, not whether loops exist. The window
+    // must be able to say "this loop will not advance right now" when that is the truth.
+    armed: !!loopTimer,
+    tickMs: LOOP_TICK_MS,
+    inFlight: loopDriver.leases.size
+  });
+}
+
+// POST /api/loops — create a standing objective. body: { name, objective, agentId?, gate?, queueCap?,
+// maxIterations?, dryStopAfter?, workdir?, model?, provider?, perDayUsd?, perIterationUsd? }
+function handleLoopsCreate(req, res) {
+  const json = loopJson(res);
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const objective = String(body.objective || '').trim();
+    if (!objective) return json(400, { error: 'a loop needs an objective — what should it keep doing?' });
+    let agentId; try { agentId = parseCronAgentIdOr400(body.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    let provider; try { provider = parseCronProviderOr400(body.provider); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    // A workdir must EXIST at create time. Accepting a path that is not there would let the loop claim a
+    // project it cannot touch, and the first iteration would fail for a reason the Commander never saw.
+    /* CANONICALIZE THE PATH. isBlessedRoot does an exact (case-insensitive on win32) string match against the
+       stored grant, and blessing stores a resolved OS-native path. A workdir posted with forward slashes on
+       Windows therefore matched NOTHING — and the failure was silent and total: the agent was never told where
+       the project was, and the check refused to run, surfacing only as a generic "check failed (exit 1)".
+       Caught by a real dogfood run; a user typing a path by hand would hit it every time. */
+    const workdir = body.workdir != null ? path.resolve(String(body.workdir)) : null;
+    if (workdir) { try { if (!fs.statSync(workdir).isDirectory()) return json(400, { error: 'not a folder: ' + workdir }); } catch (e) { return json(400, { error: 'that folder does not exist: ' + workdir }); } }
+    // A check needs somewhere to run. Accepting a checkCmd with no workdir would create a loop whose stated
+    // exit condition could never be evaluated — a promise the harness cannot keep.
+    if (body.checkCmd && !workdir) return json(400, { error: 'a check command needs a project folder — set workdir' });
+    const id = crypto.randomUUID();
+    try {
+      loopJobs = loopjobStore.createLoop(loopJobs, {
+        id: id, name: body.name || objective.slice(0, 60), objective: objective,
+        agentId: agentId, model: body.model, provider: provider,
+        gate: body.gate, queueCap: body.queueCap, maxIterations: body.maxIterations,
+        dryStopAfter: body.dryStopAfter, workdir: workdir,
+        // S2 — the human-authored host-run check. This is the ONLY moment `checkCmd` is ever accepted from
+        // outside: it arrives on an interactive, token-guarded create, is frozen onto the record, and from
+        // then on nothing the model does can reach it.
+        checkCmd: body.checkCmd, checkTimeoutMs: body.checkTimeoutMs, checkPaths: body.checkPaths,
+        exitOn: body.exitOn, redStopAfter: body.redStopAfter,
+        perDayUsd: body.perDayUsd, perIterationUsd: body.perIterationUsd, meta: body.meta
+      }, { id: id, now: Date.now() });
+      saveLoops();
+    } catch (e) { return json(500, { error: 'could not save the loop: ' + ((e && e.message) || e) }); }
+    armLoops(true);
+    json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() }) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/loops/update — edit a loop. body: { id, patch }
+function handleLoopsUpdate(req, res) {
+  const json = loopJson(res);
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
+    const patch = Object.assign({}, body.patch || {});
+    if (Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
+      try { patch.agentId = parseCronAgentIdOr400(patch.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'workdir') && patch.workdir) patch.workdir = path.resolve(String(patch.workdir));
+    try { loopJobs = loopjobStore.updateLoop(loopJobs, id, patch, { now: Date.now() }); saveLoops(); }
+    catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    armLoops(true);
+    json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() }) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+/* POST /api/loops/verdict — THE REVIEW GATE, and the loop's actual trigger. body: { id, n, verdict, note }
+
+   Rejection CASCADES to every un-approved candidate stacked above n (THE STACKING LAW — see the
+   loopjob-store header): iteration n+1 was built on a tree containing un-approved n, so it cannot survive n's
+   rejection. The response reports `cascaded` so the UI can confirm what the click actually cost; the UI is
+   expected to have WARNED with the same number (loopjob.stackedAbove) BEFORE the click. */
+function handleLoopsVerdict(req, res) {
+  const json = loopJson(res);
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    const loop = loopjobStore.getLoop(loopJobs, id);
+    if (!loop) return json(404, { error: 'no such loop' });
+    const n = parseInt(body.n, 10);
+    const verdict = body.verdict === 'approved' ? 'approved' : (body.verdict === 'rejected' ? 'rejected' : null);
+    if (!verdict) return json(400, { error: 'verdict must be "approved" or "rejected"' });
+    const target = (loop.iterations || []).find(it => it && it.n === n);
+    if (!target) return json(404, { error: 'no iteration #' + body.n + ' on this loop' });
+    if (target.outcome !== 'candidate') return json(409, { error: 'iteration #' + n + ' produced nothing to review (' + target.outcome + ')' });
+    if (target.verdict) return json(409, { error: 'iteration #' + n + ' was already ' + target.verdict });
+
+    const willCascade = verdict === 'rejected' ? loopjob.stackedAbove(loop, n).map(it => it.n) : [];
+    try {
+      loopJobs = loopjobStore.recordVerdict(loopJobs, id, n, verdict, { now: Date.now(), note: body.note });
+      saveLoops();
+    } catch (e) { return json(500, { error: 'could not save the verdict: ' + ((e && e.message) || e) }); }
+    try {
+      autonomyLedger.record({
+        source: 'loop', kind: verdict === 'approved' ? 'earn' : 'decline', jobId: id, agentId: loop.agentId,
+        reason: 'verdict-' + verdict, binding: 'commander',
+        detail: { iteration: n, cascaded: willCascade.length, noted: !!(body.note && String(body.note).trim()) }
+      });
+    } catch (_) {}
+    // a freed queue slot means the loop may fire again NOW — this is the verdict-as-trigger, made real.
+    armLoops(true);
+    json(200, { ok: true, cascaded: willCascade, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() }) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/loops/control — pause / resume / stop one loop, or lift the durable E-STOP for all of them.
+// body: { id?, action:'pause'|'resume'|'stop'|'unhalt' }
+function handleLoopsControl(req, res) {
+  const json = loopJson(res);
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const action = String(body.action || '');
+    if (action === 'unhalt') {
+      if (loopsHalted) { loopsHalted = false; saveLoopsHalted(false); }
+      armLoops(true);
+      return json(200, { ok: true, halted: loopsHalted, armed: !!loopTimer });
+    }
+    const id = String(body.id || '');
+    if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
+    const now = Date.now();
+    try {
+      if (action === 'pause') loopJobs = loopjobStore.pauseLoop(loopJobs, id, body.reason || 'paused by the Commander', { now: now });
+      else if (action === 'resume') loopJobs = loopjobStore.resumeLoop(loopJobs, id, { now: now });
+      else if (action === 'stop') loopJobs = loopjobStore.stopLoop(loopJobs, id, body.reason, { now: now });
+      else return json(400, { error: 'action must be pause, resume, stop or unhalt' });
+      saveLoops();
+    } catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    // stopping/pausing must also kill an iteration already in flight — otherwise the Commander clicks STOP and
+    // the run keeps spending until it finishes, which the button plainly implies it will not.
+    if (action !== 'resume') {
+      const lease = loopDriver.leases.get(id);
+      try { if (lease && lease.abort && typeof lease.abort.abort === 'function') lease.abort.abort(); } catch (_) {}
+    }
+    armLoops(true);
+    json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: now }) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+/* POST /api/loops/testcheck — run the Commander's check ONCE, now, and report what really happened.
+   body: { path, cmd } -> { ok, passed, summary, alreadyGreen }
+
+   WHY THIS EXISTS. The check command is the scariest field in the form and the only one with no feedback, so
+   people either guess or paste something that does not do what they think. Three failures it turns from
+   expensive into instant:
+     · a command that cannot run (typo, wrong folder, missing dep) — otherwise ~10 red passes before the
+       redStopAfter ceiling parks the loop;
+     · a command that ALREADY PASSES — otherwise the loop spends one pass, gets a trusted green and declares
+       "objective met" having done nothing. That is the app claiming a success that never happened, which
+       matters more than the wasted dollar;
+     · a command that always passes regardless (`echo ok`) — the same false victory, now visible up front.
+
+   Same trust boundary as the loop's own check: a blessed root only, human-typed command, host-executed. */
+function handleLoopsTestCheck(req, res) {
+  const json = loopJson(res);
+  readBody(req, 4096).then(async raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const root = body.path != null ? path.resolve(String(body.path)) : '';
+    const cmd = String(body.cmd || '').trim();
+    if (!root || !cmd) return json(400, { error: 'a folder and a command are both required' });
+    try { if (!fs.statSync(root).isDirectory()) return json(400, { error: 'not a folder: ' + root }); }
+    catch (e) { return json(400, { error: 'that folder does not exist: ' + root }); }
+    // the host only ever executes at a root the Commander has approved — the same law the loop check obeys.
+    if (!isBlessedRoot(root)) return json(403, { error: 'that folder is not approved yet — pick it again to approve it' });
+    try {
+      const r = await shellRunCommand({
+        spawn: childSpawn, cmd: cmd, cwd: root, timeoutMs: 120000, maxBytes: LOOP_CHECK_MAX_BYTES,
+        clock: { now: () => Date.now() }, isWin: process.platform === 'win32'
+      });
+      // loopjob-check wraps verify.interpret and is already required here; we only read passed/summary, so the
+      // trust fields (which need a git changed-file list) are irrelevant to a pre-flight.
+      const v = loopcheck.verdict({ result: r });
+      /* THREE OUTCOMES, NOT TWO. A non-zero exit from genuinely failing tests and a non-zero exit from a
+         command that could not run are the same number but opposite meanings — the first is a good target,
+         the second is a typo. Reporting both as "it fails, great" sends someone off to start a loop against
+         a command that will never work. Detected from the shell's own vocabulary, and only ever used to
+         soften the wording: we never claim it IS broken, only that it looks like it. */
+      const out = String(r.out || '');
+      const couldNotRun = r.exitCode === 127 ||
+        /command not found|is not recognized|no such file or directory|Missing script|ENOENT/i.test(out);
+      json(200, {
+        ok: true, passed: v.passed, summary: v.summary,
+        exitCode: r.exitCode, timedOut: !!r.timedOut,
+        couldNotRun: !v.passed && couldNotRun,
+        // the loop would finish instantly on an already-green check — the most important case to surface.
+        alreadyGreen: v.passed
+      });
+    } catch (e) { json(200, { ok: false, error: 'could not run it — ' + ((e && e.message) || e) }); }
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/loops/detect — what check command suits this folder? body: { path } -> { cmd, why, files }
+// Read-only and path-guarded: it only ever reports on a folder that exists; it never blesses or runs anything.
+function handleLoopsDetect(req, res) {
+  const json = loopJson(res);
+  readBody(req, 4096).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const root = body.path != null ? path.resolve(String(body.path)) : '';
+    if (!root) return json(400, { error: 'a folder is required' });
+    try { if (!fs.statSync(root).isDirectory()) return json(400, { error: 'not a folder: ' + root }); }
+    catch (e) { return json(400, { error: 'that folder does not exist: ' + root }); }
+    const d = detectCheckCommand(root);
+    json(200, { ok: true, root: root, cmd: d.cmd, why: d.why, files: loopProjectFiles(root, 12).length });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/loops/remove — delete a loop and its ledger. body: { id }
+function handleLoopsRemove(req, res) {
+  const json = loopJson(res);
+  readBody(req, 4096).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
+    const lease = loopDriver.leases.get(id);
+    try { if (lease && lease.abort && typeof lease.abort.abort === 'function') lease.abort.abort(); } catch (_) {}
+    try { loopJobs = loopjobStore.removeLoop(loopJobs, id); saveLoops(); }
+    catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    if (!anyLiveLoop()) disarmLoops();
+    json(200, { ok: true });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
 /* ---- QUEST V3: the standing QUEST REFRESH engine (questrefresh.js owns the pure half; this is the ambient
    half — the durable file, the tick timer, the ONE aux model call, the mints through questStore). Two
    triggers, both through the same gate: the 24h cadence (a slate never goes stale) and the caught-up fast
@@ -5191,6 +5821,15 @@ const ROUTES = [
   { m: 'POST', exact: '/api/cron/preview', h: handleCronPreview },
   { m: 'POST', exact: '/api/cron/arm', h: handleCronArm },
   { m: 'POST', exact: '/api/cron/run', h: handleCronRun },
+  // ---- LOOPS (standing objectives): the review gate is /verdict, and it is also the loop's trigger ----
+  { m: 'GET', exact: '/api/loops', h: handleLoopsList },
+  { m: 'POST', exact: '/api/loops', h: handleLoopsCreate },
+  { m: 'POST', exact: '/api/loops/update', h: handleLoopsUpdate },
+  { m: 'POST', exact: '/api/loops/verdict', h: handleLoopsVerdict },
+  { m: 'POST', exact: '/api/loops/control', h: handleLoopsControl },
+  { m: 'POST', exact: '/api/loops/remove', h: handleLoopsRemove },
+  { m: 'POST', exact: '/api/loops/detect', h: handleLoopsDetect },
+  { m: 'POST', exact: '/api/loops/testcheck', h: handleLoopsTestCheck },
   // ---- away workshop (W1/W2): grant toggle, backlog queue, pending deliverables, decide, force-fire a shift ----
   { m: 'POST', exact: '/api/workshop/grant', h: handleWorkshopGrant },
   { m: 'POST', exact: '/api/workshop/queue', h: handleWorkshopQueue },
@@ -5385,6 +6024,13 @@ server.listen(PORT, '127.0.0.1', () => {
     if (cronArmed && cronHalted) console.log('  · cron is E-STOP halted — timer stays down until resumed (routines panel or autonomy dial)');
     if (cronArmed && !cronHalted) armCron();
   } catch (e) { console.warn('[cron] start failed:', (e && e.message) || e); }
+  // LOOPS: no env gate and no arm ceremony — CREATING a loop is the arming action, so a station that has live
+  // standing objectives resumes them here and a station with none pays no timer. The durable E-STOP halt
+  // (loops.halt.json) freezes them ACROSS restarts until an explicit unhalt, exactly like cron's.
+  try {
+    if (loopsHalted && anyLiveLoop()) console.log('  · loops are E-STOP halted — no iteration runs until resumed');
+    else armLoops();
+  } catch (e) { console.warn('[loops] start failed:', (e && e.message) || e); }
   // NIGHT SHIFT (OPT-IN, NS-1): arms iff SKYNET_NIGHTSHIFT_ENABLED OR the posture already permits acting at boot
   // (initiative ≥ 'leash'). Inert otherwise — no timer, no fire, byte-identical for a Commander who never dials up.
   // A live posture write that RAISES initiative to acting also arms it (POST /api/autonomy/posture), so it starts
@@ -10489,12 +11135,19 @@ function handleHalt(req, res) {
   // claiming "N routines armed" — so the tray held the process alive AFTER the user paused. The flag persists
   // (survives restart) and lifts only on an explicit resume (POST /api/cron/arm or an autonomy-dial re-write).
   try { if (cronArmed && !cronHalted) { cronHalted = true; saveCronHalted(true); disarmCron(); } } catch (_) {}
+  // LOOPS get the same durable stand-down. An in-flight iteration is aborted (it settles as 'cancelled', which
+  // costs neither the failure streak nor the convergence streak), the timer comes down, and the flag PERSISTS —
+  // so a loop the Commander E-STOPped does not quietly resume itself after a restart. It lifts only on an
+  // explicit POST /api/loops/control {action:'unhalt'}.
+  let loopAborted = 0;
+  try { loopAborted = loopDriver.abortAllLeases() || 0; } catch (_) {}
+  try { if (!loopsHalted) { loopsHalted = true; saveLoopsHalted(true); } disarmLoops(); } catch (_) {}
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
   try { inputGuard.observe('halt').catch(() => {}); } catch (_) {}   // diagnostic only: never release an unowned global clip
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted, cronAborted, beatAborted }));   // honest counts: run-controllers aborted + cron leases aborted + driver-path beat aborted (additive field)
+  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted }));   // honest counts: run-controllers aborted + cron leases aborted + driver-path beat aborted + loop iterations aborted (additive fields)
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the
