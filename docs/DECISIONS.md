@@ -42,6 +42,13 @@ many of these — they win on any wording conflict.
 - **Music is REMOVED by design** (2026-07-04, e6d74bab). audio.js is a sound Director only;
   SFX = one console voice. Never re-add music unasked.
 - **CRT look is BOLD not subtle**; iterate via `?crtlab=1` and copy values out.
+- **NO white HTML controls, ever** (2026-07-27, Andrew — reported for the third time). A
+  control that renders with the browser's own paint (buttonface white, ButtonBorder grey,
+  black Arial, OS-blue tick) is a BUG, not a detail. `frontend/css/app.css` carries a
+  **CONTROL FLOOR**: element-level rules that repaint every native control from theme vars, so
+  forgetting a surface class can no longer ship an OS-chrome control. The floor must STAY a
+  floor — element-level selectors only, no geometry on the shared button rule — or it starts
+  overriding real skins. Locked by `test/control-floor-theming.test.js`.
 - **COMMS beats:** decided cards must `vanish()`; ONE post-run beat at a time; gold-inset
   beat family (no `.reply` for asides).
 - **Voice v3: ONE station voice — ULTRON** (2026-07-13, Andrew). Supersedes the v2 character
