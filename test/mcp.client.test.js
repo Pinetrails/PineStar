@@ -133,7 +133,10 @@ function makeFakeTransport(handle) {
 
     const ro = makeMcpToolDef({ connectorId: 'gh', mcpTool: { name: 'list_issues', annotations: { readOnlyHint: true }, inputSchema: { type: 'object' } }, call: () => Promise.resolve({ content: [] }) });
     A.eq(ro.scope, 'read', 'readOnlyHint -> read scope');
-    A.eq(ro.requiresConsent, false, 'readOnlyHint changes only the legacy consent flag');
+    // A server's own readOnlyHint may shape the SCOPE (what the recorded grant is keyed to) but must never
+    // switch the consent gate off: an unverifiable third-party annotation deciding "this one needs no
+    // approval" is exactly the trust the host does not extend to connectors.
+    A.eq(ro.requiresConsent, true, 'readOnlyHint cannot switch off the consent gate');
     A.eq(ro.impact, 'external-unknown', 'host authority still treats a declared read-only MCP tool as unknown');
 
     const errDef = makeMcpToolDef({ connectorId: 'x', mcpTool: { name: 't', inputSchema: { type: 'object' } }, call: () => Promise.resolve({ isError: true, content: [{ type: 'text', text: 'bad input' }] }) });
@@ -207,6 +210,38 @@ function makeFakeTransport(handle) {
     A.eq(okr.ok, true, 'a granted, valid MCP dispatch succeeds');
     A.ok(okr.content.indexOf('FILE:/etc/hosts') > 0, 'dispatch returns the MCP tool output');
     A.ok(/^\[BEGIN EXTERNAL WEB CONTENT/.test(okr.content), 'and it stays fenced through dispatch');
+  }
+
+  /* ===== F2. the WHOLE watched consent path, no stubs: real translate -> real run authority -> real consent
+     broker -> real registry. Binds the two halves of the 2026-07-27 repeated-popup fix together, using a
+     server that declares readOnlyHint (the case that used to carry requiresConsent:false).
+
+     Repro it fixed: a user answering "Full access" was asked again on the very next connector call, because
+     the authority layer prompted per call and threw the grade away instead of routing it to the broker. ===== */
+  {
+    const { makeRunAuthority } = require('../sidecar/inputpolicy.js');
+    const { makeConsentBroker } = require('../sidecar/permissions.js');
+    let runs = 0, asks = 0;
+    const reg = makeRegistry();
+    reg.register(makeMcpToolDef({
+      connectorId: 'shopify', label: 'Shopify',
+      mcpTool: { name: 'get_draft_asset', annotations: { readOnlyHint: true }, inputSchema: { type: 'object', required: ['key'], properties: { key: { type: 'string' } } } },
+      call: () => { runs++; return Promise.resolve({ content: [{ type: 'text', text: 'asset' }] }); }
+    }));
+    const ask = async () => { asks++; return 'full'; };
+    const ctx = {
+      canUse: () => ({ ok: true }),
+      authorize: makeRunAuthority({ surface: 'interactive', isTask: false, confirm: ask }).authorize,
+      consent: makeConsentBroker({ surface: 'interactive', sessionKey: 'run1', grantsBlanket: new Set(), networkOf: () => true, prompt: ask })
+    };
+    const call = (key) => ({ id: key, name: 'mcp__shopify__get_draft_asset', args: { key }, argsRaw: JSON.stringify({ key }), parseError: null });
+    // the four calls from the reported video, in order
+    for (const k of ['assets/announcement-bar.css', 'sections/main-announcement-bar.liquid', 'sections/announcement-bar-group.liquid', 'sections/announcement-bar-group.json']) {
+      const r = await reg.dispatch(call(k), ctx);
+      A.eq(r.ok, true, 'connector read ' + k + ' is allowed');
+    }
+    A.eq(runs, 4, 'all four connector reads executed');
+    A.eq(asks, 1, 'ONE approval popup for four connector calls — "Full access" is honored, not re-asked');
   }
 
   /* ---- truncation must DISAMBIGUATE, and a failing call must still be fenced ---- */
