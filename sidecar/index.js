@@ -30,6 +30,9 @@ const { makeBrowserTools } = require('./tools/builtin/browser.js');
 const { makeComputerTools } = require('./tools/builtin/computer.js');
 const { makeDesktopTools } = require('./tools/builtin/desktop.js');
 const { makeFsTools } = require('./tools/builtin/fs.js');
+// fs.read extracts .docx / .xlsx / .ipynb to readable text. inflateRawSync is injected so the extractor stays
+// pure + headless-testable, and so the OOXML path needs no dependency beyond what Node already ships.
+const docExtract = require('./tools/builtin/docextract.js').makeDocExtract({ inflateRaw: require('node:zlib').inflateRawSync });
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
 const { makeToolSearchTool } = require('./tools/builtin/toolsearch.js');   // tool.search: reach a granted-but-unadvertised (deferred) tool
@@ -8705,7 +8708,7 @@ async function runOnce(o) {
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
   const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, { scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null, agentId: (o2 && o2.agentId) || agentId });
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
   widgetTools.register(registry);   // WIDGET RAILS Phase 2: widget.set — agent-fed rail readouts (memory capability: sandboxed local write, no consent, no network)
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability

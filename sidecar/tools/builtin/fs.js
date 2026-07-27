@@ -44,6 +44,9 @@
     // Wired only for the run registry (index.js). UNWIRED (the /api/file jail helper, tests) means the
     // historic behavior — every absolute path is illegal — so those surfaces stay locked to the jail.
     const pathTrust = typeof deps.pathTrust === 'function' ? deps.pathTrust : null;
+    // OPTIONAL document-to-text for fs.read (.docx / .xlsx / .ipynb). Unwired = the historic behavior, where
+    // those files decode as UTF-8 noise. index.js wires it with zlib.inflateRawSync.
+    const docExtract = (deps.docExtract && typeof deps.docExtract.sniff === 'function') ? deps.docExtract : null;
 
     async function workspaceRoot(agentId) {
       if (environment && typeof environment.ensureWorkspace === 'function') return environment.ensureWorkspace(safeAgentId(agentId || 'agent'));
@@ -150,15 +153,29 @@
 
     const readTool = {
       name: 'fs.read', capability: 'cabinet', scope: 'read', requiresConsent: false, timeoutMs: 10000,
-      description: 'Read a UTF-8 text file from your workspace.',
+      description: 'Read a file from your workspace. Text files come back as text; Word (.docx), Excel (.xlsx) and Jupyter (.ipynb) files are extracted to readable text automatically.',
       schema: { type: 'object', required: ['path'], properties: { path: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
         const { abs } = await resolveInside(aid, args.path, { scope: 'read', ctx });
-        let txt;
-        try { txt = await fsp.readFile(abs, 'utf8'); }
+        let raw;
+        try { raw = await fsp.readFile(abs); }
         catch (e) { if (e && e.code === 'ENOENT') throw new Error('no such file: ' + args.path); throw e; }
         await stampSeen(aid, abs);   // what this agent believes the file says, as of now (see the stale-write guard)
+
+        /* DOCUMENTS. Decoding a .docx as UTF-8 produced binary noise: the agent could see the file existed and
+           had no way to read it, on exactly the formats a Commander keeps real work in. A malformed or
+           mislabelled document falls THROUGH to the plain text path rather than failing the read — a file
+           someone named .docx that is really text must still be readable. */
+        const kind = docExtract ? docExtract.sniff(args.path, raw) : null;
+        if (kind) {
+          try {
+            const text = docExtract.extract(raw, kind, { maxChars: READ_RETURN });
+            if (text) return { content: text, summary: kind + ' → ' + kb(Buffer.byteLength(text)) + ' of text' };
+          } catch (_) { /* fall through to the plain read below */ }
+        }
+
+        const txt = raw.toString('utf8');
         const out = txt.length > READ_RETURN ? txt.slice(0, READ_RETURN) + '\n…[truncated]' : txt;
         return { content: out, summary: kb(Buffer.byteLength(txt)) + ' read' };
       }
