@@ -73,11 +73,20 @@ const StationBake = (() => {
      them — without that the sky behind a window renders at the interior's 23% and reads as a
      black pane. Reset per bake alongside the wall palette cache. */
   let viewportRects = [];
-  /* THE CORNER CROWN'S ACTUAL REACH, recorded BY THE PAINTER, column → topmost painted bake-pixel
-     row. buildLightMap's chamfer erase needs to know how far up the art goes so the ambient mask
-     stops exactly there; deriving that a second time is precisely what drifted before (see the
-     note in buildLightMap). Same per-bake-state contract as viewportRects/lampPos, and keyed
-     on absolute bake-pixel coords, so a chunk bake records the same numbers as the monolithic one. */
+  /* THE CORNER CROWN'S ACTUAL REACH, recorded BY THE PAINTER — chamfer key → (column → topmost
+     painted bake-pixel row). buildLightMap's chamfer erase needs to know how far up the art goes so
+     the ambient mask stops exactly there; deriving that a second time is precisely what drifted
+     before (see the note in buildLightMap). Same per-bake-state contract as viewportRects/lampPos,
+     and keyed on absolute bake-pixel coords, so a chunk bake records the same numbers as the
+     monolithic one.
+
+     KEYED PER CHAMFER, NOT PER COLUMN. It was one flat column→row map, which is indistinguishable
+     from correct on a one-room station because no two chamfers can share a bake column there. Put a
+     second room above or below another and they do: the mask pass then ran from a FAR-AWAY corner's
+     reach down to THIS corner's tile, laying a tall 1px column of ambient over bare space — a
+     scattered shadow line hanging in the starfield (Andrew, on his own multi-room station). 148
+     leaked pixels on a stacked layout, 0 on the seed. LEAK-CHECK CORNER WORK ON A MULTI-ROOM
+     STATION; the single-room case cannot exercise this at all. */
   let crownReach = null;
 
   /* EVERY RECT THE CROWN PAINTS, recorded by the painter for buildLightMap to cut the ambient back
@@ -1220,7 +1229,7 @@ const StationBake = (() => {
       // under full ambient beside a lifted straight would be the same inversion, just localised.
       if (c === pal.cap || c === lit) crownRects.push([x0, y0, x1 - x0, y1 - y0]);
       if (!record) return;
-      for (let ix = x0; ix < x1; ix++) { const p = crownReach.get(ix); if (p === undefined || y0 < p) crownReach.set(ix, y0); }
+      for (let ix = x0; ix < x1; ix++) { const p = record.get(ix); if (p === undefined || y0 < p) record.set(ix, y0); }
     };
     const K = HR * Math.SQRT1_2;              // the 45° split between the two duals
     /* the DECK's own curve is the inner limit for the face fill — everything from the ladder down
@@ -1590,9 +1599,10 @@ const StationBake = (() => {
       for (const [ccx, ccy, kind] of G.chamfers) {
         if (kind !== 'tl' && kind !== 'tr') continue;
         const stripTop = ccy * T - (upC + capH + 2), X0 = ccx * T;
+        const rm = crownReach.get(ccx + ',' + ccy);
         for (let ix = X0; ix < X0 + T; ix++) {
-          const reach = crownReach.get(ix);
-          const artTop = reach === undefined ? ccy * T : reach;   // no ring here → the footprint plate is the top
+          const reach = rm && rm.get(ix);
+          const artTop = reach === undefined || reach === null ? ccy * T : reach;   // no ring here → the footprint plate is the top
           if (artTop > stripTop) mg.fillRect(ix, stripTop, 1, artTop - stripTop);
         }
       }
@@ -1605,8 +1615,10 @@ const StationBake = (() => {
       for (const [ccx, ccy, kind] of G.chamfers) {
         if (kind !== 'tl' && kind !== 'tr') continue;
         const X0 = kind === 'tl' ? ccx * T - pad : ccx * T, X1 = X0 + T + pad, bottom = ccy * T + T;
+        const rm = crownReach.get(ccx + ',' + ccy);
+        if (!rm) continue;
         for (let ix = X0; ix < X1; ix++) {
-          const reach = crownReach.get(ix);
+          const reach = rm.get(ix);
           if (reach === undefined || reach >= bottom) continue;
           mg.fillRect(ix, reach, 1, bottom - reach);
         }
@@ -1815,9 +1827,10 @@ const StationBake = (() => {
          defines a wall does not die at the corners — and on a TOP corner the SAME circle, centred
          higher, is also what stands the wall up. One profile, one radius, no ease on the outline. */
       const cCapW = sideCapW(cRoom);
+      let reach = null;
+      if (kind === 'tl' || kind === 'tr') crownReach.set(ccx + ',' + ccy, reach = new Map());
       bakeCornerCrown(b, cPal, kind, X, Y, ax, ay, Rc, HR, cCapW,
-                      cornerCapFar(kind, cCapW, Math.max(2, Math.round(WALL.capH))), cCy,
-                      kind === 'tl' || kind === 'tr');
+                      cornerCapFar(kind, cCapW, Math.max(2, Math.round(WALL.capH))), cCy, reach);
     }
 
     bakeRoomLighting(b);   // after the chamfers, so a rounded corner is lit like every other surface
