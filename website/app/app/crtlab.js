@@ -10,7 +10,7 @@
 (function () {
   if (!/[?&]crtlab\b/.test(location.search)) return;
 
-  const CRT_DEFAULTS = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.09, dust: 0.5, aberr: 0.35, grain: 0.24 };
+  const CRT_DEFAULTS = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.09, vig: 0.30, over: 1.20, dust: 0.5, aberr: 0.35, grain: 0.24 };
   const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2 };
   const WALL_DEFAULTS = { up: 9, corUp: 0, skirt: 32, side: 12 };
   const DEPTH_DEFAULTS = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1 };
@@ -33,10 +33,11 @@
     'Tall halls':      { wall: { up: 10, corUp: 0, skirt: 32, side: 12 } },
     'Towering':        { wall: { up: 32, corUp: 15, skirt: 38, side: 9 } },
     'Depth+':          { crt: { dust: 0.5, aberr: 0.35, grain: 0.24 }, depth: { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1 } },
-    // A/B the aperture against what shipped before — same curvature in all three, only the glass moves.
-    'Ap: old (tight)': { tube: { clear: 50, mid: 82, midA: 0.34, edgeA: 0.82, inset: 60 } },
-    'Ap: current':     { tube: { clear: 68, mid: 88, midA: 0.26, edgeA: 0.70, inset: 40 } },
-    'Ap: wide':        { tube: { clear: 78, mid: 92, midA: 0.20, edgeA: 0.58, inset: 28 } },
+    // A/B the WHOLE aperture — in-canvas vignette + overscan + the CSS glass together. `curve` is 0.09 in
+    // every one of them: these change how much of the panel the picture gets, never how hard it bows.
+    'Ap: old (tight)': { crt: { vig: 0.55, over: 1 },    tube: { clear: 50, mid: 82, midA: 0.34, edgeA: 0.82, inset: 60 } },
+    'Ap: current':     { crt: { vig: 0.30, over: 1.20 }, tube: { clear: 68, mid: 88, midA: 0.26, edgeA: 0.70, inset: 40 } },
+    'Ap: wide open':   { crt: { vig: 0.16, over: 1.24 }, tube: { clear: 80, mid: 93, midA: 0.16, edgeA: 0.48, inset: 24 } },
   };
 
   // World/StationBake are top-level `const`s (global lexical bindings, NOT window props), so
@@ -168,6 +169,9 @@
     sliders.push(buildSlider(body, crt, 'fade', 0, 3, 0.05));
     sliders.push(buildSlider(body, crt, 'glow', 0, 0.4, 0.01));
     sliders.push(buildSlider(body, crt, 'curve', 0, 0.4, 0.01));   // barrel-curve the whole feed (0 = flat)
+    // THE TWO THAT ACTUALLY SIZE THE PICTURE (both leave `curve` alone):
+    sliders.push(buildSlider(body, crt, 'vig', 0, 0.8, 0.01));     // in-canvas vignette 1−vig·r² — the dominant edge darkener (0.55 crushed corners to black)
+    sliders.push(buildSlider(body, crt, 'over', 1, 1.4, 0.01));    // output overscan — ≥1.11 pulls the corners back inside the warp's domain so they stop filling black
     sliders.push(buildSlider(body, crt, 'dust', 0, 1, 0.05));      // dust motes drifting in the light pools
     sliders.push(buildSlider(body, crt, 'aberr', 0, 1, 0.05));     // chromatic aberration at the bowed edges (GPU path)
     sliders.push(buildSlider(body, crt, 'grain', 0, 0.25, 0.01));  // film grain over the warped feed
