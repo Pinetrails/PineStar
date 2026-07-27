@@ -2368,7 +2368,29 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ag-command { margin: 10px 0 8px; display: flex; flex-direction: column; gap: 12px; }
 .ag-cmd-sec { border-top: 1px solid var(--hair, rgba(255,255,255,.08)); padding-top: 8px; }
 .ag-cmd-lbl { font-size: 10px; color: var(--ph-dim); letter-spacing: 2px; margin-bottom: 6px; }
-.ag-skin-row { max-height: 108px; }   /* reuse .skin-picker/.skin-thumb; a shorter well in the narrower dossier pane */
+/* SKIN: a scrolling well of thumbs on the left, the LIVE preview stage pinned right — a 44px still of a
+   chunky sprite is unidentifiable, so the stage plays the picked/hovered skin's real walk cycle. Same
+   shape + material as the Recruitment Bay's SUMMON stage (.mkt-skin-stage in marketplace.css), sized for
+   the narrower dossier pane; the well's height is matched to the stage so neither side reads lopsided. */
+.ag-skin-section { display: flex; gap: 12px; align-items: flex-start; }
+.ag-skin-row { max-height: 156px; }   /* reuse .skin-picker/.skin-thumb; a shorter well in the narrower dossier pane */
+.ag-skin-stage { flex: 0 0 124px; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.ag-skin-stage-frame { width: 124px; height: 124px; box-sizing: border-box; overflow: hidden;
+  background-image: radial-gradient(ellipse 64% 44% at 50% 86%, var(--ph-glow2), transparent 72%);
+  background-color: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.08), 0 1px 0 rgba(0,0,0,.35);
+  display: flex; align-items: flex-end; justify-content: center; }
+/* smooth-downscale the ~92px sprite master (repo law: never nearest-neighbour crush a large sprite) */
+.ag-skin-stage-frame img { width: 88%; height: 88%; object-fit: contain; object-position: center bottom;
+  image-rendering: auto; }
+.ag-skin-stage-name { color: var(--ph-bright); letter-spacing: 1px; font-size: 12px; text-align: center;
+  line-height: 1.25; text-shadow: 0 0 6px var(--ph-glow2); }
+.ag-stage-lbl { color: var(--ph-dim); letter-spacing: 1.5px; font-size: 10px; }
+/* narrow dossier pane: drop the stage below the wells so neither crushes */
+@media (max-width: 720px) {
+  .ag-skin-section { flex-direction: column; }
+  .ag-skin-stage { flex: 0 0 auto; align-self: center; }
+}
 .ag-cmd-danger .ag-cmd-lbl { color: var(--bad); }
 .ag-del-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ag-del { border-color: var(--bad) !important; color: var(--bad) !important; }

@@ -1284,10 +1284,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<span class="ag-del-why">' + esc(disabledReason) + '</span>'
       : '<button class="bb sm ag-del" id="ag-del-btn" title="archive this agent and remove it from the station">✕ DELETE AGENT</button>' +
         '<span class="ag-del-why">work is archived, not erased</span>';
+    // a 44px still of a chunky sprite is unidentifiable, so the picker sits beside a LIVE stage (shared
+    // SkinStage) that plays the picked — or merely hovered — skin's real walk cycle big enough to judge.
+    // Same vocabulary as the Recruitment Bay's SUMMON stage; wired (mount + hover scrub) in wireCommand.
+    const stage =
+      '<figure class="ag-skin-stage">' +
+        '<div class="ag-skin-stage-frame"><img id="ag-skin-stage-img" alt="" draggable="false"></div>' +
+        '<figcaption class="ag-skin-stage-name"><span class="ag-stage-lbl">LIVE PREVIEW —</span> <span id="ag-skin-stage-name"></span></figcaption>' +
+      '</figure>';
     return '<div class="ag-command">' +
       '<div class="ag-cmd-sec"><div class="ag-cmd-lbl">SKIN</div>' +
-        // role=group, not listbox: the thumbs are <button>s (a picker), not selectable listbox options.
-        '<div class="ag-skin-row skin-picker" role="group" aria-label="Agent skin">' + thumbs + '</div></div>' +
+        '<div class="ag-skin-section">' +
+          // role=group, not listbox: the thumbs are <button>s (a picker), not selectable listbox options.
+          '<div class="ag-skin-row skin-picker" role="group" aria-label="Agent skin">' + thumbs + '</div>' +
+          stage +
+        '</div></div>' +
       '<div class="ag-cmd-sec ag-cmd-danger"><div class="ag-cmd-lbl">DANGER</div>' +
         '<div class="ag-del-row">' + delBtn + '</div></div>' +
       '</div>';
@@ -2056,16 +2067,39 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // last agent) is left inert. Guarded so a section without the block (or a missing access hook) is a safe no-op.
   function wireCommand(body, a) {
     if (!a) return;
+    // the LIVE preview stage: hold mount()'s own handle rather than the module-level SkinStage.show — the
+    // Recruitment Bay's stage can be on screen at the same time (its modal opens over an open dossier) and
+    // whichever mounted last owns the shared shortcut.
+    const stageImg = body.querySelector('#ag-skin-stage-img');
+    const cur = (a.skin && typeof DATA !== 'undefined' && DATA.SKINS && DATA.SKINS[a.skin])
+      ? a.skin : (typeof DATA !== 'undefined' ? DATA.DEFAULT_SKIN : '');
+    const stage = (stageImg && typeof SkinStage !== 'undefined')
+      ? SkinStage.mount(stageImg, body.querySelector('#ag-skin-stage-name'), cur) : null;
+    const skinRow = body.querySelector('.ag-skin-row');
+    // hover scrubs the stage so skins can be compared without committing; leaving snaps back to the worn one
+    if (skinRow && stage) skinRow.addEventListener('mouseleave', () => stage.show(cur));
     body.querySelectorAll('.ag-skin-thumb').forEach(btn => {
+      if (stage) btn.addEventListener('mouseenter', () => stage.show(btn.dataset.skin));
       btn.addEventListener('click', () => {
         const skin = btn.dataset.skin;
         if (!skin || skin === a.skin) return;
         if (!(access.config && access.config.setSkin)) { notify('skin change unavailable', 'bad'); return; }
+        // Every rebuild of the dossier body hands back a FRESH scroll container parked at 0 — so picking a
+        // skin threw the Commander to the top of CONFIG and they never saw the one they just chose. Carry
+        // the offset across. Capture it FIRST: setSkin repaints the portrait via StationUI.setRoster, which
+        // detaches this pane before we ever reach the rerender below. `body` IS the console host (.con-pane),
+        // so closest() — not querySelector(); the enclosing .term-body is what a rebuild writes INTO, so it
+        // is the one node that survives and can hand back the new pane.
+        const host = body.closest('.con-pane');
+        const shell = body.closest('.term-body');
+        const keep = host ? host.scrollTop : 0;
         const ok = access.config.setSkin(a.id, skin);
         if (ok === false) { notify('could not change skin', 'bad'); sfx('bad'); return; }
         const nm = ((typeof DATA !== 'undefined' && DATA.SKINS && DATA.SKINS[skin] && DATA.SKINS[skin].name) || skin);
         notify('skin → ' + String(nm).toUpperCase(), 'good');
         sfx('click'); rerender('agents');
+        const next = shell && shell.querySelector('.con-pane');
+        if (next && keep) next.scrollTop = keep;   // clamped by the browser if the pane got shorter
       });
     });
     const del = body.querySelector('#ag-del-btn');
