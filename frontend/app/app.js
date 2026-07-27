@@ -1905,6 +1905,9 @@ const App = (() => {
     const inFamily = id => id === def || id.indexOf(def + '_') === 0;
     const ids = Object.keys(DATA.SKINS);
     const ordered = [def, ...ids.filter(id => id !== def && inFamily(id)), ...ids.filter(id => !inFamily(id))].filter(id => DATA.SKINS[id]);
+    // stage handle (assigned by the mount below): drive THIS stage, not the module-level shortcut, which
+    // belongs to whichever picker mounted last once more than one is on screen.
+    let stage = null;
     ordered.forEach(id => {
       const sk = DATA.SKINS[id];
       const b = document.createElement('button');
@@ -1918,15 +1921,15 @@ const App = (() => {
       b.onclick = () => {
         pickedSkin = id;
         [...wrap.children].forEach(x => { const on = x === b; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
-        if (typeof SkinStage !== 'undefined') SkinStage.show(id);
+        if (stage) stage.show(id);
         SFX.click();
       };
       // hover scrubs the stage so you can compare without committing; leaving snaps back to the pick
-      b.onmouseenter = () => { if (typeof SkinStage !== 'undefined') SkinStage.show(id); };
+      b.onmouseenter = () => { if (stage) stage.show(id); };
       wrap.appendChild(b);
     });
-    wrap.onmouseleave = () => { if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSkin); };
-    if (typeof SkinStage !== 'undefined') SkinStage.mount(el('skin-stage-img'), el('skin-stage-name'), pickedSkin);
+    wrap.onmouseleave = () => { if (stage) stage.show(pickedSkin); };
+    if (typeof SkinStage !== 'undefined') stage = SkinStage.mount(el('skin-stage-img'), el('skin-stage-name'), pickedSkin);
   }
 
   /* ---------- VOICE & MANNER (the create-screen personality system) ----------
