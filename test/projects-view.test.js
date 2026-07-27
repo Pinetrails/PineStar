@@ -109,4 +109,16 @@ A.ok(/!projScopeBlessed/.test(newInProject),
 A.ok(/Access revoked[\s\S]{0,180}existing sessions/i.test(appSrc),
   'revoked project empty-state copy says existing sessions remain browseable instead of promising new work');
 
+/* ---------- project removal: revoke trust first, then hard-forget metadata truthfully ---------- */
+const removeProject = appSrc.slice(
+  appSrc.indexOf('function removeProject('),
+  appSrc.indexOf('// ADD A PROJECT:', appSrc.indexOf('function removeProject('))
+);
+A.ok(/r\.blessed[\s\S]{0,220}\/api\/permissions\/revoke/.test(removeProject),
+  'removing a blessed project uses the standing-grant revoke endpoint');
+A.ok(/!r\.blessed[\s\S]{0,260}\/api\/projects\/forget/.test(removeProject),
+  'forgetting a revoked project uses the project metadata forget endpoint');
+A.ok(/trust revoked for/.test(removeProject) && /forgot/.test(removeProject),
+  'success telemetry distinguishes trust revocation from an actually forgotten project');
+
 A.report('projects-view.test');

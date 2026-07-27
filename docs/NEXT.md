@@ -1,5 +1,22 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-27 — REVOKED PROJECT “FORGET” IS REAL (`agent/community-bughunt-0727`)
+
+A second live PROJECTS-rail pass confirmed a destructive-action truth defect: the armed
+`Forget (already revoked)` control posted the permissions revoke endpoint a second time, announced
+`removed “…”`, and left the remembered project row visible. The existing projects store already
+had the intended persist-before-commit hard-forget primitive, so the scoped fix exposes it through
+`POST /api/projects/forget` and uses that route only after trust is revoked. The server refuses
+still-blessed roots with 409, keeping metadata deletion separate from permission withdrawal; UI
+success copy now distinguishes `trust revoked for` from `forgot`. Regression:
+`projects-view.test` 51→54 assertions and `e2e.pathtrust.test` 33→39 assertions, including
+active-root refusal, actual row removal, and no resurrection after sidecar reboot. Live seeded
+proof: the revoked row disappeared, the UI reported `forgot “community-bughunt-0727”`, and after
+a real `--keep` restart the PROJECTS rail still had no revoked row. Syntax checks, focused tests,
+full `test:http`, and 399/400 fast-gate steps are green; the sole blocked step is the pre-existing
+`qa-product-perfect-claims` release-surface authority stamp at the synced trunk HEAD (step 161),
+which is outside this bug-fix lane. Website app mirror synced. No merge, push, deploy, or PR.
+
 ## 2026-07-27 — REVOKED PROJECTS ARE READ-ONLY (`agent/community-bughunt-0727`)
 
 Proactive live flow audit confirmed a truthful-telemetry break in the PROJECTS rail: after a

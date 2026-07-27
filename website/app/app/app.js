@@ -3519,16 +3519,23 @@ const App = (() => {
     window.addEventListener('resize', closeProjectMenu);
     SFX.click();
   }
-  // REMOVE = revoke the standing path:<root> grant through the EXISTING permissions surface (truthful: the list
-  // then mirrors the grant store — after a revoke the row reports blessed:false on the next render, so a second
-  // "Forget" removes nothing new; the metadata row stays until the store's own forget path lands). No parallel store.
+  // REMOVE has two explicit stages: a blessed row revokes its standing path:<root> grant, while a row whose trust
+  // is already revoked hard-forgets only its projects-store metadata. The server refuses to forget a still-blessed
+  // row, so neither endpoint silently does both jobs and every success message describes the state actually changed.
   function removeProject(r) {
     if (!r) return;
-    fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'path:' + r.root }) })
+    const isForget = !r.blessed;
+    const endpoint = isForget ? '/api/projects/forget' : '/api/permissions/revoke';
+    const body = isForget ? { root: r.root } : { key: 'path:' + r.root };
+    fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(res => res.ok ? res.json() : { ok: false })
       .then(j => {
         SFX.bad();
-        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((j && j.ok ? 'removed “' : 'could not remove “') + r.name + '”', j && j.ok ? 'warn' : 'bad');
+        if (typeof StationUI !== 'undefined' && StationUI.notify) {
+          const success = isForget ? 'forgot “' : 'trust revoked for “';
+          const failure = isForget ? 'could not forget “' : 'could not revoke trust for “';
+          StationUI.notify((j && j.ok ? success : failure) + r.name + '”', j && j.ok ? 'warn' : 'bad');
+        }
         renderProjects();
       })
       .catch(() => { renderProjects(); });
