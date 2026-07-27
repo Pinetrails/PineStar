@@ -54,6 +54,7 @@ test/codexsignin.test.js
 test/oauthsignin.test.js
 test/loop.replay.test.js
 test/loop.steer.test.js
+test/loop.verify-on-stop.test.js
 test/loop.provider-recovery.test.js
 test/compaction.test.js
 test/loopguard.test.js

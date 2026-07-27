@@ -153,6 +153,48 @@
     new RegExp('\\b(' + CG_GERUNDS + ')\\b[^.!?\\n]{0,80}\\bnow\\b', 'i'),                                  // "Reading the full main.js now"
     new RegExp('\\bnow\\b[^.!?\\n]{0,40}\\b(' + CG_GERUNDS + ')\\b', 'i')                                   // "now fixing the death path"
   ];
+  /* VERIFY-ON-STOP (2026-07-27). The station's whole promise is that nothing is claimed unless it is proven,
+     and "fake done" — an edit shipped as finished without a single check run against it — is the failure this
+     project pays for most. The system prompt already INSTRUCTS the model to verify after editing; nothing
+     ENFORCED it, so an instruction was all it was. This turns the passive instruction into a bounded
+     follow-up: a run that mutated CODE and then tries to finish with no fresh evidence buys exactly one more
+     turn to produce some.
+
+     Deliberately narrow, because a false nudge costs a paid turn:
+       · Only a SUCCESSFUL mutation of a non-prose path arms it. A README or a SKILL.md edit has nothing to run.
+       · Any successful verification DISARMS it — verify.run, or a shell command that reads like a real check.
+       · It never fires without a verification tool actually wired, never on the grace turn (contracted to be
+         tool-free), and at most once per run, so a model that refuses to verify still terminates. */
+  const VOS_PROSE_EXT = new Set(['md', 'markdown', 'mdx', 'rst', 'txt', 'text', 'adoc', 'asciidoc', 'org', 'log', 'csv', 'tsv', 'json5']);
+  const VOS_PROSE_NAME = new Set(['license', 'licence', 'notice', 'authors', 'contributors', 'changelog', 'codeowners', 'readme']);
+  // Wire names arrive underscored (the OpenAI function-name grammar forbids '.'), registry names dotted.
+  const vosKey = (n) => String(n == null ? '' : n).toLowerCase().replace(/\./g, '_');
+  const VOS_MUTATORS = new Set(['fs_write', 'fs_edit', 'fs_patch', 'fs_append']);
+  const VOS_VERIFIERS = new Set(['verify_run']);
+  // A check is a command whose whole job is to PASS or FAIL. `git status`, `ls`, `cat` are not evidence.
+  const VOS_CHECK_RE = /\b(npm|pnpm|yarn|bun)\s+(run\s+)?(test|build|lint|typecheck|check)|\b(pytest|tox|jest|vitest|mocha|ava|tsc|eslint|ruff|mypy|flake8|rubocop|clippy|gradle|mvn|make)\b|\b(cargo|go|dotnet|swift)\s+(test|build|vet)\b|\bnode\s+[^|;&]*\btest\b/i;
+  function vosIsCodePath(p) {
+    const s = String(p == null ? '' : p).trim();
+    if (!s) return false;
+    const base = s.split(/[\\/]/).pop() || '';
+    const dot = base.lastIndexOf('.');
+    if (dot <= 0) return !VOS_PROSE_NAME.has(base.toLowerCase());   // extension-less: only prose NAMES are exempt
+    const ext = base.slice(dot + 1).toLowerCase();
+    if (VOS_PROSE_EXT.has(ext)) return false;
+    return !VOS_PROSE_NAME.has(base.slice(0, dot).toLowerCase());
+  }
+  // The path a mutating call targeted, under any of the arg names the fs tools use.
+  function vosPathOf(args) {
+    if (!args || typeof args !== 'object') return '';
+    for (const k of ['path', 'file', 'filename', 'target', 'rel']) if (typeof args[k] === 'string' && args[k]) return args[k];
+    return '';
+  }
+  function vosIsCheckCommand(args) {
+    if (!args || typeof args !== 'object') return false;
+    const cmd = args.command || args.cmd || args.script || '';
+    return VOS_CHECK_RE.test(String(cmd));
+  }
+
   function announcesIntent(text) {
     const t = String(text == null ? '' : text).trim();
     if (!t) return false;
@@ -262,6 +304,12 @@
     //    instead of ending the run 'empty' on the first silence.
     let mkUsed = 0;
     let emptyNudgeUsed = false;
+    // VERIFY-ON-STOP ledger: code paths this run has CHANGED but not since proven. Any successful verification
+    // empties it. limits.verifyOnStop === false disables; { max } raises the nudge budget (default 1).
+    const _vos = limits.verifyOnStop;
+    const VOS_MAX = (_vos === false) ? 0 : (_vos && _vos.max != null ? _vos.max : 1);
+    const vosUnverified = new Set();
+    let vosUsed = 0;
 
     // NO-OP TURN REFUND (reference-harness iteration-budget parity): a turn that produced NO tool call AND no NEW assistant
     // content (empty/whitespace text, OR text byte-identical to the immediately-prior assistant turn) is wasted work
@@ -593,6 +641,17 @@
           messages.push({ role: 'system', content: '<continuation>Your last message only ANNOUNCED an action but you called no tools — ending your reply without tool calls ends the run with the work not done. Do not narrate intentions. If work remains, make the actual tool call(s) NOW in this same turn; if the task is truly complete, give your final answer without announcing further actions.</continuation>' });
           continue;
         }
+        // VERIFY-ON-STOP: the run CHANGED code and is now trying to finish without having run anything against
+        // it. Spend one bounded turn asking for evidence instead of shipping an unproven claim of done. Gated
+        // on a verification tool actually being wired — demanding proof the run has no way to produce would
+        // just burn a turn. Never on the grace turn, which is contracted to be tool-free.
+        if (!empty && !graceUsed && vosUsed < VOS_MAX && vosUnverified.size
+            && tools.some(t => { const n = vosKey(t && t.function && t.function.name); return VOS_VERIFIERS.has(n) || n === 'shell_exec'; })) {
+          vosUsed++;
+          const touched = Array.from(vosUnverified).slice(0, 8).join(', ');
+          messages.push({ role: 'system', content: '<verify_before_done>You changed code in this run (' + touched + ') and are ending without running anything against it. Code that compiles is not code that works, and an unverified claim of "done" is the one thing this station never ships. Run the narrowest real check that proves the change — the project\'s own test/build command via verify_run, or shell_exec if that fits better — then report what it actually returned. If you genuinely cannot run a check here, say so plainly and state what you did NOT verify.</verify_before_done>' });
+          continue;
+        }
         if ((empty || duplicate) && refundsUsed < REFUND_MAX) {
           refundsUsed++;
           turns = turnStart;                                          // refund: this turn didn't advance the budget
@@ -622,6 +681,20 @@
         return end('error');
       }
       for (const r of results) messages.push(toolResultMsg(r.callId, r.isError, r.content));
+
+      // VERIFY-ON-STOP LEDGER. Only SUCCESSFUL calls move it: a write that errored changed nothing to verify,
+      // and a check that errored is not evidence that anything passed. A verification clears the whole set
+      // rather than one path — a project's check runs the project, not a file.
+      if (VOS_MAX > 0) {
+        const okById = {};
+        for (const r of results) okById[r.callId] = !!r.ok && !r.isError;
+        for (const c of calls) {
+          if (!okById[c.id]) continue;
+          const k = vosKey(c.name);
+          if (VOS_VERIFIERS.has(k) || (k === 'shell_exec' && vosIsCheckCommand(c.args))) { vosUnverified.clear(); continue; }
+          if (VOS_MUTATORS.has(k)) { const p = vosPathOf(c.args); if (vosIsCodePath(p)) vosUnverified.add(p); }
+        }
+      }
 
       /* TOOL SEARCH reveal — the one thing in a run that changes the advertised tool set, and it only ever
          APPENDS. A revealed tool is callable from the NEXT model call onward; it was already granted, so
@@ -680,5 +753,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey } };
 });
