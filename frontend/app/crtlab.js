@@ -14,6 +14,11 @@
   const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2 };
   const WALL_DEFAULTS = { up: 9, corUp: 0, skirt: 32, side: 12 };
   const DEPTH_DEFAULTS = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1 };
+  // TUBE APERTURE — the CSS glass vignette over the feed (app.css :root --tube-*). NOT the barrel warp:
+  // `curve` bows the picture, these dim its outer band, and they move independently. Seeded from the live
+  // custom properties at build time so opening the lab can never itself change the shipped look.
+  const TUBE_DEFAULTS = { clear: 68, mid: 88, midA: 0.26, edgeA: 0.70, inset: 40 };
+  const TUBE_CSSVAR = { clear: ['--tube-clear', '%'], mid: ['--tube-mid', '%'], midA: ['--tube-mid-a', ''], edgeA: ['--tube-edge-a', ''], inset: ['--tube-inset', 'px'] };
 
   const PRESETS = {
     'Clean (off)':     { crt: { scan: 0, fade: 0, dust: 0, aberr: 0, grain: 0 } },
@@ -28,6 +33,10 @@
     'Tall halls':      { wall: { up: 10, corUp: 0, skirt: 32, side: 12 } },
     'Towering':        { wall: { up: 32, corUp: 15, skirt: 38, side: 9 } },
     'Depth+':          { crt: { dust: 0.5, aberr: 0.35, grain: 0.24 }, depth: { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1 } },
+    // A/B the aperture against what shipped before — same curvature in all three, only the glass moves.
+    'Ap: old (tight)': { tube: { clear: 50, mid: 82, midA: 0.34, edgeA: 0.82, inset: 60 } },
+    'Ap: current':     { tube: { clear: 68, mid: 88, midA: 0.26, edgeA: 0.70, inset: 40 } },
+    'Ap: wide':        { tube: { clear: 78, mid: 92, midA: 0.20, edgeA: 0.58, inset: 28 } },
   };
 
   // World/StationBake are top-level `const`s (global lexical bindings, NOT window props), so
@@ -38,6 +47,24 @@
   const light = () => (SB() && SB().LIGHT) || {};
   const wall = () => (SB() && SB().WALL) || {};
   const depth = () => (SB() && SB().DEPTH) || {};
+
+  // The tube dials have no engine object behind them (they ARE the CSS), so the lab owns the state: read the
+  // shipped custom properties once, then push every edit straight back onto :root.
+  const tubeState = {};
+  function tube() {
+    if (tubeState.clear == null) {
+      const cs = getComputedStyle(document.documentElement);
+      for (const k of Object.keys(TUBE_DEFAULTS)) {
+        const n = parseFloat(cs.getPropertyValue(TUBE_CSSVAR[k][0]));
+        tubeState[k] = Number.isFinite(n) ? n : TUBE_DEFAULTS[k];
+      }
+    }
+    return tubeState;
+  }
+  function applyTube() {
+    const t = tube(), s = document.documentElement.style;
+    for (const k of Object.keys(TUBE_CSSVAR)) s.setProperty(TUBE_CSSVAR[k][0], t[k] + TUBE_CSSVAR[k][1]);
+  }
 
   let rebakeT = 0;
   function scheduleRebake() {
@@ -92,13 +119,14 @@
   let sliders = [];
   let readout;
   function syncReadout() {
-    if (readout) readout.value = JSON.stringify({ crt: pick(crt(), Object.keys(CRT_DEFAULTS)), light: pick(light(), Object.keys(LIGHT_DEFAULTS)), wall: pick(wall(), Object.keys(WALL_DEFAULTS)), depth: pick(depth(), Object.keys(DEPTH_DEFAULTS)) }, null, 0);
+    if (readout) readout.value = JSON.stringify({ crt: pick(crt(), Object.keys(CRT_DEFAULTS)), tube: pick(tube(), Object.keys(TUBE_DEFAULTS)), light: pick(light(), Object.keys(LIGHT_DEFAULTS)), wall: pick(wall(), Object.keys(WALL_DEFAULTS)), depth: pick(depth(), Object.keys(DEPTH_DEFAULTS)) }, null, 0);
   }
   function pick(o, keys) { const r = {}; for (const k of keys) if (o[k] != null) r[k] = +(+o[k]).toFixed(3); return r; }
   function syncAll() { sliders.forEach(s => s._sync && s._sync()); syncReadout(); }
 
   function applyPreset(p) {
     if (p.crt) Object.assign(crt(), p.crt);
+    if (p.tube) { Object.assign(tube(), p.tube); applyTube(); }
     if (p.light) { Object.assign(light(), p.light); scheduleRebake(); }
     if (p.wall) { Object.assign(wall(), p.wall); scheduleRebake(); }
     if (p.depth) { Object.assign(depth(), p.depth); scheduleRebake(); }
@@ -144,6 +172,15 @@
     sliders.push(buildSlider(body, crt, 'aberr', 0, 1, 0.05));     // chromatic aberration at the bowed edges (GPU path)
     sliders.push(buildSlider(body, crt, 'grain', 0, 0.25, 0.01));  // film grain over the warped feed
 
+    // The glass aperture — how much of the panel the picture actually gets to use. Independent of `curve`
+    // above: raising `clear` gives back real estate without touching the bulge at all.
+    section(body, 'TUBE APERTURE (css glass)');
+    sliders.push(buildSlider(body, tube, 'clear', 30, 95, 1, applyTube));    // % out to which the glass stays fully clear
+    sliders.push(buildSlider(body, tube, 'mid', 55, 99, 1, applyTube));      // % of the falloff's mid stop
+    sliders.push(buildSlider(body, tube, 'midA', 0, 0.6, 0.01, applyTube));  // darkness at the mid stop
+    sliders.push(buildSlider(body, tube, 'edgeA', 0, 1, 0.01, applyTube));   // darkness at the very corner
+    sliders.push(buildSlider(body, tube, 'inset', 0, 90, 2, applyTube));     // px of inner edge shadow on the panel
+
     section(body, 'DEPTH FX (re-bakes)');
     sliders.push(buildSlider(body, depth, 'wallShadow', 0, 0.5, 0.01, scheduleRebake)); // wall-cast floor shadow
     sliders.push(buildSlider(body, depth, 'sheen', 0, 0.6, 0.01, scheduleRebake));      // floor gloss under light pools
@@ -185,7 +222,7 @@
       navigator.clipboard && navigator.clipboard.writeText(txt).then(
         () => flash('copied ✓'), () => { readout.select(); flash('select+copy'); });
     }, true);
-    btn(actions, 'RESET', () => { Object.assign(crt(), CRT_DEFAULTS); Object.assign(light(), LIGHT_DEFAULTS); Object.assign(wall(), WALL_DEFAULTS); Object.assign(depth(), DEPTH_DEFAULTS); scheduleRebake(); syncAll(); });
+    btn(actions, 'RESET', () => { Object.assign(crt(), CRT_DEFAULTS); Object.assign(tube(), TUBE_DEFAULTS); applyTube(); Object.assign(light(), LIGHT_DEFAULTS); Object.assign(wall(), WALL_DEFAULTS); Object.assign(depth(), DEPTH_DEFAULTS); scheduleRebake(); syncAll(); });
     body.appendChild(actions);
 
     const note = document.createElement('div');

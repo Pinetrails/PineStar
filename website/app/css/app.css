@@ -290,10 +290,24 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 
 #game-main { flex: 1; display: flex; gap: 9px; min-height: 0; }
 
+/* ---- TUBE APERTURE (2026-07-27) ----
+   The glass overlay's darkening is a SEPARATE layer from the barrel warp (World.crt.curve): the warp bows
+   the picture, this vignette dims its outer band. Held at `transparent 50%` the clear zone ended barely past
+   the halfway mark, so the outer ~third of each axis was progressively crushed and the panel read as a small
+   oval inside a big black rectangle — real estate lost to styling, not to curvature. These are now dials, not
+   literals: crtlab's TUBE APERTURE section writes them live (?crtlab=1), so the numbers get TUNED and copied
+   back rather than guessed. Curvature is untouched by every one of them. */
+:root {
+  --tube-clear: 68%;      /* how far out the glass stays fully clear (was 50%) */
+  --tube-mid: 88%;        /* the mid stop of the falloff */
+  --tube-mid-a: 0.26;     /* alpha at the mid stop (was 0.34) */
+  --tube-edge-a: 0.70;    /* alpha at the very corner (was 0.82) */
+  --tube-inset: 40px;     /* the wrap's inner edge shadow (was 60px) */
+}
 #stage-wrap {
   flex: 1; position: relative; min-width: 0; border-radius: 9px; overflow: hidden;
   background: var(--bg);
-  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 60px rgba(0,0,0,.9);
+  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 var(--tube-inset) rgba(0,0,0,.9);
 }
 /* the live feed graded into the terminal (warms/tints the world so it reads as a
    security-cam picture inside the CRT, not a flat canvas). --cam-grade is themed. */
@@ -329,7 +343,7 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
   content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: 9px;
   background:
     radial-gradient(ellipse 72% 52% at 32% 3%, rgba(255,247,228,0.17), transparent 52%),   /* bright specular sweep across the top of the glass */
-    radial-gradient(ellipse 142% 136% at 50% 48%, transparent 50%, rgba(0,0,0,0.34) 82%, rgba(0,0,0,0.82) 100%);  /* deep bowed corner vignette → strong convex tube */
+    radial-gradient(ellipse 142% 136% at 50% 48%, transparent var(--tube-clear), rgba(0,0,0,var(--tube-mid-a)) var(--tube-mid), rgba(0,0,0,var(--tube-edge-a)) 100%);  /* bowed corner vignette → convex tube; stops are crtlab dials */
   box-shadow: inset 0 0 30px rgba(0,0,0,0.6), inset 0 2px 1px rgba(255,243,220,0.11), inset 0 0 0 1px rgba(255,238,210,0.04);   /* tube rim + top edge glass highlight */
 }
 body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
