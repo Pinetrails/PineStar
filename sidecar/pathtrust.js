@@ -159,7 +159,17 @@
          one prompt that widens the agent's filesystem reach. The PROMPT still names the path the Commander
          recognizes; only the recorded key is canonical. */
       const decision = await prompt(proposed, { path: norm, scope: scope });
-      if (decision === 'always') {
+      /* "always" AND "full" both RECORD the standing root grant. "full" used to fall through to the one-time
+         branch below on the reasoning that "a directory bless is never a side effect of a blanket capability
+         grant" — which is still true and still enforced, because this module never reads grantsBlanket/'*' at
+         all. But that reasoning was applied to the wrong value: `decision` here is not a leaked blanket grant,
+         it is the Commander's DIRECT answer to a card that names THIS folder. Treating their strongest answer
+         as weaker than "Always" meant clicking "Full access" recorded nothing, so the very next file touch in
+         the same folder asked again — live-caught 2026-07-27: five reads in one project folder raised five
+         identical cards while the user clicked "Full access" on every one. The strongest button was the only
+         one that bought nothing. Same law the connector gate learned the same week: a card that offers a grade
+         must have somewhere to WRITE it, or it is a lying card that trains click-through. */
+      if (decision === 'always' || decision === 'full') {
         if (!bless) throw new Error('path trust is not wired to persist a grant — denied');
         const isGit = await isGitRepoOf(proposedReal);
         const ok = await bless(proposedReal, { isGitRepo: isGit, now: now() });
@@ -167,9 +177,8 @@
         touch(proposedReal, norm);
         return { base: proposedReal, abs: norm };
       }
-      // "once" (and the broker's "full", treated as a one-time allow here — a directory bless is deliberate,
-      // never a side effect of a blanket capability grant): allow THIS access without persisting a root.
-      if (decision === 'once' || decision === 'full') return { base: proposedReal, abs: norm };
+      // "once": allow THIS access only, without persisting a root — the next access asks again, as promised.
+      if (decision === 'once') return { base: proposedReal, abs: norm };
       throw new Error('access to ' + norm + ' was denied');
     }
 
