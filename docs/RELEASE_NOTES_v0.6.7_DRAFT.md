@@ -8,17 +8,15 @@
 >   The body through `62706fb9` was written 2026-07-25; the delta `62706fb9..10d837d0`
 >   (browser instrument, request cost, Commander commands, station defaults) was appended
 >   2026-07-26.
-> - **DELTA STILL OWED (`10d837d0..HEAD`).** Four lanes merged 2026-07-26 after the append.
->   Only the accounting half of the security sweep has been written up (see "Runs cost less").
->   Still unwritten and user-facing:
->   - the **security sweep** (`starnet-bug-hunt`) — a model-supplied regex or a hostile page
->     could hang the station; prototype-chain keys reaching the schema validator; invisible
->     characters used to hide instructions; jail parity for `fs.search`; SSRF gaps in the MCP
->     OAuth endpoint guard;
->   - **idle continuity** — agents at rest keep their attention instead of reading as aimless;
->   - **conveyor honesty** — a MERGER funnels lanes instead of faking a combine.
-> - Andrew is still merging. When new lanes land, re-run:
->   `git log --oneline 10d837d0..feat/harness-backend --no-merges | grep -vE "^[0-9a-f]+ (qa\(|docs\(status|chore\(status)"`
+> - **DELTA `10d837d0..91f3c5b1` WRITTEN UP 2026-07-26** — security sweep, delegation +
+>   conveyor honesty, idle continuity, props/tables, the FOR YOU shelf, and the MIT/branding
+>   position. **The body is now complete through `91f3c5b1`.**
+> - **THE SKIN LANE IS IN (`d427da54`, `ff3c3362`). The body is COMPLETE through `dfc8b6ec`
+>   and ready to paste.** Note the two edits it forced: beachbabe was dropped from the
+>   north-walk list (it no longer exists), and the retirement of Beach Babe + Steve is called
+>   out because an agent wearing either silently falls back to the default skin on first launch.
+> - If anything else lands before the bump, re-run:
+>   `git log --oneline dfc8b6ec..feat/harness-backend --no-merges | grep -vE "^[0-9a-f]+ (qa\(|docs\(status|chore\(status)"`
 >   and append the user-facing ones to the matching section.
 > - Every claim below was checked against code, not against plan docs.
 
@@ -55,10 +53,27 @@ The station gets places to be, and your phone gets real control of it.
   rim left hanging in the void.
 - **116 props re-materialled.** The whole prop catalog got a v4 pass so props sit in the same
   light as the room they're in. The chair reads as a chair.
+- **Props stand on tables.** Three real tables arrived, and a prop placed on one sits on its
+  surface instead of hovering beside it. The poker table was rebuilt from scratch — it had been
+  reading as a monitor on a stand — and six more props whose art read as the wrong object
+  entirely were redrawn. Eleven props that never worked were retired, so the catalog is smaller
+  and everything left in it is worth placing.
+- **Crew at rest look like they're thinking, not lost.** An idle agent keeps its attention on
+  what it was last doing and shows an intent tell, instead of drifting aimlessly. Two related
+  bugs went with it: an agent could be teleported home mid-stride by the containment backstop,
+  and an agent's attention anchor survived a re-frame it should not have.
 - **Eleven new skins.** Freddy, Ghostface, Morpheus, Rick, Ninja Turtle, Robocop, Minion,
-  Master Chief, Pikachu, Casey Jones and Finn. Six older skins (bear, pepe, capybara,
-  crthead, beachbabe, heisenberg) had no back-frames when walking north — they do now, and
+  Master Chief, Pikachu, Casey Jones and Finn. Five older skins (bear, pepe, capybara,
+  crthead, heisenberg) had no back-frames when walking north — they do now, and
   four more (ghostface, ninjaturtle, minionchar, finn) had their north-walk cycles rebuilt.
+- **Twenty-eight skins redrawn.** Every redrawn skin was rebuilt from its *original* character
+  rather than re-prompted from a description, so builds are preserved structurally: heights are
+  unchanged everywhere and the worst drift on any skin is two pixels on one axis. Your crew
+  stands exactly where it stood. Each skin's blink is now derived from its own new idle pose,
+  so it can never disagree with the pose it interrupts.
+- **Two skins were retired: Beach Babe and Steve.** The catalog goes from 38 to 36. If one of
+  your crew was wearing either, that agent falls back to the default skin on first launch —
+  nothing else about them changes, and you can pick any of the other 36 from the dossier.
 
 ## Your phone is a real console
 
@@ -141,6 +156,43 @@ The agent's browser stopped being a page-loader with a screenshot button.
 - **Tool results are treated as data, not instructions.** Text an agent reads off a web page
   or a tool result can no longer act as a command to that agent.
 
+## Nothing can hang the station, and nothing can talk it into things
+
+An adversarial sweep went looking for ways to freeze StarNet or steer an agent using nothing but
+content it was asked to read. Everything below was a real hole, and every one of them is now
+pinned by a regression test.
+
+- **A hostile page can't freeze the station for minutes any more.** `web_fetch` had no bound on
+  how long a page could hold it; a search result could stall the whole process. Both it and the
+  search-result reader are bounded now.
+- **A model-supplied regex can't lock the process.** `fs.search` accepted a pattern straight from
+  the model — the classic catastrophic-backtracking hang, reachable by an agent that had simply
+  been told something clever by a web page.
+- **Text an agent reads is data, never orders.** The guard now sees the invisible characters that
+  were being used to smuggle instructions past it, and a tool result can no longer act as a
+  command to the agent that fetched it.
+- **A model-supplied key can't reach `Object.prototype`.** Prototype-chain names in a lookup are
+  refused instead of resolving to something the code never put there.
+- **The file jail holds everywhere.** `fs.search` had a different idea of the boundary than the
+  rest of the toolset, plus four allowlist and comparison defects alongside it; the protected-file
+  floor is now proven against the real resolved target rather than the path as typed.
+- **The MCP connector's OAuth endpoint guard closed its server-side request gaps.**
+
+## Crew work that finishes
+
+- **A delegated subtask is never dropped in silence.** The overseer→crew path could lose work and
+  report success; it can't now.
+- **A slow worker no longer destroys the whole dispatch.** Each worker gets its own wall clock and
+  partial results survive, instead of one straggler taking the batch down with it.
+- **The full crew gets used.** Asking more workers than the fan-out could take used to refuse half
+  of them outright; the dispatch runs in waves instead.
+- **A delegated worker is told its real approval posture**, so it stops trying things the station
+  was always going to deny.
+- **A MERGER funnels lanes instead of faking a combine.** The conveyor's merge step claimed to
+  combine its inputs and didn't — what came out was one lane's work wearing the label of all of
+  them. It also survives a cycle without blowing the stack, takes orphaned intake non-fatally, and
+  applies real backpressure to its source.
+
 ## Runs cost less, and the number is honest
 
 - **Roughly a third less is sent on every single request.** The station used to describe all
@@ -200,6 +252,9 @@ The agent's browser stopped being a page-loader with a screenshot button.
   and only if you're on managed credits; a bring-your-own-key station never sees it.
 - Two corner-drawing fixes: the ambient room shadow no longer darkens bare space at a corner,
   and the crown where two walls meet is tapered instead of blunt.
+- **Telling the FOR YOU shelf what you don't like no longer empties it.** Enough honest negative
+  feedback could rank every remaining suggestion below the cut-off, so the shelf went blank and
+  looked broken. Being picky now narrows the shelf instead of deleting it.
 
 ## If you were affected
 
@@ -212,4 +267,10 @@ Your overseer is the likeliest place to find something you wrote for a specialis
 ## Notes
 
 - Windows installers are code-signed (CN=Andrew Sims), continuing from v0.6.5.
-- Update from inside StarNet, or download the current installer from the releases page.
+- **Windows: update from inside StarNet.** It installs over your existing copy — your crew,
+  sessions, keys and station stay exactly where they are.
+- **macOS: download the installer manually this one time.** In-app updating has never actually
+  worked on macOS — the feed advertised builds that weren't published, so INSTALL UPDATE failed.
+  This release publishes them, so from v0.6.7 onward the Mac updater works like the Windows one.
+- **StarNet stays MIT-licensed**, and the code is genuinely free to use commercially. The
+  *name, logo and artwork* are not part of that grant — a fork is welcome, under its own name.
