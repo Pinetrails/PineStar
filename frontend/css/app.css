@@ -123,6 +123,9 @@ button, input[type=button], input[type=submit], input[type=reset] {
 button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
 /* the OS ticks/knobs: phosphor, never the platform's blue */
 input[type=checkbox], input[type=radio], input[type=range], progress { accent-color: var(--ph); }
+/* the typed-field rule above is keyed on [type], so checkbox/range/file kept the UA's Arial.
+   Harmless where nothing renders text, wrong the moment a file input is ever shown. */
+input { font-family: inherit; }
 /* the native file picker's own button is a control too — it paints buttonface until told otherwise */
 input[type=file]::file-selector-button {
   font-family: inherit; color: var(--ph); cursor: pointer;
