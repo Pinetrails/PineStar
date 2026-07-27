@@ -188,6 +188,29 @@ try {
   ck('the new agent took the WORKING pose for the delegated run', working.length > 0, 'working frames=' + working.length);
   ck('...and did that work AT ITS OWN desk (that desk\'s seat row)', !!atDesk, atDesk ? J(atDesk.rows) : 'never observed');
   ck('...SEATED there, not standing on open deck', !!seated, seated ? J(seated.rows) : 'never observed');
+
+  // ---- THE OTHER HALF OF THE RULE: the Recruitment Bay must NOT seed ----------------------------
+  // Creating an agent BY HAND is a different intent: the Commander gets the new agent's chat plus a
+  // SUGGESTION, and places the workstation wherever they want. Only an agent the overseer was ASKED
+  // to create arrives with one. Run the bay's own call shape (marketplace.js: onPick(spec,{activate:true}))
+  // on this same floor, so the two paths are compared against each other rather than in isolation.
+  const deskCount = async () => JSON.parse(await evalJS(cdp, `JSON.stringify(Build.__test__.station().props().filter(p => p.t === 'desk').map(p => p.x + ',' + p.y + '->' + (p.agentId || '-')))`));
+  const beforeBay = await deskCount();
+  const bay = JSON.parse(await evalJS(cdp, `(() => {
+    const s = Specialties.get('engineer');
+    const a = App.summonAgent(Object.assign({}, s, { skin: DATA.DEFAULT_SKIN, agentName: 'BAYHAND' }), { activate: true });
+    return JSON.stringify({ id: a && a.id }); })()`));
+  await sleep(1400);
+  const afterBay = await deskCount();
+  ck('BAY: a hand-created agent gets NO workstation — the floor is untouched', J(afterBay) === J(beforeBay), J(afterBay));
+  ck('BAY: nothing on the floor is bound to it', !afterBay.some((p) => p.endsWith('->' + bay.id)), J(afterBay));
+  const bayUi = JSON.parse(await evalJS(cdp, `(() => {
+    const log = (document.getElementById('chat-log') || {}).textContent || '';
+    const chips = [...document.querySelectorAll('#chat-log button, #chat-log .choice, #chat-log [data-choice]')].map((b) => (b.textContent || '').trim());
+    return JSON.stringify({ suggests: /nowhere to sit|needs a desk|place one/i.test(log), chips: chips.slice(-6), focused: App.currentAgent ? App.currentAgent().id : null }); })()`));
+  ck('BAY: the Commander lands in the new agent\'s chat, as before', bayUi.focused === bay.id, 'focused=' + bayUi.focused);
+  ck('BAY: and is SUGGESTED a desk (the manual guidance survives untouched)',
+    bayUi.suggests && bayUi.chips.some((c) => /place its desk/i.test(c)), J(bayUi.chips));
 } finally {
   try { proc.kill(); } catch (_) {}
   try { side.kill(); } catch (_) {}
