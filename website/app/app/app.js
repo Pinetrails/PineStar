@@ -3804,7 +3804,9 @@ const App = (() => {
       const f = fileImport.files && fileImport.files[0];
       if (!f) return;
       const r = await Backup.importFile(f);
-      if (!r.ok) { dataStatus('import failed — ' + r.error); SFX.error && SFX.error(); return; }
+      // bad(), not a bespoke error() — that cue never existed, so the `&&` guard silently swallowed
+      // the only audible signal a restore had failed. bad() is the station's negative-outcome voice.
+      if (!r.ok) { dataStatus('import failed — ' + r.error); SFX.bad(); return; }
       SFX.boot();
       const mem = (typeof r.memoriesRestored === 'number') ? r.memoriesRestored
         : (r.memories ? r.memories + ' in file' : 0);
