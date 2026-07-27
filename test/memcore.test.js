@@ -5,7 +5,7 @@
    and mirrors content into body for the legacy readers; projectRecord surfaces the full §5.2 shape. */
 'use strict';
 const A = require('./_assert.js');
-const { nextTrust, nextNoteId, reduceStats, applyPin, applyEdit, applyForget, projectRecord, TRUST_STEP, TRUST_HALFLIFE_MS, clamp01, decayTrust, tokenJaccard, findSimilar } = require('../sidecar/memcore.js');
+const { nextTrust, nextNoteId, reduceStats, applyPin, applyEdit, applyForget, projectRecord, TRUST_STEP, TRUST_HALFLIFE_MS, clamp01, decayTrust, tokenJaccard, findSimilar, originOf } = require('../sidecar/memcore.js');
 
 const base = () => [
   { id: 'note_1', kind: 'note', title: 'API base', body: 'openrouter.ai/api/v1', useCount: 0, trust: 0, lastUsedAt: null, createdAt: 1000, ts: 1000, sourceRunId: 'run_a', pinned: false },
@@ -136,5 +136,23 @@ A.eq(projNow.trust, 0.8, 'projection keeps the raw EARNED trust');
 A.ok(Math.abs(projNow.effectiveTrust - 0.4) < 1e-9, 'projection surfaces the time-decayed effectiveTrust');
 A.eq(projNow.lastFeedbackAt, 1000, 'projection surfaces lastFeedbackAt');
 A.eq(projectRecord(decayRec).effectiveTrust, undefined, 'no now -> no effectiveTrust (back-compat: callers/tests without a clock)');
+
+// ---- originOf: WHICH surface formed a belief ----
+// Memory used to form only on the watched browser run, so every record was self-evidently the Commander's own
+// conversation. Unattended runs reflect now, so "the agent believes this about me" and "this came off a group
+// chat at 3am" must be distinguishable in the Memory Core panel.
+A.eq(originOf({ taskSource: 'interactive', trigger: 'directive' }), 'commander', 'the browser COMMS run is the Commander in person');
+A.eq(originOf({ taskSource: 'telegram', trigger: 'event' }), 'channel:telegram', 'a channel names itself');
+A.eq(originOf({ taskSource: 'discord', trigger: 'event' }), 'channel:discord', '…including discord');
+A.eq(originOf({ taskSource: 'api', trigger: 'event' }), 'api', 'the local OpenAI-compatible endpoint is its own origin');
+A.eq(originOf({ trigger: 'schedule' }), 'schedule', 'a cron fire / Run Now / workshop shift is scheduled work');
+A.eq(originOf({ trigger: 'nightshift' }), 'nightshift', 'a night shift is its own origin');
+A.eq(originOf({}), 'commander', 'an unknown run context defaults to commander (the historical meaning)');
+A.eq(originOf(), 'commander', 'and so does no context at all — the helper is total');
+A.eq(originOf({ taskSource: 'weird/../name' }), 'channel:weirdname', 'a channel id is sanitized before it becomes a stored label');
+A.ok(originOf({ taskSource: 'x'.repeat(200) }).length <= 32, 'and bounded, so a hostile source cannot bloat every record');
+// an untagged LEGACY record predates unattended memory — it can only have come from the Commander
+A.eq(projectRecord({ id: 'n1', body: 'x' }).origin, 'commander', 'a legacy record projects as commander, not unknown');
+A.eq(projectRecord({ id: 'n2', body: 'x', origin: 'channel:telegram' }).origin, 'channel:telegram', 'a stamped origin survives projection');
 
 A.report('memcore.test');

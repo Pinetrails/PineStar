@@ -276,6 +276,9 @@
           // reconstructs a stream when messages<=1), so cron behavior is byte-identical — the frontend
           // autosessions module reads GET /api/transcript?stream=cron-<runId> to surface the output as a session.
           runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider,
+          // a scheduled run does real work; what it learns is durable memory, not scratch. Bounded downstream by
+          // the aux budget + per-agent reflection cooldown, and stamped origin:'schedule' (see index.js /api/run).
+          reflect: true,
           // UNATTENDED CAPABILITY GRANT (2026-07-25): the terminal/verify approval the Commander recorded on THIS
           // routine, read straight off the durable job record. Empty on every routine that was not granted, so an
           // ungranted fire is byte-identical to the pre-grant behavior. Never sourced from the prompt.

@@ -683,9 +683,22 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     const idxSrc = fs.readFileSync(path.join(__dirname, '..', 'sidecar', 'index.js'), 'utf8');
     const iTurnin = idxSrc.indexOf('async function handleMemoryTurnin');
     const iWrite = idxSrc.indexOf('writeMemoryRecord(agentId, prop', iTurnin);
-    const guard = idxSrc.indexOf('if (prop.saved) return json(409', iTurnin);
+    // needle pins the GUARANTEE (a .saved item 409s before the write), not the local variable name that holds it —
+    // the durable pending queue renamed the batch lookup to `live`, and a lock that breaks on a rename teaches
+    // nothing about whether the guarantee survived.
+    const guard = idxSrc.indexOf('.saved) return json(409', iTurnin);
     A.ok(iTurnin > 0 && iWrite > iTurnin, 'handleMemoryTurnin routes keep/edit through writeMemoryRecord');
     A.ok(guard > iTurnin && guard < iWrite, 'a saved:true stash item is 409-rejected BEFORE the keep/edit write path (no duplicate mint)');
+
+    // PENDING QUEUE (durable, cross-run): unattended runs reflect now, so a high-stakes deck can be raised with
+    // nobody watching. The route is the surface that keeps it answerable — it must exist, be agent-gated, and
+    // report an EMPTY deck honestly rather than 404-ing or inventing rows.
+    const pend = await j('GET', '/api/memory/pending?agent=agent');
+    A.eq(pend.status, 200, 'GET /api/memory/pending -> 200');
+    A.eq(pend.body.agentId, 'agent', 'the pending deck is reported per agent');
+    A.eq(pend.body.pending, [], 'a station with nothing awaiting a verdict reports an empty deck');
+    const pendBad = await j('GET', '/api/memory/pending?agent=..%2Fetc');
+    A.eq(pendBad.status, 403, 'a bad agent id is refused, not path-joined');
 
     // ---- FORGET = NEVER AGAIN (2026-07-16 resurrect audit): Memory Core's Forget must be as durable as a
     //      veto/discard — the removed belief's text joins the SAME permanent declined denylist, or reflection

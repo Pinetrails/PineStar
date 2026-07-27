@@ -22,3 +22,16 @@ frontend/js/util.js SFX — files are unmodified originals):
 | ui-think.wav  | Data_Point_01  | voice ack "thinking"                 |
 | ui-idea.wav   | Confirm_06     | proactive aside                      |
 | ui-seed.wav   | Confirm_05     | saved to shelf                       |
+
+Second pass (2026-07-27) — the cues COMMS fires were still on the old synth because no sample
+had ever been mapped to them. All six play their own unmodified pack file at rate 1.0; the three
+celebration stings are graded by the pack's own lengths, so quest stays smaller than a level-up.
+
+| file             | pack source   | cue                                     |
+| ---------------- | ------------- | --------------------------------------- |
+| ui-type.wav      | Click_03      | typewriter tick (74ms — the pack's shortest) |
+| ui-tick.wav      | Data_Point_05 | state committed (connector, key, transport) |
+| ui-sale.wav      | Confirm_01    | settings export complete                |
+| ui-quest.wav     | Confirm_02    | quest complete (235ms)                  |
+| ui-milestone.wav | Sequence_07   | milestone (843ms)                       |
+| ui-level.wav     | Sequence_06   | level up (1572ms)                       |

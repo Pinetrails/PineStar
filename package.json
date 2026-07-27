@@ -95,6 +95,7 @@
     "qa:journeys": "node scripts/qa/journeys.mjs",
     "qa:session-power-tools": "node scripts/qa/session-power-tools-journey.mjs",
     "qa:work-console": "node scripts/qa/work-console-journey.mjs",
+    "qa:summon-delegate": "node scripts/qa/summon-delegate-journey.mjs",
     "qa:atlas": "node scripts/qa/cartographer.mjs --sweep",
     "qa:atlas:static": "node scripts/qa/cartographer.mjs --sweep --static-only",
     "qa:atlas:status": "node scripts/qa/cartographer.mjs --status",

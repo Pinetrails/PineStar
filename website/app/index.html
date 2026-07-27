@@ -399,7 +399,9 @@
   </header>
 
   <aside id="left">
-    <h3>▮ CREW<span class="crew-h3-right"><span class="h3-aux" id="crew-n"></span><button id="crew-hide" class="crew-hide" type="button" title="Hide the crew rail" aria-label="Hide the crew rail" aria-expanded="true">◂</button></span></h3>
+    <!-- The head carried an "N AGENTS" count that #crew-sum already implied one panel lower
+         ("0 WORKING / 2 IDLE" totals the same roster and says more). Dropped 2026-07-27 — one fact, one place. -->
+    <h3>▮ CREW<span class="crew-h3-right"><button id="crew-hide" class="crew-hide" type="button" title="Hide the crew rail" aria-label="Hide the crew rail" aria-expanded="true">◂</button></span></h3>
     <ul id="crew"></ul>
     <div id="crew-sum"></div>
     <div id="ws-wrap">
@@ -470,7 +472,10 @@
       <button id="chat-stop" class="chat-stop" type="button" title="Stop the running turn (Esc)" aria-label="Stop the running turn" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="5.4" y="5.4" width="5.2" height="5.2" rx="1" fill="currentColor"/></svg></button>
       <!-- ATTACH: open the file picker; also served by paste + drag-drop onto the composer (chat.js) -->
       <button id="chat-attach" class="chat-attach-btn" type="button" title="Attach a photo or file" aria-label="Attach a photo or file"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.6 5 6.9 9.7a1.5 1.5 0 0 0 2.1 2.1l4.9-4.8a2.9 2.9 0 0 0-4.1-4.1L4.9 7.8a4.3 4.3 0 0 0 6.1 6.1l4.2-4.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="miter"/></svg></button>
-      <button id="model-dock-toggle" class="model-dock-toggle" type="button" title="Model selector" aria-label="Model selector" aria-haspopup="dialog" aria-expanded="false">
+      <!-- data-no-tip + NO title: this owns the richer .model-dock-tip, so the station tooltip must not
+           double up, and a leftover title= would still let the OS paint its own bubble here. aria-label
+           carries the accessible name the title used to duplicate. -->
+      <button id="model-dock-toggle" class="model-dock-toggle" type="button" data-no-tip aria-label="Model selector" aria-haspopup="dialog" aria-expanded="false">
         <span class="model-dock-sigil" aria-hidden="true"><svg viewBox="0 0 16 16"><rect x="4.4" y="4.4" width="7.2" height="7.2" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="6.7" y="6.7" width="2.6" height="2.6" fill="currentColor"/><g stroke="currentColor" stroke-width="1.2"><path d="M6 4.4V2.2"/><path d="M10 4.4V2.2"/><path d="M6 13.8v-2.2"/><path d="M10 13.8v-2.2"/><path d="M4.4 6H2.2"/><path d="M4.4 10H2.2"/><path d="M13.8 6h-2.2"/><path d="M13.8 10h-2.2"/></g></svg></span><span id="model-dock-effort-chip" class="model-dock-effort-chip">MED</span>
       </button>
       <div id="model-dock" class="model-dock" role="dialog" aria-label="Model selector" hidden>
@@ -650,6 +655,7 @@
 <script src="app/glossary.js"></script><!-- UX Wave-0: term -> one-sentence beginner map (data source for the hint layer) -->
 <script src="app/hint.js"></script><!-- UX Wave-0: shared data-hint tooltip layer (delegation → late-rendered windows work); loads after glossary.js -->
 <script src="app/armconfirm.js"></script><!-- UX Wave-0: reusable 2-step arm/confirm helper (opt-in; existing call sites unchanged) -->
+<script src="app/tooltip.js"></script><!-- station tooltip: adopts every [title] so the OS never paints its own bubble; self-starts, nothing to call -->
 <script src="app/agentid.js"></script>
 <script src="app/workstreams.js"></script>
 <script src="app/projects.js"></script>

@@ -912,6 +912,11 @@
             surface: wantApprovals ? 'interactive' : 'autonomous',
             prompt: consentPrompt,
             broadcast: true,   // P1: mirror this routed run's lifecycle to the station floor over SSE — it has no browser-local stream
+            // A channel task is real work the agent should learn from, exactly like a COMMS task. Admission is
+            // already owner-gated upstream (adapter.js ownerOk: a non-owner DM never reaches this host, a group
+            // must be whitelisted), and each record is stamped with its origin (channel:<name>) so the Commander
+            // can see in Memory Core which surface formed a belief.
+            reflect: true,
             station: bayStation || undefined,
             taskKey: 'channel:' + channel + ':' + chatId,
             taskSource: channel

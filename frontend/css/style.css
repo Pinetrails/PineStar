@@ -350,7 +350,11 @@ body:has(#screen-game.active):not(.refit-on) #logo { display: flex; }
 
 /* ================= CREW ================= */
 #left { display: flex; flex-direction: column; overflow: hidden; }
-#crew { list-style: none; overflow-y: auto; flex: 1; scrollbar-width: thin; scrollbar-color: var(--ph) transparent; }
+/* RAIL SPACE SPLIT (2026-07-27): #crew used to take flex:1 and hold ALL the column's slack, so a
+   2-agent station left ~350px of dead black under the roster while #workstreams — the list that
+   actually grows without bound — sat capped and scrolling beneath it. The roster is content-sized
+   now (it scrolls itself only past the cap), and #ws-wrap takes the slack instead. */
+#crew { list-style: none; overflow-y: auto; flex: 0 1 auto; max-height: 40%; scrollbar-width: thin; scrollbar-color: var(--ph) transparent; }
 .crew-row {
   display: flex; gap: 6px; padding: 4px 7px; border-bottom: 1px solid var(--ph-faint);
   cursor: pointer; align-items: flex-start;

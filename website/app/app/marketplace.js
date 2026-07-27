@@ -1428,21 +1428,24 @@ const Marketplace = (() => {
 
     const skinWrap = stage.querySelector('#mkt-skin-picker');
     if (skinWrap) {
+      // stage handle (assigned by the mount below): drive THIS stage, not the module-level shortcut — the
+      // agent dossier's CONFIG › SKIN stage can be open behind this modal and whichever mounted last owns it.
+      let skinStage = null;
       skinWrap.querySelectorAll('.skin-thumb').forEach(b => {
         b.addEventListener('click', () => {
           pickedSummonSkin = b.dataset.skin;
           skinWrap.querySelectorAll('.skin-thumb').forEach(x => x.classList.remove('sel'));
           b.classList.add('sel'); sfx('click');
-          if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSummonSkin);
+          if (skinStage) skinStage.show(pickedSummonSkin);
         });
         // hover scrubs the live stage so you can compare without committing; leaving snaps back to the pick
-        b.addEventListener('mouseenter', () => { if (typeof SkinStage !== 'undefined') SkinStage.show(b.dataset.skin); });
+        b.addEventListener('mouseenter', () => { if (skinStage) skinStage.show(b.dataset.skin); });
       });
-      skinWrap.addEventListener('mouseleave', () => { if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSummonSkin); });
-      // bind the live preview stage to the picked skin (the modal is the only stage visible while it's open)
+      skinWrap.addEventListener('mouseleave', () => { if (skinStage) skinStage.show(pickedSummonSkin); });
+      // bind the live preview stage to the picked skin
       const stageImg = stage.querySelector('#mkt-skin-stage-img');
       const stageName = stage.querySelector('#mkt-skin-stage-name');
-      if (stageImg && typeof SkinStage !== 'undefined') SkinStage.mount(stageImg, stageName, pickedSummonSkin);
+      if (stageImg && typeof SkinStage !== 'undefined') skinStage = SkinStage.mount(stageImg, stageName, pickedSummonSkin);
     }
 
     // SUMMON model picker: fill the catalog async, then track the choice ('' model → inherit the orchestrator's).
