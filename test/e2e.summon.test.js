@@ -109,7 +109,8 @@ function boot(port, env, attemptsLeft) {
           summonReq = ev.payload; ackPosted = true;
           await fetch(B + '/api/summon/ack', {
             method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B },
-            body: JSON.stringify({ runId, requestId: ev.payload.requestId, agentId: 'researcher-2' })
+            // `desk` = where the station's summonAgent() actually seeded the new worker's workstation
+            body: JSON.stringify({ runId, requestId: ev.payload.requestId, agentId: 'researcher-2', desk: 'BRIDGE' })
           });
         }
       }
@@ -136,6 +137,10 @@ function boot(port, env, attemptsLeft) {
     A.ok(mock.requests.length >= 2, 'the model was called again after the tool returned');
     const second = mock.requests[mock.requests.length - 1];
     A.ok(JSON.stringify(second.messages || []).indexOf('researcher-2') >= 0, 'the new agentId reached the model (ready for team.dispatch)');
+
+    // 5) THE DESK RIDES ALONG: the workstation the station seeded with the new agent reaches the lead too, so it
+    //    never tells the Commander to go build one. Sourced ONLY from the ack — the sidecar invents nothing.
+    A.ok(JSON.stringify(second.messages || []).indexOf('BRIDGE') >= 0, 'the seeded workstation location reached the model');
   } finally {
     try { child.kill(); } catch (_) {}
     try { mock.server.close(); } catch (_) {}

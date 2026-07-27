@@ -528,7 +528,66 @@ A.eq(JSON.stringify(WM.deserialize({ rooms: {}, order: [], props: [], edges: [{ 
   const r = st.ensureWorkstation('agent');
   A.ok(r.ok && r.existing, 'existing assigned console counts — no desk added');
   A.eq(st.props().filter(p => p.t === 'desk').length, 0, 'no desk seeded next to an owned console');
+  A.eq(r.id, c.id, 'the existing-workstation report names the prop the agent already owns');
   A.ok(!st.ensureWorkstation('').ok, 'blank agent id refused');
+}
+/* ---- SUMMON SEEDING: a specialist created on request arrives WITH its desk (2026-07-27) ---- */
+{
+  // every summoned crew member gets its OWN desk, distinct from the hero's, all seat-approachable
+  const st = WM.create();
+  const hero = st.ensureWorkstation('agent');
+  A.eq(hero.x + ',' + hero.y, '8,1', 'the hero seed still lands on the canonical north-wall spot');
+  const seeded = ['scout-2', 'coder-3', 'ops-4'].map(id => st.ensureWorkstation(id));
+  A.ok(seeded.every(r => r.ok && !r.existing), 'each summoned agent seeds its own workstation');
+  const ids = new Set(seeded.map(r => r.id).concat(hero.id));
+  A.eq(ids.size, 4, 'four agents = four distinct desk props (never a shared desk)');
+  A.ok(seeded.every(r => r.roomId === st.spawnRoomId()), 'crew desks land in the spawn room beside the hero');
+  A.ok(seeded.every(r => r.y === hero.y), 'crew desks line up on the hero\'s own desk row, not under the north wall face');
+  // the whole point of a desk: somewhere to sit. The row below each desk must hold a reachable tile.
+  for (const r of seeded.concat(hero)) {
+    const free = [r.x, r.x + 1].some(sx => {
+      if (!st.roomAt(sx, r.y + 1)) return false;
+      const pid = st.propAt(sx, r.y + 1);
+      const p = pid ? st.propById(pid) : null;
+      return !p || p.block === false;
+    });
+    A.ok(free, 'seeded desk ' + r.id + ' has a free seat tile in front of it');
+  }
+  A.ok(st.ensureWorkstation('scout-2').existing, 'a summoned agent is never given a second desk');
+}
+{
+  // a desk spot whose seat row is walled off is passed over in favour of a seatable one
+  const st = WM.create();
+  const rect = st.roomById(st.spawnRoomId()).rects[0];
+  A.eq(rect.y1, 0, 'starter room begins at y=0 (the wall-row assumption below)');
+  // wall off the seat row under the whole of row 1 except one gap, then seed: the desk must take the gap
+  for (let x = 0; x <= 17; x++) if (x !== 6 && x !== 7) st.addProp({ t: 'rack', x, y: 2, w: 1, h: 1, block: true });
+  const r = st.ensureWorkstation('scout-2');
+  A.ok(r.ok, 'a mostly-blocked seat row still seeds a desk');
+  A.eq(r.y, 1, 'the desk stays on the desk row');
+  A.ok([r.x, r.x + 1].some(sx => sx === 6 || sx === 7), 'the desk straddles the one gap whose seat tile is actually free');
+}
+{
+  // the spawn room is full → the seed spills into another room rather than stranding the agent deskless
+  const st = WM.create();
+  const rect = st.roomById(st.spawnRoomId()).rects[0];
+  const other = st.addRoom({ kind: 'hab', name: 'ANNEX', rect: { x1: rect.x2 + 2, y1: 0, x2: rect.x2 + 9, y2: 6 } });
+  A.ok(other.ok, 'annex room built for the overflow case');
+  for (let y = rect.y1; y <= rect.y2; y++) for (let x = rect.x1; x <= rect.x2; x++) st.addProp({ t: 'rack', x, y, w: 1, h: 1, block: true });
+  const r = st.ensureWorkstation('scout-2');
+  A.ok(r.ok && !r.existing, 'a packed spawn room does not strand a summoned agent deskless');
+  A.eq(r.roomId, other.id, 'the overflow desk lands in the next room with space');
+  A.eq(st.props().filter(p => p.t === 'desk' && p.agentId === 'scout-2').length, 1, 'still exactly one desk for the agent');
+}
+{
+  // no space anywhere → an honest failure, never a phantom desk
+  const st = WM.create();
+  const rect = st.roomById(st.spawnRoomId()).rects[0];
+  for (let y = rect.y1; y <= rect.y2; y++) for (let x = rect.x1; x <= rect.x2; x++) st.addProp({ t: 'rack', x, y, w: 1, h: 1, block: true });
+  const r = st.ensureWorkstation('scout-2');
+  A.ok(!r.ok, 'a station with nowhere to put a desk reports failure');
+  A.eq(r.error, 'NO_ROOM_FOR_DESK', 'and names the reason so the caller can stay honest about it');
+  A.eq(st.props().filter(p => p.t === 'desk').length, 0, 'no desk prop is invented on failure');
 }
 
 /* ---- connectBelt: CLICK TWO MACHINES, the path lays itself (2026-07-05 connect-mode UX) ---- */

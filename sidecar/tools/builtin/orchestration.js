@@ -462,6 +462,9 @@
     // which resolves ctx.summon (mirroring the consent round-trip). The new id is returned so the lead can hand it
     // work with team.dispatch in the SAME run. consent-gated (APPROVAL beat); ctx.summon is only present on a
     // live interactive lead run, so a headless/worker call degrades to a clear "not available" message.
+    // THE DESK RIDES ALONG: an agent created because the Commander asked for one is useless standing on bare
+    // deck, so the browser's summon seeds that agent's workstation too and reports WHERE on the ack. That is the
+    // only prop this path places, and only for the agent being created — team.summon is not a build tool.
     // Class Loadouts S1: the specialist class list is composed from the SHARED catalog (deps.classes =
     // [{id, tagline}]), NOT hardcoded here, so it never drifts from the Recruitment Bay. Falls back to a
     // static list only if no catalog was injected (keeps the tool self-describing under a bare unit test).
@@ -473,7 +476,7 @@
       // completed" instead of tripping the 30s fast-tool default mid-wait. The happy path acks in well under a second.
       timeoutMs: 180000,
       name: 'team.summon', capability: 'orchestrator', scope: 'write', requiresConsent: true,
-      description: 'Summon a NEW specialist agent onto the crew for the Commander, live — the same thing they would do in the Recruitment Bay. Use this when a specialist you need does not exist yet; if it is already listed under YOUR TEAM, delegate to it with team.dispatch instead. Pick a class with specId (one of: ' + SPEC_IDS + ') or describe a custom one with name + purpose. Returns the new agentId, which you can immediately delegate to. In APPROVAL mode the Commander confirms the summon first.',
+      description: 'Summon a NEW specialist agent onto the crew for the Commander, live — the same thing they would do in the Recruitment Bay. Use this when a specialist you need does not exist yet; if it is already listed under YOUR TEAM, delegate to it with team.dispatch instead. Pick a class with specId (one of: ' + SPEC_IDS + ') or describe a custom one with name + purpose. The station places the new agent\'s workstation with it, so never tell the Commander to go build it a desk. Returns the new agentId, which you can immediately delegate to. In APPROVAL mode the Commander confirms the summon first.',
       schema: {
         type: 'object', required: ['name'], properties: {
           name: { type: 'string' },        // the new agent's display name (e.g. "RESEARCHER")
@@ -494,11 +497,19 @@
           skin: String(a.skin || '').trim().slice(0, 40)
         };
         if (!spec.name && !spec.specId) return { content: 'Provide a name or a specId for the new agent.', summary: 'noop' };
-        let newId;
-        try { newId = await ctx.summon(spec); }
+        let ack;
+        try { ack = await ctx.summon(spec); }
         catch (e) { return { content: 'summon failed: ' + ((e && e.message) || e), summary: 'error' }; }
+        // the station resolves { agentId, desk }; a bare id string is still accepted (older stubs/callers).
+        const newId = (ack && typeof ack === 'object') ? ack.agentId : ack;
+        const desk = (ack && typeof ack === 'object' && ack.desk) ? String(ack.desk) : '';
         if (!newId) return { content: 'The summon was not completed — the Commander declined it, or the station did not respond. No agent was created.', summary: 'declined' };
-        return { content: JSON.stringify({ agentId: newId, name: spec.name || spec.specId }), summary: 'summoned ' + newId + ' — now delegate work to it with team.dispatch' };
+        // DESK: a summoned specialist needs a workstation to sit and work at, so the station places its desk as
+        // part of THIS summon. Reported only when the station said it placed one — never assumed, so the reply
+        // can't promise furniture the floor doesn't have (and can't tell the Commander to go build a second one).
+        const out = { agentId: newId, name: spec.name || spec.specId };
+        if (desk) out.workstation = desk;
+        return { content: JSON.stringify(out), summary: 'summoned ' + newId + (desk ? ' (desk placed in ' + desk + ')' : '') + ' — now delegate work to it with team.dispatch' };
       }
     };
 
