@@ -167,38 +167,24 @@ const SFX = {
   _loadSamples() {
     if (typeof fetch === 'undefined' || SFX._samplesLoading) return;
     SFX._samplesLoading = true;
-    ['click', 'open', 'alarm', 'chime', 'notify', 'msg', 'ship', 'think', 'idea', 'seed'].forEach(name => {
+    ['click', 'open', 'alarm', 'chime', 'notify', 'msg', 'ship', 'think', 'idea', 'seed',
+     'type', 'tick', 'sale', 'quest', 'milestone', 'level'].forEach(name => {
       fetch('assets/sfx/ui-' + name + '.wav').then(r => r.ok ? r.arrayBuffer() : Promise.reject())
         .then(ab => SFX.ctx.decodeAudioData(ab))
         .then(buf => { SFX._samples[name] = buf; })
         .catch(() => { /* keep synth fallback */ });
     });
   },
-  // play a sample through the master chain (so volume, shelf and limiter still apply). `when` schedules
-  // it ahead of now, exactly like voice()/noise() — that's what lets _arp stagger one sample into a figure.
+  // play a sample through the master chain (so volume, shelf and limiter still apply)
   _sample(name, o) {
     const buf = SFX._samples[name];
     if (!SFX.on || !SFX.ctx || !buf) return false;
     o = o || {};
-    const c = SFX.ctx, src = c.createBufferSource(), g = c.createGain(), t0 = c.currentTime + (o.when || 0);
+    const c = SFX.ctx, src = c.createBufferSource(), g = c.createGain();
     src.buffer = buf; src.playbackRate.value = o.rate || 1;
     g.gain.value = (o.vol != null ? o.vol : 0.5) * SFX.vol;
     src.connect(g); g.connect(SFX._out(c, o.pan));
-    src.start(t0); src.stop(t0 + buf.duration / (o.rate || 1) + 0.05);
-    return true;
-  },
-
-  /* ---- _arp: one sample played as a rising figure — the sampled board's version of an arpeggio.
-     The celebratory stings (sale/level/quest/milestone) have no single-shot equivalent in the licensed
-     pack, so they are BUILT from it rather than left on the old synth: same timbre as every other cue,
-     the interval RATIOS of the synth originals preserved (so the shape is unchanged, just re-voiced),
-     each step a touch quieter so the figure reads as one gesture instead of four separate bells.
-     Returns false when the sample hasn't loaded, so each cue keeps its synth fallback. ---- */
-  _arp(name, rates, o) {
-    o = o || {};
-    if (!SFX._samples[name]) return false;
-    const step = o.step || 0.06, vol = o.vol != null ? o.vol : 0.42, decay = o.decay != null ? o.decay : 0.88;
-    rates.forEach((rate, i) => SFX._sample(name, { rate, vol: vol * Math.pow(decay, i), when: i * step }));
+    src.start(); src.stop(c.currentTime + buf.duration / (o.rate || 1) + 0.05);
     return true;
   },
 
@@ -297,7 +283,7 @@ const SFX = {
   // helper's `SFX[n] &&` guard swallowed every one of them and the whole window changed state in silence.
   tick() {
     if (!SFX._gate('tick', 60)) return;
-    if (SFX._sample('click', { rate: 1.28, vol: 0.42 })) return;
+    if (SFX._sample('tick', { rate: 1, vol: 0.45 })) return;
     SFX.noise({ dur: 0.01, cut: 3200, type: 'highpass', vol: 0.05 });
     SFX.voice({ freq: 1120, glide: 840, dur: 0.042, type: 'sine', vol: 0.17, atk: 0.001, cut: 6000 });
   },
@@ -342,10 +328,9 @@ const SFX = {
     SFX.voice({ freq: 880, dur: 0.34, type: 'sine', vol: 0.2, detune: 5, atk: 0.012, verb: 0.45 });
     SFX.voice({ freq: 1318, dur: 0.46, type: 'sine', vol: 0.12, when: 0.09, atk: 0.015, detune: 5, verb: 0.55 });
   },
-  // sale: a small four-step major run — the settings export landing. Sampled via the station bell (notify)
-  // at the original 523/659/784/1046 ratios; the synth run stays as the pre-load fallback.
+  // sale: the settings export landing — Confirm_01, a settled two-part confirm.
   sale() {
-    if (SFX._arp('notify', [1, 1.26, 1.5, 2], { step: 0.05, vol: 0.4 })) return;
+    if (SFX._sample('sale', { rate: 1, vol: 0.5 })) return;
     [523, 659, 784, 1046].forEach((f, i) => SFX.voice({ freq: f, dur: 0.22, type: 'triangle', vol: 0.19, when: i * 0.05, atk: 0.008, detune: 3, verb: 0.3 }));
   },
   // bad: a dark exhale — low saw slide with a falling noise wash underneath; heavy, not buzzy.
@@ -357,23 +342,17 @@ const SFX = {
     SFX.voice({ freq: 196, glide: 110, dur: 0.22, type: 'sawtooth', vol: 0.16, cut: 800, atk: 0.01 });
     SFX.voice({ freq: 147, glide: 92, dur: 0.3, type: 'sawtooth', vol: 0.12, when: 0.08, cut: 620, atk: 0.01 });
   },
-  // level: the full five-step fanfare under one high shimmer — the biggest sting the station owns.
-  // Sampled: the bell run (523→1318 ratios) with the glass bell (chime) pitched up as the tail.
+  // level: the biggest sting the station owns — Sequence_01, the longest of the three (986ms).
+  // The three celebration cues are graded by the pack's own lengths: quest 498ms < milestone 843ms < level.
   level() {
-    if (SFX._arp('notify', [1, 1.26, 1.5, 2, 2.52], { step: 0.065, vol: 0.44 })) {
-      SFX._sample('chime', { rate: 2, vol: 0.12, when: 0.33 });
-      return;
-    }
+    if (SFX._sample('level', { rate: 1, vol: 0.55 })) return;
     [523, 659, 784, 1046, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.2, type: 'triangle', vol: 0.21, when: i * 0.065, atk: 0.008, detune: 3, verb: 0.3 }));
     SFX.voice({ freq: 2093, dur: 0.5, type: 'sine', vol: 0.07, when: 0.33, atk: 0.03, verb: 0.6 });
   },
   // quest-complete sting (G1a): a shorter, brighter cousin of level() — three quick gold steps + one high
   // shimmer. A MOMENT, deliberately smaller than a level-up: quests pay out in real work, not fanfare.
   quest() {
-    if (SFX._arp('notify', [1, 1.335, 2], { step: 0.055, vol: 0.4 })) {
-      SFX._sample('chime', { rate: 1.9, vol: 0.09, when: 0.19 });
-      return;
-    }
+    if (SFX._sample('quest', { rate: 1, vol: 0.5 })) return;
     [659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.16, type: 'triangle', vol: 0.19, when: i * 0.055, atk: 0.008, detune: 3, verb: 0.32 }));
     SFX.voice({ freq: 1976, dur: 0.36, type: 'sine', vol: 0.08, when: 0.19, atk: 0.02, verb: 0.55 });
   },
@@ -386,20 +365,18 @@ const SFX = {
   // milestone sting (G3a): grander than quest() (3 steps), smaller than level() (5 steps) — four rising gold
   // steps under a long high shimmer. A milestone is PERMANENT, so its sting carries a little more weight.
   milestone() {
-    if (SFX._arp('notify', [1, 1.26, 1.682, 2.52], { step: 0.06, vol: 0.42 })) {
-      SFX._sample('chime', { rate: 2.52, vol: 0.1, when: 0.26 });
-      return;
-    }
+    if (SFX._sample('milestone', { rate: 1, vol: 0.52 })) return;
     [523, 659, 880, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.18, type: 'triangle', vol: 0.2, when: i * 0.06, atk: 0.008, detune: 3, verb: 0.3 }));
     SFX.voice({ freq: 2637, dur: 0.44, type: 'sine', vol: 0.07, when: 0.26, atk: 0.03, verb: 0.6 });
   },
-  // type: the typewriter tick under every revealed COMMS line. The click sample pitched WAY up (a ~47ms
-  // sliver of it) and kept very quiet — at ~20/sec anything longer or louder turns the beat into mud.
-  // Gated quiet (see _gate) so a typing line never mutes the buttons around it.
+  // type: the typewriter tick under every revealed COMMS line — Click_03, the shortest thing in the pack
+  // at 74ms, which is the only reason it survives firing ~20×/sec. Quiet, with the same ±pan/±rate drift
+  // as click() so a run of them stays organic. Gated quiet (see _gate) so a typing line never mutes the
+  // buttons around it.
   type() {
     if (!SFX._gate('type', 24, true)) return;
-    const pan = (Math.random() - 0.5) * 0.2, drift = 2.8 * (1 + (Math.random() - 0.5) * 0.1);
-    if (SFX._sample('click', { rate: drift, vol: 0.09, pan })) return;
+    const pan = (Math.random() - 0.5) * 0.2, drift = 1 + (Math.random() - 0.5) * 0.08;
+    if (SFX._sample('type', { rate: drift, vol: 0.3, pan })) return;
     SFX.noise({ dur: 0.016, cut: 3400, vol: 0.045, type: 'highpass', pan });
   },
 
