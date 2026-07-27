@@ -1,5 +1,17 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-27 — REVOKED PROJECTS ARE READ-ONLY (`agent/community-bughunt-0727`)
+
+Proactive live flow audit confirmed a truthful-telemetry break in the PROJECTS rail: after a
+project's path grant was revoked, its remembered row correctly said REVOKED but entering it still
+promised `+ NEW` would start work in that folder and actually minted a new session anchored to the
+untrusted root. The rail now derives scoped creation authority from the freshly fetched
+`blessed` field, disables `+ NEW` for revoked rows, keeps existing sessions browseable, and guards
+the creation function itself. Regression: `projects-view.test` 48→51 assertions. Live seeded proof:
+revoked row remained visible, existing session count stayed 1, scoped `+ NEW` reported
+`enabled:false`. `node --check` + focused project/session/path-trust tests + `test:fast` 400/400
+green. Website app mirror synced. No merge, push, deploy, or PR performed.
+
 ## 2026-07-20 — PUBLIC-REPO RELEASE PREP (branch `claude/starnet-repo-release-prep-c41845`)
 
 Getting the source repo release-shaped for the public flip (Andrew: "essentially ready for
