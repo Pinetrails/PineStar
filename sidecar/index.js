@@ -92,7 +92,7 @@ const { makeConsentBroker } = require('./permissions.js');
 const { makeGrantManager } = require('./permgrants.js');
 const { makeProjectsStore } = require('./projects-store.js');   // NS-5: known-projects (blessed roots) durable store
 const { makePathTrust } = require('./pathtrust.js');            // NS-5: conversational path-trust guard
-const { makeProjectBless, projectScopeLine } = require('./projectbless.js');      // NS-5c: ADD-a-project bless core (second doorway, same grant machinery) + project-scoped run context line
+const { makeProjectBless, projectScopeLine, makeProjectInstructions } = require('./projectbless.js');      // NS-5c: ADD-a-project bless core (second doorway, same grant machinery) + project-scoped run context line + the project's own AGENTS.md/CLAUDE.md house rules
 const { makeFolderPick } = require('./folderpick.js');          // Projects rail "browse": native OS folder chooser (convenience only — bless stays the consent)
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeTelegramTransport } = require('./channels/telegram.transport.js');   // multi-bot connect: getMe token probe
@@ -2049,6 +2049,9 @@ const projectScan = makeProjectScan({
   }),
   fsp, pathMod: path, isBlessed: isBlessedRoot
 });
+// The blessed project's OWN house rules (AGENTS.md / CLAUDE.md / .cursorrules). Same trust gate as the folder
+// line below it: nothing is read for a root that is not a standing blessed grant.
+const projectInstructions = makeProjectInstructions({ fsp, pathMod: path, redact });
 
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
 // full-access ("YOLO") blanket grants the user clicks mid-run: per-AGENT (not per-run), in-memory only, so a
@@ -8231,7 +8234,12 @@ async function handleRun(req, res) {
   // the scanner uses). An un-blessed/revoked/garbage root injects NOTHING: the run must never assert folder
   // access the grant layer can't prove. The line rides `system` so it reaches every provider identically.
   const projectRootRaw = (body && typeof body.projectRoot === 'string') ? body.projectRoot.trim().slice(0, 4096) : '';
-  const projectLine = projectScopeLine(projectRootRaw, !!(projectRootRaw && isBlessedRoot(projectRootRaw)));
+  const projectBlessed = !!(projectRootRaw && isBlessedRoot(projectRootRaw));
+  const projectLine = projectScopeLine(projectRootRaw, projectBlessed);
+  // ...and the project's OWN house rules, on the same grant. Read ONCE here, before the run, so the text is
+  // byte-stable for the whole run and never shifts the cached system prefix mid-stream (providers/anthropic.js).
+  let projectRules = '';
+  try { projectRules = (await projectInstructions.load(projectRootRaw, projectBlessed)).text || ''; } catch (_) { projectRules = ''; }
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
   // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify
@@ -8362,7 +8370,7 @@ async function handleRun(req, res) {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system: projectLine ? (String(system || '') + projectLine) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
+      key, model, system: (projectLine || projectRules) ? (String(system || '') + projectLine + projectRules) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive', internal,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
       loginPrompt: askHuman,   // attended browser login: browser.login's two consent asks ride the same fail-closed permission.prompt channel

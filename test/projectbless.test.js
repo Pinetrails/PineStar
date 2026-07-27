@@ -130,5 +130,56 @@ function coreOver(tree, blessSink) {
     ok(projectScopeLine('x'.repeat(5000), true).length < 1300, 'root is bounded in the composed line');
   }
 
+  // PROJECT INSTRUCTIONS — the folder's own AGENTS.md / CLAUDE.md / .cursorrules, on the SAME blessed-root grant.
+  {
+    const { makeProjectInstructions } = require('../sidecar/projectbless.js');
+    const fakePath = { join: (...a) => a.join('/') };
+    let reads = 0;
+    const fsFor = (files) => ({ readFile: async (p) => { reads++; if (Object.prototype.hasOwnProperty.call(files, p)) return files[p]; const e = new Error('ENOENT'); e.code = 'ENOENT'; throw e; } });
+
+    // THE TRUST GATE IS THE POINT: an un-blessed root must not even touch the disk.
+    reads = 0;
+    let r = await makeProjectInstructions({ fsp: fsFor({ '/p/AGENTS.md': 'x' }), pathMod: fakePath }).load('/p', false);
+    ok(r.text === '' && r.sources.length === 0, 'un-blessed root loads no project instructions');
+    ok(reads === 0, 'un-blessed root never reads the disk at all');
+
+    // A blessed root loads the file, labels it, and names its source in the header.
+    r = await makeProjectInstructions({ fsp: fsFor({ '/p/AGENTS.md': 'always run npm test' }), pathMod: fakePath }).load('/p', true);
+    ok(r.sources.join(',') === 'AGENTS.md', 'AGENTS.md is reported as the source');
+    ok(r.text.indexOf('always run npm test') > 0, "the project's rules reach the prompt");
+    ok(r.text.indexOf('<AGENTS.md>') > 0, 'the rules are labelled with the file they came from');
+    ok(/A direct instruction in this conversation always wins/.test(r.text), 'the conversation still outranks the file');
+
+    // Several files compose, in a stable order.
+    r = await makeProjectInstructions({ fsp: fsFor({ '/p/CLAUDE.md': 'C rules', '/p/AGENTS.md': 'A rules', '/p/.cursorrules': 'K rules' }), pathMod: fakePath }).load('/p', true);
+    ok(r.sources.join(',') === 'AGENTS.md,CLAUDE.md,.cursorrules', 'all three instruction files compose in a fixed order');
+
+    // A case-insensitive filesystem answers BOTH spellings — the same rules must not be injected twice.
+    r = await makeProjectInstructions({ fsp: fsFor({ '/p/AGENTS.md': 'once', '/p/agents.md': 'once' }), pathMod: fakePath }).load('/p', true);
+    ok(r.sources.length === 1, 'both spellings of AGENTS.md yield exactly one block');
+    ok(r.text.split('once').length - 1 === 1, 'the rules appear exactly once in the prompt');
+
+    // A lowercase-only project still loads, under the canonical label.
+    r = await makeProjectInstructions({ fsp: fsFor({ '/p/agents.md': 'lower' }), pathMod: fakePath }).load('/p', true);
+    ok(r.sources.join(',') === 'AGENTS.md' && r.text.indexOf('lower') > 0, 'a lowercase agents.md loads under the canonical label');
+
+    // Secrets pasted into a setup snippet must not ride into the prompt.
+    r = await makeProjectInstructions({ fsp: fsFor({ '/p/AGENTS.md': 'key sk-SECRET here' }), pathMod: fakePath, redact: (s) => s.replace(/sk-\w+/g, '[redacted]') }).load('/p', true);
+    ok(r.text.indexOf('sk-SECRET') < 0 && r.text.indexOf('[redacted]') > 0, 'redact() runs on the way in');
+
+    // A giant instruction file is clamped and SAYS it was clamped — never silently half-read.
+    r = await makeProjectInstructions({ fsp: fsFor({ '/p/AGENTS.md': 'y'.repeat(50000) }), pathMod: fakePath, fileMax: 500, totalMax: 500 }).load('/p', true);
+    ok(r.text.length < 1500, 'an oversized instruction file is bounded');
+    ok(/truncated by the host/.test(r.text), 'the truncation is stated, not silent');
+
+    // No instruction files at all is the ordinary case and must be perfectly quiet.
+    r = await makeProjectInstructions({ fsp: fsFor({}), pathMod: fakePath }).load('/p', true);
+    ok(r.text === '' && r.sources.length === 0, 'a project with no instruction files injects nothing');
+
+    // An unreadable file is a file this project does not have — never a failed run.
+    r = await makeProjectInstructions({ fsp: { readFile: async () => { throw new Error('EACCES'); } }, pathMod: fakePath }).load('/p', true);
+    ok(r.text === '', 'an unreadable instruction file degrades to empty instead of throwing');
+  }
+
   console.log('projectbless.test: ' + n + ' assertions passed');
 })().catch(e => { console.error(e); process.exit(1); });
