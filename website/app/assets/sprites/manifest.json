@@ -1459,6 +1459,82 @@
       "masterchief/walk_west_4.png",
       "masterchief/walk_west_5.png"
     ],
+    "minion.blink.east": [
+      "minion/blink_east.png"
+    ],
+    "minion.blink.north": [
+      "minion/blink_north.png"
+    ],
+    "minion.blink.south": [
+      "minion/blink_south.png"
+    ],
+    "minion.blink.west": [
+      "minion/blink_west.png"
+    ],
+    "minion.rot.east": [
+      "minion/rot_east.png"
+    ],
+    "minion.rot.north": [
+      "minion/rot_north.png"
+    ],
+    "minion.rot.south": [
+      "minion/rot_south.png"
+    ],
+    "minion.rot.west": [
+      "minion/rot_west.png"
+    ],
+    "minion.sit.east": [
+      "minion/sit_east.png"
+    ],
+    "minion.sit.north": [
+      "minion/sit_north.png"
+    ],
+    "minion.sit.south": [
+      "minion/sit_south.png"
+    ],
+    "minion.sit.west": [
+      "minion/sit_west.png"
+    ],
+    "minion.walk.east": [
+      "minion/walk_east_0.png",
+      "minion/walk_east_1.png",
+      "minion/walk_east_2.png",
+      "minion/walk_east_3.png",
+      "minion/walk_east_4.png",
+      "minion/walk_east_5.png",
+      "minion/walk_east_6.png",
+      "minion/walk_east_7.png"
+    ],
+    "minion.walk.north": [
+      "minion/walk_north_0.png",
+      "minion/walk_north_1.png",
+      "minion/walk_north_2.png",
+      "minion/walk_north_3.png",
+      "minion/walk_north_4.png",
+      "minion/walk_north_5.png",
+      "minion/walk_north_6.png",
+      "minion/walk_north_7.png"
+    ],
+    "minion.walk.south": [
+      "minion/walk_south_0.png",
+      "minion/walk_south_1.png",
+      "minion/walk_south_2.png",
+      "minion/walk_south_3.png",
+      "minion/walk_south_4.png",
+      "minion/walk_south_5.png",
+      "minion/walk_south_6.png",
+      "minion/walk_south_7.png"
+    ],
+    "minion.walk.west": [
+      "minion/walk_west_0.png",
+      "minion/walk_west_1.png",
+      "minion/walk_west_2.png",
+      "minion/walk_west_3.png",
+      "minion/walk_west_4.png",
+      "minion/walk_west_5.png",
+      "minion/walk_west_6.png",
+      "minion/walk_west_7.png"
+    ],
     "minionchar.blink.east": [
       "minionchar/blink_east.png"
     ],
