@@ -154,7 +154,16 @@
     const count = (event) => (registry.get(event) || []).length;
     const events = () => EVENTS.slice();
 
-    return { register, invoke, count, events, EVENTS };
+    /* clear() — detach every handler, in place. This exists so a live reload (the Commander approves a hook,
+       or edits hooks.json) can rebuild the set on the SAME spine object. That matters because the spine is
+       captured by reference at boot — by the dispatch ctx and by every in-flight run — so swapping in a new
+       object would leave those holding the old one and the reload would appear to do nothing. */
+    function clear(event) {
+      if (event) { if (registry.has(event)) registry.set(event, []); return; }
+      for (const e of EVENTS) registry.set(e, []);
+    }
+
+    return { register, invoke, count, events, clear, EVENTS };
   }
 
   return { makeHooks, EVENTS, BLOCKABLE, _internals: { readDecision, readContext } };

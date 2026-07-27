@@ -140,5 +140,30 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
     A.eq(h.count('post_tool_call'), 0, 'and is gone from the registry');
   }
 
+  // ---- 11. clear() rebuilds IN PLACE — the reload path depends on it ----
+  {
+    // The spine is captured by reference at boot (dispatch ctx, in-flight runs), so approving a new hook has
+    // to rebuild THIS object. Handing out a fresh one would leave those holders on the old spine and the
+    // reload would silently do nothing — and clearing first is what stops a double-register.
+    const h = makeHooks();
+    let hits = 0;
+    const add = () => h.register('pre_tool_call', () => { hits++; }, { name: 'x' });
+    add();
+    await h.invoke('pre_tool_call', {});
+    A.eq(hits, 1, 'one handler, one hit');
+
+    h.clear();
+    A.eq(h.count('pre_tool_call'), 0, 'clear() detaches everything');
+    add(); add();
+    hits = 0;
+    await h.invoke('pre_tool_call', {});
+    A.eq(hits, 2, 'a rebuilt spine runs exactly what was re-registered — no ghosts from before the clear');
+
+    h.clear('pre_tool_call');
+    h.register('post_tool_call', () => {}, { name: 'other' });
+    h.clear('pre_tool_call');
+    A.eq(h.count('post_tool_call'), 1, 'clearing one event leaves the others alone');
+  }
+
   A.report('hooks.test');
 })().catch(e => { console.log('FAIL: hooks.test threw -- ' + (e && e.stack || e)); process.exit(1); });

@@ -29,6 +29,8 @@ const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeBrowserTools } = require('./tools/builtin/browser.js');
 const { makeComputerTools } = require('./tools/builtin/computer.js');
 const { makeDesktopTools } = require('./tools/builtin/desktop.js');
+const { makeHooks } = require('./hooks.js');                 // the hook spine: pre/post tool + llm, session, compress
+const { makeShellHooks } = require('./shellhooks.js');       // the Commander's shell scripts, on that spine
 const { makeFsTools } = require('./tools/builtin/fs.js');
 // fs.read extracts .docx / .xlsx / .ipynb to readable text. inflateRawSync is injected so the extractor stays
 // pure + headless-testable, and so the OOXML path needs no dependency beyond what Node already ships.
@@ -2185,6 +2187,30 @@ function voiceFetchOpts(base, timeoutMs) {
   return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base;
 }
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
+
+/* HOOKS — the Commander's own code in the agent's path (sidecar/hooks.js + sidecar/shellhooks.js).
+   ONE spine for the whole station, built at boot and shared by every run: a hook that only fired on the
+   browser surface would be a rule the Commander thinks is enforced and isn't. The shell bridge is installed
+   once here; every (event, command) pair stays pending until explicitly allowed, so a hooks.json that arrived
+   by repo checkout or a restored backup does nothing until the Commander says so. */
+const HOOKS_FILE = path.join(WORKSPACES, 'hooks.json');
+const HOOKS_ALLOW_FILE = path.join(WORKSPACES, 'hooks-allowed.json');
+const hookSpine = makeHooks({ onError: (e) => console.warn('[hooks] ' + (e && e.hook) + ' on ' + (e && e.event) + ': ' + (e && e.error)) });
+const shellHooks = makeShellHooks({
+  spawn: childSpawn, fsp, pathMod: path, hooksFile: HOOKS_FILE, allowFile: HOOKS_ALLOW_FILE,
+  cwd: WORKSPACES, clock: { now: () => Date.now() },
+  onError: (e) => console.warn('[hooks] ' + (e && e.hook) + ': ' + (e && e.error))
+});
+let hooksInstalled = { installed: [], pending: [], errors: [] };
+async function installShellHooks() {
+  try { hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { console.warn('[hooks] install failed: ' + ((e && e.message) || e)); return; }
+  for (const err of hooksInstalled.errors) console.warn('[hooks] ' + err);
+  if (hooksInstalled.installed.length) console.log('  · ' + hooksInstalled.installed.length + ' shell hook(s) active');
+  // Pending is NOT a failure — it is the consent gate doing its job, and it has to be visible or the
+  // Commander will think a hook they wrote is running when it is not.
+  if (hooksInstalled.pending.length) console.log('  · ' + hooksInstalled.pending.length + ' hook(s) awaiting approval (POST /api/hooks/allow)');
+}
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 // ---- channel bot tokens: keychain-backed on desktop, plaintext-file fallback in the bare sidecar ----
 // Runtime token layer, mirroring runtimeKeys for provider API keys. On the desktop build the token source of
@@ -5233,6 +5259,8 @@ const ROUTES = [
   // card can validate the typed path inline instead of failing silently on Keep. Strictly less powerful than
   // the existing keep copy (which already writes to an arbitrary destPath) — this only reports exists/isDir.
   { m: 'GET', qsplit: '/api/fs/dirstat', h: handleDirStat },
+  { m: 'GET', exact: '/api/hooks', h: handleHooksList },
+  { m: 'POST', exact: '/api/hooks/allow', h: handleHooksAllow },
   { m: 'POST', exact: '/api/checkpoint/restore', h: handleCheckpointRestore },
   { m: 'GET', prefix: '/api/checkpoint', h: handleCheckpointList },
   { m: 'GET', exact: '/api/health', h: (req, res) => { res.writeHead(200); return res.end('ok'); } },
@@ -5326,6 +5354,9 @@ server.listen(PORT, '127.0.0.1', () => {
     ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
     () => {}
   );
+  // Install the Commander's shell hooks onto the station-wide spine. Awaited-but-guarded: a hooks file that
+  // is broken must delay nothing and break nothing at boot.
+  installShellHooks().catch(() => {});
   // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).
   try {
     const t = (channelSecrets && channelSecrets.telegram) || {};
@@ -7715,6 +7746,50 @@ async function handleWorkshopShiftNow(req, res) {
   try { res.end(); } catch (_) {}
 }
 
+/* GET /api/hooks — what the Commander configured, what is LIVE, and what is waiting on them. The pending list
+   is the whole reason this route exists: a hook that silently never runs because it was never approved is the
+   worst outcome of the consent gate, so it has to be visible and actionable rather than buried in a boot log. */
+async function handleHooksList(req, res) {
+  let cfg = { hooks: [], errors: [] };
+  try { cfg = await shellHooks.load(); } catch (_) {}
+  let pending = [];
+  try { pending = await shellHooks.listPending(); } catch (_) {}
+  const live = new Set(hooksInstalled.installed.map(h => h.event + ' ' + h.command));
+  return json(200, {
+    events: hookSpine.events(),
+    hooks: cfg.hooks.map(h => ({ event: h.event, command: h.command, name: h.name, active: live.has(h.event + ' ' + h.command) })),
+    pending: pending.map(h => ({ event: h.event, command: h.command, name: h.name })),
+    errors: (cfg.errors || []).concat(hooksInstalled.errors || []),
+    file: HOOKS_FILE
+  }, res);
+}
+/* POST /api/hooks/allow { event, command } — approve one pair and install it WITHOUT a restart. Interactive
+   only, and deliberately so: approving a script that runs at station privilege on every tool call is exactly
+   the decision an unattended run must never be able to make for itself (the same unattended rule that governs
+   path blessing). The pair must already exist in hooks.json — this route approves, it never adds. */
+async function handleHooksAllow(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const event = String((body && body.event) || '').trim();
+  const command = String((body && body.command) || '').trim();
+  if (!event || !command) return json(400, { error: 'event and command are required' }, res);
+  let cfg;
+  try { cfg = await shellHooks.load(); } catch (_) { cfg = { hooks: [] }; }
+  const match = cfg.hooks.find(h => h.event === event && h.command === command);
+  if (!match) return json(404, { error: 'no such hook in hooks.json — this route approves a configured hook, it never adds one' }, res);
+  if (!(await shellHooks.allow(event, command))) return json(500, { error: 'could not persist the approval' }, res);
+  // Re-install so the newly-approved hook is live immediately, with no restart. The spine is cleared IN PLACE
+  // rather than replaced: it was captured by reference at boot (by the dispatch ctx and by every in-flight
+  // run), so handing out a new object would leave those holding the old one and the reload would look like it
+  // did nothing. Clearing first is what stops the already-installed hooks being registered a second time.
+  try {
+    hookSpine.clear();
+    hooksInstalled = await shellHooks.install(hookSpine);
+  } catch (e) { return json(500, { error: 'approved, but re-install failed: ' + ((e && e.message) || e) }, res); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length, pending: hooksInstalled.pending.length }, res);
+}
+
 /* POST /api/checkpoint/restore { agentId, snapshotId } — the manual "rewind": hard-reset an agent's workspace to
    a recorded snapshot (and drop files created since). Only restores a snapshotId IN that agent's index (never an
    arbitrary git ref); 127.0.0.1-bound. The auto-snapshots that feed this come from the opt-in dispatch hook. */
@@ -8937,6 +9012,10 @@ async function runOnce(o) {
     origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }),   // stamped onto notebook.write records: WHICH surface formed this belief
     authorize: userControlAuthority.authorize,
     userControl: userControlAuthority,
+    // HOOKS reach the tool boundary through the dispatch ctx. registry.js consults them AFTER the authority,
+    // capability, schema and consent gates — so a hook can only ever remove a permission, never add one.
+    hooks: hookSpine,
+    cwd: WORKSPACES,
     // OUTPUT PARKING: the host half of the tool-output cap. Over-cap output is written WHOLE into the agent's
     // own workspace before the clamp destroys its middle, and the result points the model at the file — the
     // work was already done and paid for, so the part that did not fit is recoverable instead of gone. Lands
@@ -9594,6 +9673,10 @@ async function runOnce(o) {
     emit(name, payload);
   };
   try {
+    // HOOKS — on_session_start. Fired HERE rather than inside loop.js because a "session" is a run as the
+    // HOST defines it (agent, model, surface, trigger), and the loop deliberately knows nothing about the
+    // surface it was launched from. Observe-only: a hook cannot refuse a run the Commander started.
+    try { await hookSpine.invoke('on_session_start', { session_id: runId, cwd: WORKSPACES, extra: { agent_id: agentId, model, platform: surface, trigger: o.trigger || 'directive' } }); } catch (_) {}
     result = await runAgentLoop({
       messages: msgs, provider, emit: loopEmit, cost, tools: toolDefs, dispatch, capCtx,
       // Granted but unadvertised: held out of the request until tool.search reveals one (see loop.js).
@@ -9606,6 +9689,8 @@ async function runOnce(o) {
       // Same wire shape the Commander's own attachments already take, so no adapter needed a change. Kill
       // switch for a text-only endpoint that rejects image parts, resolved once at module load.
       toolImages: TOOL_IMAGES_ON,
+      // The station-wide hook spine: pre/post_llm_call and on_pre_compress fire from inside the loop.
+      hooks: hookSpine,
       // Real backoff for the loop's bounded mid-stream retry: without an injected sleep the loop retries a
       // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
       // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
@@ -9635,6 +9720,22 @@ async function runOnce(o) {
       // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
       approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
     });
+    // HOOKS — on_session_end. The run's real outcome, not an optimistic one: `reason` is whatever the loop
+    // actually ended on ('done' | 'empty' | 'max_iters' | 'budget' | 'cancelled' | 'error'), so a hook that
+    // pages on failure pages on the truth. This is the seam for "when a run finishes, notify me / run the
+    // formatter / archive the transcript".
+    try {
+      await hookSpine.invoke('on_session_end', {
+        session_id: runId, cwd: WORKSPACES,
+        extra: {
+          agent_id: agentId, model, platform: surface,
+          reason: (result && result.reason) || 'unknown',
+          completed: !!(result && result.reason === 'done'),
+          interrupted: !!(result && result.reason === 'cancelled'),
+          turns: (result && result.turns) || 0, usd: (result && result.usd) || 0
+        }
+      });
+    } catch (_) {}
     // Persist visible task context only — never hidden reasoning. A clarification is a clean model run but not
     // completed work, so it leaves the brief waiting across restart and suppresses task-learning sweeps below.
     if (taskBrief && taskBrief.inputAction !== 'cancel' && result && result.reason === 'done') {

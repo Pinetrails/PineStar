@@ -166,22 +166,64 @@
         if (!c || !c.allow) return errResult('consent denied for ' + call.name + (c && c.reason ? ': ' + c.reason : ''), 'denied');
       }
 
+      /* HOOKS — pre_tool_call. Placed HERE, and the position is the whole security argument: it is the last
+         thing before the tool runs and it is AFTER the user-control authority, the capability gate, schema
+         validation and the consent broker. A hook therefore reaches only calls the station had already
+         decided to allow, and the only thing it can do is take that permission away. It cannot approve what
+         a gate refused, because a refusal returned above this line and never got here.
+         Unwired (`ctx.hooks` absent) = every existing caller and test, byte-identical. */
+      const hooks = (ctx.hooks && typeof ctx.hooks.invoke === 'function') ? ctx.hooks : null;
+      const hookPayload = {
+        tool_name: call.name, tool_input: call.args,
+        session_id: String(ctx.runId || ''), cwd: String(ctx.cwd || ''),
+        extra: { agent_id: String(ctx.agentId || ''), tool_call_id: String(call.id || ''), capability: String(tool.capability || ''), scope: String(tool.scope || '') }
+      };
+      if (hooks) {
+        let pre = null;
+        try { pre = await hooks.invoke('pre_tool_call', hookPayload); } catch (_) { pre = null; }
+        if (pre && pre.blocked) {
+          // Named, because "blocked" with no author is the most frustrating message a harness can print: the
+          // Commander needs to know WHICH of their scripts stopped this, and the model needs to know it was
+          // policy rather than a broken tool so it stops retrying.
+          return errResult('blocked by your hook' + (pre.by ? ' `' + pre.by + '`' : '') + ': ' + pre.reason, 'hook-blocked');
+        }
+      }
+
+      // post_tool_call is OBSERVE-ONLY (hooks.js refuses to let it block): by this point the result exists and
+      // the agent is entitled to it. Its verdict is deliberately discarded — a hook that could retract a
+      // finished result would be rewriting history the model may already have acted on.
+      const notifyPost = async (res, ms) => {
+        if (!hooks) return res;
+        try {
+          await hooks.invoke('post_tool_call', Object.assign({}, hookPayload, {
+            extra: Object.assign({}, hookPayload.extra, {
+              status: res.isError ? 'error' : 'ok',
+              result: typeof res.content === 'string' ? res.content : '',
+              duration_ms: ms
+            })
+          }));
+        } catch (_) { /* an observer must never change the outcome it observed */ }
+        return res;
+      };
+
       // run once, bounded by the per-tool timeout; any throw becomes an isError result. A per-call AbortController
       // (chained to the run's parent signal) is threaded in as ctx.signal so that on TIMEOUT we abort() the work
       // before rejecting — a timed-out tool no longer keeps running/spending in the background.
       const timeoutMs = tool.timeoutMs || ctx.timeoutMs || 0;
       const ac = childAbort(ctx.signal);
       const runCtx = ac !== ctx.signal ? Object.assign({}, ctx, { signal: ac.signal }) : ctx;
+      const startedAt = (ctx.clock && typeof ctx.clock.now === 'function') ? ctx.clock.now() : 0;
+      const elapsed = () => ((ctx.clock && typeof ctx.clock.now === 'function') ? ctx.clock.now() - startedAt : 0);
       try {
         const out = await withTimeout(tool.run(call.args, runCtx), timeoutMs, () => { try { ac.abort(new Error('tool timeout')); } catch (_) { try { ac.abort(); } catch (_) {} } });
         const shaped = (out && typeof out === 'object' && 'content' in out);
         const raw = shaped ? out.content : (out == null ? '' : out);
         // Park BEFORE clamping — the clamp is what destroys the middle, so the full text has to be on disk first.
         const parked = await parkIfOver(raw, call, ctx);
-        return okResult(raw, shaped ? out.summary : undefined, shaped ? out.control : undefined, parked, shaped ? out.images : undefined);
+        return await notifyPost(okResult(raw, shaped ? out.summary : undefined, shaped ? out.control : undefined, parked, shaped ? out.images : undefined), elapsed());
       } catch (e) {
-        if (e && e.__timeout) return errResult('tool ' + call.name + ' timed out after ' + timeoutMs + 'ms', 'timeout');
-        return errResult('tool ' + call.name + ' failed: ' + (e && e.message ? e.message : String(e)));
+        if (e && e.__timeout) return await notifyPost(errResult('tool ' + call.name + ' timed out after ' + timeoutMs + 'ms', 'timeout'), elapsed());
+        return await notifyPost(errResult('tool ' + call.name + ' failed: ' + (e && e.message ? e.message : String(e))), elapsed());
       }
     }
 

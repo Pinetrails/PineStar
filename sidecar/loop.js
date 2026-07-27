@@ -358,6 +358,11 @@
     let emptyNudgeUsed = false;
     // VERIFY-ON-STOP ledger: code paths this run has CHANGED but not since proven. Any successful verification
     // empties it. limits.verifyOnStop === false disables; { max } raises the nudge budget (default 1).
+    /* OPTIONAL HOOK SPINE (sidecar/hooks.js). The Commander's own code, on the model-call boundary. Absent =
+       every existing caller and test byte-identical. The tool-call sites live in tools/registry.js, which is
+       where the gates are; only the LLM-call and compaction sites belong here. */
+    const hooks = (o.hooks && typeof o.hooks.invoke === 'function') ? o.hooks : null;
+    let lastHookContext = '';   // dedupe: a standing brief injected every turn would otherwise stack N copies
     // OPTIONAL tool-result images (see SCREENSHOTS AS PIXELS below). OFF unless the host opts in, so every
     // internal/aux loop and every existing test is byte-identical; index.js turns it on for real runs.
     const toolImages = (o.toolImages === true);
@@ -451,6 +456,13 @@
          honest one for DECIDING to compact (shouldCompact still uses it); for measuring what a fold SAVED,
          both ends must come from the same estimator. */
       const beforeTokens = context.estimateMessages(messages);
+      /* HOOKS — on_pre_compress. The last moment history still exists in full. This is the seam a Commander
+         uses to keep something the summarizer would flatten (archive the transcript, extract decisions to a
+         file). Observe-only by construction in hooks.js: a hook that could VETO compaction could pin a run
+         against its context ceiling until it died, which is a worse failure than losing detail. */
+      if (hooks) {
+        try { await hooks.invoke('on_pre_compress', { session_id: runId, extra: { agent_id: agentId, model, before_tokens: beforeTokens, folding: plan.older.length, turn: turns } }); } catch (_) {}
+      }
       let r;
       try { r = summarize ? await summarize(plan.older, prevSummary) : ''; }   // prevSummary => the summarizer MERGE-updates it (H5.2)
       catch (e) { if (++compactionFails >= 2) compactionOff = true; lastUsage = null; return false; }   // summarizer threw -> skip
@@ -520,6 +532,27 @@
             emit('agent.token', { agentId, runId, delta: '\n[steering] ' + t + '\n' });
             messages.push({ role: 'system', content: '<steering_note>' + t + '</steering_note>' });
           }
+        }
+      }
+      /* HOOKS — pre_llm_call. Same message-boundary safety argument as steering above: the prior iteration's
+         tool results are already appended and paired, so an injected note can neither split a tool_call from
+         its result nor corrupt the assistant/tool interleave. This is where a Commander's STANDING BRIEF
+         lands — "deploy freeze until Friday", "the on-call is Alice" — the kind of fact that changes daily and
+         so belongs in neither a skill nor the dossier. Injected verbatim (the Commander wrote it, and fencing
+         their own instruction would defeat it), bounded by hooks.js, and deduped: a brief that does not change
+         between turns is pushed once, not once per turn. */
+      if (hooks) {
+        let pre = null;
+        try { pre = await hooks.invoke('pre_llm_call', { session_id: runId, extra: { agent_id: agentId, model, turn: turns, trigger } }); } catch (_) { pre = null; }
+        if (pre && pre.blocked) {
+          // A blocked model call ends the run. Reported as an error because the run genuinely did not do the
+          // work — but the message names the hook, so it reads as the policy decision it is, not a fault.
+          emit('agent.run.error', { agentId, runId, message: 'blocked by your hook' + (pre.by ? ' `' + pre.by + '`' : '') + ': ' + pre.reason, transient: false });
+          return end('error');
+        }
+        if (pre && pre.context && pre.context !== lastHookContext) {
+          lastHookContext = pre.context;
+          messages.push({ role: 'system', content: '<hook_context>' + pre.context + '</hook_context>' });
         }
       }
       const turnStart = turns;
@@ -643,6 +676,11 @@
         agentId, runId, usd: final.usd || 0, tokensIn: final.tokensIn || 0, tokensOut: final.tokensOut || 0,
         reasoningTokens: final.reasoningTokens || 0, cachedTokens: final.cachedTokens || 0, model, reconciled: true
       });
+
+      // HOOKS — post_llm_call. Deliberately here rather than after tool execution: it must fire once per MODEL
+      // CALL, including the final tool-free turn, and a site further down would silently skip exactly the turn
+      // that produced the answer. Observe-only; cost is already reconciled so the payload is honest.
+      if (hooks) { try { await hooks.invoke('post_llm_call', { session_id: runId, extra: { agent_id: agentId, model, turn: turns, usd: spentUsd, tokens_in: final.tokensIn || 0, tokens_out: final.tokensOut || 0, finish_reason: lastFinishReason || '' } }); } catch (_) {} }
 
       // (4) APPEND assistant turn FIRST. Capture the prior assistant text BEFORE appending, so a no-op turn whose
       // content merely duplicates the previous assistant turn can be detected below.
