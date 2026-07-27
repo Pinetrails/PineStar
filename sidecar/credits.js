@@ -72,7 +72,9 @@
 
     // cached balance snapshot the SYNC payment client reads. null = never fetched -> fail closed (a managed
     // run refuses rather than spending against an unknown balance). refresh() populates/reconciles it.
-    const cache = { balanceUsd: null, at: 0 };
+    // `subscription` and `manageUrl` ride the same /v1/balance response (a backend that doesn't send them
+    // simply leaves them null, and the STORE renders no plan line — never an invented one).
+    const cache = { balanceUsd: null, at: 0, subscription: null, manageUrl: '' };
 
     /* ---- LOW-BALANCE WARNING ------------------------------------------------------------------
        Without this, a managed run just stops at $0 with no warning — the user's first signal that
@@ -164,6 +166,10 @@
       try {
         const j = await getJson('/v1/balance?account=' + encodeURIComponent(acct(id)));
         const b = num(j && (j.balanceUsd != null ? j.balanceUsd : j.balance));
+        // Plan state is whatever the backend just said, INCLUDING null — a cancelled subscription must be
+        // able to clear the tier line, not leave the last-known plan on screen forever.
+        cache.subscription = (j && typeof j.subscription === 'object') ? j.subscription : null;
+        if (j && j.manageUrl) cache.manageUrl = str(j.manageUrl);
         setBalance(b);
         return b;
       } catch (e) { onError('refresh', e); return null; }
@@ -222,7 +228,13 @@
       accountId() { return accountId; },
       purchaseUrl() { return purchaseUrl; },
       beginRun, finishRun, refresh, history,
-      snapshot() { return { configured: true, accountId, balanceUsd: cache.balanceUsd, at: cache.at, purchaseUrl }; }
+      snapshot() {
+        return {
+          configured: true, accountId, balanceUsd: cache.balanceUsd, at: cache.at, purchaseUrl,
+          subscription: cache.subscription,                 // null until the backend reports one
+          manageUrl: cache.manageUrl || purchaseUrl         // where "manage subscription" opens in the browser
+        };
+      }
     };
   }
 

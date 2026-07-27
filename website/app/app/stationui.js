@@ -3473,6 +3473,41 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       .catch(() => {});   // sidecar offline / not configured → leave the STORE absent
   }
 
+  // A ledger entry's own name for itself. The backend sends `label` for rows that are not model calls
+  // ('expiry', 'topup', 'sub_renewal', …) and `model` for the ones that are; `kind` is the last resort.
+  const CREDIT_ENTRY_LABELS = {
+    topup: 'top-up', sub_init: 'subscription', sub_renewal: 'monthly credits',
+    expiry: 'expired — 90 days after cancelling', adjustment: 'adjustment'
+  };
+  function creditEntryLabel(e) {
+    const lab = e && e.label;
+    if (lab) return CREDIT_ENTRY_LABELS[lab] || String(lab);
+    if (e && e.model) return String(e.model);
+    return String((e && e.kind) || 'entry');
+  }
+
+  // The PLAN rows — tier, what it grants, and the next date that matters. Rendered ONLY from a real
+  // `subscription` object: a station with no plan (operator-provisioned, or a top-up-only account) shows
+  // nothing here rather than an empty "PLAN —" row implying there is one to look at.
+  function creditsPlanRows(j) {
+    const s = j && j.subscription;
+    if (!s || !s.tier) return '';
+    const cancelled = String(s.status || '') !== 'active';
+    const grant = (s.grantUsd != null && s.grantUsd > 0) ? fmtUsd(s.grantUsd) + '/mo' : '';
+    const day = (ms) => { try { return new Date(Number(ms)).toLocaleDateString(); } catch (_) { return ''; } };
+    // While cancelled the date that matters is when the leftover credits STOP working, not a renewal that
+    // is never coming. Saying "renews" on a cancelled plan would be the app asserting something false.
+    const when = cancelled
+      ? (s.graceUntil ? '<span class="dim">credits usable through ' + esc(day(s.graceUntil)) + '</span>' : '')
+      : (s.currentPeriodEnd ? '<span class="dim">renews ' + esc(day(s.currentPeriodEnd)) + '</span>' : '');
+    return '<div class="set-row"><span class="dim">PLAN</span><b style="margin-left:auto">$' + esc(String(s.tier)) + '/mo' +
+      (cancelled ? ' <span class="dim">· CANCELLED</span>' : '') + '</b></div>' +
+      (grant || when
+        ? '<div class="set-row"><span class="dim" style="font-size:.85em">' + esc(grant) + '</span>' +
+          '<span style="margin-left:auto;font-size:.85em">' + when + '</span></div>'
+        : '');
+  }
+
   // The configured STORE: real balance + history + ADD CREDITS. When the station is configured via a LINKED
   // DEVICE (not operator env), also surface a small UNLINK affordance + the account id.
   function renderCreditsConfigured(body, host, j) {
@@ -3481,19 +3516,29 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const hist = Array.isArray(j.history) ? j.history : [];
     const rows = hist.length ? hist.slice(0, 12).map(e => {
       const when = e && e.ts ? new Date(e.ts).toLocaleString() : '';
-      const kind = esc(String((e && e.kind) || 'entry'));
+      // The backend labels its own rows (`label`: 'expiry', 'topup', 'sub_renewal', …). Falling back to the
+      // bare kind would print "debit" for credits expiring at the end of grace — identical to a model call.
+      const kind = esc(creditEntryLabel(e));
       const amt = (e && e.usd != null) ? fmtUsd(e.usd) : '';
       return '<div class="mc-row"><div class="mc-top"><b>' + kind + '</b> <span class="dim">' + esc(when) + '</span></div>' +
         '<div class="mc-url dim">' + esc(amt) + (e && e.runId ? ' · run ' + esc(String(e.runId).slice(0, 8)) : '') + '</div></div>';
     }).join('') : '<div class="fb-empty">No credit activity yet.</div>';
+    // A LINKED station is somebody's own subscription; an env-configured one is an operator's prepaid pool.
+    // Same balance, completely different sentence — describing a subscriber's own account as something "the
+    // operator tops up" is just wrong on the surface that is supposed to be the truthful one.
+    const about = j.linked
+      ? 'This station runs on <b>your StarNet credits</b> — agents work without you bringing a provider key. Each run reserves up to your <b>PER RUN</b> budget and refunds whatever it doesn’t spend. You can always switch to your own key under API KEYS above.'
+      : 'This station runs on <b>managed credits</b> — a prepaid balance the operator tops up, so your agents can work without you bringing your own provider key. Each run reserves up to your <b>PER RUN</b> budget and refunds whatever it doesn’t spend. You can always switch to your own key under API KEYS above.';
     host.innerHTML =
       '<h4 class="ms-h">STORE <span class="dim">— managed credits</span></h4>' +
-      '<p class="set-about">This station runs on <b>managed credits</b> — a prepaid balance the operator tops up, so your agents can work without you bringing your own provider key. Each run reserves up to your <b>PER RUN</b> budget and refunds whatever it doesn’t spend. You can always switch to your own key under API KEYS above.</p>' +
+      '<p class="set-about">' + about + '</p>' +
       (j.linked && j.accountId ? '<div class="set-row"><span class="dim">ACCOUNT</span><span class="dim" style="margin-left:auto">' + esc(String(j.accountId)) + '</span></div>' : '') +
+      creditsPlanRows(j) +
       '<div class="set-row"><span class="dim">BALANCE</span><b class="credits-bal" style="margin-left:auto">' + esc(bal) + '</b></div>' +
       (reach ? '<div class="set-row dim">⚠ the credits service didn’t answer — the balance shown may be stale.</div>' : '') +
       '<div class="mc-acts">' +
         '<button class="bb sm" id="credits-buy">＋ ADD CREDITS ↗</button>' +
+        (j.subscription ? '<button class="bb xs" id="credits-manage" title="change or cancel your plan in the browser">MANAGE PLAN ↗</button>' : '') +
         '<button class="bb xs" id="credits-refresh" title="re-read the balance">↻ REFRESH</button>' +
       '</div>' +
       '<div class="mc-hint">Adding credits opens your browser — StarNet never handles your payment details.</div>' +
@@ -3503,6 +3548,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<button class="bb xs" id="credits-unlink" title="forget this station’s link" style="margin-left:auto">UNLINK</button></div>' : '');
     const buy = host.querySelector('#credits-buy');
     if (buy) buy.addEventListener('click', () => { sfx('click'); openExternal(j.purchaseUrl); });
+    const manage = host.querySelector('#credits-manage');
+    if (manage) manage.addEventListener('click', () => { sfx('click'); openExternal(j.manageUrl || j.purchaseUrl); });
     const ref = host.querySelector('#credits-refresh');
     if (ref) ref.addEventListener('click', () => { sfx('click'); wireCredits(body); });
     const unlink = host.querySelector('#credits-unlink');

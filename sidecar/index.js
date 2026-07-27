@@ -378,7 +378,18 @@ const CREDITS_LOW_USD = (() => { const n = Number(ENV('CREDITS_LOW_USD')); retur
 // the STORE offers a LINK STATION flow that pairs this station to an account and configures credits LIVE (no env,
 // no restart). Empty => the feature is absent (honesty law): the /api/credits/link/* routes 404 and no LINK card
 // renders. Env CREDITS_* config still wins over a linked device (operator override / backward compat).
-const CLOUD_URL = String(ENV('CLOUD_URL') || '').trim();
+//
+// THE SHIPPED DEFAULT AND ITS SWITCH. A packaged build sets no env, so with an env-only lookup the entire
+// subscription is invisible to every user who ever installs StarNet — the feature would exist and reach nobody.
+// The default therefore lives in the binary, behind ONE flag: while CLOUD_LIVE is false the station behaves
+// exactly as if no cloud existed, because offering LINK STATION against a service that is not deployed yet
+// would be a button that promises an account we cannot actually create. This is the same gate, and must be
+// flipped in the same breath, as `CREDITS.live` in website/site.js — the site's buy buttons and the app's link
+// button have to tell the same story on the same day. An explicit STARNET_CLOUD_URL always wins, so operators
+// and this repo's own live tests can point at a local service without touching the flag.
+const CLOUD_LIVE = false;                                    // ← launch switch: flip WITH website/site.js CREDITS.live
+const CLOUD_URL_DEFAULT = 'https://account.starnetos.com';   // the deployed StarNet Cloud (see starnet-cloud)
+const CLOUD_URL = String(ENV('CLOUD_URL') || (CLOUD_LIVE ? CLOUD_URL_DEFAULT : '')).trim();
 // The linked station's device token, injected by the DESKTOP from the OS keychain at spawn (keychain account
 // "credits:device"). It is a bearer credential that spends money, so the desktop adopts it out of
 // .secrets/credits.json and strips the file copy; this env var is how it gets back in. Unset in a bare/dev
@@ -5563,6 +5574,11 @@ async function handleCredits(req, res) {
     balanceUsd: snap.balanceUsd,             // null when the backend hasn't answered yet (UI shows "—")
     purchaseUrl: snap.purchaseUrl,           // external link the STORE opens; this app renders no payment form
     perRun: effectiveCaps.perRun,            // the reservation size a run will hold
+    // The plan, exactly as the backend reports it: {tier, status, grantUsd, currentPeriodEnd, graceUntil} or
+    // null. NULL IS THE POINT — an operator-provisioned station or a backend that predates this field has no
+    // subscription, and the STORE must then say nothing about one rather than invent a tier.
+    subscription: snap.subscription || null,
+    manageUrl: snap.manageUrl || snap.purchaseUrl,   // opens in the real browser; billing UI never renders in-app
     linked: !CREDITS_URL && creditsLink.hasSaved(),   // true when configured via a LINKED DEVICE (not env) -> STORE shows UNLINK
     // Where the device token actually rests: 'keychain' (desktop, adopted), 'file' (bare sidecar, or a link
     // the desktop has not adopted yet), 'none'. Reported so the STORE states the truth about a money-spending
