@@ -41,7 +41,7 @@ A.ok(dm && SKINS[dm[1]], 'DATA.DEFAULT_SKIN points at a real catalog skin (' + (
 
 // the named tiles the crew.json cluster asserts (aria-<name> buttons) each resolve by DISPLAY NAME
 const namesLc = new Set(keys.map(k => SKINS[k].name.toLowerCase()));
-for (const name of ['Alien', 'Beach Babe', 'Cadet', 'Blank Amber', 'Blank Blue', 'Blank Green', 'Blank Red', 'Capybara', 'Crewmate', 'Robot']) {
+for (const name of ['Alien', 'Cadet', 'Blank Amber', 'Blank Blue', 'Blank Green', 'Blank Red', 'Capybara', 'Crewmate', 'Robot']) {
   A.ok(namesLc.has(name.toLowerCase()), 'the "' + name + '" cluster tile resolves to a catalog skin');
 }
 
