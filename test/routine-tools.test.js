@@ -170,5 +170,162 @@ const call = (name, args) => ({ id: 'c1', name, args: args || {}, argsRaw: JSON.
     A.eq(created, 1, 'approved routine.create reaches the creator');
   }
 
+  /* ---- routine.manage: the four store verbs + reference resolution --------------------------------------
+     The gap this closes: routine.create/list shipped, so an agent could MAKE standing autonomous work and
+     never touch it again — no edit, no pause, no delete, no "fire it now". */
+  {
+    const mjobs = [
+      { id: 'j-morning', name: 'Morning market brief', agentId: 'researcher-2', enabled: true, state: 'scheduled', scheduleDisplay: 'cron 0 9 * * *' },
+      { id: 'j-evening', name: 'Evening market brief', agentId: 'researcher-2', enabled: true, state: 'scheduled', scheduleDisplay: 'cron 0 18 * * *' },
+      { id: 'j-backup', name: 'Weekly backup', agentId: 'agent', enabled: false, state: 'paused', scheduleDisplay: 'cron 0 3 * * 0' }
+    ];
+    const log = [];
+    const find = (id) => mjobs.find(j => j.id === id);
+    const mt = makeRoutineTools({
+      roster: () => roster,
+      listJobs: () => mjobs,
+      schedulerState: () => true,
+      normalizeProvider: (p) => (p === 'codex' || p === 'openrouter') ? p : '',
+      updateRoutine: async (id, patch) => { log.push(['update', id, patch]); return Object.assign({}, find(id), { name: patch.name || find(id).name }); },
+      removeRoutine: async (id) => { log.push(['remove', id]); return find(id); },
+      setRoutineEnabled: async (id, on) => { log.push(['enabled', id, on]); return Object.assign({}, find(id), { enabled: on, state: on ? 'scheduled' : 'paused' }); },
+      triggerRoutine: async (id) => { log.push(['trigger', id]); return Object.assign({}, find(id), { nextRunAt: '2026-07-27T00:00:00.000Z' }); }
+    });
+
+    // reference by EXACT id
+    {
+      const out = await mt.manageTool.run({ action: 'pause', id: 'j-morning' });
+      A.eq(log[log.length - 1][0], 'enabled', 'pause routes to setRoutineEnabled');
+      A.eq(log[log.length - 1][2], false, 'pause disables the job');
+      A.eq(JSON.parse(out.content).job.state, 'paused', 'the paused job comes back paused');
+    }
+
+    // reference by UNIQUE name substring
+    {
+      await mt.manageTool.run({ action: 'resume', id: 'weekly backup' });
+      A.eq(log[log.length - 1][1], 'j-backup', 'a unique case-insensitive name substring resolves to its job');
+      A.eq(log[log.length - 1][2], true, 'resume enables the job');
+    }
+
+    // AMBIGUITY IS AN ERROR — never a guess: editing the wrong standing routine is invisible to the agent
+    {
+      let err = null;
+      try { await mt.manageTool.run({ action: 'remove', id: 'market brief' }); } catch (e) { err = e; }
+      A.ok(err && /matches 2 routines/.test(err.message), 'an ambiguous name reference is refused, not guessed');
+      A.ok(err && /j-morning/.test(err.message) && /j-evening/.test(err.message), 'the refusal names the candidate ids');
+      A.ok(!log.some(l => l[0] === 'remove'), 'an ambiguous reference removes nothing');
+    }
+
+    // an unmatched reference points the model at routine.list rather than failing blankly
+    {
+      let err = null;
+      try { await mt.manageTool.run({ action: 'pause', id: 'no-such-routine' }); } catch (e) { err = e; }
+      A.ok(err && /routine\.list/.test(err.message), 'an unmatched reference tells the model how to find the real ids');
+    }
+
+    // update: only whitelisted fields reach the store
+    {
+      const out = await mt.manageTool.run({
+        action: 'update', id: 'j-morning', name: 'Morning brief v2', prompt: 'summarize markets', provider: 'codex'
+      });
+      const [, id, patch] = log[log.length - 1];
+      A.eq(id, 'j-morning', 'update targets the resolved job');
+      A.eq(patch.name, 'Morning brief v2', 'name is patchable');
+      A.eq(patch.prompt, 'summarize markets', 'prompt is patchable');
+      A.eq(patch.provider, 'codex', 'provider is normalized before it reaches the store');
+      A.eq(JSON.parse(out.content).changed.length, 3, 'the response reports exactly what changed');
+    }
+
+    /* THE PRIVILEGE BOUNDARY: cron-store's updateJob accepts `unattendedGrants` — the capability families a
+       routine may use with nobody watching ('workbench' = shell.exec). An agent that could patch that could
+       hand its own scheduled routine a terminal it was never granted. The tool must drop it. */
+    {
+      const before = log.length;
+      let err = null;
+      try { await mt.manageTool.run({ action: 'update', id: 'j-backup', unattendedGrants: ['workbench'], script: 'evil.sh', workdir: 'C:\\' }); }
+      catch (e) { err = e; }
+      A.ok(err && /nothing to update/.test(err.message), 'a patch of ONLY non-whitelisted fields is refused outright');
+      A.eq(log.length, before, 'no store write happens for a rejected patch');
+    }
+    {
+      await mt.manageTool.run({ action: 'update', id: 'j-backup', name: 'Backup', unattendedGrants: ['workbench'], script: 'evil.sh' });
+      const patch = log[log.length - 1][2];
+      A.ok(!('unattendedGrants' in patch), 'unattendedGrants can NEVER be patched by an agent (privilege escalation)');
+      A.ok(!('script' in patch), 'script can never be patched by an agent');
+      A.ok(!('workdir' in patch), 'workdir can never be patched by an agent');
+      A.eq(patch.name, 'Backup', 'the whitelisted field in the same call still applies');
+    }
+
+    // remove: reports what went, and marks the ledger through the host verb
+    {
+      const out = await mt.manageTool.run({ action: 'remove', id: 'j-evening' });
+      A.eq(log[log.length - 1][0], 'remove', 'remove routes to removeRoutine');
+      A.eq(JSON.parse(out.content).removed.name, 'Evening market brief', 'the response names the deleted routine');
+    }
+
+    // run_now QUEUES — it must never claim the routine ran
+    {
+      const out = await mt.manageTool.run({ action: 'run_now', id: 'j-morning' });
+      const body = JSON.parse(out.content);
+      A.eq(log[log.length - 1][0], 'trigger', 'run_now re-anchors the next fire instead of running inline');
+      A.eq(body.queued, true, 'run_now reports queued');
+      A.ok(/has not run yet/.test(body.note), 'run_now says plainly that the routine has NOT run yet');
+      A.ok(/next tick/.test(out.summary), 'the summary the model reads says queued-for-next-tick, not ran');
+    }
+
+    // a DISARMED scheduler must say so — a queued fire on a down scheduler never happens
+    {
+      const dt = makeRoutineTools({
+        roster: () => roster, listJobs: () => mjobs, schedulerState: () => false,
+        triggerRoutine: async (id) => find(id)
+      });
+      const body = JSON.parse((await dt.manageTool.run({ action: 'run_now', id: 'j-morning' })).content);
+      A.eq(body.schedulerArmed, false, 'the disarmed scheduler is reported');
+      A.ok(/DISARMED/.test(body.note), 'a queued fire on a disarmed scheduler is called out, not silently promised');
+    }
+
+    // a bad action is rejected before any reference resolution
+    {
+      let err = null;
+      try { await mt.manageTool.run({ action: 'delete', id: 'j-morning' }); } catch (e) { err = e; }
+      A.ok(err && /action must be/.test(err.message), 'an unknown action is refused with the valid set');
+    }
+
+    // an unwired host verb answers honestly instead of pretending
+    {
+      const bare = makeRoutineTools({ roster: () => roster, listJobs: () => mjobs });
+      let err = null;
+      try { await bare.manageTool.run({ action: 'remove', id: 'j-morning' }); } catch (e) { err = e; }
+      A.ok(err && /unavailable/.test(err.message), 'an unwired store verb reports unavailable rather than claiming success');
+    }
+  }
+
+  // ---- registry: routine.manage is capability- and consent-gated exactly like routine.create ----
+  {
+    let removed = 0;
+    const reg = makeRegistry();
+    makeRoutineTools({
+      roster: () => roster,
+      listJobs: () => [{ id: 'j1', name: 'Nightly', agentId: 'agent', enabled: true, state: 'scheduled' }],
+      removeRoutine: async () => { removed++; return { id: 'j1', name: 'Nightly' }; }
+    }).register(reg);
+
+    const noGrant = makeCapCtx({ agentId: 'agent', room: 'office', hasCompute: true, tools: [], approvalRules: {} }, { emit: () => {} });
+    const deniedCap = await reg.dispatch(call('routine.manage', { action: 'remove', id: 'j1' }), noGrant);
+    A.ok(deniedCap.isError && /capability denied/.test(deniedCap.content), 'routine.manage denied without the orchestrator grant');
+    A.eq(removed, 0, 'capability denial deletes nothing');
+
+    const grant = { agentId: 'agent', room: 'office', hasCompute: true, tools: ['routine.manage'], approvalRules: {} };
+    const deniedConsent = await reg.dispatch(call('routine.manage', { action: 'remove', id: 'j1' }),
+      makeCapCtx(grant, { emit: () => {}, consent: async () => ({ allow: false, reason: 'no' }) }));
+    A.ok(deniedConsent.isError && /consent denied/.test(deniedConsent.content), 'routine.manage asks consent before mutating standing work');
+    A.eq(removed, 0, 'consent denial deletes nothing');
+
+    const allowed = await reg.dispatch(call('routine.manage', { action: 'remove', id: 'j1' }),
+      makeCapCtx(grant, { emit: () => {}, consent: async () => ({ allow: true }) }));
+    A.ok(!allowed.isError, 'routine.manage runs when granted and approved');
+    A.eq(removed, 1, 'approved routine.manage reaches the store verb');
+  }
+
   A.report('routine-tools');
 })().catch(e => { console.log('FAIL: routine-tools threw -- ' + (e && e.stack || e)); process.exit(1); });

@@ -162,7 +162,12 @@
       // ROUTINES panel), never through OS crontab / Windows Task Scheduler. Lead-only like the rest of
       // orchestration; creation is consent-gated because it persists autonomous future work.
       { capId: 'orchestrator', tool: 'routine.list', scope: 'read', requiresConsent: false, network: false },
-      { capId: 'orchestrator', tool: 'routine.create', scope: 'write', requiresConsent: true, network: false }
+      { capId: 'orchestrator', tool: 'routine.create', scope: 'write', requiresConsent: true, network: false },
+      // routine.manage — edit/pause/resume/delete/queue-a-fire on an EXISTING routine. Consent-gated for the
+      // same reason create is: an edit is the same surface as a create (a clean routine can be patched into a
+      // standing payload), and pausing or deleting changes what the station does unattended. One action-shaped
+      // tool rather than five verbs, because every schema here is re-sent on every turn (see the tool file).
+      { capId: 'orchestrator', tool: 'routine.manage', scope: 'write', requiresConsent: true, network: false }
     ],
     // STUDIO (media skills): text->image generation + image vision analysis, both on the SAME BYOK OpenRouter
     // key the agent already uses (no new provider). image_generate WRITES a file into the agent's workspace, so

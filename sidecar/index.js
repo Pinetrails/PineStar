@@ -8802,6 +8802,55 @@ async function runOnce(o) {
     // W6: the "you already maintain: …" summary the tool folds into its create response so the model KNOWS what
     // exists (informational reinforcement of the hard gate). Pure read of the per-agent ledger.
     mintSummary: (agentId) => { try { return mintLedger.summary(mintLedgerFor(agentId)); } catch (_) { return ''; } },
+    /* ---- routine.manage's store verbs. Each one is the SAME locked read-modify-write the matching HTTP route
+       uses (withCronWrite), so the agent path and the ROUTINES panel can never disagree about a job's state or
+       clobber each other's concurrent advance. The tool owns arg policy; these own persistence only. ---- */
+    updateRoutine: async (id, patch) => {
+      const next = {};
+      // INJECTION TRIPWIRE — identical to POST /api/cron/update: an edit is the same surface as a create, so a
+      // routine authored clean can otherwise be patched into a standing payload.
+      if (Object.prototype.hasOwnProperty.call(patch, 'prompt')) {
+        const scan = cronGuard.scanRoutinePrompt(patch.prompt);
+        if (!scan.ok) throw new Error(scan.error);
+        next.prompt = patch.prompt;
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, 'name')) next.name = patch.name;
+      if (Object.prototype.hasOwnProperty.call(patch, 'model')) next.model = patch.model;
+      if (Object.prototype.hasOwnProperty.call(patch, 'provider')) next.provider = parseCronProviderOr400(patch.provider);
+      if (Object.prototype.hasOwnProperty.call(patch, 'repeatTimes')) {
+        next.repeat = { times: patch.repeatTimes == null ? null : Math.max(1, parseInt(patch.repeatTimes, 10) || 1) };
+      }
+      // The schedule STRING is parsed through the one shared parser (never a second implementation — "when does
+      // this run" is exactly what a user trusts us on), carrying the optional tz the tool passed alongside it.
+      if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
+        next.schedule = parseCronScheduleOr400(patch.schedule, Date.now(), patch.timezone);
+      }
+      await withCronWrite(jobs => cronStore.updateJob(jobs, id, next, { now: Date.now() }));
+      return cronStore.getJob(cronJobs, id);
+    },
+    removeRoutine: async (id) => {
+      // W6, matching POST /api/cron/remove: capture the job BEFORE removal so its name lands in the creating
+      // agent's mint ledger as DECLINED — a deleted routine must never be re-minted by the agent that made it.
+      const doomed = cronStore.getJob(cronJobs, id);
+      await withCronWrite(jobs => cronStore.removeJob(jobs, id));
+      if (doomed && doomed.name) markMintDeclined(doomed.agentId, doomed.name);
+      return doomed;
+    },
+    setRoutineEnabled: async (id, enabled) => {
+      await withCronWrite(jobs => enabled
+        ? cronStore.resumeJob(jobs, id, { now: Date.now() })
+        : cronStore.pauseJob(jobs, id));
+      return cronStore.getJob(cronJobs, id);
+    },
+    // TRIGGER = stamp the next fire at NOW so the scheduler picks the job up on its next tick. Deliberately NOT
+    // an inline run: POST /api/cron/run streams a real run to a watching human, and doing that from inside a tool
+    // call would nest runOnce in runOnce (a second spend path under no separate cap, streaming to nobody).
+    // cronStore.triggerJob, NOT resumeJob — resume RE-ANCHORS the schedule, which for `0 9 * * *` lands on 09:00
+    // TOMORROW and fires nothing now (caught by test/routine-manage.e2e.test.js, which read the time back).
+    triggerRoutine: async (id) => {
+      await withCronWrite(jobs => cronStore.triggerJob(jobs, id, { now: Date.now() }));
+      return cronStore.getJob(cronJobs, id);
+    },
     armScheduler: (enabled) => {
       const want = enabled === true;
       saveCronArmed(want);
