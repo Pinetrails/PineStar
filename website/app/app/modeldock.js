@@ -57,7 +57,7 @@ const ModelDock = (() => {
     qwen: 'QWEN',
     cohere: 'COHERE'
   };
-  const PROVIDER_RANK = { codex: 0, grok: 1, kimi: 2, openrouter: 3, openai: 4, anthropic: 5, gemini: 6, xai: 7, groq: 8, mistral: 9, deepseek: 10, together: 11, fireworks: 12, perplexity: 13, cerebras: 14, ollama: 15, custom: 16 };
+  const PROVIDER_RANK = { starnet: -1, codex: 0, grok: 1, kimi: 2, openrouter: 3, openai: 4, anthropic: 5, gemini: 6, xai: 7, groq: 8, mistral: 9, deepseek: 10, together: 11, fireworks: 12, perplexity: 13, cerebras: 14, ollama: 15, custom: 16 };
 
   let opts = {};
   let wired = false;
@@ -72,7 +72,7 @@ const ModelDock = (() => {
   }
   function providerLabel(p) {
     p = normalizeProvider(p);
-    const map = { codex: 'GPT / CODEX', grok: 'GROK OAUTH', kimi: 'KIMI OAUTH', openrouter: 'OPENROUTER', openai: 'OPENAI API', anthropic: 'ANTHROPIC', gemini: 'GEMINI', xai: 'XAI', groq: 'GROQ', mistral: 'MISTRAL', deepseek: 'DEEPSEEK', together: 'TOGETHER', fireworks: 'FIREWORKS', perplexity: 'PERPLEXITY', cerebras: 'CEREBRAS', ollama: 'OLLAMA', custom: 'CUSTOM' };
+    const map = { starnet: 'STARNET', codex: 'GPT / CODEX', grok: 'GROK OAUTH', kimi: 'KIMI OAUTH', openrouter: 'OPENROUTER', openai: 'OPENAI API', anthropic: 'ANTHROPIC', gemini: 'GEMINI', xai: 'XAI', groq: 'GROQ', mistral: 'MISTRAL', deepseek: 'DEEPSEEK', together: 'TOGETHER', fireworks: 'FIREWORKS', perplexity: 'PERPLEXITY', cerebras: 'CEREBRAS', ollama: 'OLLAMA', custom: 'CUSTOM' };
     return map[p] || String(p || 'openrouter').toUpperCase();
   }
   function normalizeProvider(p) {
@@ -92,6 +92,8 @@ const ModelDock = (() => {
     if (p === 'fireworks' || p === 'fireworks-ai') return 'fireworks';
     if (p === 'perplexity' || p === 'pplx' || p === 'sonar') return 'perplexity';
     if (p === 'cerebras') return 'cerebras';
+    // managed credits — bearer is the linked device token (mirrors app.js + registry.js aliases)
+    if (p === 'starnet' || p === 'starnet-cloud' || p === 'managed') return 'starnet';
     if (p === 'ollama' || p === 'ollama-local') return 'ollama';
     if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
     return 'openrouter';
@@ -196,13 +198,20 @@ const ModelDock = (() => {
   // local/self-hosted endpoints.) Mirrors Harness.providerNeedsKey, kept local so the dock has no new dep.
   function providerNeedsKey(p) {
     p = normalizeProvider(p);
-    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom';
+    // starnet joins the keyless set: its bearer is the linked device token, never a pasted key.
+    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom' && p !== 'starnet';
   }
   // TRUTHFUL: is the ACTIVE provider missing a real, run-able credential? Uses Harness.hasStoredCredential
   // (never fabricated by DEVMODE) so the warning only shows when a run would genuinely fail for lack of a key —
   // and disappears the instant a key is stored. This is the pre-RUN surfacing of harness.js's 'no API key set'.
   function activeNeedsKey() {
     const p = provider();
+    // STARNET has no key to miss, but it CAN be selected on a station that is not linked (a save can
+    // carry the provider across an unlink). That still cannot run, so it still warns — just truthfully.
+    if (p === 'starnet') {
+      try { return !(typeof Harness !== 'undefined' && Harness.configured && Harness.configured('starnet')); }
+      catch (_) { return false; }
+    }
     if (!providerNeedsKey(p)) return false;
     try {
       if (typeof Harness !== 'undefined' && Harness.hasStoredCredential) return !Harness.hasStoredCredential(p);
@@ -386,7 +395,9 @@ const ModelDock = (() => {
   async function fetchModels(force) {
     loading = true;
     renderList();
-    const ids = ['codex', 'grok', 'kimi', 'openrouter', 'openai', 'anthropic', 'gemini', 'xai', 'groq', 'mistral', 'deepseek', 'together', 'fireworks', 'perplexity', 'cerebras', 'ollama', 'custom'];
+    // 'starnet' first: a linked station's own credits are the most direct way to run, and its catalog is
+    // the whole managed lineup. providerEnabled() keeps it out of the list when no credits are configured.
+    const ids = ['starnet', 'codex', 'grok', 'kimi', 'openrouter', 'openai', 'anthropic', 'gemini', 'xai', 'groq', 'mistral', 'deepseek', 'together', 'fireworks', 'perplexity', 'cerebras', 'ollama', 'custom'];
     const active = provider();
     if (ids.indexOf(active) < 0) ids.unshift(active);
     const parts = await Promise.all(ids.map(p => fetchProviderModels(p, force)));
@@ -588,8 +599,13 @@ const ModelDock = (() => {
       if (head && head.parentNode) head.parentNode.insertBefore(warn, head.nextSibling);
       else if (dock) dock.insertBefore(warn, dock.firstChild);
     }
+    // The remedy has to match the credential. Telling a credits user to "add a key" sends them looking
+    // for a field that does not exist for this provider.
+    const msg = provider() === 'starnet'
+      ? 'this station isn’t linked to a StarNet account — link it in SETTINGS to run on credits'
+      : 'no ' + esc(providerLabel(provider())) + ' key — this model can’t run yet. add one in SETTINGS';
     warn.innerHTML = '<span class="mdw-glyph" aria-hidden="true">⚠</span>' +
-      '<span class="mdw-txt">no ' + esc(providerLabel(provider())) + ' key — this model can’t run yet. add one in SETTINGS</span>';
+      '<span class="mdw-txt">' + msg + '</span>';
   }
 
   function reflect() {

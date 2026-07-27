@@ -2674,6 +2674,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
      the real Harness store; nothing here is simulated. Secrets are shown MASKED only — the
      full key is never written into the DOM (truthful-telemetry + don't-leak-the-key). */
   const PROVIDERS = [
+    // STARNET MANAGED is the one provider with no credential to paste and no account to sign into here: it
+    // runs on the credits balance a linked station already has. It is also the one provider that must be able
+    // to DISAPPEAR — see creditsProviderState() — because offering it on a station with no cloud configured
+    // would advertise an account the user cannot create.
+    { id: 'starnet',       name: 'STARNET MANAGED',   endpoint: 'managed inference · credits', blurb: 'no API key — runs on your balance', live: true, credits: true },
     { id: 'openrouter',    name: 'OPENROUTER',        endpoint: 'openrouter.ai/api/v1',      blurb: 'one key · 300+ models',  live: true },
     { id: 'codex',         name: 'CHATGPT (CODEX)',   endpoint: 'OAuth · ChatGPT subscription', blurb: 'sign-in, no API key',  live: true },
     { id: 'grok',          name: 'GROK (XAI)',        endpoint: 'OAuth · SuperGrok / X Premium+', blurb: 'sign-in, no API key', live: true },
@@ -2694,6 +2699,42 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   ];
   const H = () => (typeof Harness === 'object' && Harness) ? Harness : null;
   function provName(id) { const p = PROVIDERS.find(x => x.id === id); return p ? p.name : String(id || '').toUpperCase(); }
+
+  /* ---- STARNET MANAGED, the credits provider -------------------------------------------------
+     Three states, and the first one is the reason this is not a static row:
+       absent   — no cloud is configured on this station, so the card DOES NOT RENDER. The honesty
+                  law the STORE already follows: never offer an account we cannot create. A shipped
+                  build with the launch switch off is exactly this state.
+       linkable — a cloud is configured but this station is not linked -> LINK STATION, which sends
+                  the user to the STORE where the pairing flow lives (one implementation, not two).
+       linked   — credits are live -> show the balance, because "connected" on a paid provider means
+                  nothing if the balance is zero.
+     Refreshed from the same /api/credits + /api/credits/linkable pair the STORE reads, so the two
+     panels can never disagree about whether this station has credits. */
+  let creditsProv = { state: 'absent', balanceUsd: null, tier: '' };
+  function refreshCreditsProvider() {
+    return Harness.api.get('/api/credits').catch(() => ({ configured: false }))
+      .then(j => {
+        if (j && j.configured) {
+          creditsProv = {
+            state: 'linked',
+            balanceUsd: (j.balanceUsd == null ? null : j.balanceUsd),
+            tier: (j.subscription && j.subscription.tier) ? String(j.subscription.tier) : ''
+          };
+          return creditsProv;
+        }
+        return Harness.api.get('/api/credits/linkable').catch(() => ({ available: false }))
+          .then(lk => {
+            creditsProv = { state: (lk && lk.available) ? 'linkable' : 'absent', balanceUsd: null, tier: '' };
+            return creditsProv;
+          });
+      });
+  }
+  // The rows CONNECTIONS should actually draw. Only starnet is ever filtered — every other provider
+  // is a fixed part of the product and must stay visible whether or not it is configured.
+  function visibleProviders() {
+    return PROVIDERS.filter(p => !p.credits || creditsProv.state !== 'absent');
+  }
   function activeProv() { const h = H(); return (h && h.getProv && h.getProv()) || 'openrouter'; }
   let codexStatusKnown = null;        // last /api/auth/codex/status truth: { connected, expired, reason }
   let codexConnectionChecking = false;
@@ -2874,7 +2915,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
   function providersHtml() {
     const active = activeProv();
-    return PROVIDERS.map((p, pi) => {
+    return visibleProviders().map((p, pi) => {
+      // The credits provider has its own card: no key to paste, no sign-in, and a status line that
+      // states the BALANCE, because a paid provider reading "connected" at $0.00 would be a lie of
+      // exactly the kind this panel exists to avoid.
+      if (p.credits) return creditsProviderCard(p, pi, active);
       const ks = keysFor(p.id);
       // a keyless device-code sign-in (codex/grok/kimi) can be KNOWN-dead (sidecar recorded a consumed/invalid
       // refresh token) — that must never render as SIGNED IN. The row still exists (ks has the expired entry) so
@@ -2938,6 +2983,31 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '</div>';
     }).join('');
   }
+  // The STARNET MANAGED card. Same shape as every other provider row so it reads as one of them, but its
+  // action routes to the STORE rather than owning a second copy of the pairing flow.
+  function creditsProviderCard(p, pi, active) {
+    const linked = creditsProv.state === 'linked';
+    const runnable = !!(linked && p.id === active && H() && H().getModel && H().getModel());
+    const cls = linked ? 'conn' : 'avail';
+    const bal = (creditsProv.balanceUsd == null) ? null : fmtUsd(creditsProv.balanceUsd);
+    // A linked station with an unreadable balance says so instead of implying it can spend.
+    const stat = linked
+      ? (bal == null ? '● LINKED · BALANCE UNAVAILABLE' : '● LINKED · ' + esc(bal) + (creditsProv.tier ? ' · $' + esc(creditsProv.tier) + '/MO' : ''))
+      : '○ NOT LINKED';
+    return '<div class="prov-card ' + cls + '" data-provider="' + esc(p.id) + '" role="button" tabindex="0" style="--ci:' + pi + '">' +
+      '<span class="conn-dot"></span>' +
+      '<div class="prov-main">' +
+      '<div class="prov-name">' + esc(p.name) + (runnable ? '<span class="prov-badge">ACTIVE</span>' : '') + '</div>' +
+      '<div class="prov-ep">' + esc(p.endpoint) + ' · ' + esc(p.blurb) + '</div>' +
+      '</div>' +
+      '<div class="prov-stat">' + stat +
+        '<button class="bb sm prov-addkey" data-act="credits-store" data-provider="' + esc(p.id) + '" ' +
+        'title="' + (linked ? 'balance, plan and history live in the STORE' : 'link this station to a StarNet account') + '">' +
+        (linked ? '◆ STORE' : '🔗 LINK STATION') + '</button>' +
+      '</div>' +
+      '</div>';
+  }
+
   // The SHARED credential-row for a keyless device-code OAuth provider (grok/kimi) — the parameterized twin of
   // the codex oauth branch in keysHtml. Same honest contract: SIGN-IN EXPIRED (never SIGNED IN) when dead, a
   // scrubbed reason, and always-present ⏼ RE-SIGN-IN / ✕ DISCONNECT wired to the shared engine + its own inline
@@ -3330,6 +3400,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             rerender('settings');
           }).catch(() => {});
         }
+        // Repaint the dock for EVERY provider switch, not only the OAuth reconcile above. The dock caches the
+        // provider it last drew, so without this it kept advertising the previous one — most visibly as
+        // "no OPENROUTER key — this model can't run yet" on a station that had just switched to a provider
+        // needing no key at all.
+        if (typeof ModelDock !== 'undefined' && ModelDock.reflect) ModelDock.reflect();
         notify('selected ' + provName(p) + ' provider', 'good');
         sfx('click');
         rerender('settings');
@@ -3386,6 +3461,19 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         sfx('click');
       });
       if (inlineSave) inlineSave.addEventListener('click', ev => { ev.stopPropagation(); saveInline(card.dataset.provider); });
+      // STARNET MANAGED: both LINK STATION and STORE land in the same place — the STORE section owns the
+      // pairing flow, and duplicating it on this card would be a second implementation to keep in step.
+      const toStore = card.querySelector('[data-act="credits-store"]');
+      if (toStore) toStore.addEventListener('click', ev => {
+        ev.stopPropagation();
+        sfx('click');
+        const host = body.querySelector('#credits-store');
+        if (host && host.scrollIntoView) host.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        // Re-read rather than trust the last paint: the user may have linked or unlinked in another window.
+        wireCredits(body);
+        const btn = host && host.querySelector('#credits-link');
+        if (btn && btn.focus) btn.focus();
+      });
       if (inlineInput) {
         inlineInput.addEventListener('click', ev => ev.stopPropagation());   // don't select the provider when focusing the field
         inlineInput.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); ev.stopPropagation(); saveInline(card.dataset.provider); } });
@@ -3567,7 +3655,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         : Promise.resolve(true);
       forgetKeychain
         .then(() => Harness.api.post('/api/credits/unlink', {}))
-        .then(() => wireCredits(body)).catch(() => wireCredits(body));
+        // Symmetric to the link path: a station that just gave up its credential must stop reporting
+        // that it can run on credits, or STARNET stays selectable and every run fails at admission.
+        .then(() => (H() && H().refreshCreditsConfigured) ? H().refreshCreditsConfigured() : null)
+        .then(() => { refreshCreditsProvider().catch(() => {}); wireCredits(body); })
+        .catch(() => wireCredits(body));
     });
   }
 
@@ -3633,7 +3725,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             // NOTE the token itself never passes through here — Rust reads the file, moves the
             // secret, and rewrites it. We only say "a link just happened". Best-effort: with no
             // desktop shell (browser/dev) there is no keychain, and the file path stays honest.
-            adoptCreditsToken().then(() => wireCredits(body));
+            // Tell Harness the credential now exists: configured('starnet') is what resume and the
+            // model dock gate on, and it was probed at boot when this station was NOT yet linked.
+            adoptCreditsToken()
+              .then(() => (H() && H().refreshCreditsConfigured) ? H().refreshCreditsConfigured() : null)
+              .then(() => { refreshCreditsProvider().catch(() => {}); wireCredits(body); });
             return;
           }
           if (p && (p.status === 'expired' || p.status === 'consumed' || p.status === 'unknown')) {
@@ -4372,6 +4468,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireProviderActions(host);
     wireKeyActions(host);
     queueProviderHealthRefresh();
+    // The STARNET MANAGED card is drawn from a cached credits state, so the FIRST paint of a fresh session
+    // has nothing to go on. Re-read, and repaint only if the answer changed the card's existence or its
+    // balance — an unconditional rerender here would wipe an open key editor on every settings open.
+    (() => {
+      const was = creditsProv.state + ':' + creditsProv.balanceUsd + ':' + creditsProv.tier;
+      refreshCreditsProvider().then(() => {
+        if (was !== creditsProv.state + ':' + creditsProv.balanceUsd + ':' + creditsProv.tier) rerender('settings');
+      }).catch(() => {});
+    })();
     wireCredits(host);
     wireBudget(host);
     wireFallbackChain(host);

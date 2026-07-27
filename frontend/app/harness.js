@@ -102,6 +102,10 @@ const Harness = (() => {
   /* desktop: load the keychain "configured?" flag once at boot, before the connect screen reads it */
   async function init() {
     await ensureApiToken();
+    // BEFORE the desktop early-return on purpose: managed credits live in the SIDECAR, not the keychain, so
+    // they are configured identically in a browser build and a packaged one. Probing after the return would
+    // leave configured('starnet') false forever anywhere that isn't Tauri — including every dev session.
+    await refreshCreditsConfigured();
     if (!DESKTOP) return;
     let loaded = false;
     try {
@@ -138,6 +142,23 @@ const Harness = (() => {
       } catch (_) {}
     }));
   }
+  // Whether this station can run on managed credits. The bearer is the linked device token the SIDECAR
+  // holds — there is nothing on this side to inspect, so we ask, exactly as codex/grok/kimi do. Fail-open:
+  // /api/credits 404s by design when credits are unconfigured, which just leaves the provider unconfigured.
+  //
+  // WITHOUT THIS A CREDITS-ONLY STATION IS STRANDED. Resume gates on `getKey() || configured()`, and a user
+  // who linked an account and never pasted a key has neither — so every boot would bounce them to the
+  // connect screen demanding an API key they deliberately do not have.
+  //
+  // Called again after a link/unlink so selecting STARNET does not wait for a page reload.
+  async function refreshCreditsConfigured() {
+    try {
+      const r = await fetch('/api/credits', { cache: 'no-store' });
+      const j = (r && r.ok) ? await r.json() : null;
+      _configuredByProvider.starnet = !!(j && j.configured);
+    } catch (_) { _configuredByProvider.starnet = false; }
+    return !!_configuredByProvider.starnet;
+  }
   /* whether a key is set — works in both modes; never exposes the value. In dev mode the host holds the
      key (runtimeKey), so we report configured without one — that's what lets a fresh origin auto-resume. */
   function normalizeProviderId(provider) {
@@ -160,6 +181,8 @@ const Harness = (() => {
     if (p === 'fireworks' || p === 'fireworks-ai') return 'fireworks';
     if (p === 'perplexity' || p === 'pplx' || p === 'sonar') return 'perplexity';
     if (p === 'cerebras') return 'cerebras';
+    // managed credits — bearer is the linked device token (mirrors app.js + registry.js aliases)
+    if (p === 'starnet' || p === 'starnet-cloud' || p === 'managed') return 'starnet';
     if (p === 'ollama' || p === 'ollama-local') return 'ollama';
     if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
     return 'openrouter';
@@ -186,13 +209,18 @@ const Harness = (() => {
   }
   function providerNeedsKey(provider) {
     const p = normalizeProviderId(provider);
-    // codex/grok/kimi authenticate by device-code OAuth tokens held sidecar-side; ollama/custom are keyless endpoints.
-    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom';
+    // codex/grok/kimi authenticate by device-code OAuth tokens held sidecar-side; ollama/custom are keyless
+    // endpoints; starnet's bearer is the linked device token, which the user never sees, let alone pastes.
+    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom' && p !== 'starnet';
   }
   function configured(provider) {
     const p = normalizeProviderId(provider);
     if (p === 'ollama') return true;
     if (p === 'custom' && getBaseUrl(p)) return true;
+    // STARNET MANAGED is configured IFF the sidecar reports live credits — in BOTH modes. It must not fall
+    // through to the keyless branch below, which would answer "configured" for every station simply because
+    // there is no key to look for, and claim a station can run on credits it has never been linked to.
+    if (p === 'starnet') return !!_configuredByProvider.starnet;
     return DESKTOP ? !!(_configuredByProvider[p] || (p === 'openrouter' && _configured)) : (DEVMODE || !providerNeedsKey(p) || !!getKey(p));
   }
 
@@ -743,7 +771,7 @@ const Harness = (() => {
 
   return {
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
-    getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential, setDesktopConfigured,
+    getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, refreshCreditsConfigured, hasStoredCredential, setDesktopConfigured,
     listModels, probeProvider, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, summonAck, notebook,
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
     studyProposals,

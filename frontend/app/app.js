@@ -618,6 +618,7 @@ const App = (() => {
       fireworks: 'FIREWORKS',
       perplexity: 'PERPLEXITY',
       cerebras: 'CEREBRAS',
+      starnet: 'STARNET MANAGED',
       ollama: 'OLLAMA',
       custom: 'CUSTOM'
     };
@@ -641,17 +642,19 @@ const App = (() => {
     if (p === 'fireworks' || p === 'fireworks-ai') return 'fireworks';
     if (p === 'perplexity' || p === 'pplx' || p === 'sonar') return 'perplexity';
     if (p === 'cerebras') return 'cerebras';
+    // managed credits — its bearer is the linked device token, never a key the user pastes
+    if (p === 'starnet' || p === 'starnet-cloud' || p === 'managed') return 'starnet';
     if (p === 'ollama' || p === 'ollama-local') return 'ollama';
     if (p === 'custom' || p === 'openai-compatible' || p === 'local' || p === 'vllm' || p === 'lmstudio') return 'custom';
     return 'openrouter';
   }
   function providerNeedsKey(provider) {
     const p = normalizeProviderId(provider);
-    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom';
+    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom' && p !== 'starnet';
   }
   function providerUsesKeyBox(provider) {
     const p = normalizeProviderId(provider);
-    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama';
+    return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'starnet';
   }
   function providerNeedsBaseUrl(provider) {
     return normalizeProviderId(provider) === 'custom';
@@ -689,6 +692,8 @@ const App = (() => {
       fireworks: 'https://fireworks.ai/account/api-keys',
       perplexity: 'https://www.perplexity.ai/settings/api',
       cerebras: 'https://cloud.cerebras.ai',
+      // not a key page: managed credits are obtained by LINKING a station in the STORE
+      starnet: 'https://account.starnetos.com',
       openrouter: 'https://openrouter.ai/keys'
     };
     return map[p] || 'https://openrouter.ai/keys';

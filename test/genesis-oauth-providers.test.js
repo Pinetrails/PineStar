@@ -27,7 +27,9 @@ const htmlSrc = fs.readFileSync(path.join(__dirname, '../frontend/index.html'), 
     "'grok' never aliases the API-key xai provider");
   A.ok(/'moonshot'/.test(body), "harness normalize accepts the 'moonshot' alias for kimi");
 }
-A.ok(/return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom';/.test(harnessSrc),
+// The needle pins the INTENT (grok/kimi are in the keyless set), not the exact length of the list —
+// a new keyless provider is a legitimate addition and must not read as this contract breaking.
+A.ok(/return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom'[^;]*;/.test(harnessSrc),
   'harness providerNeedsKey knows grok/kimi are keyless (OAuth tokens live sidecar-side)');
 
 /* ---------- 2. boot-time: init() probes grok/kimi sign-in status like codex ---------- */
@@ -76,7 +78,7 @@ A.ok(/refreshOAuthGenesisStatus/.test(appSrc) && /Harness\.setDesktopConfigured\
 /* ---------- 6. app.js provider vocabulary matches ---------- */
 A.ok(/if \(p === 'grok' \|\| p === 'grok-oauth' \|\| p === 'supergrok' \|\| p === 'xai-oauth'\) return 'grok';/.test(appSrc),
   "app.js normalize keeps 'grok' its own id");
-A.ok(/return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom';/.test(appSrc),
+A.ok(/return p !== 'codex' && p !== 'grok' && p !== 'kimi' && p !== 'ollama' && p !== 'custom'[^;]*;/.test(appSrc),
   'app.js providerNeedsKey knows grok/kimi are keyless');
 
 A.report('genesis-oauth-providers.test');
