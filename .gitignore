@@ -50,6 +50,7 @@ src-tauri/binaries/
 .clip-verify/
 .uiplay/
 .uiresidue/
+.wallprobe/
 .uisummon/
 .uiaudit/
 .uijourneys/

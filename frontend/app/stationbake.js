@@ -57,13 +57,28 @@ const StationBake = (() => {
        up     = how far a room's north wall face rises above the floor seam (px)
        corUp  = same for corridors (lower → corridors read as tunnels, rooms as halls)
        skirt  = hull extrusion depth below the station silhouette (the south wall seen outside)
-       side   = width of the e/w wall-top band beyond the floor edge
-       capH   = thickness of the lit cap that crowns a tall wall */
-  const WALL = { up: 14, corUp: 0, skirt: 32, side: 12, capH: 3 };   // up 9→14 (2026-07-24): the wall materials need surface to live on
+       side   = width of the e/w wall-top band beyond the floor edge. PINNED TO `pad`: the hull
+                plate, its rounded corners and its riveted rim all stop exactly `pad` out, so a
+                wider band is a slab of wall sticking out past the station's own silhouette. It
+                did not show while the band was near-black, and it showed the instant the band
+                got a lit crown.
+       capH   = thickness of the lit cap that crowns a tall wall
+       sideCap= width of the LIT TOP SURFACE on the walls that are not extruded (e/w/s and the
+                corner arcs). CAPPED AT pad-1 BY CONTRACT: buildLightMap's ambient plate covers
+                each footprint plus exactly `pad`, so a crown wider than that hangs OUTSIDE the
+                mask and renders at its raw baked tone against the starfield — a blazing line
+                down the sides while the north crown sits under 0.77 ambient. */
+  const WALL = { up: 14, corUp: 0, skirt: 32, side: 7, capH: 3, sideCap: 5 };   // up 9→14 (2026-07-24): the wall materials need surface to live on
   /* VIEWPORT holes punched by the wall pass this bake. buildLightMap cuts the ambient mask over
      them — without that the sky behind a window renders at the interior's 23% and reads as a
      black pane. Reset per bake alongside the wall palette cache. */
   let viewportRects = [];
+  /* THE CORNER CROWN'S ACTUAL REACH, recorded BY THE PAINTER, column → topmost painted bake-pixel
+     row. buildLightMap's chamfer erase needs to know how far up the art goes so the ambient mask
+     stops exactly there; deriving that a second time is precisely what drifted before (see the
+     note on eachTallCornerCol). Same per-bake-state contract as viewportRects/lampPos, and keyed
+     on absolute bake-pixel coords, so a chunk bake records the same numbers as the monolithic one. */
+  let crownReach = null;
 
   /* live-tunable lighting — the CRT LAB (crtlab.js, dev-gated) writes these and calls
      World.rebake() to re-run the bake. These ARE the shipped defaults.
@@ -146,7 +161,20 @@ const StationBake = (() => {
      the painted pixels. It used to be a separately-computed square strip, and at a chamfer — where
      the face eases away but the strip did not — it left ambient mask lying over bare space, which
      reads as a shadow floating OUTSIDE the hull against the starfield. */
-  function eachTallCornerCol(kind, ax, ay, rad, up, capH, fn) {
+  /* THE ONE CROWN-WIDTH EASE, shared by the corner ring and the tall corner sweep. A wall's top
+     surface is `capW` wide where it is read from directly above (the e/w/s straights) and `capH`
+     where it has been extruded up-screen and is read as a face (the north straight); around a
+     chamfer it crosses between the two. Both painters take their thickness from here, so the
+     crown that comes down the side and the crown that comes along the top are the same band.
+
+     THIS USED TO EASE TO NOTHING (capH * (0.30 + 0.70 * tt)) and dim as it went, because at the
+     side end there was nothing to hand off TO — the e/w walls carried no crown at all, so a cap
+     kept at full thickness over a wall receded to zero read as a bright bar ruled across the
+     corner ("the thick diagonal lines", 2026-07-25). Now the side wall has a top surface of its
+     own and the ease runs INTO it. Keep both halves of that history in mind before touching this:
+     the cap must never be thicker than the surface it crowns at either end of the arc. */
+  const crownEase = (tt, capW, capH) => Math.max(1, Math.round(capW + (capH - capW) * tt));
+  function eachTallCornerCol(kind, ax, ay, rad, up, capH, capW, fn) {
     const A = CORNER[kind];
     const R = Math.round(rad);
     const x0 = Math.round(A.cx ? ax - R : ax);
@@ -156,8 +184,7 @@ const StationBake = (() => {
       const base = Math.round(ay - Math.sqrt(R * R - adx * adx));     // upper quadrant (tl/tr)
       const tt = Math.max(0, Math.min(1, 1 - adx / R));
       const top = Math.round(base - Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * up);
-      const capAt = Math.max(1, Math.round(capH * (0.30 + 0.70 * tt)));
-      fn(ix, top, base, capAt, tt);
+      fn(ix, top, base, crownEase(tt, capW, capH), tt);
     }
   }
 
@@ -1113,6 +1140,69 @@ const StationBake = (() => {
     bulkhead: wallBulkhead, courses: wallCourses, service: wallService
   };
 
+  /* how wide the LIT TOP SURFACE is on a wall that is not extruded up-screen. Hard-clamped to
+     pad-1 — past that the crown falls outside the ambient plate and burns against the starfield
+     (see the WALL.sideCap note). Corridors get a narrower one, the same way corUp < up. */
+  const sideCapW = room => Math.max(2, Math.min(pad - 1, Math.round(room ? WALL.sideCap : WALL.sideCap * 0.6)));
+
+  /* THE CORNER'S SHARE OF THE CROWN RING. On the straights the top surface is a rect; around a
+     chamfer it is the band just outside the deck curve, and without it the ring broke at all four
+     corners — which is exactly the "cuts off as if there's only a back wall" read, because the two
+     TOP corners are where the eye follows the bright line and loses it.
+
+     Built from `eachCornerRow` and its column dual, the conventions the deck cut and the contact
+     seam already use, so the band is concentric with them by construction — no second sampling
+     convention at a corner (the standing law). The two duals split at 45°: a row walk lays a
+     HORIZONTAL span, which is across the curve only where the curve runs steep (the end that meets
+     the e/w wall), and a column walk lays a VERTICAL one, correct where it runs shallow (the end
+     that meets the n/s wall). Complementary, so the ring is gap-free and never doubles up.
+
+     Radial width eases from the side wall's full top band at the steep end to the north wall's capH
+     at the shallow end: that is where the wall stops being read as a top surface and starts being
+     read as an extruded face, and on a top corner the tall sweep below then paints that face over
+     this band. The taper is also what keeps the old "thick diagonal lines" failure away — a band
+     that stayed at full width all the way round a corner where the wall has receded is a bar ruled
+     across the corner, not a wall top. */
+  function bakeCornerCrown(b, pal, kind, X, Y, ax, ay, Rc, capW, capH, record) {
+    const A = CORNER[kind];
+    const outX = A.cx ? -1 : 1, outY = A.cy ? -1 : 1;      // which way is "away from the room"
+    const reach = Rc + 2 + capW;
+    // the ring may hang past the tile into the VOID (that is where every wall's height lives) but
+    // never into the tile behind it, which is this room's own walkable floor.
+    const xLo = outX < 0 ? X - reach : X, xHi = outX < 0 ? X + T : X + T + reach;
+    const yLo = outY < 0 ? Y - reach : Y, yHi = outY < 0 ? Y + T : Y + T + reach;
+    const lit = U.shade(pal.cap, 0.30), seam = U.shade(pal.cap, -0.45);
+    const put = (x, y, w, h, c) => {
+      const x0 = Math.max(xLo, x), x1 = Math.min(xHi, x + w);
+      const y0 = Math.max(yLo, y), y1 = Math.min(yHi, y + h);
+      if (x1 <= x0 || y1 <= y0) return;
+      b.fillStyle = c; b.fillRect(x0, y0, x1 - x0, y1 - y0);
+      if (!record) return;
+      for (let ix = x0; ix < x1; ix++) { const p = crownReach.get(ix); if (p === undefined || y0 < p) crownReach.set(ix, y0); }
+    };
+    const K = Rc * Math.SQRT1_2;                            // the 45° split between the two duals
+    const width = tt => crownEase(tt, capW, capH);
+    // ROW dual — the steep stretch, where the corner hands off to the e/w wall
+    eachCornerRow(kind, ax, ay, Rc, (py, ex) => {
+      if (ex == null) return;
+      const ady = Math.abs(py + 0.5 - ay);
+      if (ady > K) return;
+      const w = width(1 - Math.sqrt(Math.max(0, Rc * Rc - ady * ady)) / Rc);
+      if (outX < 0) { put(ex - 1 - w, py, w, 1, pal.cap); put(ex - 1 - w, py, 1, 1, lit); put(ex - 1, py, 1, 1, seam); }
+      else { put(ex + 2, py, w, 1, pal.cap); put(ex + 1 + w, py, 1, 1, lit); put(ex + 1, py, 1, 1, seam); }
+    });
+    // COLUMN dual — the shallow stretch, where it hands off to the n/s wall
+    const R = Math.round(Rc), x0 = Math.round(A.cx ? ax - R : ax);
+    for (let ix = x0; ix < x0 + R; ix++) {
+      const adx = Math.abs(ix + 0.5 - ax);
+      if (adx >= K) continue;
+      const ey = outY < 0 ? Math.round(ay - Math.sqrt(R * R - adx * adx)) : Math.round(ay + Math.sqrt(R * R - adx * adx));
+      const w = width(1 - adx / Rc);
+      if (outY < 0) { put(ix, ey - 1 - w, 1, w, pal.cap); put(ix, ey - 1 - w, 1, 1, lit); put(ix, ey - 1, 1, 1, seam); }
+      else { put(ix, ey + 2, 1, w, pal.cap); put(ix, ey + 1 + w, 1, 1, lit); put(ix, ey + 1, 1, 1, seam); }
+    }
+  }
+
   function bakeWalls(b) {
     for (const e of edges) {
       const X = e.x * T, Y = e.y * T;
@@ -1122,14 +1212,23 @@ const StationBake = (() => {
       // the SIDE faces (s/w/e) and interior seams carry the room's own wall tone too — otherwise a
       // cobalt room's tall north wall would meet three brown-grey walls at its corners.
       const pal = wallPal(e.z), wallFace = pal.face, wallTop = pal.top;
-      /* A SIDE WALL IS SEEN AS ITS TOP SURFACE, and that surface is a BAND, not a line. The band
-         used to be a hardcoded '#2f2b20' — a fixed olive that matched no room's hue — and I had put
-         a 1px `pal.face +0.14` highlight immediately beside it, which spiked one column to lum 61
-         between a 43 and a 29. A single bright column running a wall's whole length reads as an
-         annoying divider, not as light (Andrew 2026-07-24). One palette-derived crest band instead:
-         hull → crest → face → contact seam steps DOWN monotonically into the room, so the eye reads
-         a shell, a top surface, then an inner face, with nothing spiking above its neighbours. */
-      const wallCrest = U.shade(pal.base, -0.22);
+      /* A SIDE WALL IS SEEN AS ITS TOP SURFACE, and that surface is a BAND, not a line.
+         THE CROWN IS A RING, NOT A BACK WALL (2026-07-27, Andrew, tracing the missing left edge in
+         a screenshot: "it seems to cut off as if there's only a back wall ... on the left and right
+         side there doesn't really feel like there's a real wall there"). Only the north wall is
+         extruded up-screen, so it is the only one whose HEIGHT you can read directly; every other
+         wall is seen from straight above and is read ENTIRELY by its lit top surface. That surface
+         used to be 3px of `U.shade(base,-0.22)` — DARKER than the deck it encloses — fronting 9px
+         of global near-black hull, so the bright crown that defines a wall at any zoom simply
+         STOPPED at the two top corners and the e/w sides read as "the floor ends here".
+         The fix is not more contrast, it is the SAME LADDER bakeTallNorthFace paints, read outward
+         instead of upward, so one continuous top surface runs the whole silhouette:
+             contact seam (darkest) · inner face · dark under-seam · CROWN · lit outer edge · hull
+         Nothing spikes above its neighbours — the -0.22 crest's original complaint (a bright 1px
+         divider column, 2026-07-24) is avoided because the crown is a WIDE band with its highlight
+         on the outer edge, where the hull is, not stranded in the middle of the wall. */
+      const crownLit = U.shade(pal.cap, 0.30), crownSeam = U.shade(pal.cap, -0.45);
+      const cw = sideCapW(e.room);
       // walls only extrude OUTSIDE the tile when the neighbour is void. Interior boundaries
       // (a non-door seam to another zone) draw the face only, so the wall never smears onto
       // an adjacent room/corridor floor (v7 render.js parity).
@@ -1141,31 +1240,43 @@ const StationBake = (() => {
         b.fillStyle = 'rgba(255,255,255,0.05)'; b.fillRect(X, Y, T, 1);
       } else if (e.side === 's') {
         // the south wall is seen as its TOP surface plus the shadow it drops onto the deck in
-        // front of it — same contact-seam law as the north face, mirrored.
+        // front of it — same contact-seam law as the north face, mirrored. Its top surface can
+        // only ever hang SOUTH of the tile: extruding it toward the viewer like the north wall
+        // would bury the walkable row in front of it.
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X, Y + T - dep, T, 1);
-        b.fillStyle = wallCrest; b.fillRect(X, Y + T - fw, T, 2);                 // the wall's top surface (a band)
-        b.fillStyle = wallFace; b.fillRect(X, Y + T - fw + 2, T, fw - 2);
+        b.fillStyle = wallFace; b.fillRect(X, Y + T - fw, T, fw);                 // the sliver of face still inside the tile
         b.fillStyle = rib; b.fillRect(X + 5, Y + T - fw, 1, fw);
-        if (e.exterior) { b.fillStyle = wallDk; b.fillRect(X, Y + T, T, out); }
+        if (e.exterior) {
+          b.fillStyle = wallDk; b.fillRect(X, Y + T, T, Math.max(out, cw + 2));   // outer hull band
+          b.fillStyle = pal.cap; b.fillRect(X, Y + T + 1, T, cw);                 // the wall's LIT TOP SURFACE
+          b.fillStyle = crownLit; b.fillRect(X, Y + T + cw, T, 1);                // lit outer edge
+          b.fillStyle = crownSeam; b.fillRect(X, Y + T, T, 1);                    // dark seam under the crown
+        } else {
+          b.fillStyle = U.shade(pal.base, -0.22); b.fillRect(X, Y + T - fw, T, 2);   // interior seam keeps the quiet crest
+        }
       } else if (e.side === 'w') {
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X + fw, Y, 1, T);      // contact seam onto the deck
         b.fillStyle = wallFace; b.fillRect(X, Y, fw, T);
         b.fillStyle = rib; b.fillRect(X, Y + 5, fw, 1);
         if (e.exterior) {
-          const side = Math.max(out, Math.round(e.room ? WALL.side : WALL.side * 0.6));
-          b.fillStyle = wallCrest; b.fillRect(X - 3, Y, 3, T);            // the wall's LIT TOP surface, palette-derived
-          b.fillStyle = wallDk; b.fillRect(X - side, Y, side - 3, T);     // outer hull band
+          const side = Math.max(out, cw + 2, Math.round(e.room ? WALL.side : WALL.side * 0.6));
+          b.fillStyle = wallDk; b.fillRect(X - side, Y, side, T);          // outer hull band — the shell, global tone
           b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X - side, Y, 1, T);
+          b.fillStyle = pal.cap; b.fillRect(X - 1 - cw, Y, cw, T);         // the wall's LIT TOP SURFACE
+          b.fillStyle = crownLit; b.fillRect(X - 1 - cw, Y, 1, T);         // lit outer edge
+          b.fillStyle = crownSeam; b.fillRect(X - 1, Y, 1, T);             // dark seam under the crown
         }
       } else {
         b.fillStyle = U.shade(pal.base, -0.62); b.fillRect(X + T - dep, Y, 1, T);
         b.fillStyle = wallFace; b.fillRect(X + T - fw, Y, fw, T);
         b.fillStyle = rib; b.fillRect(X + T - fw, Y + 5, fw, 1);
         if (e.exterior) {
-          const side = Math.max(out, Math.round(e.room ? WALL.side : WALL.side * 0.6));
-          b.fillStyle = wallCrest; b.fillRect(X + T, Y, 3, T);
-          b.fillStyle = wallDk; b.fillRect(X + T + 3, Y, side - 3, T);
+          const side = Math.max(out, cw + 2, Math.round(e.room ? WALL.side : WALL.side * 0.6));
+          b.fillStyle = wallDk; b.fillRect(X + T, Y, side, T);
           b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X + T + side - 1, Y, 1, T);
+          b.fillStyle = pal.cap; b.fillRect(X + T + 1, Y, cw, T);
+          b.fillStyle = crownLit; b.fillRect(X + T + cw, Y, 1, T);
+          b.fillStyle = crownSeam; b.fillRect(X + T, Y, 1, T);
         }
       }
     }
@@ -1397,8 +1508,15 @@ const StationBake = (() => {
         if (kind !== 'tl' && kind !== 'tr') continue;
         const A = CORNER[kind];
         const stripTop = ccy * T - (upC + capH + 2);
-        eachTallCornerCol(kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T, upC, capH, (ix, top, base, capAt) => {
-          const artTop = top - capAt;
+        const capW = sideCapW(!G.isCorridor(G.zoneGrid[G.idx(ccx, ccy)]));
+        eachTallCornerCol(kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T, upC, capH, capW, (ix, top, base, capAt) => {
+          // ...and the CROWN RING reaches higher than the sweep does at the side end of the arc,
+          // where the sweep has eased to nothing but the ring is at its full width. Take the reach
+          // the ring's own painter recorded rather than recomputing it: a mask edge computed to
+          // match the art is the thing that drifted last time, and a mask lying over bare space
+          // reads as a shadow hanging outside the hull against the starfield.
+          const ring = crownReach.get(ix);
+          const artTop = Math.min(top - capAt, ring === undefined ? Infinity : ring);
           if (artTop > stripTop) mg.fillRect(ix, stripTop, 1, artTop - stripTop);
         });
       }
@@ -1588,11 +1706,21 @@ const StationBake = (() => {
         fill(A.cx ? ex : ex - 1, py, 2, 1, '#28241b');
       });
 
+      // THE CROWN RING carries the wall's lit top surface around the arc, so the bright line that
+      // defines a wall does not die at the corners. On a TOP corner the tall sweep below overpaints
+      // it wherever the face has risen — the ring is what remains at the side end, where the sweep
+      // has eased to nothing and there used to be a notch of bare hull.
+      const isTop = kind === 'tl' || kind === 'tr';
+      bakeCornerCrown(b, cPal, kind, X, Y, ax, ay, Rc, sideCapW(!G.isCorridor(G.zoneGrid[G.idx(ccx, ccy)])),
+                      Math.max(2, Math.round(WALL.capH)), isTop && WALL.up > 0);
+
       // TALL WALL over a curved top corner: sweep the interior wall arc up-screen, easing from
-      // full height at the north end down to zero at the side end (side walls carry no face),
-      // so the raised north wall flows around the chamfer instead of stopping dead at it.
+      // full height at the north end down to zero at the side end (a side wall is read by its top
+      // surface, not its face), so the raised north wall flows around the chamfer instead of
+      // stopping dead at it.
       if ((kind === 'tl' || kind === 'tr') && WALL.up > 0) {
         const R = Rc, up = Math.round(WALL.up), capH = Math.max(2, Math.round(WALL.capH));   // Rc: the ONE chamfer curve
+        const capW = sideCapW(!G.isCorridor(G.zoneGrid[G.idx(ccx, ccy)]));
         /* The crown is the COLUMN dual of the row walk above: for each integer column, the base is
            where the SAME circle crosses it, sampled at the column's centre and rounded by the same
            convention. It used to be sampled by ANGLE and rounded in x, which put the crown on a
@@ -1602,21 +1730,26 @@ const StationBake = (() => {
         // the column walk now lives in eachTallCornerCol, because buildLightMap has to agree with it
         // to the pixel — see the note there.
         /* THE CROWN MUST TAPER WITH THE WALL IT CROWNS (2026-07-25, Andrew: "the thick diagonal
-           lines"). The face height eases to zero around the chamfer — but the crown used to keep
+           lines"). The face height eases to zero around the chamfer — and the crown used to keep
            its full capH AND its +0.30 lit top edge the whole way, so a wall that had receded to
            nothing was still capped at full thickness in the brightest tone in the room. Stepped
            along a diagonal staircase that stops reading as a wall top and reads as a thick bright
-           bar ruled across the corner. It is the same failure the deck's service channel had: a
-           mark that is correct on the straight is wrong where the geometry turns.
-           Now the cap thins 3→1px and dims as it recedes, and the lit top edge fades out with it,
-           so the corner reads as the wall going away from you. Straight walls are untouched. */
-        eachTallCornerCol(kind, ax, ay, R, up, capH, (ix, top, base, capAt, tt) => {
+           bar ruled across the corner.
+           The taper stays; what changed (2026-07-27) is WHERE IT ENDS. It used to ease to ~1px and
+           dim out, because the e/w wall it ran into had no top surface to hand off to — the wall
+           genuinely did vanish there, and the honest thing was to fade. Now that side wall carries
+           its own crown, so the ease runs from that crown's width into capH (crownEase) and the
+           tone stays put: the corner reads as the wall TURNING, not as the wall ending.
+           BELOW THE 45° POINT this sweep steps ~3px in y per column, so a wide vertical cap here
+           would be the bright staircase all over again. bakeCornerCrown's ROW dual owns that
+           stretch and lays the same band HORIZONTALLY, which is across the curve, not along it. */
+        eachTallCornerCol(kind, ax, ay, R, up, capH, capW, (ix, top, base, capAt, tt) => {
           const faceH = base - top; if (faceH <= 0) return;
           b.fillStyle = cPal.face; b.fillRect(ix, top, 1, faceH + 1);              // face column, integer
-          const cap = U.shade(cPal.cap, -0.22 * (1 - tt));
+          const cap = cPal.cap;
           b.fillStyle = cap; b.fillRect(ix, top - capAt, 1, capAt);
-          if (capAt >= capH) { b.fillStyle = U.shade(cap, 0.30); b.fillRect(ix, top - capAt, 1, 1); }  // lit edge only at full thickness
-          b.fillStyle = U.shade(cPal.cap, -0.45); b.fillRect(ix, top - 1, 1, 1);     // 1px darker seam beneath crown
+          b.fillStyle = U.shade(cap, 0.30); b.fillRect(ix, top - capAt, 1, 1);      // lit outer edge, as on every straight
+          b.fillStyle = U.shade(cPal.cap, -0.45); b.fillRect(ix, top - 1, 1, 1);    // 1px darker seam beneath crown
         });
       }
     }
@@ -1646,6 +1779,7 @@ const StationBake = (() => {
     G = geo; T = geo.TILE; HR = T + pad; W = geo.W; H = geo.H;
     wallPalCache = null;   // per-room wall palettes are derived from THIS geometry — never reuse across bakes
     viewportRects = [];    // ...and so are the window holes the wall pass punches
+    crownReach = new Map();   // ...and the corner crown's measured reach, which the mask erase reads back
     VX = viewport ? viewport.x : 0; VY = viewport ? viewport.y : 0;
     CW = viewport ? viewport.w : W; CH = viewport ? viewport.h : H;
     lampPos = []; chamferAt = {}; extN = new Set();
