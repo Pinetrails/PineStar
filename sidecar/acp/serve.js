@@ -35,6 +35,7 @@
 'use strict';
 
 const http = require('http');
+const nodeCrypto = require('node:crypto');
 const core = require('./core.js');
 
 // ---- config: flags win over env; env over defaults ---------------------------------------------
@@ -265,7 +266,10 @@ const agent = core.makeAcpCore({
   },
   notify: notify,
   request: request,
-  newId: () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36),
+  // crypto.randomUUID, not Math.random/Date.now: the determinism lint scans all of sidecar/ and exempts only
+  // the one documented composition root (index.js), and a uuid is the idiom the rest of the sidecar mints ids
+  // with anyway. The core takes `newId` injected, so it stays pure either way.
+  newId: () => nodeCrypto.randomUUID(),
   version: () => process.env.npm_package_version || 'dev',
   log: log
 });
