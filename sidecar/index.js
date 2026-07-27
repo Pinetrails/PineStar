@@ -106,6 +106,7 @@ const channelSecretsMod = require('./channels/secrets.js');                     
 const { makeConnectGateway } = require('./channels/discord.gateway.js');           // P2-E: the real Discord gateway WS client (inbound)
 const { makeSseHub, runTeeView } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
+const { makeChainRunner } = require('./routing/chain.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
@@ -2594,6 +2595,18 @@ function bumpQueue(agentId, d) { const n = Math.max(0, (queueDepth.get(agentId) 
 // the placed floor's RoutingPlan (posted by the app on every geo change). resolveTarget answers "which agent
 // runs this work-item?"; a non-deployable plan (cycle/orphan/dead-bay) is refused so routing can't loop.
 const router = makeRouter();
+/* THE WORK LINE (agentic graphs, 2026-07-27). resolveTarget names the dock that runs a message; `chainRunner`
+   runs everything the Commander drew DOWNSTREAM of that dock — bay -> bay, until the line ships out. One
+   instance, bound to the floor's edge function; each caller hands it its own way to execute a hop. Emits its
+   per-hop crates through the SAME validated chanEmit the channel telemetry uses, so a handoff is a real crate
+   on the floor and not a claim. */
+const chainRunner = makeChainRunner({
+  nextAgent: (agentId, ctx) => router.chainNext(agentId, ctx),
+  emit: (name, payload) => { try { chanEmit(name, payload); } catch (_) {} },
+  newId: () => 'wi_' + crypto.randomUUID().slice(0, 8),
+  now: () => Date.now(),
+  getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined)   // the SAME classifier a FILTER routes by
+});
 /* RESTART TRUTH (2026-07-06 audit): the router used to hold the posted plan ONLY in memory — after a sidecar
    restart, cron/channel work fired UNROUTED (fallback agent, default-office caps, no per-bay isolation) until
    a browser happened to open and re-post. The last ACCEPTED plan persists beside the other protected state
@@ -4425,6 +4438,7 @@ function startTelegram(token, key, model, agentCfg) {
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
     resolveAgent: (ctx) => router.resolveTarget(ctx),
+    chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),                    // B5: a bay's room objects = that agent's caps
     // In-messenger control surface (channel-agnostic): list agents / switch agent / change the bound agent's model.
@@ -4681,6 +4695,7 @@ function startDiscord(token, key, model, agentCfg) {
       persona: DISCORD_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
       newId: () => crypto.randomUUID(), now: () => Date.now(),
       resolveAgent: (ctx) => router.resolveTarget(ctx),
+      chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
       // In-messenger control surface — identical to Telegram because it lives in the shared hub (roster/setModel/
@@ -4775,6 +4790,7 @@ function getDevHub() {
     groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
+    chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
     resolveStation: (agentId) => router.stationFor(agentId),
     roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
@@ -4920,6 +4936,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
       persona: channelPersona(desc.label), classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
       newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: desc.maxMessageLength,
       resolveAgent: (ctx) => router.resolveTarget(ctx),
+      chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
       // In-messenger control surface — identical across channels because it lives in the shared hub.

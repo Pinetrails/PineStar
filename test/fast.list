@@ -351,6 +351,7 @@ test/stationbake.chunk.test.js
 test/conveyor.test.js
 test/pipeline.test.js
 test/routing.b5.test.js
+test/chain.test.js
 test/propanchor.test.js
 test/waitanchor.test.js
 test/harness.integration.test.js

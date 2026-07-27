@@ -217,6 +217,11 @@
     const resolveAgent = typeof o.resolveAgent === 'function' ? o.resolveAgent : null;   // Phase B: the placed floor's routing plan
     const getTag = typeof o.getTag === 'function' ? o.getTag : null;                     // FILTER content-routing key (B3 classifier)
     const resolveStation = typeof o.resolveStation === 'function' ? o.resolveStation : null;   // B5: per-bay capability station
+    // AGENTIC GRAPHS: the dock resolveAgent picked is stage ONE; the belts drawn PAST it say where its output
+    // goes. `chain` is the injected executor (sidecar/routing/chain.js) already bound to the floor's edge
+    // function — the hub hands it a way to run one hop and stays require-free. Absent -> a single-stage run,
+    // byte-identical to the behaviour before work lines existed.
+    const chain = (o.chain && typeof o.chain.advance === 'function') ? o.chain : null;
     // ONE-RESOLVER LAW: any telemetry that attributes an inbound message to an agent (workitem crates, queue
     // HUD) must come from THIS hub's resolution, never a parallel guess. onResolved fires once per real message
     // (never for /commands) with the exact agentId the run will execute as, in onInbound's first synchronous
@@ -815,6 +820,7 @@
       let lastRunId = '';        // the runId actually delivered under (the last attempt's)
       let reply;
       let choiceEntry = null;    // the registered choice keyboard for a TASK_QUESTION reply (null = plain text)
+      let finalAgentId = agentId;   // WHO produced the delivered reply — the LAST stage of the work line, not the first
       try {
 
       // MEDIA: download + store what the user actually sent (photos/videos/voice/files) BEFORE the turn is built,
@@ -942,6 +948,56 @@
         }
         break;
       }
+
+      /* ---- THE WORK LINE: run every stage the Commander drew downstream of this dock -------------------
+         resolveAgent picked WHICH dock; the belts past it say what happens to its output. Deliberately INSIDE
+         the inflight try: myRec stays registered for the whole line, so E-STOP (halt.js reads this record) and
+         a superseding message reach the downstream stages too — a chain that outlived its own abort handle
+         would be an unstoppable spend. The reply that finally leaves is the LAST stage's. */
+      if (chain && !state.errMsg && !myRec.superseded && String(state.buf || '').trim()) {
+        const line = await chain.advance({
+          agentId: agentId, text: state.buf, originalText: msg.text,
+          signal: myRec.abort ? myRec.abort.signal : null,
+          runAgent: async function (h) {
+            // a hop is a plain autonomous run of ANOTHER agent: its OWN composed persona (never this channel's
+            // configured system prompt — that belongs to the agent the connection names), its OWN bay station,
+            // its OWN durable transcript. No consent keyboard: a downstream stage is machine-to-machine.
+            const hopRunId = newId();
+            myRec.runId = hopRunId; myRec.agentId = h.agentId; myRec.startedAt = now ? now() : null;
+            const hs = { buf: '', errMsg: null, usd: 0 };
+            const hopSink = (name, payload) => {
+              let p; try { p = redact(payload); } catch (_) { p = payload; }
+              if (name === 'agent.token') hs.buf += (p.delta || '');
+              else if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
+              else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
+              else if (name === 'agent.run.end') { if (typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd; }
+            };
+            let hist = [];
+            try { hist = store.loadHistory(h.agentId); } catch (_) {}
+            try { store.appendTurn(h.agentId, 'user', h.text); } catch (_) {}
+            try {
+              await runOnce({
+                key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort,
+                system: personaFor(h.agentId, rec), messages: hist.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: h.text }]),
+                agentId: h.agentId, isTask: true, emit: hopSink, signal: h.signal, runId: hopRunId, trigger: 'event',
+                surface: 'autonomous', broadcast: true, reflect: true,
+                station: (resolveStation ? resolveStation(h.agentId) : null) || undefined,
+                taskKey: 'chain:' + channel + ':' + chatId + ':' + h.agentId, taskSource: channel
+              });
+            } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
+            if (hs.buf.trim() && !hs.errMsg) { try { store.appendTurn(h.agentId, 'assistant', hs.buf); } catch (_) {} }
+            return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
+          }
+        });
+        if (!myRec.superseded && line.hops.length) {
+          // the line's answer replaces the first stage's — and the floor/channel agree on who produced it
+          state.buf = line.text + chain.stopNote(line);
+          finalAgentId = line.agentId;
+        } else if (!myRec.superseded && line.stopped && line.stopped !== 'stopped') {
+          state.buf = state.buf + chain.stopNote(line);   // stage one answered but the line never got going — say so
+        }
+      }
+      if (myRec.superseded) return;
       } finally {
         // release the (single) inflight record exactly once — but only if a NEWER message hasn't already replaced it
         // (the supersede path installs its own record under this chatId; clobbering it would drop the live run).
@@ -1001,7 +1057,7 @@
       }
 
       } finally { stopTyping(); }   // cease refreshes BEFORE deliver — the bubble must die with the reply, not after
-      const dr = await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), agentId,
+      const dr = await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), finalAgentId,
         choiceEntry ? { reply_markup: keyboardFor(choiceEntry) } : undefined);
       // Stitch the delivered message onto the keyboard's registry entry so a tap can edit THAT message in place.
       // A send that failed retires the token immediately: leaving it would let a phantom keyboard (buttons the
