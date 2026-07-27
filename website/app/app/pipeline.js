@@ -185,19 +185,24 @@
       }
       return false;
     }
-    // a HOOKED bay whose belt serves NEITHER direction (no intake feeds it, no outbox receives from it)
-    // is a belt to nowhere — a warning, never a blocker (dispatch can't route to it anyway: resolveTarget
-    // only walks from sources). This replaces the old blocking DEAD_BAY, which condemned valid outbound lanes.
-    for (const b of bays) if (!reach[b.agentId] && !flowsToOutbox(b.tile)) errors.push({ code: 'BAY_NOT_FED', propId: b.propId, agentId: b.agentId, warn: true });
-
     const plan = { sources, bays, junctions, belts: map, bayTileToAgent, unboundBays, dockBays, outs, reach, errors };
 
     /* THE CHAIN LAYER (agentic graphs, 2026-07-27) — bay -> bay edges. Until this existed the floor was a
        DISPATCHER: it picked one agent per inbound message, the dock consumed the crate, and everything drawn
        downstream of that dock was scenery. `chains` compiles the other half of the graph: where a dock's OUTPUT
        goes. Computed here (not on demand) so the frontend engine, the sidecar chain runner and the REFIT nags
-       all read ONE fact — the same reason resolveTarget lives in this module. */
+       all read ONE fact — the same reason resolveTarget lives in this module. Compiled BEFORE the BAY_NOT_FED
+       pass because it is now one of the three ways a dock can be fed. */
     plan.chains = compileChains(plan);
+    const chainFed = {};
+    for (const a in plan.chains) for (const n of plan.chains[a].next) chainFed[n] = true;
+
+    // a HOOKED bay whose belt serves NO direction — no intake feeds it, no UPSTREAM DOCK hands off to it, and
+    // no outbox receives from it — is a belt to nowhere. A warning, never a blocker (dispatch can't route to it
+    // anyway: resolveTarget only walks from sources). This replaces the old blocking DEAD_BAY, which condemned
+    // valid outbound lanes; the chainFed clause is the same correction for valid stage-two docks, which are fed
+    // by an agent rather than by a door and were being shamed for it.
+    for (const b of bays) if (!reach[b.agentId] && !chainFed[b.agentId] && !flowsToOutbox(b.tile)) errors.push({ code: 'BAY_NOT_FED', propId: b.propId, agentId: b.agentId, warn: true });
     // A CHAIN LOOP IS A BLOCKING ERROR — and it is INVISIBLE to detectCycle. A's ship tile feeding B's dock and
     // B's ship tile feeding A's dock are two separate physical lanes with no belt cycle anywhere; the loop only
     // exists across the docks (consume here, respawn there). Left unguarded that is an infinite chain of PAID
@@ -358,6 +363,18 @@
     // outbound: bound-bay hookups -> outbox hookups
     const outTiles = (plan.outs || []).map(o => o.tile);
     if (bayTiles.length && outTiles.length) segment(bayTiles, false, outTiles);
+    // HANDOFF: dock -> dock. A stage-to-stage lane carries real crates (and buys real runs) the moment the
+    // chain layer exists, so leaving it COLD would be the energized-tile promise lying in the other direction.
+    // Starts at the SHIP tile and ends only on a DOWNSTREAM dock's hookups, so a stub hookup that reaches no
+    // other dock stays dark instead of lighting itself.
+    const chains = plan.chains || {};
+    for (const aid in chains) {
+      const c = chains[aid];
+      if (!c || !c.tile || !c.next || !c.next.length) continue;
+      const ends = [];
+      for (const k in bayAt) if (c.next.indexOf(bayAt[k]) >= 0) { const p = k.split(','); ends.push({ x: +p[0], y: +p[1] }); }
+      if (ends.length) segment([c.tile], false, ends);
+    }
     return out;
   }
 
