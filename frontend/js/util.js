@@ -344,8 +344,12 @@ const SFX = {
   },
   // level: the biggest sting the station owns — Sequence_06, the longest of the three (1572ms).
   // The three celebration cues are graded by the pack's own lengths: quest 235ms < milestone 843ms < level.
+  // vol > 1 is DELIBERATE, do not "correct" it: Sequence_06 is recorded ~12dB quieter than Confirm_02
+  // and Sequence_07 (raw peaks -17.1 vs -4.4 / -5.3 dBFS), so at a normal 0.5 the longest sting came out
+  // the QUIETEST of the three and a level-up landed smaller than a milestone. 2.0 renders it at -19.8
+  // peak against milestone's -19.3 — matched by measurement, not by ear. The limiter takes the transient.
   level() {
-    if (SFX._sample('level', { rate: 1, vol: 0.55 })) return;
+    if (SFX._sample('level', { rate: 1, vol: 2 })) return;
     [523, 659, 784, 1046, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.2, type: 'triangle', vol: 0.21, when: i * 0.065, atk: 0.008, detune: 3, verb: 0.3 }));
     SFX.voice({ freq: 2093, dur: 0.5, type: 'sine', vol: 0.07, when: 0.33, atk: 0.03, verb: 0.6 });
   },
