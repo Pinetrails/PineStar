@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "b6bc46020b62f767962d7728c7ca870262e3abcb",
+    "sourceCommit": "bf5c1e33d3ca2c01a1dbceb59c788a8c4b538eef",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -178,8 +178,8 @@
       },
       {
         "path": "frontend/app/crtlab.js",
-        "bytes": 12089,
-        "sha256": "73565ba5897947aac999a028b17a743d7d67e0b6642adcb79acaa00250e52d00"
+        "bytes": 14768,
+        "sha256": "6de22f3055a08d5d204823c6b1a49a20b8018fcf6da2e08493ea4526e264b9e9"
       },
       {
         "path": "frontend/app/ctxgauge.js",
@@ -838,8 +838,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 217052,
-        "sha256": "b003916ae0d88588ebc76105828b8c28eb2b9c412ab2b7248dc880ead61024c5"
+        "bytes": 218154,
+        "sha256": "06585df7cb8a25f7441f24464214a5a9154fb54a35557b8b69d38bc044535832"
       },
       {
         "path": "frontend/css/asciifx.css",
