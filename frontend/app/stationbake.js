@@ -1108,13 +1108,20 @@ const StationBake = (() => {
      (see the WALL.sideCap note). Corridors get a narrower one, the same way corUp < up. */
   const sideCapW = room => Math.max(2, Math.min(pad - 1, Math.round(room ? WALL.sideCap : WALL.sideCap * 0.6)));
 
-  /* HOW FAR A TOP CORNER'S RING STANDS UP at the end where it meets the north wall. DERIVED, not
-     tuned: the ring's column dual puts its crown top at `deckY - 1 - capH - LIFT`, the north end's
-     deckY is the room's own top edge Y, and the straight wall's crown top is `Y - up - capH`.
-     Equate them and LIFT is `up - 1`. Change WALL.up and the corner still lands on the straight
-     wall's crown line to the pixel — which is the whole reason the join stopped being a notch. */
-  const cornerLift = (kind, room) =>
-    (kind === 'tl' || kind === 'tr') ? Math.max(0, Math.round(room ? WALL.up : WALL.corUp) - 1) : 0;
+  /* WHERE A CORNER ARC'S CENTRE SITS. Bottom corners: the chamfer's own centre — the outline is
+     the plain quarter circle and this is a no-op. Top corners: moved UP so the arc's topmost point
+     lands on the straight north wall's outline, i.e. `centre = thatLine + HR`. DERIVED, not tuned,
+     and derived at BOTH ends at once — the arc's leftmost point is then at `ax - HR = X - pad`,
+     which is exactly the e/w wall's outer edge. Circle tangents there are vertical and at the top
+     horizontal, so the arc leaves one straight wall and meets the other with no kink at either end,
+     for any WALL.up. Clamped at `ay`: a wall with no rise (corridors at corUp 0) keeps the plain
+     flat corner rather than inventing a lift below it. */
+  const cornerArcCy = (kind, ay, Y, HR, room) => {
+    if (kind !== 'tl' && kind !== 'tr') return ay;
+    const up = Math.round(room ? WALL.up : WALL.corUp);
+    if (up <= 0) return ay;
+    return Math.min(ay, Y - up - Math.max(2, Math.round(WALL.capH)) - 2 + HR);
+  };
 
   /* THE CROWN-WIDTH EASE. A wall's top surface is `capW` wide where it is read from directly above
      (every e/w/s straight) and `capH` where it has been stood up and is read as a face (the north
@@ -1125,44 +1132,48 @@ const StationBake = (() => {
      teach: the cap must never be wider than the surface it crowns at either end of the arc. */
   const crownEase = (tt, capW, capH) => Math.max(1, Math.round(capW + (capH - capW) * tt));
 
-  /* THE CORNER'S SHARE OF THE CROWN RING. On the straights the top surface is a rect; around a
-     chamfer it is the band just outside the deck curve, and without it the ring broke at all four
-     corners — which is exactly the "cuts off as if there's only a back wall" read, because the two
-     TOP corners are where the eye follows the bright line and loses it.
+  /* THE CORNER'S SHARE OF THE CROWN RING. On the straights the wall's lit top surface is a rect;
+     around a chamfer it is the band just inside the station's own outline, and without it the ring
+     broke at all four corners — which is exactly the "cuts off as if there's only a back wall"
+     read, because the two TOP corners are where the eye follows the bright line and loses it.
 
-     Built from `eachCornerRow` and its column dual, the conventions the deck cut and the contact
-     seam already use, so the band is concentric with them by construction — no second sampling
-     convention at a corner (the standing law). The two duals split at 45°: a row walk lays a
-     HORIZONTAL span, which is across the curve only where the curve runs steep (the end that meets
-     the e/w wall), and a column walk lays a VERTICAL one, correct where it runs shallow (the end
-     that meets the n/s wall). Complementary, so the ring is gap-free and never doubles up.
+     ---- THE OUTLINE IS ONE CIRCLE, AND A TOP CORNER LIFTS IT RIGIDLY (2026-07-27) ----
+     Two rounds of this were wrong, and both failures are worth keeping because both are easy to
+     walk back into.
 
-     ---- A TOP CORNER IS THIS SAME RING, LIFTED (2026-07-27) ----
-     Andrew, on the first cut: the bottom corners "perfected it", the top two "just cut off … it's
-     not shaped correctly". He was reading a real defect and it is worth stating exactly, because
-     it is easy to reintroduce: the corner used to carry TWO different outer profiles. The flat
-     ring followed the hull curve, and a separate column sweep rose from 0 to WALL.up across only
-     the deck curve's 12 columns — while the hull silhouette it had to meet reaches `pad` further
-     out. So the station's outline stepped inward where the sweep began, then kinked onto a much
-     steeper staircase. Two curves meeting at an angle is not a corner; it is a notch.
+     ROUND 1 — TWO PROFILES. The flat ring followed the hull curve while a separate column sweep
+     rose 0 → WALL.up across only the DECK curve's columns, and the hull reaches `pad` further out
+     than that sweep ever began. The outline stepped inward where the sweep started, then kinked
+     onto a much steeper staircase. Two curves meeting at an angle is not a corner, it is a notch.
 
-     There is now ONE profile. The ring is painted exactly as the (correct) bottom corners paint
-     it, then DISPLACED UP-SCREEN by `lift`, with the strip it vacates filled by the wall FACE —
-     which is what a wall standing up actually looks like from here. `lift` eases 0 → WALL.up-1 by
-     the same sin^1.5 curve the wall height always used, so the outline leaves the e/w wall flat
-     and arrives at the north wall's crown line to the pixel (LIFT is derived from that landing,
-     not tuned). Bottom corners pass lift 0 and are therefore byte-identical to before.
+     ROUND 2 — ONE PROFILE, BUT SHEARED. Displacing the ring by a per-column EASED amount is a
+     shear, and a sheared circle is not a circle: its curvature piles up where the ease is steepest.
+     Andrew, tracing the arc he wanted over a screenshot: "it needs to perfectly curve at the top
+     left and the top right the same way it does on the bottom." An ease cannot do that, however
+     smooth the easing function is. LAW: NEVER EASE THE OUTLINE ITSELF.
 
-     The old separate tall sweep is gone. Do not add a second profile back: if the corner needs to
-     change shape, change `lift`, and both duals follow it together. */
-  function bakeCornerCrown(b, pal, kind, X, Y, ax, ay, Rc, capW, capH, LIFT, record) {
+     What is actually true: the wall's top surface is the footprint ring translated up-screen by the
+     wall's height, and a RIGID TRANSLATION PRESERVES A CIRCLE. So the outer boundary here is the
+     same radius-HR quarter circle the bottom corners use, with its centre moved up to `cy` — and
+     the region it vacates is simply wall FACE, which is what standing the wall up exposes.
+
+     `cy` is DERIVED so both ends land tangentially, which is what makes the join invisible:
+       · centre y = (the straight north wall's outline top) + HR, so the arc's topmost point sits
+         exactly on that line with a HORIZONTAL tangent;
+       · the arc's leftmost point is then at ax - HR = X - pad, which IS the e/w wall's outer edge,
+         with a VERTICAL tangent — so it leaves the side wall without a kink.
+     Below that leftmost point the outline is simply the vertical run at ax - HR, which is how the
+     ring crosses the chamfer tile and reaches the straight side wall underneath.
+
+     Only the LADDER WIDTH eases (crownEase, capW → capH), never the boundary: a top surface really
+     is foreshortened where you see it edge-on. Bottom corners pass cy = ay and are unchanged. */
+  function bakeCornerCrown(b, pal, kind, X, Y, ax, ay, Rc, HR, capW, capH, cy, record) {
     const A = CORNER[kind];
     const outX = A.cx ? -1 : 1, outY = A.cy ? -1 : 1;      // which way is "away from the room"
-    const reach = Rc + 2 + capW + LIFT;
     // the ring may hang past the tile into the VOID (that is where every wall's height lives) but
     // never into the tile behind it, which is this room's own walkable floor.
-    const xLo = outX < 0 ? X - reach : X, xHi = outX < 0 ? X + T : X + T + reach;
-    const yLo = outY < 0 ? Y - reach : Y, yHi = outY < 0 ? Y + T : Y + T + reach;
+    const xLo = outX < 0 ? Math.round(ax - HR) : X, xHi = outX < 0 ? X + T : Math.round(ax + HR) + 1;
+    const yLo = outY < 0 ? Math.round(cy - HR) : Y, yHi = outY < 0 ? Y + T : Math.round(cy + HR) + 1;
     const lit = U.shade(pal.cap, 0.30), seam = U.shade(pal.cap, -0.45);
     const put = (x, y, w, h, c) => {
       const x0 = Math.max(xLo, x), x1 = Math.min(xHi, x + w);
@@ -1172,62 +1183,65 @@ const StationBake = (() => {
       if (!record) return;
       for (let ix = x0; ix < x1; ix++) { const p = crownReach.get(ix); if (p === undefined || y0 < p) crownReach.set(ix, y0); }
     };
-    const K = Rc * Math.SQRT1_2;                            // the 45° split between the two duals
-    const width = tt => crownEase(tt, capW, capH);
-    /* how far this point of the ring stands up. 0 along the e/w wall (a side wall shows no face
-       here), easing to LIFT where the corner meets the north wall — the same sin^1.5 curve the
-       wall height has always used, so the corner recedes at the rate the eye already knows. */
-    const riseAt = tt => LIFT <= 0 ? 0 : Math.round(Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * LIFT);
-    /* A DISPLACED RASTER MUST PAINT THE EXTENT IT OWNS, NOT ONE PIXEL. Both duals are collected
-       first and painted second, because the lift advances faster than the walk's own index: on a
-       tl corner the row dual's output rows ran 35, 37, 39, 41, 42, 44 for six consecutive source
-       rows, so 36/38/40/43 were never written and the outline came out a COMB — chunky bright
-       rungs with void between them. Each step therefore paints through to where the next one
-       starts. That is also the honest shape: where the sheared outline runs shallow, its crown
-       genuinely is taller in screen space than where it runs steep. */
-    const span = (arr, i, key) => Math.max(1, (i + 1 < arr.length ? arr[i + 1][key] : arr[i][key] + 1) - arr[i][key]);
-    // ROW dual — the steep stretch, where the corner hands off to the e/w wall
-    const rows = [];
-    eachCornerRow(kind, ax, ay, Rc, (py, ex) => {
-      if (ex == null) return;
+    const K = HR * Math.SQRT1_2;              // the 45° split between the two duals
+    /* the DECK's own curve is the inner limit for the face fill — everything from the ladder down
+       to it is wall face. Same centre and rounding convention as the deck cut itself, so the face
+       stops exactly where the floor starts. */
+    const deckXAt = py => {
       const ady = Math.abs(py + 0.5 - ay);
-      if (ady > K) return;
-      const tt = 1 - Math.sqrt(Math.max(0, Rc * Rc - ady * ady)) / Rc;
-      rows.push({ ex, w: width(tt), r: riseAt(tt), yy: py - riseAt(tt) });
-    });
-    rows.sort((p, q) => p.yy - q.yy);
-    for (let i = 0; i < rows.length; i++) {
-      const { ex, w, r, yy } = rows[i], h = span(rows, i, 'yy');
-      // the ladder, displaced; then the FACE fills the strip it vacated — a standing wall, not a
-      // floating band. Face first, so the crown is never painted over at r = 0.
+      if (ady >= Rc) return null;
+      const d = Math.sqrt(Rc * Rc - ady * ady);
+      return outX < 0 ? Math.round(ax - d) : Math.round(ax + d);
+    };
+    const deckYAt = ix => {
+      const adx = Math.abs(ix + 0.5 - ax);
+      if (adx >= Rc) return null;
+      const d = Math.sqrt(Rc * Rc - adx * adx);
+      return outY < 0 ? Math.round(ay - d) : Math.round(ay + d);
+    };
+    // ROW dual — the steep stretch (and the vertical run below it), where the ring hands off to
+    // the e/w wall. A row walk lays a HORIZONTAL span, which is ACROSS the outline only here.
+    for (let py = yLo; py < yHi; py++) {
+      const t = outY < 0 ? cy - (py + 0.5) : (py + 0.5) - cy;    // distance along the lift axis
+      if (t >= HR) continue;                                      // past the top of the arc
+      if (t > K) continue;                                        // shallow — the column dual owns it
+      // below the arc's widest point the outline is simply the straight run at the e/w wall's edge
+      const off = t <= 0 ? HR : Math.sqrt(HR * HR - t * t);
+      const ex = outX < 0 ? Math.round(ax - off) : Math.round(ax + off);
+      const w = crownEase(Math.max(0, t) / HR, capW, capH);
+      const dx = deckXAt(py), inner = dx == null ? (outX < 0 ? X + T : X - 1) : dx;
       if (outX < 0) {
-        if (r > 0) put(ex - 1 - w, yy + h, w + 1, r, pal.face);
-        put(ex - 1 - w, yy, w, h, pal.cap); put(ex - 1 - w, yy, 1, h, lit); put(ex - 1, yy, 1, h, seam);
+        put(ex, py, 1, 1, wallDk);                                             // the shell's own edge
+        put(ex + 1, py, w, 1, pal.cap); put(ex + 1, py, 1, 1, lit);            // the lit top surface
+        put(ex + 2 + w, py, Math.max(0, inner - (ex + 2 + w)), 1, pal.face);   // face, down to the deck
+        put(ex + 1 + w, py, 1, 1, seam);
       } else {
-        if (r > 0) put(ex + 1, yy + h, w + 1, r, pal.face);
-        put(ex + 2, yy, w, h, pal.cap); put(ex + 1 + w, yy, 1, h, lit); put(ex + 1, yy, 1, h, seam);
+        // the lit edge is the crown's OUTERMOST row, i.e. ex - 1 here — putting it on `ex` paints
+        // over the shell edge and rules a near-white line along the station's own silhouette.
+        put(ex, py, 1, 1, wallDk);
+        put(ex - w, py, w, 1, pal.cap); put(ex - 1, py, 1, 1, lit);
+        put(inner + 1, py, Math.max(0, (ex - 1 - w) - inner), 1, pal.face);
+        put(ex - 1 - w, py, 1, 1, seam);
       }
     }
-    // COLUMN dual — the shallow stretch, where it hands off to the n/s wall
-    const R = Math.round(Rc), x0 = Math.round(A.cx ? ax - R : ax);
-    const cols = [];
-    for (let ix = x0; ix < x0 + R; ix++) {
+    // COLUMN dual — the shallow stretch, where the ring hands off to the n/s wall.
+    for (let ix = xLo; ix < xHi; ix++) {
       const adx = Math.abs(ix + 0.5 - ax);
-      if (adx >= K) continue;
-      const tt = 1 - adx / Rc, r = riseAt(tt);
-      const ey = outY < 0 ? Math.round(ay - Math.sqrt(R * R - adx * adx)) : Math.round(ay + Math.sqrt(R * R - adx * adx));
-      cols.push({ ix, w: width(tt), r, top: outY < 0 ? ey - 1 - width(tt) - r : ey + 1, ey });
-    }
-    for (let i = 0; i < cols.length; i++) {
-      const { ix, w, r, ey, top } = cols[i];
+      if (adx >= K) continue;                                     // steep — the row dual owns it
+      const s = Math.sqrt(HR * HR - adx * adx);
+      const ey = outY < 0 ? Math.round(cy - s) : Math.round(cy + s);
+      const w = crownEase(s / HR, capW, capH);
+      const dy = deckYAt(ix), inner = dy == null ? (outY < 0 ? Y + T : Y - 1) : dy;
       if (outY < 0) {
-        // the crown must also bridge the step to the NEXT column, or the sheared arc combs
-        // sideways the same way the rows did — the dual of the fix above.
-        const grow = Math.max(0, (i > 0 ? cols[i - 1].top : top) - top);
-        if (r > 0) put(ix, ey - r, 1, r, pal.face);
-        put(ix, top, 1, w + grow, pal.cap); put(ix, top, 1, 1, lit); put(ix, top + w + grow, 1, 1, seam);
+        put(ix, ey, 1, 1, wallDk);
+        put(ix, ey + 1, 1, w, pal.cap); put(ix, ey + 1, 1, 1, lit);
+        put(ix, ey + 2 + w, 1, Math.max(0, inner - (ey + 2 + w)), pal.face);
+        put(ix, ey + 1 + w, 1, 1, seam);
       } else {
-        put(ix, ey + 2, 1, w, pal.cap); put(ix, ey + 1 + w, 1, 1, lit); put(ix, ey + 1, 1, 1, seam);
+        put(ix, ey, 1, 1, wallDk);
+        put(ix, ey - w, 1, w, pal.cap); put(ix, ey - 1, 1, 1, lit);   // outermost crown row, not the shell edge
+        put(ix, inner + 1, 1, Math.max(0, (ey - 1 - w) - inner), pal.face);
+        put(ix, ey - 1 - w, 1, 1, seam);
       }
     }
   }
@@ -1544,6 +1558,20 @@ const StationBake = (() => {
         }
       }
       mg.restore();
+      /* ...and the other half of the same law: the corner ring reaches a full `pad` FURTHER OUT
+         than the straight north wall's strip does (the strip spans the footprint width only), so
+         those columns had lit crown standing OUTSIDE the ambient plate — which renders at its raw
+         baked tone against the starfield, the blazing-line failure the WALL.sideCap note describes.
+         Add mask over exactly what the painter recorded, so cover and art are the same shape. */
+      for (const [ccx, ccy, kind] of G.chamfers) {
+        if (kind !== 'tl' && kind !== 'tr') continue;
+        const X0 = kind === 'tl' ? ccx * T - pad : ccx * T, X1 = X0 + T + pad, bottom = ccy * T + T;
+        for (let ix = X0; ix < X1; ix++) {
+          const reach = crownReach.get(ix);
+          if (reach === undefined || reach >= bottom) continue;
+          mg.fillRect(ix, reach, 1, bottom - reach);
+        }
+      }
     }
     L.globalAlpha = LIGHT.ambient;
     L.drawImage(mask, VX, VY);
@@ -1721,21 +1749,23 @@ const StationBake = (() => {
         }
         fill(ix, py, 1, 1, outerBand);
       }
+      const cRoom = !G.isCorridor(G.zoneGrid[G.idx(ccx, ccy)]);
+      const cCy = cornerArcCy(kind, ay, Y, HR, cRoom);   // the outline circle's centre — lifted on a top corner
       // HULL RIM — the outer silhouette's own curve (HR), concentric with the interior one and now
       // rasterized off the SAME row walk, so the two curves stay a fixed pixel distance apart all
       // the way round instead of one being a crisp staircase beside a soft anti-aliased stroke.
-      eachCornerRow(kind, ax, ay, HR, (py, ex) => {
+      // It rides the SAME centre as the ring: left at ay on a lifted corner it would rule a rim
+      // straight across the middle of the standing wall face.
+      eachCornerRow(kind, ax, cCy, HR, (py, ex) => {
         if (ex == null) return;
         fill(A.cx ? ex : ex - 1, py, 2, 1, '#28241b');
       });
 
       /* THE CROWN RING carries the wall's lit top surface around the arc, so the bright line that
-         defines a wall does not die at the corners — and on a TOP corner it is also what stands the
-         wall up, displaced by `cornerLift`. One profile, both duals, no separate sweep. */
-      const cRoom = !G.isCorridor(G.zoneGrid[G.idx(ccx, ccy)]);
-      bakeCornerCrown(b, cPal, kind, X, Y, ax, ay, Rc, sideCapW(cRoom),
-                      Math.max(2, Math.round(WALL.capH)), cornerLift(kind, cRoom), kind === 'tl' || kind === 'tr');
-
+         defines a wall does not die at the corners — and on a TOP corner the SAME circle, centred
+         higher, is also what stands the wall up. One profile, one radius, no ease on the outline. */
+      bakeCornerCrown(b, cPal, kind, X, Y, ax, ay, Rc, HR, sideCapW(cRoom),
+                      Math.max(2, Math.round(WALL.capH)), cCy, kind === 'tl' || kind === 'tr');
     }
 
     bakeRoomLighting(b);   // after the chamfers, so a rounded corner is lit like every other surface
