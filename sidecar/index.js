@@ -179,6 +179,7 @@ const { foldInsights } = require('./insights.js');                  // H3.3: usa
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { makeRoutineTools } = require('./tools/builtin/routines.js'); // ROUTINES: agent-created StarNet cron jobs
+const { makeCommsTools } = require('./tools/builtin/comms.js');      // COMMS: outbound reach — an agent messages a connected chat
 const cronGuard = require('./cron-guard.js');                        // routine prompt-injection tripwire (pure, see file header)
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const loopbackListenerProbe = makeLoopbackListenerProbe({ execFile, platform: process.platform, env: process.env });
@@ -2971,13 +2972,32 @@ const cronEmit = (name, payload) => { try { return cronEmitValidated(name, redac
 // opt-in is a single global flag (channelSecrets.notifyAutonomous, default off) — chatsFor returns [] when off, so
 // the notifier engine stays opt-in-agnostic. send/chatsFor read telegram/discord/channelSecrets LIVE (closures), so
 // they resolve correctly even though the channel adapters connect after this point in boot.
+/* liveChannelFor(channel) -> { adapter, hub } | null — the ONE resolver from a channel NAME to the live wired
+   channel. Fans out over the two bespoke slots, a per-instance telegram bot ('telegram:<botId>', so a ping
+   arrives FROM the agent's own contact), else the generic map (slack/matrix/signal). Reads the module-level
+   handles LIVE, so it resolves correctly even though adapters connect long after boot reaches this line.
+   Shared by the autonomous notifier and the agent's channel.send tool: a second copy of this fan-out would
+   eventually disagree about which adapter serves a channel, and the failure mode is a message going to the
+   wrong platform or silently nowhere. */
+function liveChannelFor(channel) {
+  /* The DEV channel is a REAL channel — it has a hub and a working send (it captures replies for
+     GET/POST /api/dev/inbound) — it just has no bot server behind it, so it never appears in genericChannels.
+     Exposing it here is what makes outbound reach live-provable without a platform token, and it mirrors the
+     MCP bridge's existing rule: messages_send drives the station over its local DEV channel, DEV mode only.
+     Gated on DEV_MODE so a packaged build has no dev target at all (it is never set in a shipping build). */
+  if (channel === 'dev') {
+    if (!DEV_MODE) return null;
+    const hub = getDevHub();
+    return { hub: hub, adapter: { send: (chatId, text) => devCaptureReply(chatId, text) } };
+  }
+  if (channel === 'discord') return discord;
+  if (typeof channel === 'string' && channel.indexOf('telegram:') === 0) return telegramBots.get(channel.slice('telegram:'.length)) || null;
+  if (!channel || channel === 'telegram') return telegram;
+  return genericChannels[channel] || null;
+}
 const autoNotifier = makeAutoNotifier({
   send: (chatId, text, channel) => {
-    // fan out by channel name: the two bespoke slots, a per-instance telegram bot ('telegram:<botId>' — the ping
-    // arrives FROM the agent's own contact), else the generic map (slack/matrix/signal).
-    const ch = (channel === 'discord') ? discord
-      : (typeof channel === 'string' && channel.indexOf('telegram:') === 0) ? telegramBots.get(channel.slice('telegram:'.length))
-      : (!channel || channel === 'telegram') ? telegram : genericChannels[channel];
+    const ch = liveChannelFor(channel);
     const p = (ch && ch.adapter) ? ch.adapter.send(chatId, redact(text)) : Promise.resolve({ ok: false, error: 'channel not connected' });
     // DELIVERY HONESTY (2026-07-15 audit): transports NEVER throw — a failure is a resolved { ok:false,
     // error } SendResult. Normalize that to a rejection so the notifier's per-send outcome reporting
@@ -4754,6 +4774,17 @@ const DEV_PERSONA = 'You are the Commander\'s AI agent on a DEV test channel. Ke
 let devHub = null;            // lazy singleton — one hub, many injected messages
 let devResolved = null;       // one-shot resolution slot (same pattern as tgResolved)
 const devReplies = new Map(); // chatId -> [{ text, ts }] captured outbound replies (ring, last 20)
+/* the DEV channel's one send: capture the outbound text so POST /api/dev/inbound can return it. Shared by the
+   dev hub (an agent's reply to an injected message) and by liveChannelFor('dev') (an agent's channel.send to a
+   dev chat), so both paths land in the same ring and the dev channel behaves like a real transport. */
+function devCaptureReply(chatId, text) {
+  const k = String(chatId);
+  const arr = devReplies.get(k) || [];
+  arr.push({ text: String(text == null ? '' : text), ts: Date.now() });
+  if (arr.length > 20) arr.shift();
+  devReplies.set(k, arr);
+  return Promise.resolve({ ok: true });
+}
 function devHubSecrets() {
   const provider = 'openrouter';
   const key = providerRuntimeKey(provider, '');
@@ -4768,7 +4799,7 @@ function getDevHub() {
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     runOnce: runOnce, store: channelStore,
-    send: (chatId, text) => { const k = String(chatId); const arr = devReplies.get(k) || []; arr.push({ text: String(text == null ? '' : text), ts: Date.now() }); if (arr.length > 20) arr.shift(); devReplies.set(k, arr); return Promise.resolve({ ok: true }); },
+    send: (chatId, text) => devCaptureReply(chatId, text),
     secrets: devHubSecrets,
     persona: DEV_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: same recommendation line on the dev channel
@@ -4794,6 +4825,22 @@ function getDevHub() {
     expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId)
   });
   return devHub;
+}
+/* GET /api/dev/replies?chatId=... — read what this station has SENT to a dev chat, without disturbing it.
+
+   POST /api/dev/inbound clears the chat's reply ring before running the turn (so its response contains only
+   that turn's replies), which makes it unusable for observing an UNPROMPTED outbound message: probing for the
+   text destroys it. Now that an agent can message a chat on its own (channel.send), the dev channel needs a
+   read that does not mutate — otherwise the one channel we can drive without a platform token is the one
+   channel whose outbound traffic cannot be inspected. DEV_MODE only (404 otherwise, exactly like the inbound
+   route), behind the same launch-token + loopback gate as every other /api route. */
+function handleDevReplies(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (!DEV_MODE) return json(404, { error: 'not found' });
+  let chatId = '';
+  try { chatId = String(new URL(req.url, 'http://x').searchParams.get('chatId') || '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 32); } catch (_) { chatId = ''; }
+  if (!chatId) return json(400, { error: 'chatId required' });
+  return json(200, { ok: true, chatId, replies: (devReplies.get(chatId) || []).map(r => ({ text: r.text, ts: r.ts })) });
 }
 async function handleDevInbound(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
@@ -5115,6 +5162,9 @@ const ROUTES = [
   // DEV-ONLY (404s unless SKYNET_DEV): inject an inbound message through the real channel hub — floor
   // routing / classifier / crate telemetry testable without a live bot token. Own errorPolicy → always JSON.
   { m: 'POST', exact: '/api/dev/inbound', h: handleDevInbound, errorPolicy: devInboundFailPolicy },
+  // qsplit, not exact: this GET carries ?chatId=, and an `exact` match would never fire (same reason the SSE
+  // route uses qsplit) — it would fall through to the router's plain-text 404.
+  { m: 'GET', qsplit: '/api/dev/replies', h: handleDevReplies },   // DEV-only read of a dev chat's captured OUTBOUND text (never clears)
   { m: 'GET', exact: '/api/channels/telegram/status', h: handleChannelStatus },
   { m: 'GET', exact: '/api/channels/status', h: handleChannelsStatusAll },   // one bulk poll paints the whole CHANNELS panel
   { m: 'POST', rx: GENERIC_CHANNEL_RX.connect, h: (req, res, gm) => handleGenericChannelConnect(req, res, gm[1]) },
@@ -8860,6 +8910,59 @@ async function runOnce(o) {
       if (want) armCron(); else disarmCron();
       return cronArmed;
     }
+  }).register(registry);
+  /* channel.targets / channel.send — OUTBOUND messaging reach (see tools/builtin/comms.js for the security
+     rationale on known-targets-only). Both hang off the placed DISH under their own 'comms' capId. */
+  makeCommsTools({
+    /* The reachable set is the station's CHAT MAP — chats a human actually opened with this station — joined
+       against LIVE transport state. It is not a list of platforms we support: an agent may only message
+       somewhere a person already reached us from, which is the whole containment story.
+
+       `target` is the map KEY, which is already the stable per-chat identity (multi-bot telegram namespaces it
+       as '<botId>|<chatId>' and carries the real chatId on the record — so the key is what stays unique while
+       the raw chatId does not). It is also what we hand back to sendTo, so nothing has to re-derive it. */
+    listTargets: () => {
+      try {
+        const map = channelStore.loadChatMap();
+        const chats = (map && map.chats) || {};
+        return Object.keys(chats).map((key) => {
+          const rec = chats[key] || {};
+          const channel = String(rec.channel || 'telegram');
+          const live = liveChannelFor(channel);
+          return {
+            target: key,
+            channel: channel,
+            chatId: String(rec.chatId || key),
+            agentId: String(rec.agentId || ''),
+            connected: !!(live && live.adapter)
+          };
+        });
+      } catch (_) { return []; }
+    },
+    // sendTo takes the TARGET KEY and resolves it back to its record, so the tool never has to know about the
+    // '<botId>|<chatId>' namespacing. An unknown key answers ok:false rather than throwing — the tool reports
+    // partial delivery honestly and transports never throw by contract.
+    sendTo: (target, text) => {
+      let rec = null;
+      try { rec = channelStore.getChatRecord(String(target)) || null; } catch (_) { rec = null; }
+      if (!rec) return Promise.resolve({ ok: false, error: 'unknown chat target' });
+      const channel = String(rec.channel || 'telegram');
+      const live = liveChannelFor(channel);
+      if (!(live && live.adapter)) return Promise.resolve({ ok: false, error: channel + ' is not connected' });
+      return Promise.resolve(live.adapter.send(String(rec.chatId || target), text))
+        .catch(e => ({ ok: false, error: (e && e.message) || 'send failed' }));
+    },
+    // the platform's real message ceiling, straight off the channel descriptor that already declares it (a
+    // second table would drift and Discord's 2000 is unforgiving); 'telegram:<botId>' resolves as telegram.
+    maxLenFor: (channel) => {
+      const base = String(channel || '').split(':')[0];
+      const desc = channelRegistry.get(base);
+      const n = desc && Number(desc.maxMessageLength);
+      // stay just under the true ceiling: the transport may add its own prefix/footer to a chunk.
+      return (isFinite(n) && n > 200) ? (n - 100) : 1900;
+    },
+    redact: redact,
+    emit: chanEmit
   }).register(registry);
   throttleSearch(registry);
 

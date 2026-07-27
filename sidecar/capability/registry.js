@@ -116,6 +116,18 @@
       { capId: 'web', tool: 'browser.tab_close', scope: 'execute', requiresConsent: true, network: true, deferred: true },
       // Real-screen desktop.open is not an ordinary run capability. The implementation remains
       // registered inertly for a future separate attended host channel, never a placed dish.
+      // ---- COMMS: OUTBOUND messaging reach (see tools/builtin/comms.js) ----
+      // The dish is the station's antenna: it already means "this agent can reach OUT past the station walls".
+      // Fetching a page and transmitting a message are the same physical claim on that prop, so outbound
+      // messaging hangs here rather than on a new object type. It is its OWN capId — NOT 'web' — precisely so a
+      // Commander who wants search-and-browse without letting an agent message people can switch COMMS off
+      // alone in the TOOLSETS console (a shared capId would make that impossible; see toolsets.js).
+      { capId: 'comms', tool: 'channel.targets', scope: 'read', requiresConsent: false, network: false },
+      // channel.send carries content OUT to a third party under the Commander's own bot identity — the single
+      // most consequential outward action in the tool surface and the obvious prompt-injection exfiltration
+      // target. execute + consent, like web_request and the Spotify controls: it asks every time until the
+      // Commander grants it, and an autonomous run therefore cannot spend it off a cached grant.
+      { capId: 'comms', tool: 'channel.send', scope: 'execute', requiresConsent: true, network: true }
     ],
     // CONNECTORS: a 'connector' object is a DYNAMIC capability — its grants are the tools its configured MCP
     // server reports at runtime (tools/list), which can't be statically listed here. The connector manager

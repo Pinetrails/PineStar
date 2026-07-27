@@ -31,6 +31,7 @@ const { makeTranscriptStore } = require('../sidecar/transcriptstore.js');
 const { makeSkillTools } = require('../sidecar/tools/builtin/skills.js');
 const { makeSkillStore } = require('../sidecar/skillstore.js');
 const { makeQuestTools } = require('../sidecar/tools/builtin/quests.js');
+const { makeCommsTools } = require('../sidecar/tools/builtin/comms.js');
 const { makeQuestStore } = require('../sidecar/quest-store.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
@@ -107,6 +108,11 @@ const fixture = {
     existsSync(f) { return _qFiles.has(String(f)); }, mkdirSync() {}, unlinkSync(f) { _qFiles.delete(String(f)); }, openSync() { return 1; }, fsyncSync() {}, closeSync() {}
   };
   makeQuestTools({ store: makeQuestStore({ fs: _qFs, path, workspaces: '/ws', writeDurable: ({ fs }, file, data) => fs.writeFileSync(file, data) }), clock: { now: () => 0 } }).register(registry);
+  // COMMS: channel.targets / channel.send ride the placed DISH (capId 'comms'), so this office resolves them —
+  // register them here for the same reason every other family is registered: the drift guard below proves the
+  // CAP_REGISTRY and the tool registrations agree, and a resolved-but-unregistered tool is exactly the "dark
+  // tool" bug it exists to catch. No reachable chats in a headless fixture, which is the honest empty case.
+  makeCommsTools({ listTargets: () => [], sendTo: () => Promise.resolve({ ok: false, error: 'no channel in test' }) }).register(registry);
 
   const station = { agents: { agent: { id: 'agent', room: 'office' } }, rooms: { office: { id: 'office', objects: [
     { instanceId: 'pc1', objectType: 'computer' }, { instanceId: 'd1', objectType: 'dish' },
@@ -121,7 +127,7 @@ const fixture = {
   const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: 5000 });
 
   // ---- DRIFT GUARDS (these alone would have caught both default-path showstoppers) ----
-  const EXPECTED = ['browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.drag', 'browser.eval', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect', 'browser.login', 'browser.navigate', 'browser.network', 'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot', 'browser.tab_close', 'browser.tab_select', 'browser.tabs', 'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision', 'fs.append', 'fs.edit', 'fs.list', 'fs.patch', 'fs.read', 'fs.search', 'fs.write', 'notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'tool.search', 'web_fetch', 'web_request', 'web_search', 'widget.set'];
+  const EXPECTED = ['browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.drag', 'browser.eval', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect', 'browser.login', 'browser.navigate', 'browser.network', 'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot', 'browser.tab_close', 'browser.tab_select', 'browser.tabs', 'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision', 'channel.send', 'channel.targets', 'fs.append', 'fs.edit', 'fs.list', 'fs.patch', 'fs.read', 'fs.search', 'fs.write', 'notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'tool.search', 'web_fetch', 'web_request', 'web_search', 'widget.set'];
   A.eq(resolved.tools.slice().sort(), EXPECTED.slice().sort(), 'office objects resolve to the full toolset (object=capability is real)');
   for (const name of EXPECTED) A.ok(registry.get(name), 'tool registered: ' + name);
 
