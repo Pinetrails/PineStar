@@ -1,5 +1,33 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-27 — PERMISSIONS OFFLINE STATE STAYS TRUTHFUL (`agent/community-bughunt-0727`)
+
+A Settings/permissions audit confirmed a fail-closed enforcement but fail-open-looking UI defect:
+when `/api/permissions` was unavailable, the frontend synthesized an empty successful snapshot.
+Settings then claimed “No standing approvals” even though the sidecar could still hold and enforce
+durable grants; grant and revoke failures were also silent. The permissions store now distinguishes
+unconfirmed/failed snapshots from confirmed empty state, preserves the last confirmed authority,
+and surfaces an `aria-live` warning. Failed mutations keep the confirmed row and say the change was
+not applied; a first-load failure hides grant controls until authority can be confirmed.
+
+Regression: `permissionsstore.test` 25→36 assertions and `permissions-ui.test` 28→31 assertions.
+Live seeded proof covered grant, sidecar restart persistence, offline refresh preserving the grant
+with an explicit warning, stale-session revoke failure preserving it, reconnect, successful
+two-step revoke, and clean empty state. The Settings catalog exposes one durable permission,
+`cabinet:write`; WAIT/SUGGEST/BUILD grant none, FREE grants it, enforcement remains in the consent
+broker/jail, and the UI honestly notes that a Filing Cabinet is additionally required. Interactive
+once/session/always approvals, per-agent full access, Workshop access, routine terminal/connectors,
+credentialed web access, taint revocation, and project path trust were traced and covered by focused
+tests (including four HTTP/E2E suites). Voice microphone authority is browser/OS-owned and was not
+requested. At 390×844, Settings had no viewport or horizontal overflow; arrow-key tab navigation
+worked. New-user/onboarding, sessions/workstreams, fullscreen/terminal resize, voice draft guards,
+and settings backend/UI paths passed their existing regression suites. Manual gaps: real microphone
+permission allow/deny/reset, OS notification permission, native desktop screen-reader behavior,
+and physical-device/mobile WebView compatibility. Website mirror synced. No push, deploy, or PR.
+The fast gate passed through step 160/400, then stopped at the unchanged
+`qa-product-perfect-claims` release-authority stamp (step 161), the same unrelated stale authority
+surface already recorded for this lane.
+
 ## 2026-07-27 — REVOKED PROJECT “FORGET” IS REAL (`agent/community-bughunt-0727`)
 
 A second live PROJECTS-rail pass confirmed a destructive-action truth defect: the armed

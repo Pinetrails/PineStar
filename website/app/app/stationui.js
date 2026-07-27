@@ -4021,6 +4021,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // grant list shows + revokes every standing capability. #perm-desc spells out the COMBINED truth, live.
       '<h4 class="ms-h">PERMISSIONS <span class="dim">— what it’s actually allowed to do on its own</span></h4>' +
       '<p class="set-about" id="perm-desc"></p>' +
+      '<p class="set-about" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
       // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
       // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the dial uses.
       // Stored data-level values are unchanged; only the labels unify. FULLY AUTONOMOUS stays in the label
@@ -4714,7 +4715,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // (permissionsstore). Grants live server-side, so paint from cache now, refresh from the sidecar, repaint. A
     // level click sets BOTH posture + the write grant (so it repaints the dial); the dial syncs back via syncPerm.
     if (typeof PermissionsStore !== 'undefined' && PermissionsStore.snapshot) {
-      const levelWrap = host.querySelector('#perm-level'), grantsWrap = host.querySelector('#perm-grants'), permDesc = host.querySelector('#perm-desc');
+      const levelWrap = host.querySelector('#perm-level'), grantsWrap = host.querySelector('#perm-grants'),
+            permDesc = host.querySelector('#perm-desc'), permStatus = host.querySelector('#perm-status');
       const pdesc = (lvl) => (typeof Permissions !== 'undefined' && Permissions.describeLevel) ? Permissions.describeLevel(lvl) : '';
       const plabel = (k) => (typeof Permissions !== 'undefined' && Permissions.catalogLabel) ? Permissions.catalogLabel(k) : k;
       const pcurated = () => (typeof Permissions !== 'undefined' && Permissions.grantableKeys) ? Permissions.grantableKeys() : [];
@@ -4795,7 +4797,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const snap = PermissionsStore.snapshot();
         if (permDesc) permDesc.textContent = pdesc(snap.level);
         if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(x => x.classList.toggle('sel', x.dataset.level === snap.level));
-        if (grantsWrap) { grantsWrap.innerHTML = renderGrants(snap); wireGrants(); }
+        if (permStatus) {
+          if (snap.error) permStatus.textContent = '⚠ ' + snap.error + (snap.loaded ? ' — showing the last confirmed approvals; changes were not applied.' : ' — standing approvals could not be verified; no changes are available.');
+          else permStatus.textContent = snap.loaded ? '' : 'checking standing approvals…';
+        }
+        if (grantsWrap) {
+          grantsWrap.innerHTML = snap.loaded ? renderGrants(snap) : '<p class="set-about">Standing approvals are unavailable until the local permission service confirms them.</p>';
+          if (snap.loaded) wireGrants();
+        }
       };
       syncPerm = repaintPerm;
       if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.setLevel(b.dataset.level)).then(() => { repaintPerm(); repaintDial(); }); sfx('click'); }));
