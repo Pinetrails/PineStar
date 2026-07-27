@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "df7ae5375a9b7f76040c8c2807b355a2e68fea30",
-    "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
+    "sourceCommit": "b097f503edce80882f0417c2e7dd97388639d555",
+    "pathSetSha256": "120006e93437f7e88bbf588d3f5d6009f78ce1cfca99c77cc6cb43e16b6f7982",
     "files": [
       {
         "path": "INSTALL.md",
@@ -203,8 +203,8 @@
       },
       {
         "path": "frontend/app/deliverables.js",
-        "bytes": 9492,
-        "sha256": "df2e655687879db36c02a99488170e5c606e7912a2dd10ad8c3716dab12efa0a"
+        "bytes": 11238,
+        "sha256": "78cba65d986120d69a553c9ab2f021f54c32845bf4d5086871587fe2526dfa64"
       },
       {
         "path": "frontend/app/diagnostics.js",
@@ -633,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 421763,
-        "sha256": "b8c99a49740b4c452d1502cc5ab657012f2b7f37a78989f055083be7fe71d72b"
+        "bytes": 421777,
+        "sha256": "da9c26e00707dbebb14e4cfa884b0c8a35c4bda374a37d728df1b78cca37f4c3"
       },
       {
         "path": "frontend/app/study.js",
@@ -675,6 +675,11 @@
         "path": "frontend/app/toolprops.js",
         "bytes": 3336,
         "sha256": "49deacb84530b8c40859f94ccd65078ec6d6282c812d71e6f071c9362f3c63b1"
+      },
+      {
+        "path": "frontend/app/tooltip.js",
+        "bytes": 7837,
+        "sha256": "4ce478108efeaf07313e22e22f6e034012312bae7179665507a11d66a03dd8e6"
       },
       {
         "path": "frontend/app/topbar.js",
@@ -838,8 +843,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 219068,
-        "sha256": "efe49bbda146cfe3491e2732a54badd3f03e1896b0f43381de7d3bab9e909059"
+        "bytes": 220619,
+        "sha256": "67c96721f7adffe24dbcce9c025623a00cfe808b6b1e123b5c4607e0ce378b3f"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -903,8 +908,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 64803,
-        "sha256": "6996981a26e2dac8e7786aa7c594e10284478ad9c55076ec90ee704c02ae9519"
+        "bytes": 65227,
+        "sha256": "8a4c75f7de8831c555955a9547124390320dfb9f76f1e10b5f5239e0aebf5c63"
       },
       {
         "path": "frontend/js/arcade.js",
