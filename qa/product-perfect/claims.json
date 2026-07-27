@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "bf5c1e33d3ca2c01a1dbceb59c788a8c4b538eef",
+    "sourceCommit": "91f75571c01b826c12ac51b4df5bb475b0c3fac9",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -178,8 +178,8 @@
       },
       {
         "path": "frontend/app/crtlab.js",
-        "bytes": 14768,
-        "sha256": "6de22f3055a08d5d204823c6b1a49a20b8018fcf6da2e08493ea4526e264b9e9"
+        "bytes": 15404,
+        "sha256": "8c9de74f703fecec9147add3c6011c9ecde390f217c516be5f4e87ac5050d295"
       },
       {
         "path": "frontend/app/ctxgauge.js",
@@ -813,8 +813,8 @@
       },
       {
         "path": "frontend/app/world.js",
-        "bytes": 478283,
-        "sha256": "961434b041ada8875d3d4bae193718f144c52e4d930577abcfbcec609bd84a77"
+        "bytes": 481140,
+        "sha256": "0321e24aece6e4852d18a68be45857e1c508fd4c47f682ac5497ca1acb4d8f67"
       },
       {
         "path": "frontend/app/worldmodel.js",
