@@ -73,6 +73,64 @@ input:focus, textarea.key-input:focus {
 /* solid --ph-dim (no opacity multiplier) keeps placeholder hint text >=4.5:1 (WCAG AA) on --bg across every theme; .7 opacity dropped it to ~3.2:1 */
 input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opacity: 1; }
 
+/* ---------- CONTROL FLOOR — NO control may ever paint itself with OS chrome ----------
+   LAW (2026-07-27, Andrew): every control in this product is station hardware. The browser's
+   own paint — buttonface white, ButtonBorder grey, black system text — is a BUG here, every
+   single time it surfaces, and it has surfaced repeatedly (the SURFACE/REFIT bare <button>,
+   the CHANNELS "RUNS AS" select, the DELIVERABLES status filter). The cause was always the
+   same: the sheet skinned controls per surface (.btn, .bb, .mkt-in, .fbc-sel, .mp-model …)
+   and a new control that forgot its class fell through to the user agent.
+
+   These rules are the FLOOR, not a skin. Every selector below is element-level — specificity
+   (0,0,1)/(0,0,2) — so EVERY existing class or id skin still outranks it and nothing already
+   themed changes appearance. All it does is replace OS paint with phosphor paint wherever the
+   surface sheets forgot. Measured live, floor-off vs floor-on over the same DOM (1100 controls,
+   all 17 windows open, every <details> expanded): 210 computed-style deltas, and exactly TWO
+   elements changed bounding box. The deltas are 2 white selects becoming phosphor fields
+   (#tg-bot-agent, #dl-status), 5 OS-blue accents becoming phosphor, 200 buttons leaving Arial
+   for the station font stack — and the rest are no-ops on invisible surfaces (border-colour on
+   zero-width borders, text colour on empty icon buttons, radius on borderless elements).
+
+   Do not "clean this up" by deleting it and re-skinning per surface — that is the exact
+   pattern that keeps letting white HTML controls ship. Do not raise its specificity either:
+   an earlier draft that also set border-radius/box-shadow here leaked onto id-styled,
+   class-less buttons (#ws-new, #estop-btn). A floor may only replace what the UA would paint.
+   Locked by test/control-floor-theming.test.js. */
+select {
+  font-family: inherit; font-size: 15px; color: var(--ph-bright); cursor: pointer;
+  background-color: #000;
+  border: 1px solid var(--ph-dim); border-radius: 4px; padding: 6px 9px; outline: none;
+  text-shadow: 0 0 5px var(--ph-glow2);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.7);
+  transition: border-color .12s, box-shadow .12s;
+}
+select:focus { border-color: var(--ph); box-shadow: inset 0 2px 6px rgba(0,0,0,.7), 0 0 12px var(--ph-glow2); }
+/* a bare <textarea> is a field, same as a bare <input> (the rule above only covers .key-input) */
+textarea {
+  font-family: inherit; color: var(--ph-bright);
+  background-color: #000; border: 1px solid var(--ph-dim); border-radius: 4px; padding: 8px 11px; outline: none;
+}
+textarea::placeholder { color: var(--ph-dim); opacity: 1; }
+/* buttons: neutralize the OS paint and NOTHING else. No box metrics, no radius, no shadow —
+   measured the hard way: a draft of this block that also set border-radius/box-shadow leaked
+   onto id-styled, class-less buttons (#ws-new, #estop-btn) that declare no radius of their
+   own. A floor may only replace what the user agent would have painted. */
+button, input[type=button], input[type=submit], input[type=reset] {
+  font-family: inherit; color: var(--ph); cursor: pointer;
+  background-color: transparent;
+  border: 1px solid var(--ph-dim);
+}
+button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
+/* the OS ticks/knobs: phosphor, never the platform's blue */
+input[type=checkbox], input[type=radio], input[type=range], progress { accent-color: var(--ph); }
+/* the native file picker's own button is a control too — it paints buttonface until told otherwise */
+input[type=file]::file-selector-button {
+  font-family: inherit; color: var(--ph); cursor: pointer;
+  background-color: transparent; border: 1px solid var(--ph-dim); border-radius: 5px;
+  padding: 4px 9px; margin-right: 9px;
+}
+input[type=file]::file-selector-button:hover { border-color: var(--ph); background-color: var(--ph-faint); color: var(--ph-bright); }
+
 /* (The standalone TITLE screen was removed — boot auto-resumes into the station, or opens CREATE/RESUME
    directly. The data-status line that used to live there now sits in the connect-screen footer.) */
 .title-status { color: var(--ph-dim); font-size: 14px; letter-spacing: 1px; }
