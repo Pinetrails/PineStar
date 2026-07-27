@@ -1900,40 +1900,69 @@ const PropSprites = (() => {
   };
 
   F.crate = (x, y, w, h) => {
-    // CRATE (2x1) — the storage family's PLAIN cargo box and the reference the rest are read against:
-    // steel ramp, chamfered dominant lid, ribbed short face, corner castings, one stencil, skids. v4 adds
-    // the two-temperature split (warm key on the lid's back edge, cool sky bounce down the east flank),
-    // which is what stops a 24x12 box from reading as a flat rectangle.
-    const r = RAMP.steel;
+    // CRATE (2x1) — v6 rebuild. v4's steel version read as a grey APPLIANCE: its front face was filled
+    // LINE black with only 22x5 ever painted, four 5px-pitch ribs chopped that survivor into five grey
+    // blocks, and a 15px rise over a 24px footprint is the proportion of a hi-fi, not of freight.
+    // Two changes fix it. (1) PROPORTION: it now rises 20px, so the silhouette is near-CUBIC and reads
+    // as a crate before a single detail resolves. (2) MATERIAL: timber, not steel — plank seams and
+    // cross-battens are the one universal crate signal, and the warm ramp separates it at a glance from
+    // the dozen grey machines it stands beside. (Footprint gate safe: 12 of 20 painted rows sit inside.)
+    const WD = '#6a512f', WD_LIT = '#8b6c44', WD_DK = '#3c2c19', WD_TOP = '#7b5f38';
+    const BAT = '#4a3620', BAT_LIT = '#6d5232';                   // cross-battens, a shade below the planks
+    const bT = y - 2, bH = 12;                                    // front face: y-2 .. y+9
     shadow2(x + 1, y + h - 1, w - 2);
-    // short ribbed front face
-    rr(x, y + 4, w, h - 5, LINE);
-    px(x + 1, y + 5, w - 2, h - 7, r.face);
-    px(x + 1, y + 5, w - 2, 1, r.lit); keyEdge(x + 2, y + 5, w - 5, 1, 0.14);   // catch under the lid overhang
-    for (let i = 1; i < (w - 2) / 5; i++) {
-      px(x + 1 + i * 5, y + 5, 1, h - 7, r.ao);                        // ribs cut deep
-      px(x + 2 + i * 5, y + 5, 1, h - 7, U.shade(r.face, 0.16));       // rib catch
+    // ---- FRONT FACE: vertical planks. Seams run WITH the boards, never across (the longtable law).
+    px(x, bT, w, bH, LINE);
+    px(x + 1, bT + 1, w - 2, bH - 2, WD);
+    for (let i = 1; i < 5; i++) {                                 // four seams => five planks across 22px
+      const sx = x + 1 + Math.round(i * (w - 2) / 5);
+      px(sx, bT + 1, 1, bH - 2, WD_DK);
+      px(sx + 1, bT + 1, 1, bH - 2, U.shade(WD, 0.10));           // the next plank's lit edge
     }
-    px(x + w - 2, y + 5, 1, h - 7, r.dk); rimEdge(x + w - 2, y + 5, 1, h - 7, 0.20);
-    // corner castings — the family's shared "this is freight" hardware
-    px(x + 1, y + 5, 2, 2, r.sheen); px(x + w - 3, y + 5, 2, 2, U.shade(r.sheen, -0.25));
-    px(x + 1, y + h - 4, 2, 2, r.dk); px(x + w - 3, y + h - 4, 2, 2, r.dk);
-    px(x + w - 9, y + 6, 5, 1, '#caa84a'); px(x + w - 8, y + 7, 3, 1, '#8a7434');  // serial stripe
-    px(x + 1, y + h - 3, w - 2, 1, r.ao);                              // floor-line AO
-    // the CHAMFERED lid dominates
-    chamf(x - 1, y - 4, w + 2, 10, LINE, 2);
-    chamf(x, y - 3, w, 8, r.top, 2);
-    px(x + 2, y - 3, w - 4, 1, r.sheen); keyEdge(x + 2, y - 3, 8, 1, 0.28);
-    px(x, y - 1, 1, 5, r.lit); px(x + w - 1, y - 1, 1, 5, r.dk);
-    rimEdge(x + w - 1, y - 1, 1, 5, 0.20);
-    px(x + (w >> 1), y - 2, 1, 6, U.shade(r.top, -0.22));              // lid seam
-    px(x + 4, y - 1, 4, 2, '#3a5a48'); px(x + 5, y - 1, 2, 1, ACC.work);   // stencilled cargo glyph
-    px(x + 4, y + 3, 1, 2, '#1e262c'); px(x + w - 5, y + 3, 1, 2, '#1e262c'); // clasps
-    px(x + 2, y - 2, 1, 1, U.shade(r.sheen, 0.34));                    // rivet glint (soft catch, not white)
-    px(x + 2, y + 4, w - 4, 1, U.shade(r.top, -0.16));                 // lid front edge
-    wear(x + 2, y - 2, w - 4, 6, 4, U.shade(r.top, -0.12));
-    px(x + 2, y + h - 2, 4, 1, r.dk); px(x + w - 6, y + h - 2, 4, 1, r.dk);   // skid rails
-    px(x + 2, y + h - 1, 4, 1, U.shade(r.ao, 0.20)); px(x + w - 6, y + h - 1, 4, 1, U.shade(r.ao, 0.20));
+    px(x + w - 2, bT + 1, 1, bH - 2, WD_DK); rimEdge(x + w - 2, bT + 2, 1, bH - 5, 0.20);
+    // v6.1: wear was 7 specks over a 22x8 face and it buried the plank seams in mud. A crate's texture
+    // IS its seams — the speckle only has to imply grime, so it goes to 3 and stays off the batten rows.
+    wear(x + 3, bT + 4, w - 6, 3, 3, U.shade(WD, -0.22));
+    // ---- BATTENS: two horizontal rails, pushed to the very top and bottom of the face so the planks
+    // own the middle. A DIAGONAL brace was authored here and CUT: between the rails there were only
+    // three free rows, so it came out all but horizontal and vanished into the plank seams. Don't re-add
+    // it on a 2x1 — a shallow diagonal needs a face at least twice this tall to read.
+    for (const by of [bT + 1, bT + bH - 4]) {
+      px(x + 1, by, w - 2, 2, BAT);
+      px(x + 1, by, w - 2, 1, BAT_LIT); keyEdge(x + 2, by, 7, 1, 0.16);
+      px(x + 1, by + 2, w - 2, 1, U.shade(BAT, -0.50));           // the batten's cast shadow below it
+      for (let i = 0; i < 4; i++) px(x + 3 + i * 6, by + 1, 1, 1, U.shade(BAT_LIT, 0.24));   // nail heads
+    }
+    // stencil block on the middle planks: cargo markings read as ONE object, never as scattered specks
+    px(x + 3, bT + 4, 7, 4, '#241b0f');
+    px(x + 4, bT + 5, 5, 1, '#b8933f'); px(x + 4, bT + 6, 3, 1, U.shade('#b8933f', -0.40));
+    px(x + w - 8, bT + 4, 4, 4, '#20301f'); px(x + w - 7, bT + 5, 2, 2, '#2f6b46');   // cargo-cleared chit
+    px(x + 1, y + h - 3, w - 2, 1, '#0d1114');                    // floor-line AO
+    px(x + 1, y + h - 2, 5, 1, WD_DK); px(x + w - 6, y + h - 2, 5, 1, WD_DK);        // skid feet
+    ctx.globalAlpha = 0.34; px(x + 1, y + h - 1, w - 2, 1, '#000'); ctx.globalAlpha = 1;
+    // ---- LID: the foreshortened TOP plane, planked the other way and visibly OVERHANGING the body.
+    // The 1px proud edge east/west is the whole trick that turns two stacked rectangles into a lid on a box.
+    chamf(x - 1, y - 10, w + 2, 10, LINE, 2);
+    chamf(x, y - 9, w, 8, WD_TOP, 2);
+    px(x + 2, y - 9, w - 4, 1, U.shade(WD_LIT, 0.14)); keyEdge(x + 2, y - 9, 10, 1, 0.30);
+    px(x + 2, y - 8, w - 4, 1, WD_LIT);
+    for (const sy of [y - 6, y - 4]) {                            // lid plank seams, running east-west
+      px(x + 1, sy, w - 2, 1, U.shade(WD_TOP, -0.34));
+      px(x + 1, sy + 1, w - 2, 1, U.shade(WD_TOP, 0.10));
+    }
+    px(x, y - 7, 1, 5, WD_LIT); px(x + w - 1, y - 7, 1, 5, WD_DK);
+    rimEdge(x + w - 1, y - 7, 1, 5, 0.22);
+    wear(x + 4, y - 8, w - 8, 6, 4, U.shade(WD_TOP, -0.16));
+    px(x + 1, y - 2, w - 2, 1, U.shade(WD_DK, -0.30));            // underside of the overhang
+    // steel toggle clasps ACROSS the lid line. They must STRADDLE it, not stand on it: the first draft
+    // ran them 4px up into the lid inside a LINE block, which cut two black notches out of the top plane
+    // and left two chrome sticks reading as aerials. Two rows above the seam, two below, no outline.
+    for (const cxx of [x + 5, x + w - 8]) {
+      px(cxx, y - 4, 4, 4, U.shade(WD_DK, -0.34));                // the recess the clasp is let into
+      px(cxx + 1, y - 4, 2, 3, '#79868f');
+      px(cxx + 1, y - 4, 2, 1, '#a3b0b8'); keyEdge(cxx + 1, y - 4, 1, 1, 0.30);
+      px(cxx + 1, y - 1, 2, 1, '#4c565d');                        // the catch, gripping the body below
+    }
   };
 
   F.fabricator = (x, y, w, h, f) => { // v4 apparel fabricator (3x2) — a framed gantry BAY, a feed line, an out-hopper
@@ -2091,64 +2120,119 @@ const PropSprites = (() => {
     bloom(x + 5, y - 1, w - 10, 8, '#ff9d2e', (on ? 0.15 : 0.06) + 0.04 * Math.sin(now / 700 + ph));
   };
 
-  F.easel = (x, y, w, h, f) => { // v4 portrait easel (3x2) — freestanding A-frame; the canvas IS the light source
-    const r = RAMP.gun, on = !!(f && f.work), ph = (f && f.x) || 0;
+  F.easel = (x, y, w, h, f) => {
+    // EASEL (3x2) — v6. The v4 version had an easel's ANATOMY (A-frame, ledge, canvas) and still read as
+    // a CRT MONITOR ON A STAND, because of one decision: the canvas was a DARK WELL — inset() over
+    // #170f22, with an idle ground of #1d1528. Dark rectangle in a heavy frame on legs IS a monitor;
+    // that is the same shape the console and tacscreen props use, and no amount of easel joinery around
+    // it can win the argument. A canvas is the LIGHTEST thing in the room — primed linen — so the ground
+    // is now cream and the picture is painted in dark pigment ON it, which is the correct polarity and
+    // fixes the read on its own. Three supporting changes: the frame goes to warm TIMBER (v4 used
+    // RAMP.gun, i.e. the same metal as the lockers), the centre mast now rises ABOVE the canvas the way
+    // a real easel's does, and the ledge carries brushes and a palette so the prop reads as in use.
+    const on = !!(f && f.work), ph = (f && f.x) || 0;
+    const WD = '#7a5a34', WD_LIT = '#a37c4c', WD_DK = '#432d16';
+    const LIN = '#d9cfbc', LIN_LIT = '#f2e9d6', LIN_DK = '#9d9483';   // primed linen
+    const cx0 = x + 8, cy0 = y - 9, cw = w - 16, ch = 18;             // the canvas face
     shadow2(x + 3, y + h - 1, w - 6);
-    px(x + (w >> 1) - 1, y + 13, 3, h - 15, LINE);             // rear mast under the canvas
-    px(x + (w >> 1), y + 14, 1, h - 17, r.dk); rimEdge(x + (w >> 1), y + 15, 1, 6, 0.14);
-    for (const pair of [[x + 10, x + 4], [x + w - 12, x + w - 6]]) {   // splayed A-frame legs (kept geometry)
+    // ---- CENTRE MAST, rising past the canvas top. This overshoot is the single silhouette cue that
+    // separates an easel from any other framed panel on a stand, and v4 stopped the mast at the canvas.
+    px(x + (w >> 1) - 1, cy0 - 5, 3, h - cy0 + y + 3, LINE);
+    px(x + (w >> 1), cy0 - 4, 1, h - cy0 + y + 1, WD);
+    px(x + (w >> 1), cy0 - 4, 1, 4, WD_LIT); keyEdge(x + (w >> 1), cy0 - 4, 1, 3, 0.20);
+    rimEdge(x + (w >> 1), cy0 + 12, 1, 6, 0.16);
+    // ---- SPLAYED FRONT LEGS. Kept from v4 (the geometry was never the problem) but in timber.
+    for (const pair of [[x + 10, x + 4], [x + w - 12, x + w - 6]]) {
       const tx = pair[0], fx2 = pair[1];
       for (let i = 0; i < 9; i++) px(Math.round(tx + (fx2 - tx) * (i / 8)) - 1, y + 5 + i * 2, 4, 3, LINE);
       for (let i = 0; i < 9; i++) {
         const lx = Math.round(tx + (fx2 - tx) * (i / 8));
-        px(lx, y + 5 + i * 2, 1, 2, r.lit); px(lx + 1, y + 5 + i * 2, 1, 2, r.dk);
+        px(lx, y + 5 + i * 2, 1, 2, WD_LIT); px(lx + 1, y + 5 + i * 2, 1, 2, WD_DK);
       }
-      px(fx2 - 1, y + h - 2, 4, 2, LINE); px(fx2, y + h - 2, 2, 1, r.face);
+      px(fx2 - 1, y + h - 2, 4, 2, LINE); px(fx2, y + h - 2, 2, 1, WD);
+      px(fx2 - 1, y + h - 1, 4, 1, '#0a0d10');                       // foot contact
       keyEdge(fx2, y + h - 3, 1, 2, 0.16);
     }
-    cable(x + 6, y + 17, x + w - 8, y + 17, 2.6, '#241d2c');    // slack tension cord — breaks the A out of a triangle
-    // the CANVAS dominates: heavy chamfered frame, deep well
-    chamf(x + 6, y - 8, w - 12, 21, LINE, 2);
-    chamf(x + 7, y - 7, w - 14, 19, '#43394e', 2);
-    px(x + 9, y - 7, w - 18, 1, '#584a66'); keyEdge(x + 9, y - 7, 7, 1, 0.24);
-    px(x + 7, y - 5, 1, 15, '#50445e'); px(x + w - 8, y - 5, 1, 15, '#332b3e');
-    rimEdge(x + w - 8, y - 5, 1, 15, 0.20);
-    px(x + 8, y + 11, w - 16, 1, U.shade('#43394e', -0.40));   // frame's front lip
-    inset(x + 9, y - 5, w - 18, 13, '#170f22');
-    px(x + 9, y - 5, 2, 1, '#4c4258'); px(x + w - 11, y - 5, 2, 1, '#4c4258');   // canvas clamps (kept)
-    const cvx = x + 10, cvy = y - 4, cvw = w - 20, cvh = 11;
-    if (on) {                                                   // scanline reveal of the commission (kept beats)
-      const rev = (now / 2000) % 1, rh = Math.max(1, Math.min(cvh, Math.floor(cvh * rev) + 1));
-      for (let j = 0; j < rh; j++) px(cvx, cvy + j, cvw, 1, U.shade(ACC.lounge, -0.44 + 0.24 * (1 - j / cvh)));
-      px(cvx, cvy, cvw, 1, U.shade(ACC.lounge, 0.28));
-      px(cvx + 2, cvy + 1, 3, 2, '#ffd9a0'); px(cvx + 3, cvy + 2, 1, 1, '#2a1a24');   // subject's face (kept hint)
-      if (rh > 4) { px(cvx + cvw - 6, cvy + 3, 3, 2, '#ffd9a0'); px(cvx + cvw - 5, cvy + 4, 1, 1, '#2a1a24'); }
-      if (rh < cvh) px(cvx, cvy + rh, cvw, 1, blink(120, ph) ? '#ffe4f6' : ACC.lounge);  // scan head (kept 120)
-      scanl(cvx, cvy, cvw, rh, 0.16);
-      bloom(cvx, cvy, cvw, rh, ACC.lounge, 0.16);
-    } else {                                                    // idle sketch (kept) on a primed ground, not a hole
-      px(cvx, cvy, cvw, cvh, '#1d1528');
-      px(cvx + 2, cvy + 1, 5, 5, '#463a56'); px(cvx + 3, cvy + 2, 3, 3, '#57496a');
-      px(cvx + cvw - 7, cvy + 3, 4, 4, '#3c3049');
-      px(cvx + 1, cvy + 8, cvw - 2, 1, '#2a2236');              // sketch guide line
-      glow(cvx, cvy, cvw, cvh, ACC.lounge, 0.05);
-      px(cvx + cvw - 2, cvy + cvh - 1, 1, 1, blink(1600, ph) ? ACC.flow : '#33241a');  // standby lamp
+    cable(x + 6, y + 17, x + w - 8, y + 17, 2.6, '#2b2016');         // slack tension cord across the A
+    // ---- CANVAS: a stretcher frame in timber, then PRIMED LINEN. The top edge of the stretcher is
+    // drawn as a lit 1px band standing proud of the face — that reads as the canvas LEANING BACK.
+    chamf(cx0 - 2, cy0 - 2, cw + 4, ch + 4, LINE, 2);
+    chamf(cx0 - 1, cy0 - 1, cw + 2, ch + 2, WD, 1);
+    px(cx0, cy0 - 2, cw, 1, WD_LIT); keyEdge(cx0 + 1, cy0 - 2, 7, 1, 0.26);   // the proud top edge
+    px(cx0 - 1, cy0 + 1, 1, ch - 2, WD_LIT); px(cx0 + cw, cy0 + 1, 1, ch - 2, WD_DK);
+    rimEdge(cx0 + cw, cy0 + 1, 1, ch - 2, 0.20);
+    px(cx0 - 1, cy0 + ch, cw + 2, 1, U.shade(WD_DK, -0.20));         // the frame's bottom rail, in shade
+    px(cx0, cy0, cw, ch, LIN);                                       // PRIMED LINEN — the light ground
+    px(cx0, cy0, cw, 1, LIN_LIT);                                    // the top of the weave takes the key
+    px(cx0, cy0, 1, ch, U.shade(LIN, 0.05)); px(cx0 + cw - 1, cy0, 1, ch, LIN_DK);
+    for (let i = 0; i < 3; i++) px(cx0 + 1, cy0 + 4 + i * 5, cw - 2, 1, U.shade(LIN, -0.06));   // weave
+    px(cx0, cy0 + ch - 1, cw, 1, U.shade(LIN, -0.16));               // the ledge's shadow on the linen
+    // ---- THE PICTURE. Dark pigment on the light ground, in both states. Idle is a charcoal LAY-IN
+    // (horizon, a figure blocked in, a couple of construction lines); working paints it in, top-down.
+    // It is a PORTRAIT easel, so the lay-in is a bust: head, neck, then shoulders spreading wider than
+    // the head. A first draft blocked a torso and a second "mass" beside it and the pair read as a chess
+    // piece next to a bottle — on a 20px canvas the shoulder line is the only cue that says "a person".
+    const PG = '#4b4034', PG2 = '#6d6152';
+    px(cx0 + 7, cy0 + 3, 5, 5, PG);                                  // head
+    px(cx0 + 8, cy0 + 2, 3, 1, U.shade(PG, -0.20));                  // crown
+    px(cx0 + 8, cy0 + 8, 3, 2, U.shade(PG, 0.10));                   // neck
+    // shoulders — TAPERED, and they must not touch the canvas edges. A first draft ran them 13px wide
+    // at a constant width and the bust read as a dark BAR under a blob: a rectangle spanning the picture
+    // is a horizon, not a body. Widening row by row, with linen left either side, is what makes it read.
+    for (let j = 0; j < 5; j++) px(cx0 + 8 - j - 1, cy0 + 10 + j, 5 + (j + 1) * 2, 1, PG);
+    px(cx0 + 6, cy0 + 10, 7, 1, PG2);                                // the lit top of the shoulder line
+    px(cx0 + 6, cy0 + 12, 2, 3, U.shade(PG, -0.18)); px(cx0 + 11, cy0 + 12, 2, 3, U.shade(PG, -0.18));
+    px(cx0 + 1, cy0 + 9, 5, 1, U.shade(LIN, -0.20));                 // the ground line, BEHIND the sitter
+    px(cx0 + cw - 6, cy0 + 9, 5, 1, U.shade(LIN, -0.20));
+    px(cx0 + 2, cy0 + 6, 3, 1, U.shade(LIN, -0.14));                 // two construction marks, still showing
+    px(cx0 + cw - 5, cy0 + 5, 3, 1, U.shade(LIN, -0.14));
+    if (on) {
+      // THE REVEAL PAINTS THE PICTURE, IT DOES NOT ERASE IT. A first version filled every revealed row
+      // edge-to-edge with ACC.lounge, so "working" replaced the portrait with a flat magenta flag and
+      // the face survived only as a peach square floating in it. The reveal now lays a muted BACKDROP
+      // and then re-stamps the same head/neck/shoulder geometry in painted tones over it — same shapes
+      // as the lay-in, in colour, which is what finishing a canvas actually looks like.
+      const BKD = '#6b4257', SKN = '#f0c69c', HAIR = '#3a2430', GRB = U.shade(ACC.lounge, -0.34);
+      const rev = (now / 2400) % 1, rh = Math.max(1, Math.min(ch - 2, Math.floor((ch - 2) * rev) + 1));
+      const done = (ry, rhh) => Math.max(0, Math.min(rhh, rh - (ry - cy0 - 1)));   // rows of a band painted
+      for (let j = 0; j < rh; j++)                                   // the backdrop wash, warm at the top
+        px(cx0 + 1, cy0 + 1 + j, cw - 2, 1, U.shade(BKD, 0.14 * (1 - j / ch)));
+      let d = done(cy0 + 2, 1); if (d) px(cx0 + 8, cy0 + 2, 3, d, HAIR);            // crown
+      d = done(cy0 + 3, 5); if (d) { px(cx0 + 7, cy0 + 3, 5, d, SKN);               // head
+        px(cx0 + 7, cy0 + 3, 1, d, U.shade(SKN, -0.22)); px(cx0 + 7, cy0 + 3, 5, 1, HAIR); }
+      if (rh > 5) { px(cx0 + 8, cy0 + 5, 1, 1, '#2a1a24'); px(cx0 + 10, cy0 + 5, 1, 1, '#2a1a24'); }
+      d = done(cy0 + 8, 2); if (d) px(cx0 + 8, cy0 + 8, 3, d, U.shade(SKN, -0.16));  // neck
+      for (let j = 0; j < 5; j++)                                    // shoulders, in the sitter's garment
+        if (done(cy0 + 10 + j, 1)) px(cx0 + 8 - j - 1, cy0 + 10 + j, 5 + (j + 1) * 2, 1, j ? GRB : U.shade(GRB, 0.22));
+      // the wet edge — the only bright pixel this prop ever shows, and it exists only while a row is wet
+      if (rh < ch - 2) px(cx0 + 1, cy0 + 1 + rh, cw - 2, 1, blink(120, ph) ? '#ffe4f6' : ACC.lounge);
+      bloom(cx0 + 1, cy0 + 1, cw - 2, rh, ACC.lounge, 0.09);
+    } else {
+      px(cx0 + cw - 3, cy0 + ch - 3, 1, 1, blink(1600, ph) ? U.shade(ACC.flow, -0.30) : '#8d8474');   // a pin
     }
-    // paint ledge bolted across the front legs
+    // ---- PAINT LEDGE bolted across the front legs, with the tools on it
     chamf(x + 5, y + 12, w - 10, 5, LINE, 1);
-    px(x + 6, y + 13, w - 12, 3, r.face); px(x + 6, y + 13, w - 12, 1, r.lit);
+    px(x + 6, y + 13, w - 12, 3, WD); px(x + 6, y + 13, w - 12, 1, WD_LIT);
     keyEdge(x + 7, y + 13, 8, 1, 0.15);
-    px(x + 6, y + 15, w - 12, 1, r.ao);
-    for (const pot of [[x + w - 12, ACC.lounge], [x + w - 16, ACC.data], [x + w - 20, ACC.flow]]) {
-      px(pot[0], y + 11, 3, 3, LINE); px(pot[0], y + 11, 2, 2, U.shade(pot[1], -0.30)); px(pot[0], y + 11, 2, 1, pot[1]);
+    px(x + 6, y + 15, w - 12, 1, U.shade(WD_DK, -0.20));
+    // TOOLS. Both of these must clear the canvas: a first pass stood the brush jar at x+7 and hooked the
+    // palette at x+w-15, and since the canvas face spans cx0..cx0+cw (x+8 .. x+28) BOTH were painted
+    // straight over the picture. The canvas owns the middle; the tools get the two clear side strips.
+    px(x + 1, y + 8, 5, 5, '#26303a'); px(x + 1, y + 8, 5, 1, '#3d4a56');   // brush jar, west of the frame
+    px(x + 1, y + 12, 5, 1, '#151c22');
+    for (let i = 0; i < 3; i++) {                                    // brushes: verticals that say "in use"
+      const bxx = x + 2 + i;
+      px(bxx, y + 3 + i, 1, 6 - i, '#8a6a42');
+      px(bxx, y + 3 + i, 1, 1, ['#c8c0b0', '#a33a3a', '#4ad9ff'][i]);
     }
-    px(x + 8, y + 12, 1, 1, ACC.lounge); px(x + 11, y + 12, 1, 1, ACC.data);   // splatter (kept)
-    for (let i = 0; i < 4; i++) {                               // mix LEDs (kept 500)
-      const lit = blink(500, i) && on;
-      px(x + 9 + i * 4, y + 14, 2, 1, lit ? ACC.lounge : '#473a54');
-      if (lit) bloom(x + 9 + i * 4, y + 14, 2, 1, ACC.lounge, 0.20);
-    }
-    if (on) spill(x + 8, y + 12, w - 16, ACC.lounge, 0.24, 4);  // the wet canvas throws colour down onto the ledge
+    // PALETTE lying on the ledge, east of the canvas and BELOW its bottom rail
+    chamf(x + w - 12, y + 11, 11, 5, LINE, 1);
+    chamf(x + w - 11, y + 12, 9, 3, '#9d8a6c', 1); px(x + w - 11, y + 12, 9, 1, '#bda887');
+    px(x + w - 5, y + 13, 2, 1, U.shade('#9d8a6c', -0.44));          // the thumb hole
+    for (const dab of [[x + w - 10, ACC.lounge], [x + w - 8, ACC.data], [x + w - 6, ACC.flow]])
+      px(dab[0], y + 12, 1, 1, U.shade(dab[1], -0.20));
+    px(x + 12, y + 15, 1, 1, U.shade(ACC.lounge, -0.20)); px(x + 17, y + 15, 1, 1, U.shade(ACC.data, -0.20));
+    if (on) spill(x + 8, y + 12, w - 16, ACC.lounge, 0.18, 4);       // the wet canvas throws colour down
   };
 
   F.beltH = (x, y, w, h) => {
@@ -3632,67 +3716,106 @@ const PropSprites = (() => {
     if (on) spill(x + 2, y + 3, w - 4, ACC.work, 0.09, 3);
   };
 
-  F.bar = (x, y, w, h, f) => {   // v4 counter (4x1) — chamfered steel top, back-lit bottle shelf; south face stays open (approach)
+  F.bar = (x, y, w, h, f) => {
+    // BAR (4x1) — v6 detail pass. v4 had the right ANATOMY (counter, kick rail, back shelf) and read as
+    // a grey service counter anyway, for three reasons, all fixed here:
+    //   (1) the top was RAMP.steel, so the widest lounge prop in the game was the same material as the
+    //       routers and the vault. It is timber now, with a brass nosing — the only warm big surface in
+    //       the room, which is what a bar is for.
+    //   (2) the back shelf stood on two 2px stubs 6px clear of the counter and read as FLOATING. It now
+    //       lands on two full-height end standards with a mid rail, so it is visibly one piece of joinery.
+    //   (3) the bottles were 2px blocks. A bottle is a NECK over a shoulder over a body — three rows,
+    //       not one — and that is the whole difference between a bottle rack and a colour bar chart.
     const r = RAMP.steel, ph = (f && f.x) || 0, on = !!(f && f.work);
+    const WD = '#5a3f28', WD_LIT = '#7d5a3a', WD_DK = '#33230f';        // counter timber
+    // BRASS, DEEP not bright. The first pass used #b8953f/#e0c06a and the nosing and the foot rail came
+    // out as two full-width neon-yellow bars running the whole 48px — at that length any saturated tone
+    // stops being trim and becomes a light fixture. Trim is a HIGHLIGHT on a dark metal, so the base
+    // tone drops to a dim bronze and the bright value survives only in the short west-biased glint.
+    const BRS = '#7a6128', BRS_LIT = '#b8953f';                          // brass nosing + fittings
     shadow2(x + 1, y + h - 1, w - 2);
-    for (const lx of [x + 2, x + w - 5]) {                        // end feet blocks, freestanding
+    for (const lx of [x + 2, x + w - 5]) {                              // end feet blocks, freestanding
       px(lx, y + 9, 3, 3, LINE); px(lx, y + 9, 1, 3, r.lit); px(lx + 1, y + 9, 1, 3, r.dk);
       rimEdge(lx + 2, y + 9, 1, 2, 0.16);
     }
     underAO(x + 5, y + 9, w - 10, 2);
-    px(x + 4, y + 10, w - 8, 1, '#78868f');                       // chrome foot rail in the kick gap
-    px(x + 4, y + 10, 6, 1, U.shade('#78868f', 0.22));            // rail glint, west-biased
+    px(x + 4, y + 10, w - 8, 1, BRS);                                   // brass foot rail in the kick gap
+    px(x + 4, y + 10, 7, 1, BRS_LIT);                                   // rail glint, west-biased
     px(x + 4, y + 11, w - 8, 1, '#2c363c');
-    // short front face — deliberately plain and open: this is the side agents walk up to
+    // ---- FRONT FACE: panelled timber. Deliberately plain and OPEN — this is the side agents walk up to.
     chamf(x - 1, y + 4, w + 2, 6, LINE, 2);
-    px(x, y + 5, w, 4, r.face);
-    px(x, y + 5, w, 1, r.lit); keyEdge(x + 1, y + 5, w - 3, 1, 0.16);
-    for (let i = 1; i < 3; i++) { px(x + i * 16, y + 6, 1, 3, r.ao); px(x + 1 + i * 16, y + 6, 1, 3, U.shade(r.face, 0.10)); }
-    px(x + w - 1, y + 5, 1, 4, r.dk); rimEdge(x + w - 1, y + 5, 1, 4, 0.20);
-    px(x, y + 8, w, 1, r.ao);
-    bloom(x + 2, y + 8, w - 4, 1, ACC.lounge, on ? 0.28 + 0.10 * Math.sin(now / 700) : 0.15);  // under-counter accent
-    // the CHAMFERED counter top dominates
-    chamf(x - 1, y - 3, w + 2, 9, LINE, 2);
-    chamf(x, y - 2, w, 7, r.top, 2);
-    px(x + 2, y - 2, w - 4, 1, r.sheen); keyEdge(x + 2, y - 2, 9, 1, 0.28);
-    for (let i = 0; i < w / 8; i++) px(x + 3 + i * 8, y, 3, 1, U.shade(r.sheen, 0.06));   // brushed streaks
-    px(x, y, 1, 4, r.lit); px(x + w - 1, y, 1, 4, r.dk); rimEdge(x + w - 1, y, 1, 4, 0.20);
-    px(x + 1, y + 4, w - 2, 1, U.shade(r.top, -0.18));            // top front edge
-    wear(x + 2, y - 1, w - 4, 5, 4, U.shade(r.top, -0.09));
-    // BACK SHELF standing off the north edge — a lit bottle rack is what says "bar" at 3x zoom.
-    // Bracketed down to the counter so it doesn't float, and kept SHORT so it never hides the drinks.
-    const sy = y - 10, sw = 22, sxx = x + 4;
-    for (const bx of [sxx + 1, sxx + sw - 3]) { px(bx, sy + 6, 2, 3, LINE); px(bx, sy + 6, 1, 3, r.lit); px(bx + 1, sy + 6, 1, 3, r.dk); }
-    chamf(sxx - 1, sy - 1, sw + 2, 8, LINE, 2);
-    chamf(sxx, sy, sw, 6, U.shade(r.face, -0.10), 2);
-    px(sxx + 2, sy, sw - 4, 1, r.top); keyEdge(sxx + 2, sy, 6, 1, 0.24);
-    px(sxx, sy + 2, 1, 3, r.lit); px(sxx + sw - 1, sy + 2, 1, 3, r.dk); rimEdge(sxx + sw - 1, sy + 2, 1, 3, 0.20);
-    inset(sxx + 1, sy + 1, sw - 2, 4, '#120a14');                 // back-lit niche
-    for (let i = 0; i < 7; i++) {                                 // bottles as silhouettes against the light
-      const bc = ['#7adfd0', '#caa84a', '#b44aff', '#ff6ad5', '#7fd0ff', '#caa84a', '#8adf9a'][i];
-      const bh2 = 2 + (i % 3);
-      px(sxx + 2 + i * 3, sy + 4 - bh2, 2, bh2, U.shade(bc, -0.30));
-      px(sxx + 2 + i * 3, sy + 4 - bh2, 1, bh2, bc);              // lit west edge of each bottle
+    px(x, y + 5, w, 4, WD);
+    px(x, y + 5, w, 1, WD_LIT); keyEdge(x + 1, y + 5, w - 3, 1, 0.16);
+    for (let i = 0; i < 4; i++) {                                       // four recessed panels
+      const pxx = x + 3 + i * 12;
+      px(pxx, y + 6, 9, 2, U.shade(WD, -0.24));
+      px(pxx, y + 6, 9, 1, U.shade(WD, -0.44)); px(pxx, y + 7, 9, 1, U.shade(WD, 0.10));
     }
-    bloom(sxx + 1, sy + 1, sw - 2, 4, ACC.lounge, on ? 0.26 : 0.16);   // the niche is always lit — a dark shelf reads as a hole
-    spill(sxx + 1, sy + 6, sw - 2, ACC.lounge, on ? 0.20 : 0.12, 4);   // shelf light pools onto the counter
+    px(x + w - 1, y + 5, 1, 4, WD_DK); rimEdge(x + w - 1, y + 5, 1, 4, 0.20);
+    px(x, y + 8, w, 1, U.shade(WD_DK, -0.34));
+    bloom(x + 2, y + 8, w - 4, 1, ACC.lounge, on ? 0.28 + 0.10 * Math.sin(now / 700) : 0.15);  // under-counter accent
+    // ---- COUNTER TOP: timber slab with a BRASS NOSING along the front lip. The nosing is the single
+    // detail that says "bar" fastest, because no other prop in the catalog has a warm metal edge.
+    chamf(x - 1, y - 3, w + 2, 9, LINE, 2);
+    chamf(x, y - 2, w, 7, WD, 2);
+    px(x + 2, y - 2, w - 4, 1, WD_LIT); keyEdge(x + 2, y - 2, 10, 1, 0.28);
+    px(x + 2, y - 1, w - 4, 1, U.shade(WD, 0.14));
+    for (let i = 0; i < 5; i++) px(x + 4 + i * 10, y, 5, 1, U.shade(WD, 0.08));   // grain along the top
+    px(x, y, 1, 4, WD_LIT); px(x + w - 1, y, 1, 4, WD_DK); rimEdge(x + w - 1, y, 1, 4, 0.20);
+    px(x + 1, y + 3, w - 2, 1, BRS); px(x + 1, y + 3, 9, 1, BRS_LIT);   // the brass nosing
+    px(x + 1, y + 4, w - 2, 1, U.shade(BRS, -0.52));                    // its shadow onto the front face
+    wear(x + 2, y - 1, w - 4, 4, 4, U.shade(WD, -0.12));
+    // ---- BACK GANTRY: two end standards + a mid rail carry the shelf, so it is JOINERY, not a floater.
+    const sy = y - 11, sw = 26, sxx = x + 5;
+    for (const bx of [sxx, sxx + sw - 3]) {
+      px(bx, sy + 5, 3, 8, LINE);
+      px(bx, sy + 5, 1, 8, U.shade(WD, 0.18)); px(bx + 1, sy + 5, 1, 8, WD); px(bx + 2, sy + 5, 1, 8, WD_DK);
+      keyEdge(bx, sy + 6, 1, 5, 0.16); rimEdge(bx + 2, sy + 6, 1, 6, 0.18);
+    }
+    px(sxx + 2, sy + 9, sw - 4, 1, WD_DK); px(sxx + 2, sy + 9, 6, 1, U.shade(WD, 0.10));   // mid rail
+    // shelf carcass
+    chamf(sxx - 1, sy - 1, sw + 2, 8, LINE, 2);
+    chamf(sxx, sy, sw, 6, U.shade(WD, -0.20), 2);
+    px(sxx + 2, sy, sw - 4, 1, WD_LIT); keyEdge(sxx + 2, sy, 7, 1, 0.24);
+    px(sxx, sy + 2, 1, 3, U.shade(WD, 0.14)); px(sxx + sw - 1, sy + 2, 1, 3, WD_DK);
+    rimEdge(sxx + sw - 1, sy + 2, 1, 3, 0.20);
+    inset(sxx + 1, sy + 1, sw - 2, 4, '#140a10');                       // back-lit niche
+    // BOTTLES as three-part silhouettes against the light: body, shoulder, neck. Seven across 24px.
+    for (let i = 0; i < 7; i++) {
+      const bc = ['#7adfd0', '#caa84a', '#b44aff', '#ff6ad5', '#7fd0ff', '#caa84a', '#8adf9a'][i];
+      const bh2 = 2 + (i % 2), bxx = sxx + 2 + i * 3;
+      px(bxx, sy + 5 - bh2, 2, bh2, U.shade(bc, -0.34));                // body
+      px(bxx, sy + 5 - bh2, 1, bh2, bc);                                // lit west edge
+      px(bxx, sy + 4 - bh2, 2, 1, U.shade(bc, -0.52));                  // shoulder
+      px(bxx, sy + 3 - bh2, 1, 1, U.shade(bc, -0.16));                  // neck, catching the niche light
+    }
+    bloom(sxx + 1, sy + 1, sw - 2, 4, ACC.lounge, on ? 0.26 : 0.16);    // the niche is always lit
+    spill(sxx + 1, sy + 6, sw - 2, ACC.lounge, on ? 0.20 : 0.12, 4);    // shelf light pools onto the counter
     px(sxx + sw - 4, sy + 1, 1, 1, blink(1500, ph) ? ACC.flow : '#33241a');   // shelf pilot lamp
-    // beer tap rising off the back edge, with drip
-    const tx = x + Math.round(w / 2) - 6;
-    px(tx, y - 6, 1, 5, '#aab8c8'); px(tx, y - 6, 1, 2, U.shade('#aab8c8', 0.20));
-    px(tx, y - 7, 2, 1, '#caa84a');                               // brass handle
-    px(tx - 1, y - 3, 1, 1, '#8a98a8');                           // spout
-    px(tx, y - 1, 3, 1, U.shade(r.top, -0.24));                   // base plate
-    if ((now % 2400) < 200) px(tx - 1, y - 2, 1, 1, '#ffd9a0');   // drip
-    // drinks ON the counter
-    px(x + 5, y, 3, 3, '#8a98a8'); px(x + 5, y, 3, 1, '#caa84a'); px(x + 5, y, 1, 3, '#aab8c8');   // can
-    px(x + w - 9, y - 2, 2, 5, '#7adfd0'); px(x + w - 9, y - 3, 2, 1, '#3a6a62'); px(x + w - 9, y - 1, 1, 3, '#bffff2');  // bottle
-    px(x + Math.round(w / 2) + 3, y + 1, 2, 2, '#9ab8c8'); px(x + Math.round(w / 2) + 6, y + 1, 2, 2, '#9ab8c8');
-    px(x + Math.round(w / 2) + 3, y + 2, 2, 1, '#6a8898'); px(x + Math.round(w / 2) + 6, y + 2, 2, 1, '#6a8898');   // drying glasses
-    chamf(x + Math.round(w / 2) - 3, y + 1, 6, 3, '#20282a', 1);  // bar mat
-    px(x + Math.round(w / 2) - 2, y + 1, 4, 1, '#2a3436');
-    px(x + Math.round(w / 2) + 10, y + 1, 3, 2, '#dfe8df');       // napkin stack
-    if (on) px(x + 6, y - 1, 1, 1, blink(800, ph) ? '#7a8a86' : '#5a6a66');   // someone just poured — a wisp off the can
+    // ---- TAP BANK: three taps on a shared plinth, rising off the back edge of the counter. SHORT and
+    // in bronze, not tall and in chrome: a first pass ran them six rows of near-white up into the shelf
+    // zone and they read as three lit CANDLES — the brightest thing on the prop, in front of the one
+    // element (the bottle niche) that is supposed to be the light source.
+    const tx = x + Math.round(w / 2) - 9;
+    px(tx - 1, y - 1, 11, 2, U.shade(BRS, -0.34)); px(tx - 1, y - 1, 11, 1, BRS);
+    for (let i = 0; i < 3; i++) {
+      const tk = tx + i * 4;
+      px(tk, y - 5, 1, 4, '#6c7a86'); px(tk, y - 5, 1, 2, '#96a4ae');   // the column
+      px(tk, y - 6, 2, 1, BRS_LIT);                                     // the handle badge
+      px(tk - 1, y - 2, 1, 1, '#7a8894');                               // spout
+    }
+    if ((now % 2400) < 200) px(tx + 3, y - 1, 1, 1, '#ffd9a0');         // a drip off the middle tap
+    // ---- SERVICE ON THE COUNTER. Grouped west / centre / east so it reads as three stations, not litter.
+    px(x + 5, y - 1, 3, 4, '#8a98a8'); px(x + 5, y - 1, 3, 1, BRS); px(x + 5, y - 1, 1, 4, '#c2ced6');  // can
+    px(x + 10, y, 2, 3, '#7adfd0'); px(x + 10, y - 1, 2, 1, '#3a6a62'); px(x + 10, y, 1, 3, '#bffff2');  // bottle
+    chamf(x + Math.round(w / 2) - 4, y + 1, 8, 3, '#1c2426', 1);        // bar mat
+    px(x + Math.round(w / 2) - 3, y + 1, 6, 1, '#2a3436');
+    for (const gx of [x + w - 14, x + w - 10]) {                        // two glasses, drying upside down
+      px(gx, y - 1, 3, 4, '#93a8b4'); px(gx, y - 1, 3, 1, '#c6d6de');
+      px(gx + 2, y, 1, 3, '#63757f'); px(gx, y + 3, 3, 1, '#4a585f');
+    }
+    px(x + w - 6, y + 1, 3, 2, '#dfe8df');                              // napkin stack
+    if (on) px(x + 6, y - 2, 1, 1, blink(800, ph) ? '#7a8a86' : '#5a6a66');   // someone just poured
   };
 
   F.stool = (x, y, w, h, f) => {   // v4 gas-lift task stool — one big oval seat over a thin chrome stem
@@ -4053,80 +4176,93 @@ const PropSprites = (() => {
   };
 
   F.bunk = (x, y, w, h, f) => {
-    // v4 CREW BERTH (2x2) — TOP-BIAS OBLIQUE, and the brief on this one is INHABITED, not showroom.
-    // Freestanding lounge tier: no deckplate, no floor socket, no bolted language. The read at 3x is
-    // (1) big pale mattress slab, (2) the blanket thrown back off ONE corner, (3) a warm lamp pool on
-    // the pillow fighting the station's cold ambient. Everything else is somebody's stuff.
-    const r = RAMP.fabric, ph = (f && f.x) || 0;
-    const sheet = '#b9b3a4', blank = '#2f5a62';                // linen + wool stay off the metal ramps on purpose
+    // BED (2x2) — v6, and a REPLACEMENT, not a polish pass. The v4 art was a "crew berth": a pale
+    // mattress slab, a teal wool blanket and a grey headboard cap, with boots and a jacket for story.
+    // Every one of those pieces was a horizontal band of a cold desaturated colour, so at 3x the prop
+    // read as a PHOTOCOPIER — which is exactly what the v5 sweep already flagged and left alone.
+    // Andrew's call (2026-07-27): make it a bed of the Minecraft kind. That look is three flat, high-
+    // contrast blocks in a timber frame — WHITE pillow at the head, RED quilt over the rest, brown
+    // frame around both — and it is legible at any zoom precisely because it refuses to be subtle.
+    // The catalog id stays 'bunk': saved stations carry the type string, and retiring a type leaves an
+    // invisible obstacle behind (the v5 lane law). Only the LABEL moves to BED.
+    //
+    // PROPORTION IS THE WHOLE JOB HERE. A first pass gave the headboard 9 rows and the footboard 7 out
+    // of 24, which left the bedding 13 — a light panel inside a heavy brown surround, i.e. a front-
+    // loading washing machine. On a bed the BEDDING is the subject and the frame is a trim: head 5,
+    // foot 4, bedding 17. Rails likewise drop 3px -> 2px a side.
+    const WD = '#6b5030', WD_LIT = '#8f6d44', WD_DK = '#3d2c19';         // frame timber
+    const QLT = '#a33a3a', QLT_LIT = '#c85a54', QLT_DK = '#6d2222';      // the quilt
+    const LIN = '#d8d3c4', LIN_LIT = '#f0ece0';                          // linen
+    const hdT = y - 3, ftT = y + h - 5;                                  // headboard top / footboard top
     shadow2(x + 1, y + h - 1, w - 2);
-    for (const lx of [x + 2, x + w - 5]) {                     // footboard legs — freestanding, straight to the deck
-      px(lx, y + 21, 3, 3, LINE); px(lx, y + 21, 1, 3, r.lit); px(lx + 1, y + 21, 1, 3, r.dk);
-      rimEdge(lx + 2, y + 21, 1, 2, 0.16);                     // cool sky bounce down the shade side
+    // ---- FOUR POSTS. Drawn first so the rails and the bedding overlap them; the south pair is what
+    // actually carries the prop's contact with the deck.
+    for (const [lx, lit] of [[x + 1, true], [x + w - 4, false]]) {
+      px(lx, y + 2, 3, h - 4, LINE);
+      px(lx, y + 3, 3, h - 5, lit ? WD : U.shade(WD, -0.18));
+      px(lx, y + 3, 1, h - 5, lit ? WD_LIT : WD);
+      px(lx + 2, y + 3, 1, h - 5, WD_DK);
+      if (lit) keyEdge(lx, y + 4, 1, h - 8, 0.16); else rimEdge(lx + 2, y + 4, 1, h - 8, 0.20);
+      px(lx, y + h - 2, 3, 1, '#0a0d10');                              // foot contact
     }
-    underAO(x + 5, y + 21, w - 10, 2);
-    // BOOTS kicked off under the foot of the bed — cheapest, loudest "someone sleeps here" signal there is
-    px(x + 6, y + 20, 3, 4, '#241d17'); px(x + 6, y + 20, 3, 1, '#3d3227'); px(x + 6, y + 23, 3, 1, '#100e0a');
-    px(x + 10, y + 21, 3, 3, '#1e1813'); px(x + 10, y + 21, 3, 1, '#332a20');
-    // FOOTBOARD — chamfered, warm catch under the mattress overhang, berth name tag
-    chamf(x - 1, y + 15, w + 2, 6, LINE, 2);
-    px(x, y + 16, w, 4, r.face);
-    px(x, y + 16, w, 1, r.lit); keyEdge(x + 1, y + 16, w - 4, 1, 0.16);
-    px(x, y + 17, 1, 3, U.shade(r.face, 0.08)); px(x + w - 1, y + 17, 1, 3, r.dk);
-    rimEdge(x + w - 1, y + 17, 1, 3, 0.20);
-    px(x + 2, y + 18, 3, 1, '#caa84a'); px(x + 2, y + 18, 1, 1, U.shade('#caa84a', 0.34));
-    px(x, y + 19, w, 1, r.ao);
-    // a JACKET slung over the east end of the rail — hangs past the footboard so the bottom edge isn't a straight line
-    px(x + w - 9, y + 14, 7, 8, '#3a4632'); px(x + w - 9, y + 14, 7, 1, '#54644a');
-    px(x + w - 9, y + 15, 1, 7, '#47573b'); px(x + w - 3, y + 15, 1, 7, '#28311f');
-    rimEdge(x + w - 3, y + 15, 1, 7, 0.16);
-    px(x + w - 8, y + 22, 5, 1, '#1e2618'); px(x + w - 7, y + 23, 3, 1, '#161c11');
-    px(x + w - 7, y + 17, 3, 1, U.shade('#3a4632', -0.34));    // a sleeve fold, so it isn't a flat green rectangle
-    // HEADBOARD cap — chamfered, with a shelf ledge; the crown takes the warm ceiling strip
-    chamf(x, y - 6, w, 6, LINE, 2);
-    px(x + 1, y - 5, w - 2, 4, r.face);
-    px(x + 1, y - 5, w - 2, 1, r.sheen); keyEdge(x + 1, y - 5, 8, 1, 0.28);
-    px(x + 1, y - 4, 1, 3, r.lit); px(x + w - 2, y - 4, 1, 3, r.dk);
-    rimEdge(x + w - 2, y - 4, 1, 3, 0.20);
-    px(x + 1, y - 2, w - 2, 1, U.shade(r.face, -0.30));        // shelf lip, so the cap reads as a real ledge
-    // pinned to the headboard: a photo and a comms slate charging face-down
-    px(x + 12, y - 5, 4, 3, '#8f8674'); px(x + 13, y - 4, 2, 1, '#3d5a6a'); px(x + 12, y - 5, 4, 1, '#a89c86');
-    px(x + 17, y - 4, 4, 2, '#1a2126'); px(x + 17, y - 4, 4, 1, U.shade(r.face, 0.20));
-    px(x + 20, y - 3, 1, 1, blink(1900, ph) ? ACC.data : '#16333d');   // slate charge blip
-    // MATTRESS slab — the dominant top surface
-    chamf(x - 1, y - 2, w + 2, 18, LINE, 2);
-    px(x, y - 1, w, 16, sheet);
-    px(x, y - 1, w, 1, U.shade(sheet, 0.10));                  // sheet catches the headboard light
-    px(x, y, 1, 15, U.shade(sheet, 0.06)); px(x + w - 1, y, 1, 15, U.shade(sheet, -0.22));
-    rimEdge(x + w - 1, y, 1, 15, 0.14);                        // cool bounce down the east flank of the linen
-    for (let i = 0; i < 3; i++) px(x + 2 + i * 6, y + 1 + i, 5 - i, 1, U.shade(sheet, -0.09));  // sheet creases
-    // PILLOW with a slept-in dent — a pillow that is a plain rounded rect reads as unused
-    chamf(x + 4, y - 1, 15, 6, U.shade(sheet, -0.30), 1);
-    chamf(x + 4, y - 1, 15, 5, '#d2ccbc', 1);
-    px(x + 5, y - 1, 13, 1, '#e6e0d0');
-    px(x + 8, y + 1, 6, 2, U.shade('#d2ccbc', -0.16));         // the dent a head left
-    px(x + 9, y + 1, 4, 1, U.shade('#d2ccbc', -0.26));
-    px(x + 4, y + 4, 15, 1, U.shade('#d2ccbc', -0.34));        // under-shade
-    // BLANKET, thrown BACK off the west corner instead of squared off — asymmetry is what says "slept in"
-    px(x, y + 6, w, 9, blank);
-    px(x, y + 6, w, 2, U.shade(blank, 0.20));                  // turned-down fold
-    px(x, y + 6, w, 1, U.shade(blank, 0.34));
-    px(x, y + 8, 1, 7, U.shade(blank, 0.12)); px(x + w - 1, y + 8, 1, 7, U.shade(blank, -0.26));
-    rimEdge(x + w - 1, y + 8, 1, 7, 0.18);
-    for (let j = 0; j < 5; j++) px(x + 1 + j, y + 6 + j, 1, 9 - j, sheet);   // corner peeled back to bare sheet
-    px(x + 1, y + 6, 5, 1, U.shade(sheet, 0.10));
-    px(x + 6, y + 7, 1, 8, U.shade(blank, 0.26));              // the lifted edge of the fold catching light
-    px(x + 8, y + 10, w - 12, 1, U.shade(blank, -0.16)); px(x + 10, y + 13, w - 16, 1, U.shade(blank, -0.26));
-    px(x, y + 14, w, 1, U.shade(blank, -0.36));                // hem shade onto the footboard
-    wear(x + 8, y + 7, w - 10, 7, 4, U.shade(blank, -0.10));
-    // READING LAMP on the headboard corner — the one warm source, against the cold station ambient.
-    // A stalk + a shade, not a bare pixel: at 3x the L-shape is what makes it read as a lamp.
-    px(x + 2, y - 7, 1, 6, LINE); px(x + 2, y - 6, 1, 4, r.lit);
-    px(x + 1, y - 9, 5, 3, LINE); px(x + 2, y - 8, 3, 1, r.top); keyEdge(x + 2, y - 8, 3, 1, 0.26);
-    px(x + 2, y - 7, 3, 1, '#ffd9a0');                         // lit mouth of the shade, aimed down at the pillow
-    bloom(x + 2, y - 7, 3, 1, KEY, 0.30);
-    spill(x + 1, y - 1, 7, KEY, 0.20, 5);                      // warm pool falling down onto the pillow
-    glow(x + 4, y, 9, 4, '#ffd34a', 0.11);                     // a reading lamp burns steady; it does not breathe
+    underAO(x + 4, y + h - 3, w - 8, 2);
+    // ---- HEADBOARD, standing off the north edge. One slot band, not two cut-outs: a pair of dark
+    // squares up there read as drawers and turned the whole prop into a bedside cabinet.
+    chamf(x, hdT - 1, w, 7, LINE, 2);
+    chamf(x + 1, hdT, w - 2, 6, WD, 2);
+    px(x + 3, hdT, w - 6, 1, WD_LIT); keyEdge(x + 3, hdT, 9, 1, 0.28);
+    px(x + 1, hdT + 2, 1, 3, WD_LIT); px(x + w - 2, hdT + 2, 1, 3, WD_DK);
+    rimEdge(x + w - 2, hdT + 2, 1, 3, 0.20);
+    px(x + 5, hdT + 2, w - 10, 2, WD_DK);                              // the slot, cut through the board
+    px(x + 5, hdT + 2, w - 10, 1, U.shade(WD_DK, -0.44));
+    px(x + 5, hdT + 4, w - 10, 1, U.shade(WD, 0.20));                  // its lit lower lip
+    wear(x + 3, hdT + 1, w - 6, 4, 3, U.shade(WD, -0.16));
+    px(x + 1, y + 2, w - 2, 1, U.shade(WD, -0.34));                    // the board's shade onto the bed
+    // ---- SIDE RAILS running the length. These are what make the bedding sit INSIDE a frame.
+    for (const [rx, lit] of [[x + 1, true], [x + w - 3, false]]) {
+      px(rx, y + 2, 2, h - 6, lit ? WD : U.shade(WD, -0.14));
+      px(rx, y + 2, 1, h - 6, lit ? WD_LIT : WD_DK);
+      px(rx + 1, y + 2, 1, h - 6, WD_DK);
+    }
+    // ---- THE BEDDING, in two flat blocks. Flat is the point: any gradient here softens the read.
+    // NO OUTLINE ROUND THE BEDDING. A LINE box here butts straight against the timber rails and the two
+    // fuse into one fat black frame — the appliance-door read all over again. The rails ARE the border;
+    // the only dark the bedding needs is the headboard's shade above it, which is already drawn.
+    const bx = x + 3, bw = w - 6, qT = y + 9;
+    // PILLOW at the head (north). One block of near-white, with a slept-in dent so it isn't a card.
+    px(bx, y + 3, bw, 6, LIN);
+    px(bx, y + 3, bw, 1, LIN_LIT); keyEdge(bx + 1, y + 3, 6, 1, 0.22);
+    px(bx, y + 4, 1, 5, U.shade(LIN, 0.06)); px(bx + bw - 1, y + 4, 1, 5, U.shade(LIN, -0.22));
+    rimEdge(bx + bw - 1, y + 4, 1, 5, 0.16);
+    px(bx + 4, y + 5, 9, 2, U.shade(LIN, -0.14));                      // the dent a head left
+    px(bx + 5, y + 5, 7, 1, U.shade(LIN, -0.22));
+    // QUILT over the rest, hem to the foot. The turned-back fold at the head is the one asymmetry.
+    px(bx, qT, bw, ftT - qT + 1, QLT);
+    px(bx, qT, bw, 2, QLT_LIT);                                        // turned-down fold, catching light
+    px(bx, qT, bw, 1, U.shade(QLT_LIT, 0.20));
+    px(bx, qT + 2, bw, 1, QLT_DK);                                     // the fold's own shadow
+    px(bx, qT + 3, 1, ftT - qT - 2, U.shade(QLT, 0.14));
+    px(bx + bw - 1, qT + 3, 1, ftT - qT - 2, QLT_DK);
+    rimEdge(bx + bw - 1, qT + 3, 1, ftT - qT - 2, 0.18);
+    for (const qx of [bx + 5, bx + bw - 6]) px(qx, qT + 3, 1, ftT - qT - 2, U.shade(QLT, -0.18));  // stitching
+    for (const qy of [qT + 4, qT + 8]) px(bx + 1, qy, bw - 2, 1, U.shade(QLT, -0.14));
+    px(bx + 2, qT + 4, 5, 1, U.shade(QLT_LIT, -0.20));                 // one soft crease, west-biased
+    wear(bx + 2, qT + 3, bw - 4, ftT - qT - 3, 5, U.shade(QLT, -0.12));
+    // ---- FOOTBOARD, matching the headboard so the frame closes at both ends
+    chamf(x, ftT, w, 5, LINE, 2);
+    chamf(x + 1, ftT + 1, w - 2, 3, WD, 1);
+    px(x + 3, ftT + 1, w - 6, 1, WD_LIT); keyEdge(x + 3, ftT + 1, 8, 1, 0.20);
+    px(x + 1, ftT + 2, 1, 2, WD_LIT); px(x + w - 2, ftT + 2, 1, 2, WD_DK);
+    rimEdge(x + w - 2, ftT + 2, 1, 2, 0.20);
+    px(x + 3, ftT + 3, w - 6, 1, U.shade(WD, -0.30));                  // a rail groove across the board
+    px(x + 1, y + h - 3, w - 2, 1, U.shade(WD_DK, -0.30));             // floor-line AO under the board
+    // the quilt DRAPES over the footboard — the one place the silhouette is allowed to break, and the
+    // cheapest way to stop the prop reading as a stack of three rectangles. Drawn LAST on purpose: an
+    // earlier version painted it before the footboard and the board covered it completely.
+    px(bx + 5, ftT, bw - 10, 4, QLT_DK);
+    px(bx + 5, ftT, bw - 10, 1, U.shade(QLT, -0.06));
+    px(bx + 6, ftT + 1, bw - 12, 1, U.shade(QLT, -0.22));
+    px(bx + 6, ftT + 4, bw - 12, 1, U.shade(QLT_DK, -0.40));           // the hem's own shadow on the board
   };
 
   F.rug = (x, y, w, h, f) => {   // v4 lounge rug (4x3) — the station's biggest FLOOR DECAL. Zero rise, ever.
@@ -4257,56 +4393,89 @@ const PropSprites = (() => {
   F.sidetable = (x, y, w, h, f) => {
     // 1x1 ROUND pedestal side table — the "put ONE thing here" surface. Round on purpose: the other
     // two are rectangular, so at 12px the silhouette alone says which table you placed.
-    const r = RAMP.steel, top = y + h - 1 - SURFACE_RISE;    // = y+3 at h:1
-    shadow2(x + 2, y + h - 1, 8);
-    px(x + 4, top + 4, 4, 5, LINE);                               // turned column
-    px(x + 5, top + 4, 1, 5, '#5a4a3a'); px(x + 6, top + 4, 1, 5, '#3a2e24');
-    keyEdge(x + 5, top + 4, 1, 3, 0.18); rimEdge(x + 6, top + 4, 1, 5, 0.16);
-    px(x + 5, top + 6, 2, 1, '#6a5744');                          // one collar
-    chamf(x + 2, y + h - 4, 8, 3, LINE, 1);                  // small splayed foot
-    px(x + 3, y + h - 3, 6, 1, '#4a3c2e'); keyEdge(x + 3, y + h - 3, 3, 1, 0.16);
-    px(x + 3, y + h - 2, 6, 1, '#0a0d10');
-    underAO(x + 3, top + 3, 6, 2);
-    // the ROUND top: a 5-row disc whose row insets trace a circle, so it never reads as a lozenge
-    const dsk = [3, 1, 0, 0, 1];
-    dsk.forEach((i, j) => px(x + i - 1, top - 2 + j, 12 - i * 2 + 2, 1, LINE));
-    dsk.forEach((i, j) => {
-      px(x + i, top - 2 + j, 12 - i * 2, 1, j === 0 ? '#7a6448' : (j < 3 ? '#63513a' : '#4a3c2c'));
-    });
-    px(x + 3, top - 2, 6, 1, '#8a7154'); keyEdge(x + 4, top - 2, 3, 1, 0.24);   // lit back arc
-    px(x + 1, top + 2, 10, 1, U.shade('#4a3c2c', -0.30));         // the top's front lip, in its own shade
-    rimEdge(x + 10, top - 1, 1, 2, 0.18);
+    // v6: the first version read as a MUSHROOM, for two compounding reasons. (1) The disc was 12px wide
+    // plus a 1px outline each side, so the cap hung OUT of its own tile and dominated everything under
+    // it. (2) Cap and stem were 5 rows each — a 50/50 split is the proportion of a toadstool, not of
+    // furniture. The top is now 3 rows inside a 10px span and the stem carries eight, so it reads TALL.
+    // The top PLANE is untouched at SURFACE_RISE — that is what mounted props are seated against.
+    const top = y + h - 1 - SURFACE_RISE;                         // = y+3 at h:1
+    const WD = '#63513a', WD_LIT = '#8a7154', WD_DK = '#382c1f';
+    shadow2(x + 3, y + h - 1, 6);
+    // SPLAYED FOOT first (it sits behind the stem): a base wider than the cap, so nothing reads as tipping
+    chamf(x + 1, y + h - 3, 10, 3, LINE, 1);
+    px(x + 2, y + h - 2, 8, 1, WD); px(x + 2, y + h - 2, 3, 1, WD_LIT); keyEdge(x + 2, y + h - 2, 2, 1, 0.18);
+    px(x + 2, y + h - 1, 8, 1, '#0a0d10');
+    // TURNED COLUMN — with two collars. The collars are what make a stem read as turned timber rather
+    // than as a pipe, and they cost two rows.
+    px(x + 4, top + 1, 4, 8, LINE);
+    px(x + 5, top + 1, 1, 8, WD_LIT); px(x + 6, top + 1, 1, 8, WD_DK);
+    keyEdge(x + 5, top + 2, 1, 5, 0.18); rimEdge(x + 6, top + 2, 1, 6, 0.18);
+    // ONE collar, and a NARROW one. A first pass gave it two 6px-wide collars and the prop read as a
+    // three-tier cake stand: any horizontal that approaches the cap's own width becomes another tabletop.
+    px(x + 4, top + 4, 4, 1, WD); px(x + 4, top + 4, 2, 1, WD_LIT);
+    px(x + 4, top + 5, 4, 1, U.shade(WD_DK, -0.30));
+    underAO(x + 3, top + 2, 6, 2);
+    // the ROUND top: three rows whose insets trace a circle inside a 10px span, so it stays in its tile
+    const dsk = [3, 1, 1];
+    dsk.forEach((i, j) => px(x + i, top - 1 + j, 10 - i * 2 + 2, 1, LINE));
+    dsk.forEach((i, j) => px(x + 1 + i, top - 1 + j, 10 - i * 2, 1, j === 0 ? WD_LIT : WD));
+    px(x + 4, top - 1, 4, 1, U.shade(WD_LIT, 0.16)); keyEdge(x + 4, top - 1, 3, 1, 0.26);   // lit back arc
+    px(x + 2, top + 1, 8, 1, U.shade(WD_DK, 0.10));               // the top's front lip, in its own shade
+    rimEdge(x + 9, top, 1, 1, 0.20);
   };
 
   F.loungetable = (x, y, w, h, f) => {
-    // 2x1 low COFFEE TABLE — chamfered smoked-glass top over a steel frame, with a real under-shelf.
+    // 2x1 low COFFEE TABLE — chamfered glass top over a steel frame, with a real under-shelf.
     // The shelf is what separates it from the long table at a glance: two horizontal planes, not one.
+    // v6: the top was authored as SMOKED glass at #2b3540 over a LINE-black surround, which at 12px is
+    // indistinguishable from a hole in the deck — the prop read as an open pit with a white pill in it.
+    // Glass at this size cannot be sold by darkness; it is sold by a bright LEADING EDGE, one broad
+    // specular streak, and the shelf being VISIBLE THROUGH it. So the pane is lifted two stops and the
+    // shelf's front rail is redrawn over it at low alpha, which is the actual cue that it is transparent.
     const r = RAMP.steel, top = y + h - 1 - SURFACE_RISE;
+    // Two stops up from v4's #2b3540 hole, but no further: a first correction pushed the pane to a
+    // near-uniform #41505e and it read as a CLOSED LAPTOP. Glass is a dark field with a bright rim.
+    const GLS = '#35434f', GLS_LIT = '#93a8b8';
     shadow2(x + 1, y + h - 1, w - 2);
+    // LEGS: four, not two. The pair-only version left the whole region under the pane unpainted, and
+    // with underAO over it the table read as a slab floating on a black hole. The rear pair is drawn
+    // first, thinner and cooler, so the frame has depth without competing with the front pair.
+    for (const lx of [x + 4, x + w - 6]) {
+      px(lx, top + 2, 1, 5, U.shade(r.face, -0.20)); rimEdge(lx, top + 2, 1, 4, 0.16);
+    }
     for (const lx of [x + 2, x + w - 4]) {                        // front leg pair
       px(lx - 1, top + 3, 4, 6, LINE);
       px(lx, top + 3, 1, 6, r.lit); px(lx + 1, top + 3, 1, 6, r.dk);
       rimEdge(lx + 1, top + 3, 1, 6, 0.18);
       px(lx, top + 8, 2, 1, r.ao);
     }
-    underAO(x + 4, top + 3, w - 8, 5);
+    underAO(x + 5, top + 3, w - 10, 3);
     px(x + 2, top + 5, w - 4, 2, LINE);                           // UNDER-SHELF
-    px(x + 3, top + 5, w - 6, 1, U.shade(r.face, 0.06)); keyEdge(x + 3, top + 5, 5, 1, 0.14);
-    px(x + 3, top + 6, w - 6, 1, r.dk);
-    px(x + 6, top + 4, 6, 1, '#8a8272'); px(x + 6, top + 4, 3, 1, '#a39a88');   // a datapad left on the shelf
-    // SMOKED GLASS top — dark, but with a bright leading edge, which is how glass reads at this size
+    px(x + 3, top + 5, w - 6, 1, U.shade(r.face, 0.22)); keyEdge(x + 3, top + 5, 5, 1, 0.16);
+    px(x + 3, top + 6, w - 6, 1, U.shade(r.face, -0.14));
+    // stacked on the shelf: two datapads, muted. v4 put ONE at #8a8272 which read as a bare white pill.
+    px(x + 5, top + 4, 7, 1, '#5d6b63'); px(x + 5, top + 4, 4, 1, '#7a8a80');
+    px(x + 6, top + 3, 6, 1, '#4a5a66'); px(x + 6, top + 3, 3, 1, '#647686');
+    // GLASS PANE — chamfered, lifted well clear of the deck value so it reads as a surface, not a void
     chamf(x, top - 3, w, 6, LINE, 2);
-    chamf(x + 1, top - 2, w - 2, 4, '#2b3540', 1);
-    px(x + 2, top - 2, w - 4, 1, '#4a5a68'); keyEdge(x + 3, top - 2, 8, 1, 0.26);
-    px(x + 2, top - 1, 7, 1, '#38454f');                          // one broad reflection streak, static
-    px(x + 1, top + 1, w - 2, 1, '#1b2228');
-    px(x + 2, top + 2, w - 4, 1, U.shade('#2b3540', -0.44));      // the glass edge's own thickness
-    rimEdge(x + w - 2, top - 1, 1, 3, 0.20);
+    chamf(x + 1, top - 2, w - 2, 4, GLS, 1);
+    px(x + 2, top - 2, w - 4, 1, GLS_LIT); keyEdge(x + 3, top - 2, 9, 1, 0.30);   // the bright leading edge
+    px(x + 3, top - 1, 7, 1, U.shade(GLS_LIT, -0.40));            // ONE short specular streak, static
+    ctx.globalAlpha = 0.46;                                       // the shelf, SEEN THROUGH the pane —
+    px(x + 4, top, w - 8, 1, '#93a2ae');                          // this is the cue that sells glass
+    px(x + 6, top - 1, 6, 1, '#5f6f7c');
+    ctx.globalAlpha = 1;
+    px(x + 1, top + 1, w - 2, 1, U.shade(GLS, -0.34));
+    px(x + 2, top + 2, w - 4, 1, U.shade(GLS, -0.10));            // the pane's own edge thickness, LIT
+    rimEdge(x + w - 2, top - 1, 1, 3, 0.22);
   };
 
   F.longtable = (x, y, w, h, f) => {
     // 3x1 TRESTLE table — heavy warm timber on two A-frame trestles with a stretcher between them.
     // This is the mess/briefing table: the cross-braces are the silhouette and they read at any zoom.
+    // v6 keeps the whole scheme (it was the one table that already read) and only deepens it: the plank
+    // seam gets a lit lip so the top reads as TWO boards rather than one painted line, the ends get
+    // end-grain caps, and the trestles get feet so they stop floating a pixel off the deck.
     const WD = '#5c4732', WD_LIT = '#7a6044', WD_DK = '#3a2c1e';
     const top = y + h - 1 - SURFACE_RISE;
     shadow2(x + 2, y + h - 1, w - 4);
@@ -4315,6 +4484,7 @@ const PropSprites = (() => {
       px(tx, top + 3, 1, 6, WD_DK); px(tx + 2, top + 3, 1, 6, WD_DK);
       px(tx - 1, top + 8, 5, 1, LINE);
       px(tx - 1, top + 8, 4, 1, WD); keyEdge(tx - 1, top + 8, 2, 1, 0.14);   // foot rail
+      px(tx - 1, top + 9, 5, 1, '#0a0d10');                       // the foot's own contact, not a float
       px(tx, top + 5, 3, 1, WD_LIT);                              // the trestle's own cross-brace
     }
     px(x + 5, top + 6, w - 11, 1, WD_DK);                         // stretcher tying the trestles together
@@ -4324,14 +4494,17 @@ const PropSprites = (() => {
     px(x - 1, top - 3, w + 2, 6, LINE);
     px(x, top - 2, w, 4, WD);
     px(x, top - 2, w, 1, WD_LIT); keyEdge(x + 1, top - 2, 10, 1, 0.24);
-    px(x, top, w, 1, U.shade(WD, -0.14));                         // seam between the two planks
-    px(x, top + 1, w, 1, U.shade(WD, -0.06));
+    px(x, top, w, 1, U.shade(WD, -0.34));                         // seam between the two boards, cut deep
+    px(x, top + 1, w, 1, U.shade(WD, 0.14));                      // ...and the south board's own lit lip
     px(x, top + 2, w, 1, WD_DK);                                  // the top's front edge thickness
     px(x, top - 2, 1, 4, WD_LIT); px(x + w - 1, top - 2, 1, 4, WD_DK);
+    for (const ex of [x, x + w - 2]) px(ex, top - 1, 2, 1, U.shade(WD, -0.20));   // end-grain caps
     rimEdge(x + w - 1, top - 2, 1, 4, 0.20);
-    for (let i = 0; i < 4; i++) px(x + 4 + i * 9, top - 1, 3, 1, U.shade(WD, 0.08));   // grain
+    // GRAIN — clamped to the top's own width. An unclamped run put a 3px plank stub OUT past the east
+    // edge, which reads as the table being broken, not as grain. Never let a decorative loop run past w.
+    for (let i = 0; i < 5; i++) { const gx = x + 3 + i * 8; if (gx + 4 <= x + w) px(gx, top - 1, 4, 1, U.shade(WD, 0.08)); }
+    for (let i = 0; i < 4; i++) { const gx = x + 7 + i * 9; if (gx + 3 <= x + w) px(gx, top + 1, 3, 1, U.shade(WD, 0.06)); }
   };
-
   /* ============ DETAIL-PASS PROPS (auto-generated) ============ */
   F.bridge_tacscreen = (x, y, w, h, f) => {   // v4 TAC SCREEN (2x1) — the bridge's HOODED wireframe monitor
     // The three bridge props share the room's red and must still be told apart in silhouette alone:
@@ -6842,80 +7015,103 @@ const PropSprites = (() => {
     wear(x + 1, y + 15, cw - 2, 6, 3, U.shade(r.face, -0.12));
   };
   F.quarters_lockerbank = (x, y, w, h, f) => {
-    // v4 LOCKER BANK (3x1) — freestanding on feet, lounge tier, nothing bolted. v3 drew three identical
-    // doors, which at 3x is a fence rather than a locker bank. Now the CENTRE door hangs open with kit
-    // spilling out (the silhouette break), the louvres are real slot-and-blade pairs instead of flat
-    // scratches, and the crown carries stowed gear so the top isn't a bare shelf.
+    // LOCKER BANK (3x1) — v6. The v4 art was already articulated (real louvres, one door ajar, stowed
+    // gear on the crown) and it still read as a low sideboard, because of PROPORTION alone: the door
+    // bank was NINE rows tall under a 36px-wide carcass. The v3 projection law puts lockers in the TALL
+    // 3/4 family — "full height, ~30px, brief agent occlusion is FINE, y-sort handles it" — so the
+    // squatness was never a taste call, it was a prop that had quietly fallen out of its own family.
+    // The doors now carry 21 rows. That height is what buys everything else here: a louvre STACK
+    // instead of two token slots, a full-length handle stile, and a number plate that has room to sit.
     const r = RAMP.gun;
+    const dT = y - 12, dH = 21, cT = y - 17;                  // door bank top / height, crown top
     shadow2(x + 1, y + h - 1, w - 2);
     for (const lx of [x + 2, x + (w >> 1) - 1, x + w - 5]) {  // three feet along the long footprint
       px(lx, y + 8, 3, 4, LINE); px(lx, y + 9, 1, 3, r.lit); px(lx + 1, y + 9, 1, 3, r.dk);
       rimEdge(lx + 2, y + 9, 1, 3, 0.16);
     }
     underAO(x + 5, y + 9, w - 10, 2);
-    // CROWN — chamfered top surface, warm ceiling strip along its back edge, cool bounce down the east
-    chamf(x - 1, y - 6, w + 2, 5, LINE, 2);
-    px(x, y - 5, w, 3, r.top);
-    px(x, y - 5, w, 1, r.sheen); keyEdge(x + 1, y - 5, 10, 1, 0.28);
-    px(x, y - 4, 1, 2, r.lit); px(x + w - 1, y - 4, 1, 2, r.dk); rimEdge(x + w - 1, y - 4, 1, 2, 0.20);
-    px(x + 1, y - 3, w - 2, 1, U.shade(r.top, -0.20));        // front lip of the crown
+    // ---- CROWN — chamfered top surface, warm ceiling strip along its back edge, cool bounce down the east
+    chamf(x - 1, cT, w + 2, 6, LINE, 2);
+    px(x, cT + 1, w, 4, r.top);
+    px(x, cT + 1, w, 1, r.sheen); keyEdge(x + 1, cT + 1, 10, 1, 0.28);
+    px(x, cT + 2, 1, 3, r.lit); px(x + w - 1, cT + 2, 1, 3, r.dk); rimEdge(x + w - 1, cT + 2, 1, 3, 0.20);
+    px(x + 1, cT + 4, w - 2, 1, U.shade(r.top, -0.20));       // front lip of the crown
     // stowed on top: a folded towel, a helmet, a stack of ration tins
-    px(x + 4, y - 8, 7, 3, '#6a6152'); px(x + 4, y - 8, 7, 1, '#857b68');
-    px(x + 4, y - 7, 7, 1, U.shade('#6a6152', -0.20)); px(x + 4, y - 6, 7, 1, U.shade('#6a6152', -0.34));
-    chamf(x + 15, y - 9, 7, 5, LINE, 2);
-    chamf(x + 16, y - 8, 5, 4, U.shade(r.face, 0.16), 1);
-    px(x + 16, y - 8, 5, 1, U.shade(r.face, 0.36)); keyEdge(x + 16, y - 8, 3, 1, 0.24);
-    px(x + 16, y - 6, 5, 1, '#0f1512');                       // helmet visor band
-    rimEdge(x + 20, y - 7, 1, 3, 0.18);
-    px(x + 26, y - 7, 4, 3, '#2a323a'); px(x + 26, y - 7, 4, 1, U.shade(r.face, 0.28));
-    px(x + 26, y - 5, 4, 1, U.shade(r.face, -0.30));
-    // DOOR BANK
-    chamf(x - 1, y - 2, w + 2, 11, LINE, 2);
-    px(x, y - 1, w, 9, r.face);
-    px(x, y - 1, w, 1, r.lit); keyEdge(x + 1, y - 1, w - 5, 1, 0.16);   // catch under the crown overhang
+    px(x + 4, cT - 3, 7, 3, '#6a6152'); px(x + 4, cT - 3, 7, 1, '#857b68');
+    px(x + 4, cT - 2, 7, 1, U.shade('#6a6152', -0.20)); px(x + 4, cT - 1, 7, 1, U.shade('#6a6152', -0.34));
+    chamf(x + 15, cT - 4, 7, 5, LINE, 2);
+    chamf(x + 16, cT - 3, 5, 4, U.shade(r.face, 0.16), 1);
+    px(x + 16, cT - 3, 5, 1, U.shade(r.face, 0.36)); keyEdge(x + 16, cT - 3, 3, 1, 0.24);
+    px(x + 16, cT - 1, 5, 1, '#0f1512');                      // helmet visor band
+    rimEdge(x + 20, cT - 2, 1, 3, 0.18);
+    px(x + 26, cT - 2, 4, 3, '#2a323a'); px(x + 26, cT - 2, 4, 1, U.shade(r.face, 0.28));
+    px(x + 26, cT, 4, 1, U.shade(r.face, -0.30));
+    // ---- DOOR BANK
+    chamf(x - 1, dT - 1, w + 2, dH + 2, LINE, 2);
+    px(x, dT, w, dH, r.face);
+    px(x, dT, w, 1, r.lit); keyEdge(x + 1, dT, w - 5, 1, 0.16);   // catch under the crown overhang
     for (let d = 0; d < 3; d++) {
       const dx = x + 1 + d * 12;
-      if (d) px(dx - 2, y, 1, 8, r.ao);                       // stile between doors
+      if (d) px(dx - 2, dT + 1, 1, dH - 2, r.ao);             // stile between doors
       if (d === 1) continue;                                  // the open one is built separately below
-      chamf(dx, y, 10, 8, U.shade(r.face, 0.14), 1);
-      px(dx + 1, y, 8, 1, U.shade(r.face, 0.32));
-      px(dx, y + 1, 1, 6, U.shade(r.face, 0.22)); px(dx + 9, y + 1, 1, 6, U.shade(r.face, -0.22));
-      rimEdge(dx + 9, y + 1, 1, 6, 0.18);
-      px(dx, y + 7, 10, 1, U.shade(r.face, -0.28));
-      for (let v = 0; v < 2; v++) {                           // real louvres: a cut slot with a lit blade under it
-        px(dx + 2, y + 1 + v * 2, 6, 1, r.ao);
-        px(dx + 2, y + 2 + v * 2, 6, 1, U.shade(r.face, 0.28));
+      chamf(dx, dT + 1, 10, dH - 3, U.shade(r.face, 0.14), 1);
+      px(dx + 1, dT + 1, 8, 1, U.shade(r.face, 0.32));
+      px(dx, dT + 2, 1, dH - 5, U.shade(r.face, 0.22)); px(dx + 9, dT + 2, 1, dH - 5, U.shade(r.face, -0.22));
+      rimEdge(dx + 9, dT + 2, 1, dH - 5, 0.18);
+      px(dx, dT + dH - 3, 10, 1, U.shade(r.face, -0.28));
+      // LOUVRE BANK at the TOP ONLY — three slot-and-blade pairs. Two token slots read as a decal, but
+      // a full-height stack reads as a SERVER RACK: evenly spaced horizontals over the whole face are
+      // that family's signature. A locker vents at the head and is plain below, and that plain lower
+      // half is what leaves the number plate somewhere to sit.
+      for (let v = 0; v < 3; v++) {
+        px(dx + 2, dT + 3 + v * 2, 6, 1, r.ao);
+        px(dx + 2, dT + 4 + v * 2, 6, 1, U.shade(r.face, 0.28));
       }
-      px(dx + 2, y + 5, 5, 2, U.shade(r.face, -0.18));        // recessed name card
-      px(dx + 2, y + 5, 5, 1, U.shade(r.face, -0.40));
-      px(dx + 8, y + 3, 1, 3, '#0c1210'); px(dx + 8, y + 3, 1, 1, U.shade(r.lit, 0.32));  // handle slot + glint
-      px(dx + 7, y + 6, 2, 1, '#7d8a84'); px(dx + 7, y + 7, 1, 1, '#3a4a44');             // hasp + padlock body
+      px(dx + 1, dT + 10, 8, 1, U.shade(r.face, -0.34));      // a pressed swage line across the door
+      px(dx + 1, dT + 11, 8, 1, U.shade(r.face, 0.20));
+      // NUMBER PLATE — a recessed card with a stencilled digit block, which the 9-row version had no room for
+      px(dx + 2, dT + 14, 6, 4, U.shade(r.face, -0.30));
+      px(dx + 2, dT + 14, 6, 1, U.shade(r.face, -0.52));
+      px(dx + 3, dT + 15, 1, 2, '#8f9c96'); px(dx + 5, dT + 15, 1, 2, '#8f9c96'); px(dx + 6, dT + 16, 1, 1, '#8f9c96');
+      // HANDLE STILE running most of the door height — the vertical is what says "this pulls open"
+      px(dx + 8, dT + 5, 1, dH - 11, '#0c1210');
+      px(dx + 8, dT + 5, 1, 3, U.shade(r.lit, 0.32));
+      px(dx + 7, dT + dH - 7, 2, 1, '#7d8a84'); px(dx + 7, dT + dH - 6, 1, 2, '#3a4a44');   // hasp + padlock
     }
-    // the CENTRE door hangs open — this is the read that separates a locker bank from a fence
+    // ---- the CENTRE door hangs open — the read that separates a locker bank from a fence
     const dx1 = x + 13;
-    px(dx1 - 1, y - 1, 10, 10, '#080d0b');                    // the dark inside of the locker
-    px(dx1, y, 8, 1, U.shade(r.face, -0.52));                 // shelf inside, barely catching light
-    px(dx1 + 1, y + 1, 6, 3, '#3a4632'); px(dx1 + 1, y + 1, 6, 1, '#54644a');   // a shirt on the rail
-    px(dx1 + 2, y + 4, 5, 3, '#8f8674'); px(dx1 + 2, y + 4, 5, 1, '#a89c86');   // a towel, half out
-    px(dx1 + 3, y + 7, 4, 2, U.shade('#8f8674', -0.24));      // ... hanging past the sill, breaking the base line
-    px(dx1 + 4, y + 9, 2, 1, U.shade('#8f8674', -0.44));
-    px(dx1 + 1, y + 5, 1, 1, ACC.data);                       // a datachit forgotten on the shelf
-    bloom(dx1 + 1, y + 5, 1, 1, ACC.data, 0.24);              // it is a dropped chit, not a device on standby
-    px(dx1 - 4, y - 1, 4, 10, LINE);                          // the leaf, swung west across its neighbour
-    px(dx1 - 3, y, 3, 8, U.shade(r.face, 0.22));
-    px(dx1 - 3, y, 3, 1, U.shade(r.face, 0.38)); keyEdge(dx1 - 3, y, 3, 1, 0.22);
-    px(dx1 - 1, y, 1, 8, U.shade(r.face, -0.36));             // the leaf's shaded inner face
-    px(dx1 - 3, y + 3, 1, 3, '#7d8a84');                      // handle riding round with the leaf
-    ctx.globalAlpha = 0.26; px(dx1 - 6, y + 1, 2, 7, '#000'); ctx.globalAlpha = 1;   // the leaf's cast shadow
-    px(x + 3, y + 5, 3, 2, '#b56a78'); px(x + 3, y + 5, 3, 1, '#c98592');    // door 0: worn pink sticker (kept)
-    // door 2: amber name-tag, BACKLIT AND STEADY. A name plate has nothing to report, so pulsing it was the
-    // locker bank pretending to be an instrument panel.
-    inset(x + 27, y + 4, 5, 3, '#10161a');
-    px(x + 28, y + 5, 3, 1, U.shade('#ffb84d', 0.10));
-    bloom(x + 28, y + 5, 3, 1, '#ffb84d', 0.48);
-    spill(x + 27, y + 7, 5, '#ffb84d', 0.14, 3);
+    px(dx1 - 1, dT, 10, dH - 1, '#080d0b');                   // the dark inside of the locker
+    for (const shy of [dT + 5, dT + 12]) {                    // two shelves, barely catching light
+      px(dx1, shy, 8, 1, U.shade(r.face, -0.46));
+      px(dx1, shy + 1, 8, 1, '#040806');
+    }
+    px(dx1 + 1, dT + 1, 6, 4, '#3a4632'); px(dx1 + 1, dT + 1, 6, 1, '#54644a');   // a shirt on the rail
+    px(dx1 + 2, dT + 2, 1, 3, U.shade('#3a4632', -0.34));
+    px(dx1 + 2, dT + 7, 5, 4, '#8f8674'); px(dx1 + 2, dT + 7, 5, 1, '#a89c86');   // a towel, folded
+    px(dx1 + 1, dT + 14, 6, 4, '#2b2118'); px(dx1 + 1, dT + 14, 6, 1, '#463527'); // boots on the floor pan
+    px(dx1 + 2, dT + 18, 4, 2, U.shade('#8f8674', -0.30));    // ... something hanging past the sill,
+    px(dx1 + 3, dT + 20, 2, 1, U.shade('#8f8674', -0.50));    //     breaking the base line
+    px(dx1 + 1, dT + 13, 1, 1, U.shade(ACC.data, -0.30));     // a datachit forgotten on the shelf
+    bloom(dx1 + 1, dT + 13, 1, 1, ACC.data, 0.12);            // it is a dropped chit, not a device on standby
+    px(dx1 - 4, dT, 4, dH - 1, LINE);                         // the leaf, swung west across its neighbour
+    px(dx1 - 3, dT + 1, 3, dH - 3, U.shade(r.face, 0.22));
+    px(dx1 - 3, dT + 1, 3, 1, U.shade(r.face, 0.38)); keyEdge(dx1 - 3, dT + 1, 3, 1, 0.22);
+    px(dx1 - 1, dT + 1, 1, dH - 3, U.shade(r.face, -0.36));   // the leaf's shaded inner face
+    for (let v = 0; v < 4; v++) px(dx1 - 3, dT + 4 + v * 2, 3, 1, U.shade(r.face, -0.10));   // its louvres
+    px(dx1 - 3, dT + 13, 1, 3, '#7d8a84');                    // handle riding round with the leaf
+    ctx.globalAlpha = 0.26; px(dx1 - 6, dT + 2, 2, dH - 5, '#000'); ctx.globalAlpha = 1;   // its cast shadow
+    px(x + 3, dT + 19, 3, 2, '#b56a78'); px(x + 3, dT + 19, 3, 1, '#c98592');   // door 0: worn pink sticker
+    // door 2: amber name-tag, BACKLIT AND STEADY. A name plate has nothing to report, so pulsing it was
+    // the locker bank pretending to be an instrument panel.
+    // ...and SMALL. On the 9-row carcass this plate was 5x1; carrying it up to 7x3 with a 0.44 bloom on
+    // the taller door turned it into the brightest object on a cosmetic prop, competing with the real
+    // telemetry emissives elsewhere in the room. A name plate is a label, so it gets label brightness.
+    inset(x + 27, dT + 8, 5, 3, '#10161a');
+    px(x + 28, dT + 9, 3, 1, U.shade('#ffb84d', -0.16));
+    bloom(x + 28, dT + 9, 3, 1, '#ffb84d', 0.26);
+    spill(x + 27, dT + 11, 5, '#ffb84d', 0.10, 3);
     px(x, y + 8, w, 1, r.ao);                                 // floor-line AO
-    wear(x + 1, y + 1, w - 2, 6, 5, U.shade(r.face, -0.12));
+    wear(x + 1, dT + 2, w - 2, dH - 6, 6, U.shade(r.face, -0.12));
   };
   F.quarters_minifridge = (x, y, w, h, f) => {
     // v4 MINI-FRIDGE (1x1) — ONE bold idea, per the 12px law: the door is standing AJAR and the cold
@@ -7154,7 +7350,7 @@ const PropSprites = (() => {
     { id: "arcade", label: "ARCADE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'arcade', sit: false, approach: 'south' } },
     { id: "arcade2", label: "ARCADE II", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'arcade', sit: false, approach: 'south' } },
     { id: "jukebox", label: "JUKEBOX", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'juke', sit: false, approach: 'south' } },
-    { id: "bunk", label: "BUNK", cat: "lounge", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true },
+    { id: "bunk", label: "BED", cat: "lounge", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true },
     { id: "quarters_pooltable", label: "POOL TABLE", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true },
     { id: "quarters_vending", label: "VENDING", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "quarters_lockerbank", label: "LOCKERS", cat: "lounge", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: true },
