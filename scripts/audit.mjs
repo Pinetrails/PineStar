@@ -436,7 +436,16 @@ async function scenarioConveyor(cdp, A) {
   A.ok('conveyor/delivered-once', !!belt && belt.delCount === 1 && belt.delId === 'belt-1', belt ? `delivered ${belt.delCount}× (id=${belt.delId}) @ ${belt.delAt}` : 'no belt result');
   A.ok('conveyor/belt-drains', !!belt && belt.remaining === 0, belt ? `${belt.remaining} boxes left on belt (drains to empty)` : 'no belt result');
 
-  // 2) a K=2 MERGER junction: two inbound crates → ONE carrier delivery carrying BOTH ids (none dropped).
+  // 2) a MERGER junction is a FUNNEL, not a batcher: two inbound crates → TWO deliveries, both ids intact.
+  //
+  //    This asserted the opposite until 2026-07-26 (`delCount === 1`, one carrier holding a combined
+  //    `merged` id list). That contract was the bug 78f3f724 removed: chooseExit absorbed the first K-1
+  //    crates so they never delivered, and nobody but this probe ever read `merged`/`mergeCount`. Nothing
+  //    in the harness batches — Pipeline.resolveTarget dispatches every work-item independently, so K
+  //    inbound messages were always K separate paid runs, and the floor was animating a barrier the
+  //    server never performed. The law is K crates in, K crates out, K runs; this probe now holds that.
+  //    `bufferSize` stays in the fixture on purpose: a legacy K on a saved prop must be INERT, and a
+  //    delivery count of 1 here would mean it started being honoured again.
   const merge = await evalJS(cdp, `(() => {
     const belts = [{x:0,y:0,dir:'E'},{x:1,y:0,dir:'E'},{x:2,y:0,dir:'E'},{x:3,y:0,dir:'E'}];
     const junc = new Map([['2,0', { kind:'merge', bufferSize:2 }]]);
@@ -446,18 +455,17 @@ async function scenarioConveyor(cdp, A) {
     let t = 0; for (let i = 0; i < 30; i++) { t += 16; cv.tick(16, t, belts, junc); }
     cv.enqueueAt(0, 0, { workitemId: 'm2' });
     for (let i = 0; i < 300; i++) { t += 16; cv.tick(16, t, belts, junc); }
-    const d0 = del[0] || null;
     return {
       delCount: del.length,
-      merged: d0 && d0.merged ? d0.merged.slice().sort() : null,
-      mergeCount: d0 && d0.mergeCount,
+      ids: del.map(p => p && p.workitemId).sort(),
+      fakeCombine: del.some(p => p && (p.merged != null || p.mergeCount != null)),
       remaining: cv.boxCount()
     };
   })()`).catch((e) => ({ err: e.message }));
-  A.ok('conveyor/merger-single-delivery', !!merge && merge.delCount === 1, merge && merge.err ? merge.err : (merge ? `merger emitted ${merge.delCount} deliveries for 2 inbound` : 'no merge result'));
-  const carriesBoth = !!(merge && merge.merged && merge.merged.indexOf('m1') >= 0 && merge.merged.indexOf('m2') >= 0);
-  A.ok('conveyor/merger-loses-nothing', carriesBoth && merge.mergeCount === 2, merge ? `carrier merged=[${(merge.merged || []).join(',')}] K=${merge.mergeCount}` : 'no merge result');
-  A.ok('conveyor/merger-belt-drains', !!merge && merge.remaining === 0, merge ? `${merge.remaining} boxes left (absorbed sinks, carrier delivers, both despawn)` : 'no merge result');
+  A.ok('conveyor/merger-k-in-k-out', !!merge && merge.delCount === 2, merge && merge.err ? merge.err : (merge ? `merger emitted ${merge.delCount} deliveries for 2 inbound (K in = K out)` : 'no merge result'));
+  const bothArrived = !!(merge && merge.ids && merge.ids.join(',') === 'm1,m2');
+  A.ok('conveyor/merger-loses-nothing', bothArrived && merge.fakeCombine === false, merge ? `delivered=[${(merge.ids || []).join(',')}] fakeCombineFields=${merge.fakeCombine}` : 'no merge result');
+  A.ok('conveyor/merger-belt-drains', !!merge && merge.remaining === 0, merge ? `${merge.remaining} boxes left (both crates cross the junction, deliver and despawn)` : 'no merge result');
 }
 
 // SCENARIO (dedicated boot): TOOL-RUN WITH APPROVAL — drive a run that hits a real permission gate and prove
