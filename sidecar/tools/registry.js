@@ -63,7 +63,9 @@
     return content.slice(0, head) + note + content.slice(content.length - tail);
   }
 
-  const okResult = (content, summary, control, parkedPath) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null });
+  // `images` rides ALONGSIDE content, never inside it: a tool result is a string on every wire we speak, so
+  // pixels have to travel as their own field and be rendered by the loop (see loop.js SCREENSHOTS AS PIXELS).
+  const okResult = (content, summary, control, parkedPath, images) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null, images: Array.isArray(images) && images.length ? images : null });
   const errResult = (content, summary, parkedPath) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error' });
 
   // Ask the host to keep the full output. Never throws and never blocks a result: a parker that fails just
@@ -176,7 +178,7 @@
         const raw = shaped ? out.content : (out == null ? '' : out);
         // Park BEFORE clamping — the clamp is what destroys the middle, so the full text has to be on disk first.
         const parked = await parkIfOver(raw, call, ctx);
-        return okResult(raw, shaped ? out.summary : undefined, shaped ? out.control : undefined, parked);
+        return okResult(raw, shaped ? out.summary : undefined, shaped ? out.control : undefined, parked, shaped ? out.images : undefined);
       } catch (e) {
         if (e && e.__timeout) return errResult('tool ' + call.name + ' timed out after ' + timeoutMs + 'ms', 'timeout');
         return errResult('tool ' + call.name + ' failed: ' + (e && e.message ? e.message : String(e)));

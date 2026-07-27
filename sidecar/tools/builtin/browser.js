@@ -1838,7 +1838,9 @@
             // the vision answer DESCRIBES attacker-controlled pixels, so it inherits the page's trust level.
             // `saved` stays OUTSIDE the fence: it is host-authored provenance about where we wrote the
             // screenshot, not page content, and burying it inside would tell the model to distrust our own note.
-            return { content: fenceExternal(r.answer || '(vision model returned no text)', 'vision description of the page on screen') + saved, summary: 'vision' };
+            // The analyzed frame rides back WITH its description: the description is a second model's reading
+            // of the pixels, and the run's own model should be able to check it against them.
+            return { content: fenceExternal(r.answer || '(vision model returned no text)', 'vision description of the page on screen') + saved, summary: 'vision', images: (r.image ? [{ mime: 'image/png', data: String(r.image) }] : null) };
           }
           const reason = (r && r.reason) || 'vision model is not configured';
           return { content: 'browser.vision unavailable: ' + reason + ' (captured ' + ((r && r.bytes) || 0) + ' bytes but did not analyze them).' + saved, summary: 'vision unavailable' };
@@ -1854,7 +1856,12 @@
           }
           return {
             content: 'Screenshot saved to ' + shot.rel + ' (' + (shot.bytes / 1024).toFixed(0) + ' KB).\nView: ' + shot.viewer,
-            summary: 'shot → ' + shot.rel
+            summary: 'shot → ' + shot.rel,
+            // THE PIXELS THEMSELVES. Until this rode along, "screenshot" meant the model got a FILE PATH and
+            // never saw the screen — it could prove a page to the Commander and remained blind to it itself.
+            // The loop fences and attaches these (see loop.js SCREENSHOTS AS PIXELS); a text-only model simply
+            // never has the field turned on.
+            images: [{ mime: 'image/png', data: String(data) }]
           };
         })
     ];

@@ -92,6 +92,9 @@ const { makeConsentBroker } = require('./permissions.js');
 const { makeGrantManager } = require('./permgrants.js');
 const { makeProjectsStore } = require('./projects-store.js');   // NS-5: known-projects (blessed roots) durable store
 const { makePathTrust } = require('./pathtrust.js');            // NS-5: conversational path-trust guard
+// Tool-result images (browser.screenshot / browser.vision -> real pixels in the prompt). ON by default; set
+// SKYNET_TOOL_IMAGES=0 for a text-only endpoint that rejects image content parts.
+const TOOL_IMAGES_ON = String(process.env.SKYNET_TOOL_IMAGES == null ? '' : process.env.SKYNET_TOOL_IMAGES).trim() !== '0';
 const { makeProjectBless, projectScopeLine, makeProjectInstructions } = require('./projectbless.js');      // NS-5c: ADD-a-project bless core (second doorway, same grant machinery) + project-scoped run context line + the project's own AGENTS.md/CLAUDE.md house rules
 const { makeFolderPick } = require('./folderpick.js');          // Projects rail "browse": native OS folder chooser (convenience only — bless stays the consent)
 const { makeTelegramAdapter } = require('./channels/telegram.js');
@@ -9596,6 +9599,10 @@ async function runOnce(o) {
       // A turn that asks for four file reads waited four round trips for them; an all-read-only batch now
       // overlaps. The predicate is above — the loop cannot judge tool scope on its own.
       parallelSafe,
+      // SCREENSHOTS AS PIXELS: a browser/vision capture rides back to the model as an image, not a file path.
+      // Same wire shape the Commander's own attachments already take, so no adapter needed a change. Kill
+      // switch for a text-only endpoint that rejects image parts, resolved once at module load.
+      toolImages: TOOL_IMAGES_ON,
       // Real backoff for the loop's bounded mid-stream retry: without an injected sleep the loop retries a
       // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
       // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
