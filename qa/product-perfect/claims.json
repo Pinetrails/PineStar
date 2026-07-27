@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "dae4f89abef37e77e770d19dc651c86f6801b3ff",
+    "sourceCommit": "c565f61ead22141d9a7e25463ff417a35ff2ee52",
     "pathSetSha256": "ba2d0a007dbdf1fb304e041a440e8a10a26ef8a87b3fb2ad6f73c69661dabaee",
     "files": [
       {
@@ -768,8 +768,8 @@
       },
       {
         "path": "frontend/app/windows/loops.js",
-        "bytes": 41219,
-        "sha256": "5cf8f6749ed5746ce5d38a253f21c19d01eb409b214b1978c8092e9a786fc24e"
+        "bytes": 41954,
+        "sha256": "f9194fd8f6e26958d7a3a8a7b8d71f4b211e6adaac97ccc5f442b96d446728e7"
       },
       {
         "path": "frontend/app/windows/messaging.js",
