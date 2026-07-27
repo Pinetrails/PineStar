@@ -340,8 +340,18 @@
           if (r && r.error) { notify(r.error, 'warn'); sfx('bad'); }
           else {
             const cas = (r && r.cascaded && r.cascaded.length) || 0;
-            notify(verdict === 'approved' ? 'approved #' + n + ' — the loop continues'
-              : 'rejected #' + n + (cas ? ' (+' + cas + ' discarded)' : '') + ' — the loop will try again', verdict === 'approved' ? 'good' : 'warn');
+            /* SAY WHAT HAPPENED TO THE CODE, not just to the row. A rejection now really reverts the
+               iteration's commits, so the toast must say so — and in the one case where it CANNOT (a project
+               that is not a git repo) it must say that instead, because "rejected" over files still sitting
+               on disk is the app claiming a tree state that does not exist. */
+            const undone = (r && r.undone && r.undone.length) || 0;
+            notify(verdict === 'approved'
+              ? 'approved #' + n + ' — kept' + (r && r.branch ? ' on ' + r.branch : '') + ', the loop continues'
+              : 'rejected #' + n + (cas ? ' (+' + cas + ' discarded)' : '')
+                + (undone ? ' — ' + undone + ' commit' + (undone === 1 ? '' : 's') + ' reverted' : '')
+                + ' — the loop will try again',
+              verdict === 'approved' ? 'good' : 'warn');
+            if (r && r.undoNote) notify(r.undoNote, 'warn');
           }
         } catch (_) { notify('could not reach the station', 'warn'); sfx('bad'); }
         refresh(); return;
