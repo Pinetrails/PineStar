@@ -138,6 +138,9 @@
             id: nextId(list), kind: 'note',
             title: redact(String(args.title)), body: redact(String(args.body)),   // §5.6: scrub secrets before they persist
             scope: scope, streamId: streamId, sourceRunId: runId,
+            // which SURFACE formed this belief (memcore.originOf, injected on the run's tool ctx). Unattended runs
+            // can write memory now, so the Commander must be able to tell a channel-learned fact from their own.
+            origin: (ctx && ctx.origin) ? String(ctx.origin) : 'commander',
             createdAt: now, ts: now, lastUsedAt: null, useCount: 0, trust: 0, pinned: false
           };
           list.push(note);
