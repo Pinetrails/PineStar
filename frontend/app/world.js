@@ -547,11 +547,26 @@ const World = (() => {
   }
   // walk the hero to its work seat (or snap onto it if unreachable) + enter the 'work' goal — the shared "now sit
   // and work" step, reached EITHER straight from on-duty OR after the conveyor-fetch leg below.
-  function goToSeat() {
+  function goToSeat(now) {
     agent.goal = 'work';
     if (!seat || !setPathTo({ x: seat.tx, y: seat.ty })) {
       if (seat) { const f = seatFoot(seat); agent.px = f.x; agent.py = f.y; agent.sitting = true; agent.working = true; agent.dir = deskFace || 'north'; }   // face the assigned desk (deskFace) when teleport-fallback seating
+      return;
     }
+    /* ALREADY STANDING ON THE SEAT TILE — sit down NOW instead of waiting for a walk that will never
+       happen. geo.path returns [] (truthy!) for a same-tile route, so setPathTo reports "walk armed"
+       with ZERO waypoints: nextWaypoint nulls the target, the walk stepper never fires arrive(), and
+       `working` (set only by arrive's settle beat) stays false FOREVER. Nothing recovers it — the
+       stuck-walker self-heal above only drops the walk POSE, and the desk-trip seize is gated on
+       `goal !== 'work'`, which is already 'work'. Same `if (!self.target) arrive(now)` idiom the other
+       zero-length callers use (tend / gaze / rounds).
+       THE PATH THAT GETS HERE IS THE APPROVAL WALK: team.dispatch requires consent, so DELEGATING
+       raises a permission.prompt; resolveWaitAnchor falls back to the hero's OWN desk when the floor
+       has no airlock/mission board, so the trip back after permission.response is zero-length. The
+       overseer then stood at its desk NOT working for the rest of a provably live run while COMMS and
+       the crew panel both said WORKING (2026-07-27). Truthful telemetry cuts both ways: the world may
+       no more assert idle over a live run than a panel may assert work over a dead one. */
+    if (!agent.target) arrive(now);
   }
   // G4 feature 1: resolve WHERE the permission-blocked hero waits, honestly from the live floor. Reuses the
   // pure WaitAnchor ladder (airlock → mission board → own desk) + PropAnchor's approach-tile law, and clamps
@@ -3252,10 +3267,10 @@ const World = (() => {
       // reachable bay; otherwise straight to the seat (in-app chat is byte-identical — no detour).
       else if (agent.goal === 'summon' && now >= agent.thinkUntil) {
         const conv = agent.taskViaConveyor ? assignedConveyorTile(agent.id) : null;
-        if (conv && setPathTo({ x: conv.x, y: conv.y })) agent.goal = 'fetch'; else goToSeat();
+        if (conv && setPathTo({ x: conv.x, y: conv.y })) agent.goal = 'fetch'; else goToSeat(now);
       }
       // reached the conveyor → now head to the workstation and work
-      else if (agent.goal === 'fetch' && agent.state !== 'walk' && (!agent.pathPts || agent.pathIdx >= agent.pathPts.length)) goToSeat();
+      else if (agent.goal === 'fetch' && agent.state !== 'walk' && (!agent.pathPts || agent.pathIdx >= agent.pathPts.length)) goToSeat(now);
     }
     if (activity !== 'task' && (agent.goal === 'work' || agent.goal === 'summon' || agent.goal === 'fetch')) {
       agent.goal = null; agent.sitting = false; agent.working = false; agent.thinkUntil = 0; agent.settleUntil = 0; agent.pathPts = null; agent.target = null; agent.state = 'idle'; agent.idleUntil = now + 200; agent.lastTaskAt = now; agent.taskViaConveyor = false;   // just finished real work → relaxed, downtime clock resets
