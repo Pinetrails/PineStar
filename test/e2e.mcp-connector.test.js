@@ -82,12 +82,19 @@ function startMockOpenRouter() {
         req.on('end', () => {
           let parsed = {}, msgs = [];
           try { parsed = JSON.parse(body); msgs = parsed.messages || []; } catch (_) {}
-          const hasToolResult = msgs.some(m => m && m.role === 'tool');
+          const toolResults = msgs.filter(m => m && m.role === 'tool').length;
+          const hasToolResult = toolResults > 0;
           const hasMcpTool = (parsed.tools || []).some(t => t && t.function && t.function.name === 'mcp__demo__lookup');
+          // A conversation carrying this sentinel asks for FOUR connector calls in a row — the shape of the
+          // reported repeated-approval bug. Sentinel-gated so every other scenario in this file is untouched.
+          const wantsMany = msgs.some(m => m && m.role === 'user' && String(m.content || '').indexOf('FOURLOOKUPS') >= 0);
           requests.push(parsed);
 
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
-          if (!hasToolResult && hasMcpTool) {
+          if (wantsMany && hasMcpTool && toolResults < 4) {
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'mcp_lookup_' + toolResults, type: 'function', function: { name: 'mcp__demo__lookup', arguments: JSON.stringify({ query: 'asset-' + toolResults }) } }] } }] }) + '\n\n');
+            res.write('data: ' + JSON.stringify({ choices: [{ finish_reason: 'tool_calls', delta: {} }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n');
+          } else if (!hasToolResult && hasMcpTool) {
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'mcp_lookup', type: 'function', function: { name: 'mcp__demo__lookup', arguments: JSON.stringify({ query: 'alpha' }) } }] } }] }) + '\n\n');
             res.write('data: ' + JSON.stringify({ choices: [{ finish_reason: 'tool_calls', delta: {} }], usage: { prompt_tokens: 8, completion_tokens: 4, total_tokens: 12 } }) + '\n\n');
           } else if (!hasToolResult) {
@@ -366,6 +373,71 @@ async function readNdjson(res) {
     const rePanel = await readNdjson(reRun);
     A.ok(!rePanel.some(e => e.name === 'agent.tool_call' && e.payload && e.payload.name === 'mcp__demo__lookup'),
       'the UNGRANTED routine is still refused after a granted one ran (the grant never leaks between routines)');
+
+    /* ── THE WATCHED SURFACE: one popup, not one per call (repeated-approval fix, 2026-07-27) ──────────────
+       Reported live: an agent doing four `get_draft_asset` reads asked for approval four times while the user
+       kept clicking "Full access". Cause: the host-authority layer prompted per call and collapsed
+       once/always/full to a boolean, so the grade was never recorded and the consent broker was skipped
+       entirely. This drives the real /api/run stream and answers over the real POST /api/consent. */
+    async function driveWatched(who, input, decision) {
+      const res = await fetch(B + '/api/run', {
+        method: 'POST', headers,
+        // isTask:true is what makes the run advertise tools at all; the connector portal itself is
+        // account-level, so composeOffice rides it onto the interactive office without a `placed` entry.
+        body: JSON.stringify({ key: 'sk-or-v1-mcp-fake', model: 'test/model', agentId: who, isTask: true, messages: [{ role: 'user', content: input }] })
+      });
+      A.eq(res.status, 200, 'watched /api/run returns a stream');
+      const reader = res.body.getReader(); const dec = new TextDecoder();
+      let buf = '', runId = '';
+      const prompts = [], calls = [], results = [];
+      while (true) {
+        const { value, done } = await reader.read(); if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf('\n')) >= 0) {
+          const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+          if (!line) continue;
+          let ev; try { ev = JSON.parse(line); } catch (_) { continue; }
+          if (ev.name === 'agent.run.start') runId = ev.payload.runId;
+          if (ev.name === 'agent.tool_call' && ev.payload.name === 'mcp__demo__lookup') calls.push(ev.payload);
+          if (ev.name === 'agent.tool_result') results.push(ev.payload);
+          if (ev.name === 'permission.prompt') {
+            prompts.push(ev.payload);
+            fetch(B + '/api/consent', { method: 'POST', headers, body: JSON.stringify({ runId, promptId: ev.payload.promptId, decision }) }).catch(() => {});
+          }
+        }
+      }
+      return { prompts, calls, results };
+    }
+
+    // THE EXACT REPORTED CASE. Before the fix this was four popups for four calls, every "Full access" click
+    // discarded. Ordering below matters: a DENY grants nothing, "Full access" is a per-AGENT blanket, and
+    // "Always" is a GLOBAL standing grant — so each grade gets a fresh agent, and deny runs before always.
+    const full = await driveWatched('mcp-agent', 'FOURLOOKUPS please read four theme assets', 'full');
+    A.eq(full.calls.length, 4, 'the watched run made four connector tool calls');
+    A.eq(full.prompts.length, 1, 'FOUR connector calls raise exactly ONE approval popup after "Full access"');
+    A.eq(full.prompts[0].tool, 'mcp__demo__lookup', 'the one popup names the connector tool');
+    A.eq(full.results.filter(r => r.ok === true).length, 4, 'all four connector calls succeeded under the single grant');
+
+    // Full Access is per-AGENT and outlives the run (in memory, until restart) — so the NEXT run is silent too.
+    const again = await driveWatched('mcp-agent', 'FOURLOOKUPS read them again', 'deny');
+    A.eq(again.calls.length, 4, 'the follow-up run made four connector calls');
+    A.eq(again.prompts.length, 0, 'a granted agent is not re-asked on its next run either');
+
+    // A DENY still refuses — the fix records a yes, it never invents one. Fresh agent: no blanket in play.
+    const denied = await driveWatched('mcp-agent-deny', 'FOURLOOKUPS deny this one', 'deny');
+    A.ok(denied.prompts.length >= 1, 'an ungranted agent is still asked');
+    A.eq(denied.results.filter(r => r.ok === true).length, 0, 'no denied connector call ever performed an action');
+    A.ok(denied.results.some(r => r.ok === false), 'the denied connector call comes back as a refusal');
+
+    /* "Always" — the narrower grade: one standing grant on the danger CLASS (capability:scope) that the
+       Commander can SEE and revoke, which a one-shot answer never was. Runs last: it persists globally. */
+    const alwaysRun = await driveWatched('mcp-agent-always', 'FOURLOOKUPS read the four assets again', 'always');
+    A.eq(alwaysRun.calls.length, 4, 'the "always" run also made four connector calls');
+    A.eq(alwaysRun.prompts.length, 1, '"Always" is likewise asked once, not once per call');
+    A.eq(alwaysRun.results.filter(r => r.ok === true).length, 4, 'all four calls succeeded under the standing grant');
+    const perms = await (await fetch(B + '/api/permissions', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.ok(JSON.stringify(perms).indexOf('mcp:demo') >= 0, 'the "Always" grant is visible in the Permissions panel, so it can be revoked');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}
