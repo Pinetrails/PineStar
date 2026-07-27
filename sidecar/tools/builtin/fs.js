@@ -96,6 +96,40 @@
       return { base, abs };
     }
 
+    /* STALE-WRITE GUARD (2026-07-27). A delegated worker, a second agent, or the Commander's own editor can
+       change a file between the moment this agent READ it and the moment it writes back. Nothing here noticed,
+       so the write silently reverted the other change — the classic lost update, and the harder kind to spot
+       because both sides believe they succeeded.
+
+       SCOPED TO fs.write ON PURPOSE, after tracing what each writer actually does:
+         · fs.append reads the file and appends to what it FINDS, so a concurrent change survives.
+         · fs.edit reads fresh and replaces an exact `find`; a drifted file either still matches (the edit
+           lands on the NEW text, which is right) or misses and errors honestly.
+         · fs.patch validates every hunk's context against current content before writing anything.
+       All three are read-modify-write inside ONE call and cannot clobber. fs.write is the only writer that
+       replaces a whole file with content composed from a read that may now be old — so it is the only one
+       that needs a stamp, and guarding the others would only manufacture false refusals.
+
+       A file this agent never read has no stamp and is never refused: writing a file you did not read is
+       "create it", not "clobber it". One refusal per drift — the stamp is dropped so the required re-read
+       re-arms it, and the agent can never be stuck in a loop it has no way to satisfy. */
+    const readStamps = new Map();   // agentId \0 abs -> the mtime this agent last SAW
+    const stampKey = (aid, abs) => String(aid) + '\0' + (P.sep === '\\' ? String(abs).toLowerCase() : String(abs));
+    async function mtimeOf(abs) { try { const st = await fsp.stat(abs); return Number(st.mtimeMs || 0) || 0; } catch (_) { return 0; } }
+    async function stampSeen(aid, abs) {
+      const m = await mtimeOf(abs);
+      if (m) readStamps.set(stampKey(aid, abs), m); else readStamps.delete(stampKey(aid, abs));
+    }
+    async function assertFresh(aid, abs, rel) {
+      const key = stampKey(aid, abs);
+      const seen = readStamps.get(key);
+      if (!seen) return;                          // never read here -> nothing to be stale against
+      const now = await mtimeOf(abs);
+      if (!now || now <= seen) return;            // deleted since, or untouched since we looked
+      readStamps.delete(key);                     // one refusal per drift; the re-read below re-arms it
+      throw new Error('stale write refused: ' + rel + ' changed on disk after you read it — someone else (another agent, or the Commander) edited it. Read it again and re-apply your change on top of the current content, or use fs.edit/fs.patch so your change merges instead of replacing the file.');
+    }
+
     const writeTool = {
       name: 'fs.write', capability: 'cabinet', scope: 'write', requiresConsent: true, timeoutMs: 10000,
       description: 'Write a UTF-8 text file into your workspace. This is where your deliverables (reports, notes, code) are saved.',
@@ -105,8 +139,10 @@
         const { abs } = await resolveInside(aid, args.path, { scope: 'write', ctx });
         const data = Buffer.from(String(args.content), 'utf8');
         if (data.length > WRITE_BYTES) throw new Error('file too large (' + data.length + ' > ' + WRITE_BYTES + ' bytes)');
+        await assertFresh(aid, abs, args.path);   // refuse to overwrite a file that moved under us
         await fsp.mkdir(P.dirname(abs), { recursive: true });
         await fsp.writeFile(abs, data);
+        await stampSeen(aid, abs);                // our own write is the new baseline, so a rewrite never self-trips
         emitDeliverable(ctx, aid, args.path);
         return { content: 'Wrote ' + args.path + ' (' + data.length + ' bytes).', summary: 'wrote ' + args.path + ' (' + kb(data.length) + ')' };
       }
@@ -117,10 +153,12 @@
       description: 'Read a UTF-8 text file from your workspace.',
       schema: { type: 'object', required: ['path'], properties: { path: { type: 'string' } } },
       run: async (args, ctx) => {
-        const { abs } = await resolveInside((ctx && ctx.agentId) || 'agent', args.path, { scope: 'read', ctx });
+        const aid = (ctx && ctx.agentId) || 'agent';
+        const { abs } = await resolveInside(aid, args.path, { scope: 'read', ctx });
         let txt;
         try { txt = await fsp.readFile(abs, 'utf8'); }
         catch (e) { if (e && e.code === 'ENOENT') throw new Error('no such file: ' + args.path); throw e; }
+        await stampSeen(aid, abs);   // what this agent believes the file says, as of now (see the stale-write guard)
         const out = txt.length > READ_RETURN ? txt.slice(0, READ_RETURN) + '\n…[truncated]' : txt;
         return { content: out, summary: kb(Buffer.byteLength(txt)) + ' read' };
       }
