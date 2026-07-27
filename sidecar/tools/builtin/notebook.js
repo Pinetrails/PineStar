@@ -38,6 +38,38 @@
     // than reward, so one bad recall sinks faster than one good recall rises). Expressed in OUR delta units (×0.15 in nextTrust):
     // helpful +0.075, unhelpful −0.15 — both WEAKER than a user turn-in keep (+2 → +0.30): the human still wins.
     const HELPFUL_DELTA = 0.5, UNHELPFUL_DELTA = -1.0;
+    // NEAR-DUPE CHALLENGE at the write boundary. Reflection has deduped its PROPOSALS by Jaccard since M-mem.6, but
+    // a direct notebook.write never was — so the same belief accumulated in a dozen phrasings over months, diluting
+    // recall (the top-K ranker spends slots on restatements) and giving the Commander a panel full of noise to
+    // prune by hand. The reference harness forces this issue with a hard char cap that ERRORS when full; we have no
+    // cap by design (the user owns their memory, and top-K already bounds the prompt), so the equivalent is to
+    // stop the redundant WRITE rather than to cap the store.
+    //
+    // WHY A CHALLENGE AND NOT A SILENT BLOCK. Token overlap cannot tell a restatement from two different facts that
+    // share a shape: "staging db is in frankfurt" vs "production db is in frankfurt" scores as high as a genuine
+    // paraphrase, because the ONE token that carries the difference is the one that differs. Any threshold tight
+    // enough to catch real paraphrases will therefore sometimes swallow a real memory — and a false suppression is
+    // worse than a duplicate (the same bar declinedindex.js sets). So we show the agent the belief it already holds
+    // and let it decide: a restatement stops there; a genuinely distinct fact is re-sent with distinct:true and
+    // saved. Nothing is ever silently lost, and the common case costs one refused call instead of a permanent
+    // duplicate. Threshold matches reflection's — one definition of "near-dupe" across the whole memory system.
+    const DUPE_THRESHOLD = 0.6;
+    const findSimilar = typeof deps.findSimilar === 'function' ? deps.findSimilar : (records, text, o) => {
+      // inline Jaccard fallback (mirrors memcore.findSimilar/tokenJaccard) so this UMD tool stays dependency-free
+      // in the browser build + standalone tests. Kept in sync with memcore — that is the canonical copy.
+      const STOP = new Set(('a an the of to in on for and or but is are was were be been it its this that with as at by from your you i we they').split(/\s+/));
+      const toks = s => { const set = new Set(); for (const t of String(s == null ? '' : s).toLowerCase().split(/[^a-z0-9]+/)) if (t.length >= 3 && !STOP.has(t)) set.add(t); return set; };
+      const threshold = (o && typeof o.threshold === 'number') ? o.threshold : 0.6;
+      const B = toks(text);
+      for (const r of (Array.isArray(records) ? records : [])) {
+        if (!r) continue;
+        const A = toks(r.content != null ? r.content : ((r.title || '') + ' ' + (r.body || '')));
+        if (!A.size || !B.size) continue;
+        let inter = 0; for (const t of A) if (B.has(t)) inter++;
+        if (inter / (A.size + B.size - inter) >= threshold) return r;
+      }
+      return null;
+    };
     const KEY = aid => 'notebook:' + (aid || 'agent');
     // M-mem.2: widen any legacy {id,title,body,ts} note to the §5.2 memory-record shape
     // (kind/scope/provenance/trust/useCount/pinned), idempotently — so an existing notebook upgrades
@@ -76,8 +108,16 @@
         'priority: preferences & corrections > environment facts > procedures. The best memory stops the user repeating themselves. ' +
         'SKIP: trivia, task progress, completed-work logs, PR/issue/commit ids, anything that will be stale within a week (that is not memory). ' +
         "WRITE STYLE: a declarative fact, not an instruction to yourself — 'User prefers concise replies' is right; 'Always reply concisely' is wrong " +
-        '(an imperative gets re-read in a later session as a standing order and can override the user). Reusable procedures belong in a skill, not memory.',
-      schema: { type: 'object', required: ['title', 'body'], properties: { title: { type: 'string' }, body: { type: 'string' } } },
+        '(an imperative gets re-read in a later session as a standing order and can override the user). Reusable procedures belong in a skill, not memory. ' +
+        'A fact you already hold is not saved twice: a save that comes back "already known" shows you the entry you already have — do not reword and retry it.',
+      schema: {
+        type: 'object', required: ['title', 'body'],
+        properties: {
+          title: { type: 'string' },
+          body: { type: 'string' },
+          distinct: { type: 'boolean', description: 'Only after an "already known" reply: set true when you have read the existing entry and judged this a genuinely different fact.' }
+        }
+      },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
         const runId = ctx && ctx.runId ? String(ctx.runId) : null;   // provenance source (B1 Cortex seam)
@@ -86,8 +126,14 @@
         const now = clock.now();
         // §5.2 record minted INSIDE the lock against the re-read list, so the id is collision-proof even if a
         // concurrent run/UI write changed the notebook since this run started (P1).
-        let note = null;
+        let note = null, dupe = null;
+        const overridden = !!(args && args.distinct);   // the agent SAW the near-dupe and judged this fact different
         await updateNotes(aid, (list) => {
+          const text = String(args.title) + ' ' + String(args.body);
+          // the near-dupe check runs INSIDE the lock against the RE-READ list — outside it, two concurrent runs
+          // saving the same belief would both see a clean notebook and both append.
+          dupe = overridden ? null : findSimilar(list, text, { threshold: DUPE_THRESHOLD });
+          if (dupe) return undefined;   // nothing to write — skip the store write entirely
           note = {
             id: nextId(list), kind: 'note',
             title: redact(String(args.title)), body: redact(String(args.body)),   // §5.6: scrub secrets before they persist
@@ -97,6 +143,20 @@
           list.push(note);
           return list;
         });
+        // ALREADY KNOWN: a success, not an error — an error makes a model retry with a reworded duplicate, which is
+        // the exact behaviour this guard exists to stop. Show the belief it already holds IN FULL so the decision is
+        // informed, and emit NOTHING (no memory.write, no deliverable): nothing was written, and a receipt for a
+        // write that did not happen is the kind of claim truthful telemetry forbids.
+        if (dupe) {
+          const held = String(dupe.content != null ? dupe.content : (dupe.body != null ? dupe.body : '')).replace(/\s+/g, ' ').trim().slice(0, 300);
+          return {
+            content: 'Not saved — you already remember something very close:\n[' + dupe.id + '] ' + String(dupe.title || '') + ': ' + held + '\n\n' +
+              'If that is the SAME belief, you are done — do not reword and retry. If this is genuinely a different fact ' +
+              '(or a correction that should replace it), call notebook.write again with distinct:true and say in your reply ' +
+              'which entry the Commander may want to edit.',
+            summary: 'already known (' + dupe.id + ')'
+          };
+        }
         if (ctx && typeof ctx.emit === 'function') {
           // memory.write — the durable-memory rung (feeds useCount/trust + the dossier's archivist track). The
           // frozen contract requires runId, so emit only on a real run (some test fixtures carry no runId).
@@ -129,7 +189,13 @@
           if (rank && list.length > 1) list = rank(list, String(q), { now: clock.now(), k: list.length });
         }
         if (!list.length) return { content: q ? 'No notes match "' + q + '".' : 'Your notebook is empty.', summary: '0 notes' };
-        return { content: list.map(n => '- [' + n.id + '] ' + n.title + ': ' + n.body).join('\n'), summary: list.length + ' note(s)' };
+        const body = list.map(n => '- [' + n.id + '] ' + n.title + ': ' + n.body).join('\n');
+        // report the SIZE of the whole store on a filtered read, so the agent knows how much memory it is holding
+        // (the reference harness puts a usage percentage in the system prompt; we have no cap to measure against,
+        // but the count is the honest half of that signal — and it is the number a crowded notebook shows up in).
+        const total = q ? notesOf(aid).length : list.length;
+        const foot = q ? '\n\n(' + list.length + ' of ' + total + ' entries in memory)' : '';
+        return { content: body + foot, summary: list.length + ' note(s)' };
       }
     };
 
