@@ -111,26 +111,79 @@
     function normStream(v) { const s = str(v); return SID_RE.test(s) ? s : 'global'; }
     function tokenize(s) { return (str(s).toLowerCase().match(/[a-z0-9]+/g)) || []; }
 
-    // H1.3: keyword recall over ONE stream's transcript — the substrate for the agent-callable recall_conversation
-    // tool, so it can find weeks-old dialogue no longer in context. Lightweight BM25-ish: rank a row by how many
+    // H1.3: keyword recall over the transcript — the substrate for the agent-callable recall_conversation tool,
+    // so it can find weeks-old dialogue no longer in context. Lightweight BM25-ish: rank a row by how many
     // DISTINCT query terms it contains (primary), then total term frequency, then recency. Dependency-free + pure.
+    //
+    // SCOPE (parity with the reference harness, whose session search spans every session, not just the open one):
+    // o.scope === 'all' searches EVERY workstream; anything else keeps the historical single-stream behaviour, so
+    // the existing call shape search(streamId, q, {limit}) is byte-for-byte unchanged. Every hit now carries its
+    // OWN streamId — without it a cross-stream result is unattributable, and the agent would quote another
+    // workstream's decision as if it belonged to this one.
     function search(streamId, query, o) {
       o = o || {};
       const limit = num(o.limit) > 0 ? Math.min(num(o.limit), 50) : 10;
       const terms = Array.from(new Set(tokenize(query)));
       if (!terms.length) return [];
+      const all = o.scope === 'all';
       const want = normStream(streamId);
       const scored = [];
       for (let i = 0; i < rows.length; i++) {
         const r = rows[i];
-        if (r.streamId !== want) continue;
+        if (!all && r.streamId !== want) continue;
         const tf = {}; for (const t of tokenize(r.content)) tf[t] = (tf[t] || 0) + 1;
         let distinct = 0, freq = 0;
         for (const t of terms) { if (tf[t]) { distinct++; freq += tf[t]; } }
-        if (distinct) scored.push({ idx: i, role: r.role, content: r.content, ts: r.ts, score: distinct * 1000 + freq });
+        if (distinct) scored.push({ idx: i, streamId: r.streamId, role: r.role, content: r.content, ts: r.ts, score: distinct * 1000 + freq });
       }
       scored.sort((a, b) => (b.score - a.score) || (b.ts - a.ts) || (b.idx - a.idx));
-      return scored.slice(0, limit).map(x => ({ role: x.role, content: x.content, ts: x.ts, score: x.score }));
+      return scored.slice(0, limit).map(x => ({ streamId: x.streamId, role: x.role, content: x.content, ts: x.ts, score: x.score }));
+    }
+
+    // BROWSE (reference-harness parity: "list recent sessions"): every workstream present in the transcript, with its
+    // turn count, last-activity stamp, and the most recent USER line as a preview — so an agent that does not know
+    // WHICH workstream holds an answer can look before it searches. Newest-active first; deterministic tiebreak by
+    // id so two streams stamped in the same millisecond never reorder between calls.
+    function streams(o) {
+      o = o || {};
+      const limit = num(o.limit) > 0 ? Math.min(num(o.limit), 100) : 20;
+      const previewMax = num(o.previewChars) > 0 ? num(o.previewChars) : 160;
+      const by = new Map();
+      for (let i = 0; i < rows.length; i++) {
+        const r = rows[i];
+        let e = by.get(r.streamId);
+        if (!e) { e = { streamId: r.streamId, turns: 0, lastAt: 0, preview: '' }; by.set(r.streamId, e); }
+        e.turns++;
+        if (r.ts >= e.lastAt) e.lastAt = r.ts;
+        // last USER line wins the preview — the assistant's reply is the answer, the user's line is the topic.
+        if (r.role === 'user' && r.content) e.preview = str(r.content).replace(/\s+/g, ' ').trim().slice(0, previewMax);
+      }
+      const out = Array.from(by.values());
+      out.sort((a, b) => (b.lastAt - a.lastAt) || (a.streamId < b.streamId ? -1 : a.streamId > b.streamId ? 1 : 0));
+      return out.slice(0, limit);
+    }
+
+    // SCROLL (reference-harness parity: anchored drill-down): the window of turns around a point in ONE stream, so a
+    // search hit can be READ IN CONTEXT instead of as an isolated line. Anchored on a TIMESTAMP rather than a row
+    // index or a synthetic id — ts is the only anchor that stays valid after trimStreamRam() splices older rows out
+    // from under us, which is exactly when a drill-down is most likely to be attempted.
+    function around(streamId, ts, o) {
+      o = o || {};
+      const win = num(o.window) > 0 ? Math.min(num(o.window), 50) : 6;
+      const want = normStream(streamId);
+      const at = num(ts);
+      const mine = [];
+      for (let i = 0; i < rows.length; i++) { if (rows[i].streamId === want) mine.push(rows[i]); }
+      if (!mine.length) return [];
+      // the row closest to the anchor (mine is append-ordered, so ties resolve to the earliest match — stable).
+      let anchor = 0, best = Infinity;
+      for (let i = 0; i < mine.length; i++) {
+        const d = Math.abs(num(mine[i].ts) - at);
+        if (d < best) { best = d; anchor = i; }
+      }
+      const from = Math.max(0, anchor - win);
+      const to = Math.min(mine.length, anchor + win + 1);
+      return mine.slice(from, to).map(r => Object.assign({}, r));
     }
 
     function append(e) {
@@ -230,7 +283,7 @@
     }
 
     return {
-      append, appendTurns, appendNew, markPersisted, history, reconstruct, search,
+      append, appendTurns, appendNew, markPersisted, history, reconstruct, search, streams, around,
       all() { return rows.map(r => Object.assign({}, r)); },
       count() { return rows.length; },
       _internals: { normStream, SID_RE }
