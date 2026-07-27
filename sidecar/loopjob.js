@@ -342,6 +342,10 @@
         // verdictNote is the Commander's own reason. It rides the projection so the panel can show WHY
         // something was rejected — otherwise the history reads as unexplained deletions.
         verdict: it.verdict, verdictNote: it.verdictNote || null,
+        // the commit this iteration landed (S3). It rides the DECIDED rows too, not just the pending ones:
+        // once a pass is approved it leaves `pending`, and without this its work would become invisible —
+        // the Commander could no longer see where the code they approved actually went.
+        commit: it.commit || null,
         endedAt: it.endedAt, usd: it.usd, check: it.check || null
       })),
       // the check surface the panel renders its stepper from. `checkCmd` is shown so the Commander can see

@@ -121,6 +121,7 @@ const loopjob = require('./loopjob.js');                   // LOOPS: pure gate +
 const loopjobStore = require('./loopjob-store.js');        // LOOPS: pure LoopJob lifecycle reducer (iterations, verdicts)
 const { makeLoopDriver } = require('./loopjob-driver.js'); // LOOPS: the verdict-triggered tick driver
 const loopcheck = require('./loopjob-check.js');           // LOOPS: pure host-check verdict + tamper guard
+const loopgit = require('./loopgit.js');                   // LOOPS: pure git harvest decision (branch, pathspec, undo plan)
 const nightshift = require('./nightshift.js');            // NS-1: pure planner for the server-owned night-shift driver
 const { makeNightshiftDriver } = require('./nightshift-driver.js'); // NS-1: the restart-safe idle-autonomy tick driver
 const contextpack = require('./contextpack.js');          // NS-2: pure recency-weighted context pack for the propose step
@@ -4363,6 +4364,204 @@ async function runLoopCheck(loop, before) {
 /* the LOOP tick driver — pure orchestration, every ambient dep injected here. Deliberately reuses the cron
    credential/identity/station resolvers: a loop iteration is the same kind of unattended run a routine fires,
    so it must resolve provider, key and station identically or the two paths would drift. */
+/* ==== THE HARVEST — what makes APPROVE and REJECT real (S3) ==============================================
+
+   Before this, loopjob-driver's defaultHarvest returned `commit: null`, nothing injected a `harvest` dep, and
+   POST /api/loops/verdict ran no git at all. An iteration's edits therefore piled up UNCOMMITTED in the
+   Commander's project: approve promoted nothing, reject undid nothing, and a rejected row sat next to code
+   still sitting in the working tree. That is the product asserting a state git never had.
+
+   Two ambient functions close it, with loopgit.js owning every safety decision:
+     loopHarvest   — commit THIS pass's paths onto the loop's own branch, and return the sha.
+     loopUndoWork  — revert the rejected iteration and the stack the STACKING LAW discards, before the verdict
+                     is recorded (loopjob-store: "the HOST performs the actual git ... BEFORE calling this").
+
+   The identity is passed with -c so a machine with no global git identity can still run a loop. Nothing here
+   ever pushes. ====================================================================================== */
+
+const LOOP_GIT_ID = ['-c', 'user.name=StarNet Loop', '-c', 'user.email=loop@starnet.local'];
+
+async function loopIsRepo(root) {
+  const r = await runGit(root, ['rev-parse', '--is-inside-work-tree'], 15000);
+  return r.ok && /true/.test(r.stdout);
+}
+
+/* loopHarvest — THE COMMIT. `ctx.before` is the pre-iteration dirty snapshot the driver already computes for
+   the check, and it is what keeps this honest: the pathspec is after-MINUS-before, so a pass commits only the
+   files that appeared while it ran. `git add -A` would sweep in the Commander's own uncommitted work and put
+   it inside a commit that a later rejection reverts.
+
+   THE ONE THING after-minus-before CANNOT SEPARATE is an edit the Commander makes to their own project WHILE
+   a pass is running — it appeared during the pass, so it is attributed to the pass and rides its commit. This
+   is the same attribution runLoopCheck's tamper guard has always used, and there is no signal that would
+   distinguish the two; it is committed rather than lost, and the review card lists the file. Worth knowing
+   because it is exactly what makes test/loops-check.e2e's own `git commit` occasionally find nothing to do.
+
+   A non-git project is NOT an error — a research loop against a folder of notes is a legitimate shape. It
+   simply harvests no commit, exactly as before. But a project we KNOW we should have committed to and could
+   not (blessing revoked mid-pass, a record naming a protected branch) THROWS, because the driver turns a
+   thrown harvest into a failed iteration rather than a review candidate — a candidate whose work did not
+   actually land is the worst possible thing to put in front of a reviewer. */
+async function loopHarvest(loop, res, iterN, ctx) {
+  // the honest text-only baseline, byte-identical to what the driver would have produced on its own.
+  const text = String((res && res.text) || '');
+  const first = text.split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
+  const base = {
+    text: text,
+    title: first.replace(/^[#>*\-\s]+/, '').split(/\s+/).slice(0, 12).join(' ') || null,
+    summary: text.slice(0, 1200) || null,
+    commit: null,
+    files: [],
+    usd: (res && typeof res.usd === 'number' && isFinite(res.usd)) ? res.usd : 0
+  };
+  if (!loop || !loop.workdir) return base;
+
+  const root = loop.workdir;
+  const isRepo = await loopIsRepo(root);
+  // RE-CHECK THE BLESSING EVERY ITERATION, like runLoopCheck does — a grant can be revoked under a running loop.
+  const blessed = isBlessedRoot(root);
+  const target = loopgit.harvestTarget(loop, {
+    blessed: blessed, isRepo: isRepo,
+    dateStr: new Date().toISOString().slice(0, 10),
+    headBranch: null
+  });
+  if (!target.ok) {
+    if (!isRepo) return base;                      // a folder that is not a repo simply has no commits. Honest.
+    throw new Error(target.reason || 'the loop cannot commit here');
+  }
+
+  // the exact paths THIS pass introduced. Uncapped by the review card's 40 — a file we decline to commit is a
+  // file a rejection cannot undo, so the commit set must be the whole delta, not the readable slice of it.
+  const after = await loopChangedFiles(root);
+  if (!after.gitProven) throw new Error('git could not report what changed in ' + root);
+  const beforeSet = new Set(((ctx && ctx.before && ctx.before.files) || []));
+  const paths = loopgit.commitPaths(after.files.filter(f => !beforeSet.has(f)));
+  if (!paths.length) return base;                  // the pass changed no file — a real outcome, not a failure.
+
+  if (target.create) {
+    const co = await runGit(root, ['checkout', '-b', target.branch], 20000);
+    if (!co.ok) throw new Error('could not create the loop branch ' + target.branch + ': ' + String(co.stderr || '').slice(0, 200));
+    // persist the branch the moment it exists, so a crash between here and the commit cannot orphan it and
+    // start a SECOND branch on the next pass (which would split one loop's work across two undo domains).
+    try { loopJobs = loopjobStore.updateLoop(loopJobs, loop.id, { branch: target.branch }, { now: Date.now() }); saveLoops(); }
+    catch (e) { console.warn('[loops] could not persist the loop branch:', (e && e.message) || e); }
+  } else {
+    const cur = await runGit(root, ['rev-parse', '--abbrev-ref', 'HEAD'], 15000);
+    if ((cur.stdout || '').trim() !== target.branch) {
+      const co = await runGit(root, ['checkout', target.branch], 20000);
+      if (!co.ok) throw new Error('the project is not on ' + target.branch + ' and could not switch to it: ' + String(co.stderr || '').slice(0, 200));
+    }
+  }
+
+  // add THEN commit, both restricted to the pathspec: `add` is what picks up files the pass newly created,
+  // and the `--` on commit is what guarantees nothing else already sitting in the index rides along.
+  const add = await runGit(root, ['add', '--'].concat(paths), 30000);
+  if (!add.ok) throw new Error('could not stage this iteration: ' + String(add.stderr || '').slice(0, 200));
+  const subject = loopgit.commitSubject(loop, iterN, base.title);
+  const body = 'objective: ' + String(loop.objective || '').slice(0, 400);
+  const commit = await runGit(root, LOOP_GIT_ID.concat(['commit', '-m', subject, '-m', body, '--']).concat(paths), 30000);
+  if (!commit.ok) throw new Error('could not commit this iteration: ' + String(commit.stderr || commit.stdout || '').slice(0, 200));
+  const head = await runGit(root, ['rev-parse', '--short', 'HEAD'], 15000);
+  const sha = (head.stdout || '').trim();
+  if (!loopgit.isSha(sha)) throw new Error('committed, but git did not return a usable commit id');
+
+  return Object.assign(base, { commit: sha, files: paths.map(p => ({ path: p })) });
+}
+
+/* loopFilesInCommit — the paths one commit touched. The undo's blast radius is the union of these, and
+   scoping to it is what lets a Commander keep unrelated scratch files dirty without being locked out of the
+   REJECT button. */
+async function loopFilesInCommit(root, sha) {
+  const r = await runGit(root, ['show', '--pretty=format:', '--name-only', sha], 20000);
+  if (!r.ok) return null;
+  return String(r.stdout || '').split('\n').map(s => s.trim()).filter(Boolean);
+}
+
+/* loopUndoWork — THE REVERT, run BEFORE the rejection is recorded. Rejecting #3 undoes #5, #4 and #3 (newest
+   first — see loopgit.js), because the STACKING LAW already discards the ones above.
+
+   REVERT, NEVER RESET: every iteration stays in history, so a mis-click is recoverable.
+
+   THE DIRTY-TREE RULE IS SCOPED, NOT GLOBAL. Refusing on ANY uncommitted file reads as safe and is actually
+   useless: one scratch file the Commander keeps around would permanently disable rejection on a real repo.
+   So the precondition is only that nothing we are about to revert is currently dirty — that is the state
+   that would make git clobber unsaved edits, and it is also what makes the failure path safe, since the
+   recovery only ever restores those same paths.
+
+   Returns { ok, ... } and NEVER throws; the route refuses the verdict on ok:false rather than filing a
+   rejection over code that is still in the tree. */
+async function loopUndoWork(loop, n) {
+  const plan = loopgit.undoPlan(loop, n);
+  if (plan.mode === 'blocked') return { ok: false, error: plan.reason || 'this iteration cannot be undone' };
+  // 'unrevertable' still lets the verdict through — refusing would strand a candidate nobody can ever rule
+  // on — but the reason rides back so the panel states plainly that the files were left in place.
+  if (plan.mode === 'unrevertable') return { ok: true, reverted: [], commit: null, note: plan.reason };
+  if (plan.mode === 'none' || !plan.commits.length) return { ok: true, reverted: [], commit: null, note: null };
+
+  const root = loop.workdir;
+  if (!isBlessedRoot(root)) return { ok: false, error: '"' + root + '" is not an approved project folder any more, so its work cannot be undone from here' };
+  if (!(await loopIsRepo(root))) return { ok: false, error: 'the project folder is no longer a git repo' };
+
+  const status = await runGit(root, ['status', '--porcelain'], 15000);
+  if (!status.ok) return { ok: false, error: 'git could not read the project state' };
+  const dirty = new Set(loopcheck.parseChangedFiles(status.stdout));
+
+  // the union of every path the doomed commits touched — the undo's blast radius.
+  const scope = new Set();
+  for (const c of plan.commits) {
+    const files = await loopFilesInCommit(root, c.sha);
+    if (files == null) return { ok: false, error: 'git could not read what iteration #' + c.n + ' changed, so it cannot be undone safely' };
+    for (const f of files) scope.add(f);
+  }
+  const clash = Array.from(scope).filter(f => dirty.has(f));
+  if (clash.length) {
+    return {
+      ok: false,
+      error: 'you have uncommitted edits to ' + clash.slice(0, 5).join(', ') + (clash.length > 5 ? ' and ' + (clash.length - 5) + ' more' : '')
+        + ' — undoing this iteration would overwrite them. Commit or stash those files, then reject again.'
+    };
+  }
+
+  const cur = await runGit(root, ['rev-parse', '--abbrev-ref', 'HEAD'], 15000);
+  if ((cur.stdout || '').trim() !== String(loop.branch || '')) {
+    const co = await runGit(root, ['checkout', String(loop.branch)], 20000);
+    if (!co.ok) return { ok: false, error: 'could not switch to ' + loop.branch + ' to undo the work: ' + String(co.stderr || '').slice(0, 200) };
+  }
+
+  // accumulate every revert into the index, then land ONE commit — so the undo is a single reviewable entry
+  // rather than N of them, and so a mid-sequence failure has nothing committed to unpick. The recovery is
+  // scoped to `scope` for the same reason the precondition was: never touch a file this undo did not own.
+  const scoped = Array.from(scope);
+  for (const c of plan.commits) {
+    const r = await runGit(root, ['revert', '--no-commit', c.sha], 30000);
+    if (!r.ok) {
+      await runGit(root, ['revert', '--quit'], 15000);                                     // clear the sequencer state
+      if (scoped.length) {
+        await runGit(root, ['reset', '-q', '--'].concat(scoped), 20000);                   // unstage the partial revert
+        await runGit(root, ['checkout', '-q', 'HEAD', '--'].concat(scoped), 20000);        // and restore those paths only
+      }
+      return { ok: false, error: 'could not undo iteration #' + c.n + ' — ' + String(r.stderr || '').slice(0, 200) + ' (nothing was changed; the commits are all still there)' };
+    }
+  }
+  const others = plan.commits.length - 1;
+  const subject = 'loop: undo rejected #' + n + (others > 0 ? ' (and ' + others + ' built on it)' : '');
+  const done = await runGit(root, LOOP_GIT_ID.concat(['commit', '-m', subject, '--']).concat(scoped), 30000);
+  if (!done.ok) {
+    if (scoped.length) {
+      await runGit(root, ['reset', '-q', '--'].concat(scoped), 20000);
+      await runGit(root, ['checkout', '-q', 'HEAD', '--'].concat(scoped), 20000);
+    }
+    return { ok: false, error: 'the undo could not be committed: ' + String(done.stderr || '').slice(0, 200) + ' (nothing was changed)' };
+  }
+  const head = await runGit(root, ['rev-parse', '--short', 'HEAD'], 15000);
+  return {
+    ok: true,
+    reverted: plan.commits.map(c => c.n),
+    commit: (head.stdout || '').trim() || null,
+    note: plan.commitless.length ? (plan.commitless.length + ' of the discarded passes had committed nothing') : null
+  };
+}
+
 const loopDriver = makeLoopDriver({
   getLoops: () => loopJobs,
   // TRANSACTIONAL DISPATCH: an honest false receipt means the durable write did NOT land, and the driver then
@@ -4437,6 +4636,9 @@ const loopDriver = makeLoopDriver({
   },
   snapshot: (loop) => (loop && loop.workdir) ? loopChangedFiles(loop.workdir) : Promise.resolve(null),
   check: (loop, ctx) => runLoopCheck(loop, ctx && ctx.before),
+  /* THE HARVEST. Without this dep the driver falls back to defaultHarvest, which reports `commit: null` — and
+     a loop whose iterations are never committed is a loop whose REJECT button cannot undo anything. */
+  harvest: (loop, res, iterN, ctx) => loopHarvest(loop, res, iterN, ctx),
   /* A LOOP THAT NEEDS YOU SAYS SO — on the channel you already use. The dock badge and toast only exist while
      the app is open, which is exactly the case that does NOT matter for a loop that runs while you are away.
      Reuses the SAME opt-in gate and chat map as cron notifications (channelSecrets.notifyAutonomous, default
@@ -4614,7 +4816,7 @@ function handleLoopsUpdate(req, res) {
    expected to have WARNED with the same number (loopjob.stackedAbove) BEFORE the click. */
 function handleLoopsVerdict(req, res) {
   const json = loopJson(res);
-  readBody(req, 1 << 16).then(raw => {
+  readBody(req, 1 << 16).then(async raw => {
     let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
     const id = String(body.id || '');
     const loop = loopjobStore.getLoop(loopJobs, id);
@@ -4628,6 +4830,29 @@ function handleLoopsVerdict(req, res) {
     if (target.verdict) return json(409, { error: 'iteration #' + n + ' was already ' + target.verdict });
 
     const willCascade = verdict === 'rejected' ? loopjob.stackedAbove(loop, n).map(it => it.n) : [];
+
+    /* THE UNDO HAPPENS FIRST, AND A FAILED UNDO REFUSES THE VERDICT.
+
+       loopjob-store's contract is explicit: the host performs the git BEFORE calling recordVerdict, because
+       the store "never claims an apply it did not witness". Recording 'rejected' over code still sitting in
+       the Commander's working tree would be precisely that lie — the row says gone, the file says otherwise.
+       So a rejection that cannot be undone returns 409 with git's own reason and changes nothing; the
+       candidate stays reviewable and they can fix the blocker (usually a dirty tree) and click again.
+
+       An APPROVAL needs no git: the iteration was already committed onto the loop's branch when it was
+       harvested. Approve means "keep it", and it is kept. */
+    let undone = null;
+    if (verdict === 'rejected') {
+      try { undone = await loopUndoWork(loop, n); }
+      catch (e) { undone = { ok: false, error: 'the undo failed: ' + ((e && e.message) || e) }; }
+      if (!undone.ok) {
+        return json(409, {
+          error: undone.error || 'this iteration could not be undone, so it was not marked rejected',
+          undone: false, cascaded: willCascade
+        });
+      }
+    }
+
     try {
       loopJobs = loopjobStore.recordVerdict(loopJobs, id, n, verdict, { now: Date.now(), note: body.note });
       saveLoops();
@@ -4641,7 +4866,17 @@ function handleLoopsVerdict(req, res) {
     } catch (_) {}
     // a freed queue slot means the loop may fire again NOW — this is the verdict-as-trigger, made real.
     armLoops(true);
-    json(200, { ok: true, cascaded: willCascade, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() }) });
+    json(200, {
+      ok: true, cascaded: willCascade,
+      // WHAT ACTUALLY HAPPENED TO THE CODE, not just to the row. `reverted` is the iteration numbers whose
+      // commits were undone and `undoCommit` is the commit that undid them, so the panel can state the real
+      // outcome instead of implying a tree change that may not have happened.
+      undone: undone ? undone.reverted : [],
+      undoCommit: undone ? undone.commit : null,
+      undoNote: undone ? undone.note : null,
+      branch: loop.branch || null,
+      loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() })
+    });
   }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
 

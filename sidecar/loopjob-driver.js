@@ -360,7 +360,11 @@
               ? beforeP.then(before => check(fresh, { iterN: iterN, before: before }))
                 .catch(e => ({ ran: true, passed: false, trusted: false, mustReview: true, tampered: false, tamperedPaths: [], gitProven: false, summary: '', note: 'the check could not be run — ' + ((e && e.message) || e) }))
               : Promise.resolve(null);
-            return checkP.then(verdict => Promise.resolve().then(() => harvest(fresh, withText, iterN)).then(
+            // the harvest needs the SAME pre-iteration snapshot the check got: its commit pathspec is
+            // after-minus-before, so without it a pass would stage files that were already dirty when the
+            // loop started — the Commander's own work, swept into a commit a later rejection reverts.
+            return checkP.then(verdict => beforeP.then(before =>
+              Promise.resolve().then(() => harvest(fresh, withText, iterN, { before: before, check: verdict })).then(
               (h) => settle(loop.id, runId, Object.assign(
                 { status: 'ok', check: verdict },
                 h || {},
@@ -373,7 +377,7 @@
               // a harvest failure (e.g. git refused the commit) is a REAL iteration failure, not a silent
               // success: the work did not land, so the loop must not park a candidate the Commander cannot act on.
               (e) => settle(loop.id, runId, { status: 'error', error: 'harvest: ' + ((e && e.message) || 'failed') })
-            ));
+            )));
           },
           (e) => settle(loop.id, runId, {
             status: 'error',

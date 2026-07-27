@@ -201,9 +201,16 @@ function makeRepo() {
     A.eq(L(st).pendingCount >= 1, true, 'it is forced in front of a human instead');
 
     // ---- a clean, trusted green completes the loop as DONE -------------------------------------------------
-    // commit the tampering away so the working tree is clean again, leaving a genuinely-passing check.
+    /* commit the tampering away so the working tree is clean again, leaving a genuinely-passing check.
+       TOLERANT OF AN ALREADY-CLEAN TREE ON PURPOSE (S3): the loop now COMMITS each iteration itself, so if a
+       pass was in flight when this test dirtied the repo, the harvest has already committed these files and
+       `git commit` exits non-zero with "nothing to commit". The precondition this line exists to establish is
+       "the tree is clean", and both paths establish it — only an unexpected git failure should fail the test. */
     execFileSync('git', ['-C', repo, 'add', '-A'], { stdio: 'pipe' });
-    execFileSync('git', ['-C', repo, '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'accept'], { stdio: 'pipe' });
+    try { execFileSync('git', ['-C', repo, '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'accept'], { stdio: 'pipe' }); }
+    catch (e) { /* nothing to commit — the harvest got there first */ }
+    A.eq(execFileSync('git', ['-C', repo, 'status', '--porcelain'], { stdio: 'pipe' }).toString().trim(), '',
+      'the working tree is clean before the trusted-green run, however it got there');
     const fresh = await mk({
       name: 'already green', objective: 'keep the project check passing', workdir: repo,
       checkCmd: 'node check.js', exitOn: 'check-green', model: 'test/model', provider: 'openrouter'

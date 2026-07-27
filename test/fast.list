@@ -315,6 +315,7 @@ test/cron.lock.test.js
 test/loopjob.test.js
 test/loopjob-check.test.js
 test/loopjob-driver.test.js
+test/loopgit.test.js
 test/cron.oneshot.test.js
 test/cron.run-now.test.js
 test/tool-withheld-message.test.js
