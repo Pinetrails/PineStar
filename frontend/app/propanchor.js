@@ -64,7 +64,7 @@ const PropAnchor = (() => {
       ? ORDER.slice()
       : [approach].concat(ORDER.filter(s => s !== approach));
     for (const side of sides) {
-      for (const t of sideTiles(prop, side)) {
+      for (const t of centreOut(sideTiles(prop, side))) {
         if (geo.walkable(t.tx, t.ty, extra)) {
           return { tx: t.tx, ty: t.ty, face: facingToward(t.tx, t.ty, prop), sit };
         }

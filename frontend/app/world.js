@@ -542,7 +542,7 @@ const World = (() => {
     if (dtx + 1 > z.x2) dtx = Math.max(z.x1, z.x2 - 1);
     const dty = Math.min(z.y1 + 1, z.y2 - 1);
     desk = { tx: dtx, ty: dty, w: 2, h: 1 };
-    seat = { tx: dtx, ty: Math.min(dty + 1, z.y2) };   // 2-wide desk -> centre sits on the tile seam
+    seat = { tx: dtx, ty: Math.min(dty + 1, z.y2), cx: dtx + 0.5 };   // 2-wide desk -> centre sits on the tile seam
     blocked.add(dtx + ',' + dty); blocked.add((dtx + 1) + ',' + dty);
   }
   // walk the hero to its work seat (or snap onto it if unreachable) + enter the 'work' goal — the shared "now sit
@@ -1628,7 +1628,7 @@ const World = (() => {
     // walkable WHOLE tile (pathing needs one), but an even-width desk's centre line falls on a tile
     // boundary — a 2-wide desk seated at either tile sits 6px off-centre, which is exactly the "chair is
     // stuck on the left" report. Only the RENDER + the final foot snap use cx; the walk target stays tx.
-    return a ? { tx: a.tx, ty: a.ty, face: a.face } : null;
+    return a ? { tx: a.tx, ty: a.ty, face: a.face, cx: seatCx(prop, a.tx) } : null;
   }
   // centre a 1-wide seat under a prop, but never drift further than one tile from the walkable anchor
   // (a desk whose middle is walled off keeps its chair at the tile the body can actually reach).
