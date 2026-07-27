@@ -414,6 +414,13 @@ belong in the release notes — an unexplained change reads as a regression.
 3. **Fewer tools are advertised per request.** Browser sub-tools are `deferred: true` in the
    capability registry — still granted, reachable via `tool.search`. Agents behave slightly
    differently; nothing was revoked.
+4. **An agent wearing Beach Babe or Steve changes appearance.** `ff3c3362` retired both
+   (`DATA.SKINS` 38 → 36) and deleted their sprite dirs and manifest keys. A save still holding
+   `skin: 'beachbabe'` is **not** a crash: `frontend/js/assets.js:123` resolves
+   `DATA.SKINS[b.skin] && …set` with a fallback to `DATA.SKINS[DATA.DEFAULT_SKIN].set`, and the
+   scale lookup (`:44`) and the picker (`app.js:1900`) both guard the same way — verified by
+   reading each site, not assumed. The agent renders as the default skin instead, silently. That
+   is the only removal in this release that reaches existing saves, and it is in the notes.
 
 ### E4 — What is still NOT proven
 

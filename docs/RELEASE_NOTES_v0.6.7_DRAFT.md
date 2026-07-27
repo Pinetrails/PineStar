@@ -11,11 +11,12 @@
 > - **DELTA `10d837d0..91f3c5b1` WRITTEN UP 2026-07-26** — security sweep, delegation +
 >   conveyor honesty, idle continuity, props/tables, the FOR YOU shelf, and the MIT/branding
 >   position. **The body is now complete through `91f3c5b1`.**
-> - **ONE LANE STILL OWED: the agent sprite fixes**, the last merge of the night. Add its
->   user-facing line to "The station is a place now" (or to Fixes if it reads as a bug fix)
->   and this draft is ready to paste.
-> - Andrew is still merging. When new lanes land, re-run:
->   `git log --oneline 91f3c5b1..feat/harness-backend --no-merges | grep -vE "^[0-9a-f]+ (qa\(|docs\(status|chore\(status)"`
+> - **THE SKIN LANE IS IN (`d427da54`, `ff3c3362`). The body is COMPLETE through `dfc8b6ec`
+>   and ready to paste.** Note the two edits it forced: beachbabe was dropped from the
+>   north-walk list (it no longer exists), and the retirement of Beach Babe + Steve is called
+>   out because an agent wearing either silently falls back to the default skin on first launch.
+> - If anything else lands before the bump, re-run:
+>   `git log --oneline dfc8b6ec..feat/harness-backend --no-merges | grep -vE "^[0-9a-f]+ (qa\(|docs\(status|chore\(status)"`
 >   and append the user-facing ones to the matching section.
 > - Every claim below was checked against code, not against plan docs.
 
@@ -62,9 +63,17 @@ The station gets places to be, and your phone gets real control of it.
   bugs went with it: an agent could be teleported home mid-stride by the containment backstop,
   and an agent's attention anchor survived a re-frame it should not have.
 - **Eleven new skins.** Freddy, Ghostface, Morpheus, Rick, Ninja Turtle, Robocop, Minion,
-  Master Chief, Pikachu, Casey Jones and Finn. Six older skins (bear, pepe, capybara,
-  crthead, beachbabe, heisenberg) had no back-frames when walking north — they do now, and
+  Master Chief, Pikachu, Casey Jones and Finn. Five older skins (bear, pepe, capybara,
+  crthead, heisenberg) had no back-frames when walking north — they do now, and
   four more (ghostface, ninjaturtle, minionchar, finn) had their north-walk cycles rebuilt.
+- **Twenty-eight skins redrawn.** Every redrawn skin was rebuilt from its *original* character
+  rather than re-prompted from a description, so builds are preserved structurally: heights are
+  unchanged everywhere and the worst drift on any skin is two pixels on one axis. Your crew
+  stands exactly where it stood. Each skin's blink is now derived from its own new idle pose,
+  so it can never disagree with the pose it interrupts.
+- **Two skins were retired: Beach Babe and Steve.** The catalog goes from 38 to 36. If one of
+  your crew was wearing either, that agent falls back to the default skin on first launch —
+  nothing else about them changes, and you can pick any of the other 36 from the dossier.
 
 ## Your phone is a real console
 
