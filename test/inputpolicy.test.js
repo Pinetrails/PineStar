@@ -4,6 +4,7 @@ const A = require('./_assert.js');
 const { resolveTools } = require('../sidecar/capability/resolve.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
+const { makeConsentBroker } = require('../sidecar/permissions.js');
 const { makeComputerTools } = require('../sidecar/tools/builtin/computer.js');
 const { makeDesktopTools } = require('../sidecar/tools/builtin/desktop.js');
 const { enforceSyntheticOnly, enforceRunAuthority, runInputContext, impactOfTool, makeRunAuthority, IMPACTS, backgroundOwnsLoopbackUrl, backgroundOwnsLocalUrl, makeLoopbackListenerProbe, normalizeUnattendedGrants, isConnectorTool } = require('../sidecar/inputpolicy.js');
@@ -129,32 +130,92 @@ A.eq(backgroundOwnsLoopbackUrl({ running: true, tail: 'Local: https://[::1]:4443
   A.eq(await backgroundOwnsLocalUrl(ownedStatus, 'http://127.0.0.1:5174/', async () => false), false, 'spoofed stdout URL cannot authorize a listener owned by another process');
   A.eq(await backgroundOwnsLocalUrl(Object.assign({}, ownedStatus, { pid: null }), 'http://127.0.0.1:5174/', ownedProbe), false, 'missing background PID fails listener ownership closed');
 
-  let exactPrompts = 0, standingPrompts = 0, externalRuns = 0;
+  /* THE UNCLASSIFIABLE TOOL — anything that merely FELL THROUGH to external-unknown keeps the exact,
+     non-cacheable, one-shot per-call confirmation. This is the catch-all, and it stays shut. */
+  let exactPrompts = 0, standingPrompts = 0, unknownRuns = 0;
   const exactAuthority = makeRunAuthority({
     surface: 'interactive', isTask: true,
     environment: { supports: { hostileCodeSandbox: false } },
-    confirm: async () => { exactPrompts++; return 'once'; }
+    confirm: async () => { exactPrompts++; return 'full'; }   // even the STRONGEST answer buys nothing here
   });
   const unknownRegistry = makeRegistry();
   unknownRegistry.register({
+    name: 'future.magic', capability: 'future-cap', impact: 'external-unknown',
+    scope: 'read', requiresConsent: true, schema: { type: 'object', properties: {} },
+    run: async () => { unknownRuns++; return { content: 'ok' }; }
+  });
+  const unknownCtx = { authorize: exactAuthority.authorize, consent: async () => { standingPrompts++; return { allow: true }; } };
+  const unknownResult = await unknownRegistry.dispatch({ id: 'u1', name: 'future.magic', args: {} }, unknownCtx);
+  A.eq(unknownResult.ok, true, 'unknown external effect runs only after exact live confirmation');
+  A.eq(exactPrompts, 1, 'unknown external effect receives one exact per-call prompt');
+  A.eq(standingPrompts, 0, 'exact one-shot authority does not fall through to a weaker cached-consent prompt');
+  await unknownRegistry.dispatch({ id: 'u2', name: 'future.magic', args: {} }, unknownCtx);
+  A.eq(exactPrompts, 2, 'an unclassifiable tool re-asks every call — "full" is deliberately NOT recorded for it');
+  A.eq(unknownRuns, 2, 'each confirmed unclassifiable call executes exactly once');
+
+  /* THE CONNECTOR TOOL (capability 'mcp:<id>') — a server the Commander deliberately connected. It routes to
+     the consent BROKER instead, so the grade they pick is recorded and the next call is answered from cache.
+     REGRESSION (2026-07-27): the one-shot path collapsed once/always/full to a boolean, so a user clicking
+     "Full access" was re-prompted on every single connector call — four times in a row on a live Shopify run. */
+  let connPrompts = 0, connRuns = 0;
+  const connAuthority = makeRunAuthority({
+    surface: 'interactive', isTask: true,
+    environment: { supports: { hostileCodeSandbox: false } },
+    confirm: async () => 'full'
+  });
+  const connRegistry = makeRegistry();
+  connRegistry.register({
     name: 'mcp__custom__maybe_read', capability: 'mcp:custom', impact: 'external-unknown',
     scope: 'read', requiresConsent: true, schema: { type: 'object', properties: {} },
-    run: async () => { externalRuns++; return { content: 'ok' }; }
+    run: async () => { connRuns++; return { content: 'ok' }; }
   });
-  const unknownResult = await unknownRegistry.dispatch(
-    { id: 'u1', name: 'mcp__custom__maybe_read', args: {} },
-    { authorize: exactAuthority.authorize, consent: async () => { standingPrompts++; return { allow: true }; } }
-  );
-  A.eq(unknownResult.ok, true, 'unknown connector effect runs only after exact live confirmation');
-  A.eq(exactPrompts, 1, 'unknown connector receives one exact per-call prompt');
-  A.eq(standingPrompts, 0, 'exact one-shot authority does not fall through to a weaker cached-consent prompt');
-  A.eq(externalRuns, 1, 'confirmed connector call executes exactly once');
-  const deniedUnknown = await unknownRegistry.dispatch(
-    { id: 'u2', name: 'mcp__custom__maybe_read', args: {} },
+  const connBroker = makeConsentBroker({
+    surface: 'interactive', sessionKey: 'r1', grantsBlanket: new Set(),
+    networkOf: () => true,                                   // every MCP call is an outward network effect
+    prompt: async () => { connPrompts++; return 'full'; }
+  });
+  const connCtx = { authorize: connAuthority.authorize, consent: connBroker };
+  const c1 = await connRegistry.dispatch({ id: 'c1', name: 'mcp__custom__maybe_read', args: {} }, connCtx);
+  A.eq(c1.ok, true, 'a watched connector call runs after the broker prompt');
+  A.eq(connPrompts, 1, 'the FIRST connector call still asks a live human');
+  const c2 = await connRegistry.dispatch({ id: 'c2', name: 'mcp__custom__maybe_read', args: {} }, connCtx);
+  A.eq(c2.ok, true, 'the second connector call is allowed');
+  A.eq(connPrompts, 1, 'THE BUG: "Full access" must silence every later connector prompt, not re-ask each call');
+  A.eq(connRuns, 2, 'both connector calls executed');
+  // "Always" records the danger CLASS (capability:scope) rather than the blanket — same no-re-prompt result.
+  let alwaysPrompts = 0;
+  const alwaysBroker = makeConsentBroker({
+    surface: 'interactive', sessionKey: 'r2', grantsBlanket: new Set(), networkOf: () => true,
+    prompt: async () => { alwaysPrompts++; return 'always'; }
+  });
+  const alwaysCtx = { authorize: connAuthority.authorize, consent: alwaysBroker };
+  await connRegistry.dispatch({ id: 'a1', name: 'mcp__custom__maybe_read', args: {} }, alwaysCtx);
+  await connRegistry.dispatch({ id: 'a2', name: 'mcp__custom__maybe_read', args: {} }, alwaysCtx);
+  A.eq(alwaysPrompts, 1, '"Always" on a connector is recorded as a standing grant, not re-asked');
+  A.ok(alwaysBroker.snapshot().permanent.indexOf('mcp:custom:read') >= 0, 'the standing grant is visible/revocable in the Permissions panel snapshot');
+  // A DENY still refuses, and is NOT remembered as a yes.
+  let denyPrompts = 0, denyRuns = 0;
+  const denyRegistry = makeRegistry();
+  denyRegistry.register({
+    name: 'mcp__custom__maybe_read', capability: 'mcp:custom', impact: 'external-unknown',
+    scope: 'read', requiresConsent: true, schema: { type: 'object', properties: {} },
+    run: async () => { denyRuns++; return { content: 'ok' }; }
+  });
+  const denyBroker = makeConsentBroker({
+    surface: 'interactive', sessionKey: 'r3', grantsBlanket: new Set(), networkOf: () => true,
+    prompt: async () => { denyPrompts++; return 'deny'; }
+  });
+  const denied1 = await denyRegistry.dispatch({ id: 'd1', name: 'mcp__custom__maybe_read', args: {} }, { authorize: connAuthority.authorize, consent: denyBroker });
+  A.eq(denied1.summary, 'denied', 'a denied connector call performs no action');
+  A.eq(denyRuns, 0, 'a denied connector tool never runs');
+  A.eq(denyPrompts, 1, 'the deny went through the broker, which asked exactly once');
+  // The autonomous floor is untouched: no grant, no connector call, whatever consent says.
+  const deniedUnattended = await connRegistry.dispatch(
+    { id: 'u3', name: 'mcp__custom__maybe_read', args: {} },
     { authorize: autonomousAuthority.authorize, consent: async () => ({ allow: true }) }
   );
-  A.eq(deniedUnknown.summary, 'user-control-denied', 'autonomous connector calls are denied despite consent state');
-  A.eq(externalRuns, 1, 'denied autonomous connector never executes');
+  A.eq(deniedUnattended.summary, 'user-control-denied', 'autonomous connector calls are denied despite consent state');
+  A.eq(connRuns, 4, 'the denied autonomous connector never executed');
 
   let driverCalls = 0, openerCalls = 0;
   const registry = makeRegistry();

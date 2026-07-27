@@ -133,6 +133,21 @@ function makeRunAuthority(opts) {
         return { ok: true, impact, surface, isTask, isolated };
       }
       if (surface !== 'interactive' || !confirm) return { ok: false, impact, reason: 'unknown external effects require a watched, exact per-call confirmation' };
+      /* A WATCHED call to one of the Commander's OWN connected MCP servers. Hand it to the consent broker —
+         WITHOUT oneShot, so registry.dispatch runs the broker, which does the asking AND records the grade the
+         Commander picked (once / always / full). The one-shot path below cannot: it collapses all four
+         affirmative answers to a bare boolean, so "Always" and "Full access" bought nothing and every single
+         call re-prompted. Live-caught 2026-07-27: a Shopify connector agent asked four times in a row for four
+         `get_draft_asset` reads while the user kept clicking Full access. A prompt the Commander already
+         answered "always" to, asked again, is not consent — it is a click-through trainer.
+
+         The catch-all STAYS closed. This is narrowed by isConnectorTool (capability 'mcp:<id>') exactly like
+         connectorAllowedUnattended above — a tool that merely FELL THROUGH to external-unknown because the
+         host could not classify it is not a connector and keeps the exact per-call confirmation below. The
+         broker is also strictly stronger than what it replaces: same live prompt on first use, same
+         fail-closed timeout/abort, plus the hardline floor and a standing grant the Commander can SEE and
+         revoke in the Permissions panel — which a one-shot answer never was. */
+      if (isConnectorTool(tool)) return { ok: true, impact, surface, isTask, isolated };
       // Deliberately bypass the standing-grant broker: any affirmative UI choice authorizes
       // this call ONCE only. "Always", Full Access, and cached grants are not recorded here.
       return Promise.resolve(confirm(call, tool)).then(decision => {

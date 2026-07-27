@@ -126,9 +126,16 @@
       readOnly: readOnly,
       capability: 'mcp:' + sanitizePart(connectorId),   // lets registry.list() grant a whole connector by capId
       // Transport and server-supplied readOnlyHint cannot prove absence of local/user effects.
-      // Every custom connector call receives an exact non-cacheable live confirmation.
+      // Every custom connector call is gated by the consent broker on first use.
       impact: 'external-unknown',
-      requiresConsent: o.localProcess === true || !readOnly,
+      // ALWAYS true — including a server that self-declares readOnlyHint. The old value
+      // (`o.localProcess === true || !readOnly`) left a remote read-only tool ungated HERE and leaned on the
+      // host-authority layer's per-call confirmation instead. Now that a watched connector call routes to the
+      // broker (sidecar/inputpolicy.js — so "Always"/"Full access" are actually recorded), that fallback is
+      // gone: leaving this false would make a server's own unverifiable annotation the thing that decides it
+      // needs no approval at all. The annotation still shapes `scope` (read vs execute), which is what the
+      // grade is recorded against — it just can no longer switch the gate off.
+      requiresConsent: true,
       network: true,                                     // every remote MCP call is an outward network effect
       timeoutMs: o.timeoutMs || 0,                       // 0 -> inherit the host's per-tool timeout (CAPS.toolTimeoutMs)
       run: async function (args, ctx) {
