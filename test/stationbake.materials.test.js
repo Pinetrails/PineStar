@@ -1,6 +1,6 @@
 'use strict';
 
-/* Deck MATERIALS (v4) — the per-tile floor recipes behind REFIT ▧ PAINT.
+/* Deck MATERIALS (v4) — the per-tile floor recipes behind REFIT ▧ SURFACE.
 
    These assert the painters directly through StationBake.sampleMaterial rather than through a
    full bake(), on purpose: the bake's room-lighting pass fills over the whole footprint, and in

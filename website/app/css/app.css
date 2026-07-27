@@ -2640,27 +2640,74 @@ body.crew-rail-off #screen-game.active {
   white-space: normal; line-height: 1.25;
 }
 
-.refit-swatch {
-  width: 26px; height: 22px; cursor: pointer; border: 2px solid var(--ph-dim);
-  image-rendering: pixelated; padding: 0; flex: 0 0 auto;
-}
-.refit-swatch:hover { border-color: var(--ph); }
-.refit-swatch.active { border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow); }
-
-/* PAINT palette rows: DECK MATERIAL (the recipe) above DECK PAINT (the hue) — two axes, two
-   rows. The material swatch is wider because a material only reads across a few tiles. */
+/* SURFACE palette: MATERIAL (the recipe) above COLOUR (the hue) — two axes, two sections.
+   Both speak the SAME card language as the prop gallery above: a dark inset chip with a phosphor
+   rim, never a bare <button>. A <button> that declares only a border inherits the UA's grey
+   buttonface AND Arial, which is exactly how this section came to read as raw HTML pasted into a
+   CRT panel — so every chip here sets background, border-radius and font-family explicitly. */
 .refit-palcap {
-  width: 100%; font-size: 11px; letter-spacing: 1px; opacity: .62;
-  color: var(--ph); margin: 2px 0 1px;
+  display: flex; align-items: baseline; gap: 6px; width: 100%;
+  font-size: 11px; letter-spacing: 1px; margin: 9px 0 4px;
 }
-.refit-palrow:first-child .refit-palcap { margin-top: 0; }
-/* material swatches carry their NAME: a hue is self-evident from a colour chip, a recipe is not */
-.refit-matswatch { width: 46px; height: auto; padding: 2px 0 3px; display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.refit-matswatch canvas { image-rendering: pixelated; }
-.refit-matswatch .refit-matname {
-  font-size: 9px; letter-spacing: .5px; line-height: 1; opacity: .72; color: var(--ph-bright);
+.refit-palcap:first-child { margin-top: 2px; }
+.refit-palcap-k { color: var(--ph); opacity: .6; }
+/* the caption carries the live selection as WORDS — 21 hue chips can't each hold a label */
+.refit-palcap-v { color: var(--ph-bright); letter-spacing: 1.4px; text-shadow: 0 0 8px var(--ph-glow2); }
+.refit-palcap-v::before { content: '· '; opacity: .4; }
+
+/* MATERIAL — a gallery of real baked patches, each labelled (a hue is self-evident from a chip,
+   a recipe is not). Sized so six tiles of the bake fit at 1:1 — pixel art is never scaled. */
+/* FIXED 66px tracks (the prop gallery's idiom), sized so the 60px patch sits in its cell with no
+   dead air — four across keeps ten materials to three rows, which is what stops the dock from
+   growing past the bottom of the screen. The dock's max-height is in `vh` but the whole overlay is
+   uiZoom-scaled, so a palette that merely fits on paper can still run off the glass. */
+.refit-matgrid { display: grid; grid-template-columns: repeat(auto-fill, 66px); gap: 6px; width: 100%; }
+.refit-mattile {
+  display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 0;
+  padding: 4px 1px 3px; cursor: pointer; border-radius: 5px; font-family: inherit;
+  background: rgba(0,0,0,.34); border: 1.5px solid var(--ph-faint); color: var(--ph-dim);
 }
-.refit-matswatch.active .refit-matname { opacity: 1; }
+.refit-mattile:hover { border-color: var(--ph); color: var(--ph-bright); background: var(--ph-faint); }
+.refit-mattile.active {
+  border-color: var(--ph-bright); color: var(--ph-bright);
+  box-shadow: 0 0 10px var(--ph-glow), inset 0 0 14px rgba(0,0,0,.55);
+}
+.refit-mattile canvas {
+  display: block; max-width: 100%; image-rendering: pixelated; pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.55);
+}
+.refit-matname {
+  font-size: 10px; letter-spacing: .5px; line-height: 1; text-align: center;
+  max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* COLOUR — the same recipe rendered in every tone, so the row answers "what does PLANK look like
+   in COBALT?" rather than showing a flat colour the station never actually renders. */
+.refit-huegrid { display: flex; flex-wrap: wrap; gap: 5px; width: 100%; }
+.refit-hue {
+  flex: 0 0 auto; padding: 0; line-height: 0; cursor: pointer; overflow: hidden;
+  border-radius: 4px; font-family: inherit;
+  background: rgba(0,0,0,.34); border: 1.5px solid var(--ph-faint);
+}
+.refit-hue canvas { display: block; image-rendering: pixelated; pointer-events: none; }
+.refit-hue:hover { border-color: var(--ph); }
+.refit-hue.active { border-color: var(--ph-bright); box-shadow: 0 0 10px var(--ph-glow); }
+/* AUTO is not a colour, it's a MODE — "whatever this room's deck is". It has no swatch of its own
+   and it needs a WORD, so it takes a full-width row above the hues instead of standing in the grid
+   as an odd chip a head taller than its neighbours. */
+.refit-hue-auto {
+  width: 100%; display: flex; flex-direction: row; align-items: center; gap: 9px;
+  padding: 3px 7px 3px 3px; line-height: 1; color: var(--ph-dim); text-align: left;
+}
+.refit-hue-auto:hover { color: var(--ph-bright); }
+.refit-hue-auto.active { color: var(--ph-bright); }
+.refit-hue-auto .refit-matname { font-size: 11px; letter-spacing: 1.2px; }
+
+/* DECK / WALLS target toggle — the same lit-frame treatment the prop TIER toggle uses */
+.refit-painttarget.active {
+  border-color: var(--ph) !important; color: var(--ph-bright);
+  box-shadow: inset 0 0 0 1.5px var(--ph), 0 0 12px var(--ph-glow2);
+}
 
 .refit-tip {
   position: fixed; z-index: 3; display: none; pointer-events: none;

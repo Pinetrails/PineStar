@@ -233,7 +233,7 @@ const StationBake = (() => {
      DEPTH.floorDetail scales every delta the material draws; DEPTH.floorWear rides on top.
 
      V4 adds four decks that deliberately DON'T read as the old station — the material axis is
-     user-chosen now (WorldModel.FLOOR_MATERIALS → REFIT ▧ PAINT), not just a per-kind default:
+     user-chosen now (WorldModel.FLOOR_MATERIALS → REFIT ▧ SURFACE), not just a per-kind default:
        grate — open catwalk mesh: top-lit bars over a dark void, substructure glimpsed below.
        hex   — honeycomb cells on an offset lattice: advanced-tech, nothing else here is non-rectilinear.
        plank — staggered wood boards: per-board tone, grain hairlines, occasional knot.

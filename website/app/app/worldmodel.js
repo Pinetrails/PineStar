@@ -105,7 +105,7 @@ const WorldModel = (() => {
      CRT phosphor + warm room-light pools read on top — their variety comes from spreading the HUE
      across the wheel, not from brightness. bone + onyx are the deliberate exceptions: the bright
      and near-black ends of the value range, for decks that want stark contrast. This catalog is the
-     sole source: add a colour here and it appears in the DECK PAINT palette AND as a room floor
+     sole source: add a colour here and it appears in the SURFACE palette's COLOUR row AND as a room floor
      style automatically. */
   const FLOOR_STYLES = {
     hull:     { base: '#33302a', label: 'HULL' },
@@ -145,9 +145,9 @@ const WorldModel = (() => {
      grate holes, wood grain, grass blades...). Both compose: every material derives its marks
      from the tile's own base via U.shade, so a TURF deck painted COBALT is blue grass — odd,
      but coherent and the user's call. `pitch` is the plate/plank cell in tiles; `suggest` is the
-     hue the PAINT palette pre-selects when you pick that material (a UI convenience only — the
+     hue the SURFACE palette pre-selects when you pick that material (a UI convenience only — the
      model never forces a colour). This catalog is the sole source: add a material here, give it
-     a recipe in stationbake, and it appears in the DECK MATERIAL palette automatically. */
+     a recipe in stationbake, and it appears in the SURFACE palette's MATERIAL row automatically. */
   const FLOOR_MATERIALS = {
     // the hab default since 2026-07-25 — see the note above deckSpine in stationbake.js
     spine: { label: 'SPINE',  pitch: [4, 3], suggest: null },
@@ -453,7 +453,7 @@ const WorldModel = (() => {
       return { ok: true };
     }
 
-    /* lay a whole deck — hue AND material — in ONE undo slot. This is what the REFIT PAINT tool
+    /* lay a whole deck — hue AND material — in ONE undo slot. This is what the REFIT SURFACE tool
        commits on a room click, so "undo" reverses the deck the Commander saw laid, not half of it.
        Either field may be omitted to leave that axis alone. */
     function setDeck(id, opts) {
