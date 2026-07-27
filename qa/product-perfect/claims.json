@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "8e79eea520c1bbf007ae5d254096ec794a598a1f",
+    "sourceCommit": "7c6de7ed45cbcf53b4900b7e640d589e93b2a931",
     "pathSetSha256": "120006e93437f7e88bbf588d3f5d6009f78ce1cfca99c77cc6cb43e16b6f7982",
     "files": [
       {
@@ -178,8 +178,8 @@
       },
       {
         "path": "frontend/app/crtlab.js",
-        "bytes": 15404,
-        "sha256": "8c9de74f703fecec9147add3c6011c9ecde390f217c516be5f4e87ac5050d295"
+        "bytes": 16322,
+        "sha256": "10b3797e06f26b75ee594a649e82415399692cc8e7176bf6c36b9236b83697e5"
       },
       {
         "path": "frontend/app/ctxgauge.js",
@@ -618,8 +618,8 @@
       },
       {
         "path": "frontend/app/stationbake.js",
-        "bytes": 118795,
-        "sha256": "f89d98921cd6e80c309d8b9930c10c3b7d6beb76c08cff6eb624a7cbc53d1a2c"
+        "bytes": 134394,
+        "sha256": "37717b3b4eeafb703f3d76141c62de711fb0e914ec03e85b5ebeb40d6a4da3a6"
       },
       {
         "path": "frontend/app/stationquests.js",
