@@ -112,11 +112,63 @@
     }
   }
 
-  // read-only concurrent / mutating sequential is a later optimization; M1 runs sequentially.
+  /* PARALLEL BATCH PLANNING (pure). A model that asks to read four files in one turn waited four round trips
+     for them; the whole batch could have taken as long as its slowest member. Concurrency is allowed only when
+     the batch is provably free of interference, and the loop cannot judge that on its own — it sees a NAME and
+     ARGS, not a tool's scope or its session state. So the host injects the predicate (o.parallelSafe) from
+     where the registry actually lives, and no predicate means the sequential path, byte-identical to before.
+
+     ALL-OR-NOTHING per batch, deliberately: a partially-parallel batch would have to define what happens when
+     a safe call finishes after an unsafe one it was supposed to follow. One mixed call sends the whole turn
+     down the sequential path, which is always correct and never slower than it used to be.
+
+     Why path overlap is NOT checked here: the predicate only ever admits READ-scope calls, and concurrent
+     reads of one file cannot interfere. What it must exclude — and does, at the host — is the read that
+     mutates hidden SESSION state anyway: browser.snapshot invalidates the element refs of the previous
+     snapshot, so two "read-only" browser calls in flight genuinely race. */
+  function parallelizable(calls, isParallelSafe) {
+    if (typeof isParallelSafe !== 'function' || calls.length < 2) return false;
+    for (const c of calls) {
+      if (c.parseError) return false;                 // a broken call becomes an error result; keep that path simple
+      if (!isParallelSafe(c.name)) return false;
+    }
+    return true;
+  }
+
   // Every call gets exactly one result (success / error / timeout / denial) — never thrown.
   async function executeCalls(calls, dispatch, capCtx, emit, meta) {
     const results = [];
     let finalControl = null;
+
+    /* CONCURRENT PATH. The EMIT STREAM STAYS IN CALL ORDER even though the work does not: the loop advertises
+       "identical calls -> identical emits", the war-room renders off that stream, and a shuffled order would
+       make a fast tool look like it answered a slow tool's question. Every call is announced up front, the
+       work overlaps, and the results are reported in the order they were asked for — with each call's own
+       real elapsed ms, which stays honest because it is measured per call, not across the batch. */
+    if (parallelizable(calls, meta.parallelSafe)) {
+      for (const c of calls) {
+        if (meta.hiddenTools && meta.hiddenTools.has(c.name)) continue;
+        emit('agent.tool_call', { agentId: meta.agentId, runId: meta.runId, callId: c.id, name: c.name || 'unknown', argsSummary: summarize(c.argsRaw) });
+      }
+      const settled = await Promise.all(calls.map(async (c) => {
+        const t0 = meta.clock ? meta.clock.now() : 0;
+        let r;
+        try { r = await dispatch(c, capCtx); }
+        catch (e) { r = { ok: false, isError: true, content: 'tool dispatch threw: ' + (e && e.message), summary: 'error' }; }
+        r = r || { ok: false, isError: true, content: 'tool returned nothing', summary: 'error' };
+        return { c, r, ms: Math.max(0, (meta.clock ? meta.clock.now() : 0) - t0) };
+      }));
+      for (const s of settled) {
+        results.push({ callId: s.c.id, isError: !!s.r.isError, ok: !!s.r.ok, content: s.r.content, control: s.r.control || null, images: s.r.images || null });
+        if (meta.hiddenTools && meta.hiddenTools.has(s.c.name)) continue;
+        emit('agent.tool_result', {
+          agentId: meta.agentId, runId: meta.runId, callId: s.c.id, ok: !!s.r.ok,
+          ms: s.ms, summary: s.r.summary || (s.r.isError ? 'error' : 'ok'), isError: !!s.r.isError
+        });
+      }
+      return results;
+    }
+
     for (const c of calls) {
       if (finalControl) {
         results.push({ callId: c.id, isError: true, ok: false, content: 'skipped: the Task Brief paused for the Commander', control: null });
@@ -130,7 +182,7 @@
       catch (e) { r = { ok: false, isError: true, content: 'tool dispatch threw: ' + (e && e.message), summary: 'error' }; }
       r = r || { ok: false, isError: true, content: 'tool returned nothing', summary: 'error' };
       const t1 = meta.clock ? meta.clock.now() : 0;
-      results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content, control: r.control || null });
+      results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content, control: r.control || null, images: r.images || null });
       if (r.control && r.control.final) finalControl = r.control;
       if (!hidden) emit('agent.tool_result', {
         agentId: meta.agentId, runId: meta.runId, callId: c.id, ok: !!r.ok,
@@ -674,7 +726,7 @@
       }
       let results;
       try {
-        results = await executeCalls(calls, dispatch, capCtx, emit, { agentId, runId, clock, hiddenTools: new Set(o.hiddenTools || []) });
+        results = await executeCalls(calls, dispatch, capCtx, emit, { agentId, runId, clock, hiddenTools: new Set(o.hiddenTools || []), parallelSafe: (typeof o.parallelSafe === 'function') ? o.parallelSafe : null });
         assertPaired(calls, results); // (7) HARD INVARIANT
       } catch (e) {
         emit('agent.run.error', { agentId, runId, message: String((e && e.message) || e), transient: false });
@@ -753,5 +805,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, parallelizable } };
 });

@@ -9133,6 +9133,24 @@ async function runOnce(o) {
   // ordinary capability/consent path exactly as before.
   const grantedSet = new Set(resolved.tools || []);
 
+  /* PARALLEL-SAFE PREDICATE — the host half of loop.js's batch planner. The loop sees a name and args; only
+     here does the registry exist to say what a tool actually IS. A batch runs concurrently only when EVERY
+     member passes this, so it is written to be boring: read scope, no consent prompt (two prompts racing for
+     one Commander is not a UX), granted to this run, and outside every family whose "read" quietly mutates
+     shared session state. browser.* is the one that makes the rule necessary — a snapshot invalidates the
+     previous snapshot's element refs, so two concurrent browser reads genuinely race even though both are
+     read-scope. mcp:* is excluded because a third-party server's idea of read-only is not ours to assume. */
+  const PARALLEL_UNSAFE_FAMILY = /^(browser|computer|desktop|spotify|team|brief|shell|verify)\./;
+  const parallelSafe = (wireName) => {
+    const n = String(wireName || '');
+    const real = fromWire.has(n) ? fromWire.get(n) : (allWire.get(n) || n);
+    const t = registry.get(real);
+    if (!t || !grantedSet.has(real)) return false;
+    if (t.scope !== 'read' || t.requiresConsent) return false;
+    if (/^mcp:/.test(String(t.capability || ''))) return false;
+    return !PARALLEL_UNSAFE_FAMILY.test(real);
+  };
+
   const seen = new Map();
   let toolBytes = 0;   // running total of tool-output chars fed back into the model this run
   let toolsOk = 0;     // crate-honesty: successful tool results this run — "did it actually WORK, or just talk?"
@@ -9575,6 +9593,9 @@ async function runOnce(o) {
       // Granted but unadvertised: held out of the request until tool.search reveals one (see loop.js).
       deferredTools: deferredToolDefs,
       hiddenTools: ['brief_ask', 'brief_proceed'],
+      // A turn that asks for four file reads waited four round trips for them; an all-read-only batch now
+      // overlaps. The predicate is above — the loop cannot judge tool scope on its own.
+      parallelSafe,
       // Real backoff for the loop's bounded mid-stream retry: without an injected sleep the loop retries a
       // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
       // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
