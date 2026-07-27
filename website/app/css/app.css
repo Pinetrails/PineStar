@@ -134,6 +134,34 @@ input[type=file]::file-selector-button {
 }
 input[type=file]::file-selector-button:hover { border-color: var(--ph); background-color: var(--ph-faint); color: var(--ph-bright); }
 
+/* STATION TOOLTIP — the phosphor hover card that replaces the browser's native `title` bubble
+   (tooltip.js). Same molded-card language as .model-dock-tip, which had this right in one place;
+   this generalizes it to every [title] in the app. position:fixed + body-child = its style px are
+   ZOOMED px (uiZoom law) — tooltip.js divides by z, this sheet must not re-scale anything. */
+.station-tip {
+  position: fixed; z-index: 200; pointer-events: none;
+  width: max-content; max-width: 280px;
+  padding: 7px 10px; text-align: left;
+  font-size: 12px; line-height: 1.4; white-space: normal; overflow-wrap: anywhere;
+  color: var(--ph); background: var(--panel);
+  border: 2px solid var(--ph); border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--ink), 0 0 18px var(--ph-glow2);
+  opacity: 0; transform: translateY(3px);
+  transition: opacity .12s var(--ease-out, ease-out), transform .12s var(--ease-out, ease-out);
+}
+.station-tip[hidden] { display: none; }
+.station-tip.show { opacity: 1; transform: translateY(0); }
+/* the arrow tracks the anchor's centre (--tip-arrow, set by tooltip.js after clamping) */
+.station-tip::after {
+  content: ''; position: absolute; left: var(--tip-arrow, 50%); margin-left: -6px;
+  top: 100%; border: 6px solid transparent; border-top-color: var(--ph);
+}
+.station-tip.below::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--ph); }
+@media (prefers-reduced-motion: reduce) {
+  .station-tip { transition: none; transform: none; }
+  .station-tip.show { transform: none; }
+}
+
 /* (The standalone TITLE screen was removed — boot auto-resumes into the station, or opens CREATE/RESUME
    directly. The data-status line that used to live there now sits in the connect-screen footer.) */
 .title-status { color: var(--ph-dim); font-size: 14px; letter-spacing: 1px; }
