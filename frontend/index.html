@@ -463,7 +463,12 @@
            On its OWN row so the message always spans the panel and a long message stays fully visible while typing. -->
       <div class="chat-editline">
         <span class="prompt">&gt;</span>
-        <textarea id="chat-input" rows="1" maxlength="4000" placeholder="speak to your agent… ( / for commands )" autocomplete="off" aria-label="Message your agent" aria-controls="chat-slash" aria-expanded="false" aria-autocomplete="list"></textarea>
+        <!-- PLACEHOLDER WIDTH LAW: the composer's inner text width at the DEFAULT 360px panel is ~217px
+             (VT323 16px). The old copy "speak to your agent… ( / for commands )" measured 250px and clipped
+             to "speak to your agent… ( / for" — cutting off the ONLY in-app hint that slash commands exist.
+             Any future edit must re-measure against that budget; SEND cannot give the space back (its label
+             is drawn by .chat-send ::before/::after brackets, so hiding it renders an empty "[ ]"). -->
+        <textarea id="chat-input" rows="1" maxlength="4000" placeholder="speak to your agent · / commands" autocomplete="off" aria-label="Message your agent" aria-controls="chat-slash" aria-expanded="false" aria-autocomplete="list"></textarea>
         <!-- SEND: an explicit send affordance beside Enter (Enter sends · Shift+Enter = newline). chat.js wires it to submitComposer(). -->
         <button id="chat-send" class="chat-send" type="button" title="Enter sends · Shift+Enter = newline" aria-label="Send message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5V9.2l6-1.2-6-1.2V2.5L14 8z" fill="currentColor"/></svg><span class="cs-label">SEND</span></button>
       </div>
