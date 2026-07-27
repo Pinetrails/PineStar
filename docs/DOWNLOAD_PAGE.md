@@ -85,10 +85,14 @@ phone-home**.
 
 ## What it costs
 
-**The app is free.** You pay only your own AI provider for the tokens your agents use —
-directly, at their prices, with no StarNet markup (StarNet has no way to bill you). You set the
-budget: StarNet has per-run, per-day, and global spend caps, and a one-click halt that stops
-every running agent immediately.
+**The app is free**, and using your own provider key is free forever. On that path you pay only
+your own AI provider for the tokens your agents use — directly, at their prices, with no StarNet
+markup. You set the budget: StarNet has per-run, per-day, and global spend caps, and
+a one-click halt that stops every running agent immediately.
+
+StarNet Credits are an optional alternative for people who would rather not hold a provider
+account: a prepaid balance you buy from us and spend on model runs through StarNet's own gateway.
+Bringing your own key stays free either way, and is never nagged into a subscription.
 
 ## Support
 
