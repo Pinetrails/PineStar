@@ -277,7 +277,10 @@ function makeOpenAiCompat(deps) {
       emit: sink, signal: o.signal, runId: o.runId,
       trigger: 'event', surface: 'autonomous',   // headless external caller: default-deny ungranted mutation, never stall
       broadcast: true,                            // light the station floor — a user SEES the external harness's run
-      taskKey: 'v1:' + o.agentId, taskSource: 'api'
+      taskKey: 'v1:' + o.agentId, taskSource: 'api',
+      // an externally-driven run is still this agent doing real work — it learns from it like any other, with each
+      // record stamped origin:'api' so the Commander can tell it apart from their own conversation.
+      reflect: true
     });
     return Promise.resolve(p).then(() => acc, (e) => { acc.errMsg = acc.errMsg || ('run failed: ' + ((e && e.message) || e)); return acc; });
   }

@@ -5821,7 +5821,9 @@ const Chat = (() => {
         onSummon: ev => {
           const rid = Channels.runIdOf(ws.id);
           Promise.resolve((typeof App !== 'undefined' && App.summonForRequest) ? App.summonForRequest(ev) : null)
-            .then(newId => Harness.summonAck(rid, ev.requestId, newId))
+            // summonForRequest resolves { agentId, desk } — desk = where the new worker's seeded workstation
+            // landed (blank if none). A legacy plain-id resolution still acks correctly.
+            .then(r => { const o = (r && typeof r === 'object') ? r : { agentId: r || null, desk: '' }; return Harness.summonAck(rid, ev.requestId, o.agentId, o.desk); })
             .catch(() => Harness.summonAck(rid, ev.requestId, null));
         }
       });

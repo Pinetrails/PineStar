@@ -597,9 +597,13 @@ const Harness = (() => {
   // answer a live crew.summon.request: report the new agentId we summoned (or null if we couldn't), which resolves
   // the run's awaiting team.summon tool. Separate request from the open /api/run stream — no deadlock. The summon
   // tool has its own browser-ack timeout, so a dropped ack settles cleanly to "not completed" rather than hanging.
-  async function summonAck(runId, requestId, agentId) {
+  // `desk` (optional) is the room the new agent's seeded workstation actually landed in — the ONLY reason the
+  // tool result may mention a desk at all, so the lead can never announce furniture the floor doesn't have.
+  async function summonAck(runId, requestId, agentId, desk) {
     if (!runId || !requestId) return;
-    try { await fetch('/api/summon/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, requestId, agentId: agentId || null }) }); } catch (_) {}
+    const body = { runId, requestId, agentId: agentId || null };
+    if (desk) body.desk = String(desk).slice(0, 60);
+    try { await fetch('/api/summon/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (_) {}
   }
 
   // Cortex (M-mem.5b): after a run, reflection may PROPOSE durable memories (announced via the memory.proposed
@@ -719,6 +723,17 @@ const Harness = (() => {
     } catch (e) { return []; }
   }
   const memoryRestore = o => memoryMutate('declined/restore', o);   // undo a discard — remove one entry from the reject-list
+  // High-stakes proposals still awaiting a verdict, across ALL runs (the durable queue). Unattended runs reflect
+  // now, so a credential/PII/standing-instruction belief can be raised by a routine at 3am with nobody watching —
+  // this is how it stays answerable instead of quietly evaporating. [] on any failure (never a fabricated deck).
+  async function memoryPending(agentId) {
+    try {
+      const r = await fetch('/api/memory/pending?agent=' + encodeURIComponent(agentId || 'agent'), { cache: 'no-store' });
+      if (!r.ok) return [];
+      const j = await r.json();
+      return Array.isArray(j.pending) ? j.pending : [];
+    } catch (e) { return []; }
+  }
 
   /* Minimal JSON client for the sidecar's /api surface (the launch-token rides via the hardened
      window.fetch above). Two shapes, matching the two call-site idioms this codebase already uses:
@@ -745,7 +760,7 @@ const Harness = (() => {
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
     getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential, setDesktopConfigured,
     listModels, probeProvider, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, summonAck, notebook,
-    memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
+    memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPending, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     threadProposals, threadTurnin,
     agentSkills, agentSkillManage,

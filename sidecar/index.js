@@ -136,7 +136,8 @@ const harnessImport = require('./harness-import.js'); // IMPORT-AN-AGENT: read-o
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
 const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore, saveJsonVerified } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
-const { makeMemoryStore, resetAgentMemory, restoreDeclined } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
+const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
+const { makeMemoryStore, resetAgentMemory, restoreDeclined } = MemoryStore;
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { makeDeliverableStore } = require('./deliverable-store.js'); // durable kept/discarded/failed Workshop lifecycle index
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
@@ -1505,6 +1506,30 @@ function stashProposals(agentId, runId, proposals) {
   latestProposalRun.set(agentId, runId);
   while (proposalsByRun.size > PROPOSALS_CAP) { const k = proposalsByRun.keys().next().value; proposalsByRun.delete(k); }
 }
+
+/* ---- the DURABLE pending queue (pending:<agent>) ----
+
+   proposalsByRun above is an in-memory Map: it dies on restart, is capped, and is reachable only by the exact
+   runId or the single newest-per-agent fallback. That was survivable while ONLY the watched browser run reflected
+   — a high-stakes confirm deck appeared in front of the Commander seconds after the run that raised it. Now that
+   unattended runs reflect (a routine at 3am, a night shift, a channel message), a deck can be raised with nobody
+   watching, and an un-answered proposal that evaporates on the next restart is a memory the Commander was never
+   given the chance to approve. The reference harness answers this with a staged-write queue reviewable later
+   (`/memory pending`); this is the same guarantee.
+
+   Only HIGH-STAKES (un-saved) proposals are queued — auto-saved ones are already durable records in the notebook.
+   The queue mechanics are pure over the injected store (memory-store.js, unit-tested); these are the ambient
+   wrappers that bind them to notebookStore + the wall clock and swallow a store hiccup. */
+async function queuePending(agentId, runId, items) {
+  try { await MemoryStore.appendPending(notebookStore, agentId, runId, items, Date.now()); }
+  catch (e) { console.warn('[cortex] pending queue write failed:', (e && e.message) || e); }
+}
+async function takePending(agentId, runId, id) {
+  try { return await MemoryStore.takePending(notebookStore, agentId, runId, id); } catch (_) { return null; }
+}
+function listPending(agentId) {
+  try { return MemoryStore.listPending(notebookStore, agentId); } catch (_) { return []; }
+}
 /* FLAGSHIP CROSS-WIRE (NS-8 lite): assemble the read-side SHARED DECLINED INDEX from every engine's EXPLICIT-decline
    store, so an idea the Commander declined ANYWHERE is suppressed at propose-time EVERYWHERE. Per-agent stores
    (notebook declined:, studyDeclined) + station-wide stores (declined thread titles, quest deniedTitles, declined
@@ -1525,6 +1550,7 @@ function buildDeclinedIndex(agentId) {
 async function runReflection(o) {
   const { agentId, runId, messages, provider, model, cost } = o;
   const unmetered = !!(o && o.unmetered);
+  const origin = String((o && o.origin) || 'commander');   // which surface formed these beliefs (memcore.originOf)
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, REFLECT_TIMEOUT_MS);
   let usd = 0, tokens = 0;
@@ -1572,17 +1598,20 @@ async function runReflection(o) {
       const saved = [];
       for (const p of normalProps) {
         try {
-          const w = await writeMemoryRecord(agentId, p, { runId, trustDelta: 0, source: 'reflection' });
-          if (w.ok) saved.push({ id: w.id, kind: w.kind, content: p.content, scope: p.scope || 'global', saved: true });
+          const w = await writeMemoryRecord(agentId, p, { runId, trustDelta: 0, source: 'reflection', origin: origin });
+          if (w.ok) saved.push({ id: w.id, kind: w.kind, content: p.content, scope: p.scope || 'global', origin: origin, saved: true });
         } catch (_) {}   // one failed write never sinks the batch
       }
       // stash ONE batch (mixed: saved receipts carry saved:true + a real record id; high-stakes carry the pending
       // prop_N id). The frontend fetches it via /api/memory/proposals — renders a passive receipt for saved:true
       // items and the Keep/Edit/Discard confirm deck for the rest. A single stash per runId (a second stashProposals
       // for the same runId would OVERWRITE the first — so merge here).
-      const pending = highStakesProps.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global' }));
+      const pending = highStakesProps.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global', origin: origin }));
       const combined = saved.concat(pending);
       if (combined.length) stashProposals(agentId, runId, combined);
+      // ...and queue the high-stakes half DURABLY. The in-memory stash serves the live receipt/deck render; this
+      // is what makes a deck raised by an unattended run answerable minutes or a restart later.
+      if (pending.length) await queuePending(agentId, runId, pending);
       // memory.write already emitted per-record inside writeMemoryRecord — that is the receipt TRIGGER. Auto-saved
       // items get NO memory.proposed (they must NOT claim the one-beat slot — study/arc/trust stay free). Only the
       // high-stakes ones emit memory.proposed so the confirm deck fires for just those (and claims the slot).
@@ -3987,6 +4016,7 @@ async function runNightshiftActShift(opts) {
       messages: [{ role: 'user', content: prompt }],
       agentId, isTask: true, emit: (typeof opts.emit === 'function' ? opts.emit : function () {}), signal: sig,
       runId, streamId: 'nightshift-act-' + runId, surface: 'autonomous', trigger: 'nightshift', broadcast: !!opts.broadcast,
+      reflect: true,   // a night shift does real work; what it learns is durable memory, not scratch (see the reflect note on /api/run)
       station: router.stationFor(agentId) || undefined
     });
   } catch (e) { threw = e; }
@@ -5224,6 +5254,7 @@ const ROUTES = [
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
   { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
   { m: 'GET', prefix: '/api/memory/proposals', h: serveProposals },
+  { m: 'GET', prefix: '/api/memory/pending', h: servePending },   // un-answered high-stakes decks (durable, cross-run)
   { m: 'POST', exact: '/api/memory/turnin', h: handleMemoryTurnin },
   { m: 'GET', prefix: '/api/study/proposals', h: serveStudyProposals },   // GROWTH Tier 1: dossier belief-update proposals for a run
   { m: 'POST', exact: '/api/study/resolve', h: handleStudyResolve },   // GROWTH Tier 1: consume one decided study proposal + mirror the denylist
@@ -6723,6 +6754,7 @@ async function handleCronRun(req, res) {
       // identical cron.fire/cron.result events, can fetch the real output via /api/transcript?stream=cron-<runId>.
       // Per-run id keeps the seed empty (index.js reconstructs a stream only when messages<=1) — no behavior drift.
       runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: true,
+      reflect: true,   // Run Now must match the scheduled fire's posture exactly, memory included (see the reflect note on /api/run)
       // Run Now must exercise the REAL unattended posture, grant included — otherwise "test it now" would
       // prove a capability set the scheduled fire does not get (the whole point of this route).
       unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : []
@@ -6902,6 +6934,7 @@ async function runWorkshopShift(agentId, opts) {
       messages: [{ role: 'user', content: prompt }],
       agentId: id, isTask: true, emit: emit, signal: signal,
       runId: runId, streamId: 'workshop-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: !!o.broadcast,
+      reflect: true,   // a workshop shift builds real things; its lessons outlive the shift (see the reflect note on /api/run)
       // B5 parity (2026-07-06 audit): a bay-docked agent's workshop shift runs with ITS bay room's objects,
       // never the default office — the same station contract as routed channel messages and cron fires.
       station: router.stationFor(id) || undefined
@@ -8295,17 +8328,20 @@ async function handleRun(req, res) {
   // /api/summon/ack with the new agentId (handleSummonAck), which resolves this Promise. Fail-closed identically: a
   // disconnect (ac abort) or a CONSENT_TIMEOUT_MS stall settles to null (no agent created) so a forgotten request
   // can never hold a billable run open. Settles exactly once. The new id flows back to the lead for team.dispatch.
+  // Resolves { agentId, desk } on success (desk = the room the new worker's seeded workstation landed in, '' when
+  // none was placed) and null on decline/timeout/abort. team.summon reads .agentId and tolerates a bare id, so an
+  // older caller/stub resolving just the string still works.
   function summonRequest(spec) {
     return new Promise((resolve) => {
       const requestId = crypto.randomUUID();
       let settled = false, timer = null;
       function onAbort() { finish(null); }
-      function finish(newAgentId) {
+      function finish(newAgentId, desk) {
         if (settled) return; settled = true;
         pendingSummon.delete(requestId);
         if (timer) clearTimeout(timer);
         try { ac.signal.removeEventListener('abort', onAbort); } catch (_) {}
-        resolve(newAgentId || null);
+        resolve(newAgentId ? { agentId: newAgentId, desk: desk || '' } : null);
       }
       pendingSummon.set(requestId, finish);
       if (ac.signal.aborted) return finish(null);
@@ -8342,7 +8378,19 @@ async function handleRun(req, res) {
       preloadSkills,
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
       stationObjects,  // Class Loadouts (shared-gear): station-wide gear for SKILL availability (tools stay room-scoped)
-      reflect: true,  // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
+      /* MEMORY FORMS ON EVERY REAL RUN. This flag used to be set HERE ALONE, with the rationale "only the WATCHED
+         browser run reflects -> a turn-in beat; the headless hub omits this". That was correct when reflection
+         always produced a BLOCKING Keep/Edit/Discard deck: raising one with nobody at the station was pointless.
+         The silent-save reversal removed that constraint — a normal proposal now auto-saves behind a passive
+         receipt, and only the rare high-stakes tier still asks. So the flag's real meaning was never "attended",
+         it was "this run did real work", and gating on the browser meant everything the agent learned on a
+         routine, a night shift, a workshop shift, or a messaging channel was computed and thrown away.
+         Now set at every REAL-WORK host; delegated workers deliberately stay OFF (their results come back as tool
+         results inside the PARENT's messages, so the parent's own reflection already covers them — turning it on
+         per worker would pay N aux calls for one task and race N batches into one deck). The spend is still
+         bounded exactly as before: AuxGovernor's per-run-end budget, the per-agent cooldown, and the salience gate
+         all sit downstream of this flag. */
+      reflect: true,
       recurring,      // salience signal: did the mint detector see this task shape before? (decision 3)
       lead: true      // Stage 2: ONLY the browser-commanded run is a lead — it alone gets the orchestrator object
                       // (delegate tool). A delegated worker runs via team.dispatch with lead falsy -> cannot re-delegate.
@@ -8650,7 +8698,7 @@ async function runOnce(o) {
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
   const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, { scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null, agentId: (o2 && o2.agentId) || agentId });
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
-  makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
+  makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
   widgetTools.register(registry);   // WIDGET RAILS Phase 2: widget.set — agent-fed rail readouts (memory capability: sandboxed local write, no consent, no network)
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
   makeSkillTools({
@@ -8874,6 +8922,7 @@ async function runOnce(o) {
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
   const capCtx = makeCapCtx(resolved, Object.assign({
     emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal,
+    origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }),   // stamped onto notebook.write records: WHICH surface formed this belief
     authorize: userControlAuthority.authorize,
     userControl: userControlAuthority,
     // Explicitly false in all current runOnce flows. This makes the deny visible at the
@@ -9680,7 +9729,7 @@ async function runOnce(o) {
   // so it re-qualifies next run.
   if (_auxSpend.has('reflection')) {
     reflectingNow.add(agentId);
-    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
+    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: _auxModel, cost, unmetered: providerUnmetered, origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }) }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
   }
   if (_auxSpend.has('study')) {
     studyingNow.add(agentId);
@@ -10253,16 +10302,18 @@ function handleNightshiftDrafts(req, res) {
   }
 }
 
-// POST /api/summon/ack { runId, requestId, agentId } — the browser's answer to a live crew.summon.request: it ran
-// the REAL summonAgent() and reports the new agentId (or null if it couldn't). Resolves the run's awaiting
+// POST /api/summon/ack { runId, requestId, agentId, desk? } — the browser's answer to a live crew.summon.request:
+// it ran the REAL summonAgent() and reports the new agentId (or null if it couldn't). Resolves the run's awaiting
 // team.summon tool. A stale runId/requestId is a harmless no-op (the run ended or the request auto-settled to null).
+// `desk` is the room the new agent's seeded workstation landed in — the browser only sends it after the placement
+// actually returned ok, so the tool result can state it without the sidecar asserting anything it can't source.
 async function handleSummonAck(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
   const pend = pendingSummonByRun.get(body.runId);
   const finish = pend && pend.get(body.requestId);
   const newId = (body.agentId != null && /^[A-Za-z0-9_-]{1,40}$/.test(String(body.agentId))) ? String(body.agentId) : null;
-  if (finish) finish(newId);
+  if (finish) finish(newId, newId ? String(body.desk == null ? '' : body.desk).replace(/[\r\n]+/g, ' ').trim().slice(0, 60) : '');
   res.writeHead(200); res.end('ok');
 }
 
@@ -12100,7 +12151,7 @@ async function writeMemoryRecord(agentId, prop, opts) {
   await notebookStore.update('notebook:' + agentId, (stored) => {
     const list = Array.isArray(stored) ? stored : [];
     writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
-    rec = recordFromProposal(prop || {}, { now: Date.now(), runId: runId || (prop && prop.sourceRunId), id: writtenId, content });
+    rec = recordFromProposal(prop || {}, { now: Date.now(), runId: runId || (prop && prop.sourceRunId), id: writtenId, content, origin: opts.origin });
     if (trustDelta) rec.trust = memcore.nextTrust(rec.trust, trustDelta);   // M-mem.6: keep/edit seeds real trust; silent auto-save leaves it neutral
     list.push(rec);
     return list;
@@ -12172,15 +12223,22 @@ async function handleMemoryTurnin(req, res) {
   }
 
   const batch = proposalsByRun.get(runId);
-  const prop = batch && batch.agentId === agentId && batch.proposals.find(p => p.id === id);
-  if (!prop) return json(404, { error: 'no such proposal (it may have expired)' });
+  const live = batch && batch.agentId === agentId && batch.proposals.find(p => p.id === id);
   // AUTO-SAVED items ride the same stash (saved:true, carrying a REAL notebook/skill id) so the frontend can fetch
   // the receipt batch — but they are already written. A keep/edit here would mint a DUPLICATE record; a discard
   // would denylist the text while the record silently survives. Only veto (handled above) may target them.
-  if (prop.saved) return json(409, { error: 'already saved — use verdict veto to undo it' });
-  // resolved either way — drop it from the pending batch (and the batch entry when it empties)
-  batch.proposals = batch.proposals.filter(p => p.id !== id);
-  if (!batch.proposals.length) { proposalsByRun.delete(runId); if (latestProposalRun.get(agentId) === runId) latestProposalRun.delete(agentId); }
+  if (live && live.saved) return json(409, { error: 'already saved — use verdict veto to undo it' });
+  // Clear the DURABLE queue first, and fall back to it for the proposal body: a deck raised by an unattended run
+  // and answered after a restart has no in-memory batch left, and 404-ing there would silently discard a decision
+  // the Commander did make. takePending is idempotent, so the live path clears the queue on its way through.
+  const queued = await takePending(agentId, runId, id);
+  const prop = live || queued;
+  if (!prop) return json(404, { error: 'no such proposal (it may have expired)' });
+  // resolved either way — drop it from the in-memory batch too (and the batch entry when it empties)
+  if (batch && live) {
+    batch.proposals = batch.proposals.filter(p => p.id !== id);
+    if (!batch.proposals.length) { proposalsByRun.delete(runId); if (latestProposalRun.get(agentId) === runId) latestProposalRun.delete(agentId); }
+  }
 
   if (verdict === 'discard') {
     // §5.6 "discard = never again": no NOTEBOOK record is written, but the rejected text IS recorded to the
@@ -12193,7 +12251,7 @@ async function handleMemoryTurnin(req, res) {
   // verdict seeds real trust (fb.delta); a skill proposal becomes a saved skill instead of a note.
   const content = (verdict === 'edit' ? String(body.content != null ? body.content : prop.content) : prop.content).trim();
   const w = await writeMemoryRecord(agentId, prop, {
-    content, runId, trustDelta: fb.delta,
+    content, runId, trustDelta: fb.delta, origin: prop.origin,   // the surface that PROPOSED it, not the one approving it
     skillName: body.skillName || body.name, skillBody: body.skillBody || body.body, summary: body.summary
   });
   if (!w.ok) return json(400, { error: w.error || 'could not save that memory' });
@@ -12235,6 +12293,27 @@ function serveMemoryRecords(req, res) {
     const records = Array.isArray(raw) ? raw.map(r => redact(memcore.projectRecord(r, nowMs))) : [];
     json(200, { agentId: agent, records });
   } catch (e) { json(200, { records: [] }); }
+}
+
+/* GET /api/memory/pending?agent=<id> — high-stakes proposals still awaiting a Keep/Edit/Discard verdict, oldest
+   first, across ALL runs (the durable queue, not the per-run stash). This is the surface that makes unattended
+   reflection honest: a credential/PII/standing-instruction belief raised by a 3am routine is not silently kept and
+   not silently dropped — it waits here until the Commander decides. Each row carries its runId + id so the panel
+   can resolve it through the SAME POST /api/memory/turnin the live deck uses. Read-only; redacted on the way out
+   (defence-in-depth — the content already passed redact() at proposal time). */
+function servePending(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!isAgentId(agent)) return json(403, { error: 'forbidden' });
+    const rows = listPending(agent).map(p => redact({
+      runId: p.runId || '', id: p.id || '', kind: p.kind || 'note',
+      content: String(p.content || ''), scope: p.scope || 'global',
+      origin: p.origin || 'commander', createdAt: p.createdAt || 0
+    }));
+    json(200, { agentId: agent, pending: rows });
+  } catch (e) { json(200, { pending: [] }); }
 }
 
 // GET /api/memory/declined?agent=<id> — the permanent reject-list: beliefs the Commander Discarded, which
