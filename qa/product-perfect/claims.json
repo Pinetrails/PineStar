@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "7c6de7ed45cbcf53b4900b7e640d589e93b2a931",
-    "pathSetSha256": "120006e93437f7e88bbf588d3f5d6009f78ce1cfca99c77cc6cb43e16b6f7982",
+    "sourceCommit": "dae4f89abef37e77e770d19dc651c86f6801b3ff",
+    "pathSetSha256": "ba2d0a007dbdf1fb304e041a440e8a10a26ef8a87b3fb2ad6f73c69661dabaee",
     "files": [
       {
         "path": "INSTALL.md",
@@ -253,8 +253,8 @@
       },
       {
         "path": "frontend/app/glossary.js",
-        "bytes": 5953,
-        "sha256": "1cec38aa05441d2104f7b38c1fb7b5eb3985b1e5770714c057afa6df812b3dfc"
+        "bytes": 6193,
+        "sha256": "6b6a978d4561927a562a069625768b8bd8ff50d4f3324c00a8a4f5988f08bfd4"
       },
       {
         "path": "frontend/app/goalloop.js",
@@ -320,6 +320,11 @@
         "path": "frontend/app/lifecycle.js",
         "bytes": 3024,
         "sha256": "a5e4dde18f6c1dbf34a54eb59ba7343e159fc5c46549a9da905987d5699dec3d"
+      },
+      {
+        "path": "frontend/app/loop-templates.js",
+        "bytes": 13493,
+        "sha256": "41bdda7d7fcf3561ab68bd51c77ebd3a7dc4f859ec63c1ec3b1499a2264f92d3"
       },
       {
         "path": "frontend/app/maintquests.js",
@@ -762,6 +767,11 @@
         "sha256": "b55d4b6ae8bc7bd5caca4711c1c79e71decd266a97f83c2de0e59ba86aa1a028"
       },
       {
+        "path": "frontend/app/windows/loops.js",
+        "bytes": 41219,
+        "sha256": "5cf8f6749ed5746ce5d38a253f21c19d01eb409b214b1978c8092e9a786fc24e"
+      },
+      {
         "path": "frontend/app/windows/messaging.js",
         "bytes": 45220,
         "sha256": "d90412abbe886119f0a3bc0ad9933eea33e44b45b69bbb533606543341836a5e"
@@ -843,8 +853,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 225657,
-        "sha256": "12e176a8f045e7af1b580c62ede86db0141b2f9f22ae4d84247c0054fccab2db"
+        "bytes": 234036,
+        "sha256": "2ffe8735168746d6bc720812fe35ce1994ac539858f459f4d6398d50cbd25e64"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -908,8 +918,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 65398,
-        "sha256": "b90b2961c92cad1c52ca7f57fee3dc19a399c8c20ad8f4595f2f709ad4626c4a"
+        "bytes": 65926,
+        "sha256": "653d9262a9a3158f0c8215094f0e6ecb0754b0b107a295ce3e0a173905a5b832"
       },
       {
         "path": "frontend/js/arcade.js",
