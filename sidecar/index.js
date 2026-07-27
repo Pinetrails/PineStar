@@ -8925,11 +8925,27 @@ async function runOnce(o) {
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
+  let parkSeq = 0;   // distinguishes parked outputs within one run (see parkOutput below)
   const capCtx = makeCapCtx(resolved, Object.assign({
     emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal,
     origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }),   // stamped onto notebook.write records: WHICH surface formed this belief
     authorize: userControlAuthority.authorize,
     userControl: userControlAuthority,
+    // OUTPUT PARKING: the host half of the tool-output cap. Over-cap output is written WHOLE into the agent's
+    // own workspace before the clamp destroys its middle, and the result points the model at the file — the
+    // work was already done and paid for, so the part that did not fit is recoverable instead of gone. Lands
+    // in the same jail fs.read already serves, so reading it back needs no new capability. Best effort by
+    // design: a parker that fails degrades to the plain clamp rather than failing the tool call.
+    parkOutput: async (content, meta) => {
+      try {
+        const ws = await executionEnvironment.ensureWorkspace(fsJail.safeAgentId(agentId || 'agent'));
+        await fsp.mkdir(path.join(ws, '.output'), { recursive: true });
+        const safeTool = String((meta && meta.tool) || 'tool').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40);
+        const rel = '.output/' + safeTool + '-' + String(runId || 'run').replace(/[^A-Za-z0-9_-]/g, '') + '-' + (parkSeq++) + '.txt';
+        await fsp.writeFile(path.join(ws, rel), String(content), 'utf8');
+        return { path: rel };   // WORKSPACE-RELATIVE: the exact string fs.read takes, not a host absolute path
+      } catch (_) { return null; }
+    },
     // Explicitly false in all current runOnce flows. This makes the deny visible at the
     // tool boundary even if a future refactor accidentally re-adds computer.use to tools.
   }, runInputContext(surface, isTask)));

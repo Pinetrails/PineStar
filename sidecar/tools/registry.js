@@ -41,20 +41,41 @@
       return (Number.isFinite(n) && n > 0) ? Math.floor(n) : 80000;
     } catch (_) { return 80000; }
   })();
-  function clampOutput(content) {
+  /* PARKING (2026-07-27): the middle of an over-cap result used to be DESTROYED. The note told the model to
+     "narrow it", which is sound advice for a search but useless for output that was already the answer — a
+     600k-line log, a full test run, a big query result. The work was done and paid for, and the part that
+     mattered could be exactly the part thrown away, with no way to get it back except re-running the call.
+     When the host wires a parker (ctx.parkOutput), the FULL output is written to the agent's workspace first
+     and the note points at the file, so nothing is lost and the model can page it back at its own pace.
+     No parker wired = the old behavior verbatim (tests, the /api/file helper, any bare registry). */
+  function clampOutput(content, parkedPath) {
     if (typeof content !== 'string' || content.length <= OUTPUT_MAX) return content;
     const head = Math.floor(OUTPUT_MAX * 0.7), tail = OUTPUT_MAX - head;
     const dropped = content.length - head - tail;
     // The note names a NEXT ACTION. "truncated" alone invites the model to run the identical call again.
-    return content.slice(0, head)
-      + '\n\n[... ' + dropped + ' characters removed by the host output cap. Do not repeat this call as-is — '
-      + 'narrow it: filter, page, request a smaller range, or write the full output to a file and read it back '
-      + 'in parts. The end of the output follows ...]\n\n'
-      + content.slice(content.length - tail);
+    const note = parkedPath
+      ? '\n\n[... ' + dropped + ' characters elided here by the host output cap. THE FULL OUTPUT WAS SAVED to '
+        + parkedPath + ' — read that file (in ranges if it is large) to see the part that is missing, or search '
+        + 'it. Do NOT repeat this call to recover it. The end of the output follows ...]\n\n'
+      : '\n\n[... ' + dropped + ' characters removed by the host output cap. Do not repeat this call as-is — '
+        + 'narrow it: filter, page, request a smaller range, or write the full output to a file and read it back '
+        + 'in parts. The end of the output follows ...]\n\n';
+    return content.slice(0, head) + note + content.slice(content.length - tail);
   }
 
-  const okResult = (content, summary, control) => ({ ok: true, isError: false, content: clampOutput(content), summary: summary || 'ok', control: control || null });
-  const errResult = (content, summary) => ({ ok: false, isError: true, content: clampOutput(content), summary: summary || 'error' });
+  const okResult = (content, summary, control, parkedPath) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null });
+  const errResult = (content, summary, parkedPath) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error' });
+
+  // Ask the host to keep the full output. Never throws and never blocks a result: a parker that fails just
+  // means we fall back to the plain clamp — losing the tail must never also lose the answer.
+  async function parkIfOver(content, call, ctx) {
+    if (typeof content !== 'string' || content.length <= OUTPUT_MAX) return null;
+    if (!ctx || typeof ctx.parkOutput !== 'function') return null;
+    try {
+      const r = await ctx.parkOutput(content, { tool: (call && call.name) || 'tool' });
+      return (r && r.path) ? String(r.path) : null;
+    } catch (_) { return null; }
+  }
 
   // Race a promise against a timeout. onTimeout (if given) fires BEFORE the reject so the caller can abort the
   // underlying work — otherwise a timed-out tool keeps running and SPENDING (worst case: a team.dispatch fan-out
@@ -151,8 +172,11 @@
       const runCtx = ac !== ctx.signal ? Object.assign({}, ctx, { signal: ac.signal }) : ctx;
       try {
         const out = await withTimeout(tool.run(call.args, runCtx), timeoutMs, () => { try { ac.abort(new Error('tool timeout')); } catch (_) { try { ac.abort(); } catch (_) {} } });
-        if (out && typeof out === 'object' && 'content' in out) return okResult(out.content, out.summary, out.control);
-        return okResult(out == null ? '' : out);
+        const shaped = (out && typeof out === 'object' && 'content' in out);
+        const raw = shaped ? out.content : (out == null ? '' : out);
+        // Park BEFORE clamping — the clamp is what destroys the middle, so the full text has to be on disk first.
+        const parked = await parkIfOver(raw, call, ctx);
+        return okResult(raw, shaped ? out.summary : undefined, shaped ? out.control : undefined, parked);
       } catch (e) {
         if (e && e.__timeout) return errResult('tool ' + call.name + ' timed out after ' + timeoutMs + 'ms', 'timeout');
         return errResult('tool ' + call.name + ' failed: ' + (e && e.message ? e.message : String(e)));
