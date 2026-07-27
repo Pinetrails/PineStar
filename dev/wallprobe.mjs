@@ -93,6 +93,20 @@ const PROBE = `(() => {
   // 1:1 CROPS written to disk by the caller — the only honest way to LOOK at a bake (the game
   // canvas draws at a fractional uiZoom, and a non-integer scale invents artifacts that are not
   // in the art). Nearest-neighbour upscale only.
+  /* A BARE composite — baseCv with NO light map. The corners live at the darkest end of the room,
+     where the ambient mask crushes the ring into the hull skirt beside it and geometry becomes
+     impossible to judge by eye. Every SHAPE question is answered here; every TONE question needs
+     the lit composite above. Judging the bottom corners on the lit view cost a whole round. */
+  const bare = document.createElement('canvas'); bare.width = W; bare.height = H;
+  const gb = bare.getContext('2d'); gb.imageSmoothingEnabled = false;
+  gb.fillStyle = '#ff00ff'; gb.fillRect(0, 0, W, H); gb.drawImage(bk.baseCv, 0, 0);
+  const cropBare = (cx, cy, cw, ch, z) => {
+    const c2 = document.createElement('canvas'); c2.width = cw * z; c2.height = ch * z;
+    const g2 = c2.getContext('2d'); g2.imageSmoothingEnabled = false;
+    g2.drawImage(bare, cx, cy, cw, ch, 0, 0, cw * z, ch * z);
+    return c2.toDataURL('image/png').split(',')[1];
+  };
+
   const crop = (cx, cy, cw, ch, z) => {
     const c2 = document.createElement('canvas'); c2.width = cw * z; c2.height = ch * z;
     const g2 = c2.getContext('2d'); g2.imageSmoothingEnabled = false;
@@ -113,6 +127,8 @@ const PROBE = `(() => {
       tl: crop(x1 - 16, y1 - 26, 46, 46, 11),
       bl: crop(x1 - 16, y2 - 20, 46, 46, 11),
       br: crop(x2 - 30, y2 - 20, 46, 46, 11),
+      blBare: cropBare(x1 - 12, y2 - 22, 38, 38, 14),
+      tlBare: cropBare(x1 - 12, y1 - 26, 38, 38, 14),
       whole: crop(0, 0, W, H, 3)
     }
   });

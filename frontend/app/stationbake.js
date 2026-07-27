@@ -1130,7 +1130,16 @@ const StationBake = (() => {
      over a wall receded to zero read as a bright bar ruled across the corner ("the thick diagonal
      lines", 2026-07-25). Now the ease runs INTO that crown. The law both halves of that history
      teach: the cap must never be wider than the surface it crowns at either end of the arc. */
-  const crownEase = (tt, capW, capH) => Math.max(1, Math.round(capW + (capH - capW) * tt));
+  const crownEase = (tt, capW, capFar) => Math.max(1, Math.round(capW + (capFar - capW) * tt));
+
+  /* WHAT THE CROWN NARROWS TO AT THE FAR END OF A CORNER ARC — i.e. the width of whatever straight
+     wall waits there. Only a TOP corner ends on an extruded wall, whose crown is genuinely
+     foreshortened to capH; a BOTTOM corner joins two walls that are both read from straight above,
+     so both ends are capW and the ring must hold ONE width the whole way round.
+     It taper-pinched to capH at the bottom two for a while, which put a 5 -> 3 -> 5 waist at exactly
+     the corner — the ring visibly thinning right where the eye is following it round (Andrew:
+     "lets perfect the corners on the bottom"). A constant-width band is what reads as a turn. */
+  const cornerCapFar = (kind, capW, capH) => (kind === 'tl' || kind === 'tr') ? capH : capW;
 
   /* THE CORNER'S SHARE OF THE CROWN RING. On the straights the wall's lit top surface is a rect;
      around a chamfer it is the band just inside the station's own outline, and without it the ring
@@ -1167,7 +1176,7 @@ const StationBake = (() => {
 
      Only the LADDER WIDTH eases (crownEase, capW → capH), never the boundary: a top surface really
      is foreshortened where you see it edge-on. Bottom corners pass cy = ay and are unchanged. */
-  function bakeCornerCrown(b, pal, kind, X, Y, ax, ay, Rc, HR, capW, capH, cy, record) {
+  function bakeCornerCrown(b, pal, kind, X, Y, ax, ay, Rc, HR, capW, capFar, cy, record) {
     const A = CORNER[kind];
     const outX = A.cx ? -1 : 1, outY = A.cy ? -1 : 1;      // which way is "away from the room"
     // the ring may hang past the tile into the VOID (that is where every wall's height lives) but
@@ -1208,7 +1217,7 @@ const StationBake = (() => {
       // below the arc's widest point the outline is simply the straight run at the e/w wall's edge
       const off = t <= 0 ? HR : Math.sqrt(HR * HR - t * t);
       const ex = outX < 0 ? Math.round(ax - off) : Math.round(ax + off);
-      const w = crownEase(Math.max(0, t) / HR, capW, capH);
+      const w = crownEase(Math.max(0, t) / HR, capW, capFar);
       const dx = deckXAt(py), inner = dx == null ? (outX < 0 ? X + T : X - 1) : dx;
       if (outX < 0) {
         put(ex, py, 1, 1, wallDk);                                             // the shell's own edge
@@ -1230,7 +1239,7 @@ const StationBake = (() => {
       if (adx >= K) continue;                                     // steep — the row dual owns it
       const s = Math.sqrt(HR * HR - adx * adx);
       const ey = outY < 0 ? Math.round(cy - s) : Math.round(cy + s);
-      const w = crownEase(s / HR, capW, capH);
+      const w = crownEase(s / HR, capW, capFar);
       const dy = deckYAt(ix), inner = dy == null ? (outY < 0 ? Y + T : Y - 1) : dy;
       if (outY < 0) {
         put(ix, ey, 1, 1, wallDk);
@@ -1764,8 +1773,10 @@ const StationBake = (() => {
       /* THE CROWN RING carries the wall's lit top surface around the arc, so the bright line that
          defines a wall does not die at the corners — and on a TOP corner the SAME circle, centred
          higher, is also what stands the wall up. One profile, one radius, no ease on the outline. */
-      bakeCornerCrown(b, cPal, kind, X, Y, ax, ay, Rc, HR, sideCapW(cRoom),
-                      Math.max(2, Math.round(WALL.capH)), cCy, kind === 'tl' || kind === 'tr');
+      const cCapW = sideCapW(cRoom);
+      bakeCornerCrown(b, cPal, kind, X, Y, ax, ay, Rc, HR, cCapW,
+                      cornerCapFar(kind, cCapW, Math.max(2, Math.round(WALL.capH))), cCy,
+                      kind === 'tl' || kind === 'tr');
     }
 
     bakeRoomLighting(b);   // after the chamfers, so a rounded corner is lit like every other surface
