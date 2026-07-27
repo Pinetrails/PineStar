@@ -31,6 +31,7 @@ const { makeComputerTools } = require('./tools/builtin/computer.js');
 const { makeDesktopTools } = require('./tools/builtin/desktop.js');
 const { makeHooks } = require('./hooks.js');                 // the hook spine: pre/post tool + llm, session, compress
 const { makeShellHooks } = require('./shellhooks.js');       // the Commander's shell scripts, on that spine
+const { makePluginLoader } = require('./plugins.js');        // packaged JS extensions, on that same spine
 const { makeFsTools } = require('./tools/builtin/fs.js');
 // fs.read extracts .docx / .xlsx / .ipynb to readable text. inflateRawSync is injected so the extractor stays
 // pure + headless-testable, and so the OOXML path needs no dependency beyond what Node already ships.
@@ -2201,8 +2202,29 @@ const shellHooks = makeShellHooks({
   cwd: WORKSPACES, clock: { now: () => Date.now() },
   onError: (e) => console.warn('[hooks] ' + (e && e.hook) + ': ' + (e && e.error))
 });
+/* PLUGINS — the packaged form of the same idea (sidecar/plugins.js). Scoped SURFACE: the only thing a plugin
+   is handed is `on(event, handler)` against this same spine. Inert until explicitly allowed, keyed to a hash
+   of the code itself so a silent edit re-asks. */
+const PLUGINS_DIR = path.join(WORKSPACES, 'plugins');
+const PLUGINS_ALLOW_FILE = path.join(WORKSPACES, 'plugins-allowed.json');
+const pluginLoader = makePluginLoader({
+  fsp, pathMod: path, dir: PLUGINS_DIR, allowFile: PLUGINS_ALLOW_FILE,
+  requireModule: (p) => require(p), hash: (s) => crypto.createHash('sha256').update(String(s)).digest('hex'),
+  guard: skillGuard, clock: { now: () => Date.now() },
+  onError: (e) => console.warn('[plugins] ' + (e && e.plugin) + ': ' + (e && e.error))
+});
+let pluginsLoaded = { loaded: [], pending: [], errors: [] };
 let hooksInstalled = { installed: [], pending: [], errors: [] };
 async function installShellHooks() {
+  /* ORDER IS LOAD-BEARING: plugins register BEFORE shell hooks, mirroring the reference harness. The spine
+     reports the FIRST block's reason, so on a blocking event this decides who gets to explain the refusal —
+     and an in-process plugin is the more specific authority. */
+  try {
+    pluginsLoaded = await pluginLoader.load(hookSpine);
+    for (const err of pluginsLoaded.errors) console.warn('[plugins] ' + err);
+    if (pluginsLoaded.loaded.length) console.log('  · ' + pluginsLoaded.loaded.length + ' plugin(s) active');
+    if (pluginsLoaded.pending.length) console.log('  · ' + pluginsLoaded.pending.length + ' plugin(s) awaiting approval (POST /api/plugins/allow)');
+  } catch (e) { console.warn('[plugins] load failed: ' + ((e && e.message) || e)); }
   try { hooksInstalled = await shellHooks.install(hookSpine); }
   catch (e) { console.warn('[hooks] install failed: ' + ((e && e.message) || e)); return; }
   for (const err of hooksInstalled.errors) console.warn('[hooks] ' + err);
@@ -5261,6 +5283,8 @@ const ROUTES = [
   { m: 'GET', qsplit: '/api/fs/dirstat', h: handleDirStat },
   { m: 'GET', exact: '/api/hooks', h: handleHooksList },
   { m: 'POST', exact: '/api/hooks/allow', h: handleHooksAllow },
+  { m: 'GET', exact: '/api/plugins', h: handlePluginsList },
+  { m: 'POST', exact: '/api/plugins/allow', h: handlePluginsAllow },
   { m: 'POST', exact: '/api/checkpoint/restore', h: handleCheckpointRestore },
   { m: 'GET', prefix: '/api/checkpoint', h: handleCheckpointList },
   { m: 'GET', exact: '/api/health', h: (req, res) => { res.writeHead(200); return res.end('ok'); } },
@@ -7744,6 +7768,51 @@ async function handleWorkshopShiftNow(req, res) {
   kaOff();
   try { res.write(JSON.stringify({ name: 'workshop.shift.result', payload: result }) + '\n'); } catch (_) {}
   try { res.end(); } catch (_) {}
+}
+
+/* GET /api/plugins — installed / active / pending, with each pending plugin's GUARD FINDINGS attached. The
+   findings are the point of showing them here: the Commander is about to approve third-party in-process code,
+   and an approval prompt that cannot say what the code appears to do is a rubber stamp. */
+async function handlePluginsList(req, res) {
+  let found = { plugins: [], errors: [] };
+  try { found = await pluginLoader.discover(); } catch (_) {}
+  let pending = [];
+  try { pending = await pluginLoader.listPending(); } catch (_) {}
+  const live = new Set(pluginsLoaded.loaded.map(p => p.id));
+  const pend = new Set(pending.map(p => p.id));
+  return json(200, {
+    dir: PLUGINS_DIR,
+    plugins: found.plugins.map(p => ({
+      id: p.id, name: p.name, version: p.version, description: p.description,
+      active: live.has(p.id), pending: pend.has(p.id), digest: p.digest, findings: p.findings || null
+    })),
+    errors: (found.errors || []).concat(pluginsLoaded.errors || [])
+  }, res);
+}
+/* POST /api/plugins/allow { id, digest } — approve THIS EXACT CODE and load it without a restart.
+   The digest is REQUIRED and must match what is on disk right now: approving by id alone would let a plugin
+   that changed between the moment the Commander read it and the moment they clicked be approved sight-unseen,
+   which is precisely the substitution the hash exists to prevent. */
+async function handlePluginsAllow(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const id = String((body && body.id) || '').trim();
+  const digest = String((body && body.digest) || '').trim();
+  if (!id || !digest) return json(400, { error: 'id and digest are required' }, res);
+  let found;
+  try { found = await pluginLoader.discover(); } catch (_) { found = { plugins: [] }; }
+  const match = found.plugins.find(p => p.id === id);
+  if (!match) return json(404, { error: 'no such plugin installed: ' + id }, res);
+  if (match.digest !== digest) return json(409, { error: 'this plugin changed since you read it — re-read /api/plugins and approve the current code', digest: match.digest }, res);
+  if (!(await pluginLoader.allow(id, digest))) return json(500, { error: 'could not persist the approval' }, res);
+  // Same in-place rebuild as the hooks route, and the same ordering: plugins first, then shell hooks.
+  try {
+    hookSpine.clear();
+    pluginsLoaded = await pluginLoader.load(hookSpine);
+    hooksInstalled = await shellHooks.install(hookSpine);
+  } catch (e) { return json(500, { error: 'approved, but re-load failed: ' + ((e && e.message) || e) }, res); }
+  return json(200, { ok: true, active: pluginsLoaded.loaded.length, pending: pluginsLoaded.pending.length }, res);
 }
 
 /* GET /api/hooks — what the Commander configured, what is LIVE, and what is waiting on them. The pending list

@@ -55,6 +55,7 @@ test/oauthsignin.test.js
 test/hooks.test.js
 test/shellhooks.test.js
 test/hooks.wiring.test.js
+test/plugins.test.js
 test/loop.replay.test.js
 test/loop.steer.test.js
 test/loop.verify-on-stop.test.js
