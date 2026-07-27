@@ -6808,6 +6808,43 @@ async function handleCronRun(req, res) {
     state.errMsg = state.errMsg || ('sidecar failure: ' + ((e && e.message) || e));
     try { emit('agent.run.error', { agentId: job.agentId, runId: runId, message: state.errMsg, transient: false }); } catch (_) {}
   } finally {
+    /* RUN NOW MUST FIRE THE WHOLE LINE, exactly like the scheduled fire does. This route calls runOnce
+       DIRECTLY (it streams to the watching browser), so it does not pass through the cron driver's
+       advanceChain seam — without this the SAME routine would run four stages on schedule and one stage
+       from the button, which is the precise bug class the slash-command redirect above already exists to
+       prevent. Hops stream into the SAME response and the SAME per-run stream, so the session shows the
+       whole line. Runs BEFORE markRun/cron.result below so the recorded outcome is the LINE's, and a chain
+       failure never changes the routine's outcome (state.errMsg is untouched). */
+    if (!state.errMsg && String(state.buf || '').trim()) {
+      try {
+        const line = await chainRunner.advance({
+          agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''), signal: ac.signal,
+          runAgent: async (h) => {
+            const hs = { buf: '', errMsg: null, usd: 0 };
+            const hopSink = (name, payload) => {
+              try { emit(name, payload); } catch (_) {}
+              const p = payload || {};
+              if (name === 'agent.token') hs.buf += (p.delta || '');
+              else if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
+              else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
+              else if (name === 'agent.run.end' && typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd;
+            };
+            try {
+              await runOnce({
+                key: key, model: model, provider: provider, system: cronSystemFor(h.agentId),
+                messages: [{ role: 'user', content: h.text }], agentId: h.agentId, isTask: true,
+                emit: hopSink, signal: h.signal, runId: crypto.randomUUID(), streamId: 'cron-' + runId,
+                surface: 'autonomous', trigger: 'schedule', broadcast: true, reflect: true,
+                station: router.stationFor(h.agentId) || undefined,
+                unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : []
+              });
+            } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
+            return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
+          }
+        });
+        if (line && String(line.text || '').trim()) state.buf = line.text;
+      } catch (e) { console.warn('[cron] run-now work line failed after ' + job.agentId + ': ' + ((e && e.message) || e)); }
+    }
     runs.delete(runId);
     runsMeta.delete(runId);
     dropSteer(runId, 'manual-run');      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun); logs a count if non-empty
@@ -10519,7 +10556,10 @@ function handleHalt(req, res) {
   });
   // multi-bot telegram: every agent-bound bot's hub runs die on E-STOP too, exactly like the station bot's.
   const tgBotInflights = [...telegramBots.values()].map((w) => (w && w.hub && w.hub._internals) ? w.hub._internals.inflight : null);
-  const halted = killAll(runs, tgInflight, dcInflight, ...genericInflights, ...tgBotInflights);   // browser runs + ALL channel hub runs, in one kill (see sidecar/halt.js)
+  // the DEV injector's hub too (SKYNET_DEV only, and null until something has used it). Its runs are REAL runs
+  // that really spend, so an E-STOP that skipped them would leave live work the panel says it stopped.
+  const devInflight = (devHub && devHub._internals) ? devHub._internals.inflight : null;
+  const halted = killAll(runs, tgInflight, dcInflight, ...genericInflights, ...tgBotInflights, devInflight);   // browser runs + ALL channel hub runs, in one kill (see sidecar/halt.js)
   let cronAborted = 0;
   try { cronAborted = cronDriver.abortAllLeases(); } catch (_) {}   // Phase 0: E-STOP also aborts in-flight cron runs (unattended spend)
   let beatAborted = 0;

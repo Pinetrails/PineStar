@@ -178,6 +178,34 @@ async function readNdjson(res) {
     await sse.waitFor(events => events.some(e => e.name === 'workitem.placed' && e.payload && e.payload.agentId === 'research-agent' && e.payload.kind === 'cron'), 5000, 'cron workitem');
     await sse.waitFor(events => events.some(e => e.name === 'agent.run.start' && e.payload && e.payload.agentId === 'research-agent' && e.payload.trigger === 'schedule'), 5000, 'SSE run start');
     await sse.waitFor(events => events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'research-agent'), 5000, 'SSE run end');
+
+    /* RUN NOW MUST FIRE THE WHOLE WORK LINE, exactly like the scheduled fire. This route calls runOnce
+       DIRECTLY, so it bypasses the cron driver's advanceChain seam — it shipped running four stages on
+       schedule and ONE stage from the button (caught live 2026-07-27), the same "one routine, two
+       behaviours" bug the slash-command redirect in this route already exists to prevent. */
+    const Pipeline = require('../frontend/app/pipeline.js');
+    const belt = (x, y, dir) => ({ x, y, dir });
+    const plan = Pipeline.compileRoutingPlan({
+      props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+              { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'research-agent' },
+              { id: 'b2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer-agent' },
+              { id: 'o', t: 'outbox', x: 10, y: 0, w: 1, h: 1 }],
+      belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E'), belt(8, 0, 'E'), belt(9, 0, 'E')]
+    });
+    A.eq(plan.chains['research-agent'].next, ['writer-agent'], 'the drawn floor chains the two docks');
+    for (const b of plan.bays.concat(plan.dockBays)) b.objects = ['computer'];   // an unequipped bay grants no compute
+    const posted = await fetch(B + '/api/routing', { method: 'POST', headers, body: JSON.stringify(plan) });
+    A.eq(posted.status, 200, 'the two-stage floor deploys');
+
+    const callsBefore = mock.requests.length;
+    const run2 = await fetch(B + '/api/cron/run', { method: 'POST', headers, body: JSON.stringify({ id: job.id }) });
+    A.eq(run2.status, 200, 'Run Now returns a stream (second fire)');
+    const panel2 = await readNdjson(run2);
+    const starts = panel2.filter(e => e.name === 'agent.run.start').map(e => e.payload.agentId);
+    A.ok(starts.indexOf('research-agent') >= 0, 'stage one ran');
+    A.ok(starts.indexOf('writer-agent') >= 0, 'RUN NOW fired the DOWNSTREAM stage too (was one stage before)');
+    A.ok(mock.requests.length >= callsBefore + 2, 'two provider calls — the line really bought both runs');
+    await sse.waitFor(events => events.some(e => e.name === 'workitem.placed' && e.payload && e.payload.agentId === 'writer-agent' && e.payload.kind === 'chain'), 5000, 'the handoff rides as a chain crate');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}

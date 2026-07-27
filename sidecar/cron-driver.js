@@ -74,6 +74,8 @@
     const d = deps || {};
     const getJobs = d.getJobs, setJobs = d.setJobs, runOnce = d.runOnce;
     const emit = typeof d.emit === 'function' ? d.emit : function () {};
+    // a place to say something went wrong without changing behaviour (injectable so tests stay quiet)
+    const warn = typeof d.warn === 'function' ? d.warn : function (m) { try { console.warn(m); } catch (_) {} };
     const newId = d.newId, newAbort = d.newAbort, now = d.now;
     const getKey = typeof d.getKey === 'function' ? d.getKey : function () { return ''; };
     const providerForJob = typeof d.providerForJob === 'function' ? d.providerForJob : function () { return 'openrouter'; };
@@ -310,7 +312,9 @@
             function (line) { if (line && String(line.text || '').trim()) state.buf = line.text; finishFire(job.id, runId, state, null); },
             // A CHAIN FAILURE NEVER CHANGES THE ROUTINE'S OUTCOME: stage one really did run and really did
             // produce work. Same law the channel path holds — the line is never a gate on the answer.
-            function () { finishFire(job.id, runId, state, null); }
+            // It is still SAID OUT LOUD: a silently swallowed chain error is indistinguishable from a floor
+            // with no downstream stage, and that is exactly how this shipped broken once already.
+            function (e) { warn('[cron] work line failed after ' + job.agentId + ': ' + ((e && e.message) || e)); finishFire(job.id, runId, state, null); }
           );
         },
         function (e) { finishFire(job.id, runId, state, e || new Error('run rejected')); }
