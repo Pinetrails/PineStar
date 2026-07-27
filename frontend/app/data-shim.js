@@ -21,7 +21,6 @@ function registerAgent(id, color) {
 DATA.SKINS = {
   bear:       { name: 'Teddy Bear', set: 'bear',       scale: 0.36 },
   pepe:       { name: 'Pepe',       set: 'pepe',       scale: 0.36 },
-  steve:      { name: 'Steve',      set: 'steve',      scale: 0.414 },
   alien:      { name: 'Alien',      set: 'alien',      scale: 0.376 },
   skeleton:   { name: 'Skeleton',   set: 'skeleton',   scale: 0.414 },
   crewmate:   { name: 'Crewmate',   set: 'crewmate',   scale: 0.385 },
@@ -42,7 +41,6 @@ DATA.SKINS = {
   voidwizard:   { name: 'Void Wizard',    set: 'voidwizard',   scale: 0.368 },
   samaltman:    { name: 'Sam',            set: 'samaltman',    scale: 0.385 },
   dario:        { name: 'Dario',          set: 'dario',        scale: 0.376 },
-  beachbabe:    { name: 'Beach Babe',     set: 'beachbabe',    scale: 0.385 },
   secretagent:  { name: 'Secret Agent',   set: 'secretagent',  scale: 0.404 },
   grimreaper:   { name: 'Grim Reaper',    set: 'grimreaper',   scale: 0.394 },
   plaguedoctor: { name: 'Plague Doctor',  set: 'plaguedoctor', scale: 0.376 },
