@@ -277,8 +277,8 @@ const SFX = {
     SFX.noise({ dur: 0.01, cut: 3000, type: 'highpass', vol: 0.05 });
     SFX.voice({ freq: 1060, glide: 780, dur: 0.04, type: 'sine', vol: 0.16, atk: 0.001, cut: 6000 });
   },
-  // tick: a state COMMITTED — a connector enabled, a transport switched, a key removed. The toggle voice
-  // with a little more body, so a settings change CONFIRMS without pretending to be a notification.
+  // tick: a state COMMITTED — a connector enabled, a transport switched, a key removed. Data_Point_05,
+  // a 166ms readout blip: a settings change CONFIRMS without pretending to be a notification.
   // connectors.js has called sfx('tick') at eight sites since it was written; until this cue existed the
   // helper's `SFX[n] &&` guard swallowed every one of them and the whole window changed state in silence.
   tick() {
@@ -342,8 +342,8 @@ const SFX = {
     SFX.voice({ freq: 196, glide: 110, dur: 0.22, type: 'sawtooth', vol: 0.16, cut: 800, atk: 0.01 });
     SFX.voice({ freq: 147, glide: 92, dur: 0.3, type: 'sawtooth', vol: 0.12, when: 0.08, cut: 620, atk: 0.01 });
   },
-  // level: the biggest sting the station owns — Sequence_01, the longest of the three (986ms).
-  // The three celebration cues are graded by the pack's own lengths: quest 498ms < milestone 843ms < level.
+  // level: the biggest sting the station owns — Sequence_06, the longest of the three (1572ms).
+  // The three celebration cues are graded by the pack's own lengths: quest 235ms < milestone 843ms < level.
   level() {
     if (SFX._sample('level', { rate: 1, vol: 0.55 })) return;
     [523, 659, 784, 1046, 1318].forEach((f, i) => SFX.voice({ freq: f, dur: 0.2, type: 'triangle', vol: 0.21, when: i * 0.065, atk: 0.008, detune: 3, verb: 0.3 }));

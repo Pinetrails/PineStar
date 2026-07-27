@@ -30,8 +30,8 @@ celebration stings are graded by the pack's own lengths, so quest stays smaller 
 | file             | pack source   | cue                                     |
 | ---------------- | ------------- | --------------------------------------- |
 | ui-type.wav      | Click_03      | typewriter tick (74ms — the pack's shortest) |
-| ui-tick.wav      | Confirm_03    | state committed (connector, key, transport) |
+| ui-tick.wav      | Data_Point_05 | state committed (connector, key, transport) |
 | ui-sale.wav      | Confirm_01    | settings export complete                |
-| ui-quest.wav     | Sequence_04   | quest complete (498ms)                  |
+| ui-quest.wav     | Confirm_02    | quest complete (235ms)                  |
 | ui-milestone.wav | Sequence_07   | milestone (843ms)                       |
-| ui-level.wav     | Sequence_01   | level up (986ms)                        |
+| ui-level.wav     | Sequence_06   | level up (1572ms)                       |
