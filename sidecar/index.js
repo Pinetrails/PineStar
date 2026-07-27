@@ -5182,6 +5182,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/config/export', h: handleConfigExport },   // P1-7 station backup
   { m: 'POST', exact: '/api/config/import', h: handleConfigImport },
   { m: 'POST', exact: '/api/config/reset', h: handleConfigReset },
+  { m: 'GET', exact: '/api/runtime/agent', h: handleRuntimeAgent },   // what a LOCAL headless caller needs to drive /api/run (no secrets)
   { m: 'GET', exact: '/api/runtime/knobs', h: handleRuntimeKnobsGet },   // P1-9 advanced knobs
   { m: 'POST', exact: '/api/runtime/knobs', h: handleRuntimeKnobsSet },
   { m: 'POST', exact: '/api/auth/codex/start', h: handleCodexStart },
@@ -5843,6 +5844,39 @@ function runtimeKnobsStatus() {
 function handleRuntimeKnobsGet(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(runtimeKnobsStatus()));
+}
+/* GET /api/runtime/agent — the small read a LOCAL headless client needs before it can drive POST /api/run.
+
+   /api/run demands an explicit `model` and 400s without one, because the browser always knows which model the
+   Commander picked. An out-of-process local client (the ACP editor bridge, a CLI) never sees that page state, so
+   without this it would have to guess a model id or duplicate the sidecar's provider-resolution rules. This
+   reports the SAME resolution the server itself would use, plus the roster so a client can target one agent.
+
+   Holds NO secrets — never a key, never a base URL with credentials in it; `configured` is the honest boolean of
+   whether a run could actually start right now. Behind the same per-launch token + loopback pin as every /api
+   route, so this is not a new trust surface. */
+function handleRuntimeAgent(req, res) {
+  // Resolve exactly as the other HEADLESS host does (devHubSecrets): provider 'openrouter' + the runtime
+  // credential + STARNET_DEFAULT_MODEL. Deliberately not a new env knob — a second resolution rule would
+  // eventually disagree with the one the runs actually use, and then this route would lie.
+  const provider = 'openrouter';
+  const key = providerRuntimeKey(provider, '');
+  const baseUrl = providerRuntimeBaseUrl(provider, '');
+  const model = String(ENV('DEFAULT_MODEL') || '').trim();
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({
+    ok: true,
+    provider: provider,
+    model: model,
+    // configured = a run can start: a credential for this provider AND a model to run it on. Both, because
+    // either one missing is a 400 from /api/run, and a client that is told "configured" and then 400s learns
+    // nothing about which half is wrong.
+    configured: !!(model && providerHasCredential(provider, key, baseUrl)),
+    version: (() => { try { return computeVersionSurface().harness || 'dev'; } catch (_) { return 'dev'; } })(),
+    agents: [...agentRoster].map(([agentId, a]) => ({
+      agentId, name: (a && a.name) || agentId, model: (a && a.model) || null, provider: (a && a.provider) || null
+    }))
+  }));
 }
 async function handleRuntimeKnobsSet(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
