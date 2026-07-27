@@ -95,6 +95,15 @@
       try { await fsp.writeFile(allowFile, JSON.stringify(cur, null, 2), 'utf8'); return true; }
       catch (e) { onError({ plugin: id, error: (e && e.message) || String(e) }); return false; }
     }
+    // UN-APPROVE — the other half of the gate. Dropping the entry is enough: load() only registers a plugin
+    // whose digest is in the allowlist, so a revoke plus a re-load leaves it installed but inert.
+    async function revoke(id) {
+      const cur = await allowedMap();
+      if (!(String(id) in cur)) return false;
+      delete cur[String(id)];
+      try { await fsp.writeFile(allowFile, JSON.stringify(cur, null, 2), 'utf8'); return true; }
+      catch (e) { onError({ plugin: id, error: (e && e.message) || String(e) }); return false; }
+    }
     async function listPending() {
       const [{ plugins }, allowed] = [await discover(), await allowedMap()];
       return plugins.filter(p => !(allowed[p.id] && allowed[p.id].digest === p.digest));
@@ -140,7 +149,7 @@
       return { loaded, pending, errors };
     }
 
-    return { discover, load, allow, listPending, _internals: { idOk } };
+    return { discover, load, allow, revoke, listPending, _internals: { idOk } };
   }
 
   return { makePluginLoader, _internals: { idOk } };

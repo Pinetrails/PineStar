@@ -5283,8 +5283,10 @@ const ROUTES = [
   { m: 'GET', qsplit: '/api/fs/dirstat', h: handleDirStat },
   { m: 'GET', exact: '/api/hooks', h: handleHooksList },
   { m: 'POST', exact: '/api/hooks/allow', h: handleHooksAllow },
+  { m: 'POST', exact: '/api/hooks/revoke', h: handleHooksRevoke },
   { m: 'GET', exact: '/api/plugins', h: handlePluginsList },
   { m: 'POST', exact: '/api/plugins/allow', h: handlePluginsAllow },
+  { m: 'POST', exact: '/api/plugins/revoke', h: handlePluginsRevoke },
   { m: 'POST', exact: '/api/checkpoint/restore', h: handleCheckpointRestore },
   { m: 'GET', prefix: '/api/checkpoint', h: handleCheckpointList },
   { m: 'GET', exact: '/api/health', h: (req, res) => { res.writeHead(200); return res.end('ok'); } },
@@ -7768,6 +7770,40 @@ async function handleWorkshopShiftNow(req, res) {
   kaOff();
   try { res.write(JSON.stringify({ name: 'workshop.shift.result', payload: result }) + '\n'); } catch (_) {}
   try { res.end(); } catch (_) {}
+}
+
+/* The two REVOKE routes. Written as their own handlers rather than a flag on allow, because "take this away"
+   must never be one mistyped field away from "grant this" — and because the honest answer to revoking
+   something that was never allowed is 404, not a cheerful ok:true. Both rebuild the spine in place, so the
+   revoked extension stops running immediately rather than at the next restart. */
+async function handleHooksRevoke(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const event = String((body && body.event) || '').trim();
+  const command = String((body && body.command) || '').trim();
+  if (!event || !command) return json(400, { error: 'event and command are required' }, res);
+  if (!(await shellHooks.revoke(event, command))) return json(404, { error: 'that hook was not approved' }, res);
+  try {
+    hookSpine.clear();
+    pluginsLoaded = await pluginLoader.load(hookSpine);
+    hooksInstalled = await shellHooks.install(hookSpine);
+  } catch (e) { return json(500, { error: 'revoked, but re-install failed: ' + ((e && e.message) || e) }, res); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length, pending: hooksInstalled.pending.length }, res);
+}
+async function handlePluginsRevoke(req, res) {
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const id = String((body && body.id) || '').trim();
+  if (!id) return json(400, { error: 'id is required' }, res);
+  if (!(await pluginLoader.revoke(id))) return json(404, { error: 'that plugin was not approved' }, res);
+  try {
+    hookSpine.clear();
+    pluginsLoaded = await pluginLoader.load(hookSpine);
+    hooksInstalled = await shellHooks.install(hookSpine);
+  } catch (e) { return json(500, { error: 'revoked, but re-load failed: ' + ((e && e.message) || e) }, res); }
+  return json(200, { ok: true, active: pluginsLoaded.loaded.length, pending: pluginsLoaded.pending.length }, res);
 }
 
 /* GET /api/plugins — installed / active / pending, with each pending plugin's GUARD FINDINGS attached. The

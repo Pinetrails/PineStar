@@ -145,6 +145,24 @@ const mk = (extra) => makeShellHooks(Object.assign({ spawn, fsp, pathMod: path, 
       A.ok(r.errors.some(e => /on_whatever|cannot register/.test(e)), 'and the Commander is told why');
     }
 
+    // ---- 9b. REVOKE — the other half of the gate ----
+    {
+      await fsp.rm(ALLOW, { force: true });
+      const cmd = script('');
+      await writeHooks([{ event: 'post_tool_call', command: cmd, name: 'revocable' }]);
+      const sh = mk();
+      await sh.install(makeHooks(), { accept: true });
+      A.eq((await sh.listPending()).length, 0, 'approved -> not pending');
+
+      A.eq(await sh.revoke('post_tool_call', cmd), true, 'revoke reports that it removed the approval');
+      A.eq((await sh.listPending()).length, 1, 'the hook is pending again');
+      const spine = makeHooks();
+      A.eq((await sh.install(spine)).installed.length, 0, 'and a re-install leaves it CONFIGURED BUT INERT — revoking disarms, it does not delete the line');
+      A.eq(spine.count('post_tool_call'), 0, 'nothing is registered on the spine for it');
+      A.eq(await sh.revoke('post_tool_call', cmd), false, 'revoking what is already un-approved is an honest false');
+      A.eq(await sh.revoke('pre_tool_call', 'never configured'), false, 'and so is revoking something that was never approved');
+    }
+
     // ---- 10. a missing hooks file is the ordinary case: no hooks, no errors, no noise ----
     {
       const sh = makeShellHooks({ spawn, fsp, pathMod: path, hooksFile: path.join(DIR, 'nope.json'), allowFile: ALLOW, cwd: DIR });

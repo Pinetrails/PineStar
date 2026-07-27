@@ -163,6 +163,24 @@ async function writePlugin(id, source, manifest) {
       A.eq(errors.length, 0, 'and no complaints — most stations will never install one');
       A.eq((await loader.load(makeHooks())).loaded.length, 0, 'load() is a clean no-op');
     }
+    // ---- 9. REVOKE — a consent gate with no way back is a one-way door, not a gate ----
+    {
+      await fsp.rm(ALLOW, { force: true });
+      for (const stale of ['throws-at-load', 'throws-at-register', 'no-register', 'good', 'scanned', 'no-manifest', 'escaper']) {
+        await fsp.rm(path.join(PLUGINS, stale), { recursive: true, force: true });
+      }
+      await writePlugin('revocable', 'module.exports = { register(api) { api.on("post_tool_call", () => {}); } };');
+      const loader = mk();
+      await loader.load(makeHooks(), { accept: true });
+      A.eq((await loader.listPending()).some(x => x.id === 'revocable'), false, 'approved -> not pending');
+
+      A.eq(await loader.revoke('revocable'), true, 'revoke reports that it removed the approval');
+      A.eq((await loader.listPending()).some(x => x.id === 'revocable'), true, 'the plugin is pending again');
+      const after = await loader.load(makeHooks());
+      A.eq(after.loaded.some(x => x.id === 'revocable'), false, 'and a re-load leaves it INSTALLED BUT INERT — revoking disarms, it does not uninstall');
+      A.eq(await loader.revoke('revocable'), false, 'revoking what is already un-approved is an honest false, not a cheerful success');
+      A.eq(await loader.revoke('never-existed'), false, 'and so is revoking something that was never there');
+    }
   } finally {
     await fsp.rm(DIR, { recursive: true, force: true });
     delete global.__auditLog; delete global.__apiKeys; delete global.__spineReachable;
