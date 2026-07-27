@@ -3408,6 +3408,13 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // itself keeps micro-dollar precision; this is presentation only). No app-wide formatter exists to reuse.
   function fmtUsd(v) { return U.usd(v); }   // canonical spend formatter (util.js U.usd)
 
+  // The desktop shell's command bridge, or null in a plain browser (dev, tests, the website embed).
+  // Looked up per call rather than cached: the page can render before __TAURI__ is injected.
+  function tauriInvoke() {
+    try { return (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) || null; }
+    catch (_) { return null; }
+  }
+
   // open a URL in the user's real browser (Tauri shell when packaged, a new tab otherwise). Buying credits is
   // ALWAYS an external link — this app never renders a payment form or handles card data.
   function openExternal(url) {
@@ -3444,41 +3451,151 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // STORE / MANAGED CREDITS — populate #credits-store from the real /api/credits payload. The endpoint 404s unless
   // a credits backend is configured, so an UNconfigured install renders NOTHING here (no dead STORE, no fake balance
   // — the honesty law). Balance + history are read from the adapter; PURCHASE opens the external buy page.
+  let _creditsLinkPoll = null;   // module-scoped so a re-render / panel re-open always cancels a stale poll loop
+  function stopLinkPoll() { if (_creditsLinkPoll) { clearInterval(_creditsLinkPoll); _creditsLinkPoll = null; } }
+
   function wireCredits(body) {
     const host = body.querySelector('#credits-store');
     if (!host) return;
-    host.innerHTML = '';   // stay empty until we KNOW credits are configured
-    Harness.api.get('/api/credits')
+    stopLinkPoll();        // any in-flight link poll from a prior render is stale now
+    host.innerHTML = '';   // stay empty until we KNOW credits are configured (or linkable)
+    // /api/credits 404s when credits are unconfigured — that is the honesty law, not an error, and
+    // api.get throws on any non-2xx. Catching to {configured:false} keeps the 404 on the normal path.
+    Harness.api.get('/api/credits').catch(() => ({ configured: false }))
       .then(j => {
-        if (!j || !j.configured) return;   // unconfigured → no surface at all
-        const bal = (j.balanceUsd == null) ? '—' : fmtUsd(j.balanceUsd);
-        const reach = j.reachable === false;
-        const hist = Array.isArray(j.history) ? j.history : [];
-        const rows = hist.length ? hist.slice(0, 12).map(e => {
-          const when = e && e.ts ? new Date(e.ts).toLocaleString() : '';
-          const kind = esc(String((e && e.kind) || 'entry'));
-          const amt = (e && e.usd != null) ? fmtUsd(e.usd) : '';
-          return '<div class="mc-row"><div class="mc-top"><b>' + kind + '</b> <span class="dim">' + esc(when) + '</span></div>' +
-            '<div class="mc-url dim">' + esc(amt) + (e && e.runId ? ' · run ' + esc(String(e.runId).slice(0, 8)) : '') + '</div></div>';
-        }).join('') : '<div class="fb-empty">No credit activity yet.</div>';
-        host.innerHTML =
-          '<h4 class="ms-h">STORE <span class="dim">— managed credits</span></h4>' +
-          '<p class="set-about">This station runs on <b>managed credits</b> — a prepaid balance the operator tops up, so your agents can work without you bringing your own provider key. Each run reserves up to your <b>PER RUN</b> budget and refunds whatever it doesn’t spend. You can always switch to your own key under API KEYS above.</p>' +
-          '<div class="set-row"><span class="dim">BALANCE</span><b class="credits-bal" style="margin-left:auto">' + esc(bal) + '</b></div>' +
-          (reach ? '<div class="set-row dim">⚠ the credits service didn’t answer — the balance shown may be stale.</div>' : '') +
-          '<div class="mc-acts">' +
-            '<button class="bb sm" id="credits-buy">＋ ADD CREDITS ↗</button>' +
-            '<button class="bb xs" id="credits-refresh" title="re-read the balance">↻ REFRESH</button>' +
-          '</div>' +
-          '<div class="mc-hint">Adding credits opens your browser — StarNet never handles your payment details.</div>' +
-          '<div class="set-row"><span class="dim">RECENT ACTIVITY</span></div>' +
-          '<div class="mc-list">' + rows + '</div>';
-        const buy = host.querySelector('#credits-buy');
-        if (buy) buy.addEventListener('click', () => { sfx('click'); openExternal(j.purchaseUrl); });
-        const ref = host.querySelector('#credits-refresh');
-        if (ref) ref.addEventListener('click', () => { sfx('click'); wireCredits(body); });
+        if (j && j.configured) return renderCreditsConfigured(body, host, j);
+        // unconfigured → is this station LINKABLE (STARNET_CLOUD_URL wired)? If so, offer LINK STATION. Otherwise
+        // render NOTHING (honesty law: a bare BYOK install shows no STORE surface at all).
+        return Harness.api.get('/api/credits/linkable').catch(() => ({ available: false }))
+          .then(lk => { if (lk && lk.available) renderCreditsLinkCard(body, host); })
+          .catch(() => {});
       })
       .catch(() => {});   // sidecar offline / not configured → leave the STORE absent
+  }
+
+  // The configured STORE: real balance + history + ADD CREDITS. When the station is configured via a LINKED
+  // DEVICE (not operator env), also surface a small UNLINK affordance + the account id.
+  function renderCreditsConfigured(body, host, j) {
+    const bal = (j.balanceUsd == null) ? '—' : fmtUsd(j.balanceUsd);
+    const reach = j.reachable === false;
+    const hist = Array.isArray(j.history) ? j.history : [];
+    const rows = hist.length ? hist.slice(0, 12).map(e => {
+      const when = e && e.ts ? new Date(e.ts).toLocaleString() : '';
+      const kind = esc(String((e && e.kind) || 'entry'));
+      const amt = (e && e.usd != null) ? fmtUsd(e.usd) : '';
+      return '<div class="mc-row"><div class="mc-top"><b>' + kind + '</b> <span class="dim">' + esc(when) + '</span></div>' +
+        '<div class="mc-url dim">' + esc(amt) + (e && e.runId ? ' · run ' + esc(String(e.runId).slice(0, 8)) : '') + '</div></div>';
+    }).join('') : '<div class="fb-empty">No credit activity yet.</div>';
+    host.innerHTML =
+      '<h4 class="ms-h">STORE <span class="dim">— managed credits</span></h4>' +
+      '<p class="set-about">This station runs on <b>managed credits</b> — a prepaid balance the operator tops up, so your agents can work without you bringing your own provider key. Each run reserves up to your <b>PER RUN</b> budget and refunds whatever it doesn’t spend. You can always switch to your own key under API KEYS above.</p>' +
+      (j.linked && j.accountId ? '<div class="set-row"><span class="dim">ACCOUNT</span><span class="dim" style="margin-left:auto">' + esc(String(j.accountId)) + '</span></div>' : '') +
+      '<div class="set-row"><span class="dim">BALANCE</span><b class="credits-bal" style="margin-left:auto">' + esc(bal) + '</b></div>' +
+      (reach ? '<div class="set-row dim">⚠ the credits service didn’t answer — the balance shown may be stale.</div>' : '') +
+      '<div class="mc-acts">' +
+        '<button class="bb sm" id="credits-buy">＋ ADD CREDITS ↗</button>' +
+        '<button class="bb xs" id="credits-refresh" title="re-read the balance">↻ REFRESH</button>' +
+      '</div>' +
+      '<div class="mc-hint">Adding credits opens your browser — StarNet never handles your payment details.</div>' +
+      '<div class="set-row"><span class="dim">RECENT ACTIVITY</span></div>' +
+      '<div class="mc-list">' + rows + '</div>' +
+      (j.linked ? '<div class="set-row" style="margin-top:.6em"><span class="dim" style="font-size:.85em">This station is linked to your account.</span>' +
+        '<button class="bb xs" id="credits-unlink" title="forget this station’s link" style="margin-left:auto">UNLINK</button></div>' : '');
+    const buy = host.querySelector('#credits-buy');
+    if (buy) buy.addEventListener('click', () => { sfx('click'); openExternal(j.purchaseUrl); });
+    const ref = host.querySelector('#credits-refresh');
+    if (ref) ref.addEventListener('click', () => { sfx('click'); wireCredits(body); });
+    const unlink = host.querySelector('#credits-unlink');
+    if (unlink) unlink.addEventListener('click', () => {
+      sfx('click');
+      if (typeof window !== 'undefined' && window.confirm && !window.confirm('Unlink this station from your StarNet account? You can relink anytime.')) return;
+      unlink.disabled = true;
+      // BOTH halves have to go: the sidecar owns the file, only the shell can reach the keychain.
+      // Clearing the keychain first means a failure there is visible before we report "unlinked" —
+      // leaving a money-spending credential behind while claiming it is gone would be the exact
+      // dishonesty delete_credential_honest exists to prevent.
+      const kcInvoke = tauriInvoke();
+      const forgetKeychain = kcInvoke
+        ? kcInvoke('harness_clear_credits_token').then(() => true).catch(() => false)
+        : Promise.resolve(true);
+      forgetKeychain
+        .then(() => Harness.api.post('/api/credits/unlink', {}))
+        .then(() => wireCredits(body)).catch(() => wireCredits(body));
+    });
+  }
+
+  // Ask the desktop shell to move the device token from .secrets/credits.json into the OS keychain.
+  // Resolves to true only when the keychain genuinely holds it — a locked/absent credential store
+  // leaves the token in the file ON PURPOSE (better a token on disk than a token nobody has), and
+  // the sidecar keeps reporting tokenAtRest:'file' so the STORE never overstates the protection.
+  function adoptCreditsToken() {
+    const invoke = tauriInvoke();
+    if (!invoke) return Promise.resolve(false);
+    return invoke('harness_adopt_credits_token').then(ok => !!ok).catch(() => false);
+  }
+
+  // The UNLINKED-but-linkable state: a LINK STATION card. Clicking begins the pairing dance.
+  function renderCreditsLinkCard(body, host, note) {
+    host.innerHTML =
+      '<h4 class="ms-h">STORE <span class="dim">— managed credits</span></h4>' +
+      '<p class="set-about">Link this station to your <b>StarNet account</b> to run agents on managed credits — no provider key needed. You will confirm a short code in your browser.</p>' +
+      (note ? '<div class="set-row" style="color:var(--gold,#e8c15a)">' + esc(note) + '</div>' : '') +
+      '<div class="mc-acts"><button class="bb sm" id="credits-link">🔗 LINK STATION</button></div>' +
+      '<div class="mc-hint">Linking opens your browser to confirm — StarNet never handles your payment details.</div>' +
+      '<div id="credits-link-state"></div>';
+    const btn = host.querySelector('#credits-link');
+    if (btn) btn.addEventListener('click', () => { sfx('click'); startCreditsLink(body, host); });
+  }
+
+  // Ask the sidecar for a pairing code, then show it + poll until the user confirms on the site.
+  function startCreditsLink(body, host) {
+    const state = host.querySelector('#credits-link-state');
+    const btn = host.querySelector('#credits-link');
+    if (btn) btn.disabled = true;
+    if (state) state.innerHTML = '<div class="set-row dim">Requesting a link code…</div>';
+    Harness.api.post('/api/credits/link/start', { deviceName: 'StarNet Station' })
+      .then(r => { if (!r.ok) throw new Error('start failed'); return r.j; })
+      .then(j => { if (!j || !j.code) throw new Error('no code'); showCreditsLinkCode(body, host, j); })
+      .catch(() => { renderCreditsLinkCard(body, host, 'Could not reach the link service — try again.'); });
+  }
+
+  // Show the STAR-XXXX code prominently (VT323/CRT), open the verify page, and poll every 2s until linked/expired.
+  function showCreditsLinkCode(body, host, j) {
+    stopLinkPoll();
+    const expiresAt = Number(j.expiresAt) || 0;
+    host.innerHTML =
+      '<h4 class="ms-h">LINK STATION <span class="dim">— confirm in your browser</span></h4>' +
+      '<p class="set-about">Open the link page and confirm this code to connect your account:</p>' +
+      '<div class="credits-link-code" style="font-family:\'VT323\',monospace;font-size:2.6em;line-height:1.1;letter-spacing:.14em;text-align:center;color:var(--gold,#e8c15a);text-shadow:0 0 10px rgba(232,193,90,.55);margin:.35em 0">' + esc(String(j.code)) + '</div>' +
+      '<div class="mc-acts"><button class="bb sm" id="credits-link-open">OPEN LINK PAGE ↗</button></div>' +
+      '<div class="set-row dim" id="credits-link-status" style="margin-top:.5em">Waiting for confirmation…</div>';
+    const open = host.querySelector('#credits-link-open');
+    if (open) open.addEventListener('click', () => { sfx('click'); openExternal(j.verifyUrl); });
+    openExternal(j.verifyUrl);   // auto-open once so the user lands straight on the confirm page
+    const statusEl = host.querySelector('#credits-link-status');
+    const tick = () => {
+      if (expiresAt && Date.now() > expiresAt) { stopLinkPoll(); renderCreditsLinkCard(body, host, 'That code expired — start again.'); return; }
+      Harness.api.post('/api/credits/link/poll', { code: j.code })
+        .then(r => (r && r.ok) ? r.j : {})
+        .then(p => {
+          if (p && p.linked) {
+            stopLinkPoll(); sfx('sale');
+            // Hand the freshly minted device token to the OS keychain immediately. The token is a
+            // bearer credential that spends money and it is sitting in a plaintext file right now;
+            // this shrinks that window from "until the next app restart" to a couple of seconds.
+            // NOTE the token itself never passes through here — Rust reads the file, moves the
+            // secret, and rewrites it. We only say "a link just happened". Best-effort: with no
+            // desktop shell (browser/dev) there is no keychain, and the file path stays honest.
+            adoptCreditsToken().then(() => wireCredits(body));
+            return;
+          }
+          if (p && (p.status === 'expired' || p.status === 'consumed' || p.status === 'unknown')) {
+            stopLinkPoll(); renderCreditsLinkCard(body, host, 'That code is no longer valid — start again.');
+          } else if (statusEl) { statusEl.textContent = 'Waiting for confirmation…'; }
+        })
+        .catch(() => {});
+    };
+    _creditsLinkPoll = setInterval(tick, 2000);
   }
 
   // BUDGET panel — read the live caps + real spend from the sidecar, fill the four inputs, wire SAVE / RESET.

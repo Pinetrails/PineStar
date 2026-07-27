@@ -18,6 +18,7 @@ const { makeCostEngine } = require('./cost.js');
 const { makeLedger } = require('./ledger.js');
 const { makeBudget } = require('./budget.js');
 const { makeCredits } = require('./credits.js');   // managed-credit backend adapter (inert unless STARNET_CREDITS_URL is set)
+const { makeCreditsLink } = require('./credits-link.js');   // device-pairing client + durable link config (inert unless STARNET_CLOUD_URL is set)
 const budgetCaps = require('./budgetcaps.js');   // pure resolve(env,overrides) + validate patch — SETTINGS→Budget (P0-2)
 const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved) + validate patch — SETTINGS→Models fallback chain (P0-3)
 const { makeConcurrencyGate } = require('./concurrency.js');
@@ -373,6 +374,16 @@ const CREDITS_PURCHASE_URL = String(ENV('CREDITS_PURCHASE_URL') || '').trim();
 // Floor for the low-credit warning. The EFFECTIVE threshold is max(this, the per-run cap) — see the
 // makeCredits wiring below for why the cap is the meaningful half. 0 disables the warning outright.
 const CREDITS_LOW_USD = (() => { const n = Number(ENV('CREDITS_LOW_USD')); return Number.isFinite(n) && n >= 0 ? n : 5; })();
+// STARNET_CLOUD_URL points at the hosted StarNet Cloud service (accounts + credits + device linking). When set,
+// the STORE offers a LINK STATION flow that pairs this station to an account and configures credits LIVE (no env,
+// no restart). Empty => the feature is absent (honesty law): the /api/credits/link/* routes 404 and no LINK card
+// renders. Env CREDITS_* config still wins over a linked device (operator override / backward compat).
+const CLOUD_URL = String(ENV('CLOUD_URL') || '').trim();
+// The linked station's device token, injected by the DESKTOP from the OS keychain at spawn (keychain account
+// "credits:device"). It is a bearer credential that spends money, so the desktop adopts it out of
+// .secrets/credits.json and strips the file copy; this env var is how it gets back in. Unset in a bare/dev
+// sidecar, where the token simply stays in the file as before — see sidecar/credits-link.js header.
+const CREDITS_TOKEN = String(ENV('CREDITS_TOKEN') || '').trim();
 // a live permission.prompt left unanswered this long auto-denies (never hangs a run). P1-9: env
 // STARNET_CONSENT_TIMEOUT_MS > a UI-saved override > the 120s default; the frozen resolve keeps it constant per boot.
 const CONSENT_TIMEOUT_MS = resolveKnob('CONSENT_TIMEOUT_MS', 'consentTimeoutMs', 120000);
@@ -566,22 +577,50 @@ const budget = makeBudget({ caps: { agent: BUDGET_CAPS.perAgent, day: BUDGET_CAP
 // NB: no `ledger` is passed — the run finalizer below is the SINGLE ledger writer (drives the budget pools).
 // billing.js therefore does refund-only settlement here; the managed account's own spend record lives on the
 // credits backend (posted via debit/credit), so the local ledger is never double-counted for a managed run.
-const credits = makeCredits({
-  url: CREDITS_URL, apiKey: CREDITS_API_KEY, accountId: CREDITS_ACCOUNT, purchaseUrl: CREDITS_PURCHASE_URL,
-  fetch: globalThis.fetch, clock: { now: () => Date.now() },
-  onError: (stage, err) => console.warn('[credits] ' + stage + ' failed:', (err && err.message) || err),
-  // WHY THE PER-RUN CAP IS THE THRESHOLD, not a round number: admission reserves `perRun` before a managed
-  // run starts, so once the balance drops below that cap the very next run is REFUSED. That makes it the one
-  // non-arbitrary point to warn at — "$5 left" means nothing on a station whose runs reserve $10, and the
-  // user would hit the wall with a cheerful warning still unspoken. The env floor only raises it.
-  // A GETTER, not a number: effectiveCaps is mutable (the Commander can retune perRun live from SETTINGS,
-  // and it is defined AFTER this call), so reading it per-check keeps the warning honest without a restart.
-  lowBalanceUsd: () => Math.max(CREDITS_LOW_USD, Number((effectiveCaps && effectiveCaps.perRun) || 0)),
-  // Late-bound on purpose: cronEmit is declared further down. Balance changes only ever happen after boot
-  // (refresh() resolves on a later tick), so by first call it exists — the typeof guard covers the rest.
-  emit: (name, payload) => { try { if (typeof cronEmit === 'function') cronEmit(name, payload); } catch (_) {} }
+// Device-linking client + durable link store (WORKSPACES/.secrets/credits.json — not reachable via /api/file).
+// Inert unless STARNET_CLOUD_URL is set. The link flow writes the file; the credits adapter is (re)built from it.
+const creditsLink = makeCreditsLink({
+  cloudUrl: CLOUD_URL, fetch: globalThis.fetch, fsp, fs, pathMod: path,
+  dir: path.join(WORKSPACES, '.secrets'), now: () => Date.now(), envToken: CREDITS_TOKEN
 });
+// Resolve the credits adapter config. PRECEDENCE (additive, never breaks an env deploy): env CREDITS_* wins
+// (operator override / backward compat); else a linked device from .secrets/credits.json (deviceToken = bearer);
+// else nothing (inert). For a linked device the external "add credits" page is the account page on the cloud.
+function resolveCreditsConfig() {
+  if (CREDITS_URL) return { url: CREDITS_URL, apiKey: CREDITS_API_KEY, accountId: CREDITS_ACCOUNT, purchaseUrl: CREDITS_PURCHASE_URL };
+  const saved = creditsLink.loadSavedSync();
+  if (saved) return { url: saved.url, apiKey: saved.deviceToken, accountId: saved.accountId, purchaseUrl: saved.url + '/account' };
+  return { url: '', apiKey: '', accountId: '', purchaseUrl: '' };
+}
+function buildCredits(cfg) {
+  return makeCredits({
+    url: cfg.url, apiKey: cfg.apiKey, accountId: cfg.accountId, purchaseUrl: cfg.purchaseUrl,
+    fetch: globalThis.fetch, clock: { now: () => Date.now() },
+    onError: (stage, err) => console.warn('[credits] ' + stage + ' failed:', (err && err.message) || err),
+    // WHY THE PER-RUN CAP IS THE THRESHOLD, not a round number: admission reserves `perRun` before a managed
+    // run starts, so once the balance drops below that cap the very next run is REFUSED. That makes it the one
+    // non-arbitrary point to warn at — "$5 left" means nothing on a station whose runs reserve $10, and the
+    // user would hit the wall with a cheerful warning still unspoken. The env floor only raises it.
+    // A GETTER, not a number: effectiveCaps is mutable (the Commander can retune perRun live from SETTINGS,
+    // and it is defined AFTER this call), so reading it per-check keeps the warning honest without a restart.
+    // Rebuilt adapters (link/unlink) get the same getter — the warning must survive a relink, not just boot.
+    lowBalanceUsd: () => Math.max(CREDITS_LOW_USD, Number((effectiveCaps && effectiveCaps.perRun) || 0)),
+    // Late-bound on purpose: cronEmit is declared further down. Balance changes only ever happen after boot
+    // (refresh() resolves on a later tick), so by first call it exists — the typeof guard covers the rest.
+    emit: (name, payload) => { try { if (typeof cronEmit === 'function') cronEmit(name, payload); } catch (_) {} }
+  });
+}
+// `credits` is a LIVE, replaceable binding: linking a device (or unlinking) rebuilds it in place with no restart,
+// mirroring how handleSetKey mutates provider runtime config. Every call site uses `credits.<method>()`, so a
+// reassignment is transparent to admission / the STORE surface.
+let credits = buildCredits(resolveCreditsConfig());
 if (credits.configured()) { credits.refresh().catch(() => {}); }   // warm the balance cache at boot (fail-open)
+// Rebuild the live credits adapter from the current config (after a link/unlink). Warms the balance when live.
+function rebuildCredits() {
+  credits = buildCredits(resolveCreditsConfig());
+  if (credits.configured()) return credits.refresh().catch(() => null);
+  return Promise.resolve(null);
+}
 
 /* ---- P0-2 budget-caps persistence (SETTINGS → Budget). The four USD caps were env-only; now they persist in a
    PROTECTED sibling file (durable + .bak, like connectors/permissions) and apply LIVE to the running governor
@@ -1393,6 +1432,9 @@ function providerRuntimeKey(provider, explicitKey) {
   if (registryProviderUsesCodex(id)) return '';
   const explicit = String(explicitKey || '').trim();
   if (explicit) return explicit;
+  // 'starnet' managed provider: the bearer is the linked device token, resolved from the credits config
+  // (env CREDITS_* override or the linked .secrets/credits.json record) — never an env API key.
+  if (id === 'starnet') return String(resolveCreditsConfig().apiKey || '').trim();
   const runtime = String(runtimeKeys[id] || '').trim();
   if (runtime) return runtime;
   const profile = getProviderProfile(id);
@@ -1403,6 +1445,12 @@ function providerRuntimeBaseUrl(provider, explicitBaseUrl) {
   const id = normalizeProvider(provider);
   const explicit = String(explicitBaseUrl || '').trim();
   if (explicit) return explicit;
+  // 'starnet' managed provider: baseUrl = the linked cloud URL + '/v1' (the inference proxy lives there).
+  // Resolved live so linking/unlinking a station reconfigures it with no restart (mirrors the credits adapter).
+  if (id === 'starnet') {
+    const u = String(resolveCreditsConfig().url || '').trim().replace(/\/+$/, '');
+    return u ? (u + '/v1') : '';
+  }
   const runtime = String(runtimeBaseUrls[id] || '').trim();
   if (runtime) return runtime;
   const profile = getProviderProfile(id);
@@ -5095,6 +5143,10 @@ const ROUTES = [
   { m: 'POST', exact: '/api/routing', h: handleRouting },
   { m: 'GET', exact: '/api/budget/status', h: handleBudgetStatus },
   { m: 'GET', qsplit: '/api/credits', h: handleCredits },   // 404s (no surface) unless managed credits are configured
+  { m: 'GET', qsplit: '/api/credits/linkable', h: handleCreditsLinkable },   // {available} — is device linking offered (STARNET_CLOUD_URL set + not already configured)?
+  { m: 'POST', exact: '/api/credits/link/start', h: handleCreditsLinkStart },   // begin a pairing: returns a STAR-XXXX code + verifyUrl
+  { m: 'POST', exact: '/api/credits/link/poll', h: handleCreditsLinkPoll },     // poll once; on confirm persists the token + configures credits live
+  { m: 'POST', exact: '/api/credits/unlink', h: handleCreditsUnlink },          // forget the linked device, revert credits to inert
   { m: 'POST', exact: '/api/budget/caps', h: handleBudgetCaps },
   { m: 'POST', exact: '/api/budget/resume', h: handleBudgetResume },
   { m: 'GET', exact: '/api/fallback/chain', h: handleFallbackStatus },
@@ -5511,9 +5563,62 @@ async function handleCredits(req, res) {
     balanceUsd: snap.balanceUsd,             // null when the backend hasn't answered yet (UI shows "—")
     purchaseUrl: snap.purchaseUrl,           // external link the STORE opens; this app renders no payment form
     perRun: effectiveCaps.perRun,            // the reservation size a run will hold
+    linked: !CREDITS_URL && creditsLink.hasSaved(),   // true when configured via a LINKED DEVICE (not env) -> STORE shows UNLINK
+    // Where the device token actually rests: 'keychain' (desktop, adopted), 'file' (bare sidecar, or a link
+    // the desktop has not adopted yet), 'none'. Reported so the STORE states the truth about a money-spending
+    // credential instead of implying a protection that is not there — the honesty law applied to secrets.
+    tokenAtRest: !CREDITS_URL ? creditsLink.tokenAtRest() : 'env',
+    keychainAvailable: DESKTOP_SHELL,
     history: Array.isArray(hist.entries) ? hist.entries : [],
     reachable: !hist.error
   }));
+}
+
+/* ---- Device-linking surface (STARNET_CLOUD_URL). All four routes ride the normal x-starnet-token /api gate.
+   HONESTY LAW: /api/credits/linkable reports availability truthfully — a LINK card is offered ONLY when a cloud
+   URL is configured AND credits are not already live. The pollSecret never crosses this boundary (it lives in
+   creditsLink's memory). link/poll on 'confirmed' rebuilds the live credits adapter — no restart. ---- */
+function creditsJson(res, code, obj) { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); }
+
+function handleCreditsLinkable(req, res) {
+  // available: the cloud is wired AND we are not already configured (env or an existing link). When already
+  // configured, /api/credits carries the balance + the `linked` flag — there is no separate LINK card to show.
+  const available = creditsLink.configured() && !credits.configured();
+  creditsJson(res, 200, { available: available, cloud: creditsLink.configured() });
+}
+
+async function handleCreditsLinkStart(req, res) {
+  if (!creditsLink.configured()) return creditsJson(res, 404, { error: 'linking_unavailable' });
+  let body = {}; try { body = JSON.parse(String(await readBody(req, 4096) || '') || '{}') || {}; } catch (_) {}
+  try {
+    const r = await creditsLink.start(body && body.deviceName);
+    if (!r || !r.ok) return creditsJson(res, 502, { error: (r && r.error) || 'link_start_failed' });
+    return creditsJson(res, 200, { code: r.code, verifyUrl: r.verifyUrl, expiresAt: r.expiresAt });   // pollSecret intentionally withheld
+  } catch (e) { return creditsJson(res, 502, { error: (e && e.message) || 'link_start_failed' }); }
+}
+
+async function handleCreditsLinkPoll(req, res) {
+  if (!creditsLink.configured()) return creditsJson(res, 404, { error: 'linking_unavailable' });
+  let body = {}; try { body = JSON.parse(String(await readBody(req, 4096) || '') || '{}') || {}; } catch (_) {}
+  const code = String((body && body.code) || '');
+  if (!code) return creditsJson(res, 400, { error: 'code_required' });
+  try {
+    const r = await creditsLink.poll(code);
+    if (r && r.status === 'confirmed') {
+      await rebuildCredits();   // the device token is now persisted — build the live adapter + warm the balance
+      return creditsJson(res, 200, { linked: true, accountId: r.accountId });
+    }
+    return creditsJson(res, 200, { linked: false, status: (r && r.status) || 'pending' });
+  } catch (e) { return creditsJson(res, 502, { error: (e && e.message) || 'link_poll_failed' }); }
+}
+
+async function handleCreditsUnlink(req, res) {
+  // Delete the linked device record and revert credits to whatever env config remains (usually inert). Safe:
+  // the device token is re-issuable by relinking (secret-durability law). A no-op when env-configured.
+  let r = { ok: true, removed: false };
+  try { r = await creditsLink.clearSaved(); } catch (e) { r = { ok: false, error: (e && e.message) || String(e) }; }
+  try { await rebuildCredits(); } catch (_) {}
+  return creditsJson(res, 200, { ok: r.ok !== false, unlinked: true, configured: credits.configured() });
 }
 /* ---- POST /api/budget/caps { perRun?, perAgent?, perDay?, global? } — set one or more USD caps. Each value:
    a positive number = a real cap; 0 (or "0") = NO CAP (ungoverned) — an explicit saved choice; null / "" = CLEAR
