@@ -365,6 +365,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   display: flex; flex-direction: column; gap: 3px;
   background: rgba(5, 3, 1, 0.58);
 }
+/* PILL CLEARANCE (2026-07-27): .comms-newpill floats over this scroller's bottom edge and used to sit
+   ON TOP of the last transcript row. While the pill is up, reserve its height at the foot of the scroll
+   so the newest line can always be read past it. Toggled by chat.js showNewPill/hideNewPill. */
+#chat-log.pill-clear { padding-bottom: 48px; }
 #chat-log > * { position: relative; z-index: 1; flex: 0 0 auto; }
 #chat-log > .choice-row { z-index: 2; }
 #chat-log > .cmsg.consent, #chat-log > .cmsg.turnin, #chat-log > .cmsg.nudge { z-index: 3; }
@@ -899,6 +903,24 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cmsg.tb-read .tb-read-in { width: 100%; font-size: 14px; padding: 6px 9px; }   /* box-sizing is global (style.css `* {}`) */
 .tb-read-ack { font-size: 13px; line-height: 1.4; color: var(--ph); letter-spacing: 0.3px; }
 .tb-read-ack.err { color: var(--bad, #d66); }
+.tb-read-ack.closed { color: var(--ph-dim); }
+
+/* ---- SPENT BRIEF (2026-07-27): the read's run has resolved, so the card stops being a control surface and
+   becomes transcript. It recedes to the passive card weight (the live one keeps the lit phosphor edge — that
+   edge is what says "this is still steerable"), and folds to caption + objective. Click the caption to get
+   the full read back; nothing is deleted. Same fold idiom as the resolved run line's .run-fold. ---- */
+.cmsg.tb-read.tb-read-spent { border-left-color: var(--ph-dim); box-shadow: none; background: rgba(var(--ph-rgb), .03); }
+.tb-read-spent .tb-read-cap { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.tb-read-spent .tb-read-cap:hover, .tb-read-spent .tb-read-cap:focus-visible { color: var(--ph); outline: 0; }
+.tb-read-chev { display: none; font-size: 9px; line-height: 1; transition: transform var(--t-fast, 120ms) var(--ease-soft, ease); }
+.tb-read-spent .tb-read-chev { display: inline-block; }
+.tb-read-spent:not(.folded) .tb-read-chev { transform: rotate(90deg); }
+.tb-read-spent.folded .tb-read-head { font-size: 13px; color: var(--ph); text-shadow: none;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tb-read-spent.folded .tb-read-meta,
+.tb-read-spent.folded .tb-read-cap2,
+.tb-read-spent.folded .tb-read-assumps,
+.tb-read-spent.folded .tb-read-fix { display: none; }
 
 /* ===== THE DIALOGUE MODE (dialogue.js) — Fallout-style focused first-run conversation =====
    Mounts as a child overlay of #chat-panel, covering COMMS while the awakening/tutorial runs. One short
@@ -1911,7 +1933,8 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .src-badge.src-saved { color: var(--ph); border-color: var(--ph-faint); background: rgba(0, 0, 0, .25); }
 
 /* ---------- WORKSTREAMS rail (left) ---------- */
-#ws-wrap { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; }
+/* takes the left rail's slack (see the RAIL SPACE SPLIT note on #crew in style.css) */
+#ws-wrap { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
 .ws-head {
   display: flex; align-items: center; justify-content: space-between;
   color: var(--ink); background: var(--ph); padding: 3px 10px; letter-spacing: 1px;
@@ -1954,8 +1977,11 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .diag-pre { font-family: inherit; font-size: 11px; line-height: 1.4; color: var(--ph); margin: 0;
   padding: 8px 10px; border: 1px solid var(--ph-dim); border-radius: 2px; background: rgba(0,0,0,.25); }
 .diag-block-bar { display: flex; gap: 8px; margin-top: 6px; }
+/* fills whatever #ws-wrap was given rather than a fixed 40vh slice — the old cap made the list scroll
+   while empty rail sat above it. min-height:0 so the flex child may actually shrink and scroll. */
 #workstreams {
-  list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto; max-height: 40vh;
+  list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto;
+  flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; gap: 4px;
 }
 /* display:flex above beats the UA [hidden] rule — without this, the PROJECTS tab couldn't actually
@@ -2015,8 +2041,10 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* the PROJECTS list reuses the SESSIONS rail row vocabulary (.ws-row / .ws-dot / .ws-title / .ws-meta /
    .ws-kebab) but each project is a TWO-LINE card: name line + the honest path line (the path used to hide
    in a tooltip, which read as a bare, cheap row). Sessions preview as an indented phosphor thread. */
+/* same slack rule as #workstreams — the PROJECTS tab shares the rail's lower half */
 #projects {
-  list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto; max-height: 40vh;
+  list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto;
+  flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; gap: 0;
 }
 #projects[hidden] { display: none; }

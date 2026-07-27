@@ -125,8 +125,12 @@ const Chat = (() => {
     pill.setAttribute('aria-label', isNew ? 'Jump to newest messages' : 'Scroll to latest');
     positionNewPill(pill);
     pill.classList.add('show');
+    if (log) log.classList.add('pill-clear');   // reserve the pill's height at the foot of the scroll so it never covers the newest line
   }
-  function hideNewPill() { const p = el('comms-newpill'); if (p) { p.classList.remove('show'); p.classList.remove('hasnew'); } }
+  function hideNewPill() {
+    const p = el('comms-newpill'); if (p) { p.classList.remove('show'); p.classList.remove('hasnew'); }
+    if (log) log.classList.remove('pill-clear');
+  }
 
   /* COMMS PROCESSING TIMER — a live wall-clock readout in the header (▸ thinking · 3s) that counts how long
      the DISPLAYED stream's turn has been running. The start instant lives on the channel (Channels.startedAt),
@@ -244,6 +248,7 @@ const Chat = (() => {
   // resolve the live card into a compact one-line summary that STAYS in the transcript. opts: { error, raw,
   // stopped, endReason, steps, cost }. Truthful: steps/cost only appear when a real number is supplied.
   function resolvePresence(ws, opts) {
+    foldBriefCards();   // the run is over → any "my read" contract for it can no longer steer; retire + fold it (before the early-out, so the registry can't hold a stale card)
     if (!isActiveWs(ws)) { clearPresence(); return; }
     opts = opts || {};
     const started = (typeof Channels !== 'undefined') ? Channels.startedAtOf(ws.id) : 0;
@@ -852,6 +857,16 @@ const Chat = (() => {
       ? ModelDock.labels.short(model)
       : ((model.split('/').pop() || model).toUpperCase());
   }
+  // The COMMS header's model slot, de-duplicated against the composer's model-dock chip (see renderIdBar).
+  // Never invents a name: every branch reads the same real roster/localStorage state agentModelText does.
+  function pinReadout(a) {
+    const mine = agentModelText(a);
+    if (!a.model) return mine;                                    // unpinned — "follows station default", no bogus "pin:" prefix
+    const station = (typeof Harness !== 'undefined' && Harness.getModel) ? String(Harness.getModel() || '') : '';
+    const stationShort = (station && typeof ModelDock !== 'undefined' && ModelDock.labels && ModelDock.labels.short)
+      ? ModelDock.labels.short(station) : '';
+    return (stationShort && mine === stationShort) ? 'pinned' : ('pin: ' + mine);
+  }
   // P1.2 (UPDATE_STATE_SAFETY_AUDIT) — an honest one-line notice shown in the COMMS header's model slot when the
   // focused agent id is NOT in the live registry (roster out of sync). focusAgent sets it instead of silently
   // rebinding to the overseer; a subsequent focus onto a REAL agent clears it (''). No new window, no .reply beat —
@@ -886,8 +901,13 @@ const Chat = (() => {
       if (activeId != null) sel.value = activeId;
     }
     const cur = list.find(a => a.id === activeId) || null;
-    // "pin:" prefix so this per-agent PINNED model readout can't be misread as the dock's active-model chip
-    if (modelEl) modelEl.textContent = cur ? ('pin: ' + agentModelText(cur)) : '';
+    // "pin:" prefix so this per-agent PINNED model readout can't be misread as the dock's active-model chip.
+    // DEDUPE (2026-07-27): the composer's dock chip already names the active model a few rows below. When an
+    // agent's pin resolves to that SAME model, spelling the name twice in one panel adds nothing — collapse to
+    // the one fact the dock chip genuinely can't carry ("this agent is pinned, it won't follow the default").
+    // The full name stays whenever the two actually differ, which is the case worth reading. And an UNPINNED
+    // agent no longer prints the self-contradicting "pin: follows station default".
+    if (modelEl) modelEl.textContent = cur ? pinReadout(cur) : '';
     if (bar) bar.hidden = !list.length;   // no roster yet (pre-wake) → hide the row rather than show an empty selector
   }
   // wire the agent <select> once: a change hands off to App.selectAgent (switch/mint a stream bound to that
@@ -2979,6 +2999,19 @@ const Chat = (() => {
       briefReadCard(ws, p);
     });
   }
+  /* SPENT-BRIEF FOLD (2026-07-27). The "my read" card is a PRE-RUN contract: its meta rows, its assumption
+     chips and its steer box all exist so the Commander can argue with the read BEFORE the work happens. Once
+     the run it describes has resolved, none of that can act any more — but the card kept its full height
+     forever, so a finished run left ~40% of the visible transcript occupied by a control surface that no
+     longer controls anything (and whose chips still said "tap to correct", a promise only send() ever
+     retracted). At run end each live card retires its own affordances and folds to its headline, keeping the
+     same click-to-expand vocabulary as the resolved run line above it. Nothing is deleted — one click and the
+     whole read is back, so the transcript stays a complete record. */
+  let briefCards = [];
+  function foldBriefCards() {
+    const cards = briefCards; briefCards = [];
+    for (const close of cards) { try { close(); } catch (_) { /* a detached card must never break run teardown */ } }
+  }
   function briefReadCard(ws, p) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('tb-read');
     // The label is its own small caption, NOT a prefix on the objective: "▸ my read: " used to eat the front of
@@ -2986,6 +3019,9 @@ const Chat = (() => {
     // as the card's headline.
     const cap = document.createElement('div'); cap.className = 'tb-read-cap';
     cap.textContent = 'my read';
+    // the fold handle — inert (and invisible) until the run ends and closeCard() arms it
+    const chev = document.createElement('span'); chev.className = 'tb-read-chev'; chev.setAttribute('aria-hidden', 'true'); chev.textContent = '▸';
+    cap.appendChild(chev);
     r.body.appendChild(cap);
     const head = document.createElement('div'); head.className = 'tb-read-head';
     head.textContent = p.objective;
@@ -3049,6 +3085,28 @@ const Chat = (() => {
     input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
     line.appendChild(input);
     r.body.appendChild(line);
+    // Run over → retire what can no longer act, then fold to the headline. The steer box is replaced only when
+    // it's still the live input: a send() that already landed owns `line` and its ✔/✕ receipt must survive.
+    const closeCard = () => {
+      retire();
+      if (input.isConnected) {
+        line.textContent = '';
+        const t = document.createElement('span'); t.className = 'tb-read-ack closed';
+        t.textContent = 'this read is closed — say it in chat instead';
+        line.appendChild(t);
+      }
+      r.d.classList.add('tb-read-spent', 'folded');
+      cap.setAttribute('role', 'button'); cap.tabIndex = 0; cap.setAttribute('aria-expanded', 'false');
+      cap.title = 'show the full read';
+      const toggle = () => {
+        const open = !r.d.classList.toggle('folded');
+        cap.setAttribute('aria-expanded', open ? 'true' : 'false');
+        cap.title = open ? 'fold this read away' : 'show the full read';
+      };
+      cap.addEventListener('click', toggle);
+      cap.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
+    };
+    briefCards.push(closeCard);
     autoscroll();
   }
 
@@ -5820,10 +5878,15 @@ const Chat = (() => {
         if (!taskQuestion && (!endReason || endReason === 'done') && !cutShort && replyText.trim() && typeof GoalLoop !== 'undefined' && goalOf(ws)) goalJudgeReply = replyText;
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
         if (endReason && endReason !== 'done' && endReason !== 'clarifying' && !taskQuestion) {
-          if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
+          // NO ECHO OF THE HEADLINE (2026-07-27): resolvePresence already prints "■ RUN STOPPED" for every one
+          // of these reasons, so a work-log line that only says "stopped" restated the card verbatim one row
+          // below it. Emit this line only when it carries something the card can't: what to do next (step limit,
+          // budget door) or a reason the label doesn't name. Your own interrupt → the card alone tells the truth.
+          const stopLine = endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
             : endReason === 'budget' ? budgetStopLine(budgetScope, budgetCapUsd)
-            : endReason === 'cancelled' ? (interrupted.has(ws.id) ? 'stopped' : 'run cancelled')
-            : 'stopped (' + endReason + ')'));
+            : endReason === 'cancelled' ? (interrupted.has(ws.id) ? '' : 'run cancelled')
+            : 'stopped (' + endReason + ')';
+          if (isActiveWs(ws)) { breakLive(); if (stopLine) toolLine('⏹ ' + stopLine); }
           markStoppedTurn(ws, replyText);
           // a budget stop's honest door is the BUDGET settings section, not a doomed retry (the same cap fires
           // again immediately); every other stop keeps the plain retry chip.
