@@ -139,6 +139,25 @@
         '<div class="mc-acts"><button class="bb sm" id="ky-add">+ SAVE KEY</button></div>' +
       '</div>' +
       '<div id="ky-msg" class="msg"></div>';
+    /* ---- EXTENSIONS: the Commander's OWN code, running inside the station ----
+       Sits in this console and not in SETTINGS because "MCP server", "hook" and "plugin" are one user intent —
+       things I plug into my station — and splitting them by which subsystem implements them is how a settings
+       screen becomes a junk drawer. The two lists stay SEPARATE inside the tab because they are not the same
+       promise: a hook is a script the station shells out to, a plugin is code loaded into the station itself.
+
+       The PENDING rows are the reason this panel exists at all. Both gates are opt-in by design, so an
+       unapproved extension is silently inert — and an extension you wrote that never ran, with nothing on
+       screen saying why, is the worst failure this design can produce. */
+    const secExt =
+      '<p class="set-about">Your own code, run by the station at fixed moments — after a file is written, before a tool runs, when a session ends. ' +
+        'A <b>hook</b> is a script the station calls; a <b>plugin</b> is a folder of code it loads. ' +
+        '<span class="dim">(Both run OUTSIDE the agent sandbox, with your permissions — which is why nothing runs until you approve it here.)</span></p>' +
+      '<div class="sec"><span class="sec-l">HOOKS</span><span class="sec-r" id="hk-file"></span><span class="sec-nd"></span></div>' +
+      '<div id="hk-list" class="mc-list"><span class="loading pulse">loading hooks…</span></div>' +
+      '<div class="sec"><span class="sec-l">PLUGINS</span><span class="sec-r" id="pl-dir"></span><span class="sec-nd"></span></div>' +
+      '<div id="pl-list" class="mc-list"><span class="loading pulse">loading plugins…</span></div>' +
+      '<div id="ext-msg" class="msg"></div>';
+
     const frag = h => (el => { el.innerHTML = h; });
     // TOOLSETS first (audit finding 5): the dock button says TOOLSETS, so the panel must open on the tab it's
     // named for — a first click used to land on the CATALOG storefront, which read as "TOOLSETS = connectors".
@@ -146,8 +165,121 @@
       { id: 'toolsets', label: 'TOOLSETS', glyph: '▤', desc: 'Every capability your agents can use, grouped and switchable. A prop grants a toolset; the switch is the kill-switch on top.', build: frag(secToolsets) },
       { id: 'catalog', label: 'CATALOG', glyph: '⊞', desc: 'One-click connectors — browse vetted services (docs, search, automation, payments…) and plug them in as agent tools.', build: frag(secCatalog) },
       { id: 'keys', label: 'KEYS', glyph: '⊟', desc: 'Every platform API key your agents hold, in one place — and a safe drop for any service the catalog doesn’t list.', build: frag(secKeys) },
-      { id: 'mcp', label: 'MCP CONNECTORS', glyph: '⧉', desc: 'External tool servers your agents can call — GitHub, Slack, a database. Their tools run through the same approval gate as the built-ins.', build: frag(secMcp) }
-    ], { search: true, searchPlaceholder: 'search toolsets & connectors…' });
+      { id: 'mcp', label: 'MCP CONNECTORS', glyph: '⧉', desc: 'External tool servers your agents can call — GitHub, Slack, a database. Their tools run through the same approval gate as the built-ins.', build: frag(secMcp) },
+      { id: 'extensions', label: 'EXTENSIONS', glyph: '⌥', desc: 'Your own hooks and plugins — code the station runs at fixed moments. Nothing runs until you approve it here.', build: frag(secExt) }
+    ], { search: true, searchPlaceholder: 'search toolsets, connectors & extensions…' });
+
+    /* ===== EXTENSIONS: hooks + plugins, straight off /api/hooks and /api/plugins =====
+       TRUTHFUL TELEMETRY, strictly: every badge here reads a state the sidecar can prove. "active" means the
+       hook spine actually registered it this boot — not that it appears in a config file. That distinction is
+       the entire value of the panel, because a configured-but-unapproved extension looks identical to a
+       working one from the outside. */
+    const extMsg = body.querySelector('#ext-msg');
+    function extSay(text, bad) {
+      if (!extMsg) return;
+      extMsg.textContent = text || '';
+      extMsg.style.color = bad ? 'var(--bad)' : 'var(--ok)';
+    }
+    // Actions carry their own busy state: a double-click on APPROVE must not fire two re-installs.
+    async function extPost(url, payload, btn) {
+      if (btn) { btn.disabled = true; btn.classList.add('busy'); }
+      try {
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok) { extSay((j && j.error) || ('request failed (' + r.status + ')'), true); return false; }
+        return true;
+      } catch (e) { extSay('could not reach the station: ' + ((e && e.message) || e), true); return false; }
+      finally { if (btn) { btn.disabled = false; btn.classList.remove('busy'); } }
+    }
+
+    function extBadge(state) {
+      return ({
+        active: ['var(--ok)', '● active'],
+        pending: ['var(--gold)', '⚠ awaiting your approval'],
+        error: ['var(--bad)', '✕ error']
+      })[state] || ['var(--ph-dim)', '○ inert'];
+    }
+    // A findings block is DISCLOSURE at the approval moment — the guard is not a boundary, so the Commander
+    // has to be able to see what they are about to say yes to.
+    function extFindings(f) {
+      if (!f || !f.level) return '';
+      const hits = Array.isArray(f.hits) && f.hits.length ? ' — ' + f.hits.map(h => esc(String(h))).join(', ') : '';
+      return '<div class="mc-hint">scanner: <b>' + esc(String(f.level)) + '</b>' + hits + '</div>';
+    }
+
+    async function renderExtensions() {
+      const hkEl = body.querySelector('#hk-list');
+      const plEl = body.querySelector('#pl-list');
+      if (!hkEl || !plEl) return;
+      let hooks = null, plugins = null;
+      try {
+        const [a, b2] = await Promise.all([fetch('/api/hooks'), fetch('/api/plugins')]);
+        hooks = await a.json(); plugins = await b2.json();
+      } catch (e) {
+        hkEl.innerHTML = '<div class="mc-hint">could not read hooks — the station may still be starting.</div>';
+        plEl.innerHTML = '';
+        return;
+      }
+      const fileEl = body.querySelector('#hk-file'); if (fileEl && hooks.file) fileEl.textContent = hooks.file;
+      const dirEl = body.querySelector('#pl-dir'); if (dirEl && plugins.dir) dirEl.textContent = plugins.dir;
+
+      const hkRows = (hooks.hooks || []).map((h, i) => {
+        const state = h.active ? 'active' : 'pending';
+        const b3 = extBadge(state);
+        const act = h.active
+          ? '<button class="bb xs danger" data-ext="hook-revoke" data-event="' + esc(h.event) + '" data-command="' + esc(h.command) + '">✕ REVOKE</button>'
+          : '<button class="bb sm" data-ext="hook-allow" data-event="' + esc(h.event) + '" data-command="' + esc(h.command) + '">✓ APPROVE</button>';
+        return '<div class="mc-row" style="--ci:' + i + '">' +
+          '<div class="mc-top"><b>' + esc(h.name || h.command) + '</b> <span class="mc-tag">' + esc(h.event) + '</span>' +
+            '<span class="mc-state" style="color:' + b3[0] + '">' + b3[1] + '</span></div>' +
+          '<div class="mc-url dim"><code>' + esc(h.command) + '</code></div>' +
+          '<div class="mc-acts">' + act + '</div>' +
+        '</div>';
+      });
+      hkEl.innerHTML = hkRows.length ? hkRows.join('')
+        // The empty state TEACHES the feature rather than saying "none": a hooks file most stations will never
+        // write is exactly the thing that needs an example at the moment you first look for it.
+        : '<div class="mc-hint">No hooks yet. Create <code>hooks.json</code> in the folder above with entries like ' +
+          '<code>{ "event": "post_tool_call", "command": "npx prettier --write ." }</code>, then approve it here. ' +
+          'Events: pre/post_tool_call, pre/post_llm_call, on_session_start, on_session_end, on_pre_compress.</div>';
+
+      const plRows = (plugins.plugins || []).map((p, i) => {
+        const state = p.active ? 'active' : (p.pending ? 'pending' : 'inert');
+        const b3 = extBadge(state);
+        const act = p.active
+          ? '<button class="bb xs danger" data-ext="plugin-revoke" data-id="' + esc(p.id) + '">✕ REVOKE</button>'
+          : '<button class="bb sm" data-ext="plugin-allow" data-id="' + esc(p.id) + '" data-digest="' + esc(p.digest || '') + '">✓ APPROVE</button>';
+        return '<div class="mc-row" style="--ci:' + i + '">' +
+          '<div class="mc-top"><b>' + esc(p.name || p.id) + '</b> <span class="dim">' + esc(p.id) + '</span>' +
+            '<span class="mc-tag">v' + esc(p.version || '0') + '</span>' +
+            '<span class="mc-state" style="color:' + b3[0] + '">' + b3[1] + '</span></div>' +
+          (p.description ? '<div class="mc-url dim">' + esc(p.description) + '</div>' : '') +
+          extFindings(p.findings) +
+          '<div class="mc-acts">' + act + '</div>' +
+        '</div>';
+      });
+      plEl.innerHTML = plRows.length ? plRows.join('')
+        : '<div class="mc-hint">No plugins installed. A plugin is a folder in the path above containing ' +
+          '<code>plugin.json</code> and an <code>index.js</code> that exports <code>register(api)</code>; ' +
+          'it subscribes to the same events as a hook but stays loaded, so it can remember things between them.</div>';
+
+      const errs = (hooks.errors || []).concat(plugins.errors || []);
+      if (errs.length) extSay(errs[0], true); else extSay('');
+    }
+
+    body.addEventListener('click', async (ev) => {
+      const btn = ev.target.closest('[data-ext]');
+      if (!btn || !body.contains(btn)) return;
+      const kind = btn.getAttribute('data-ext');
+      let ok = false;
+      if (kind === 'hook-allow') ok = await extPost('/api/hooks/allow', { event: btn.dataset.event, command: btn.dataset.command }, btn);
+      else if (kind === 'hook-revoke') ok = await extPost('/api/hooks/revoke', { event: btn.dataset.event, command: btn.dataset.command }, btn);
+      else if (kind === 'plugin-allow') ok = await extPost('/api/plugins/allow', { id: btn.dataset.id, digest: btn.dataset.digest }, btn);
+      else if (kind === 'plugin-revoke') ok = await extPost('/api/plugins/revoke', { id: btn.dataset.id }, btn);
+      else return;
+      if (ok) { try { sfx('ok'); } catch (_) {} await renderExtensions(); }
+    });
+    renderExtensions();
 
     // ===== TOOLSETS: render pill-switch rows from GET /api/toolsets, honestly reflecting placement + consent =====
     const tsListEl = body.querySelector('#ts-list');

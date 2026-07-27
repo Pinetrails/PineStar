@@ -7777,39 +7777,42 @@ async function handleWorkshopShiftNow(req, res) {
    something that was never allowed is 404, not a cheerful ok:true. Both rebuild the spine in place, so the
    revoked extension stops running immediately rather than at the next restart. */
 async function handleHooksRevoke(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body;
   try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
   catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
   const event = String((body && body.event) || '').trim();
   const command = String((body && body.command) || '').trim();
-  if (!event || !command) return json(400, { error: 'event and command are required' }, res);
-  if (!(await shellHooks.revoke(event, command))) return json(404, { error: 'that hook was not approved' }, res);
+  if (!event || !command) return json(400, { error: 'event and command are required' });
+  if (!(await shellHooks.revoke(event, command))) return json(404, { error: 'that hook was not approved' });
   try {
     hookSpine.clear();
     pluginsLoaded = await pluginLoader.load(hookSpine);
     hooksInstalled = await shellHooks.install(hookSpine);
-  } catch (e) { return json(500, { error: 'revoked, but re-install failed: ' + ((e && e.message) || e) }, res); }
-  return json(200, { ok: true, active: hooksInstalled.installed.length, pending: hooksInstalled.pending.length }, res);
+  } catch (e) { return json(500, { error: 'revoked, but re-install failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length, pending: hooksInstalled.pending.length });
 }
 async function handlePluginsRevoke(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body;
   try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
   catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
   const id = String((body && body.id) || '').trim();
-  if (!id) return json(400, { error: 'id is required' }, res);
-  if (!(await pluginLoader.revoke(id))) return json(404, { error: 'that plugin was not approved' }, res);
+  if (!id) return json(400, { error: 'id is required' });
+  if (!(await pluginLoader.revoke(id))) return json(404, { error: 'that plugin was not approved' });
   try {
     hookSpine.clear();
     pluginsLoaded = await pluginLoader.load(hookSpine);
     hooksInstalled = await shellHooks.install(hookSpine);
-  } catch (e) { return json(500, { error: 'revoked, but re-load failed: ' + ((e && e.message) || e) }, res); }
-  return json(200, { ok: true, active: pluginsLoaded.loaded.length, pending: pluginsLoaded.pending.length }, res);
+  } catch (e) { return json(500, { error: 'revoked, but re-load failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: pluginsLoaded.loaded.length, pending: pluginsLoaded.pending.length });
 }
 
 /* GET /api/plugins — installed / active / pending, with each pending plugin's GUARD FINDINGS attached. The
    findings are the point of showing them here: the Commander is about to approve third-party in-process code,
    and an approval prompt that cannot say what the code appears to do is a rubber stamp. */
 async function handlePluginsList(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let found = { plugins: [], errors: [] };
   try { found = await pluginLoader.discover(); } catch (_) {}
   let pending = [];
@@ -7823,38 +7826,40 @@ async function handlePluginsList(req, res) {
       active: live.has(p.id), pending: pend.has(p.id), digest: p.digest, findings: p.findings || null
     })),
     errors: (found.errors || []).concat(pluginsLoaded.errors || [])
-  }, res);
+  });
 }
 /* POST /api/plugins/allow { id, digest } — approve THIS EXACT CODE and load it without a restart.
    The digest is REQUIRED and must match what is on disk right now: approving by id alone would let a plugin
    that changed between the moment the Commander read it and the moment they clicked be approved sight-unseen,
    which is precisely the substitution the hash exists to prevent. */
 async function handlePluginsAllow(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body;
   try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
   catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
   const id = String((body && body.id) || '').trim();
   const digest = String((body && body.digest) || '').trim();
-  if (!id || !digest) return json(400, { error: 'id and digest are required' }, res);
+  if (!id || !digest) return json(400, { error: 'id and digest are required' });
   let found;
   try { found = await pluginLoader.discover(); } catch (_) { found = { plugins: [] }; }
   const match = found.plugins.find(p => p.id === id);
-  if (!match) return json(404, { error: 'no such plugin installed: ' + id }, res);
-  if (match.digest !== digest) return json(409, { error: 'this plugin changed since you read it — re-read /api/plugins and approve the current code', digest: match.digest }, res);
-  if (!(await pluginLoader.allow(id, digest))) return json(500, { error: 'could not persist the approval' }, res);
+  if (!match) return json(404, { error: 'no such plugin installed: ' + id });
+  if (match.digest !== digest) return json(409, { error: 'this plugin changed since you read it — re-read /api/plugins and approve the current code', digest: match.digest });
+  if (!(await pluginLoader.allow(id, digest))) return json(500, { error: 'could not persist the approval' });
   // Same in-place rebuild as the hooks route, and the same ordering: plugins first, then shell hooks.
   try {
     hookSpine.clear();
     pluginsLoaded = await pluginLoader.load(hookSpine);
     hooksInstalled = await shellHooks.install(hookSpine);
-  } catch (e) { return json(500, { error: 'approved, but re-load failed: ' + ((e && e.message) || e) }, res); }
-  return json(200, { ok: true, active: pluginsLoaded.loaded.length, pending: pluginsLoaded.pending.length }, res);
+  } catch (e) { return json(500, { error: 'approved, but re-load failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: pluginsLoaded.loaded.length, pending: pluginsLoaded.pending.length });
 }
 
 /* GET /api/hooks — what the Commander configured, what is LIVE, and what is waiting on them. The pending list
    is the whole reason this route exists: a hook that silently never runs because it was never approved is the
    worst outcome of the consent gate, so it has to be visible and actionable rather than buried in a boot log. */
 async function handleHooksList(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let cfg = { hooks: [], errors: [] };
   try { cfg = await shellHooks.load(); } catch (_) {}
   let pending = [];
@@ -7866,24 +7871,25 @@ async function handleHooksList(req, res) {
     pending: pending.map(h => ({ event: h.event, command: h.command, name: h.name })),
     errors: (cfg.errors || []).concat(hooksInstalled.errors || []),
     file: HOOKS_FILE
-  }, res);
+  });
 }
 /* POST /api/hooks/allow { event, command } — approve one pair and install it WITHOUT a restart. Interactive
    only, and deliberately so: approving a script that runs at station privilege on every tool call is exactly
    the decision an unattended run must never be able to make for itself (the same unattended rule that governs
    path blessing). The pair must already exist in hooks.json — this route approves, it never adds. */
 async function handleHooksAllow(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
   let body;
   try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
   catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
   const event = String((body && body.event) || '').trim();
   const command = String((body && body.command) || '').trim();
-  if (!event || !command) return json(400, { error: 'event and command are required' }, res);
+  if (!event || !command) return json(400, { error: 'event and command are required' });
   let cfg;
   try { cfg = await shellHooks.load(); } catch (_) { cfg = { hooks: [] }; }
   const match = cfg.hooks.find(h => h.event === event && h.command === command);
-  if (!match) return json(404, { error: 'no such hook in hooks.json — this route approves a configured hook, it never adds one' }, res);
-  if (!(await shellHooks.allow(event, command))) return json(500, { error: 'could not persist the approval' }, res);
+  if (!match) return json(404, { error: 'no such hook in hooks.json — this route approves a configured hook, it never adds one' });
+  if (!(await shellHooks.allow(event, command))) return json(500, { error: 'could not persist the approval' });
   // Re-install so the newly-approved hook is live immediately, with no restart. The spine is cleared IN PLACE
   // rather than replaced: it was captured by reference at boot (by the dispatch ctx and by every in-flight
   // run), so handing out a new object would leave those holding the old one and the reload would look like it
@@ -7891,8 +7897,8 @@ async function handleHooksAllow(req, res) {
   try {
     hookSpine.clear();
     hooksInstalled = await shellHooks.install(hookSpine);
-  } catch (e) { return json(500, { error: 'approved, but re-install failed: ' + ((e && e.message) || e) }, res); }
-  return json(200, { ok: true, active: hooksInstalled.installed.length, pending: hooksInstalled.pending.length }, res);
+  } catch (e) { return json(500, { error: 'approved, but re-install failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length, pending: hooksInstalled.pending.length });
 }
 
 /* POST /api/checkpoint/restore { agentId, snapshotId } — the manual "rewind": hard-reset an agent's workspace to
