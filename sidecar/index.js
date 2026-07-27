@@ -2637,7 +2637,7 @@ const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: (
 // *_API_KEY from the inherited env, so without this the pasted key never reaches curl (see servicekeys.runEnv).
 const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: () => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV }) });
 try { console.log('[exec-env]', JSON.stringify(executionEnvironment.describe())); } catch (_) {}
-const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200 });
+const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200, hooks: hookSpine });
 
 // per-agent inbound work-item depth (backpressure): bumped when a message is admitted, dropped when its
 // run finishes. Drives queue.status -> the queue-depth HUD. Keyed by the SAME agentId the hub routes to.
@@ -12477,6 +12477,10 @@ async function writeMemoryRecord(agentId, prop, opts) {
     return list;
   });
   chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
+  // HOOKS — on_memory_write, at the OTHER path that commits a record (the silent auto-save + the Keep/Edit
+  // turn-in both land here, not in notebook.write). Both sites fire it or the event would be true only half
+  // the time, which is worse than not offering it.
+  try { hookSpine.invoke('on_memory_write', { session_id: runId || '', extra: { agent_id: agentId, id: writtenId, kind: rec.kind, scope: rec.scope, source: 'turn-in' } }); } catch (_) {}
   // QUEST V2 §A — the FACT-contract sweep, wired at the ONE server-side path that commits a memory record
   // (silent auto-save + Keep/Edit turn-in both land here): the durable record IS the proof the harness learned
   // it. A fact key matches when it is the record's id, equals the committed content, or appears verbatim inside

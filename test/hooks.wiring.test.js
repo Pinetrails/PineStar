@@ -157,5 +157,24 @@ async function run(o) {
     A.eq(res.reason, 'done', 'and the run still finished — a throwing hook is fail-open at every site');
   }
 
+  /* ---- 9. NO DEAD EVENTS. The panel offers every event hooks.js declares, so an event that nothing FIRES is
+       a menu item whose hook silently never runs — with nothing on screen to say why. That is the exact
+       failure mode a hook must never have, and it shipped: subagent_stop and on_memory_write were declared,
+       listed in the dropdown, and emitted by nobody. This asserts the two lists match, in the source, so the
+       next event added cannot reach the picker without a call site. ---- */
+  {
+    const fs = require('fs');
+    const path = require('path');
+    const root = path.join(__dirname, '..');
+    const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
+    // Every file that may legitimately fire a hook. A new call site goes here.
+    const SITES = ['sidecar/loop.js', 'sidecar/index.js', 'sidecar/tools/registry.js', 'sidecar/subagents.js', 'sidecar/tools/builtin/notebook.js'];
+    const src = SITES.map(read).join('\n');
+    const declared = require('../sidecar/hooks.js').EVENTS;
+    const dead = declared.filter(e => src.indexOf("invoke('" + e + "'") < 0);
+    A.eq(dead.join(',') || '(none)', '(none)', 'every declared hook event is fired by a real call site — a dead event is a menu item that silently does nothing');
+    A.eq(declared.length, 9, 'the event list is the size the UI and docs describe');
+  }
+
   A.report('hooks.wiring.test');
 })().catch(e => { console.log('FAIL: hooks.wiring.test threw -- ' + (e && e.stack || e)); process.exit(1); });

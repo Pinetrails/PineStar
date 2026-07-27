@@ -165,6 +165,12 @@
           // frozen contract requires runId, so emit only on a real run (some test fixtures carry no runId).
           // streamId is included only when present (the optional field is typed string — never emit a null).
           if (runId) { const w = { agentId: aid, runId, id: note.id, kind: 'note', scope: scope }; if (streamId) w.streamId = streamId; ctx.emit('memory.write', w); }
+          /* HOOKS — on_memory_write. Observe-only by construction (hooks.js refuses to let it block): memory is
+             the Commander's own, and a script that could veto their notes would be a foot-gun with no upside.
+             Fire-and-forget — the note is already saved, so a slow hook delays nothing. */
+          if (ctx.hooks && typeof ctx.hooks.invoke === 'function') {
+            try { ctx.hooks.invoke('on_memory_write', { session_id: runId || '', extra: { agent_id: aid, id: note.id, kind: 'note', scope: scope, title: note.title, source: 'notebook.write' } }); } catch (_) {}
+          }
           const d = { id: note.id, agentId: aid, kind: 'note', title: note.title };
           if (ctx.room) d.room = ctx.room;
           ctx.emit('deliverable', d);
