@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "d2e2c43b13126e6266a2093c83ad4d25458f89a4",
+    "sourceCommit": "8d65cea706d231996c0452a1fe05ed3d9bffe5eb",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 287139,
-        "sha256": "6d55569f698c02541eb3fd678bf0c4437e38acb3d25caad40696b06b3a8ed920"
+        "bytes": 287329,
+        "sha256": "41193f91a4158525aaedacd0c4fbdd502e66c77725d8cf17e67acee4b2c8b0ae"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -348,8 +348,8 @@
       },
       {
         "path": "frontend/app/modeldock.js",
-        "bytes": 36581,
-        "sha256": "e439e7d9ccbac7fcd95acee15541979440a1f99c64243302ab39df91676cb6a9"
+        "bytes": 36992,
+        "sha256": "56823f7f63de2dd55a167d20604a94438ef3b99303576d4a4230b20f5bcae715"
       },
       {
         "path": "frontend/app/modelpicker.js",
@@ -923,8 +923,8 @@
       },
       {
         "path": "frontend/js/util.js",
-        "bytes": 27536,
-        "sha256": "dc9168cedfa7a19d39992a6aae3faebac529ecca2f32a1079d8e05024a14c15f"
+        "bytes": 31117,
+        "sha256": "186a0b06e3c2c776e8f22f3caf3a0409a1769693f950bfa41e1bb4bd99603d1f"
       }
     ]
   },
