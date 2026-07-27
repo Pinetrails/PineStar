@@ -1172,6 +1172,18 @@ const WorldModel = (() => {
       if (!aid || !AID_RE.test(aid)) return fail('BAD_AGENT');
       const own = doc.props.find(p => SEAT_WORKSTATIONS[p.t] && p.agentId === aid);
       if (own) return { ok: true, existing: true, id: own.id, agentId: aid, x: own.x, y: own.y, roomId: roomAt(own.x, own.y) };
+      // ADOPT BEFORE BUILDING. An UNBOUND workstation is dead furniture — no agent may walk to an unassigned
+      // capability prop (world.js mayTouchProp), so it grants nobody a seat. Two ways one appears: the Commander
+      // built a desk and never bound it, and deleteAgent unbinds (never demolishes) the props of a removed
+      // specialist. Without this, a summon → delete → summon cycle silently litters the spawn room with
+      // abandoned desks and eventually pushes the seeder into other rooms. Deliberately SPAWN-ROOM ONLY: a
+      // free desk the Commander built in some far lab is theirs to assign, and adopting it would land a
+      // newly-summoned specialist (and its whole zone/leash) somewhere they never asked for.
+      const adopt = doc.props.find(p => SEAT_WORKSTATIONS[p.t] && !p.agentId && roomAt(p.x, p.y) === doc.meta.spawnRoomId);
+      if (adopt) {
+        const bound = assignPropAgent(adopt.id, aid);
+        return bound.ok ? Object.assign({}, bound, { adopted: true, x: adopt.x, y: adopt.y, roomId: roomAt(adopt.x, adopt.y) }) : bound;
+      }
       const rm = doc.meta.spawnRoomId && doc.rooms[doc.meta.spawnRoomId];
       const r = rm && rm.rects && rm.rects[0];
       if (!r) return fail('NO_SPAWN_ROOM');

@@ -504,12 +504,13 @@
         const newId = (ack && typeof ack === 'object') ? ack.agentId : ack;
         const desk = (ack && typeof ack === 'object' && ack.desk) ? String(ack.desk) : '';
         if (!newId) return { content: 'The summon was not completed — the Commander declined it, or the station did not respond. No agent was created.', summary: 'declined' };
-        // DESK: a summoned specialist needs a workstation to sit and work at, so the station places its desk as
-        // part of THIS summon. Reported only when the station said it placed one — never assumed, so the reply
-        // can't promise furniture the floor doesn't have (and can't tell the Commander to go build a second one).
+        // DESK: a summoned specialist needs a workstation to sit and work at, so the station sorts its desk as
+        // part of THIS summon. Reported only when the station named a room — never assumed, so the reply can't
+        // promise furniture the floor doesn't have (and can't tell the Commander to go build a second one).
+        // Worded "workstation is in X", not "placed": the station may have bound a free desk it already had.
         const out = { agentId: newId, name: spec.name || spec.specId };
         if (desk) out.workstation = desk;
-        return { content: JSON.stringify(out), summary: 'summoned ' + newId + (desk ? ' (desk placed in ' + desk + ')' : '') + ' — now delegate work to it with team.dispatch' };
+        return { content: JSON.stringify(out), summary: 'summoned ' + newId + (desk ? ' (workstation in ' + desk + ')' : '') + ' — now delegate work to it with team.dispatch' };
       }
     };
 

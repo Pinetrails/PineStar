@@ -580,6 +580,41 @@ A.eq(JSON.stringify(WM.deserialize({ rooms: {}, order: [], props: [], edges: [{ 
   A.eq(st.props().filter(p => p.t === 'desk' && p.agentId === 'scout-2').length, 1, 'still exactly one desk for the agent');
 }
 {
+  // ADOPTION: an UNBOUND workstation in the spawn room is taken over, never duplicated beside
+  const st = WM.create();
+  st.ensureWorkstation('agent');
+  const spare = st.addProp({ t: 'console', x: 2, y: 5, w: 2, h: 1, block: true });   // Commander built it, never bound it
+  const r = st.ensureWorkstation('scout-2');
+  A.ok(r.ok && r.adopted, 'a free workstation in the spawn room is adopted rather than duplicated');
+  A.eq(r.id, spare.id, 'the adopted prop is the one that was already standing there');
+  A.eq(st.props().filter(p => p.t === 'desk').length, 1, 'no second desk is built beside a usable free one');
+  A.eq(st.propById(spare.id).agentId, 'scout-2', 'the free workstation is now bound to the summoned agent');
+}
+{
+  // the summon -> delete -> summon cycle must not litter the floor (deleteAgent UNBINDS, never demolishes)
+  const st = WM.create();
+  st.ensureWorkstation('agent');
+  for (let i = 0; i < 4; i++) {
+    const r = st.ensureWorkstation('temp-' + i);
+    A.ok(r.ok, 'cycle ' + i + ' seats the agent');
+    // mirror deleteAgent: unbind every prop assigned to the removed specialist
+    for (const p of st.propsByAgent('temp-' + i)) st.assignPropAgent(p.id, '');
+  }
+  A.eq(st.props().filter(p => p.t === 'desk').length, 2, 'four summon/delete cycles leave ONE reusable desk, not four');
+}
+{
+  // a free desk in ANOTHER room is left alone — the specialist is not exiled to a far lab
+  const st = WM.create();
+  st.ensureWorkstation('agent');
+  const rect = st.roomById(st.spawnRoomId()).rects[0];
+  const lab = st.addRoom({ kind: 'hab', name: 'LAB', rect: { x1: rect.x2 + 2, y1: 0, x2: rect.x2 + 9, y2: 6 } });
+  const remote = st.addProp({ t: 'console', x: rect.x2 + 3, y: 2, w: 2, h: 1, block: true });
+  const r = st.ensureWorkstation('scout-2');
+  A.ok(r.ok && !r.adopted, 'a free desk in a distant room is NOT adopted');
+  A.eq(r.roomId, st.spawnRoomId(), 'the summoned agent is seated in the spawn room instead');
+  A.eq(st.propById(remote.id).agentId, undefined, 'the Commander\'s unbound lab console is left untouched');
+}
+{
   // no space anywhere → an honest failure, never a phantom desk
   const st = WM.create();
   const rect = st.roomById(st.spawnRoomId()).rects[0];

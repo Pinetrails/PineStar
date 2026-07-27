@@ -962,7 +962,10 @@ const App = (() => {
     } else {
       // say WHERE its desk landed when one was seeded — the Commander needs to be able to go look at it (and
       // move it in REFIT). Only claimed when the placement actually returned ok; a failed seed says nothing.
-      _notify(a.name + ' summoned — ' + ((desk && desk.ok) ? ('desk placed' + (deskRoom ? ' in ' + deskRoom : '') + '. ') : '') + 'switch to its stream to task it, or let the overseer delegate.', 'good');
+      // "took the free desk" vs "desk placed": ensureWorkstation may ADOPT an unbound workstation instead of
+      // building one, and saying "placed" for a desk that was already there is a small lie about the floor.
+      const deskLine = (desk && desk.ok) ? ((desk.adopted ? 'took the free desk' : 'desk placed') + (deskRoom ? ' in ' + deskRoom : '') + '. ') : '';
+      _notify(a.name + ' summoned — ' + deskLine + 'switch to its stream to task it, or let the overseer delegate.', 'good');
     }
     // ONE loadout beat: state plainly what the class summon actually applied — the skills enabled, the effort
     // applied, and the STATION GEAR the class draws on (honest present/missing under the overseer, NOT per-agent
@@ -1245,12 +1248,15 @@ const App = (() => {
     try { a = summonAgent(spec, { activate: false, desk: true }); } catch (_) { a = null; }
     if (!a) return null;
     try { await lastRosterPush; } catch (_) {}   // the worker is now in the backend roster → safe to delegate
-    // re-read the (idempotent) seed so the ack can tell the lead where the desk actually is — the tool's
-    // result must never claim a desk the floor doesn't have. Blank when nothing was placed.
+    // READ BACK what actually landed, so the ack can tell the lead where the desk is. Deliberately a PURE
+    // read (propsByAgent), never a second ensureWorkstation call: re-running the seeder here could place a
+    // desk AFTER summonAgent's persist() — a floor change that would not be saved until the next write.
+    // Blank when nothing was placed, and the tool then says nothing about a desk.
     let deskWhere = '';
     try {
-      const d = (station && station.ensureWorkstation) ? station.ensureWorkstation(a.id) : null;
-      if (d && d.ok) { const rm = (d.roomId && station.roomById) ? station.roomById(d.roomId) : null; deskWhere = (rm && rm.name) ? String(rm.name) : 'the station'; }
+      const mine = (station && station.propsByAgent) ? station.propsByAgent(a.id) : [];
+      const seat = mine.find(p => station.capForProp && station.capForProp(p.t) === 'computer');
+      if (seat) { const rm = station.roomById ? station.roomById(station.roomAt(seat.x, seat.y)) : null; deskWhere = (rm && rm.name) ? String(rm.name) : 'the station'; }
     } catch (_) { deskWhere = ''; }
     return { agentId: a.id, desk: deskWhere };
   }

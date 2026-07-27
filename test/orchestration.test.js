@@ -356,7 +356,7 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   const parsed = JSON.parse(out.content);
   A.eq(parsed.agentId, 'scout-2', 'the object ack still yields the new agentId');
   A.eq(parsed.workstation, 'BRIDGE', 'the seeded workstation room reaches the lead');
-  A.ok(/desk placed in BRIDGE/.test(out.summary), 'the summary states the desk was placed, and where');
+  A.ok(/workstation in BRIDGE/.test(out.summary), 'the summary states where the workstation is (true whether it was built or adopted)');
   A.ok(summonTool.description.indexOf('workstation with it') > 0, 'the tool tells the lead never to ask the Commander to build the desk');
 }
 
