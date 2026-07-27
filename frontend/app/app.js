@@ -905,6 +905,18 @@ const App = (() => {
     a.systemPrompt = composeSystemPrompt(a);
     agents.set(id, a);
     registerAgent(id, a.color);                                // sprite tint shim
+    // ITS DESK COMES WITH IT (opts.desk): a specialist created because the Commander ASKED for one has
+    // nowhere to sit, so it stands where work is delivered instead of walking to a workstation — the
+    // "you also have to go build it a desk" step nobody asked for. When the summon is the answer to a
+    // direct request (the overseer's team.summon), seed the ONE per-agent prop the same way the hero's
+    // starter desk is seeded (ensureWorkstation: idempotent, spawn room first, real placed prop). This is
+    // NOT a general "the agent can place props" power — only this one desk, only on this one path, and
+    // only for the agent being created. Deliberately BEFORE World.spawnAgent so the desk exists as the
+    // body arrives (containBody re-homes the body next tick in the rare case the two pick the same tile).
+    const desk = (opts.desk === true && station && typeof station.ensureWorkstation === 'function')
+      ? station.ensureWorkstation(id) : null;
+    const deskRoom = (desk && desk.ok && desk.roomId && station.roomById) ? (station.roomById(desk.roomId) || {}).name : null;
+    if (opts.desk === true && !(desk && desk.ok)) console.warn('[summon] no desk seeded for', id, desk && desk.error);
     const _spawned = (typeof World !== 'undefined' && !!World.spawnAgent);
     if (_spawned) World.spawnAgent(a);                          // Phase C: a real floor body
     else console.warn('[summon] World.spawnAgent missing — no floor body for', id);
@@ -934,7 +946,9 @@ const App = (() => {
       // desk placement teed up. FINALE (Lane D): the toast is ONE line now — the desk requirement + its door move
       // into the diegetic line + chip below (the standing record no longer duplicates the whole instruction).
       _notify(a.name + ' summoned — type to task it now.', 'good');
-      if (typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())
+      // …unless its desk already came with it (opts.desk): the "nowhere to sit" line would then be a lie, and
+      // the chip would open REFIT to place a SECOND desk the agent can't own (one workstation per agent).
+      if (!(desk && desk.ok) && typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())
           && (typeof Chat.beatBusy !== 'function' || !Chat.beatBusy())) {   // a pending question/beat owns the COMMS moment — its chips must survive; the desk line stays available via REFIT
         Chat.localLine(a.name + ' is here — but it has nowhere to sit yet. it needs a desk of its own before it can take floor work. want to place one?');
         Chat.choices([{ label: '▤ PLACE ITS DESK', value: 'desk' }, { label: 'later', value: 'later', skip: true }], item => {
@@ -946,7 +960,12 @@ const App = (() => {
       // RECRUIT dock button). Guarded on visibility so a closed COMMS panel is a no-op.
       setTimeout(() => { const ci = el('chat-input'); if (ci && ci.offsetParent !== null) { try { ci.focus(); } catch (_) {} } }, 0);
     } else {
-      _notify(a.name + ' summoned — switch to its stream to task it, or let the overseer delegate.', 'good');
+      // say WHERE its desk landed when one was seeded — the Commander needs to be able to go look at it (and
+      // move it in REFIT). Only claimed when the placement actually returned ok; a failed seed says nothing.
+      // "took the free desk" vs "desk placed": ensureWorkstation may ADOPT an unbound workstation instead of
+      // building one, and saying "placed" for a desk that was already there is a small lie about the floor.
+      const deskLine = (desk && desk.ok) ? ((desk.adopted ? 'took the free desk' : 'desk placed') + (deskRoom ? ' in ' + deskRoom : '') + '. ') : '';
+      _notify(a.name + ' summoned — ' + deskLine + 'switch to its stream to task it, or let the overseer delegate.', 'good');
     }
     // ONE loadout beat: state plainly what the class summon actually applied — the skills enabled, the effort
     // applied, and the STATION GEAR the class draws on (honest present/missing under the overseer, NOT per-agent
@@ -1222,11 +1241,24 @@ const App = (() => {
       persona: ev.persona || (base && base.persona) || undefined,
       purpose: ev.purpose || (base && base.purpose) || undefined
     });
+    // desk:true — this summon IS the answer to "create me an agent", so the worker arrives with the one
+    // per-agent prop it needs to sit and work. See summonAgent: the seed is that agent's desk and nothing
+    // else; the Commander can move or reclaim it in REFIT like any placed prop.
     let a = null;
-    try { a = summonAgent(spec, { activate: false }); } catch (_) { a = null; }
+    try { a = summonAgent(spec, { activate: false, desk: true }); } catch (_) { a = null; }
     if (!a) return null;
     try { await lastRosterPush; } catch (_) {}   // the worker is now in the backend roster → safe to delegate
-    return a.id;
+    // READ BACK what actually landed, so the ack can tell the lead where the desk is. Deliberately a PURE
+    // read (propsByAgent), never a second ensureWorkstation call: re-running the seeder here could place a
+    // desk AFTER summonAgent's persist() — a floor change that would not be saved until the next write.
+    // Blank when nothing was placed, and the tool then says nothing about a desk.
+    let deskWhere = '';
+    try {
+      const mine = (station && station.propsByAgent) ? station.propsByAgent(a.id) : [];
+      const seat = mine.find(p => station.capForProp && station.capForProp(p.t) === 'computer');
+      if (seat) { const rm = station.roomById ? station.roomById(station.roomAt(seat.x, seat.y)) : null; deskWhere = (rm && rm.name) ? String(rm.name) : 'the station'; }
+    } catch (_) { deskWhere = ''; }
+    return { agentId: a.id, desk: deskWhere };
   }
 
   function persist() {

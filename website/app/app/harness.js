@@ -597,9 +597,13 @@ const Harness = (() => {
   // answer a live crew.summon.request: report the new agentId we summoned (or null if we couldn't), which resolves
   // the run's awaiting team.summon tool. Separate request from the open /api/run stream — no deadlock. The summon
   // tool has its own browser-ack timeout, so a dropped ack settles cleanly to "not completed" rather than hanging.
-  async function summonAck(runId, requestId, agentId) {
+  // `desk` (optional) is the room the new agent's seeded workstation actually landed in — the ONLY reason the
+  // tool result may mention a desk at all, so the lead can never announce furniture the floor doesn't have.
+  async function summonAck(runId, requestId, agentId, desk) {
     if (!runId || !requestId) return;
-    try { await fetch('/api/summon/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, requestId, agentId: agentId || null }) }); } catch (_) {}
+    const body = { runId, requestId, agentId: agentId || null };
+    if (desk) body.desk = String(desk).slice(0, 60);
+    try { await fetch('/api/summon/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (_) {}
   }
 
   // Cortex (M-mem.5b): after a run, reflection may PROPOSE durable memories (announced via the memory.proposed

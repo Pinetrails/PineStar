@@ -8328,17 +8328,20 @@ async function handleRun(req, res) {
   // /api/summon/ack with the new agentId (handleSummonAck), which resolves this Promise. Fail-closed identically: a
   // disconnect (ac abort) or a CONSENT_TIMEOUT_MS stall settles to null (no agent created) so a forgotten request
   // can never hold a billable run open. Settles exactly once. The new id flows back to the lead for team.dispatch.
+  // Resolves { agentId, desk } on success (desk = the room the new worker's seeded workstation landed in, '' when
+  // none was placed) and null on decline/timeout/abort. team.summon reads .agentId and tolerates a bare id, so an
+  // older caller/stub resolving just the string still works.
   function summonRequest(spec) {
     return new Promise((resolve) => {
       const requestId = crypto.randomUUID();
       let settled = false, timer = null;
       function onAbort() { finish(null); }
-      function finish(newAgentId) {
+      function finish(newAgentId, desk) {
         if (settled) return; settled = true;
         pendingSummon.delete(requestId);
         if (timer) clearTimeout(timer);
         try { ac.signal.removeEventListener('abort', onAbort); } catch (_) {}
-        resolve(newAgentId || null);
+        resolve(newAgentId ? { agentId: newAgentId, desk: desk || '' } : null);
       }
       pendingSummon.set(requestId, finish);
       if (ac.signal.aborted) return finish(null);
@@ -10299,16 +10302,18 @@ function handleNightshiftDrafts(req, res) {
   }
 }
 
-// POST /api/summon/ack { runId, requestId, agentId } — the browser's answer to a live crew.summon.request: it ran
-// the REAL summonAgent() and reports the new agentId (or null if it couldn't). Resolves the run's awaiting
+// POST /api/summon/ack { runId, requestId, agentId, desk? } — the browser's answer to a live crew.summon.request:
+// it ran the REAL summonAgent() and reports the new agentId (or null if it couldn't). Resolves the run's awaiting
 // team.summon tool. A stale runId/requestId is a harmless no-op (the run ended or the request auto-settled to null).
+// `desk` is the room the new agent's seeded workstation landed in — the browser only sends it after the placement
+// actually returned ok, so the tool result can state it without the sidecar asserting anything it can't source.
 async function handleSummonAck(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
   const pend = pendingSummonByRun.get(body.runId);
   const finish = pend && pend.get(body.requestId);
   const newId = (body.agentId != null && /^[A-Za-z0-9_-]{1,40}$/.test(String(body.agentId))) ? String(body.agentId) : null;
-  if (finish) finish(newId);
+  if (finish) finish(newId, newId ? String(body.desk == null ? '' : body.desk).replace(/[\r\n]+/g, ' ').trim().slice(0, 60) : '');
   res.writeHead(200); res.end('ok');
 }
 
