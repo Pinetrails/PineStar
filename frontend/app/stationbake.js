@@ -76,7 +76,7 @@ const StationBake = (() => {
   /* THE CORNER CROWN'S ACTUAL REACH, recorded BY THE PAINTER, column → topmost painted bake-pixel
      row. buildLightMap's chamfer erase needs to know how far up the art goes so the ambient mask
      stops exactly there; deriving that a second time is precisely what drifted before (see the
-     note on eachTallCornerCol). Same per-bake-state contract as viewportRects/lampPos, and keyed
+     note in buildLightMap). Same per-bake-state contract as viewportRects/lampPos, and keyed
      on absolute bake-pixel coords, so a chunk bake records the same numbers as the monolithic one. */
   let crownReach = null;
 
@@ -151,43 +151,6 @@ const StationBake = (() => {
       fn(py, ex, ox, ox + r, A);
     }
   }
-  /* THE COLUMN DUAL of eachCornerRow, for a TOP corner carrying a tall wall. For each integer
-     column it hands back where the eased wall face tops out, its floor contact, the cap thickness
-     there and the 0→1 position along the arc (0 = the side end, where the wall has receded to
-     nothing). Same circle, same centre-sample-and-round convention as the row walk.
-
-     THE CROWN PAINTER AND THE AMBIENT MASK BOTH DERIVE FROM THIS ONE WALK. That is the point: the
-     mask's upper edge is defined as "wherever this says the art tops out", so it cannot drift above
-     the painted pixels. It used to be a separately-computed square strip, and at a chamfer — where
-     the face eases away but the strip did not — it left ambient mask lying over bare space, which
-     reads as a shadow floating OUTSIDE the hull against the starfield. */
-  /* THE ONE CROWN-WIDTH EASE, shared by the corner ring and the tall corner sweep. A wall's top
-     surface is `capW` wide where it is read from directly above (the e/w/s straights) and `capH`
-     where it has been extruded up-screen and is read as a face (the north straight); around a
-     chamfer it crosses between the two. Both painters take their thickness from here, so the
-     crown that comes down the side and the crown that comes along the top are the same band.
-
-     THIS USED TO EASE TO NOTHING (capH * (0.30 + 0.70 * tt)) and dim as it went, because at the
-     side end there was nothing to hand off TO — the e/w walls carried no crown at all, so a cap
-     kept at full thickness over a wall receded to zero read as a bright bar ruled across the
-     corner ("the thick diagonal lines", 2026-07-25). Now the side wall has a top surface of its
-     own and the ease runs INTO it. Keep both halves of that history in mind before touching this:
-     the cap must never be thicker than the surface it crowns at either end of the arc. */
-  const crownEase = (tt, capW, capH) => Math.max(1, Math.round(capW + (capH - capW) * tt));
-  function eachTallCornerCol(kind, ax, ay, rad, up, capH, capW, fn) {
-    const A = CORNER[kind];
-    const R = Math.round(rad);
-    const x0 = Math.round(A.cx ? ax - R : ax);
-    for (let ix = x0; ix < x0 + R; ix++) {
-      const adx = Math.abs(ix + 0.5 - ax);
-      if (adx >= R) continue;
-      const base = Math.round(ay - Math.sqrt(R * R - adx * adx));     // upper quadrant (tl/tr)
-      const tt = Math.max(0, Math.min(1, 1 - adx / R));
-      const top = Math.round(base - Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * up);
-      fn(ix, top, base, crownEase(tt, capW, capH), tt);
-    }
-  }
-
   /* cut the hull's rounded corner. Was a clip('evenodd') + fill, which anti-aliased the station's
      whole silhouette — the soft outer fuzz that survived the interior-curve fix. */
   function eraseSpandrel(g, kind, ax, ay, rad) {
@@ -1145,6 +1108,23 @@ const StationBake = (() => {
      (see the WALL.sideCap note). Corridors get a narrower one, the same way corUp < up. */
   const sideCapW = room => Math.max(2, Math.min(pad - 1, Math.round(room ? WALL.sideCap : WALL.sideCap * 0.6)));
 
+  /* HOW FAR A TOP CORNER'S RING STANDS UP at the end where it meets the north wall. DERIVED, not
+     tuned: the ring's column dual puts its crown top at `deckY - 1 - capH - LIFT`, the north end's
+     deckY is the room's own top edge Y, and the straight wall's crown top is `Y - up - capH`.
+     Equate them and LIFT is `up - 1`. Change WALL.up and the corner still lands on the straight
+     wall's crown line to the pixel — which is the whole reason the join stopped being a notch. */
+  const cornerLift = (kind, room) =>
+    (kind === 'tl' || kind === 'tr') ? Math.max(0, Math.round(room ? WALL.up : WALL.corUp) - 1) : 0;
+
+  /* THE CROWN-WIDTH EASE. A wall's top surface is `capW` wide where it is read from directly above
+     (every e/w/s straight) and `capH` where it has been stood up and is read as a face (the north
+     straight); around a chamfer it crosses between the two. It used to ease to NOTHING and dim out,
+     because at the side end there was no side crown to hand off to — a cap kept at full thickness
+     over a wall receded to zero read as a bright bar ruled across the corner ("the thick diagonal
+     lines", 2026-07-25). Now the ease runs INTO that crown. The law both halves of that history
+     teach: the cap must never be wider than the surface it crowns at either end of the arc. */
+  const crownEase = (tt, capW, capH) => Math.max(1, Math.round(capW + (capH - capW) * tt));
+
   /* THE CORNER'S SHARE OF THE CROWN RING. On the straights the top surface is a rect; around a
      chamfer it is the band just outside the deck curve, and without it the ring broke at all four
      corners — which is exactly the "cuts off as if there's only a back wall" read, because the two
@@ -1157,16 +1137,28 @@ const StationBake = (() => {
      the e/w wall), and a column walk lays a VERTICAL one, correct where it runs shallow (the end
      that meets the n/s wall). Complementary, so the ring is gap-free and never doubles up.
 
-     Radial width eases from the side wall's full top band at the steep end to the north wall's capH
-     at the shallow end: that is where the wall stops being read as a top surface and starts being
-     read as an extruded face, and on a top corner the tall sweep below then paints that face over
-     this band. The taper is also what keeps the old "thick diagonal lines" failure away — a band
-     that stayed at full width all the way round a corner where the wall has receded is a bar ruled
-     across the corner, not a wall top. */
-  function bakeCornerCrown(b, pal, kind, X, Y, ax, ay, Rc, capW, capH, record) {
+     ---- A TOP CORNER IS THIS SAME RING, LIFTED (2026-07-27) ----
+     Andrew, on the first cut: the bottom corners "perfected it", the top two "just cut off … it's
+     not shaped correctly". He was reading a real defect and it is worth stating exactly, because
+     it is easy to reintroduce: the corner used to carry TWO different outer profiles. The flat
+     ring followed the hull curve, and a separate column sweep rose from 0 to WALL.up across only
+     the deck curve's 12 columns — while the hull silhouette it had to meet reaches `pad` further
+     out. So the station's outline stepped inward where the sweep began, then kinked onto a much
+     steeper staircase. Two curves meeting at an angle is not a corner; it is a notch.
+
+     There is now ONE profile. The ring is painted exactly as the (correct) bottom corners paint
+     it, then DISPLACED UP-SCREEN by `lift`, with the strip it vacates filled by the wall FACE —
+     which is what a wall standing up actually looks like from here. `lift` eases 0 → WALL.up-1 by
+     the same sin^1.5 curve the wall height always used, so the outline leaves the e/w wall flat
+     and arrives at the north wall's crown line to the pixel (LIFT is derived from that landing,
+     not tuned). Bottom corners pass lift 0 and are therefore byte-identical to before.
+
+     The old separate tall sweep is gone. Do not add a second profile back: if the corner needs to
+     change shape, change `lift`, and both duals follow it together. */
+  function bakeCornerCrown(b, pal, kind, X, Y, ax, ay, Rc, capW, capH, LIFT, record) {
     const A = CORNER[kind];
     const outX = A.cx ? -1 : 1, outY = A.cy ? -1 : 1;      // which way is "away from the room"
-    const reach = Rc + 2 + capW;
+    const reach = Rc + 2 + capW + LIFT;
     // the ring may hang past the tile into the VOID (that is where every wall's height lives) but
     // never into the tile behind it, which is this room's own walkable floor.
     const xLo = outX < 0 ? X - reach : X, xHi = outX < 0 ? X + T : X + T + reach;
@@ -1182,24 +1174,61 @@ const StationBake = (() => {
     };
     const K = Rc * Math.SQRT1_2;                            // the 45° split between the two duals
     const width = tt => crownEase(tt, capW, capH);
+    /* how far this point of the ring stands up. 0 along the e/w wall (a side wall shows no face
+       here), easing to LIFT where the corner meets the north wall — the same sin^1.5 curve the
+       wall height has always used, so the corner recedes at the rate the eye already knows. */
+    const riseAt = tt => LIFT <= 0 ? 0 : Math.round(Math.pow(Math.sin(tt * Math.PI / 2), 1.5) * LIFT);
+    /* A DISPLACED RASTER MUST PAINT THE EXTENT IT OWNS, NOT ONE PIXEL. Both duals are collected
+       first and painted second, because the lift advances faster than the walk's own index: on a
+       tl corner the row dual's output rows ran 35, 37, 39, 41, 42, 44 for six consecutive source
+       rows, so 36/38/40/43 were never written and the outline came out a COMB — chunky bright
+       rungs with void between them. Each step therefore paints through to where the next one
+       starts. That is also the honest shape: where the sheared outline runs shallow, its crown
+       genuinely is taller in screen space than where it runs steep. */
+    const span = (arr, i, key) => Math.max(1, (i + 1 < arr.length ? arr[i + 1][key] : arr[i][key] + 1) - arr[i][key]);
     // ROW dual — the steep stretch, where the corner hands off to the e/w wall
+    const rows = [];
     eachCornerRow(kind, ax, ay, Rc, (py, ex) => {
       if (ex == null) return;
       const ady = Math.abs(py + 0.5 - ay);
       if (ady > K) return;
-      const w = width(1 - Math.sqrt(Math.max(0, Rc * Rc - ady * ady)) / Rc);
-      if (outX < 0) { put(ex - 1 - w, py, w, 1, pal.cap); put(ex - 1 - w, py, 1, 1, lit); put(ex - 1, py, 1, 1, seam); }
-      else { put(ex + 2, py, w, 1, pal.cap); put(ex + 1 + w, py, 1, 1, lit); put(ex + 1, py, 1, 1, seam); }
+      const tt = 1 - Math.sqrt(Math.max(0, Rc * Rc - ady * ady)) / Rc;
+      rows.push({ ex, w: width(tt), r: riseAt(tt), yy: py - riseAt(tt) });
     });
+    rows.sort((p, q) => p.yy - q.yy);
+    for (let i = 0; i < rows.length; i++) {
+      const { ex, w, r, yy } = rows[i], h = span(rows, i, 'yy');
+      // the ladder, displaced; then the FACE fills the strip it vacated — a standing wall, not a
+      // floating band. Face first, so the crown is never painted over at r = 0.
+      if (outX < 0) {
+        if (r > 0) put(ex - 1 - w, yy + h, w + 1, r, pal.face);
+        put(ex - 1 - w, yy, w, h, pal.cap); put(ex - 1 - w, yy, 1, h, lit); put(ex - 1, yy, 1, h, seam);
+      } else {
+        if (r > 0) put(ex + 1, yy + h, w + 1, r, pal.face);
+        put(ex + 2, yy, w, h, pal.cap); put(ex + 1 + w, yy, 1, h, lit); put(ex + 1, yy, 1, h, seam);
+      }
+    }
     // COLUMN dual — the shallow stretch, where it hands off to the n/s wall
     const R = Math.round(Rc), x0 = Math.round(A.cx ? ax - R : ax);
+    const cols = [];
     for (let ix = x0; ix < x0 + R; ix++) {
       const adx = Math.abs(ix + 0.5 - ax);
       if (adx >= K) continue;
+      const tt = 1 - adx / Rc, r = riseAt(tt);
       const ey = outY < 0 ? Math.round(ay - Math.sqrt(R * R - adx * adx)) : Math.round(ay + Math.sqrt(R * R - adx * adx));
-      const w = width(1 - adx / Rc);
-      if (outY < 0) { put(ix, ey - 1 - w, 1, w, pal.cap); put(ix, ey - 1 - w, 1, 1, lit); put(ix, ey - 1, 1, 1, seam); }
-      else { put(ix, ey + 2, 1, w, pal.cap); put(ix, ey + 1 + w, 1, 1, lit); put(ix, ey + 1, 1, 1, seam); }
+      cols.push({ ix, w: width(tt), r, top: outY < 0 ? ey - 1 - width(tt) - r : ey + 1, ey });
+    }
+    for (let i = 0; i < cols.length; i++) {
+      const { ix, w, r, ey, top } = cols[i];
+      if (outY < 0) {
+        // the crown must also bridge the step to the NEXT column, or the sheared arc combs
+        // sideways the same way the rows did — the dual of the fix above.
+        const grow = Math.max(0, (i > 0 ? cols[i - 1].top : top) - top);
+        if (r > 0) put(ix, ey - r, 1, r, pal.face);
+        put(ix, top, 1, w + grow, pal.cap); put(ix, top, 1, 1, lit); put(ix, top + w + grow, 1, 1, seam);
+      } else {
+        put(ix, ey + 2, 1, w, pal.cap); put(ix, ey + 1 + w, 1, 1, lit); put(ix, ey + 1, 1, 1, seam);
+      }
     }
   }
 
@@ -1492,13 +1521,14 @@ const StationBake = (() => {
     for (const [ccx, ccy, kind] of G.chamfers) { const A = CORNER[kind]; eraseSpandrel(mg, kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T + pad); }
     /* ...and above a TOP corner the raised strip has to follow the wall's EASED top instead of
        staying square. eraseSpandrel above only cuts the corner out of the FOOTPRINT plate; the
-       wall-height strip kept its square corner while the face it stands for eases to nothing around
-       the chamfer, so ambient mask was left lying over bare space — a shadow hanging outside the
-       hull, invisible against pure black but plain against the SpaceBG starfield. Same law as the
-       straight wall top (the mask must never cover pixels the art doesn't paint), and the reach is
-       taken from eachTallCornerCol, the very walk the crown is painted from, so the two cannot
-       disagree. Erase only ABOVE the art: the crown itself belongs under the ambient like the rest
-       of the interior. */
+       wall-height strip kept its square corner while the ring it stands for eases down around the
+       chamfer, so ambient mask was left lying over bare space — a shadow hanging outside the hull,
+       invisible against pure black but plain against the SpaceBG starfield. Same law as the
+       straight wall top: the mask must never cover pixels the art doesn't paint.
+       THE REACH IS READ BACK FROM THE PAINTER (`crownReach`), never recomputed. A mask edge
+       derived a second time to match the art is exactly what drifted before, and it drifts again
+       the moment the corner's shape changes — as it just did. Erase only ABOVE the art: the crown
+       itself belongs under the ambient like the rest of the interior. */
     if (WALL.up > 0) {
       const upC = Math.round(WALL.up);
       mg.save();
@@ -1506,19 +1536,12 @@ const StationBake = (() => {
       mg.fillStyle = '#000';
       for (const [ccx, ccy, kind] of G.chamfers) {
         if (kind !== 'tl' && kind !== 'tr') continue;
-        const A = CORNER[kind];
-        const stripTop = ccy * T - (upC + capH + 2);
-        const capW = sideCapW(!G.isCorridor(G.zoneGrid[G.idx(ccx, ccy)]));
-        eachTallCornerCol(kind, (ccx + A.cx) * T, (ccy + A.cy) * T, T, upC, capH, capW, (ix, top, base, capAt) => {
-          // ...and the CROWN RING reaches higher than the sweep does at the side end of the arc,
-          // where the sweep has eased to nothing but the ring is at its full width. Take the reach
-          // the ring's own painter recorded rather than recomputing it: a mask edge computed to
-          // match the art is the thing that drifted last time, and a mask lying over bare space
-          // reads as a shadow hanging outside the hull against the starfield.
-          const ring = crownReach.get(ix);
-          const artTop = Math.min(top - capAt, ring === undefined ? Infinity : ring);
+        const stripTop = ccy * T - (upC + capH + 2), X0 = ccx * T;
+        for (let ix = X0; ix < X0 + T; ix++) {
+          const reach = crownReach.get(ix);
+          const artTop = reach === undefined ? ccy * T : reach;   // no ring here → the footprint plate is the top
           if (artTop > stripTop) mg.fillRect(ix, stripTop, 1, artTop - stripTop);
-        });
+        }
       }
       mg.restore();
     }
@@ -1706,52 +1729,13 @@ const StationBake = (() => {
         fill(A.cx ? ex : ex - 1, py, 2, 1, '#28241b');
       });
 
-      // THE CROWN RING carries the wall's lit top surface around the arc, so the bright line that
-      // defines a wall does not die at the corners. On a TOP corner the tall sweep below overpaints
-      // it wherever the face has risen — the ring is what remains at the side end, where the sweep
-      // has eased to nothing and there used to be a notch of bare hull.
-      const isTop = kind === 'tl' || kind === 'tr';
-      bakeCornerCrown(b, cPal, kind, X, Y, ax, ay, Rc, sideCapW(!G.isCorridor(G.zoneGrid[G.idx(ccx, ccy)])),
-                      Math.max(2, Math.round(WALL.capH)), isTop && WALL.up > 0);
+      /* THE CROWN RING carries the wall's lit top surface around the arc, so the bright line that
+         defines a wall does not die at the corners — and on a TOP corner it is also what stands the
+         wall up, displaced by `cornerLift`. One profile, both duals, no separate sweep. */
+      const cRoom = !G.isCorridor(G.zoneGrid[G.idx(ccx, ccy)]);
+      bakeCornerCrown(b, cPal, kind, X, Y, ax, ay, Rc, sideCapW(cRoom),
+                      Math.max(2, Math.round(WALL.capH)), cornerLift(kind, cRoom), kind === 'tl' || kind === 'tr');
 
-      // TALL WALL over a curved top corner: sweep the interior wall arc up-screen, easing from
-      // full height at the north end down to zero at the side end (a side wall is read by its top
-      // surface, not its face), so the raised north wall flows around the chamfer instead of
-      // stopping dead at it.
-      if ((kind === 'tl' || kind === 'tr') && WALL.up > 0) {
-        const R = Rc, up = Math.round(WALL.up), capH = Math.max(2, Math.round(WALL.capH));   // Rc: the ONE chamfer curve
-        const capW = sideCapW(!G.isCorridor(G.zoneGrid[G.idx(ccx, ccy)]));
-        /* The crown is the COLUMN dual of the row walk above: for each integer column, the base is
-           where the SAME circle crosses it, sampled at the column's centre and rounded by the same
-           convention. It used to be sampled by ANGLE and rounded in x, which put the crown on a
-           subtly different pixel staircase from the face band it is supposed to sit on — a 1px
-           mismatch that wandered around the arc. Deriving both from one circle is what makes the
-           crown, the face and the deck cut land on a single edge. */
-        // the column walk now lives in eachTallCornerCol, because buildLightMap has to agree with it
-        // to the pixel — see the note there.
-        /* THE CROWN MUST TAPER WITH THE WALL IT CROWNS (2026-07-25, Andrew: "the thick diagonal
-           lines"). The face height eases to zero around the chamfer — and the crown used to keep
-           its full capH AND its +0.30 lit top edge the whole way, so a wall that had receded to
-           nothing was still capped at full thickness in the brightest tone in the room. Stepped
-           along a diagonal staircase that stops reading as a wall top and reads as a thick bright
-           bar ruled across the corner.
-           The taper stays; what changed (2026-07-27) is WHERE IT ENDS. It used to ease to ~1px and
-           dim out, because the e/w wall it ran into had no top surface to hand off to — the wall
-           genuinely did vanish there, and the honest thing was to fade. Now that side wall carries
-           its own crown, so the ease runs from that crown's width into capH (crownEase) and the
-           tone stays put: the corner reads as the wall TURNING, not as the wall ending.
-           BELOW THE 45° POINT this sweep steps ~3px in y per column, so a wide vertical cap here
-           would be the bright staircase all over again. bakeCornerCrown's ROW dual owns that
-           stretch and lays the same band HORIZONTALLY, which is across the curve, not along it. */
-        eachTallCornerCol(kind, ax, ay, R, up, capH, capW, (ix, top, base, capAt, tt) => {
-          const faceH = base - top; if (faceH <= 0) return;
-          b.fillStyle = cPal.face; b.fillRect(ix, top, 1, faceH + 1);              // face column, integer
-          const cap = cPal.cap;
-          b.fillStyle = cap; b.fillRect(ix, top - capAt, 1, capAt);
-          b.fillStyle = U.shade(cap, 0.30); b.fillRect(ix, top - capAt, 1, 1);      // lit outer edge, as on every straight
-          b.fillStyle = U.shade(cPal.cap, -0.45); b.fillRect(ix, top - 1, 1, 1);    // 1px darker seam beneath crown
-        });
-      }
     }
 
     bakeRoomLighting(b);   // after the chamfers, so a rounded corner is lit like every other surface

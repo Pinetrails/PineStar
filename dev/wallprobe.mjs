@@ -110,9 +110,9 @@ const PROBE = `(() => {
     ring: { north: stat(north), south: stat(south), west: stat(west), east: stat(east) },
     arcTL: arcOf('tl'), arcTR: arcOf('tr'), arcBL: arcOf('bl'), arcBR: arcOf('br'),
     crops: {
-      tl: crop(x1 - 20, y1 - 26, 52, 52, 7),
-      bl: crop(x1 - 20, y2 - 32, 52, 52, 7),
-      br: crop(x2 - 32, y2 - 32, 52, 52, 7),
+      tl: crop(x1 - 16, y1 - 26, 46, 46, 11),
+      bl: crop(x1 - 16, y2 - 20, 46, 46, 11),
+      br: crop(x2 - 30, y2 - 20, 46, 46, 11),
       whole: crop(0, 0, W, H, 3)
     }
   });
