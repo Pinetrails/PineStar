@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "ef4cd8067daa1f26e38a7509a694777d40c97cbb",
+    "sourceCommit": "d778087e404685b863a97c99e32fa04412e26927",
     "pathSetSha256": "120006e93437f7e88bbf588d3f5d6009f78ce1cfca99c77cc6cb43e16b6f7982",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 290576,
-        "sha256": "143d80c07483eaceafa42e4f79bf7f59bf4b248490ac8665a003e67da88e87e0"
+        "bytes": 290700,
+        "sha256": "ba82ac00b9a4ca8b6f2006d5a05fe5482103fe70e5974c5b06db7bede0592fad"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -333,8 +333,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 190552,
-        "sha256": "02982c267830eca430a790d06b03c63ec4191ff09c0dba4c239312f722b00403"
+        "bytes": 190691,
+        "sha256": "91046ded0c41d7317363a44c4b0d4b98aa2a9569cd5a8b69f4cefc6dae844f37"
       },
       {
         "path": "frontend/app/mint.js",
@@ -593,8 +593,8 @@
       },
       {
         "path": "frontend/app/skinstage.js",
-        "bytes": 3022,
-        "sha256": "e49e2f8e5b85619c536c0584ab470ce76f1b323ab130d3bd279c0e745a2d1986"
+        "bytes": 4558,
+        "sha256": "b35b35c83e01198617ef9c8c07ec58aa78b5764cf2c1a0e5599a45b2c4984b22"
       },
       {
         "path": "frontend/app/slaglog.js",
@@ -633,8 +633,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 421777,
-        "sha256": "da9c26e00707dbebb14e4cfa884b0c8a35c4bda374a37d728df1b78cca37f4c3"
+        "bytes": 424449,
+        "sha256": "79e91fab3474258256458274a34cb3b9351f97a1b8231fce08422cd0df239711"
       },
       {
         "path": "frontend/app/study.js",
@@ -843,8 +843,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 220619,
-        "sha256": "67c96721f7adffe24dbcce9c025623a00cfe808b6b1e123b5c4607e0ce378b3f"
+        "bytes": 222350,
+        "sha256": "6b6393abe86ddc73b98dfe5265648669747bbbdc814225eb360e0ad043892958"
       },
       {
         "path": "frontend/css/asciifx.css",
