@@ -88,6 +88,75 @@
       return { plugins, errors };
     }
 
+    /* SCAFFOLD. "Create a plugin" cannot mean "go make two files by hand in a folder you have to find" — that
+       is the same authoring gap the hooks form closes. This writes a WORKING plugin, not an empty stub: it
+       subscribes to a real event and does something observable, so the first thing the author sees is proof
+       the socket works, and their job is to edit rather than to guess the shape from prose.
+       Authored here = consented here, same as a hook typed into the form. */
+    async function scaffold(spec) {
+      const id = String((spec && spec.id) || '').trim();
+      if (!idOk(id)) return { ok: false, error: 'use letters, numbers, dot, dash or underscore (max 64)' };
+      const name = String((spec && spec.name) || '').trim() || id;
+      const description = String((spec && spec.description) || '').trim() || 'A StarNet plugin.';
+      const base = P.join(dir, id);
+      try { await fsp.stat(base); return { ok: false, error: 'a plugin folder named "' + id + '" already exists' }; }
+      catch (_) { /* good — it does not exist yet */ }
+
+      const source = [
+        '/* ' + name + ' — a StarNet plugin.',
+        ' *',
+        ' * register(api) runs once at station boot. api.on(event, handler) is the whole surface:',
+        ' *   pre_tool_call    before a tool runs — return {decision:"block", reason:"…"} to stop it',
+        ' *   post_tool_call   after it ran (observe only)',
+        ' *   pre_llm_call     before a model call — return {context:"…"} to add a standing note',
+        ' *   post_llm_call    after a model call (observe only)',
+        ' *   on_session_start / on_session_end / on_pre_compress / on_memory_write',
+        ' *',
+        ' * Unlike a hook, a plugin stays loaded — so it can remember things between events.',
+        ' */',
+        "'use strict';",
+        '',
+        'module.exports = {',
+        '  register(api) {',
+        '    let toolCalls = 0;',
+        '',
+        '    api.on(\'post_tool_call\', (p) => {',
+        '      toolCalls++;',
+        '      console.log(\'[' + id + '] \' + p.tool_name + \' (\' + toolCalls + \' this run)\');',
+        '    });',
+        '',
+        '    api.on(\'on_session_end\', () => {',
+        '      console.log(\'[' + id + '] run finished after \' + toolCalls + \' tool calls\');',
+        '      toolCalls = 0;',
+        '    });',
+        '  }',
+        '};',
+        ''
+      ].join('\n');
+      const manifest = JSON.stringify({ name, version: '1.0.0', description, main: 'index.js' }, null, 2) + '\n';
+      try {
+        await fsp.mkdir(base, { recursive: true });
+        await fsp.writeFile(P.join(base, 'plugin.json'), manifest, 'utf8');
+        await fsp.writeFile(P.join(base, 'index.js'), source, 'utf8');
+      } catch (e) { return { ok: false, error: 'could not create the plugin folder: ' + ((e && e.message) || e) }; }
+      await allow(id, hash(source));
+      return { ok: true, id, name, dir: base };
+    }
+
+    /* DESTROY the folder. Deliberately separate from revoke, and deliberately NOT offered for a plugin the
+       station did not write: deleting someone's source tree because they clicked the wrong row is the one
+       mistake there is no undo for. The caller must pass the id it read back from discover(). */
+    async function destroy(id) {
+      const pid = String(id || '').trim();
+      if (!idOk(pid)) return false;
+      const base = P.join(dir, pid);
+      try { await fsp.stat(base); } catch (_) { return false; }
+      try { await fsp.rm(base, { recursive: true, force: true }); }
+      catch (e) { onError({ plugin: pid, error: (e && e.message) || String(e) }); return false; }
+      await revoke(pid);
+      return true;
+    }
+
     const allowedMap = async () => (await readJson(allowFile, {})) || {};
     async function allow(id, digest) {
       const cur = await allowedMap();
@@ -149,7 +218,7 @@
       return { loaded, pending, errors };
     }
 
-    return { discover, load, allow, revoke, listPending, _internals: { idOk } };
+    return { discover, load, allow, revoke, scaffold, destroy, listPending, _internals: { idOk } };
   }
 
   return { makePluginLoader, _internals: { idOk } };

@@ -181,6 +181,39 @@ async function writePlugin(id, source, manifest) {
       A.eq(await loader.revoke('revocable'), false, 'revoking what is already un-approved is an honest false, not a cheerful success');
       A.eq(await loader.revoke('never-existed'), false, 'and so is revoking something that was never there');
     }
+    // ---- 10. SCAFFOLD. "Create a plugin" cannot mean "hand-make two files in a folder you must find first". ----
+    {
+      await fsp.rm(ALLOW, { force: true });
+      await fsp.rm(path.join(PLUGINS, 'revocable'), { recursive: true, force: true });
+      const loader = mk();
+      const made = await loader.scaffold({ id: 'auditor', name: 'Auditor', description: 'counts tool calls' });
+      A.eq(made.ok, true, 'scaffold() creates the plugin');
+
+      // It must arrive WORKING, not as an empty stub — the first thing an author sees should be proof the
+      // socket works, so their job is to edit rather than to guess the shape from prose.
+      const src = await fsp.readFile(path.join(PLUGINS, 'auditor', 'index.js'), 'utf8');
+      A.ok(/module\.exports\s*=\s*\{[\s\S]*register\(api\)/.test(src), 'the scaffold exports a real register(api)');
+      A.ok(/api\.on\(/.test(src), 'and actually subscribes to an event');
+      const man = JSON.parse(await fsp.readFile(path.join(PLUGINS, 'auditor', 'plugin.json'), 'utf8'));
+      A.eq(man.name, 'Auditor', 'the manifest carries the given name');
+
+      const spine = makeHooks();
+      const loaded = await loader.load(spine);
+      A.ok(loaded.loaded.some(x => x.id === 'auditor'), 'it is AUTO-APPROVED and loads with no second step');
+      A.ok(spine.count('post_tool_call') > 0, 'and its handler is really on the spine');
+
+      A.eq((await loader.scaffold({ id: 'auditor' })).ok, false, 'the same id cannot be scaffolded twice');
+      A.eq((await loader.scaffold({ id: 'has spaces' })).ok, false, 'an unusable id is refused');
+      A.eq((await loader.scaffold({ id: '../escape' })).ok, false, 'and so is one that would escape the plugins folder');
+
+      // DESTROY removes the folder — the one action here with no undo.
+      A.eq(await loader.destroy('auditor'), true, 'destroy() reports the deletion');
+      let gone = false;
+      try { await fsp.stat(path.join(PLUGINS, 'auditor')); } catch (_) { gone = true; }
+      A.eq(gone, true, 'the folder is really gone from disk');
+      A.eq(Object.keys(JSON.parse(await fsp.readFile(ALLOW, 'utf8'))).length, 0, 'and it left no orphan approval behind');
+      A.eq(await loader.destroy('auditor'), false, 'destroying what is gone is an honest false');
+    }
   } finally {
     await fsp.rm(DIR, { recursive: true, force: true });
     delete global.__auditLog; delete global.__apiKeys; delete global.__spineReachable;

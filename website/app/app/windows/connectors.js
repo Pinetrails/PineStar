@@ -152,10 +152,32 @@
       '<p class="set-about">Your own code, run by the station at fixed moments — after a file is written, before a tool runs, when a session ends. ' +
         'A <b>hook</b> is a script the station calls; a <b>plugin</b> is a folder of code it loads. ' +
         '<span class="dim">(Both run OUTSIDE the agent sandbox, with your permissions — which is why nothing runs until you approve it here.)</span></p>' +
-      '<div class="sec"><span class="sec-l">HOOKS</span><span class="sec-r" id="hk-file"></span><span class="sec-nd"></span></div>' +
+      '<div class="sec"><span class="sec-l">HOOKS</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<div id="hk-list" class="mc-list"><span class="loading pulse">loading hooks…</span></div>' +
-      '<div class="sec"><span class="sec-l">PLUGINS</span><span class="sec-r" id="pl-dir"></span><span class="sec-nd"></span></div>' +
+      // The AUTHORING form. Its absence is what made the whole feature unreachable: "create a hook" used to
+      // mean "find a folder and hand-write JSON". The event is a picker, not free text, because a typo there
+      // fails silently — the hook simply never fires, with nothing on screen to say why.
+      '<div class="mc-form" id="hk-form">' +
+        '<div class="ext-pair">' +
+          '<select id="hk-event" class="key-input fbc-sel" aria-label="When should this run"></select>' +
+          '<input id="hk-name" class="key-input" placeholder="name (optional) — e.g. format-on-write" autocomplete="off" spellcheck="false" maxlength="60">' +
+        '</div>' +
+        '<input id="hk-cmd" class="key-input" placeholder="command — e.g. npx prettier --write ." autocomplete="off" spellcheck="false">' +
+        '<div class="mc-hint">Runs as a separate process with your permissions. It is handed the event as JSON on stdin; to STOP an action, print ' +
+          '<code>{"decision":"block","reason":"why"}</code>. No shell — quote arguments, and put pipes in a script.</div>' +
+        '<div class="mc-acts"><button class="bb sm" id="hk-add">+ ADD HOOK</button></div>' +
+      '</div>' +
+      '<div class="sec"><span class="sec-l">PLUGINS</span><span class="sec-r"></span><span class="sec-nd"></span></div>' +
       '<div id="pl-list" class="mc-list"><span class="loading pulse">loading plugins…</span></div>' +
+      '<div class="mc-form" id="pl-form">' +
+        '<div class="ext-pair">' +
+          '<input id="pl-id" class="key-input" placeholder="id — e.g. run-auditor (a-z 0-9 _ -)" autocomplete="off" spellcheck="false" maxlength="64">' +
+          '<input id="pl-name" class="key-input" placeholder="name (optional) — e.g. Run Auditor" autocomplete="off" spellcheck="false" maxlength="60">' +
+        '</div>' +
+        '<input id="pl-desc" class="key-input" placeholder="what it does (optional)" autocomplete="off" spellcheck="false" maxlength="140">' +
+        '<div class="mc-hint">Creates a WORKING plugin you can edit — it already counts tool calls and logs them at the end of a run. Unlike a hook it stays loaded, so it can remember things between events.</div>' +
+        '<div class="mc-acts"><button class="bb sm" id="pl-add">+ CREATE PLUGIN</button><button class="bb xs" id="pl-where">⧉ COPY FOLDER PATH</button></div>' +
+      '</div>' +
       '<div id="ext-msg" class="msg"></div>';
 
     const frag = h => (el => { el.innerHTML = h; });
@@ -174,6 +196,20 @@
        hook spine actually registered it this boot — not that it appears in a config file. That distinction is
        the entire value of the panel, because a configured-but-unapproved extension looks identical to a
        working one from the outside. */
+    /* The picker says WHEN in plain language. "post_tool_call" is the wire name and it is meaningless to
+       anyone who has not read the source; the value stays the wire name, only the label is human. */
+    const EVENT_LABEL = {
+      pre_tool_call: 'before the agent uses a tool  (can block it)',
+      post_tool_call: 'after the agent uses a tool',
+      pre_llm_call: 'before every model call  (can add a note, or block)',
+      post_llm_call: 'after every model call',
+      on_session_start: 'when a run starts',
+      on_session_end: 'when a run finishes',
+      subagent_stop: 'when a delegated worker finishes',
+      on_pre_compress: 'just before history is compacted',
+      on_memory_write: 'when something is written to memory'
+    };
+    let extPluginDir = '';
     const extMsg = body.querySelector('#ext-msg');
     function extSay(text, bad) {
       if (!extMsg) return;
@@ -220,15 +256,27 @@
         plEl.innerHTML = '';
         return;
       }
-      const fileEl = body.querySelector('#hk-file'); if (fileEl && hooks.file) fileEl.textContent = hooks.file;
-      const dirEl = body.querySelector('#pl-dir'); if (dirEl && plugins.dir) dirEl.textContent = plugins.dir;
+      // The folder path is REMEMBERED, never PRINTED. An absolute path in the chrome is noise for the many
+      // (the form writes the files now) and a leak for the few (it exposes the host's directory layout on
+      // every screenshot). It is available on demand from the COPY FOLDER PATH control instead.
+      extPluginDir = plugins.dir || '';
+      // Fill the event picker once, from the sidecar's OWN list — a hard-coded copy here would rot the day a
+      // new event ships and would fail SILENTLY, which is the one failure mode a hook must never have.
+      const evSel = body.querySelector('#hk-event');
+      if (evSel && !evSel.options.length && Array.isArray(hooks.events)) {
+        evSel.innerHTML = hooks.events.map(e => '<option value="' + esc(e) + '">' + esc(EVENT_LABEL[e] || e) + '</option>').join('');
+      }
 
       const hkRows = (hooks.hooks || []).map((h, i) => {
         const state = h.active ? 'active' : 'pending';
         const b3 = extBadge(state);
-        const act = h.active
-          ? '<button class="bb xs danger" data-ext="hook-revoke" data-event="' + esc(h.event) + '" data-command="' + esc(h.command) + '">✕ REVOKE</button>'
-          : '<button class="bb sm" data-ext="hook-allow" data-event="' + esc(h.event) + '" data-command="' + esc(h.command) + '">✓ APPROVE</button>';
+        // TWO different verbs, and the difference is the point: REVOKE stops it running and keeps the line so
+        // you can turn it back on; DELETE removes the line entirely.
+        const dat = ' data-event="' + esc(h.event) + '" data-command="' + esc(h.command) + '"';
+        const act = (h.active
+          ? '<button class="bb xs danger" data-ext="hook-revoke"' + dat + '>✕ REVOKE</button>'
+          : '<button class="bb sm" data-ext="hook-allow"' + dat + '>✓ APPROVE</button>')
+          + '<button class="bb xs danger" data-ext="hook-delete"' + dat + '>🗑 DELETE</button>';
         return '<div class="mc-row" style="--ci:' + i + '">' +
           '<div class="mc-top"><b>' + esc(h.name || h.command) + '</b> <span class="mc-tag">' + esc(h.event) + '</span>' +
             '<span class="mc-state" style="color:' + b3[0] + '">' + b3[1] + '</span></div>' +
@@ -237,18 +285,20 @@
         '</div>';
       });
       hkEl.innerHTML = hkRows.length ? hkRows.join('')
-        // The empty state TEACHES the feature rather than saying "none": a hooks file most stations will never
-        // write is exactly the thing that needs an example at the moment you first look for it.
-        : '<div class="mc-hint">No hooks yet. Create <code>hooks.json</code> in the folder above with entries like ' +
-          '<code>{ "event": "post_tool_call", "command": "npx prettier --write ." }</code>, then approve it here. ' +
-          'Events: pre/post_tool_call, pre/post_llm_call, on_session_start, on_session_end, on_pre_compress.</div>';
+        // The empty state TEACHES by pointing at the form directly below it. It must never send anyone to a
+        // file on disk now that the form exists — that was true for about a day and would age into a lie.
+        : '<div class="mc-hint">No hooks yet. A hook runs your own command at a fixed moment — ' +
+          '<i>after the agent writes a file, run <code>npx prettier --write .</code></i>, or ' +
+          '<i>before it uses a tool, block anything touching <code>main</code></i>. Add one below.</div>';
 
       const plRows = (plugins.plugins || []).map((p, i) => {
         const state = p.active ? 'active' : (p.pending ? 'pending' : 'inert');
         const b3 = extBadge(state);
-        const act = p.active
+        const act = (p.active
           ? '<button class="bb xs danger" data-ext="plugin-revoke" data-id="' + esc(p.id) + '">✕ REVOKE</button>'
-          : '<button class="bb sm" data-ext="plugin-allow" data-id="' + esc(p.id) + '" data-digest="' + esc(p.digest || '') + '">✓ APPROVE</button>';
+          : '<button class="bb sm" data-ext="plugin-allow" data-id="' + esc(p.id) + '" data-digest="' + esc(p.digest || '') + '">✓ APPROVE</button>')
+          // DELETE removes a folder of code. It asks first — this is the one action here with no undo.
+          + '<button class="bb xs danger" data-ext="plugin-delete" data-id="' + esc(p.id) + '" data-name="' + esc(p.name || p.id) + '">🗑 DELETE</button>';
         return '<div class="mc-row" style="--ci:' + i + '">' +
           '<div class="mc-top"><b>' + esc(p.name || p.id) + '</b> <span class="dim">' + esc(p.id) + '</span>' +
             '<span class="mc-tag">v' + esc(p.version || '0') + '</span>' +
@@ -259,25 +309,56 @@
         '</div>';
       });
       plEl.innerHTML = plRows.length ? plRows.join('')
-        : '<div class="mc-hint">No plugins installed. A plugin is a folder in the path above containing ' +
-          '<code>plugin.json</code> and an <code>index.js</code> that exports <code>register(api)</code>; ' +
-          'it subscribes to the same events as a hook but stays loaded, so it can remember things between them.</div>';
+        : '<div class="mc-hint">No plugins yet. A plugin listens to the same moments as a hook, but stays loaded — ' +
+          'so it can <b>remember between them</b> (count today\'s tool calls, warn you at fifty). ' +
+          'Create one below and it arrives working, ready to edit.</div>';
 
       const errs = (hooks.errors || []).concat(plugins.errors || []);
       if (errs.length) extSay(errs[0], true); else extSay('');
     }
 
+    // The three form buttons carry no data-ext of their own (they live in the markup, not in a rendered row),
+    // so they are mapped to actions here rather than duplicating the handler.
+    const EXT_FORM_BTNS = { 'hk-add': 'hook-add', 'pl-add': 'plugin-add', 'pl-where': 'plugin-where' };
     body.addEventListener('click', async (ev) => {
-      const btn = ev.target.closest('[data-ext]');
+      const formBtn = ev.target.closest('#hk-add, #pl-add, #pl-where');
+      const btn = formBtn || ev.target.closest('[data-ext]');
       if (!btn || !body.contains(btn)) return;
-      const kind = btn.getAttribute('data-ext');
+      const kind = formBtn ? EXT_FORM_BTNS[formBtn.id] : btn.getAttribute('data-ext');
       let ok = false;
+      // Set AFTER the re-render, never before: renderExtensions() clears the message line to drop stale
+      // errors, so a success set inline is wiped the instant it is written (caught live).
+      let done = '';
       if (kind === 'hook-allow') ok = await extPost('/api/hooks/allow', { event: btn.dataset.event, command: btn.dataset.command }, btn);
       else if (kind === 'hook-revoke') ok = await extPost('/api/hooks/revoke', { event: btn.dataset.event, command: btn.dataset.command }, btn);
+      else if (kind === 'hook-delete') ok = await extPost('/api/hooks/delete', { event: btn.dataset.event, command: btn.dataset.command }, btn);
       else if (kind === 'plugin-allow') ok = await extPost('/api/plugins/allow', { id: btn.dataset.id, digest: btn.dataset.digest }, btn);
       else if (kind === 'plugin-revoke') ok = await extPost('/api/plugins/revoke', { id: btn.dataset.id }, btn);
+      else if (kind === 'plugin-delete') {
+        // The only irreversible control on this panel, so it is the only one that asks.
+        if (!confirm('Delete the plugin "' + (btn.dataset.name || btn.dataset.id) + '" and its folder?\n\nThis removes the code from disk and cannot be undone.')) return;
+        ok = await extPost('/api/plugins/delete', { id: btn.dataset.id }, btn);
+      }
+      else if (kind === 'hook-add') {
+        const ev = body.querySelector('#hk-event'), cmd = body.querySelector('#hk-cmd'), nm = body.querySelector('#hk-name');
+        if (!cmd.value.trim()) { extSay('a hook needs a command to run', true); cmd.focus(); return; }
+        ok = await extPost('/api/hooks/create', { event: ev.value, command: cmd.value.trim(), name: nm.value.trim() }, btn);
+        if (ok) { cmd.value = ''; nm.value = ''; done = 'hook added — it is running now'; }
+      }
+      else if (kind === 'plugin-add') {
+        const id = body.querySelector('#pl-id'), nm = body.querySelector('#pl-name'), ds = body.querySelector('#pl-desc');
+        if (!id.value.trim()) { extSay('a plugin needs an id', true); id.focus(); return; }
+        ok = await extPost('/api/plugins/create', { id: id.value.trim(), name: nm.value.trim(), description: ds.value.trim() }, btn);
+        if (ok) { done = 'plugin created and loaded — edit its index.js to make it yours'; id.value = ''; nm.value = ''; ds.value = ''; }
+      }
+      else if (kind === 'plugin-where') {
+        if (!extPluginDir) { extSay('the station has not reported a plugins folder yet', true); return; }
+        try { await navigator.clipboard.writeText(extPluginDir); extSay('folder path copied to your clipboard'); }
+        catch (_) { extSay(extPluginDir); }   // no clipboard permission — show it rather than fail silently
+        return;
+      }
       else return;
-      if (ok) { try { sfx('ok'); } catch (_) {} await renderExtensions(); }
+      if (ok) { try { sfx('ok'); } catch (_) {} await renderExtensions(); if (done) extSay(done); }
     });
     renderExtensions();
 
@@ -917,5 +998,7 @@
     refreshStatus();
   }
 
-  StationUI.registerWindow('connectors', 'TOOLSETS & CONNECTORS', buildConnectors, { console: true });
+  // The title must match the dock button that opens it — a window whose chrome disagrees with the button you
+  // pressed reads as the wrong window, and this console now covers more than toolsets and connectors.
+  StationUI.registerWindow('connectors', 'ABILITIES', buildConnectors, { console: true });
 })();

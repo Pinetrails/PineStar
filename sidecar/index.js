@@ -5284,9 +5284,13 @@ const ROUTES = [
   { m: 'GET', exact: '/api/hooks', h: handleHooksList },
   { m: 'POST', exact: '/api/hooks/allow', h: handleHooksAllow },
   { m: 'POST', exact: '/api/hooks/revoke', h: handleHooksRevoke },
+  { m: 'POST', exact: '/api/hooks/create', h: handleHooksCreate },
+  { m: 'POST', exact: '/api/hooks/delete', h: handleHooksDelete },
   { m: 'GET', exact: '/api/plugins', h: handlePluginsList },
   { m: 'POST', exact: '/api/plugins/allow', h: handlePluginsAllow },
   { m: 'POST', exact: '/api/plugins/revoke', h: handlePluginsRevoke },
+  { m: 'POST', exact: '/api/plugins/create', h: handlePluginsCreate },
+  { m: 'POST', exact: '/api/plugins/delete', h: handlePluginsDelete },
   { m: 'POST', exact: '/api/checkpoint/restore', h: handleCheckpointRestore },
   { m: 'GET', prefix: '/api/checkpoint', h: handleCheckpointList },
   { m: 'GET', exact: '/api/health', h: (req, res) => { res.writeHead(200); return res.end('ok'); } },
@@ -7770,6 +7774,60 @@ async function handleWorkshopShiftNow(req, res) {
   kaOff();
   try { res.write(JSON.stringify({ name: 'workshop.shift.result', payload: result }) + '\n'); } catch (_) {}
   try { res.end(); } catch (_) {}
+}
+
+/* THE AUTHORING ROUTES. Without these there was no way to make an extension except to find a folder and
+   hand-write JSON — which meant the whole feature was, in practice, unreachable. Creating through the station
+   AUTO-APPROVES: the Commander typed it here, on purpose, and asking them to then approve their own keystrokes
+   is theatre. The allowlist still governs everything that arrives by any other route. */
+async function handleHooksCreate(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const event = String((body && body.event) || '').trim();
+  if (hookSpine.events().indexOf(event) < 0) return json(400, { error: 'unknown event — pick one of: ' + hookSpine.events().join(', ') });
+  const r = await shellHooks.create({ event, command: (body && body.command) || '', name: (body && body.name) || '' });
+  if (!r.ok) return json(400, { error: r.error });
+  try { hookSpine.clear(); pluginsLoaded = await pluginLoader.load(hookSpine); hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { return json(500, { error: 'created, but could not start it: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length });
+}
+async function handleHooksDelete(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const event = String((body && body.event) || '').trim();
+  const command = String((body && body.command) || '').trim();
+  if (!event || !command) return json(400, { error: 'event and command are required' });
+  if (!(await shellHooks.remove(event, command))) return json(404, { error: 'no such hook' });
+  try { hookSpine.clear(); pluginsLoaded = await pluginLoader.load(hookSpine); hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { return json(500, { error: 'deleted, but reload failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length });
+}
+async function handlePluginsCreate(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const r = await pluginLoader.scaffold({ id: (body && body.id) || '', name: (body && body.name) || '', description: (body && body.description) || '' });
+  if (!r.ok) return json(400, { error: r.error });
+  try { hookSpine.clear(); pluginsLoaded = await pluginLoader.load(hookSpine); hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { return json(500, { error: 'created, but could not load it: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, id: r.id, active: pluginsLoaded.loaded.length });
+}
+async function handlePluginsDelete(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const id = String((body && body.id) || '').trim();
+  if (!id) return json(400, { error: 'id is required' });
+  if (!(await pluginLoader.destroy(id))) return json(404, { error: 'no such plugin' });
+  try { hookSpine.clear(); pluginsLoaded = await pluginLoader.load(hookSpine); hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { return json(500, { error: 'deleted, but reload failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: pluginsLoaded.loaded.length });
 }
 
 /* The two REVOKE routes. Written as their own handlers rather than a flag on allow, because "take this away"

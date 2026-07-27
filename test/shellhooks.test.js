@@ -163,6 +163,31 @@ const mk = (extra) => makeShellHooks(Object.assign({ spawn, fsp, pathMod: path, 
       A.eq(await sh.revoke('pre_tool_call', 'never configured'), false, 'and so is revoking something that was never approved');
     }
 
+    // ---- 9c. AUTHORING. Without create() the feature was unreachable: "make a hook" meant "find a folder
+    //          and hand-write JSON". A hook TYPED INTO THE STATION is consented by the act of typing it. ----
+    {
+      await fsp.rm(ALLOW, { force: true });
+      await fsp.rm(HOOKS, { force: true });
+      const sh = mk();
+      const cmd = script('');
+      const made = await sh.create({ event: 'post_tool_call', command: cmd, name: 'formatter' });
+      A.eq(made.ok, true, 'create() writes the hook');
+      A.eq((await sh.listPending()).length, 0, 'and AUTO-APPROVES it — asking the author to approve their own keystrokes is theatre');
+      const spine = makeHooks();
+      A.eq((await sh.install(spine)).installed.length, 1, 'so it installs and runs immediately');
+
+      A.eq((await sh.create({ event: 'post_tool_call', command: cmd, name: 'dupe' })).ok, false, 'the exact same hook cannot be added twice');
+      A.eq((await sh.create({ event: 'post_tool_call', command: '' })).ok, false, 'a hook with no command is refused');
+      A.eq((await sh.create({ event: 'post_tool_call', command: 'node "unbalanced' })).ok, false, 'an unparseable command is refused at the door, not at run time');
+
+      // DELETE removes the LINE — the thing revoke deliberately does not do.
+      A.eq(await sh.remove('post_tool_call', cmd), true, 'remove() reports the deletion');
+      A.eq((await sh.load()).hooks.length, 0, 'the line is gone from hooks.json');
+      A.eq(Object.keys(JSON.parse(await fsp.readFile(ALLOW, 'utf8'))).length, 0,
+        'and its approval went with it — an orphan approval would be silently inherited by the next hook with that command');
+      A.eq(await sh.remove('post_tool_call', cmd), false, 'deleting what is gone is an honest false');
+    }
+
     // ---- 10. a missing hooks file is the ordinary case: no hooks, no errors, no noise ----
     {
       const sh = makeShellHooks({ spawn, fsp, pathMod: path, hooksFile: path.join(DIR, 'nope.json'), allowFile: ALLOW, cwd: DIR });
