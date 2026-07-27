@@ -159,6 +159,7 @@
     sliders.push(buildSlider(body, light, 'pool', 0.5, 1, 0.01, scheduleRebake));
     sliders.push(buildSlider(body, light, 'floor', 0, 0.5, 0.01, scheduleRebake));
     sliders.push(buildSlider(body, light, 'room', 0.2, 0.8, 0.02, scheduleRebake));
+    sliders.push(buildSlider(body, light, 'crown', 0, 0.8, 0.01, scheduleRebake));   // how far ambient gives way over a wall's lit top surface — 0 puts the crown back under the hull skirt
 
     section(body, 'WALL HEIGHT (re-bakes)');
     sliders.push(buildSlider(body, wall, 'up', 0, 36, 1, scheduleRebake));      // room north face rise

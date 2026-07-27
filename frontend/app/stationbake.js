@@ -80,13 +80,33 @@ const StationBake = (() => {
      on absolute bake-pixel coords, so a chunk bake records the same numbers as the monolithic one. */
   let crownReach = null;
 
+  /* EVERY RECT THE CROWN PAINTS, recorded by the painter for buildLightMap to cut the ambient back
+     over (same per-bake contract as viewportRects/lampPos, absolute bake-pixel coords, so chunk and
+     monolithic bakes record identically).
+
+     WHY THE CROWN NEEDS ITS OWN CUT AT ALL. The hull SKIRT hangs in void and is deliberately left
+     OUTSIDE the ambient plate, so it renders at its raw baked tones — its top lip `#3f3a2c` reads
+     luma 58 flat. The wall's crown is interior and takes the full 0.77 ambient, which at the dark
+     end of a room drops it to 38. So the station's hull was BRIGHTER than the lit top surface of
+     the wall inside it, and the corners nearest the skirt were where that inversion showed worst.
+     Brightening the baked tone cannot fix it: through 0.77 ambient even a pure white crown tops out
+     near luma 62, barely at the skirt. The ambient itself has to give over the crown.
+     Which is also the honest reading — a crown is the one interior surface that faces the ceiling
+     lamps square-on. It is cut MULTIPLICATIVELY, so the crown still darkens away from the lamps
+     like everything else; it just never falls under the shell outside it. */
+  let crownRects = [];
+  const crown = (b, x, y, w, h, color) => {
+    b.fillStyle = color; b.fillRect(x, y, w, h);
+    if (w > 0 && h > 0) crownRects.push([x, y, w, h]);
+  };
+
   /* live-tunable lighting — the CRT LAB (crtlab.js, dev-gated) writes these and calls
      World.rebake() to re-run the bake. These ARE the shipped defaults.
        ambient  = how dark the unlit station is (0=fully lit · 1=black)
        pool     = how brightly the ceiling lamps carve their light pools back out
        room/corridor/door = baseline lift inside each space type
        floor    = warmth of the additive light pool painted on the floor */
-  const LIGHT = { ambient: 0.77, ambR: 7, ambG: 5, ambB: 3, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2 };
+  const LIGHT = { ambient: 0.77, ambR: 7, ambG: 5, ambB: 3, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2, crown: 0.45 };   // crown = how far the ambient gives way over a wall's lit top surface (0 = off, the old inversion)
 
   /* live-tunable DEPTH FX — the CRT LAB writes these and re-bakes (same contract as LIGHT/WALL).
      Pure top-down 2D cosmetics that make the deck read a touch more 3D — never imply agent/run
@@ -791,8 +811,8 @@ const StationBake = (() => {
     b.fillStyle = wallDk; b.fillRect(X, topY - capH - 2, T, 2);
     // lit crown — opaque cap band, 1px lighter top edge, 1px darker seam beneath. Kept BRIGHT:
     // after the ambient bake this continuous line defines the wall height at any zoom.
-    b.fillStyle = pal.cap; b.fillRect(X, topY - capH, T, capH);
-    b.fillStyle = U.shade(pal.cap, 0.30); b.fillRect(X, topY - capH, T, 1);          // 1px lighter top edge
+    crown(b, X, topY - capH, T, capH, pal.cap);
+    crown(b, X, topY - capH, T, 1, U.shade(pal.cap, 0.30));                          // 1px lighter top edge
     b.fillStyle = U.shade(pal.cap, -0.45); b.fillRect(X, topY - 1, T, 1);            // 1px darker seam beneath
     // THE FACE — per material
     (WALL_RECIPES[wallMatOf(e.z)] || WALL_RECIPES.plating)(b, pal, X, topY, h, e, n, room, Y + inFace);
@@ -1189,6 +1209,9 @@ const StationBake = (() => {
       const y0 = Math.max(yLo, y), y1 = Math.min(yHi, y + h);
       if (x1 <= x0 || y1 <= y0) return;
       b.fillStyle = c; b.fillRect(x0, y0, x1 - x0, y1 - y0);
+      // the ring's crown tones join the straights' in the ambient cut — a corner that stayed
+      // under full ambient beside a lifted straight would be the same inversion, just localised.
+      if (c === pal.cap || c === lit) crownRects.push([x0, y0, x1 - x0, y1 - y0]);
       if (!record) return;
       for (let ix = x0; ix < x1; ix++) { const p = crownReach.get(ix); if (p === undefined || y0 < p) crownReach.set(ix, y0); }
     };
@@ -1300,8 +1323,8 @@ const StationBake = (() => {
         b.fillStyle = rib; b.fillRect(X + 5, Y + T - fw, 1, fw);
         if (e.exterior) {
           b.fillStyle = wallDk; b.fillRect(X, Y + T, T, Math.max(out, cw + 2));   // outer hull band
-          b.fillStyle = pal.cap; b.fillRect(X, Y + T + 1, T, cw);                 // the wall's LIT TOP SURFACE
-          b.fillStyle = crownLit; b.fillRect(X, Y + T + cw, T, 1);                // lit outer edge
+          crown(b, X, Y + T + 1, T, cw, pal.cap);                                 // the wall's LIT TOP SURFACE
+          crown(b, X, Y + T + cw, T, 1, crownLit);                                // lit outer edge
           b.fillStyle = crownSeam; b.fillRect(X, Y + T, T, 1);                    // dark seam under the crown
         } else {
           b.fillStyle = U.shade(pal.base, -0.22); b.fillRect(X, Y + T - fw, T, 2);   // interior seam keeps the quiet crest
@@ -1314,8 +1337,8 @@ const StationBake = (() => {
           const side = Math.max(out, cw + 2, Math.round(e.room ? WALL.side : WALL.side * 0.6));
           b.fillStyle = wallDk; b.fillRect(X - side, Y, side, T);          // outer hull band — the shell, global tone
           b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X - side, Y, 1, T);
-          b.fillStyle = pal.cap; b.fillRect(X - 1 - cw, Y, cw, T);         // the wall's LIT TOP SURFACE
-          b.fillStyle = crownLit; b.fillRect(X - 1 - cw, Y, 1, T);         // lit outer edge
+          crown(b, X - 1 - cw, Y, cw, T, pal.cap);                         // the wall's LIT TOP SURFACE
+          crown(b, X - 1 - cw, Y, 1, T, crownLit);                         // lit outer edge
           b.fillStyle = crownSeam; b.fillRect(X - 1, Y, 1, T);             // dark seam under the crown
         }
       } else {
@@ -1326,8 +1349,8 @@ const StationBake = (() => {
           const side = Math.max(out, cw + 2, Math.round(e.room ? WALL.side : WALL.side * 0.6));
           b.fillStyle = wallDk; b.fillRect(X + T, Y, side, T);
           b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X + T + side - 1, Y, 1, T);
-          b.fillStyle = pal.cap; b.fillRect(X + T + 1, Y, cw, T);
-          b.fillStyle = crownLit; b.fillRect(X + T + cw, Y, 1, T);
+          crown(b, X + T + 1, Y, cw, T, pal.cap);
+          crown(b, X + T + cw, Y, 1, T, crownLit);
           b.fillStyle = crownSeam; b.fillRect(X + T, Y, 1, T);
         }
       }
@@ -1597,6 +1620,17 @@ const StationBake = (() => {
       const n = Math.max(1, Math.round(RW / (RH * 1.4)));
       for (let i = 0; i < n; i++) cut(X + RW * (i + 0.5) / n, Y + RH * 0.42, Math.max(RH * 0.78, RW / n * 0.62), LIGHT.room);
     }
+    /* THE CROWN CUT — a flat, hard-edged pull on the ambient over every rect the crown painted, so
+       the wall's lit top surface always reads ABOVE the hull skirt outside it (the skirt hangs in
+       void, deliberately outside the ambient plate, so it renders at a flat luma 58 and used to
+       out-shine a 38 crown at the dark end of a room). MULTIPLICATIVE by construction — it is one
+       more destination-out on the same layer — so the crown still falls off away from the lamps
+       exactly like every other surface; it just never falls under the shell. Hard-edged, not a
+       gradient: it stands for a surface, not a light source. */
+    if (LIGHT.crown > 0.001) {
+      L.fillStyle = 'rgba(0,0,0,' + Math.min(1, LIGHT.crown).toFixed(3) + ')';
+      for (const [x, y, w, h] of crownRects) L.fillRect(x, y, w, h);
+    }
     for (const l of lampPos) cut(l.x, l.y, l.r, LIGHT.pool);   // lamps punch bright pools out of the darker ambient → the lights carry the room
     // doorway light spill so corridors and rooms read as connected
     for (const [x1, y1, x2, y2] of G.doorDefs) cut((x1 + x2 + 1) / 2 * T, (y1 + y2 + 1) / 2 * T, T * 1.6, LIGHT.door);
@@ -1804,6 +1838,7 @@ const StationBake = (() => {
     G = geo; T = geo.TILE; HR = T + pad; W = geo.W; H = geo.H;
     wallPalCache = null;   // per-room wall palettes are derived from THIS geometry — never reuse across bakes
     viewportRects = [];    // ...and so are the window holes the wall pass punches
+    crownRects = [];       // ...and the crown rects the ambient cut reads back
     crownReach = new Map();   // ...and the corner crown's measured reach, which the mask erase reads back
     VX = viewport ? viewport.x : 0; VY = viewport ? viewport.y : 0;
     CW = viewport ? viewport.w : W; CH = viewport ? viewport.h : H;

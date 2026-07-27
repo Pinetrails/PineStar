@@ -115,8 +115,15 @@ const PROBE = `(() => {
     return c2.toDataURL('image/png').split(',')[1];
   };
 
+  /* THE ACCEPTANCE TEST for the crown cut: the DIMMEST crown pixel anywhere on the ring must beat
+     the BRIGHTEST hull-skirt pixel. The skirt hangs outside the ambient plate at flat raw tones, so
+     it is the thing the wall has to out-shine, and the corners are where the two meet. */
+  let skirtMax = 0;
+  for (let y = y2 + 6; y < Math.min(H, y2 + 44); y++)
+    for (let x = x1 + 60; x < x2 - 60; x++) { const v = at(x, y); if (v != null && v > skirtMax) skirtMax = v; }
+
   return JSON.stringify({
-    W, H, T, room: [x1, y1, x2, y2], leak,
+    W, H, T, room: [x1, y1, x2, y2], leak, skirtMax,
     westScan: scanH(midY, x1 - 20, x1 + 12),
     eastScan: scanH(midY, x2 - 12, x2 + 20),
     northScan: scanV(midX, y1 - 24, y1 + 14),
