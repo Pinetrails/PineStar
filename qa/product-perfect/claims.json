@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "eb06cdc010ba944016f5ff34d8bfcdf3c58710fb",
+    "sourceCommit": "70f81f59f7e89e1ed8a6ffefb245296dd53eaa56",
     "pathSetSha256": "b42fc8968bd9ea83635667209ba4d6e8006645e600aee2323874ba4fcda2f603",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 289801,
-        "sha256": "0e918aa40da80029db8964a479710aa7d18922e52acdbb587b2eb4f138848087"
+        "bytes": 290386,
+        "sha256": "60a2c288c775cafd41c9dcfcbca188d4dcec66699a270af6601b6864a98d72c9"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -818,8 +818,8 @@
       },
       {
         "path": "frontend/app/worldmodel.js",
-        "bytes": 76199,
-        "sha256": "fbbb3592eb391f4d361d6ddbac6759282bf85763ad579413d708f00eba89b544"
+        "bytes": 77291,
+        "sha256": "c37350399f9a46fbc7e5480f705726939f130f921266301fb381fef8ce6f4f44"
       },
       {
         "path": "frontend/app/xp.js",
