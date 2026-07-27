@@ -161,6 +161,10 @@ const { makeClock } = require('../shared/clock-rng.js');
   A.eq(edited.content, 'fixed up text', 'edited content used + trimmed');
   A.eq(recordFromProposal({ kind: 'fact', content: 'f' }, { now: 0 }).title, 'Fact', 'fact -> "Fact" label');
   A.eq(recordFromProposal({ kind: 'weird', content: 'w' }, { now: 0 }).title, 'Note', 'unknown kind -> "Note" label');
+  // ORIGIN: unattended runs reflect now, so a committed record must say which surface formed it
+  A.eq(rec.origin, 'commander', 'no origin supplied -> commander (the historical meaning of an untagged record)');
+  A.eq(recordFromProposal(prop, { now: 0, id: 'n', origin: 'channel:telegram' }).origin, 'channel:telegram', 'a run-supplied origin is stamped on the record');
+  A.eq(recordFromProposal({ kind: 'fact', content: 'f', origin: 'nightshift' }, { now: 0 }).origin, 'nightshift', 'a proposal that already carries an origin keeps it');
 
   // feedbackFor: Keep/Edit positive (XP + a good confidence sample), Discard negative (a bad sample), else null
   A.eq(feedbackFor('keep').delta, 2, 'keep is the strong positive');

@@ -52,14 +52,79 @@ let clk = 1000; const clock = { now: () => clk };
     A.ok(/match/.test(r.summary), 'summary reports match count');
   }
 
-  // ---- E. the tool guards an empty query + a missing store ----
+  // ---- E. the tool guards an empty transcript + a missing store ----
   {
     const { recallTool } = makeRecallTool({ transcriptStore: makeTranscriptStore({ io: memIo(), clock }) });
+    // an argument-less call is now BROWSE (list workstreams), so on an EMPTY store it must say there is no
+    // recorded conversation — never invent one.
     const empty = await recallTool.run({ query: '   ' }, { streamId: 's1' });
-    A.ok(/query/i.test(empty.content), 'empty query -> a helpful nudge, not a crash');
+    A.ok(/no recorded conversation/i.test(empty.content), 'empty store + no query -> honest "nothing recorded"');
     const noStore = makeRecallTool({}).recallTool;
     const r = await noStore.run({ query: 'x' }, { streamId: 's1' });
     A.ok(/unavailable/i.test(r.content), 'missing transcriptStore -> graceful "unavailable"');
+  }
+
+  // ---- F. store: scope:'all' spans every workstream, and every hit is ATTRIBUTED ----
+  {
+    const s = makeTranscriptStore({ io: memIo(), clock });
+    clk = 2000; s.append({ streamId: 'a', role: 'user', content: 'alpha secret pumpkin' });
+    clk = 2001; s.append({ streamId: 'b', role: 'user', content: 'beta pumpkin elsewhere' });
+    const scoped = s.search('a', 'pumpkin', { limit: 5 });
+    A.eq(scoped.length, 1, 'default scope is still ONE stream (no behaviour drift)');
+    A.eq(scoped[0].streamId, 'a', 'a hit carries its own streamId');
+    const all = s.search('a', 'pumpkin', { limit: 5, scope: 'all' });
+    A.eq(all.length, 2, "scope:'all' searches every workstream");
+    A.eq(all.map(h => h.streamId).sort(), ['a', 'b'], 'cross-stream hits are attributable to their workstream');
+  }
+
+  // ---- G. store: streams() browse + around() scroll ----
+  {
+    const s = makeTranscriptStore({ io: memIo(), clock });
+    clk = 3000; s.append({ streamId: 'old', role: 'user', content: 'the docking clamp question' });
+    clk = 4000; s.append({ streamId: 'new', role: 'user', content: 'the reactor question' });
+    clk = 4001; s.append({ streamId: 'new', role: 'assistant', content: 'reactor answer' });
+    const list = s.streams({ limit: 10 });
+    A.eq(list.length, 2, 'browse lists every workstream');
+    A.eq(list[0].streamId, 'new', 'most recently active workstream leads');
+    A.eq(list[0].turns, 2, 'turn count is real');
+    A.ok(list[0].preview.indexOf('reactor') >= 0, 'preview shows the last USER line (the topic)');
+    A.ok(list[1].preview.indexOf('docking clamp') >= 0, 'each stream keeps its own preview');
+    // scroll: anchored on a ts, returns the surrounding window of THAT stream only
+    const win = s.around('new', 4001, { window: 5 });
+    A.eq(win.length, 2, 'scroll returns the stream window around the anchor');
+    A.ok(win.every(r => r.streamId === 'new'), 'scroll never leaks another workstream');
+    A.eq(s.around('nope', 4001, { window: 5 }), [], 'scroll on an unknown stream -> empty, not a throw');
+  }
+
+  // ---- H. the tool: AUTO-WIDENS a zero-hit stream search instead of claiming it never happened ----
+  {
+    const s = makeTranscriptStore({ io: memIo(), clock });
+    clk = 5000; s.append({ streamId: 'other', role: 'user', content: 'we decided to use postgres for the ledger' });
+    clk = 5001; s.append({ streamId: 'here', role: 'user', content: 'unrelated chatter' });
+    const { recallTool } = makeRecallTool({ transcriptStore: s });
+    const r = await recallTool.run({ query: 'postgres ledger' }, { streamId: 'here' });
+    A.ok(r.content.indexOf('postgres') >= 0, 'the answer one workstream over is FOUND, not denied');
+    A.ok(/searched all of them/i.test(r.content), 'and the widening is stated, not silent');
+    A.ok(r.content.indexOf('[other') >= 0, 'the cross-stream hit names its workstream');
+    // an EXPLICIT stream scope is honoured — no surprise widening when the caller pinned it
+    const pinned = await recallTool.run({ query: 'postgres ledger', scope: 'stream' }, { streamId: 'here' });
+    A.ok(/no messages/i.test(pinned.content), "scope:'stream' does not auto-widen");
+  }
+
+  // ---- I. the tool: browse + scroll shapes ----
+  {
+    const s = makeTranscriptStore({ io: memIo(), clock });
+    clk = 6000; s.append({ streamId: 'w1', role: 'user', content: 'first topic' });
+    clk = 6001; s.append({ streamId: 'w1', role: 'assistant', content: 'first answer' });
+    const { recallTool } = makeRecallTool({ transcriptStore: s });
+    const browse = await recallTool.run({}, { streamId: 'w1' });
+    A.ok(browse.content.indexOf('w1') >= 0, 'no-arg call browses the workstreams');
+    A.ok(/workstream/i.test(browse.summary), 'browse summary counts workstreams');
+    const scroll = await recallTool.run({ around: 6001 }, { streamId: 'w1' });
+    A.ok(scroll.content.indexOf('first topic') >= 0, 'scroll reads the turns around the anchor');
+    A.ok(/turn/i.test(scroll.summary), 'scroll summary counts turns');
+    const bad = await recallTool.run({ around: 'nonsense' }, { streamId: 'w1' });
+    A.ok(/t=/.test(bad.content), 'a bad anchor explains the t= stamp instead of crashing');
   }
 
   A.report('recall.test');

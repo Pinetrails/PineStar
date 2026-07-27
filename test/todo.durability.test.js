@@ -7,7 +7,7 @@
 
 const A = require('./_assert.js');
 const path = require('path');
-const { makeMemoryStore, memoryFileFor, resetAgentMemory, restoreDeclined } = require('../sidecar/memory-store.js');
+const { makeMemoryStore, memoryFileFor, resetAgentMemory, restoreDeclined, appendPending, takePending, listPending, PENDING_CAP } = require('../sidecar/memory-store.js');
 const { makeTodoTool, formatForInjection } = require('../sidecar/tools/builtin/todo.js');
 
 function memFs() {
@@ -123,6 +123,51 @@ function memFs() {
       'a real status still round-trips');
     A.ok(T.render([{ id: 'z', content: 'c', status: 'toString' }]).indexOf('[?]') === 0,
       'an unknown status renders as [?] rather than reaching for a prototype value');
+  }
+
+  /* ---------- the DURABLE pending queue: a high-stakes deck raised with nobody watching stays answerable ----------
+     Unattended runs reflect now, so a credential/PII/standing-instruction proposal can be raised at 3am. The old
+     in-memory Map lost it on restart and could only be reached by exact runId — i.e. the Commander was never given
+     the chance to rule on it. This queue is the durable half. ---------- */
+  {
+    const pstore = makeMemoryStore({ fs: memFs(), path, workspaces: ROOT });
+    const props = [{ id: 'prop_1', kind: 'fact', content: 'the api key rotates monthly', scope: 'global', origin: 'schedule' }];
+    A.eq(await appendPending(pstore, 'hero', 'run-a', props, 5000), 1, 'a high-stakes proposal is queued');
+    const q = listPending(pstore, 'hero');
+    A.eq(q.length, 1, 'and is listed');
+    A.eq(q[0].runId, 'run-a', 'carrying the run that raised it, so a verdict can be routed back');
+    A.eq(q[0].origin, 'schedule', 'and the surface that formed it');
+    A.eq(q[0].createdAt, 5000, 'stamped with the INJECTED clock (memory-store is inside the determinism scan)');
+
+    // idempotent: a retried run / double-fired beat must not double the deck
+    A.eq(await appendPending(pstore, 'hero', 'run-a', props, 6000), 0, 're-stashing the same batch adds nothing');
+    A.eq(listPending(pstore, 'hero').length, 1, 'the deck is not doubled');
+
+    // proposal ids are per-batch (every batch mints a prop_1) — the composite key must keep runs apart
+    await appendPending(pstore, 'hero', 'run-b', [{ id: 'prop_1', kind: 'fact', content: 'a different belief' }], 7000);
+    A.eq(listPending(pstore, 'hero').length, 2, 'the same prop id from a DIFFERENT run is its own entry');
+
+    // resolving returns the real proposal body — this is what lets a post-restart verdict commit the right text
+    const taken = await takePending(pstore, 'hero', 'run-a', 'prop_1');
+    A.eq(taken.content, 'the api key rotates monthly', 'taking a proposal returns its body, not just an id');
+    A.eq(listPending(pstore, 'hero').length, 1, 'and removes exactly that one');
+    A.eq(listPending(pstore, 'hero')[0].runId, 'run-b', 'the other run\'s proposal is untouched');
+    A.eq(await takePending(pstore, 'hero', 'run-a', 'prop_1'), null, 'taking it twice is a null no-op, never an error');
+    A.eq(await takePending(pstore, 'nobody', 'run-z', 'prop_9'), null, 'taking from an empty queue is a no-op');
+
+    // FIFO bound: a backlog nobody answers must never grow without limit
+    const many = [];
+    for (let i = 0; i < PENDING_CAP + 10; i++) many.push({ id: 'p' + i, content: 'belief ' + i });
+    await appendPending(pstore, 'flood', 'run-c', many, 8000);
+    const flooded = listPending(pstore, 'flood');
+    A.eq(flooded.length, PENDING_CAP, 'the queue is capped');
+    A.eq(flooded[flooded.length - 1].id, 'p' + (PENDING_CAP + 9), 'and keeps the NEWEST (oldest fall off the front)');
+
+    // a re-commissioned hero must not inherit the prior Commander's un-answered deck
+    pstore.set('notebook:hero', [{ id: 'note_1' }]);
+    await resetAgentMemory(pstore, 'hero');
+    A.eq(listPending(pstore, 'hero'), [], 'new-hero reset wipes the pending deck too');
+    A.eq(listPending(pstore, 'flood').length, PENDING_CAP, 'and is scoped to the one agent');
   }
 
   A.report('todo.durability.test');
