@@ -100,4 +100,28 @@ economy accent — keeps cyan/green meaningful) + a small drive LED.
   (It once buffered K and absorbed K−1 for a map-reduce barrier the server never performed — removed
   2026-07-26.) Real batching would need a defined reply target for a run merged from several chats;
   that is an open product question, not a belt feature.
-- **Later:** outbound belt (reply rides desk→OUTBOX); RPG economy.
+- **Work lines / agentic graphs (done — 2026-07-27):** a dock's OUTPUT is the next dock's INPUT. Until this
+  landed the floor was a *dispatcher*: it picked ONE agent per inbound message, the bay consumed the crate, and
+  every bay drawn downstream of it was scenery — `INTAKE → researcher → writer → OUTBOX` ran only the
+  researcher. `compileRoutingPlan` now also emits `chains { agentId → { tile, next[], outbox, deadEnd } }`, and
+  `chainNext(plan, agentId, ctx, pick)` walks the belts from a dock's SHIP tile to the next dock, mirroring
+  crate physics exactly: a FILTER downstream of a dock branches on the **output's** tag (route the result by
+  what it turned out to be), a SPLIT round-robins, and **one output crate is one downstream run** (K in, K out).
+  `sidecar/routing/chain.js` executes it for channel messages (all four hubs) and scheduled routines
+  (`cron-driver` `advanceChain`, hops riding the routine's own stream so its session shows the whole line).
+  The reply that leaves the station is the LAST stage's.
+  - **A DOCK NEVER EATS ITS OWN OUTPUT.** A lane running along a dock's edge touches several ring tiles; the
+    handoff rides through all of them and is consumed only by a foreign dock. Compiler and engine hold the
+    same rule, which is what makes a self-loop structurally impossible rather than merely unlikely.
+  - **`CHAIN_CYCLE` is a BLOCKING error**, and it is invisible to `detectCycle`: A shipping into B's dock and
+    B shipping into A's are two separate lanes with no belt cycle anywhere — the loop exists only across the
+    docks (consume here, respawn there), and it is an infinite chain of PAID runs.
+  - **A CHAIN NEVER GATES THE REPLY.** Hop cap (6), chain spend cap ($2), a failed/empty stage, E-STOP — every
+    stop delivers the last good output plus an honest note naming where the line stopped. Same law as
+    "no belt → work still runs": a broken stage 3 must not swallow stage 2's answer.
+  - The line runs INSIDE the hub's inflight record, so E-STOP and a superseding message reach the downstream
+    stages; and `visited` refuses to run an agent twice even if the plan is re-posted mid-chain.
+  - Legibility: dock→dock lanes render ENERGIZED (they carry real crates), `BAY_NOT_FED` no longer shames a
+    stage-two dock (it is fed by an agent, not by a door), and a non-terminal stage no longer ALSO ships a
+    crate at the OUTBOX — its product *is* the handoff.
+- **Later:** RPG economy.
