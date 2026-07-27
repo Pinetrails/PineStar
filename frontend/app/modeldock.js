@@ -687,7 +687,14 @@ const ModelDock = (() => {
     const refresh = el('model-dock-refresh');
     const settings = el('model-dock-settings');
     if (toggle) {
-      toggle.addEventListener('click', ev => { ev.preventDefault(); ev.stopPropagation(); toggleDock(); });
+      // this handler stops propagation (the outside-click closer below must not see its own opening
+      // press), which also means audio.js's delegated click cue never reaches the document — so the
+      // dock sounds its own, directional like every other panel: open going out, close coming back.
+      toggle.addEventListener('click', ev => {
+        ev.preventDefault(); ev.stopPropagation();
+        if (typeof SFX !== 'undefined') { if (open) SFX.close(); else SFX.open(); }
+        toggleDock();
+      });
       // rich CRT tooltip on hover + keyboard focus (a11y) — killed the moment the dock opens
       toggle.addEventListener('mouseenter', showTip);
       toggle.addEventListener('mouseleave', hideTip);

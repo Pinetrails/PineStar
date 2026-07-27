@@ -73,6 +73,95 @@ input:focus, textarea.key-input:focus {
 /* solid --ph-dim (no opacity multiplier) keeps placeholder hint text >=4.5:1 (WCAG AA) on --bg across every theme; .7 opacity dropped it to ~3.2:1 */
 input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opacity: 1; }
 
+/* ---------- CONTROL FLOOR — NO control may ever paint itself with OS chrome ----------
+   LAW (2026-07-27, Andrew): every control in this product is station hardware. The browser's
+   own paint — buttonface white, ButtonBorder grey, black system text — is a BUG here, every
+   single time it surfaces, and it has surfaced repeatedly (the SURFACE/REFIT bare <button>,
+   the CHANNELS "RUNS AS" select, the DELIVERABLES status filter). The cause was always the
+   same: the sheet skinned controls per surface (.btn, .bb, .mkt-in, .fbc-sel, .mp-model …)
+   and a new control that forgot its class fell through to the user agent.
+
+   These rules are the FLOOR, not a skin. Every selector below is element-level — specificity
+   (0,0,1)/(0,0,2) — so EVERY existing class or id skin still outranks it and nothing already
+   themed changes appearance. All it does is replace OS paint with phosphor paint wherever the
+   surface sheets forgot. Measured live, floor-off vs floor-on over the same DOM (1100 controls,
+   all 17 windows open, every <details> expanded): 210 computed-style deltas, and exactly TWO
+   elements changed bounding box. The deltas are 2 white selects becoming phosphor fields
+   (#tg-bot-agent, #dl-status), 5 OS-blue accents becoming phosphor, 200 buttons leaving Arial
+   for the station font stack — and the rest are no-ops on invisible surfaces (border-colour on
+   zero-width borders, text colour on empty icon buttons, radius on borderless elements).
+
+   Do not "clean this up" by deleting it and re-skinning per surface — that is the exact
+   pattern that keeps letting white HTML controls ship. Do not raise its specificity either:
+   an earlier draft that also set border-radius/box-shadow here leaked onto id-styled,
+   class-less buttons (#ws-new, #estop-btn). A floor may only replace what the UA would paint.
+   Locked by test/control-floor-theming.test.js. */
+select {
+  font-family: inherit; font-size: 15px; color: var(--ph-bright); cursor: pointer;
+  background-color: #000;
+  border: 1px solid var(--ph-dim); border-radius: 4px; padding: 6px 9px; outline: none;
+  text-shadow: 0 0 5px var(--ph-glow2);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.7);
+  transition: border-color .12s, box-shadow .12s;
+}
+select:focus { border-color: var(--ph); box-shadow: inset 0 2px 6px rgba(0,0,0,.7), 0 0 12px var(--ph-glow2); }
+/* a bare <textarea> is a field, same as a bare <input> (the rule above only covers .key-input) */
+textarea {
+  font-family: inherit; color: var(--ph-bright);
+  background-color: #000; border: 1px solid var(--ph-dim); border-radius: 4px; padding: 8px 11px; outline: none;
+}
+textarea::placeholder { color: var(--ph-dim); opacity: 1; }
+/* buttons: neutralize the OS paint and NOTHING else. No box metrics, no radius, no shadow —
+   measured the hard way: a draft of this block that also set border-radius/box-shadow leaked
+   onto id-styled, class-less buttons (#ws-new, #estop-btn) that declare no radius of their
+   own. A floor may only replace what the user agent would have painted. */
+button, input[type=button], input[type=submit], input[type=reset] {
+  font-family: inherit; color: var(--ph); cursor: pointer;
+  background-color: transparent;
+  border: 1px solid var(--ph-dim);
+}
+button:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--ph-bright); outline-offset: 2px; }
+/* the OS ticks/knobs: phosphor, never the platform's blue */
+input[type=checkbox], input[type=radio], input[type=range], progress { accent-color: var(--ph); }
+/* the typed-field rule above is keyed on [type], so checkbox/range/file kept the UA's Arial.
+   Harmless where nothing renders text, wrong the moment a file input is ever shown. */
+input { font-family: inherit; }
+/* the native file picker's own button is a control too — it paints buttonface until told otherwise */
+input[type=file]::file-selector-button {
+  font-family: inherit; color: var(--ph); cursor: pointer;
+  background-color: transparent; border: 1px solid var(--ph-dim); border-radius: 5px;
+  padding: 4px 9px; margin-right: 9px;
+}
+input[type=file]::file-selector-button:hover { border-color: var(--ph); background-color: var(--ph-faint); color: var(--ph-bright); }
+
+/* STATION TOOLTIP — the phosphor hover card that replaces the browser's native `title` bubble
+   (tooltip.js). Same molded-card language as .model-dock-tip, which had this right in one place;
+   this generalizes it to every [title] in the app. position:fixed + body-child = its style px are
+   ZOOMED px (uiZoom law) — tooltip.js divides by z, this sheet must not re-scale anything. */
+.station-tip {
+  position: fixed; z-index: 200; pointer-events: none;
+  width: max-content; max-width: 280px;
+  padding: 7px 10px; text-align: left;
+  font-size: 12px; line-height: 1.4; white-space: normal; overflow-wrap: anywhere;
+  color: var(--ph); background: var(--panel);
+  border: 2px solid var(--ph); border-radius: 4px;
+  box-shadow: 0 0 0 2px var(--ink), 0 0 18px var(--ph-glow2);
+  opacity: 0; transform: translateY(3px);
+  transition: opacity .12s var(--ease-out, ease-out), transform .12s var(--ease-out, ease-out);
+}
+.station-tip[hidden] { display: none; }
+.station-tip.show { opacity: 1; transform: translateY(0); }
+/* the arrow tracks the anchor's centre (--tip-arrow, set by tooltip.js after clamping) */
+.station-tip::after {
+  content: ''; position: absolute; left: var(--tip-arrow, 50%); margin-left: -6px;
+  top: 100%; border: 6px solid transparent; border-top-color: var(--ph);
+}
+.station-tip.below::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--ph); }
+@media (prefers-reduced-motion: reduce) {
+  .station-tip { transition: none; transform: none; }
+  .station-tip.show { transform: none; }
+}
+
 /* (The standalone TITLE screen was removed — boot auto-resumes into the station, or opens CREATE/RESUME
    directly. The data-status line that used to live there now sits in the connect-screen footer.) */
 .title-status { color: var(--ph-dim); font-size: 14px; letter-spacing: 1px; }
@@ -290,10 +379,24 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
 
 #game-main { flex: 1; display: flex; gap: 9px; min-height: 0; }
 
+/* ---- TUBE APERTURE (2026-07-27) ----
+   The glass overlay's darkening is a SEPARATE layer from the barrel warp (World.crt.curve): the warp bows
+   the picture, this vignette dims its outer band. Held at `transparent 50%` the clear zone ended barely past
+   the halfway mark, so the outer ~third of each axis was progressively crushed and the panel read as a small
+   oval inside a big black rectangle — real estate lost to styling, not to curvature. These are now dials, not
+   literals: crtlab's TUBE APERTURE section writes them live (?crtlab=1), so the numbers get TUNED and copied
+   back rather than guessed. Curvature is untouched by every one of them. */
+:root {
+  --tube-clear: 68%;      /* how far out the glass stays fully clear (was 50%) */
+  --tube-mid: 88%;        /* the mid stop of the falloff */
+  --tube-mid-a: 0.26;     /* alpha at the mid stop (was 0.34) */
+  --tube-edge-a: 0.70;    /* alpha at the very corner (was 0.82) */
+  --tube-inset: 40px;     /* the wrap's inner edge shadow (was 60px) */
+}
 #stage-wrap {
   flex: 1; position: relative; min-width: 0; border-radius: 9px; overflow: hidden;
   background: var(--bg);
-  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 60px rgba(0,0,0,.9);
+  box-shadow: 0 0 0 2px var(--ph), 0 0 0 3.5px rgba(0,0,0,.9), inset 0 0 var(--tube-inset) rgba(0,0,0,.9);
 }
 /* the live feed graded into the terminal (warms/tints the world so it reads as a
    security-cam picture inside the CRT, not a flat canvas). --cam-grade is themed. */
@@ -329,7 +432,7 @@ input::placeholder, textarea.key-input::placeholder { color: var(--ph-dim); opac
   content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none; border-radius: 9px;
   background:
     radial-gradient(ellipse 72% 52% at 32% 3%, rgba(255,247,228,0.17), transparent 52%),   /* bright specular sweep across the top of the glass */
-    radial-gradient(ellipse 142% 136% at 50% 48%, transparent 50%, rgba(0,0,0,0.34) 82%, rgba(0,0,0,0.82) 100%);  /* deep bowed corner vignette → strong convex tube */
+    radial-gradient(ellipse 142% 136% at 50% 48%, transparent var(--tube-clear), rgba(0,0,0,var(--tube-mid-a)) var(--tube-mid), rgba(0,0,0,var(--tube-edge-a)) 100%);  /* bowed corner vignette → convex tube; stops are crtlab dials */
   box-shadow: inset 0 0 30px rgba(0,0,0,0.6), inset 0 2px 1px rgba(255,243,220,0.11), inset 0 0 0 1px rgba(255,238,210,0.04);   /* tube rim + top edge glass highlight */
 }
 body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
@@ -365,6 +468,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   display: flex; flex-direction: column; gap: 3px;
   background: rgba(5, 3, 1, 0.58);
 }
+/* PILL CLEARANCE (2026-07-27): .comms-newpill floats over this scroller's bottom edge and used to sit
+   ON TOP of the last transcript row. While the pill is up, reserve its height at the foot of the scroll
+   so the newest line can always be read past it. Toggled by chat.js showNewPill/hideNewPill. */
+#chat-log.pill-clear { padding-bottom: 48px; }
 #chat-log > * { position: relative; z-index: 1; flex: 0 0 auto; }
 #chat-log > .choice-row { z-index: 2; }
 #chat-log > .cmsg.consent, #chat-log > .cmsg.turnin, #chat-log > .cmsg.nudge { z-index: 3; }
@@ -899,6 +1006,24 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .cmsg.tb-read .tb-read-in { width: 100%; font-size: 14px; padding: 6px 9px; }   /* box-sizing is global (style.css `* {}`) */
 .tb-read-ack { font-size: 13px; line-height: 1.4; color: var(--ph); letter-spacing: 0.3px; }
 .tb-read-ack.err { color: var(--bad, #d66); }
+.tb-read-ack.closed { color: var(--ph-dim); }
+
+/* ---- SPENT BRIEF (2026-07-27): the read's run has resolved, so the card stops being a control surface and
+   becomes transcript. It recedes to the passive card weight (the live one keeps the lit phosphor edge — that
+   edge is what says "this is still steerable"), and folds to caption + objective. Click the caption to get
+   the full read back; nothing is deleted. Same fold idiom as the resolved run line's .run-fold. ---- */
+.cmsg.tb-read.tb-read-spent { border-left-color: var(--ph-dim); box-shadow: none; background: rgba(var(--ph-rgb), .03); }
+.tb-read-spent .tb-read-cap { cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.tb-read-spent .tb-read-cap:hover, .tb-read-spent .tb-read-cap:focus-visible { color: var(--ph); outline: 0; }
+.tb-read-chev { display: none; font-size: 9px; line-height: 1; transition: transform var(--t-fast, 120ms) var(--ease-soft, ease); }
+.tb-read-spent .tb-read-chev { display: inline-block; }
+.tb-read-spent:not(.folded) .tb-read-chev { transform: rotate(90deg); }
+.tb-read-spent.folded .tb-read-head { font-size: 13px; color: var(--ph); text-shadow: none;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.tb-read-spent.folded .tb-read-meta,
+.tb-read-spent.folded .tb-read-cap2,
+.tb-read-spent.folded .tb-read-assumps,
+.tb-read-spent.folded .tb-read-fix { display: none; }
 
 /* ===== THE DIALOGUE MODE (dialogue.js) — Fallout-style focused first-run conversation =====
    Mounts as a child overlay of #chat-panel, covering COMMS while the awakening/tutorial runs. One short
@@ -1911,7 +2036,8 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .src-badge.src-saved { color: var(--ph); border-color: var(--ph-faint); background: rgba(0, 0, 0, .25); }
 
 /* ---------- WORKSTREAMS rail (left) ---------- */
-#ws-wrap { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; }
+/* takes the left rail's slack (see the RAIL SPACE SPLIT note on #crew in style.css) */
+#ws-wrap { margin-top: 12px; display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
 .ws-head {
   display: flex; align-items: center; justify-content: space-between;
   color: var(--ink); background: var(--ph); padding: 3px 10px; letter-spacing: 1px;
@@ -1954,8 +2080,11 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .diag-pre { font-family: inherit; font-size: 11px; line-height: 1.4; color: var(--ph); margin: 0;
   padding: 8px 10px; border: 1px solid var(--ph-dim); border-radius: 2px; background: rgba(0,0,0,.25); }
 .diag-block-bar { display: flex; gap: 8px; margin-top: 6px; }
+/* fills whatever #ws-wrap was given rather than a fixed 40vh slice — the old cap made the list scroll
+   while empty rail sat above it. min-height:0 so the flex child may actually shrink and scroll. */
 #workstreams {
-  list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto; max-height: 40vh;
+  list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto;
+  flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; gap: 4px;
 }
 /* display:flex above beats the UA [hidden] rule — without this, the PROJECTS tab couldn't actually
@@ -2015,8 +2144,10 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 /* the PROJECTS list reuses the SESSIONS rail row vocabulary (.ws-row / .ws-dot / .ws-title / .ws-meta /
    .ws-kebab) but each project is a TWO-LINE card: name line + the honest path line (the path used to hide
    in a tooltip, which read as a bare, cheap row). Sessions preview as an indented phosphor thread. */
+/* same slack rule as #workstreams — the PROJECTS tab shares the rail's lower half */
 #projects {
-  list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto; max-height: 40vh;
+  list-style: none; margin: 0; padding: 6px 0 0; overflow-y: auto;
+  flex: 1 1 auto; min-height: 0;
   display: flex; flex-direction: column; gap: 0;
 }
 #projects[hidden] { display: none; }
@@ -2279,7 +2410,29 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .ag-command { margin: 10px 0 8px; display: flex; flex-direction: column; gap: 12px; }
 .ag-cmd-sec { border-top: 1px solid var(--hair, rgba(255,255,255,.08)); padding-top: 8px; }
 .ag-cmd-lbl { font-size: 10px; color: var(--ph-dim); letter-spacing: 2px; margin-bottom: 6px; }
-.ag-skin-row { max-height: 108px; }   /* reuse .skin-picker/.skin-thumb; a shorter well in the narrower dossier pane */
+/* SKIN: a scrolling well of thumbs on the left, the LIVE preview stage pinned right — a 44px still of a
+   chunky sprite is unidentifiable, so the stage plays the picked/hovered skin's real walk cycle. Same
+   shape + material as the Recruitment Bay's SUMMON stage (.mkt-skin-stage in marketplace.css), sized for
+   the narrower dossier pane; the well's height is matched to the stage so neither side reads lopsided. */
+.ag-skin-section { display: flex; gap: 12px; align-items: flex-start; }
+.ag-skin-row { max-height: 156px; }   /* reuse .skin-picker/.skin-thumb; a shorter well in the narrower dossier pane */
+.ag-skin-stage { flex: 0 0 124px; margin: 0; display: flex; flex-direction: column; align-items: center; gap: 5px; }
+.ag-skin-stage-frame { width: 124px; height: 124px; box-sizing: border-box; overflow: hidden;
+  background-image: radial-gradient(ellipse 64% 44% at 50% 86%, var(--ph-glow2), transparent 72%);
+  background-color: var(--panel2); border: 1px solid var(--ph-dim); border-radius: 6px;
+  box-shadow: inset 0 1px 0 rgba(var(--ph-rgb),.08), 0 1px 0 rgba(0,0,0,.35);
+  display: flex; align-items: flex-end; justify-content: center; }
+/* smooth-downscale the ~92px sprite master (repo law: never nearest-neighbour crush a large sprite) */
+.ag-skin-stage-frame img { width: 88%; height: 88%; object-fit: contain; object-position: center bottom;
+  image-rendering: auto; }
+.ag-skin-stage-name { color: var(--ph-bright); letter-spacing: 1px; font-size: 12px; text-align: center;
+  line-height: 1.25; text-shadow: 0 0 6px var(--ph-glow2); }
+.ag-stage-lbl { color: var(--ph-dim); letter-spacing: 1.5px; font-size: 10px; }
+/* narrow dossier pane: drop the stage below the wells so neither crushes */
+@media (max-width: 720px) {
+  .ag-skin-section { flex-direction: column; }
+  .ag-skin-stage { flex: 0 0 auto; align-self: center; }
+}
 .ag-cmd-danger .ag-cmd-lbl { color: var(--bad); }
 .ag-del-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .ag-del { border-color: var(--bad) !important; color: var(--bad) !important; }
