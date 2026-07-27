@@ -4085,7 +4085,10 @@ const World = (() => {
     const step = a.state === 'walk' ? (Math.floor(now / 140) % 2) : 0;
     const bob = (a.state !== 'walk' && !a.sitting)
       ? Math.round(a.speaking ? Math.sin(now / 170 + a.phase) * 1.1 : Math.sin(now / 600 + a.phase) * 0.7) : 0;
-    ctx.globalAlpha = 0.3; ctx.fillStyle = '#000'; ctx.fillRect(x - 4, y - 1, 8, 2); ctx.globalAlpha = 1;
+    // same pooled contact shadow the sprite bodies get (SPRITES.groundShadow needs no loaded
+    // assets, so the fallback — which runs precisely when they FAILED to load — still gets it).
+    if (typeof SPRITES !== 'undefined' && SPRITES.groundShadow) SPRITES.groundShadow(ctx, x, y, 5, { lift: -bob });
+    else { ctx.globalAlpha = 0.3; ctx.fillStyle = '#000'; ctx.fillRect(x - 4, y - 1, 8, 2); ctx.globalAlpha = 1; }
     const top = y - h + bob;
     ctx.fillStyle = a.color; ctx.fillRect(x - 3, top + 3, 6, h - 6);
     ctx.fillStyle = '#f0e6c0'; ctx.fillRect(x - 2, top, 5, 4);
