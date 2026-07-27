@@ -821,6 +821,7 @@
       let reply;
       let choiceEntry = null;    // the registered choice keyboard for a TASK_QUESTION reply (null = plain text)
       let finalAgentId = agentId;   // WHO produced the delivered reply — the LAST stage of the work line, not the first
+      let firstStageText = null;    // what the ENTRY dock itself said, when a work line went on to replace it
       try {
 
       // MEDIA: download + store what the user actually sent (photos/videos/voice/files) BEFORE the turn is built,
@@ -991,6 +992,7 @@
         });
         if (!myRec.superseded && line.hops.length) {
           // the line's answer replaces the first stage's — and the floor/channel agree on who produced it
+          firstStageText = state.buf;
           state.buf = line.text + chain.stopNote(line);
           finalAgentId = line.agentId;
         } else if (!myRec.superseded && line.stopped && line.stopped !== 'stopped') {
@@ -1052,7 +1054,13 @@
                              : '\nReply with a choice, or say "use your judgment."');
           }
         }
-        if (reply) { try { store.appendTurn(agentId, 'assistant', reply); } catch (_) {} }
+        /* AN AGENT'S TRANSCRIPT RECORDS WHAT THAT AGENT SAID. When a work line ran, `reply` is the LAST
+           stage's text — writing it under the ENTRY dock would fabricate a turn: stage one never said it, and
+           on the next message it would replay its own history as if it had. Each hop already persists its own
+           output under its own id (and the delivering stage's transcript holds the delivered text), so the
+           entry dock gets back what IT actually produced. */
+        const ownReply = (firstStageText != null) ? firstStageText : reply;
+        if (ownReply) { try { store.appendTurn(agentId, 'assistant', ownReply); } catch (_) {} }
         if (state.reason && state.reason !== 'done') reply += endNote(state.reason, state);
       }
 
