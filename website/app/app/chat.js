@@ -5949,7 +5949,8 @@ const Chat = (() => {
       const stopped = interrupted.has(ws.id);   // the Commander pressed Stop on THIS stream — a graceful interrupt, not a fault
       if (stopped) {
         // keep whatever already streamed, mark it stopped, and log NO error (the stop was intentional).
-        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.done(); toolLine('⏹ stopped'); resolvePresence(ws, { stopped: true, steps: runToolsOk }); }
+        // No toolLine (2026-07-27): resolvePresence already prints "■ RUN STOPPED · …" — `⏹ stopped` echoed it.
+        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.done(); resolvePresence(ws, { stopped: true, steps: runToolsOk }); }
         markStoppedTurn(ws, acc);
         if (isActiveWs(ws)) offerTryAgain();
         if (!isTask && isActiveWs(ws) && acc.trim()) World.say(acc);
