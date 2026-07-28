@@ -1,5 +1,37 @@
 # Skill-creation parity plan — 7/10 → 9/10
 
+## STATUS 2026-07-28 — BUILT AND PROVEN (P0 1-4 + P1 5-6), branch `claude/starnet-hermesagent-comparison-e1a29b`
+
+Commits: `237f8762` (enforcement) · `0f87fb9d` (claims re-lock) · `4040fb27` (dead-preload fix +
+live proofs). NOT pushed, NOT merged — Andrew pushes.
+
+Proof: `test/skills.gate.test.js` 80 assertions (units) · `test/skills.gate.http.test.js` 31
+(real booted host over sockets) · `test/skills.gate.prompt.e2e.test.js` 22 (the bytes that reach
+the provider, mock upstream). `test:fast` green, 424 steps. Every guard was reverted one at a time
+and watched go red before being trusted. Claims re-locked; the only W0 problem left is the
+pre-existing installed-exe smoke stamp, which nothing here touches.
+
+**Three things this plan got wrong, corrected by grounding:**
+1. Support-file CONTENT was already capped and redacted (`red(e.content, supportFileMax)`, 64k).
+   Item 5 shrank to a file-COUNT + package-BYTES cap.
+2. The plan missed a second hole in the same area: `package.js hydrate()` reads `SKILL.md` back off
+   disk and OVERRIDES the stored body, so a package edited after the scan laundered content past
+   the guard. `gate.verify()` re-digests at the delivery seam to catch it — and legacy records
+   (written before the guard existed, carrying no verdict at all) are live-scanned there too.
+3. Mapping the Commander's own writes to the `trusted` tier made an unapprovable dead end once
+   verdicts were enforced. Human-authored content now has its own `user` tier that ASKS.
+
+**Found in passing and fixed (not in this plan):** the `/skill` preload path had never worked.
+`sidecar/index.js` read the bare identifier `preloadSkills` inside `runOnce` — handleRun's local —
+so it threw ReferenceError every run and the enclosing catch swallowed it silently. Invisible to
+every unit test; visible the moment a test asserted on the provider's system prompt.
+
+Still open from this doc: **P2 item 7** (a user-authored "New skill" composer in the panel). The
+WITHHELD card + Approve button shipped, so the panel's claims-re-lock cost is already paid.
+
+---
+
+
 Scope: the **creation/authoring** surface only (`sidecar/skillstore.js`,
 `sidecar/skills/{package,guard,runtime}.js`, `sidecar/tools/builtin/skills.js`, the
 review/curator forks in `sidecar/index.js`). Distribution (a hub / third-party install /
