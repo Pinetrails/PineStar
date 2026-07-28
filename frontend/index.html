@@ -533,11 +533,13 @@
       <div class="bb-menu" role="menu">
         <div class="bb-menu-h" aria-hidden="true">▤ WORK — what the crew is doing</div>
         <!-- WORK menu, one axis per entry (UX confusion audit 2026-07-15): RECIPES = WHAT to run,
-             ROUTINES = WHEN it runs, TASKS = WHERE live work sits, QUESTS = progress only. -->
+             ROUTINES = WHEN it runs, LOOPS = UNTIL it is done, TASKS = WHERE live work sits,
+             QUESTS = progress only. -->
         <button class="bb" data-term="tasks" data-hint="task"><span class="bb-i">☑</span><span class="bb-tx"><b>TASKS</b><small>where all work lives — queued, running &amp; done</small></span></button>
         <button class="bb" data-term="deliverables" data-hint="deliverable"><span class="bb-i">▣</span><span class="bb-tx"><b>DELIVERABLES</b><small>outputs, Workshop builds &amp; cleanup</small></span></button>
         <button class="bb" id="bb-missions" data-hint="recipe"><span class="bb-i">❒</span><span class="bb-tx"><b>RECIPES</b><small>ready-made jobs to launch — they land on TASKS</small></span></button>
         <button class="bb" data-term="routines" data-hint="routine"><span class="bb-i">⏱</span><span class="bb-tx"><b>ROUTINES</b><small>any job, put on a schedule</small></span></button>
+        <button class="bb" data-term="loops" data-hint="loop"><span class="bb-i">∞</span><span class="bb-tx"><b>LOOPS</b><small>any job, repeated until it’s done</small></span></button>
         <button class="bb" data-term="quests" data-hint="quest"><span class="bb-i">⚑</span><span class="bb-tx"><b>QUESTS</b><small>progress &amp; suggestions — not a second to-do list</small></span></button>
       </div>
     </div>
@@ -683,6 +685,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/recipe-catalog/ops.js"></script>
 <script src="app/recipe-catalog/index.js"></script><!-- aggregates every recipe-catalog module into one array — MUST load before recipes.js, which consumes it -->
 <script src="app/recipes.js"></script>
+<script src="app/loop-templates.js"></script><!-- LOOP SHAPES — the build/test/verify, sweep and research templates windows/loops.js renders -->
 <script src="app/classicons.js"></script>
 <script src="app/modeldock.js"></script>
 <script src="app/modelpicker.js"></script>
@@ -699,6 +702,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/windows/logbook.js"></script><!-- LOGBOOK — per-agent run history (RUNS · SLAG · INSIGHTS console) -->
 <script src="app/windows/outbox.js"></script><!-- OUTBOX — FINISHED WORK: uncollected finished runs, readable + rateable accordion -->
 <script src="app/windows/routines.js"></script><!-- ROUTINES — scheduled autonomous runs (thin CRUD client over /api/cron) -->
+<script src="app/windows/loops.js"></script><!-- LOOPS — standing objectives (thin polling client over /api/loops); needs loop-templates.js above -->
 <script src="app/windows/connectors.js"></script><!-- TOOLSETS & CONNECTORS — toolset kill-switches, MCP manager, catalog + service keys (Spotify flow embedded) -->
 <script src="app/windows/messaging.js"></script><!-- CHANNELS — messaging platforms catalog (Telegram/Discord/Slack/Matrix/Signal cards) -->
 <script src="app/navdock.js"></script>
