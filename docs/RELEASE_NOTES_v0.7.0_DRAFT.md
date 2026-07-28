@@ -156,6 +156,12 @@ why the surface still sounded like the old board no matter what else changed.
   can be rolled back. Two functions in the sidecar shared a name, so the snapshotter was silently
   handed the wrong one and **every snapshot failed without a word** — the restore list was always
   empty. It records now.
+- **The context gauge finally measures something.** The bottom-bar CTX readout sat at `—` with ten
+  hollow cells forever. The station kept one model catalog shared across every provider, and it
+  warms all ~17 of them at once — so whichever provider answered last, usually an unconfigured one
+  with an empty list, wiped the catalog belonging to the one you were actually using. The window
+  size for your live model then read as zero, so the gauge had nothing to divide by. Catalogs are
+  per-provider now, and a real turn paints `11k / 200k`.
 - **An oversized outbound message is refused**, not truncated into something you didn't write.
 - **The selected skin is announced** in the dossier, so the picker is usable without sight.
 - The ambient room shadow no longer darkens bare space at a corner, and the crown carries one
