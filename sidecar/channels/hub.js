@@ -132,7 +132,10 @@
     { command: 'away', description: 'Queue work to build on the away shift', usage: '/away [<what to build>|list|on|off]', slash: true },
     { command: 'approvals', description: 'Approve/deny buttons for this chat (on or off)', usage: '/approvals [on|off]' },
     { command: 'whoami', description: 'Show which agent this chat is talking to' },
-    { command: 'help', description: 'List these commands', menu: false }
+    { command: 'help', description: 'List these commands', menu: false },
+    // Telegram sends this when a fresh chat's START button is pressed. menu:false — the client offers it on an
+    // empty chat by itself, and it would be noise in the "/" list for everyone else.
+    { command: 'start', description: 'What this bot is and how to talk to it', menu: false }
   ];
   const SLASH_CMDS = COMMANDS.reduce((m, c) => { if (c.slash) m[c.command] = 1; return m; }, {});
   const KNOWN_CMDS = COMMANDS.reduce((m, c) => { m[c.command] = 1; return m; }, {});
@@ -487,6 +490,22 @@
 
       if (cmd === 'help') {
         await deliver(chatId, helpText(), '', 'command');
+        return;
+      }
+
+      /* /start — the FIRST thing every Telegram user ever sends: the client shows a START button on a fresh
+         chat and sends this literal text when it is pressed. It was in no command table, so it fell through
+         parseCommand as an ordinary message, SPENT A PAID MODEL RUN, and the member's first ever exchange with
+         the station was an agent puzzling over the word "/start". Answered here, for free, with the one thing
+         a newcomer actually needs: who they are talking to and what they can say. */
+      if (cmd === 'start') {
+        const me = (roster || []).find(x => String(x.agentId) === String(boundId));
+        const who = me ? (me.name || me.agentId) : boundId;
+        await deliver(chatId,
+          'STARNET online — you are talking to ' + who + '.\n\n'
+          + 'Just say what you need in plain language and I will get on it. I can search and read the web, '
+          + 'work with your files, remember things for you, and run scheduled work.\n\n'
+          + helpText(), '', 'command');
         return;
       }
 

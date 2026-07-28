@@ -18,6 +18,16 @@ const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+/* The Telegram transport sends parse_mode:'HTML' (channels/telegram.format.js), so the WIRE text carries tags
+   and entities while the phone renders plain prose. Every assertion about what the member READS must therefore
+   run on the rendered form — otherwise "WEB & BROWSER" fails against the perfectly correct "WEB &amp; BROWSER".
+   Decoding &amp; LAST is deliberate: doing it first would turn "&amp;lt;" into "<". */
+function rendered(wireText) {
+  return String(wireText == null ? '' : wireText)
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+}
+
 function readJsonBody(req) {
   return new Promise(resolve => {
     let body = '';
@@ -285,7 +295,7 @@ async function waitUntil(fn, ms, label) {
     const llmCallsBeforeTools = llm.requests.length;
     tg.pushText(7777, 99, '/tools');
     await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '7777'), 8000, '/tools reply to chat 7777');
-    const toolsReply = String((tg.sends.find(s => String(s.chat_id) === '7777') || {}).text || '');
+    const toolsReply = rendered((tg.sends.find(s => String(s.chat_id) === '7777') || {}).text);
     A.ok(!/no tools yet/.test(toolsReply), '/tools over Telegram does NOT claim the agent has no tools');
     A.ok(/Tools for this agent/.test(toolsReply), '/tools returns the card, not the empty-state sentence');
     // the autonomous office (capability/office.js fullOffice) — the objects hub.js's runs resolve against.
@@ -299,6 +309,19 @@ async function waitUntil(fn, ms, label) {
     A.ok(!activeLines.some(l => /TASK DELEGATION/.test(l)), '/tools does not claim delegation on a channel (orchestrator is LEAD-only)');
     // a slash command must not spend a model turn — it is answered by the registry, not the provider.
     A.eq(llm.requests.length, llmCallsBeforeTools, '/tools was answered by the registry without calling the provider');
+
+    /* ---- "/start" is answered for FREE, not by the model ---------------------------------------------------
+       Telegram shows a START button on every fresh chat and sends this literal text when it is pressed — the
+       first thing a new member ever transmits. It was in no command table, so it fell through parseCommand as
+       an ordinary message and SPENT A PAID MODEL RUN on an agent puzzling over the word "/start". Asserted
+       through the real ingress, and the provider-call count is what proves it never reached the model. */
+    const llmBeforeStart = llm.requests.length;
+    tg.pushText(7778, 99, '/start');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '7778'), 8000, '/start reply');
+    const startReply = rendered((tg.sends.find(s => String(s.chat_id) === '7778') || {}).text);
+    A.eq(llm.requests.length, llmBeforeStart, '/start is answered by the hub without spending a model turn');
+    A.ok(/STARNET online/.test(startReply), '/start greets the newcomer instead of answering "/start" as a question');
+    A.ok(/\/help/.test(startReply), '/start tells a first-time member what they can actually say');
 
     /* ---- /approvals ON must not COST the agent its office --------------------------------------------------
        THE BUG (2026-07-28, reported by a user off the v0.7.0 install that shipped the /tools fix above): the hub
@@ -340,7 +363,7 @@ async function waitUntil(fn, ms, label) {
     // and the readout AGREES with that wire, which is the whole point of the pair of fixes.
     tg.pushText(approvalsChat, 99, '/tools');
     await waitUntil(() => tg.sends.filter(s => String(s.chat_id) === String(approvalsChat)).length >= 3, 8000, '/tools reply in the approvals-ON chat');
-    const approvedTools = String((tg.sends.filter(s => String(s.chat_id) === String(approvalsChat)).pop() || {}).text || '');
+    const approvedTools = rendered((tg.sends.filter(s => String(s.chat_id) === String(approvalsChat)).pop() || {}).text);
     A.ok(/WEB & BROWSER/.test(approvedTools), '/tools in an approvals-ON chat lists the same WEB & BROWSER the run was handed');
     A.ok(!/no tools yet/.test(approvedTools), '/tools in an approvals-ON chat does not claim the agent has no tools');
 

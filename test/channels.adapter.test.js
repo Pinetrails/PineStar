@@ -418,6 +418,28 @@ async function run() {
     A.throws(() => makeChannelAdapter({ transport: t, normalize }), 'missing clock throws');
   }
 
+  /* ---- an unparseable update must not WEDGE the channel -------------------------------------------------
+     dispatch() swallowed a normalize() throw and returned WITHOUT advancing the offset. getUpdates keeps
+     returning everything at-or-after `offset` until a higher one confirms it, so the loop would re-fetch and
+     re-throw on that same update forever — a hot spin against the Bot API with every message behind it
+     permanently undelivered. One bad update must cost one dropped message, never the whole channel. */
+  {
+    let calls = 0;
+    const boom = (u) => { calls++; if (u && u.update_id === 7) throw new Error('unparseable'); return { offset: u.update_id, message: null }; };
+    const t = fakeTransport([[]]);
+    const seen = [];
+    const a = makeChannelAdapter({ transport: t, normalize: boom, name: 'telegram', maxMessageLength: 4096,
+      onInbound: m => seen.push(m), clock: CLOCK, sleep: () => Promise.resolve() });
+    const before = a._internals.offset;
+    a._internals.dispatch({ update_id: 7, message: { text: 'x', chat: { id: 1, type: 'private' }, from: { id: 9 } } });
+    A.ok(a._internals.offset > before, 'a normalize() throw still advances past the bad update');
+    A.eq(a._internals.offset, 8, 'the offset lands exactly one past the unparseable update id');
+    // and the NEXT, well-formed update is still processed normally — the channel is not deaf afterwards
+    a._internals.dispatch({ update_id: 8, message: { text: 'y', chat: { id: 1, type: 'private' }, from: { id: 9 } } });
+    A.eq(a._internals.offset, 9, 'the channel keeps moving after skipping the bad one');
+    await a.disconnect();
+  }
+
   A.report('channels.adapter.test');
 }
 
