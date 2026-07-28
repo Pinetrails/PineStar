@@ -527,7 +527,20 @@
     return null;
   }
 
+  /* THE HANDOFF TURN — lives HERE, in the module both the sidecar executor and the browser's COMMS loop
+     already load, because the same floor must produce the same run on every surface. A downstream stage is
+     NOT the user, it is a machine being handed material, so the turn names the line explicitly. Carrying the
+     ORIGINAL request as well as the upstream output is load-bearing: a writer handed only research has no
+     idea what was asked and invents one. */
+  function handoffPrompt(originalText, fromAgentId, upstream, hop) {
+    return 'PIPELINE HANDOFF — you are stage ' + (hop + 1) + ' of a work line on this station.\n\n'
+      + 'The original request was:\n' + String(originalText || '(none recorded)') + '\n\n'
+      + 'The upstream stage (' + fromAgentId + ') produced:\n' + String(upstream) + '\n\n'
+      + 'Do YOUR part of this work and produce the output for the next stage. Do not restate the upstream '
+      + 'output — build on it. Answer with the work itself, not a description of what you would do.';
+  }
+
   const ok = plan => !plan.errors.some(e => !e.warn);   // a plan is deployable iff it has no non-warning errors
 
-  return { compileRoutingPlan, resolveTarget, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom } };
+  return { compileRoutingPlan, resolveTarget, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom } };
 });

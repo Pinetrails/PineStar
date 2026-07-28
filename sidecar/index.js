@@ -5168,6 +5168,7 @@ const ROUTES = [
   { m: 'GET', rx: GENERIC_CHANNEL_RX.status, h: (req, res, gm) => handleGenericChannelStatus(req, res, gm[1]) },
   { m: 'GET', qsplit: '/api/channels/events', h: handleChannelEvents },   // path match: the SSE url carries a ?token= query now
   { m: 'POST', exact: '/api/routing', h: handleRouting },
+  { m: 'GET', qsplit: '/api/routing/chain', h: handleRoutingChain },   // qsplit, not exact: `exact` compares the FULL url and this route always carries a query
   { m: 'GET', exact: '/api/budget/status', h: handleBudgetStatus },
   { m: 'GET', qsplit: '/api/credits', h: handleCredits },   // 404s (no surface) unless managed credits are configured
   { m: 'POST', exact: '/api/budget/caps', h: handleBudgetCaps },
@@ -5542,6 +5543,24 @@ function handleRouting(req, res) {
     res.writeHead(r.ok ? 200 : 422, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(r));
   }).catch(() => { try { res.writeHead(400); res.end(); } catch (_) {} });
+}
+
+/* ---- GET /api/routing/chain?agentId=&tag= — WHERE DOES THIS DOCK'S OUTPUT GO?
+
+   The one seam the BROWSER needs to run a work line. Channel and cron runs advance their line inside the
+   sidecar, but an in-app COMMS turn streams through /api/run to the browser, which owns the turn — so the
+   browser asks the SAME router the same question and drives the same hops. `pick` advances the round-robin
+   exactly like every other caller, so a SPLIT downstream of a dock spreads across surfaces instead of each
+   one always taking lane 0. Read-only apart from that counter; { next: null } for a terminal stage, an
+   unknown agent, or no routing floor at all. ---- */
+function handleRoutingChain(req, res) {
+  const u = new URL(req.url, 'http://x');
+  const agentId = String(u.searchParams.get('agentId') || '').trim();
+  const tag = String(u.searchParams.get('tag') || '').trim() || undefined;
+  let next = null;
+  try { next = agentId ? router.chainNext(agentId, { tag: tag }) : null; } catch (_) { next = null; }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ next: next || null }));
 }
 
 /* ---- GET /api/budget/status — the live spend pools (day + global) vs their caps, plus session resume headroom.

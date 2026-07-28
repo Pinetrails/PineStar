@@ -206,6 +206,24 @@ async function readNdjson(res) {
     A.ok(starts.indexOf('writer-agent') >= 0, 'RUN NOW fired the DOWNSTREAM stage too (was one stage before)');
     A.ok(mock.requests.length >= callsBefore + 2, 'two provider calls — the line really bought both runs');
     await sse.waitFor(events => events.some(e => e.name === 'workitem.placed' && e.payload && e.payload.agentId === 'writer-agent' && e.payload.kind === 'chain'), 5000, 'the handoff rides as a chain crate');
+
+    /* A SESSION IS NAMED AFTER THE RUN IT IS NAMED AFTER. Hops share the routine's 'cron-<runId>' stream so the
+       session shows the whole line — which means that stream now holds SEVERAL run rows, and the frontend used
+       to title/attribute the session from whichever row it read first. That titled the Commander's routine
+       session with the internal PIPELINE HANDOFF prompt and credited it to the LAST stage's agent (caught by
+       looking at the real session rail, 2026-07-27). This locks the data the picker needs: the defining row is
+       findable by runId, and it is the routine's own. */
+    const runsRes = await fetch(B + '/api/runs?agent=*&limit=50', { headers });
+    A.eq(runsRes.status, 200, 'runs list reads');
+    const rows = ((await runsRes.json()) || {}).runs || [];
+    const byStream = {};
+    for (const r of rows) if (r && typeof r.streamId === 'string' && r.streamId.indexOf('cron-') === 0) (byStream[r.streamId] = byStream[r.streamId] || []).push(r);
+    const multi = Object.keys(byStream).find(k => byStream[k].length > 1);
+    A.ok(multi, 'a chained routine records one row PER STAGE under a single stream');
+    const defining = multi ? byStream[multi].find(r => String(r.runId || '') === multi.slice('cron-'.length)) : null;
+    A.ok(defining, 'that stream still carries the run it is NAMED after');
+    A.ok(defining && String(defining.title || '').indexOf('PIPELINE HANDOFF') < 0,
+      'and the defining row is the ROUTINE, never a stage handoff — internal plumbing must not become a session title');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}

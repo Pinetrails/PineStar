@@ -21,6 +21,7 @@
    • EVERY HOP IS A CRATE. workitem.placed/delivered per hop, so the floor shows the handoff it is really doing
      (additive use of the frozen contract — kind:'chain'). */
 'use strict';
+const Pipeline = require('../../frontend/app/pipeline.js');
 
 const MAX_HOPS = 6;            // stages AFTER the first (a drawn floor with more is a design smell, not a run)
 const MAX_CHAIN_USD = 2.00;    // the whole chain's spend ceiling — one message must not become an open tab
@@ -41,16 +42,10 @@ function makeChainRunner(o) {
   const newId = typeof o.newId === 'function' ? o.newId : function () { return 'chain' + (++seq); };
   const say = (n, p) => { try { emit(n, p); } catch (_) {} };
 
-  /* The handoff turn. A downstream stage is NOT the user — it is a machine being handed material — so the turn
-     names the line explicitly. Carrying the ORIGINAL request as well as the upstream output is load-bearing:
-     a writer handed only research has no idea what was asked, and would invent one. */
-  function handoffText(originalText, fromAgentId, upstream, hop) {
-    return 'PIPELINE HANDOFF — you are stage ' + (hop + 1) + ' of a work line on this station.\n\n'
-      + 'The original request was:\n' + String(originalText || '(none recorded)') + '\n\n'
-      + 'The upstream stage (' + fromAgentId + ') produced:\n' + String(upstream) + '\n\n'
-      + 'Do YOUR part of this work and produce the output for the next stage. Do not restate the upstream '
-      + 'output — build on it. Answer with the work itself, not a description of what you would do.';
-  }
+  // The handoff turn is composed by the SHARED pure module (frontend/app/pipeline.js) that also compiles the
+  // plan — the browser's COMMS work line loads the same function, so the same floor cannot produce a different
+  // run on a different surface. Injectable only so a test can watch what a stage was handed.
+  const handoffText = typeof o.handoffPrompt === 'function' ? o.handoffPrompt : Pipeline.handoffPrompt;
 
   const preview = s => String(s || '').replace(/\s+/g, ' ').slice(0, PREVIEW);
 
