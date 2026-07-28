@@ -33,8 +33,10 @@ const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 /* the mock provider. `onPrompt` runs BEFORE the reply is streamed, and this test uses it to write the
-   "agent's" file into the project — the deterministic stand-in for a tool-using model editing real code. */
-function startMock(onPrompt) {
+   "agent's" file into the project — the deterministic stand-in for a tool-using model editing real code.
+   It reads through a mutable box so a later phase can swap in a different "agent". */
+function startMock(box) {
+  const onPrompt = (nth) => box.write(nth);
   let nth = 0;
   return new Promise((resolve) => {
     const server = http.createServer((req, res) => {
@@ -122,10 +124,13 @@ function makeRepo() {
   fs.writeFileSync(path.join(repo, 'MY-NOTES.txt'), 'my own unsaved work\n');
 
   // each pass writes one file, exactly as an agent editing the project would.
-  const mock = await startMock((nth) => {
-    fs.writeFileSync(path.join(repo, 'src', 'feature' + nth + '.js'), 'module.exports = ' + nth + ';\n');
-    return 'I added feature ' + nth + '.';
-  });
+  const box = {
+    write: (nth) => {
+      fs.writeFileSync(path.join(repo, 'src', 'feature' + nth + '.js'), 'module.exports = ' + nth + ';\n');
+      return 'I added feature ' + nth + '.';
+    }
+  };
+  const mock = await startMock(box);
 
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-loopgitws-'));
   const env = {
@@ -227,6 +232,12 @@ function makeRepo() {
     const fresh = (st3.loops.find(x => x.id === id).recent || []).filter(i => i.outcome === 'candidate' && !i.verdict).sort((a, b) => a.n - b.n)[0];
     A.ok(fresh && fresh.commit, 'the loop kept working after the rejection and committed again');
 
+    /* PAUSE FIRST. The next two phases assert on an uncommitted edit, and a live loop would commit it out
+       from under them on its next pass — the harvest cannot tell that edit from the agent's. Pausing makes
+       this deterministic instead of a race against the tick. */
+    await fetch(B + '/api/loops/control', { method: 'POST', headers, body: JSON.stringify({ id, action: 'pause' }) });
+    await sleep(1200);
+
     // dirty exactly the file that iteration committed — undoing it would clobber unsaved edits.
     const clashPath = git(['show', '--pretty=format:', '--name-only', fresh.commit]).split('\n').map(s => s.trim()).filter(Boolean)[0];
     fs.writeFileSync(path.join(repo, clashPath), 'MY LOCAL EDIT\n');
@@ -259,6 +270,77 @@ function makeRepo() {
     A.eq(git(['rev-parse', baseBranch]).trim(), baseHead, 'the Commander\'s original branch is exactly where they left it');
 
     await fetch(B + '/api/loops/control', { method: 'POST', headers, body: JSON.stringify({ id, action: 'stop' }) });
+
+    /* ---- 6. THE REGRESSION THE HARVEST ALMOST SHIPPED: tampering must survive the loop's own commit -------
+
+       S2's law is "TRUST IS THE FULL UNCOMMITTED STATE" — are the check files in a state git has not recorded.
+       The harvest broke that question's premise, because the loop now commits every pass: an agent that
+       weakens a test file has it recorded by git seconds later, the working tree goes clean, and the next
+       pass's green reads as TRUSTED. Tampering would only have to survive one settlement to become invisible,
+       which is precisely the hole S2 exists to close. loopTrustSurface moves the baseline from the index to
+       the loop's own baseCommit. This proves it, across a REAL commit made by the harvest itself. */
+    const repo2 = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'sk-looptamper-')));
+    const git2 = (args) => execFileSync('git', ['-C', repo2].concat(args), { stdio: 'pipe' }).toString();
+    fs.mkdirSync(path.join(repo2, 'test'));
+    fs.writeFileSync(path.join(repo2, 'test', 'thing.test.js'), '// a real test file\n');
+    fs.writeFileSync(path.join(repo2, 'check.js'),
+      "const fs=require('fs');\nif(fs.existsSync(__dirname+'/fixed.txt')){console.log('1 passing');process.exit(0);}\nconsole.log('1 failing');process.exit(1);\n");
+    git2(['init', '-q']); git2(['config', 'user.email', 't@t.local']); git2(['config', 'user.name', 't']);
+    git2(['config', 'commit.gpgsign', 'false']); git2(['add', '-A']); git2(['commit', '-q', '-m', 'base']);
+
+    /* The "agent" weakens the test file AND makes the check pass — a textbook reward hack — and then TOUCHES
+       NOTHING EVER AGAIN. That last part is the whole point: if it kept re-tampering, the working tree would
+       be dirty on every pass and the old index-based guard would keep catching it, proving nothing. Tampering
+       once and stopping is exactly the shape that goes invisible the moment the harvest commits it. */
+    let hacked = false;
+    box.write = () => {
+      if (hacked) return 'Nothing more to do — the check already passes.';
+      hacked = true;
+      fs.writeFileSync(path.join(repo2, 'test', 'thing.test.js'), '// weakened\n');
+      fs.writeFileSync(path.join(repo2, 'fixed.txt'), 'ok\n');
+      return 'I made the check pass.';
+    };
+    await fetch(B + '/api/projects/bless', { method: 'POST', headers, body: JSON.stringify({ path: repo2, surface: 'interactive' }) });
+    const hack = await fetch(B + '/api/loops', {
+      method: 'POST', headers,
+      body: JSON.stringify({
+        name: 'green it', objective: 'make the check pass', workdir: repo2, gate: 'auto', queueCap: 9,
+        checkCmd: 'node check.js', exitOn: 'check-green', model: 'test/model', provider: 'openrouter'
+      })
+    });
+    const hackId = (await hack.json()).loop.id;
+    const H = (s) => s.loops.find(x => x.id === hackId);
+
+    let hs = await until(B, headers, s => H(s) && H(s).lastCheck && H(s).lastCheck.passed, 'the hacked check to go green');
+    A.eq(H(hs).lastCheck.passed, true, 'the check really does pass now');
+    A.eq(H(hs).lastCheck.tampered, true, 'and the tampering is caught on the pass that did it');
+    A.eq(H(hs).lastCheck.trusted, false, 'so the green is not trusted');
+
+    /* Wait for the harvest to COMMIT the weakened test file and leave a clean tree. This wait is the setup
+       for the real assertion, so it is on the repo itself — polling the API would let a stale snapshot
+       satisfy the next step with a pass from the still-dirty era, which is exactly how the first draft of
+       this test passed with the fix switched off. */
+    await until(B, headers, () => { try { return git2(['status', '--porcelain']).trim() === ''; } catch (_) { return false; } },
+      'the harvest to commit the hack and leave a clean tree');
+    A.eq(git2(['status', '--porcelain']).trim(), '', 'the weakened test file is committed, so the tree is CLEAN');
+    A.ok(/thing\.test\.js/.test(git2(['log', '--pretty=format:', '--name-only'])), 'and it really is inside a commit the loop made');
+
+    /* THE ASSERTION: a pass that runs from HERE — clean tree, no fresh tampering — must STILL refuse the green.
+       Keyed on lastCheck.n, NOT on iterationCount: iterationCount rises the moment a pass STARTS, so waiting
+       on it hands back the PREVIOUS iteration's verdict while the new one is still in flight. That is the
+       second way this test managed to pass with the fix switched off. */
+    const nAt = H(await (await fetch(B + '/api/loops', { headers })).json()).iterationCount;
+    hs = await until(B, headers, s => H(s) && H(s).lastCheck && H(s).lastCheck.n > nAt,
+      'a check verdict from a pass that ran AFTER the tree went clean');
+    A.ok(H(hs).lastCheck.n > nAt, 'the verdict under test is from the new pass (#' + H(hs).lastCheck.n + '), not a stale one');
+    A.eq(H(hs).lastCheck.passed, true, 'the check still passes');
+    A.eq(H(hs).lastCheck.tampered, true, 'TAMPERING SURVIVES THE COMMIT — a clean tree does not launder a weakened test');
+    A.ok((H(hs).lastCheck.tamperedPaths || []).some(p => /thing\.test\.js/.test(p)), 'and it still names the real file: ' + JSON.stringify(H(hs).lastCheck.tamperedPaths));
+    A.eq(H(hs).lastCheck.trusted, false, 'so the green is STILL not trusted');
+    A.ok(H(hs).state !== 'done', 'and a laundered green CANNOT complete the objective');
+
+    await fetch(B + '/api/loops/control', { method: 'POST', headers, body: JSON.stringify({ id: hackId, action: 'stop' }) });
+    try { fs.rmSync(repo2, { recursive: true, force: true }); } catch (_) {}
   } finally {
     try { child && child.kill(); } catch (_) {}
     try { mock.server.close(); } catch (_) {}

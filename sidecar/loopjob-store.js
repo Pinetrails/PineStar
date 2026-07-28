@@ -95,7 +95,7 @@
 
   // fields a Commander may edit. id / timestamps / run-state / ledger are NOT patchable here.
   const EDITABLE = ['name', 'objective', 'agentId', 'model', 'provider', 'gate',
-    'queueCap', 'maxIterations', 'dryStopAfter', 'workdir', 'branch',
+    'queueCap', 'maxIterations', 'dryStopAfter', 'workdir', 'branch', 'baseCommit',
     'checkCmd', 'checkTimeoutMs', 'checkPaths', 'exitOn', 'redStopAfter'];
 
   function isValidId(id) { return typeof id === 'string' && ID_RE.test(id); }
@@ -154,6 +154,11 @@
       // this reducer only records what it was told (never trusts it as a path).
       workdir: spec.workdir != null ? str(spec.workdir, 600) : null,
       branch: spec.branch != null ? str(spec.branch, 200) : null,
+      /* baseCommit — where HEAD was when the loop's branch was cut (S3). It is the TRUST BASELINE, and it
+         exists because the harvest broke the original one: the tamper guard asked "are the check files in a
+         state git has not recorded", and once the loop COMMITS each pass, git has recorded them. Anything
+         this loop has changed since baseCommit — committed by its own harvest or still dirty — counts. */
+      baseCommit: spec.baseCommit != null ? str(spec.baseCommit, 80) : null,
       /* ---- THE HOST-RUN CHECK (S2) — what turns "am I done?" from an opinion into an exit code ----
          checkCmd is authored by the HUMAN at loop-creation time and is never editable by the model: it is not
          in the iteration prompt, not a tool argument, and the agent has no route to change it. The agent's job

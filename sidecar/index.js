@@ -4193,6 +4193,16 @@ function loopPrecheck(loop) {
     if (loop.workdir && !isBlessedRoot(loop.workdir)) {
       return { ok: false, reason: 'the project folder is not approved for this station — re-approve "' + loop.workdir + '" and resume' };
     }
+    /* ONE LOOP AT A TIME PER PROJECT FOLDER (S3). Loops run up to LOOP_MAX_PARALLEL at once, and before the
+       harvest existed two loops sharing a folder merely interleaved their edits. Now that each one commits
+       onto its OWN branch, sharing a folder means they would fight over which branch is checked out and
+       commit each other's half-finished work. This is a soft, self-clearing stand-down — it names the other
+       loop and re-evaluates every tick, so the second loop simply takes its turn. */
+    if (loop.workdir) {
+      const busy = (loopJobs || []).find(other => other && other.id !== loop.id && other.workdir === loop.workdir
+        && (other.state === 'running' || other.fireClaim != null));
+      if (busy) return { ok: false, reason: 'waiting for "' + (busy.name || busy.id) + '" to finish its pass — one loop at a time per project folder' };
+    }
     const provider = cronProviderFor(loop);
     if (!cronHasCredential(provider, cronKeyFor(provider))) {
       return { ok: false, reason: 'no credential for ' + (provider || 'the selected provider') + ' — add a key in the KEYS tab' };
@@ -4294,6 +4304,30 @@ async function loopChangedFiles(root) {
   } catch (_) { return { gitProven: false, files: [] }; }
 }
 
+/* loopTrustSurface — EVERY file this loop has touched since it started, which is what the tamper guard has to
+   reason about once the harvest exists.
+
+   The S2 law was "TRUST IS THE FULL UNCOMMITTED STATE": ask whether the check files are in a state git has not
+   recorded, never who changed them. The harvest broke that question's premise — the loop now COMMITS each
+   pass, so a test file the agent weakened is recorded by git within seconds and the working tree goes clean.
+   Left alone, tampering would only have to survive one settlement to become invisible: exactly the hole S2
+   was written to close, re-opened from the other side.
+
+   So the baseline moves from "the index" to "where this loop started". The trust set is the union of what is
+   uncommitted NOW and everything the loop's own branch has changed since baseCommit. A loop that has not
+   branched yet has no baseCommit and behaves precisely as it did before. */
+async function loopTrustSurface(loop, live) {
+  if (!loop || !loop.baseCommit || !loop.branch) return live;
+  const r = await runGit(loop.workdir, ['diff', '--name-only', loop.baseCommit, 'HEAD'], 15000);
+  // an unreadable range must not silently shrink the trust set — say we could not prove it instead.
+  if (!r.ok) return { gitProven: false, files: live.files };
+  const committed = String(r.stdout || '').split('\n').map(s => s.trim()).filter(Boolean);
+  if (!committed.length) return live;
+  const all = new Set(live.files);
+  for (const f of committed) all.add(f);
+  return { gitProven: live.gitProven, files: Array.from(all) };
+}
+
 /* runLoopCheck — run the loop's human-authored check at its blessed root and judge the result.
    `before` is the pre-iteration changed-file snapshot, so the paths attributed to THIS iteration are the ones
    that appeared during it — not every uncommitted edit left by earlier iterations. */
@@ -4342,10 +4376,15 @@ async function runLoopCheck(loop, before) {
      this iteration introduced it, which is a message detail, never the trust decision. */
   const beforeSet = new Set((before && before.files) || []);
   const introduced = after.files.filter(f => !beforeSet.has(f));
+  /* TWO DIFFERENT QUESTIONS, TWO DIFFERENT SETS — do not collapse them.
+       `introduced` (working tree, after-minus-before) answers "what did THIS pass touch" for the review card.
+       `trust`      (working tree UNION everything committed since baseCommit) answers "can this green be
+                    believed", and it must span the harvest's own commits or the guard goes blind. */
+  const trust = await loopTrustSurface(loop, after);
   const v = loopcheck.verdict({
     result: res,
-    changed: after.files,
-    gitProven: after.gitProven,
+    changed: trust.files,
+    gitProven: trust.gitProven,
     extraPaths: loop.checkPaths
   });
   // the files this pass actually touched, so the review card can show WHAT CHANGED rather than only the
@@ -4439,12 +4478,20 @@ async function loopHarvest(loop, res, iterN, ctx) {
   if (!paths.length) return base;                  // the pass changed no file — a real outcome, not a failure.
 
   if (target.create) {
+    // WHERE HEAD WAS BEFORE WE BRANCHED. This is the trust baseline the tamper guard needs once the harvest
+    // starts committing — capture it BEFORE the checkout, because after it there is no way back to it.
+    const baseR = await runGit(root, ['rev-parse', 'HEAD'], 15000);
+    const base = (baseR.stdout || '').trim();
     const co = await runGit(root, ['checkout', '-b', target.branch], 20000);
     if (!co.ok) throw new Error('could not create the loop branch ' + target.branch + ': ' + String(co.stderr || '').slice(0, 200));
     // persist the branch the moment it exists, so a crash between here and the commit cannot orphan it and
     // start a SECOND branch on the next pass (which would split one loop's work across two undo domains).
-    try { loopJobs = loopjobStore.updateLoop(loopJobs, loop.id, { branch: target.branch }, { now: Date.now() }); saveLoops(); }
-    catch (e) { console.warn('[loops] could not persist the loop branch:', (e && e.message) || e); }
+    try {
+      loopJobs = loopjobStore.updateLoop(loopJobs, loop.id, {
+        branch: target.branch, baseCommit: loopgit.isSha(base) ? base : null
+      }, { now: Date.now() });
+      saveLoops();
+    } catch (e) { console.warn('[loops] could not persist the loop branch:', (e && e.message) || e); }
   } else {
     const cur = await runGit(root, ['rev-parse', '--abbrev-ref', 'HEAD'], 15000);
     if ((cur.stdout || '').trim() !== target.branch) {
