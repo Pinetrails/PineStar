@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "a7c1b7e16a894575126a01f66b81a64112933d13",
+    "sourceCommit": "811610d10dd8581475de52bbae07ee6c2b45281b",
     "pathSetSha256": "ba2d0a007dbdf1fb304e041a440e8a10a26ef8a87b3fb2ad6f73c69661dabaee",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 291001,
-        "sha256": "6ed812d39b0414d0e76dd8194148cba5b2872df300f91351b945ae1453b51d2c"
+        "bytes": 292492,
+        "sha256": "d9391e9021be4ccd2a44cf39e29ff3a1964c7957928d35689a40a75111287aa4"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -758,8 +758,8 @@
       },
       {
         "path": "frontend/app/windows/connectors.js",
-        "bytes": 60319,
-        "sha256": "09b6b62853ec82b552101b79b1f5d20e3e127c7b7eee65da76a94229552e7c6f"
+        "bytes": 76023,
+        "sha256": "61fcae7e1cabf26a41f8b3364fc8570f7689a5df3d3caf2f8426156f0596ceb2"
       },
       {
         "path": "frontend/app/windows/logbook.js",
@@ -853,8 +853,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 234036,
-        "sha256": "2ffe8735168746d6bc720812fe35ce1994ac539858f459f4d6398d50cbd25e64"
+        "bytes": 234398,
+        "sha256": "b54af0ac127b649992ac9323c6d9cebfea5d5f961f1de7645f5ffa6a8a32c41f"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -918,8 +918,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 66461,
-        "sha256": "af57375646c9520b274cd1cae9c7e4421be6ee036a6a801b74792fc7ddc72184"
+        "bytes": 66477,
+        "sha256": "edc4cca4a91afe172d763e684f6ffec6bc2a7e27a5df77635ed02681e6ee772a"
       },
       {
         "path": "frontend/js/arcade.js",
