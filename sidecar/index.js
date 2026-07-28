@@ -6137,6 +6137,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/permissions/revoke', h: handlePermissionsRevoke },
   { m: 'GET', exact: '/api/projects', h: handleProjectsList },   // NS-5: the known blessed-project roots (autonomy surface)
   { m: 'POST', exact: '/api/projects/bless', h: handleProjectBless },   // NS-5c: ADD a project (interactive-only, blesses through the same path-grant machinery)
+  { m: 'POST', exact: '/api/projects/forget', h: handleProjectForget },   // Projects rail: hard-forget revoked metadata (never withdraws trust)
   { m: 'POST', exact: '/api/projects/pickfolder', h: handleProjectPickFolder },   // Projects rail "browse": native OS folder chooser (grants nothing)
   { m: 'POST', exact: '/api/harness/detect', h: handleHarnessDetect },   // IMPORT-AN-AGENT: find on-disk OpenClaw/Hermes agent homes (read-only)
   { m: 'POST', exact: '/api/harness/scan', h: handleHarnessScan },       // IMPORT-AN-AGENT: read ONE agent home into a normalized preview (read-only)
@@ -11400,6 +11401,20 @@ async function handleProjectBless(req, res) {
   let r; try { r = await projectBless.blessPath({ path: body && body.path, surface: 'interactive' }); }
   catch (e) { return sendJson(400, { ok: false, reason: 'bless failed: ' + (e && e.message || e) }); }
   sendJson(r && r.ok ? 200 : 400, r || { ok: false, reason: 'bless failed' });
+}
+
+// POST /api/projects/forget { root } — delete ONLY the known-project metadata row after trust has already
+// been revoked. This endpoint deliberately refuses a still-blessed root: forgetting metadata must never become
+// a second, implicit permission-revoke path. projectsStore.remove is persist-before-commit, so a failed durable
+// write leaves the row visible and returns an honest failure instead of claiming it disappeared.
+async function handleProjectForget(req, res) {
+  const sendJson = (code, obj) => respondJson(res, code, obj);
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const root = body && body.root;
+  if (typeof root !== 'string' || !root) return sendJson(400, { ok: false, reason: 'missing project root' });
+  if (grantsPermanent.has('path:' + root)) return sendJson(409, { ok: false, reason: 'revoke project trust before forgetting it' });
+  const r = projectsStore.remove(root);
+  sendJson(r && r.ok ? 200 : 500, r || { ok: false, reason: 'forget failed' });
 }
 
 // POST /api/projects/pickfolder — the Projects rail's "browse" button. Opens the native OS folder chooser on

@@ -20,10 +20,12 @@ const PermissionsStore = (() => {
   let grantable = [];     // cached curated catalog keys the server will accept
   let meta = {};          // cached provenance { dangerKey: { grantedAt } } — additive, may be {} for legacy stores
   let loaded = false;     // a successful load/refresh has happened at least once
+  let error = '';         // last authority/mutation failure; never replace confirmed grants with guessed emptiness
 
   const ready = () => typeof Permissions !== 'undefined';
   const posture = () => { try { return (deps.getPosture ? deps.getPosture() : null) || {}; } catch (_) { return {}; } };
   const norm = (arr) => ready() ? Permissions.normalizeGrants(arr) : (Array.isArray(arr) ? arr.slice() : []);
+  const failure = (r, fallback) => String((r && r.reason) || fallback || 'permissions service unavailable');
   // keep only well-formed provenance rows ({ grantedAt:number|null }) so a malformed payload can't poison the cache.
   const normMeta = (m) => {
     const out = {};
@@ -39,11 +41,16 @@ const PermissionsStore = (() => {
     if (deps.api && typeof deps.api.load === 'function') {
       try {
         const r = await deps.api.load();
+        if (!r || r.ok === false || !Array.isArray(r.grants)) {
+          error = failure(r, 'permissions service unavailable');
+          return snapshot();
+        }
         if (r && Array.isArray(r.grants)) grants = norm(r.grants);
         if (r && Array.isArray(r.grantable)) grantable = r.grantable.slice();
         meta = normMeta(r && r.meta);   // additive: absent → {}, no provenance shown (legacy store)
         loaded = true;
-      } catch (_) {}
+        error = '';
+      } catch (e) { error = String((e && e.message) || 'permissions service unavailable'); }
     }
     return snapshot();
   }
@@ -57,7 +64,8 @@ const PermissionsStore = (() => {
       grantable: grantable.length ? grantable.slice() : (ready() ? Permissions.grantableKeys() : []),
       meta: Object.assign({}, meta),   // provenance { key: { grantedAt } } — additive; {} when the store is legacy
       level: currentLevel(),
-      loaded
+      loaded,
+      error
     };
   }
 
@@ -66,13 +74,25 @@ const PermissionsStore = (() => {
   // that DOES return meta updates it here so the "granted just now" line shows without a round-trip.
   async function grant(key) {
     if (deps.api && typeof deps.api.grant === 'function') {
-      try { const r = await deps.api.grant(key); if (r && Array.isArray(r.grants)) grants = norm(r.grants); if (r && r.meta) meta = normMeta(r.meta); } catch (_) {}
+      try {
+        const r = await deps.api.grant(key);
+        if (!r || r.ok === false) { error = failure(r, 'could not confirm permission grant'); return snapshot(); }
+        if (Array.isArray(r.grants)) grants = norm(r.grants);
+        if (r.meta) meta = normMeta(r.meta);
+        error = '';
+      } catch (e) { error = String((e && e.message) || 'could not confirm permission grant'); }
     }
     return snapshot();
   }
   async function revoke(key) {
     if (deps.api && typeof deps.api.revoke === 'function') {
-      try { const r = await deps.api.revoke(key); if (r && Array.isArray(r.grants)) grants = norm(r.grants); if (r && r.meta) meta = normMeta(r.meta); else { const m = Object.assign({}, meta); delete m[key]; meta = m; } } catch (_) {}
+      try {
+        const r = await deps.api.revoke(key);
+        if (!r || r.ok === false) { error = failure(r, 'could not confirm permission revoke'); return snapshot(); }
+        if (Array.isArray(r.grants)) grants = norm(r.grants);
+        if (r.meta) meta = normMeta(r.meta); else { const m = Object.assign({}, meta); delete m[key]; meta = m; }
+        error = '';
+      } catch (e) { error = String((e && e.message) || 'could not confirm permission revoke'); }
     }
     return snapshot();
   }
@@ -92,7 +112,7 @@ const PermissionsStore = (() => {
   // opts: { api:{ load(), grant(key), revoke(key) }, getPosture(), applyPreset(id), load:bool }
   function init(opts) {
     deps = opts || {};
-    grants = []; grantable = []; meta = {}; loaded = false;
+    grants = []; grantable = []; meta = {}; loaded = false; error = '';
     if (deps.load !== false) { try { refresh(); } catch (_) {} }
   }
 
@@ -104,7 +124,7 @@ const PermissionsStore = (() => {
   // with no api wired); the revoke calls are still INITIATED synchronously. Non-curated grants are left to the user.
   function reset() {
     const keys = ready() ? Permissions.grantableKeys() : ['cabinet:write'];
-    grants = []; grantable = []; meta = {}; loaded = false;
+    grants = []; grantable = []; meta = {}; loaded = false; error = '';
     if (!deps.api || typeof deps.api.revoke !== 'function') return Promise.resolve();
     const jobs = [];
     for (const k of keys) { try { jobs.push(Promise.resolve(deps.api.revoke(k)).catch(() => {})); } catch (_) {} }

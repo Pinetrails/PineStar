@@ -1,5 +1,62 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-27 — PERMISSIONS OFFLINE STATE STAYS TRUTHFUL (`agent/community-bughunt-0727`)
+
+A Settings/permissions audit confirmed a fail-closed enforcement but fail-open-looking UI defect:
+when `/api/permissions` was unavailable, the frontend synthesized an empty successful snapshot.
+Settings then claimed “No standing approvals” even though the sidecar could still hold and enforce
+durable grants; grant and revoke failures were also silent. The permissions store now distinguishes
+unconfirmed/failed snapshots from confirmed empty state, preserves the last confirmed authority,
+and surfaces an `aria-live` warning. Failed mutations keep the confirmed row and say the change was
+not applied; a first-load failure hides grant controls until authority can be confirmed.
+
+Regression: `permissionsstore.test` 25→36 assertions and `permissions-ui.test` 28→31 assertions.
+Live seeded proof covered grant, sidecar restart persistence, offline refresh preserving the grant
+with an explicit warning, stale-session revoke failure preserving it, reconnect, successful
+two-step revoke, and clean empty state. The Settings catalog exposes one durable permission,
+`cabinet:write`; WAIT/SUGGEST/BUILD grant none, FREE grants it, enforcement remains in the consent
+broker/jail, and the UI honestly notes that a Filing Cabinet is additionally required. Interactive
+once/session/always approvals, per-agent full access, Workshop access, routine terminal/connectors,
+credentialed web access, taint revocation, and project path trust were traced and covered by focused
+tests (including four HTTP/E2E suites). Voice microphone authority is browser/OS-owned and was not
+requested. At 390×844, Settings had no viewport or horizontal overflow; arrow-key tab navigation
+worked. New-user/onboarding, sessions/workstreams, fullscreen/terminal resize, voice draft guards,
+and settings backend/UI paths passed their existing regression suites. Manual gaps: real microphone
+permission allow/deny/reset, OS notification permission, native desktop screen-reader behavior,
+and physical-device/mobile WebView compatibility. Website mirror synced. No push, deploy, or PR.
+The fast gate passed through step 160/400, then stopped at the unchanged
+`qa-product-perfect-claims` release-authority stamp (step 161), the same unrelated stale authority
+surface already recorded for this lane.
+
+## 2026-07-27 — REVOKED PROJECT “FORGET” IS REAL (`agent/community-bughunt-0727`)
+
+A second live PROJECTS-rail pass confirmed a destructive-action truth defect: the armed
+`Forget (already revoked)` control posted the permissions revoke endpoint a second time, announced
+`removed “…”`, and left the remembered project row visible. The existing projects store already
+had the intended persist-before-commit hard-forget primitive, so the scoped fix exposes it through
+`POST /api/projects/forget` and uses that route only after trust is revoked. The server refuses
+still-blessed roots with 409, keeping metadata deletion separate from permission withdrawal; UI
+success copy now distinguishes `trust revoked for` from `forgot`. Regression:
+`projects-view.test` 51→54 assertions and `e2e.pathtrust.test` 33→39 assertions, including
+active-root refusal, actual row removal, and no resurrection after sidecar reboot. Live seeded
+proof: the revoked row disappeared, the UI reported `forgot “community-bughunt-0727”`, and after
+a real `--keep` restart the PROJECTS rail still had no revoked row. Syntax checks, focused tests,
+full `test:http`, and 399/400 fast-gate steps are green; the sole blocked step is the pre-existing
+`qa-product-perfect-claims` release-surface authority stamp at the synced trunk HEAD (step 161),
+which is outside this bug-fix lane. Website app mirror synced. No merge, push, deploy, or PR.
+
+## 2026-07-27 — REVOKED PROJECTS ARE READ-ONLY (`agent/community-bughunt-0727`)
+
+Proactive live flow audit confirmed a truthful-telemetry break in the PROJECTS rail: after a
+project's path grant was revoked, its remembered row correctly said REVOKED but entering it still
+promised `+ NEW` would start work in that folder and actually minted a new session anchored to the
+untrusted root. The rail now derives scoped creation authority from the freshly fetched
+`blessed` field, disables `+ NEW` for revoked rows, keeps existing sessions browseable, and guards
+the creation function itself. Regression: `projects-view.test` 48→51 assertions. Live seeded proof:
+revoked row remained visible, existing session count stayed 1, scoped `+ NEW` reported
+`enabled:false`. `node --check` + focused project/session/path-trust tests + `test:fast` 400/400
+green. Website app mirror synced. No merge, push, deploy, or PR performed.
+
 ## 2026-07-20 — PUBLIC-REPO RELEASE PREP (branch `claude/starnet-repo-release-prep-c41845`)
 
 Getting the source repo release-shaped for the public flip (Andrew: "essentially ready for

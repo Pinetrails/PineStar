@@ -2699,9 +2699,9 @@ const App = (() => {
         try { if (typeof TrustStore !== 'undefined' && TrustStore.onManualInitiative && typeof AutonomyStore !== 'undefined' && AutonomyStore.get) TrustStore.onManualInitiative((AutonomyStore.get() || {}).initiative); } catch (_) {}
       },
       api: {
-        load: () => fetch('/api/permissions', { cache: 'no-store' }).then(r => r.ok ? r.json() : { grants: [], grantable: [] }).catch(() => ({ grants: [], grantable: [] })),
-        grant: (key) => fetch('/api/permissions/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.ok ? r.json() : { ok: false }).catch(() => ({ ok: false })),
-        revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.ok ? r.json() : { ok: false }).catch(() => ({ ok: false }))
+        load: () => fetch('/api/permissions', { cache: 'no-store' }).then(r => r.ok ? r.json() : { ok: false, reason: 'permissions service unavailable' }).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
+        grant: (key) => fetch('/api/permissions/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission grant failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
+        revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission revoke failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' }))
       }
     });
     // GROWTH Tier 3 — EARNED AUTONOMY (track record → trust): folds the SAME run outcomes xpstore folds into a
@@ -3304,9 +3304,13 @@ const App = (() => {
   // the entered-project scope (null = overview). Persisted like the reference harness's projectScope, so a reload lands back
   // inside the project you were organizing — pure view state, deliberately outside the world save.
   let projScope = null;
+  // A remembered project root is not necessarily still trusted. Default false on reload/entry and only
+  // enable scoped session creation after GET /api/projects proves the current row is still blessed.
+  let projScopeBlessed = false;
   try { projScope = localStorage.getItem('starnet.projscope') || null; } catch (_) {}
-  function setProjScope(root) {
+  function setProjScope(root, blessed) {
     projScope = root || null;
+    projScopeBlessed = !!(projScope && blessed === true);
     try { if (root) localStorage.setItem('starnet.projscope', root); else localStorage.removeItem('starnet.projscope'); } catch (_) {}
     updateProjHeadAction();
   }
@@ -3314,8 +3318,15 @@ const App = (() => {
   // a session in it (+ NEW) — one slot, two labelled truths, same as the reference harness's scoped "+".
   function updateProjHeadAction() {
     const b = el('ws-addproject'); if (!b) return;
-    if (projScope) { b.textContent = '+ NEW'; b.title = 'start a new session in this project'; }
-    else { b.textContent = '+ ADD'; b.title = 'bless a folder as a trusted project'; }
+    if (projScope) {
+      b.textContent = '+ NEW';
+      b.disabled = !projScopeBlessed;
+      b.title = projScopeBlessed ? 'start a new session in this project' : 're-add this project before starting new work';
+    } else {
+      b.textContent = '+ ADD';
+      b.disabled = false;
+      b.title = 'bless a folder as a trusted project';
+    }
   }
   function setRailView(view) {
     view = (view === 'projects') ? 'projects' : 'sessions';
@@ -3336,8 +3347,8 @@ const App = (() => {
     if (view === 'projects') { updateProjHeadAction(); renderProjects(); }
     else { updateArchivedToggle(); }   // sessions view: ARCHIVED button re-asserts its own "≥1 archived" gate
   }
-  function enterProject(root) { setProjScope(root); SFX.click(); renderProjects(); }
-  function exitProjectScope() { setProjScope(null); SFX.click(); renderProjects(); }
+  function enterProject(root, blessed) { setProjScope(root, blessed); SFX.click(); renderProjects(); }
+  function exitProjectScope() { setProjScope(null, false); SFX.click(); renderProjects(); }
   // the live dot class + git badge for one project row (pure read of the shaped row)
   function projDot(r) { return 'ws-dot ' + (!r.blessed ? 'proj-plain' : (r.isGitRepo ? 'proj-git' : 'proj-plain')); }
   function renderProjects() {
@@ -3353,6 +3364,8 @@ const App = (() => {
           // honestly instead of rendering a ghost.
           const row = rows.filter(r => Projects.sameRoot && Projects.sameRoot(r.root, projScope))[0] || null;
           if (!row) { setProjScope(null); return renderProjectsOverview(ul, rows); }
+          projScopeBlessed = row.blessed === true;
+          updateProjHeadAction();
           return renderProjectEntered(ul, row);
         }
         renderProjectsOverview(ul, rows);
@@ -3408,12 +3421,13 @@ const App = (() => {
           if (id !== Workstreams.activeId()) switchWorkstream(id);
           SFX.open();
         }
-        enterProject(li.dataset.root);
+        const row = rows.find(x => Projects.sameRoot && Projects.sameRoot(x.root, li.dataset.root));
+        enterProject(li.dataset.root, !!(row && row.blessed));
       };
     });
     ul.querySelectorAll('.proj-row').forEach(li => {
       const row = rows.find(x => x.root === li.dataset.root);
-      li.onclick = () => enterProject(row.root);
+      li.onclick = () => enterProject(row.root, row.blessed);
       li.oncontextmenu = (e) => { e.preventDefault(); openProjectMenu(row, e.clientX, e.clientY); };
       const keb = li.querySelector('.ws-kebab');
       if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2); };
@@ -3441,7 +3455,9 @@ const App = (() => {
         '</span>' +
       '</li>';
     if (!sess.length) {
-      html += '<li class="proj-empty">No sessions in this project yet — <b>+ NEW</b> starts one working in this folder.</li>';
+      html += row.blessed
+        ? '<li class="proj-empty">No sessions in this project yet — <b>+ NEW</b> starts one working in this folder.</li>'
+        : '<li class="proj-empty">Access revoked — re-add this project before starting new work. Existing sessions remain browseable.</li>';
     } else {
       html += sess.map(s => {
         const w = byId[s.id];
@@ -3474,7 +3490,7 @@ const App = (() => {
   // + NEW inside an entered project: a fresh untitled session ANCHORED to the project (projectRoot rides every
   // run as the working folder; the title auto-mints from the first message, same as the sessions rail's + NEW).
   function newSessionInProject(root) {
-    if (!root) return;
+    if (!root || !projScopeBlessed) return;
     const ws = Workstreams.startSession({ activate: false, projectRoot: root });
     if (!ws) return;
     switchWorkstream(ws.id);
@@ -3527,9 +3543,9 @@ const App = (() => {
           setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.classList.remove('armed'); btn.innerHTML = '<span class="ws-menu-glyph" aria-hidden="true">✕</span>' + (r.blessed ? 'Remove (revoke trust)' : 'Forget (already revoked)'); } }, 4000);
         });
       } else if (act === 'newsess') {
-        btn.addEventListener('click', () => { closeProjectMenu(); setProjScope(r.root); newSessionInProject(r.root); });
+        btn.addEventListener('click', () => { closeProjectMenu(); setProjScope(r.root, r.blessed); newSessionInProject(r.root); });
       } else {
-        btn.addEventListener('click', () => { closeProjectMenu(); enterProject(r.root); });
+        btn.addEventListener('click', () => { closeProjectMenu(); enterProject(r.root, r.blessed); });
       }
     });
     document.addEventListener('pointerdown', onProjMenuOutside, true);
@@ -3538,16 +3554,23 @@ const App = (() => {
     window.addEventListener('resize', closeProjectMenu);
     SFX.click();
   }
-  // REMOVE = revoke the standing path:<root> grant through the EXISTING permissions surface (truthful: the list
-  // then mirrors the grant store — after a revoke the row reports blessed:false on the next render, so a second
-  // "Forget" removes nothing new; the metadata row stays until the store's own forget path lands). No parallel store.
+  // REMOVE has two explicit stages: a blessed row revokes its standing path:<root> grant, while a row whose trust
+  // is already revoked hard-forgets only its projects-store metadata. The server refuses to forget a still-blessed
+  // row, so neither endpoint silently does both jobs and every success message describes the state actually changed.
   function removeProject(r) {
     if (!r) return;
-    fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'path:' + r.root }) })
+    const isForget = !r.blessed;
+    const endpoint = isForget ? '/api/projects/forget' : '/api/permissions/revoke';
+    const body = isForget ? { root: r.root } : { key: 'path:' + r.root };
+    fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(res => res.ok ? res.json() : { ok: false })
       .then(j => {
         SFX.bad();
-        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((j && j.ok ? 'removed “' : 'could not remove “') + r.name + '”', j && j.ok ? 'warn' : 'bad');
+        if (typeof StationUI !== 'undefined' && StationUI.notify) {
+          const success = isForget ? 'forgot “' : 'trust revoked for “';
+          const failure = isForget ? 'could not forget “' : 'could not revoke trust for “';
+          StationUI.notify((j && j.ok ? success : failure) + r.name + '”', j && j.ok ? 'warn' : 'bad');
+        }
         renderProjects();
       })
       .catch(() => { renderProjects(); });

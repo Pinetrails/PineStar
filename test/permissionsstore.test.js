@@ -120,6 +120,42 @@ const wire = (h) => PermissionsStore.init({ api: h.api, getPosture: h.getPosture
     ok(snap.meta && typeof snap.meta === 'object', 'a meta-less payload still yields an object meta (empty)');
   }
 
+  // --- transport/persist failures never turn unknown authority into an empty, trusted ledger ---
+  {
+    let mode = 'ok';
+    const api = {
+      load: async () => mode === 'ok'
+        ? { grants: ['cabinet:write'], grantable: ['cabinet:write'] }
+        : { ok: false, reason: 'permissions service unavailable' },
+      grant: async () => ({ ok: false, reason: 'could not persist grant — denied' }),
+      revoke: async () => ({ ok: false, reason: 'could not persist revoke — kept' })
+    };
+    PermissionsStore.init({ api, getPosture: () => ({ initiative: 'free' }), applyPreset: () => {}, load: false });
+    await PermissionsStore.refresh();
+    ok(PermissionsStore.snapshot().grants.includes('cabinet:write'), 'successful load establishes the authoritative grant cache');
+    mode = 'fail';
+    let snap = await PermissionsStore.refresh();
+    ok(snap.grants.includes('cabinet:write'), 'failed refresh preserves the last confirmed grants (never fabricates empty authority)');
+    ok(/unavailable/i.test(snap.error), 'failed refresh exposes an explicit permissions-service error');
+    snap = await PermissionsStore.revoke('cabinet:write');
+    ok(snap.grants.includes('cabinet:write'), 'failed revoke keeps the active grant visible');
+    ok(/persist revoke/i.test(snap.error), 'failed revoke exposes the backend reason instead of silently doing nothing');
+    snap = await PermissionsStore.grant('cabinet:write');
+    ok(/persist grant/i.test(snap.error), 'failed grant exposes the backend reason instead of silently doing nothing');
+    mode = 'ok';
+    snap = await PermissionsStore.refresh();
+    ok(!snap.error, 'a later authoritative refresh clears the stale error');
+  }
+
+  // --- a first-load outage is UNKNOWN, not an authoritative empty approval ledger ---
+  {
+    const api = { load: async () => ({ ok: false, reason: 'offline' }) };
+    PermissionsStore.init({ api, getPosture: () => ({ initiative: 'wait' }), applyPreset: () => {}, load: false });
+    const snap = await PermissionsStore.refresh();
+    ok(snap.loaded === false, 'failed first load never marks permission authority loaded');
+    ok(/offline/i.test(snap.error), 'failed first load carries an explicit offline error');
+  }
+
   // --- read-only citizen: never emits, no bus dependency ---
   {
     const src = fs.readFileSync(path.join(__dirname, '..', 'frontend', 'app', 'permissionsstore.js'), 'utf8');

@@ -5,6 +5,9 @@
 'use strict';
 const A = require('./_assert.js');
 const P = require('../frontend/app/projects.js');
+const fs = require('fs');
+const path = require('path');
+const appSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/app.js'), 'utf8');
 
 /* ---------- basename: win32 + posix, trailing separators ignored ---------- */
 A.eq(P.basename('C:\\Users\\me\\project'), 'project', 'win32 basename');
@@ -89,5 +92,33 @@ A.eq(pr.projectsList, true, 'projects view shows the projects list');
 A.eq(pr.newBtn, false, 'projects view hides + NEW');
 A.eq('archivedBtn' in pr, false, 'no ARCHIVED head action exists — the archived reveal is a footer row inside #workstreams');
 A.eq(pr.addBtn, true, 'projects view shows + ADD');
+
+/* ---------- revoked scope: browse history, but never mint work against an untrusted root ---------- */
+const headAction = appSrc.slice(
+  appSrc.indexOf('function updateProjHeadAction()'),
+  appSrc.indexOf('function setRailView(', appSrc.indexOf('function updateProjHeadAction()'))
+);
+const newInProject = appSrc.slice(
+  appSrc.indexOf('function newSessionInProject('),
+  appSrc.indexOf('// the project row actions menu', appSrc.indexOf('function newSessionInProject('))
+);
+A.ok(/b\.disabled\s*=\s*!projScopeBlessed/.test(headAction),
+  'entered revoked project disables + NEW from the fetched path-grant truth');
+A.ok(/!projScopeBlessed/.test(newInProject),
+  'newSessionInProject refuses to anchor a new session after trust is revoked');
+A.ok(/Access revoked[\s\S]{0,180}existing sessions/i.test(appSrc),
+  'revoked project empty-state copy says existing sessions remain browseable instead of promising new work');
+
+/* ---------- project removal: revoke trust first, then hard-forget metadata truthfully ---------- */
+const removeProject = appSrc.slice(
+  appSrc.indexOf('function removeProject('),
+  appSrc.indexOf('// ADD A PROJECT:', appSrc.indexOf('function removeProject('))
+);
+A.ok(/r\.blessed[\s\S]{0,220}\/api\/permissions\/revoke/.test(removeProject),
+  'removing a blessed project uses the standing-grant revoke endpoint');
+A.ok(/!r\.blessed[\s\S]{0,260}\/api\/projects\/forget/.test(removeProject),
+  'forgetting a revoked project uses the project metadata forget endpoint');
+A.ok(/trust revoked for/.test(removeProject) && /forgot/.test(removeProject),
+  'success telemetry distinguishes trust revocation from an actually forgotten project');
 
 A.report('projects-view.test');

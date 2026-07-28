@@ -144,6 +144,10 @@ function boot(port, env, attemptsLeft) {
     const projAdd = await (await fetch(B + '/api/projects', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     const addedRow = (projAdd.projects || []).find(p => path.resolve(p.root).toLowerCase() === path.resolve(repo2).toLowerCase());
     A.ok(addedRow && addedRow.blessed === true && addedRow.isGitRepo === true, 'GET /api/projects lists the ADDED project (blessed, git)');
+    const forget = (root) => fetch(B + '/api/projects/forget', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-StarNet-Token': token, Origin: B }, body: JSON.stringify({ root }) });
+    const forgetBlessed = await forget(addedRow.root); const forgetBlessedJson = await forgetBlessed.json();
+    A.eq(forgetBlessed.status, 409, 'forget refuses an actively blessed project (trust must be revoked first)');
+    A.eq(forgetBlessedJson.ok, false, 'active-project forget reports ok:false');
     const permsAdd = await (await fetch(B + '/api/permissions', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     A.ok((permsAdd.grants || []).some(g => g.indexOf('path:') === 0 && path.resolve(g.slice(5)).toLowerCase() === path.resolve(repo2).toLowerCase()), 'the SAME path:<root> grant appears in /api/permissions (one grant store, two doorways)');
     // d) an interactive run reads under the ADDED root with NO prompt (the route-blessed grant is real trust).
@@ -155,6 +159,12 @@ function boot(port, env, attemptsLeft) {
     const projAfter = await (await fetch(B + '/api/projects', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     const afterRow = (projAfter.projects || []).find(p => path.resolve(p.root).toLowerCase() === path.resolve(repo2).toLowerCase());
     A.ok(afterRow && afterRow.blessed === false, 'after revoke, the ADDED project reports blessed:false (truthful telemetry)');
+    const forgotten = await forget(afterRow.root); const forgottenJson = await forgotten.json();
+    A.eq(forgotten.status, 200, 'forget accepts a revoked project');
+    A.eq(forgottenJson.ok, true, 'revoked-project forget reports ok:true');
+    const projForgotten = await (await fetch(B + '/api/projects', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.ok(!(projForgotten.projects || []).some(p => path.resolve(p.root).toLowerCase() === path.resolve(repo2).toLowerCase()),
+      'forget removes the revoked project metadata row instead of only claiming removal');
 
     // ---- 1. first outside read → exactly ONE path.trust prompt; "always" lets the read flow ----
     const r1 = await driveRead('ptagent', fileA, 'always');
@@ -190,6 +200,8 @@ function boot(port, env, attemptsLeft) {
     A.ok((permsR.grants || []).some(g => g.indexOf('path:') === 0 && path.resolve(g.slice(5)).toLowerCase() === path.resolve(proj).toLowerCase()), 'RESTART-SAFE: the path grant survived the reboot');
     const projR = await (await fetch(B + '/api/projects', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     A.ok((projR.projects || []).some(p => path.resolve(p.root).toLowerCase() === path.resolve(proj).toLowerCase() && p.blessed === true && p.isGitRepo === true), 'RESTART-SAFE: the known-project row (blessed, isGitRepo) survived the reboot');
+    A.ok(!(projR.projects || []).some(p => path.resolve(p.root).toLowerCase() === path.resolve(repo2).toLowerCase()),
+      'RESTART-SAFE: a hard-forgotten revoked project does not reappear after reboot');
     const rReboot = await driveRead('ptagent-reboot', fileA, 'deny');
     A.eq(rReboot.prompts.filter(p => p.tool === 'path.trust').length, 0, 'RESTART-SAFE: a read under the blessed root does NOT re-prompt after the reboot');
 
