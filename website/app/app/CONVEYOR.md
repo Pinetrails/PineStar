@@ -107,9 +107,18 @@ economy accent — keeps cyan/green meaningful) + a small drive LED.
   `chainNext(plan, agentId, ctx, pick)` walks the belts from a dock's SHIP tile to the next dock, mirroring
   crate physics exactly: a FILTER downstream of a dock branches on the **output's** tag (route the result by
   what it turned out to be), a SPLIT round-robins, and **one output crate is one downstream run** (K in, K out).
-  `sidecar/routing/chain.js` executes it for channel messages (all four hubs) and scheduled routines
-  (`cron-driver` `advanceChain`, hops riding the routine's own stream so its session shows the whole line).
+  `sidecar/routing/chain.js` executes it for channel messages (all four hubs), scheduled routines
+  (`cron-driver` `advanceChain`) and Run Now; an in-app COMMS turn is owned by the BROWSER, so `chat.js`
+  drives the same hops itself against `GET /api/routing/chain`. All four surfaces run the same line.
   The reply that leaves the station is the LAST stage's.
+  - **The handoff prompt lives in `pipeline.js`** — the pure module the sidecar executor and the browser BOTH
+    load. Two copies of that string would let one floor produce different runs on different surfaces.
+  - **Every stage is attributed to the agent that produced it.** `row()` takes `opts.who` and a work-line turn
+    persists its `agentId`; stamping stage two's work with the entry dock's name is a fabricated turn, the same
+    law that stopped the hub writing a downstream reply into the entry dock's transcript.
+  - **A stream can hold several run rows.** Hops share the routine's `cron-<runId>` stream so the session shows
+    the whole line — so anything deriving a session's title/agent must pick the row whose runId the stream is
+    NAMED after, never whichever it reads first (that titled routines with the internal handoff prompt).
   - **A DOCK NEVER EATS ITS OWN OUTPUT.** A lane running along a dock's edge touches several ring tiles; the
     handoff rides through all of them and is consumed only by a foreign dock. Compiler and engine hold the
     same rule, which is what makes a self-loop structurally impossible rather than merely unlikely.
