@@ -165,6 +165,8 @@ test/deliverable-store.test.js
 test/deliverables-ui.test.js
 test/work-recap.test.js
 test/qa-ledger.test.js
+test/qa-bugs.test.js
+test/qa-bugs-register.test.js
 test/qa-guardian.test.js
 test/qa-ready.test.js
 test/qa-product-perfect.test.js

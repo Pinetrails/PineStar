@@ -39,3 +39,19 @@ Add **L2 + L6** next (honesty + adversarial depth). L4/L5/L7/L8 are the daily/we
    from a dead session.
 5. **Never touch another agent's worktree; never edit the integration tree** (L1's merges and
    L5's reaping are the sanctioned exceptions).
+
+## The SWEEP — `loops/sweep/` (a fan-out, not a loop)
+
+The ten loops above run on a schedule and keep the machine from **regressing**. The sweep is
+the other half: a one-shot fan-out of ten adversarial lanes, one per surface slice
+(safecell, providers, channels, sessions, autonomy, skills, onboarding, voice, world, release),
+launched together when you are about to ship a fix-heavy update.
+
+Its findings go to `qa/bugs/` — a **tracked** register, unlike the machine-local
+`qa/findings/` above — so a lane's work survives the session and worktree that found it:
+
+```bash
+node scripts/qa/bugs.mjs --list --status open
+```
+
+Read `loops/sweep/README.md` before launching one.

@@ -42,7 +42,8 @@ Verified on trunk 2026-07-01. Every lane must reuse these, not reinvent them.
 | 17-state screenshot sweep | `npm run shoot` (`scripts/shoot.mjs` + `scripts/lib/{cdp,states,seed,shootRun}.mjs`) | CDP-driven headless Chrome, fixed-wait capture (beats the animating-canvas timeout), writes PNGs + `manifest.json`, exits nonzero on failure |
 | Truthfulness assertions | `npm run audit` (`scripts/audit.mjs`, DEV-gated `frontend/app/testapi.js`) | 4 scenarios (floor-rest / task / summon / moat), asserts displayed state == event-reduced truth |
 | Golden-frame diffing | `npm run golden` / `golden:bless` (`scripts/golden.mjs`, baseline `scripts/goldens.json`) | Animation-tolerant change detection; flags only frames that really moved |
-| Composed evidence sweep | `scripts/bug-hunt.mjs` → `.bugloops/bug-hunt-<stamp>/` | One command composing board + world sanity + audit + golden (+ optional full gates) into a timestamped evidence bundle |
+| Composed evidence sweep | `npm run qa:guardian` (`scripts/qa/guardian.mjs`) | The one command composing `test:fast` → `test:http` → `shoot` → `golden` → `audit` → `qa:journeys` against a pinned trunk copy, filing one deduped ledger finding per regression. (An earlier draft of this row named `scripts/bug-hunt.mjs`; that script was never built — the Guardian is what shipped.) |
+| Durable hunt backlog | `npm run qa:bugs` (`scripts/qa/bugs.mjs`, files in `qa/bugs/`) | The TRACKED bug register the sweep lanes file into, so findings survive the session and worktree that found them — the portable counterpart to machine-local `qa/findings/` |
 | Test gates | `npm run test:fast` (~380 steps), `test:http` | The merge gate |
 | Visual-Auditor runbook | `scripts/VISUAL_AUDITOR.md` | The documented /loop launch for the vision-driven UI-coherence cycle (needs a local session with vision) |
 | Interactive/transition probes | `scripts/uiplay.mjs`, `uiresidue.mjs`, `uisummon.mjs`, `uiprobe.mjs`, `uimeasure.mjs` | Chat-run driving, transition residue, summon flow, DOM/geometry dumps |
@@ -145,8 +146,8 @@ them). Every lane ends with a **movie test** — a proof artifact, not a claim.
 - **Builds:** `scripts/qa/guardian.mjs` — one cycle = sync a DEDICATED pinned
   worktree to trunk head (never runs in the integration tree, never in another
   agent's worktree), then compose: `test:fast` → `npm run shoot` → `npm run
-  golden` → `npm run audit` (reuse `bug-hunt.mjs` internals via
-  `scripts/lib/run-command.mjs` rather than duplicating). Writes one
+  golden` → `npm run audit` (bounded-subprocess plumbing shared via
+  `scripts/lib/run-command.mjs` rather than duplicated). Writes one
   ledger entry per regression (fingerprinted per failing suite/frame/assertion),
   updates `qa/STATUS.md`, exits nonzero on red. npm script `qa:guardian`.
   Plus `qa:guardian:watch` — re-runs when trunk HEAD moves (poll `git
