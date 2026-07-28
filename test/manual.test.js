@@ -43,7 +43,32 @@ const { starnetManual } = require('../sidecar/manual.js');
   A.ok(/place the matching prop/i.test(m), 'tells the agent to place the matching prop for a missing power');
   A.ok(/Windows Task Scheduler/.test(m) && /OS crontab/.test(m), 'routine guidance points away from OS schedulers');
 
-  // 7) hygiene: no template leakage
+  /* 7) CONNECTING A PLATFORM (regression, 2026-07-28). A real Commander could not connect Google Drive and
+        their agent made it worse: the manual's NAVIGATION section named COMMS/ROUTINES/TASKS/REFIT/Recruitment
+        Bay/APPROVALS and NEVER the window where platforms are actually connected, so a model asked "how do I
+        connect X" had nothing true to say and invented a menu path. These assertions pin the surfaces. */
+  A.ok(/ABILITIES/.test(m), 'names the ABILITIES window (where platforms are connected)');
+  A.ok(/CATALOG/.test(m) && /KEYS/.test(m) && /MCP CONNECTORS/.test(m), 'names the three connect routes');
+  A.ok(/CHANNELS/.test(m), 'names the CHANNELS window (inbound messaging)');
+  A.ok(/SETTINGS › PROVIDERS/.test(m), 'separates AI-provider keys from platform keys');
+
+  /* 8) THE PROP RULE DOES NOT APPLY TO CONNECTORS — the defect that produced the "gaslighting". The manual
+        used to list CONNECTOR PORTAL under "no prop placed means no power", but capability/office.js rides
+        every configured connector onto the office unconditionally ("account-level, not a placed floor prop").
+        So the agent authoritatively sent Commanders into REFIT to place a portal that is both unnecessary and
+        a dead end (a portal binds a connectorId that only exists after ABILITIES configured it). */
+  A.ok(/ACCOUNT-LEVEL/.test(m), 'states that a connector is account-level, not a placed prop');
+  A.ok(/NEVER send the Commander to REFIT to connect a platform/i.test(m), 'forbids the REFIT dead end');
+  A.ok(!/CONNECTOR PORTAL → an MCP/.test(m), 'CONNECTOR PORTAL is no longer listed as a prop that grants a connector');
+
+  /* 9) ANTI-INVENTION. The agent has no catalog in its prompt and no tool to read one, so any specific claim
+        about what is or is not connectable is a guess. It must route to the search box instead of improvising,
+        and must not argue when the Commander reports that its suggestion failed. */
+  A.ok(/HONESTY RULE/.test(m), 'carries the honesty rule for connect questions');
+  A.ok(/NEVER\s+(?:assert|invent)/.test(m), 'forbids inventing menu paths / asserting catalog contents');
+  A.ok(/universal fallback/i.test(m), 'names KEYS + web_request as the always-works fallback');
+
+  // hygiene: no template leakage
   A.ok(!/undefined|null|\[object/.test(m), 'no junk leaks into the manual');
 
   A.report('manual.test');

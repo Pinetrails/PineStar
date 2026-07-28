@@ -178,5 +178,19 @@ function fakeStack(tools) {
   // on-theme styling for the new cards
   A.ok(/\.cc-card/.test(css) && /\.cc-grid/.test(css) && /\.cc-chip/.test(css), 'catalog card styles present');
 
+  /* ---------- 4. THE CONSOLE SEARCH MUST INDEX THE PLATFORMS (regression, 2026-07-28) ----------
+     A user could not connect Google Drive: typing "google" / "gmail" / "google drive" into the ABILITIES
+     search box returned ZERO hits while a Google Workspace card was rendered on screen. Cause: doFilter's
+     row selector is a hardcoded class allowlist and `.cc-card` — the class every catalog AND every KEYS
+     platform card uses (48 of them) — was not on it. A search box directly above a catalog that indexes
+     none of the catalog is the single worst discoverability bug the connector surface can have. */
+  const searchSel = (stationCore.match(/const rows = pane\.querySelectorAll\(([^)]*)\)/) || [])[1] || '';
+  A.ok(/\.cc-card/.test(searchSel), 'console search indexes .cc-card (catalog + KEYS platform cards)');
+  // aliases: the words a Commander TYPES are often in neither the name nor the blurb ("gdrive", "g suite").
+  // The matcher must read the off-screen data-search attribute, and the card must emit it.
+  A.ok(/dataset\.search/.test(stationCore), 'console search also matches the off-screen data-search aliases');
+  A.ok(/data-search="/.test(station), 'catalog cards emit data-search from their aliases');
+  A.ok(/e\.aliases/.test(station) && /p\.aliases/.test(station), 'both the CATALOG and the KEYS platform card carry aliases');
+
   A.report('connectors-ui');
 })().catch(e => { console.log('FAIL: threw ' + (e && e.stack || e)); process.exit(1); });

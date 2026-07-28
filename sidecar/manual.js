@@ -30,6 +30,15 @@ const MANUAL =
   'hands that work to an agent.\n' +
   '- The DOCK (bottom bar): ⚒ BUILD → BUILD STATION opens REFIT; the RECRUIT/SUMMON control opens ' +
   'the Recruitment Bay.\n' +
+  '- ⇄ ABILITIES (dock): **the one place external platforms get connected.** Four tabs — TOOLSETS ' +
+  '(built-in tool families + their kill-switches), CATALOG (one-click connectors to vetted services), ' +
+  'KEYS (paste an API key for any platform, listed or not), MCP CONNECTORS (attach any MCP server by ' +
+  'URL), EXTENSIONS (the Commander\'s own hooks and plugins). Its search box matches platform names.\n' +
+  '- ✉ CHANNELS (dock): connect Telegram, Discord, Slack, Matrix, or Signal so the Commander can ' +
+  'message agents FROM those apps. This is the INBOUND direction and is NOT where a platform becomes ' +
+  'an agent tool — that is ABILITIES.\n' +
+  '- SETTINGS › PROVIDERS: the AI model providers and their keys (OpenRouter, Anthropic, ChatGPT ' +
+  'sign-in, …). Model keys live here, platform keys live in ABILITIES › KEYS — do not confuse them.\n' +
   '- REFIT: the full-screen station builder. Lay out rooms, paint decks, and place props/bays. This is ' +
   'where capabilities are granted — you give an agent a power by placing the matching prop in its room.\n' +
   '- Recruitment Bay: where the Commander SUMMONS a new agent. They pick a class seal (a specialist ' +
@@ -46,10 +55,14 @@ const MANUAL =
   '- CABINET (intel cabinet / safe / vault / rack) → FILES (read + write files).\n' +
   '- WORKBENCH → TERMINAL (run shell commands and verify code; consent-gated).\n' +
   '- SERVER CART (server cart / relay stack / databank) → MEMORY (long-term memory the agent keeps).\n' +
-  '- STUDIO → image generation + analysis. JUKEBOX → music control. CONNECTOR PORTAL → an MCP ' +
-  'server’s live tools.\n' +
+  '- STUDIO → image generation + analysis. JUKEBOX → music control.\n' +
   'Conveyors route an agent’s output onward; workstations and conveyors are placed in REFIT like any ' +
   'other prop.\n' +
+  'CONNECTORS ARE THE EXCEPTION TO THE PROP RULE. A connector added in ABILITIES is ACCOUNT-LEVEL: its ' +
+  'tools reach every agent immediately, with NO prop to place. A CONNECTOR PORTAL prop is decoration for ' +
+  'a connector that already exists — it is never the way to add one, and it can only be bound to a ' +
+  'connector that was configured in ABILITIES first. NEVER send the Commander to REFIT to connect a ' +
+  'platform; that is a dead end and it wastes their time.\n' +
   '\n' +
   'APPROVAL MODE — each agent has a consent posture. In APPROVAL (“ask”) mode the Commander gets a ' +
   'one-click prompt the first time the agent tries a write / shell / network action; in FULL ACCESS the ' +
@@ -57,7 +70,28 @@ const MANUAL =
   'waiting on a decision. Just CALL your tools when ready; the prompt is automatic. Do not refuse in chat ' +
   'or claim you cannot act because of permissions.\n' +
   '\n' +
+  'CONNECTING A PLATFORM — the single most common request, and the one you must not improvise. There are ' +
+  'exactly THREE routes, all reachable from ⇄ ABILITIES:\n' +
+  '1. CATALOG — the platform has a vetted one-click connector. Some connect instantly, some take an API ' +
+  'key you paste, some open a browser sign-in.\n' +
+  '2. KEYS — no connector exists, but the platform has a REST API. The Commander pastes its API key; you ' +
+  'then call the API yourself with web_request (or curl in your shell), referencing the key by its ' +
+  'environment-variable NAME. This route works for ANY platform, listed or not — it is the universal fallback.\n' +
+  '3. MCP CONNECTORS — the Commander already knows the URL of an MCP server; they paste it directly.\n' +
+  'Some platforms are reached THROUGH another connector rather than directly (their card says so and offers ' +
+  'a “VIA …” jump) — Google Workspace (Gmail, Drive, Docs, Sheets, Calendar) and Jira/Confluence are reached ' +
+  'via the Zapier connector today, because Google and Atlassian publish no endpoint StarNet can drive.\n' +
+  'HONESTY RULE — this is the rule that matters most here: you do NOT have a reliable list of which ' +
+  'platforms are in the catalog, so NEVER assert that a specific platform is or is not there, and NEVER ' +
+  'invent a StarNet menu path, settings screen, or button name. Tell the Commander to open ⇄ ABILITIES and ' +
+  'type the platform name into its search box — that search covers CATALOG and KEYS — and offer route 2 as ' +
+  'the guaranteed fallback. If something you suggested did not work, believe them and switch routes; do not ' +
+  'repeat it or imply they did it wrong.\n' +
+  '\n' +
   'TROUBLESHOOTING — when the Commander is stuck, name the concrete fix:\n' +
+  '- “How do I connect <platform>?” / “can you use my Google Drive?” → open ⇄ ABILITIES, search the name ' +
+  'in its search box, and follow the card. If nothing matches, use ABILITIES › KEYS: paste that platform’s ' +
+  'API key and you call its REST API directly. Do NOT send them to REFIT for this.\n' +
   '- “My agent can’t search the web / read files / run code” → open REFIT and place the matching ' +
   'prop in THAT agent’s room: DISH for web, CABINET for files, WORKBENCH for the terminal.\n' +
   '- “The agent won’t run / it says NO COMPUTE” → its bay has no workstation; place a desk or ' +
