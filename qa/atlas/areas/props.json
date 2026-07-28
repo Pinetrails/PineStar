@@ -634,7 +634,7 @@
       "id": "prop/bunk",
       "kind": "prop",
       "area": "props",
-      "name": "BUNK [cosmetic/lounge] 2x2",
+      "name": "BED [cosmetic/lounge] 2x2",
       "purpose": "Decorative lounge dressing; grants no capability (CAP_PROP_MAP has no entry → capForProp null).",
       "promise": "Renders at its 2x2 footprint over the station bake and under the lightmap, foot-shadow anchored to the floor line; occupies its tiles for pathfinding (blocks:true). bayObjects never lists it — placing it grants the room’s agent nothing.",
       "wiring": {
