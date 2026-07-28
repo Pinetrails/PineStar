@@ -42,6 +42,8 @@ const { makeToolSearchTool } = require('./tools/builtin/toolsearch.js');   // to
 const { makeSkillTools } = require('./tools/builtin/skills.js');    // H4: the agent's reusable skill library tools
 const Todo = require('./tools/builtin/todo.js');
 const { makeImageTools } = require('./tools/builtin/image.js');           // STUDIO: image_generate / image_analyze (OpenRouter multimodal)
+const { makeConnectorTools } = require('./tools/builtin/connectors.js');  // WEB: connectors.list — what the station HAS wired, and what it could (read-only, no secrets)
+const { makeVoiceTools } = require('./tools/builtin/voice.js');           // STUDIO: voice_generate — speech saved into the workspace as a playable clip
 const { makeSpotifyTools } = require('./tools/builtin/spotify.js');       // JUKEBOX: control/query the user's Spotify
 const { makeSpotifyStore } = require('./spotify/store.js');               // Spotify OAuth (PKCE) token store + auto-refresh
 const spotifyPkce = require('./spotify/pkce.js');                          // pure PKCE helpers (verifier/challenge/urls)
@@ -10021,6 +10023,16 @@ async function runOnce(o) {
       catch (_) { return ''; }
     })()
   }).register(registry);
+  // INTEGRATION SELF-KNOWLEDGE: the same `dish` grant as web_request. Every dep is the LIVE object the panels
+  // read (manager + KEYS list + both catalogs), so the readout can never drift from what ABILITIES shows. The
+  // serviceKeys dep is a THUNK, not the array: `serviceKeys` is reassigned on every KEYS edit, so capturing the
+  // value here would freeze the tool on the list as it stood when the run started.
+  makeConnectorTools({
+    connectors: connectors,
+    serviceKeys: () => serviceKeys,
+    connectorCatalog: connectorCatalog,
+    keysCatalog: serviceKeysCatalog
+  }).register(registry);
   // STUDIO media tools, built up-front so browser.vision can borrow its multimodal analyze path
   // (one provider seam, no duplication). Registered below; here we only need its vision callback.
   // STARNET_IMAGE_MODEL overrides the studio's default text->image model (image.js picks the current-gen
@@ -10109,6 +10121,10 @@ async function runOnce(o) {
   // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
   imageTools.register(registry);
+  // STUDIO, third skill: voice_generate — the agent MAKES a clip (voiceover, narration, audio message) into its
+  // workspace. It drives the SAME ladder /api/tts does (agentSpeechSynth below: the keyed neural chain, then the
+  // free keyless Edge floor), so it needs no voice-specific credential and a zero-key station can still record.
+  makeVoiceTools({ synth: agentSpeechSynth, fsp, pathMod: path, root: WORKSPACES }).register(registry);
   // JUKEBOX (Spotify): registered every run, EXPOSED via a 'jukebox' object; no-op (clear error) until the user
   // connects Spotify in TOOLSETS. The OAuth session + auto-refresh live in the station-wide spotifyStore above.
   makeSpotifyTools({ store: spotifyStore }).register(registry);
@@ -12884,6 +12900,44 @@ async function ttsSynthKeyed(ttsProvider, o) {
   // anything else (e.g. a 200 with a JSON error body) is NOT silently wrapped as WAV — that ships a corrupt blob.
   return { ok: false, reason: 'unexpected content-type: ' + ct };
 }
+/* agentSpeechSynth({ text, voice, style }) -> { ok, buf, ext, mime, provider } | { ok:false, reason }
+   ONE clip for the voice_generate TOOL (tools/builtin/voice.js). Same ladder POST /api/tts climbs — keyed
+   neural providers in TTS_KEY_PROVIDERS order, then the free keyless Edge floor — reusing ttsSynthKeyed
+   rather than re-implementing it, so the agent's voiceover and the station's own voice come from the same
+   credential and never drift apart. Deliberately NOT sharing the /api/tts disk cache: that cache is keyed
+   for short repeated station lines, and a voiceover is written to the workspace anyway.
+   A failure reports EVERY leg it tried — "no audio" with no reason is the kind of dead end that gets
+   diagnosed as "StarNet can't do voice" when the truth is one dead key. */
+async function agentSpeechSynth(o) {
+  const text = String((o && o.text) || '').replace(/\s+/g, ' ').trim();
+  if (!text) return { ok: false, reason: 'no text' };
+  const style = String((o && o.style) || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  const wantVoice = String((o && o.voice) || '').trim();
+  const input = style ? ('Say the following in ' + style + ': ' + text) : text;
+  const reasons = [];
+  for (const p of TTS_KEY_PROVIDERS) {
+    const key = providerRuntimeKey(p, '');
+    if (!key) continue;
+    let r;
+    try { r = await ttsSynthKeyed(p, { model: TTS_DEFAULT_MODEL, voice: wantVoice || 'Umbriel', input, text, style, key }); }
+    catch (e) { r = { ok: false, reason: (e && e.message) || String(e) }; }
+    if (r && r.ok && r.buf && r.buf.length) return { ok: true, buf: r.buf, ext: r.ext, mime: r.outType, provider: p };
+    reasons.push(p + ': ' + ((r && r.reason) || 'failed'));
+  }
+  if (edgetts.enabled()) {
+    // Edge names voices 'en-US-ChristopherNeural'. A voice the agent picked for a KEYED provider ('Umbriel')
+    // is meaningless here and would fail the whole synthesis, so it is dropped rather than forwarded — the
+    // floor speaks in its default voice instead of not speaking at all.
+    const edgeVoice = /^[a-z]{2}-[A-Za-z]{2,8}-\w+$/.test(wantVoice) ? wantVoice : '';
+    try {
+      const buf = await edgetts.synth(text, edgeVoice ? { nowMs: Date.now(), voice: edgeVoice } : { nowMs: Date.now() });
+      if (buf && buf.length) return { ok: true, buf: buf, ext: 'mp3', mime: 'audio/mpeg', provider: 'edge' };
+      reasons.push('edge: empty audio');
+    } catch (e) { reasons.push('edge: ' + ((e && e.message) || e)); }
+  } else reasons.push('edge: disabled');
+  return { ok: false, reason: reasons.join('; ') || 'this station holds no voice-capable credential' };
+}
+
 async function handleTts(req, res) {
   const fallback = (reason) => { console.error('[tts] fallback →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ fallback: true, reason })); };
   let body;
