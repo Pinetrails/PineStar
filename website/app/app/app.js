@@ -2323,6 +2323,11 @@ const App = (() => {
     wakeBtnBusy(true);   // COMMIT POINT: past every validation gate — show WAKING… and hold the latch through enterGame
     if (resumingSaved) { const s = resumingSaved; resumingSaved = null; s.agent.model = model; resumeInto(s); return true; }
 
+    // LOCK DOWN before the NEW hero or any of its local stores are committed. A failed durable revoke rejects,
+    // leaves the prior station intact, and keeps its confirmed grant visible instead of commissioning a fresh
+    // Commander who silently inherited cabinet:write. Saved-station resume returns above and keeps its grants.
+    if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();
+
     // the FIRST agent is always the station's OVERSEER — the orchestrating lead the Commander commissions before
     // any specialist. Its voice is the archetype + fine-tune dials + free-text note; its APPROVAL mode (ask vs
     // full access) drives the real consent broker, while the mission/context/orders are authored in the awakening.
@@ -2364,7 +2369,6 @@ const App = (() => {
     if (typeof BottleStore !== 'undefined') BottleStore.reset();   // …and R5's per-run bottle-decision denylist clears — a fresh hero re-earns every "bottle it?" offer (own key)
     if (typeof ResummonStore !== 'undefined') ResummonStore.reset();   // …and P3.1's per-run re-summon-decision denylist clears — a fresh hero re-earns every "run it again?" offer (own key)
     if (typeof TrustStore !== 'undefined') TrustStore.reset();   // GROWTH Tier 3: …and a fresh EARNED-AUTONOMY track record — a new Commander never inherits the prior hero's earned rungs / declined-offer state / streak (own key); the earned dial rung must be re-earned from scratch
-    if (typeof PermissionsStore !== 'undefined') await PermissionsStore.reset();   // …and LOCK DOWN the standing grants (AWAIT so the revoke lands before the new agent enters — no inherit-window) — a new Commander never inherits the previous one's autonomous file-write permission (server-side grant; re-grant via the Permissions panel)
     if (typeof Harness !== 'undefined' && Harness.memoryReset) Harness.memoryReset(agent.id);   // …and wipe SERVER-SIDE memory (notebook/declined/todo) so no prior Commander's kept or rejected beliefs bleed into the fresh hero
     pendingStationDoc = null;   // a brand-new station (one shabby starter room) for a new agent
     pendingStationStats = null; // fresh growth meters — XpStore.init seeds them on enterGame

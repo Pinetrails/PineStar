@@ -83,15 +83,33 @@ const wire = (h) => PermissionsStore.init({ api: h.api, getPosture: h.getPosture
     ok(!PermissionsStore._grants().includes('cabinet:write'), 'revoke updates the cache');
   }
 
-  // --- new-hero reset locks down: clears the cache + best-effort revokes the autonomous write grant ---
+  // --- new-hero reset locks down authoritatively and preserves unrelated standing grants ---
   {
-    const h = harness(['cabinet:write'], { initiative: 'free', actsUnattended: true }); wire(h);
+    const h = harness(['cabinet:write', 'net:send'], { initiative: 'free', actsUnattended: true }); wire(h);
     await PermissionsStore.refresh();
     const p = PermissionsStore.reset();
-    eq(PermissionsStore._grants(), [], 'reset cleared the cache synchronously');
     ok(h.calls.revoke.includes('cabinet:write'), 'reset revoked the write grant (a fresh hero starts locked)');
     ok(p && typeof p.then === 'function', 'reset returns an awaitable promise so onWake can await the lockdown (no inherit-window)');
-    await p;
+    const snap = await p;
+    ok(!snap.grants.includes('cabinet:write'), 'successful reset removes the confirmed curated grant');
+    ok(snap.grants.includes('net:send'), 'successful reset preserves a non-curated standing grant');
+  }
+
+  // --- failed new-hero lockdown never fabricates an empty ledger or resolves as safe ---
+  {
+    const server = new Set(['cabinet:write']);
+    const api = {
+      load: async () => ({ ok: true, grants: Array.from(server), grantable: ['cabinet:write'] }),
+      revoke: async () => ({ ok: false, reason: 'could not persist revoke — kept', grants: Array.from(server) })
+    };
+    PermissionsStore.init({ api, getPosture: () => ({ initiative: 'free' }), applyPreset: () => {}, load: false });
+    await PermissionsStore.refresh();
+    let rejected = null;
+    try { await PermissionsStore.reset(); } catch (e) { rejected = e; }
+    ok(rejected && /could not lock down standing permissions/i.test(rejected.message), 'failed reset rejects so commissioning cannot proceed');
+    const snap = PermissionsStore.snapshot();
+    ok(snap.grants.includes('cabinet:write'), 'failed reset preserves the last confirmed dangerous grant');
+    ok(/persist revoke/i.test(snap.error), 'failed reset exposes the durable revoke failure');
   }
 
   // --- provenance (P0-5): the store caches the sidecar's meta map and exposes it in the snapshot ---

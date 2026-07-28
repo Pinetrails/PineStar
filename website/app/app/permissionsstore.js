@@ -116,19 +116,21 @@ const PermissionsStore = (() => {
     if (deps.load !== false) { try { refresh(); } catch (_) {} }
   }
 
-  // a brand-new hero starts LOCKED DOWN: drop the cache and revoke the curated autonomous grants, so a fresh station
-  // can never inherit a previous one's standing permission to write files unattended (re-grant via the panel).
-  // RETURNS A PROMISE so onWake can AWAIT the lockdown before the new agent enters the game — closing the window
-  // where a fresh Commander could briefly inherit the prior write grant (the posture reset to 'wait' is the backstop;
-  // this makes the claimed lockdown authoritative, not fire-and-forget). Sync-safe + node-safe (resolves immediately
-  // with no api wired); the revoke calls are still INITIATED synchronously. Non-curated grants are left to the user.
-  function reset() {
+  // a brand-new hero starts LOCKED DOWN: revoke the curated autonomous grants before the fresh station commits.
+  // A revoke failure must preserve the last confirmed cache and REJECT — clearing first made the UI claim lockdown
+  // while the server still held cabinet:write. Non-curated grants remain visible and untouched.
+  async function reset() {
     const keys = ready() ? Permissions.grantableKeys() : ['cabinet:write'];
-    grants = []; grantable = []; meta = {}; loaded = false; error = '';
-    if (!deps.api || typeof deps.api.revoke !== 'function') return Promise.resolve();
-    const jobs = [];
-    for (const k of keys) { try { jobs.push(Promise.resolve(deps.api.revoke(k)).catch(() => {})); } catch (_) {} }
-    return Promise.all(jobs);
+    if (!deps.api || typeof deps.api.revoke !== 'function') {
+      grants = []; grantable = []; meta = {}; loaded = false; error = '';
+      return snapshot();
+    }
+    error = '';
+    for (const k of keys) {
+      const snap = await revoke(k);
+      if (snap.error) throw new Error('could not lock down standing permissions — ' + snap.error);
+    }
+    return snapshot();
   }
 
   return { init, refresh, snapshot, currentLevel, setLevel, grant, revoke, reset, _grants: () => grants.slice() };
