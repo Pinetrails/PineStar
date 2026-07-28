@@ -10994,7 +10994,14 @@ async function runOnce(o) {
   } catch (_) { /* runtime skill indexing must never break a run */ }
   try {
     if (resolved.tools.indexOf('skill.view') >= 0) {
-      const names = (Array.isArray(preloadSkills) ? preloadSkills : []).concat(runtimeSkills.extractInvocations(messages));
+      /* `o.preloadSkills`, NOT `preloadSkills`. The bare identifier is handleRun's local (line ~9668);
+         inside runOnce it resolves to nothing, so this line threw ReferenceError on EVERY run and the
+         catch below — "explicit skill preload must never break a run" — swallowed it. The whole
+         preload path was dead: `/skill Name` loaded nothing and body.preloadSkills was ignored, with
+         no error anywhere. Found by asserting on the bytes that reach the provider, which is the only
+         place a silently-skipped prompt block is visible. */
+      const requested = Array.isArray(o.preloadSkills) ? o.preloadSkills : [];
+      const names = requested.concat(runtimeSkills.extractInvocations(messages));
       const seenNames = new Set();
       const loaded = [];
       const withheldPreloads = [];

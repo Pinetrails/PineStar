@@ -47,9 +47,14 @@ function approvalsMap() {
   A.eq(rec.guardAction, 'ask', 'agent-created dangerous content -> ask');
   A.ok(rec.contentDigest, 'persist stamps a content digest');
 
+  // The Commander's own typing is its own tier: it ASKS, so the author can bless their own
+  // deliberate content. Blocking the human would be a gate with no key (see guard.js TRUST).
   const s2 = storeWith();
   s2.write({ agentId: 'a', name: 'Risky', summary: 'r', body: RISKY, createdBy: 'user' });
-  A.eq(s2.list('a')[0].guardAction, 'block', 'a TRUSTED source writing dangerous content -> block (trust table)');
+  A.eq(s2.list('a')[0].guardAction, 'ask', 'the human surface writing dangerous content -> ask, never block');
+  const s3 = storeWith();
+  s3.write({ agentId: 'a', name: 'Clean', summary: 'c', body: '1. build\n2. ship' });
+  A.eq(s3.list('a')[0].guardAction, 'allow', 'clean content is allowed outright');
 }
 
 // ---- A2. the prompt index NAMES a withheld skill and never delivers it ----
@@ -99,16 +104,27 @@ function approvalsMap() {
 
 // ---- A4. a BLOCK verdict is not approvable at all ----
 {
-  const s = storeWith();
-  s.write({ agentId: 'a', name: 'Nasty', summary: 'n', body: NASTY, createdBy: 'user' });
-  const rec = s.list('a')[0];
-  A.eq(rec.guardAction, 'block', 'destructive content from a trusted source blocks');
+  /* Block is the answer for content that arrives CLAIMING to be vetted by someone else — the
+     'community'/'trusted' tiers, i.e. the shape a future hub install writes. Build that record the
+     way the scanner would and prove no approval can bless it. */
+  const rec = {
+    id: 'imported', agentId: 'a', name: 'Imported Cleanup', createdBy: 'community', state: 'active',
+    body: NASTY, setup: '', files: []
+  };
+  const scan = skillGuard.scanSkillRecord(rec, { source: 'community' });
+  A.eq(scan.verdict, 'dangerous', 'the scanner rates the destructive body dangerous');
+  rec.scan = scan;
+  rec.guardAction = skillGuard.shouldAllow(scan, { allowAsk: true }).action;
+  A.eq(rec.guardAction, 'block', 'a community-sourced dangerous skill blocks');
+  rec.contentDigest = digestOf(rec);
+
   const approvals = approvalsMap();
   const gate = makeSkillGate({ guard: skillGuard, approvals });
   approvals.set('a', rec.id, { digest: gate.stampOf(rec), action: 'allow', at: 1 });   // try to bless it anyway
   const d = gate.decide(rec);
   A.eq(d.visible, false, 'a block stays withheld even with an approval record present');
   A.eq(d.approvable, false, 'and it is not offered as approvable');
+  A.eq(gate.verify(rec).visible, false, 'and the delivery seam agrees');
 }
 
 // ---- B. a package edited on disk after the scan is caught at DELIVERY ----
@@ -133,6 +149,18 @@ function approvalsMap() {
   const tools = makeSkillTools({ store: s, gate });
   A.eq(tools.viewTool.run({ name: 'Deploy' }, { agentId: 'a' }).summary, 'withheld', 'skill.view refuses the tampered package');
   try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+}
+
+// ---- B2. a LEGACY record (saved before the guard/digest existed) is scanned at delivery ----
+{
+  const gate = makeSkillGate({ guard: skillGuard, approvals: approvalsMap() });
+  const legacy = { id: 'old', agentId: 'a', name: 'Old Deploy', createdBy: 'agent', state: 'active', body: RISKY, files: [] };
+  A.eq(gate.decide(legacy).visible, true, 'metadata alone cannot judge a legacy record (no verdict, no body)');
+  const v = gate.verify(legacy);
+  A.eq(v.visible, false, 'the delivery seam re-scans it and withholds');
+  A.eq(v.unscanned, true, 'and says it predates the guard');
+  const clean = { id: 'ok', agentId: 'a', name: 'Old Safe', createdBy: 'agent', state: 'active', body: '1. build\n2. ship', files: [] };
+  A.eq(gate.verify(clean).visible, true, 'a clean legacy record still loads');
 }
 
 // ---- C. pinned is a LOCK on every content action, wrapper included ----

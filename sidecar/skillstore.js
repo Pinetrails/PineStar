@@ -197,7 +197,9 @@
       const projected = projectSkill(entry, true);
       try {
         if (guard && typeof guard.scanSkillRecord === 'function') {
-          const scan = guard.scanSkillRecord(projected, { source: entry.createdBy === 'user' ? 'trusted' : 'agent-created' });
+          // 'user' (the Commander's own typing) is its own trust tier — see the TRUST table in
+          // skills/guard.js for why it asks rather than blocks now that verdicts are enforced.
+          const scan = guard.scanSkillRecord(projected, { source: entry.createdBy === 'user' ? 'user' : 'agent-created' });
           entry.scan = scan;
           if (guard && typeof guard.shouldAllow === 'function') {
             const policy = guard.shouldAllow(scan, { allowAsk: true });

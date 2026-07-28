@@ -118,20 +118,34 @@
        so the bytes delivered here are not necessarily the bytes persist() scanned: someone who
        can write into the package dir could otherwise launder content past the scanner. Recompute
        the digest, and on a mismatch re-scan LIVE and take the worse of the two actions. */
+    function liveScan(skill) {
+      try {
+        if (!guard || typeof guard.scanSkillRecord !== 'function' || typeof guard.shouldAllow !== 'function') return null;
+        const scan = guard.scanSkillRecord(skill, { source: str(skill.createdBy) === 'user' ? 'user' : 'agent-created' });
+        const policy = guard.shouldAllow(scan, { allowAsk: true });
+        return { action: (policy && policy.action) || 'allow', scan };
+      } catch (_) { return null; }
+    }
     function verify(skill) {
       const base = decide(skill);
       const stamped = str(skill && skill.contentDigest);
-      if (!stamped || !skill || typeof skill.body !== 'string') return base;
+      if (!skill || typeof skill.body !== 'string') return base;
+      /* A LEGACY RECORD CARRIES NO VERDICT AND NO DIGEST. skills.jsonl predates both the scanner
+         and this gate, so an old skill would otherwise sail through with guardAction '' — the
+         quietest possible hole, because it looks exactly like a clean skill. Nothing can scan it
+         from metadata alone (list() has no body), so the delivery seam scans it here, where the
+         body finally exists. The index may still name it; only the bytes are gated. */
+      if (!stamped && !str(skill.guardAction)) {
+        const live = liveScan(skill);
+        if (!live || live.action === 'allow') return base;
+        const legacy = decide(Object.assign({}, skill, { guardAction: live.action, scan: live.scan }));
+        legacy.unscanned = true;
+        if (!legacy.visible) legacy.reason = 'this skill was saved before the guard existed and re-scanning it flagged content — review it in ABILITIES > SKILLS';
+        return legacy;
+      }
+      if (!stamped) return base;
       if (digestOf(skill) === stamped) return base;
-      let live = null;
-      try {
-        if (guard && typeof guard.scanSkillRecord === 'function' && typeof guard.shouldAllow === 'function') {
-          const scan = guard.scanSkillRecord(skill, { source: str(skill.createdBy) === 'user' ? 'trusted' : 'agent-created' });
-          live = guard.shouldAllow(scan, { allowAsk: true });
-          if (live && live.action === 'ask') live = { action: 'ask', scan };
-          else live = { action: (live && live.action) || 'allow', scan };
-        }
-      } catch (_) { live = null; }
+      const live = liveScan(skill);
       const action = worseAction(base.action, live ? live.action : 'ask');   // unscannable tamper => at least ask
       const merged = decide(Object.assign({}, skill, { guardAction: action, scan: (live && live.scan) || skill.scan }));
       merged.tampered = true;
