@@ -6,7 +6,7 @@
    turn any prompt injection into an exfiltration primitive. */
 'use strict';
 const A = require('./_assert.js');
-const { makeCommsTools, MAX_CHUNKS } = require('../sidecar/tools/builtin/comms.js');
+const { makeCommsTools, MAX_CHUNKS, TEXT_CHARS } = require('../sidecar/tools/builtin/comms.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { makeCapCtx } = require('../sidecar/capability/capGate.js');
 
@@ -153,6 +153,20 @@ const TARGETS = [
     try { await t.sendTool.run({ target: '99001', text: 'x'.repeat(100 * (MAX_CHUNKS + 3)) }); } catch (e) { err = e; }
     A.ok(err && /limit /.test(err.message), 'a message that would spray the chat is refused up front');
     A.eq(sent.length, 0, 'and NOTHING is sent — the refusal happens before the first part');
+  }
+
+  // ---- the per-call ceiling refuses whole instead of silently clipping a successful send ------------
+  {
+    const sent = [];
+    const t = makeCommsTools({
+      listTargets: () => TARGETS,
+      sendTo: (x, text) => { sent.push(text); return Promise.resolve({ ok: true }); }
+    });
+    let err = null;
+    try { await t.sendTool.run({ target: '99001', text: 'x'.repeat(TEXT_CHARS) + 'tail-marker' }); } catch (e) { err = e; }
+    A.ok(err && /characters \(limit /.test(err.message), 'an oversized payload is refused with the exact limit');
+    A.ok(/nothing was sent/.test(err.message), 'the refusal states that no partial prefix escaped');
+    A.eq(sent.length, 0, 'the transport receives ZERO chunks — no silently clipped successful send');
   }
 
   // ---- PARTIAL DELIVERY IS REPORTED, never rounded up to success ------------------------------------

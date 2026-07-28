@@ -67,6 +67,13 @@ selections and locks exactly one true state. Live post-fix round-trip after sele
 36 total · 1 visual (`Pepe`) · 1 pressed (`Pepe`) · 35 false · matching preview caption.
 Verification: focused test 11 assertions, website mirror 8 assertions, claims planning PASS
 (37 claims / 182 files), `test:fast` 403/403 green. Not pushed or merged.
+## 2026-07-27 — OUTBOUND MESSAGE INTEGRITY (`agent/quality-loop-0727b`)
+
+READY TO MERGE — the new `channel.send` tool silently clipped any payload above its 8,000-character
+call ceiling, delivered the prefix in up to five chunks, and reported success. A real-sidecar DEV-channel
+reproduction sent five partial messages (reply count 2→7) while dropping the tail. The tool now exposes
+the ceiling in its schema and refuses the whole call before target resolution or transport activity.
+Regression proof: 56 focused unit assertions, 35 real-sidecar assertions, and full `test:http` green.
 
 ## 2026-07-20 — PUBLIC-REPO RELEASE PREP (branch `claude/starnet-repo-release-prep-c41845`)
 

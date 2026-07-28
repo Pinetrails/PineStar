@@ -142,13 +142,17 @@
         required: ['target', 'text'],
         properties: {
           target: { type: 'string', description: 'A target token from channel.targets (a channel name or chat id also works when it matches exactly one).' },
-          text: { type: 'string', description: 'The message body. Plain text; it is split into platform-sized parts automatically.' }
+          text: { type: 'string', maxLength: TEXT_CHARS, description: 'The message body. Plain text; it is split into platform-sized parts automatically.' }
         }
       },
       run: async (args, ctx) => {
         if (typeof sendTo !== 'function') throw new Error('outbound messaging unavailable');
-        const text = clean(args && args.text, TEXT_CHARS);
+        const text = clean(args && args.text);
         if (!text) throw new Error('text is required — an empty message is never sent');
+        if (text.length > TEXT_CHARS) {
+          throw new Error('text is ' + text.length + ' characters (limit ' + TEXT_CHARS
+            + ') — send a summary and put the detail in a file instead; nothing was sent');
+        }
         const t = resolveTarget(listTargets() || [], args && args.target);
         // A resolved-but-DOWN transport is its own answer. Reporting "sent" into a dead channel, or "no such
         // target" for a chat that plainly exists, are both lies the model would repeat to the Commander.
