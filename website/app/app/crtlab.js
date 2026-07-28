@@ -11,8 +11,12 @@
   if (!/[?&]crtlab\b/.test(location.search)) return;
 
   const CRT_DEFAULTS = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.09, vig: 0.30, over: 1.20, dust: 0.5, aberr: 0.35, grain: 0.24 };
-  const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2 };
-  const WALL_DEFAULTS = { up: 9, corUp: 0, skirt: 32, side: 12 };
+  const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2, crown: 0.45 };
+  /* MUST MIRROR StationBake.WALL EXACTLY — these are not just the readout's key list, RESET writes
+     them back over the live object. They had drifted (up 9, side 12) behind the shipped 14/7, so
+     RESET restored a state that never shipped and side 12 pushed the wall band past the hull
+     silhouette it is pinned to. Add a WALL knob, add it here. */
+  const WALL_DEFAULTS = { up: 14, corUp: 0, skirt: 32, side: 7, capH: 3, sideCap: 5 };
   const DEPTH_DEFAULTS = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1 };
   // TUBE APERTURE — the CSS glass vignette over the feed (app.css :root --tube-*). NOT the barrel warp:
   // `curve` bows the picture, these dim its outer band, and they move independently. Seeded from the live
@@ -29,9 +33,10 @@
     'Bright room':     { light: { ambient: 0.52, pool: 0.9, floor: 0.2 } },
     'Balanced':        { light: { ambient: 0.66, pool: 0.95, floor: 0.22 } },
     'Dark + pools':    { light: { ambient: 0.82, pool: 1.0, floor: 0.26 } },
+    // side is pinned at `pad` (7) — past it the wall band juts out of the station's own silhouette
     'Flat (old)':      { wall: { up: 0, corUp: 0, skirt: 12, side: 4 }, depth: { wallShadow: 0, sheen: 0, cornerAO: 0, dither: 0, floorWear: 0, floorDetail: 0, deckSeam: 0, wallDetail: 0 } },
-    'Tall halls':      { wall: { up: 10, corUp: 0, skirt: 32, side: 12 } },
-    'Towering':        { wall: { up: 32, corUp: 15, skirt: 38, side: 9 } },
+    'Tall halls':      { wall: { up: 10, corUp: 0, skirt: 32, side: 7 } },
+    'Towering':        { wall: { up: 32, corUp: 15, skirt: 38, side: 7 } },
     'Depth+':          { crt: { dust: 0.5, aberr: 0.35, grain: 0.24 }, depth: { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1 } },
     // A/B the WHOLE aperture — in-canvas vignette + overscan + the CSS glass together. `curve` is 0.09 in
     // every one of them: these change how much of the panel the picture gets, never how hard it bows.
@@ -200,12 +205,14 @@
     sliders.push(buildSlider(body, light, 'pool', 0.5, 1, 0.01, scheduleRebake));
     sliders.push(buildSlider(body, light, 'floor', 0, 0.5, 0.01, scheduleRebake));
     sliders.push(buildSlider(body, light, 'room', 0.2, 0.8, 0.02, scheduleRebake));
+    sliders.push(buildSlider(body, light, 'crown', 0, 0.8, 0.01, scheduleRebake));   // how far ambient gives way over a wall's lit top surface — 0 puts the crown back under the hull skirt
 
     section(body, 'WALL HEIGHT (re-bakes)');
     sliders.push(buildSlider(body, wall, 'up', 0, 36, 1, scheduleRebake));      // room north face rise
     sliders.push(buildSlider(body, wall, 'corUp', 0, 24, 1, scheduleRebake));   // corridor north face rise
     sliders.push(buildSlider(body, wall, 'skirt', 6, 44, 1, scheduleRebake));   // hull drop below the station
-    sliders.push(buildSlider(body, wall, 'side', 4, 12, 1, scheduleRebake));    // e/w wall-top band width
+    sliders.push(buildSlider(body, wall, 'side', 4, 7, 1, scheduleRebake));     // e/w wall band width — 7 is the hull's own reach (`pad`); past it the wall juts out of the station silhouette
+    sliders.push(buildSlider(body, wall, 'sideCap', 2, 6, 1, scheduleRebake));  // lit top surface of the e/w/s walls — the crown ring's width
 
     section(body, 'PRESETS');
     const presetWrap = document.createElement('div');

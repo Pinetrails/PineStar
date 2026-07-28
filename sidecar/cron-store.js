@@ -220,6 +220,29 @@
       Object.assign({}, job, { enabled: true, state: 'scheduled', nextRunAt: armAt(job.schedule, null, now) }));
   }
 
+  /* triggerJob — make a job DUE on the very next scheduler tick, without running it inline.
+
+     This is NOT resumeJob. resumeJob RE-ANCHORS: it recomputes the next fire of the job's own schedule from
+     `now`, which for a cron routine is the next matching WALL-CLOCK time — so "resume at 10:00 a `0 9 * * *`
+     job" yields 09:00 TOMORROW and the job does not fire now at all. Using it as a trigger would report
+     "queued to fire within a tick" about something a day away, which is precisely the kind of claim the
+     harness may never make. A trigger instead writes nextRunAt = NOW, which planTick's dueAtOf reads back as
+     already-due (it prefers the persisted nextRunAt over a fresh computation), so the job fires on the next
+     tick through the ordinary unattended path and then advances normally from markRun. Same shape as the
+     reference harness's trigger_job (cron/jobs.py), which also just stamps next_run_at = now.
+
+     A paused job is un-paused, exactly as resume does — asking to fire a paused routine and having nothing
+     happen is a silent no-op, and the caller is told (state comes back 'scheduled'). A one-shot that has
+     ALREADY settled (lastRunAt set) is deliberately left alone: planTick treats a settled one-shot as
+     permanently ineligible, so stamping it due would promise a fire that can never happen. */
+  function triggerJob(jobs, id, ctx) {
+    const now = (ctx && ctx.now) || 0;
+    return mapJob(jobs, id, (job) => {
+      if (job.schedule && job.schedule.kind === 'once' && job.lastRunAt) return job;   // settled one-shot: never re-armable
+      return Object.assign({}, job, { enabled: true, state: 'scheduled', nextRunAt: iso(now) });
+    });
+  }
+
   function removeJob(jobs, id) { return (jobs || []).filter(j => !(j && j.id === id)); }
 
   /* claimOnceFire — G4.5: stamp a one-shot's FIRE-CLAIM at fire time (the advance-before-run analog for a
@@ -345,6 +368,7 @@
     updateJob: updateJob,
     pauseJob: pauseJob,
     resumeJob: resumeJob,
+    triggerJob: triggerJob,
     claimOnceFire: claimOnceFire,
     renewOnceHeartbeat: renewOnceHeartbeat,
     markRun: markRun,

@@ -106,6 +106,39 @@ function scriptPrompt(decision) {
     A.eq(p2.calls.length, 1, '"once" left no standing grant → the next reference DID re-prompt');
   }
 
+  /* ---- 4b. "full" is AT LEAST as strong as "always": it records the standing root and never re-prompts ----
+     Regression for the live-caught 2026-07-27 loop: "full" fell through to the "once" branch, so a Commander
+     clicking the card's STRONGEST button ("Full access") bought nothing and was asked again on the very next
+     file touch in the same folder. Five reads = five identical cards. The grades must never invert. */
+  {
+    const h = harness();
+    const p = scriptPrompt('full');
+    const r = await h.pt.guard(fileAbs, { scope: 'read', surface: 'interactive', prompt: p });
+    A.ok(r && r.abs, '"full" allows the access');
+    A.eq(p.calls.length, 1, 'exactly ONE prompt for the first outside reference');
+    A.eq(h.blessed.length, 1, '"full" RECORDED a standing root grant (it is not a one-time allow)');
+    A.ok(h.blessed[0] && path.resolve(h.blessed[0].rootReal).toLowerCase() === path.resolve(proj).toLowerCase(),
+      '"full" blessed the same git-repo root "always" would have');
+    // every subsequent file in that folder must flow silently — this is the loop the user actually hit
+    const p2 = scriptPrompt('deny');   // must not be consulted
+    for (const f of ['README.md', 'src/main.js']) {
+      const r2 = await h.pt.guard(path.join(proj, f), { scope: 'read', surface: 'interactive', prompt: p2 });
+      A.ok(r2 && r2.base, 'subsequent read under the "full"-blessed root resolved');
+    }
+    A.eq(p2.calls.length, 0, 'after "full", NO further card is raised for that folder');
+    // and the grant is a real, revocable standing root — same shape "always" produces
+    A.eq(h.roots.size, 1, '"full" left exactly one revocable standing root behind');
+  }
+
+  // ---- 4c. a failed persist under "full" DENIES (fail-closed, exactly as "always" does) ----
+  {
+    const h = harness();
+    h.setBlessOk(false);
+    await rejects(h.pt.guard(fileAbs, { scope: 'read', surface: 'interactive', prompt: scriptPrompt('full') }),
+      '"full" that could not persist its grant is DENIED, never silently allowed');
+    A.eq(h.roots.size, 0, 'a failed "full" bless recorded nothing');
+  }
+
   // ---- 5. "no" (deny) throws and blesses nothing ----
   {
     const h = harness();

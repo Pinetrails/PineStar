@@ -285,4 +285,50 @@ const iso = cron._internals.iso;
   A.eq(store.markDelivery(jobs, 'nope', { ok: true }, { now: T }), jobs.map(x => x), 'markDelivery on an absent job is a no-op');
 }
 
+/* ---- triggerJob: make a job due on the NEXT tick, and never lie about when that is -------------------
+   The bug this locks was live: routine.manage's run_now originally used resumeJob, which re-anchors the
+   SCHEDULE rather than stamping a due time. For `0 9 * * *` that recomputes 09:00 tomorrow — the same value
+   it already held — so the tool reported "queued to fire within a tick" about a fire a day away. */
+{
+  const T = Date.parse('2026-07-27T10:00:00.000Z');
+  let jobs = [];
+  jobs = store.createJob(jobs, { name: 'Morning', prompt: 'p', schedule: cron.parseSchedule('0 9 * * *', T), agentId: 'a' }, { id: 'tg1', now: T });
+  const armed = store.getJob(jobs, 'tg1').nextRunAt;
+  A.eq(armed, '2026-07-28T09:00:00.000Z', 'a 09:00 cron job created at 10:00 is armed for TOMORROW 09:00');
+
+  // resumeJob is NOT a trigger — it recomputes the same wall-clock occurrence.
+  A.eq(store.getJob(store.resumeJob(jobs, 'tg1', { now: T }), 'tg1').nextRunAt, armed,
+    'resumeJob re-anchors the schedule and yields the SAME next occurrence (this is why it cannot be a trigger)');
+
+  // triggerJob stamps NOW, which planTick reads back as already-due.
+  const fired = store.triggerJob(jobs, 'tg1', { now: T });
+  A.eq(store.getJob(fired, 'tg1').nextRunAt, '2026-07-27T10:00:00.000Z', 'triggerJob stamps the next fire at NOW');
+  A.eq(store.getJob(fired, 'tg1').state, 'scheduled', 'a triggered job is scheduled');
+  A.eq(store.getJob(fired, 'tg1').enabled, true, 'a triggered job is enabled');
+  A.eq(cron.planTick(fired, T, {}).fire.map(f => f.jobId), ['tg1'], 'the triggered job is DUE on the very next tick');
+  A.eq(cron.planTick(jobs, T, {}).fire.length, 0, 'the untriggered job is not due at the same instant');
+
+  // a PAUSED job asked to fire is un-paused rather than silently doing nothing
+  {
+    const paused = store.pauseJob(jobs, 'tg1');
+    A.eq(store.getJob(paused, 'tg1').enabled, false, 'precondition: paused');
+    const t = store.triggerJob(paused, 'tg1', { now: T });
+    A.eq(store.getJob(t, 'tg1').enabled, true, 'triggering a paused routine un-pauses it (never a silent no-op)');
+    A.eq(cron.planTick(t, T, {}).fire.map(f => f.jobId), ['tg1'], 'and it then actually fires');
+  }
+
+  // a SETTLED one-shot can never fire again — do not promise it will
+  {
+    let once = store.createJob([], { name: 'One', prompt: 'p', schedule: cron.parseSchedule('in 1h', T), agentId: 'a' }, { id: 'tg2', now: T });
+    once = store.markRun(once, 'tg2', { ok: true, runId: 'r1' }, { now: T + 1000 });
+    A.ok(store.getJob(once, 'tg2').lastRunAt, 'precondition: the one-shot has settled');
+    const t = store.triggerJob(once, 'tg2', { now: T + 2000 });
+    A.eq(store.getJob(t, 'tg2').nextRunAt, store.getJob(once, 'tg2').nextRunAt,
+      'a settled one-shot is left untouched — planTick would never fire it, so stamping it due would be a false promise');
+    A.eq(cron.planTick(t, T + 2000, {}).fire.length, 0, 'and it stays not-due');
+  }
+
+  A.eq(store.triggerJob(jobs, 'nope', { now: T }), jobs.map(x => x), 'triggerJob on an absent job is a no-op');
+}
+
 A.report('cron-store');

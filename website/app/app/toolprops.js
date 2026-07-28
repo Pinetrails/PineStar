@@ -6,6 +6,7 @@
 
      fs.*                                        -> 'cabinet'   (files)
      web_search / web_fetch / public browser.*   -> 'dish'      (web)
+     channel.*                                   -> 'dish'      (outbound comms — the dish transmits too)
      notebook.* / skill.* / recall_conversation
        / todo                                    -> 'notebook'  (memory)
      image_*                                     -> 'studio'    (media)
@@ -39,6 +40,10 @@ const ToolProps = (() => {
   const PREFIX = [
     ['fs.', 'cabinet'],
     ['browser.', 'dish'],
+    // channel.targets / channel.send — the 'comms' capId rides the placed DISH, so an agent messaging a chat
+    // pulses the same antenna a web fetch does. It genuinely IS the dish transmitting; leaving it null would
+    // make the one outward-facing message in the tool surface invisible on the floor.
+    ['channel.', 'dish'],
     ['notebook.', 'notebook'],
     ['skill.', 'notebook'],
     ['image_', 'studio'],
