@@ -56,6 +56,17 @@ the creation function itself. Regression: `projects-view.test` 48→51 assertion
 revoked row remained visible, existing session count stayed 1, scoped `+ NEW` reported
 `enabled:false`. `node --check` + focused project/session/path-trust tests + `test:fast` 400/400
 green. Website app mirror synced. No merge, push, deploy, or PR performed.
+## 2026-07-27 — DOSSIER SKIN SELECTION ACCESSIBILITY (`agent/quality-loop-0727`)
+
+READY TO MERGE. The new CONFIG › SKIN live preview visually marked the worn skin with
+`.sel`, but all 36 buttons exposed no selected state to assistive technology. Live repro:
+Teddy Bear was the selected tile and preview caption while every button had neither
+`aria-pressed` nor `aria-current`. The renderer now derives `aria-pressed="true|false"` from
+the same `id === cur` predicate as `.sel`; a source-executed regression renders both possible
+selections and locks exactly one true state. Live post-fix round-trip after selecting Pepe:
+36 total · 1 visual (`Pepe`) · 1 pressed (`Pepe`) · 35 false · matching preview caption.
+Verification: focused test 11 assertions, website mirror 8 assertions, claims planning PASS
+(37 claims / 182 files), `test:fast` 403/403 green. Not pushed or merged.
 
 ## 2026-07-20 — PUBLIC-REPO RELEASE PREP (branch `claude/starnet-repo-release-prep-c41845`)
 
