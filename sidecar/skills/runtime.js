@@ -23,19 +23,39 @@
   function isLive(s, platform) { return s && s.state !== 'archived' && platformOk(s, platform); }
   function cleanLine(s) { return str(s).replace(/\s+/g, ' ').trim(); }
 
+  /* gateOf — the guard decision for one skill, from an injected gate (skills/gate.js). No gate
+     injected = everything visible, which is exactly how this file behaved before the gate existed. */
+  function gateOf(s, gate) {
+    if (typeof gate !== 'function') return { visible: true, reason: '' };
+    try { const d = gate(s) || {}; return { visible: d.visible !== false, reason: str(d.reason) }; }
+    catch (_) { return { visible: true, reason: '' };  /* a gate hiccup must never empty the index */ }
+  }
+
   function composeIndex(skills, opts) {
     opts = opts || {};
     const budget = opts.budget > 0 ? opts.budget : 6000;
     const live = (Array.isArray(skills) ? skills : []).filter(s => isLive(s, opts.platform));
-    if (!live.length) return { text: '', ids: [], omitted: 0 };
+    if (!live.length) return { text: '', ids: [], omitted: 0, withheld: 0 };
 
     const canManage = opts.canManage !== false;
     const parts = [];
     const ids = [];
-    let used = 0, omitted = 0;
+    let used = 0, omitted = 0, withheld = 0;
     for (const s of live) {
       const bits = [];
       bits.push('- ' + cleanLine(s.name || s.id || 'Skill'));
+      /* A WITHHELD SKILL IS NAMED, NEVER SUMMARIZED, AND NEVER PROMISED. The row exists so the
+         model doesn't try to create a duplicate of a skill it cannot see; the summary is dropped
+         because it is model-authored text the guard's scan never covered, and the id is dropped
+         from `ids` so it is not counted as used — nothing was delivered. */
+      const g = gateOf(s, opts.gate);
+      if (!g.visible) {
+        withheld++;
+        const line = bits[0] + ' [WITHHELD: ' + cleanLine(g.reason || 'held by the skill guard') + ' - do not recreate it]';
+        if (parts.length && used + line.length > budget) { omitted++; continue; }
+        parts.push(line); used += line.length;
+        continue;
+      }
       if (s.summary) bits.push(' -- ' + cleanLine(s.summary));
       const meta = [];
       if (s.category) meta.push(cleanLine(s.category));
@@ -49,7 +69,7 @@
       if (parts.length && used + line.length > budget) { omitted++; continue; }
       parts.push(line); used += line.length; if (s.id) ids.push(s.id);
     }
-    if (!parts.length) return { text: '', ids: [], omitted: live.length };
+    if (!parts.length) return { text: '', ids: [], omitted: live.length, withheld };
 
     const manage = canManage
       ? 'If the task teaches a reusable procedure, update an existing skill or create a new one with skill.manage.'
@@ -58,7 +78,7 @@
       + 'Before replying, scan this skill index. If any saved skill is even partly relevant, call skill.view with its name before acting. '
       + 'Do not infer the procedure from the summary alone; load the full body first. ' + manage + '\n\n';
     const tail = omitted ? ('\n\n(' + omitted + ' more saved skill' + (omitted === 1 ? ' was' : 's were') + ' omitted to keep the prompt lean.)') : '';
-    return { text: head + parts.join('\n') + tail, ids, omitted };
+    return { text: head + parts.join('\n') + tail, ids, omitted, withheld };
   }
 
   function extractInvocations(messages) {
@@ -75,8 +95,11 @@
     return out.filter(Boolean);
   }
 
+  /* composeLoaded injects FULL BODIES for skills the Commander named (/skill, preloadSkills), so
+     the gate matters here even more than in the index. The caller already filters, and `withheld`
+     is checked again here: this is the last seam before the bytes enter the system prompt. */
   function composeLoaded(skills) {
-    const live = (Array.isArray(skills) ? skills : []).filter(s => s && s.body && s.state !== 'archived');
+    const live = (Array.isArray(skills) ? skills : []).filter(s => s && s.body && s.state !== 'archived' && !s.withheld);
     if (!live.length) return '';
     return '\n\n## PRELOADED SKILLS\n'
       + 'The Commander explicitly loaded these skills for this run. Follow them where applicable.\n\n'

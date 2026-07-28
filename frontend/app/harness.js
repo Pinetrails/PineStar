@@ -715,6 +715,18 @@ const Harness = (() => {
       return r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false };
     } catch (e) { return { ok: false }; }
   }
+  /* The Commander's review decision on a skill the guard WITHHELD from the model. The approval is
+     recorded against the content digest the sidecar just read, so any later edit re-asks. Carries
+     the sidecar's refusal text through on failure — a 'block' verdict can never be approved and the
+     panel must say why rather than silently fail. */
+  async function agentSkillAllow(o) {
+    try {
+      const r = await fetch('/api/agent-skills/allow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o || {}) });
+      const j = await r.json().catch(() => null);
+      if (r.ok) return j || { ok: true };
+      return { ok: false, error: (j && j.error) || 'could not record that decision' };
+    } catch (e) { return { ok: false, error: 'the station did not answer' }; }
+  }
 
   async function memoryRecords(agentId) {
     try {
@@ -782,7 +794,7 @@ const Harness = (() => {
     memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPending, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     threadProposals, threadTurnin,
-    agentSkills, agentSkillManage,
+    agentSkills, agentSkillManage, agentSkillAllow,
     api,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),

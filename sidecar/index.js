@@ -177,6 +177,7 @@ const { makeSkillPrefs } = require('./skills/prefs.js');   // persisted enable/d
 const runtimeSkills = require('./skills/runtime.js');       // runtime-created skill index (metadata only)
 const skillPackages = require('./skills/package.js');       // package-backed SKILL.md mirror for runtime skills
 const skillGuard = require('./skills/guard.js');            // guard scanner for runtime/external skill packages
+const { makeSkillGate, digestOf: skillDigestOf } = require('./skills/gate.js');   // the CONSUMER of that verdict: may the model read this skill?
 const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
 const skillCurator = require('./skillcurator.js');          // skill lifecycle/consolidation maintenance
 const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
@@ -803,7 +804,23 @@ const skillsIo = {
 };
 const SKILL_PACKAGES_DIR = path.join(WORKSPACES, 'skill-packages');
 const skillPackageStore = skillPackages.makePackageStore({ fs, pathMod: path, root: SKILL_PACKAGES_DIR });
-const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact, packageStore: skillPackageStore, guard: skillGuard });
+const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact, packageStore: skillPackageStore, guard: skillGuard, digest: skillDigestOf });
+/* SKILL GUARD APPROVALS — the Commander's per-skill "I read this and it's fine", keyed to a digest
+   of the exact content that was reviewed, exactly as plugins-allowed.json keys a plugin to its code
+   hash: edit the skill and it asks again. Held in memory (this file is small, read once at boot) and
+   written through synchronously — one sidecar owns the save dir, so there is no cross-process race.
+   `block` verdicts are absent from this file by design: nothing in it can bless one. */
+const SKILLS_ALLOW_FILE = path.join(WORKSPACES, 'skills-allowed.json');
+let skillApprovals = {};
+try { skillApprovals = JSON.parse(fs.readFileSync(SKILLS_ALLOW_FILE, 'utf8')) || {}; } catch (_) { skillApprovals = {}; }
+function persistSkillApprovals() {
+  try { fs.writeFileSync(SKILLS_ALLOW_FILE, JSON.stringify(skillApprovals, null, 2), 'utf8'); return true; }
+  catch (e) { console.warn('[skills] approval write failed:', (e && e.message) || e); return false; }
+}
+const skillGate = makeSkillGate({
+  guard: skillGuard,
+  approvals: { get: (agentId, id) => skillApprovals[String(agentId) + '\x00' + String(id)] || null }
+});
 // BOOT COMPACTION: when skills.jsonl has grown past a threshold, rewrite it to one line per (agentId,name) so
 // view-bump churn + repeated edits can't grow it without bound. Runs AFTER the store loaded `latest`, so the
 // rewrite is exactly the current newest-per-skill set. Safe + idempotent; fail-open.
@@ -1805,7 +1822,11 @@ async function runBackgroundSkillReview(o) {
     // but every skillbase MUTATION fires the EXISTING `deliverable` event + one auditable log line via this
     // observer — that is what surfaces the new skill in the SKILLS panel and the one COMMS aside.
     const reviewObserver = skillReview.makeReviewObserver({ emit: chanEmit, log: (s) => console.log(s), now: () => Date.now(), source: 'skill-review' });
-    makeSkillTools({ store: skillStore, onManage: (skill, ctx, action) => reviewObserver.onManage(skill, action) }).register(registry);
+    // readBeforeWrite: this fork is autonomous, so it must READ a skill (skill.view) before it may
+    // rewrite or archive it — the ledger lives in this per-pass tool instance. gate: the fork is a
+    // model too; a withheld skill is withheld from IT as well, or the review pass becomes the way
+    // an unreviewed body reaches a prompt.
+    makeSkillTools({ store: skillStore, gate: skillGate, readBeforeWrite: true, onManage: (skill, ctx, action) => reviewObserver.onManage(skill, action) }).register(registry);
     const allowed = ['skill.write', 'skill.manage', 'skill.list', 'skill.view'];
     const resolved = {
       agentId, room: 'skill-review', hasCompute: true, tools: allowed.slice(),
@@ -1888,7 +1909,7 @@ async function runSkillCurator(o) {
     const registry = makeRegistry();
     // A2: same un-silencing for the curator — merges/archives now surface a deliverable + audit line once each.
     const curatorObserver = skillReview.makeReviewObserver({ emit: chanEmit, log: (s) => console.log(s), now: () => Date.now(), source: 'skill-curator' });
-    makeSkillTools({ store: skillStore, onManage: (skill, ctx, action) => curatorObserver.onManage(skill, action) }).register(registry);
+    makeSkillTools({ store: skillStore, gate: skillGate, readBeforeWrite: true, onManage: (skill, ctx, action) => curatorObserver.onManage(skill, action) }).register(registry);   // same two guards as the review fork: read before you rewrite, and the guard's verdict binds here too
     const allowed = ['skill.write', 'skill.manage', 'skill.list', 'skill.view'];
     const resolved = { agentId, room: 'skill-curator', hasCompute: true, tools: allowed.slice(), approvalRules: {}, networkCaps: {} };
     const toolDefs = registry.wireFormat(registry.list(new Set(allowed)));
@@ -6248,6 +6269,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/slash/dispatch', h: handleSlashDispatch },
   { m: 'POST', exact: '/api/skills/toggle', h: handleSkillToggle },
   { m: 'POST', exact: '/api/agent-skills/manage', h: handleAgentSkillManage },
+  { m: 'POST', exact: '/api/agent-skills/allow', h: handleAgentSkillAllow },   // the Commander's review decision on a guard-withheld skill
   { m: 'GET', prefix: '/api/agent-skills', h: serveAgentSkills },
   { m: 'GET', prefix: '/api/skills', h: serveSkills },
   { m: 'POST', exact: '/api/spotify/auth/start', h: handleSpotifyStart },
@@ -9579,7 +9601,12 @@ function serveAgentSkills(req, res) {
     if (includeBody) {
       skills = skills.map(s => skillStore.view(agentId, s.id, { includeArchived: true, bump: false }) || s);
     }
-    json(200, { agentId, skills });
+    /* The panel is the HUMAN surface, so it still gets the body and the findings — the Commander is
+       the reviewer; they cannot approve what they cannot read. What it gains is the truth about what
+       the MODEL sees: withheld/approvable/digest, so a card can say "withheld, needs your approval"
+       instead of implying the agent is using a skill it was never given. */
+    skills = skillGate.annotate(skills).map(s => Object.assign({}, s, { guardDigest: skillGate.stampOf(s) }));
+    json(200, { agentId, skills, withheld: skills.filter(s => s.withheld).length });
   } catch (e) { json(200, { skills: [] }); }
 }
 
@@ -9593,6 +9620,35 @@ async function handleAgentSkillManage(req, res) {
   if (!r.ok) return json(400, { error: r.error || 'could not update skill' });
   chanEmit('deliverable', { id: r.skill.id, agentId, kind: 'skill', title: r.skill.name });
   json(200, { ok: true, action: r.action, skill: r.skill });
+}
+
+/* POST /api/agent-skills/allow { agentId, id, allow } — the Commander's review decision on a skill
+   the guard withheld ('ask'). Keyed to the CONTENT DIGEST that was just reviewed, so a later edit
+   re-asks (the plugins-allowed.json law: an approval blesses bytes, never a name).
+   A 'block' verdict is not approvable here — the route refuses it rather than pretending, because
+   the trust table's answer for that content is no, and a UI that offers an impossible click is a lie. */
+async function handleAgentSkillAllow(req, res) {
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16, res)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
+  const id = String(body.id || body.target || '').trim();
+  if (!id) return json(400, { error: 'which skill?' });
+  const skill = skillStore.view(agentId, id, { includeArchived: true, bump: false });
+  if (!skill) return json(404, { error: 'no such skill' });
+  const key = agentId + '\x00' + skill.id;
+  if (body.allow === false) {
+    delete skillApprovals[key];
+    persistSkillApprovals();
+    return json(200, { ok: true, approved: false, skill: skillGate.annotate([skill])[0] });
+  }
+  const decision = skillGate.decide(skill);
+  if (decision.action === 'block') return json(400, { error: 'the skill guard blocked this skill outright - it cannot be approved. Edit the skill to remove the flagged content.', findings: decision.categories });
+  const digest = skillGate.stampOf(skill);
+  skillApprovals[key] = { digest, action: 'allow', at: Date.now(), name: skill.name };
+  persistSkillApprovals();
+  const after = skillGate.annotate([skillStore.view(agentId, skill.id, { includeArchived: true, bump: false }) || skill])[0];
+  json(200, { ok: true, approved: true, digest, skill: after });
 }
 
 /* ------------------------------- the run endpoint ------------------------------- */
@@ -10094,6 +10150,7 @@ async function runOnce(o) {
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
   makeSkillTools({
     store: skillStore,
+    gate: skillGate,   // guard verdict enforcement: a withheld skill lists as withheld and refuses to load its body
     onView: (skill) => {
       if (!skill || seenLoadedSkills.has(skill.id)) return;
       seenLoadedSkills.add(skill.id);
@@ -10926,7 +10983,10 @@ async function runOnce(o) {
       const rs = runtimeSkills.composeIndex(skillStore.list(agentId), {
         budget: 6000,
         platform: process.platform,
-        canManage: resolved.tools.indexOf('skill.manage') >= 0
+        canManage: resolved.tools.indexOf('skill.manage') >= 0,
+        // The guard's verdict, enforced at the one seam where the index enters the system prompt.
+        // Metadata-only decision (no bodies here) — the strict re-digest happens in skill.view.
+        gate: (s) => skillGate.decide(s)
       });
       runtimeSkillBlock = rs.text || '';
       if (rs.ids && rs.ids.length && typeof skillStore.markUsed === 'function') skillStore.markUsed(agentId, rs.ids);
@@ -10934,15 +10994,28 @@ async function runOnce(o) {
   } catch (_) { /* runtime skill indexing must never break a run */ }
   try {
     if (resolved.tools.indexOf('skill.view') >= 0) {
-      const names = (Array.isArray(preloadSkills) ? preloadSkills : []).concat(runtimeSkills.extractInvocations(messages));
+      /* `o.preloadSkills`, NOT `preloadSkills`. The bare identifier is handleRun's local (line ~9668);
+         inside runOnce it resolves to nothing, so this line threw ReferenceError on EVERY run and the
+         catch below — "explicit skill preload must never break a run" — swallowed it. The whole
+         preload path was dead: `/skill Name` loaded nothing and body.preloadSkills was ignored, with
+         no error anywhere. Found by asserting on the bytes that reach the provider, which is the only
+         place a silently-skipped prompt block is visible. */
+      const requested = Array.isArray(o.preloadSkills) ? o.preloadSkills : [];
+      const names = requested.concat(runtimeSkills.extractInvocations(messages));
       const seenNames = new Set();
       const loaded = [];
+      const withheldPreloads = [];
       for (const name of names) {
         const key = String(name || '').toLowerCase();
         if (!key || seenNames.has(key)) continue;
         seenNames.add(key);
         const v = skillStore.view(agentId, name);
         if (!v) continue;
+        // A NAMED PRELOAD IS STILL GATED. This path injects the FULL body, so a withheld skill
+        // invoked by /skill must not slip in ahead of the index's check. verify() (not decide())
+        // because the body is in hand here: it re-digests the hydrated package.
+        const pd = skillGate.verify(v);
+        if (pd && pd.visible === false) { withheldPreloads.push({ name: v.name, reason: pd.reason || 'held by the skill guard' }); continue; }
         loaded.push(v);
         if (!seenLoadedSkills.has(v.id)) {
           seenLoadedSkills.add(v.id);
@@ -10950,6 +11023,15 @@ async function runOnce(o) {
         }
       }
       preloadedSkillBlock = runtimeSkills.composeLoaded(loaded);
+      /* A REQUESTED SKILL THAT WAS WITHHELD MUST BE SAID OUT LOUD. The Commander typed /skill and
+         is entitled to know the procedure never arrived — silently dropping it would have the agent
+         improvise while the user believes it is following a saved skill. */
+      if (withheldPreloads.length) {
+        preloadedSkillBlock += '\n\n## WITHHELD SKILLS\n'
+          + 'The Commander asked for these skills and the skill guard withheld them. You do NOT have their steps. '
+          + 'Say so plainly and ask them to review the skill in ABILITIES > SKILLS; never improvise a substitute and present it as the saved skill.\n'
+          + withheldPreloads.map(w => '- ' + w.name + ' -- ' + w.reason).join('\n');
+      }
     }
   } catch (_) { /* explicit skill preload must never break a run */ }
   // QUEST V2 §B (agent awareness) + §E (generative minting): fold THIS agent's OPEN quests (its own + station-wide)

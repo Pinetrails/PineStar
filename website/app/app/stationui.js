@@ -2541,21 +2541,41 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const state = s.state === 'archived' ? 'off' : (s.state === 'stale' ? 'want' : 'on');
       const when = s.updatedAt ? new Date(s.updatedAt).toLocaleDateString() : 'unknown';
       const files = (s.files || []).length ? '<div class="sk-attr">Support files: ' + esc((s.files || []).map(f => f.path).join(', ')) + '</div>' : '';
+      /* WITHHELD IS THE ONE THING THIS CARD MUST NOT HIDE. The skill guard can keep a saved skill
+         out of the agent's prompt entirely; a card that looks identical either way would have the
+         Commander believe their agent is using a procedure it was never given. So: a badge, the
+         reason, the finding categories, and — when the verdict is 'ask' — the button that clears
+         it. A 'block' verdict shows no button, because no click can bless it (the sidecar refuses
+         it too); the honest instruction is to edit out the flagged content. */
+      const held = !!s.withheld;
+      const cats = (s.guardCategories || []).length ? ' (' + esc((s.guardCategories || []).join(', ')) + ')' : '';
+      const heldBlock = held
+        ? '<div class="sk-attr sk-held">WITHHELD FROM THE AGENT: ' + esc(s.withheldReason || 'held by the skill guard') + cats +
+            '. This skill is saved, but its steps are not given to ' + esc(agentId) + '.</div>'
+        : (s.guardDecision === 'ask' ? '<div class="sk-attr">Approved by you for this exact content — an edit will ask again.</div>' : '');
+      const heldBtn = held && s.guardApprovable
+        ? '<button class="consent-btn" data-ag-act="allow" title="Give this skill to the agent — the approval covers this exact content">Approve</button>'
+        : (!held && s.guardDecision === 'ask'
+          ? '<button class="consent-btn" data-ag-act="revoke" title="Withhold this skill from the agent again">Revoke</button>'
+          : '');
+      const absorbed = s.absorbedInto ? '<div class="sk-attr">Merged into: ' + esc(s.absorbedInto) + '</div>' : '';
       html +=
-        '<div class="sk-card ' + state + '" data-agent-skill="' + esc(s.id) + '">' +
+        '<div class="sk-card ' + state + (held ? ' held' : '') + '" data-agent-skill="' + esc(s.id) + '">' +
           '<div class="sk-card-head">' +
             '<button class="sk-toggle" data-ag-act="pin" title="' + (s.pinned ? 'Unpin' : 'Pin') + ' this skill">' + (s.pinned ? '*' : '+') + '</button>' +
             '<div class="sk-card-main">' +
               '<div class="sk-name-row"><span class="sk-name">' + esc(s.name) + '</span>' +
                 (s.category ? '<span class="sk-badge cat">' + esc(String(s.category).toUpperCase()) + '</span>' : '') +
+                (held ? '<span class="sk-badge want">WITHHELD</span>' : '') +
                 '<span class="sk-badge free">' + esc((s.state || 'active').toUpperCase()) + '</span></div>' +
               '<div class="sk-desc">' + esc(s.summary || '') + '</div>' +
               '<div class="sk-stat ' + state + '">used ' + (s.useCount || 0) + 'x - viewed ' + (s.viewCount || 0) + 'x - patched ' + (s.patchCount || 0) + 'x - updated ' + esc(when) + '</div>' +
             '</div>' +
             '<button class="sk-expand" data-ag-act="expand" title="Read the skill">&gt;</button>' +
           '</div>' +
-          '<div class="sk-body"><pre>' + esc(s.body || '') + '</pre>' + files +
+          '<div class="sk-body">' + heldBlock + '<pre>' + esc(s.body || '') + '</pre>' + files + absorbed +
             '<div class="consent-btns mc-acts">' +
+              heldBtn +
               '<button class="consent-btn" data-ag-act="edit">Edit</button>' +
               '<button class="consent-btn" data-ag-act="archive">' + (s.state === 'archived' ? 'Restore' : 'Archive') + '</button>' +
             '</div>' +
@@ -2571,9 +2591,26 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const opened = card.classList.toggle('open'); btn.textContent = opened ? 'v' : '>'; sfx('click'); return;
       }
       if (act === 'edit') { editAgentSkill(card, skill, agentId); return; }
+      if (act === 'allow' || act === 'revoke') {
+        btn.classList.add('busy');
+        const r = await Harness.agentSkillAllow({ agentId, id: skill.id, allow: act === 'allow' });
+        if (r && r.ok) { sfx('click'); loadAgentSkills(agentId); }
+        else {
+          // Say what the station said. A silently dead button on a security decision is worse
+          // than no button, and the usual reason is a 'block' verdict that cannot be approved.
+          btn.classList.remove('busy');
+          const note = card.querySelector('.sk-held') || card.querySelector('.sk-body');
+          if (note) { const w = mkEl('div', 'sk-attr sk-held'); w.textContent = (r && r.error) || 'that decision was refused'; note.appendChild(w); }
+        }
+        return;
+      }
       btn.classList.add('busy');
       const action = act === 'pin' ? (skill.pinned ? 'unpin' : 'pin') : (skill.state === 'archived' ? 'restore' : 'archive');
-      const r = await Harness.agentSkillManage({ agentId, action, target: skill.id });
+      /* force: the pin exists to stop MODELS (a review pass, a curator pass) from rewriting or
+         filing away the Commander's own procedure. A Commander clicking their own card is the
+         author, so the panel passes the override the sidecar requires — without it the button
+         would simply fail on a pinned skill, which is a worse lie than no button. */
+      const r = await Harness.agentSkillManage({ agentId, action, target: skill.id, force: true });
       if (r && r.ok) { sfx('click'); loadAgentSkills(agentId); } else btn.classList.remove('busy');
     }));
   }
@@ -2591,7 +2628,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const save = mkEl('button', 'consent-btn'); save.textContent = 'Save'; actions.appendChild(save);
     const cancel = mkEl('button', 'consent-btn'); cancel.textContent = 'Cancel'; actions.appendChild(cancel);
     save.onclick = async () => {
-      const r = await Harness.agentSkillManage({ agentId, action: 'edit', target: skill.id, summary: skill.summary || '', body: ta.value, category: skill.category || 'General' });
+      const r = await Harness.agentSkillManage({ agentId, action: 'edit', target: skill.id, summary: skill.summary || '', body: ta.value, category: skill.category || 'General', force: true });   // the human author may edit their own pinned skill (see force note above)
       if (r && r.ok) { sfx('click'); loadAgentSkills(agentId); }
     };
     cancel.onclick = () => loadAgentSkills(agentId);

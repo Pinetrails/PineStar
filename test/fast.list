@@ -140,6 +140,7 @@ test/apiauth.test.js
 test/notebook.test.js
 test/skills.test.js
 test/skills.library.test.js
+test/skills.gate.test.js
 test/slash.test.js
 test/slash-actions.test.js
 test/slash.parity.test.js

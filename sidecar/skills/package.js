@@ -41,6 +41,9 @@
       'source_run_id: ' + escYaml(skill.sourceRunId || ''),
       'pinned: ' + (!!skill.pinned ? 'true' : 'false')
     ];
+    // Consolidation lineage: an archived package says which live skill absorbed it, so the merge is
+    // readable on disk and not just in the JSONL log.
+    if (skill.absorbedInto) lines.push('absorbed_into: ' + escYaml(skill.absorbedInto));
     const platforms = arr(skill.platforms);
     const requires = arr(skill.requires);
     if (platforms.length) lines.push('platforms: [' + platforms.map(escYaml).join(', ') + ']');
@@ -90,8 +93,34 @@
       return path.join(root, '.archive', safeSegment(skill.agentId || 'agent'), safeSegment(skill.id || skill.name || 'skill'));
     }
     function ensureDir(dir) { fs.mkdirSync(dir, { recursive: true }); }
+    /* PATH REDIRECT GUARD. supportPath() already refuses `..`, absolute paths, drive letters and
+       control bytes, so the STRING can't escape — but a SYMLINK can: if `skill-packages/agent/x`
+       or a `references` dir inside it is a link, a "contained" relative write lands wherever the
+       link points. String validation cannot see that; only resolving can. Resolve the deepest
+       existing ancestor, re-attach the rest, and require the result to sit under the real root. */
+    function realOf(p) { try { return fs.realpathSync(p); } catch (_) { return null; } }
+    function insideRoot(target) {
+      const rootReal = realOf(root) || path.resolve(root);
+      let probe = path.resolve(target);
+      const rest = [];
+      for (;;) {
+        const real = realOf(probe);
+        if (real) {
+          const full = rest.length ? path.join(real, rest.join(path.sep)) : real;
+          const rel = path.relative(rootReal, full);
+          return !!rel && rel.indexOf('..') !== 0 && !path.isAbsolute(rel);
+        }
+        const parent = path.dirname(probe);
+        if (parent === probe) return false;    // walked past the filesystem root without finding anything real
+        rest.unshift(path.basename(probe));
+        probe = parent;
+      }
+    }
     function writeText(file, text) {
+      // Check BEFORE mkdir: creating the directory chain first would materialize the escape path.
+      if (!insideRoot(file)) throw new Error('skill package path escapes the package root: ' + file);
       ensureDir(path.dirname(file));
+      if (!insideRoot(file)) throw new Error('skill package path escapes the package root: ' + file);
       fs.writeFileSync(file, text, 'utf8');
     }
     function projectedFiles(skill) {
@@ -99,6 +128,7 @@
       return files.map(f => ({ path: supportPath(f.path), content: str(f.content), updatedAt: f.updatedAt || 0 })).filter(f => f.path);
     }
     function writePackage(skill) {
+      ensureDir(root);   // so insideRoot() can realpath the root itself — a root that does not exist yet would otherwise compare an unresolved path against resolved ones (fail-closed on any symlinked save dir)
       const dir = skill.state === 'archived' ? archiveDir(skill) : packageDir(skill);
       const visible = packageDir(skill);
       if (skill.state === 'archived' && visible !== dir) {
@@ -122,6 +152,10 @@
           try { entries = fs.readdirSync(cur, { withFileTypes: true }); } catch (_) { continue; }
           for (const ent of entries) {
             const full = path.join(cur, ent.name);
+            // A symlink inside the package is skipped, never followed: hydrate() feeds these bytes
+            // straight into skill.view, so following a link would let anything on disk be read out
+            // as this skill's "support file".
+            if (ent.isSymbolicLink()) continue;
             if (ent.isDirectory()) stack.push(full);
             else if (ent.isFile()) {
               const rel = path.relative(dir, full).replace(/\\/g, '/');
@@ -142,6 +176,7 @@
       const dir = skill.state === 'archived' ? archiveDir(skill) : packageDir(skill);
       const md = path.join(dir, 'SKILL.md');
       if (!fs.existsSync(md)) return skill;
+      if (!insideRoot(md)) return skill;   // same law as the write side: a redirected package is not this skill's package
       let parsed = null;
       try { parsed = parseFrontmatter(fs.readFileSync(md, 'utf8')); } catch (_) {}
       const files = readSupportFiles(dir);
