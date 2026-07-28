@@ -194,6 +194,8 @@ test/desktop.test.js
 test/computer.test.js
 test/inputpolicy.test.js
 test/image.test.js
+test/voice-tool.test.js
+test/connectors-tool.test.js
 test/attachments.test.js
 test/spotify.pkce.test.js
 test/spotify.store.test.js

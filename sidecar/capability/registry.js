@@ -69,6 +69,12 @@
       // web_request calls a third-party API AS the Commander (it spends a stored key), so unlike the two
       // keyless readers above it always asks. Its unattended use is additionally gated per-key.
       { capId: 'web', tool: 'web_request', scope: 'execute', requiresConsent: true, network: true },
+      // The INTEGRATION readout that keeps web_request honest: which connectors/keys are live, and which vetted
+      // ones the Commander could add but has not. Rides `dish` because web_request is the route a key is actually
+      // spent through — a station with no dish has no reach to advertise. Local read, no network, no consent, no
+      // secret (names and env-var names only). NOT deferred: it is the cure for not knowing what exists, so it
+      // cannot itself be a tool the agent must already suspect exists to find. (see tools/builtin/connectors.js)
+      { capId: 'web', tool: 'connectors.list', scope: 'read', requiresConsent: false, network: false },
       // DEFERRED (`deferred: true`) — still GRANTED, just not advertised in every request. The browser family
       // alone is 29 tools / ~10.2KB of the 37.7KB of schemas re-sent on EVERY turn (measured at the wire), and
       // an agent needs about six of them to drive a page. A deferred tool stays fully dispatchable; the model
@@ -186,7 +192,12 @@
     // it is consent-gated like fs.write; image_analyze only READS an image and returns text (consent-free).
     studio: [
       { capId: 'studio', tool: 'image_generate', scope: 'write', requiresConsent: true, network: true },
-      { capId: 'studio', tool: 'image_analyze', scope: 'read', requiresConsent: false, network: true }
+      { capId: 'studio', tool: 'image_analyze', scope: 'read', requiresConsent: false, network: true },
+      // voice_generate SPEAKS to a file — the studio's third skill. Consent-gated for the same reason
+      // image_generate is: it writes into the workspace. It rides the station's existing TTS ladder (the keyed
+      // neural chain, then the free keyless Edge floor), so it needs no studio-specific credential — but it
+      // does reach the network on the keyed legs. (see tools/builtin/voice.js)
+      { capId: 'studio', tool: 'voice_generate', scope: 'write', requiresConsent: true, network: true }
     ],
     // JUKEBOX (Spotify): querying playback/library is consent-free (read); CONTROLLING playback is an outward
     // action on the user's account/device, so it is execute + consent-gated. The OAuth session (PKCE, no secret)

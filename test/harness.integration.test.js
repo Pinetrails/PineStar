@@ -19,6 +19,7 @@ const { makeCostEngine } = require('../sidecar/cost.js');
 const { runAgentLoop } = require('../sidecar/loop.js');
 const { makeRegistry } = require('../sidecar/tools/registry.js');
 const { makeWebTools } = require('../sidecar/tools/builtin/web.js');
+const { makeConnectorTools } = require('../sidecar/tools/builtin/connectors.js');
 const { makeBrowserTools } = require('../sidecar/tools/builtin/browser.js');
 const { makeDesktopTools } = require('../sidecar/tools/builtin/desktop.js');
 const { makeFsTools } = require('../sidecar/tools/builtin/fs.js');
@@ -113,6 +114,9 @@ const fixture = {
   // CAP_REGISTRY and the tool registrations agree, and a resolved-but-unregistered tool is exactly the "dark
   // tool" bug it exists to catch. No reachable chats in a headless fixture, which is the honest empty case.
   makeCommsTools({ listTargets: () => [], sendTo: () => Promise.resolve({ ok: false, error: 'no channel in test' }) }).register(registry);
+  // connectors.list rides the same placed DISH as web_request (capId 'web'). Registered with NO deps: the
+  // honest empty station, which is also the case that must not pretend "you have nothing to add".
+  makeConnectorTools({}).register(registry);
 
   const station = { agents: { agent: { id: 'agent', room: 'office' } }, rooms: { office: { id: 'office', objects: [
     { instanceId: 'pc1', objectType: 'computer' }, { instanceId: 'd1', objectType: 'dish' },
@@ -127,7 +131,7 @@ const fixture = {
   const capCtx = makeCapCtx(resolved, { emit, consent, timeoutMs: 5000 });
 
   // ---- DRIFT GUARDS (these alone would have caught both default-path showstoppers) ----
-  const EXPECTED = ['browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.drag', 'browser.eval', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect', 'browser.login', 'browser.navigate', 'browser.network', 'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot', 'browser.tab_close', 'browser.tab_select', 'browser.tabs', 'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision', 'channel.send', 'channel.targets', 'fs.append', 'fs.edit', 'fs.list', 'fs.patch', 'fs.read', 'fs.search', 'fs.write', 'notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'tool.search', 'web_fetch', 'web_request', 'web_search', 'widget.set'];
+  const EXPECTED = ['browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.drag', 'browser.eval', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect', 'browser.login', 'browser.navigate', 'browser.network', 'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot', 'browser.tab_close', 'browser.tab_select', 'browser.tabs', 'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision', 'channel.send', 'channel.targets', 'connectors.list', 'fs.append', 'fs.edit', 'fs.list', 'fs.patch', 'fs.read', 'fs.search', 'fs.write', 'notebook.feedback', 'notebook.read', 'notebook.write', 'quest.update', 'recall_conversation', 'skill.list', 'skill.manage', 'skill.view', 'skill.write', 'todo', 'tool.search', 'web_fetch', 'web_request', 'web_search', 'widget.set'];
   A.eq(resolved.tools.slice().sort(), EXPECTED.slice().sort(), 'office objects resolve to the full toolset (object=capability is real)');
   for (const name of EXPECTED) A.ok(registry.get(name), 'tool registered: ' + name);
 
