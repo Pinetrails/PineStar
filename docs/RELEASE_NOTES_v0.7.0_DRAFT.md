@@ -156,6 +156,17 @@ why the surface still sounded like the old board no matter what else changed.
   can be rolled back. Two functions in the sidecar shared a name, so the snapshotter was silently
   handed the wrong one and **every snapshot failed without a word** — the restore list was always
   empty. It records now.
+- **Voice stops dying after the first few words.** With voice on, an agent would speak its
+  opening words and then go silent for the entire rest of the reply. A reply is spoken
+  sentence-by-sentence, and a single failed chunk — one transient network blip on sentence two —
+  armed a cool-off that sent every *later* sentence of that same reply straight to silence
+  without even trying. A cool-off can no longer cut off a reply that is already speaking, and a
+  sentence that plays successfully clears it. A genuinely dead voice provider is still backed off
+  rather than hammered once per sentence.
+- **`/tools` over Telegram stops claiming you have no tools.** It answered "this agent has no
+  tools yet" for nearly every agent — it only counted tools from a conveyor bay, so any agent not
+  docked in one read as empty, while that same agent's Telegram runs were being handed the full
+  toolset the whole time. The readout now asks the same question the runs do.
 - **The context gauge finally measures something.** The bottom-bar CTX readout sat at `—` with ten
   hollow cells forever. The station kept one model catalog shared across every provider, and it
   warms all ~17 of them at once — so whichever provider answered last, usually an unconfigured one
