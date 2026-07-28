@@ -222,5 +222,63 @@ const tick = (n = 12) => new Promise(r => setTimeout(r, n));
     A.ok(synthSpy.speakCalls === 0, 'failed neural chunk NEVER calls speechSynthesis.speak (no robotic fallback)');
   }
 
+  // --- ONE transient blip must NOT silence the rest of a reply ("it only says the first word") ---
+  // 2026-07-28 user report: with the agent voice on, the agent spoke its opening words and then went quiet
+  // for the whole rest of the reply. Mechanism: any failed chunk armed a 4s neural cold-off, and every LATER
+  // chunk of the SAME reply then short-circuited to silence without even attempting its round-trip — one blip
+  // on sentence 2 guillotined sentences 3..N. Contract now: a reply already speaking keeps asking (with one
+  // immediate retry for a transient class), so a single blip costs at most a beat, never the rest of the reply.
+  {
+    const state = { tts: 0, spoken: [] };
+    // Fail the 2nd request AND its retry (a blip that outlives one retry — otherwise the retry alone rescues
+    // the chunk and the cold-off gate is never exercised). Everything after returns real audio, so the ONLY
+    // thing that can keep sentences 3..N silent is the cold-off leaking across the rest of the reply.
+    const blipFetch = (url, o) => {
+      if (String(url).indexOf('/api/tts') >= 0) {
+        state.tts++;
+        if (state.tts === 2 || state.tts === 3) return Promise.resolve({ ok: false, status: 429, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ fallback: true, reason: 'openrouter 429 — rate limited' }) });
+        try { state.spoken.push(JSON.parse(o.body).text); } catch (_) {}
+        return Promise.resolve({ ok: true, headers: { get: () => 'audio/mpeg' }, blob: () => Promise.resolve({ size: 128 }) });
+      }
+      return Promise.resolve({ ok: true, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ text: 'words' }), blob: () => Promise.resolve({ size: 1 }) });
+    };
+    const t = boot({ ttsKey: true, fetch: blipFetch });
+    t.Voice.setSpeakReplies(true);
+    // stream a reply the way chat.js does: chunk by chunk, then close it.
+    t.Voice.speakChunk('Right, ', 'agent'); await tick(20);
+    t.Voice.speakChunk('here is the first full sentence. ', 'agent'); await tick(20);
+    t.Voice.speakChunk('This is the second sentence. ', 'agent'); await tick(20);
+    t.Voice.speakChunk('Third sentence lands here. ', 'agent'); await tick(20);
+    t.Voice.speakChunk('And a fourth to close it out. ', 'agent'); await tick(20);
+    t.Voice.endReply(); await tick(80);
+    A.ok(state.tts > 3, 'blip: a failed chunk does NOT stop the reply — later chunks still attempt their round-trip');
+    A.ok(state.spoken.some(s => /fourth to close/.test(s)), 'blip: the LAST sentence of the reply is still synthesized (reply spoken through to the end)');
+    A.ok(state.spoken.some(s => /second sentence/.test(s)), 'blip: the sentence after the failure is spoken (cold-off never guillotines a live reply)');
+    A.ok(state.spoken.some(s => /Third sentence/.test(s)), 'blip: every remaining sentence is spoken, not just the one after the failure');
+  }
+
+  // --- a transient failure is RETRIED once, so a one-shot blip loses NOTHING -------------------
+  // Narrower guard on the retry itself: fail exactly one request and prove the same chunk's text is
+  // re-requested and spoken (a single 429 must cost a beat of latency, never a whole sentence).
+  {
+    const state = { tts: 0, spoken: [] };
+    const oneBlip = (url, o) => {
+      if (String(url).indexOf('/api/tts') >= 0) {
+        state.tts++;
+        if (state.tts === 2) return Promise.resolve({ ok: false, status: 429, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ fallback: true, reason: 'openrouter 429 — rate limited' }) });
+        try { state.spoken.push(JSON.parse(o.body).text); } catch (_) {}
+        return Promise.resolve({ ok: true, headers: { get: () => 'audio/mpeg' }, blob: () => Promise.resolve({ size: 128 }) });
+      }
+      return Promise.resolve({ ok: true, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ text: 'words' }), blob: () => Promise.resolve({ size: 1 }) });
+    };
+    const t = boot({ ttsKey: true, fetch: oneBlip });
+    t.Voice.setSpeakReplies(true);
+    t.Voice.speakChunk('Right, ', 'agent'); await tick(20);
+    t.Voice.speakChunk('here is the first full sentence. ', 'agent'); await tick(20);
+    t.Voice.endReply(); await tick(80);
+    A.ok(state.spoken.some(s => /first full sentence/.test(s)), 'retry: a transient failure is retried once, so the blipped sentence is still spoken');
+    A.ok(!/real voice/i.test(String(t.nodes['voice-toggle'].title || '')), 'retry: a blip that the retry rescued does NOT pin an outage banner on the toggle');
+  }
+
   A.report('voice.button.test');
 })().catch(e => { console.log('FAIL: harness threw — ' + (e && e.stack || e)); process.exit(1); });
