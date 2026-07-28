@@ -9395,8 +9395,17 @@ const slashActions = slashActionsMod.makeSlashActions({
    which is what makes a Telegram answer byte-identical to the desktop one instead of a second implementation.
 
    The one honest difference is where `placed` comes from: a browser knows its live floor, a phone does not, so
-   the agent's room objects are read from the routing plan's bay. That keeps /tools answering for the room this
-   agent actually occupies. Returns { ok, text?, title?, lines? }; never throws. */
+   the objects are read from the SAME two sources the channel's own runs resolve against — a bay-docked agent's
+   bay (router.stationFor), else composeOffice's AUTONOMOUS office, which is what hub.js hands runOnce when
+   stationFor is null. Returns { ok, text?, title?, lines? }; never throws.
+
+   THE BUG THIS FIXES (2026-07-28). `placed` was read ONLY from stationFor, which returns null for every agent
+   that is not docked in a conveyor bay — i.e. essentially every main agent. So /tools over Telegram computed
+   placed=[] and answered "This agent has no tools yet", while the very same agent's Telegram RUNS were being
+   handed the full autonomous office (web, files, memory, studio, jukebox) all along. The readout was wrong, not
+   the grant. It is deliberately NOT the desktop floor: a headless surface keeps the default office by design
+   (see capability/office.js), so quoting heroCaps here would trade one lie for another — a placed WORKBENCH
+   still grants no terminal over Telegram, and only the LEAD (a browser-commanded run) gets TASK DELEGATION. */
 /* ---- COMMANDER-DEFINED COMMANDS (sidecar/usercommands.js) --------------------------------------------
    Loaded from WORKSPACES/usercommands.json — deliberately OUTSIDE any agent's fs jail, so an agent cannot
    author one. That is the whole safety argument for the exec type: these are the Commander's own snippets,
@@ -9477,7 +9486,11 @@ async function runSlashForChannel(input, ctx) {
   let placed = [];
   try {
     const st = router.stationFor(agentId);
-    placed = placedTypesFrom((st && st.rooms && st.rooms.bay && st.rooms.bay.objects) || []);
+    placed = st
+      ? placedTypesFrom((st.rooms && st.rooms.bay && st.rooms.bay.objects) || [])
+      // No bay -> the run composes the autonomous office (hub.js passes station:undefined). Compose the SAME
+      // one, with the SAME lead:false a channel run carries, so the readout and the grant are one fact.
+      : placedTypesFrom(composeOffice({ surface: 'autonomous', lead: false, connectorIds: connectors.ids() }));
   } catch (_) { placed = []; }
   let out;
   try { out = slash.dispatch(String(input || ''), slashOptions(placed)); }

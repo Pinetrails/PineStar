@@ -275,6 +275,31 @@ async function waitUntil(fn, ms, label) {
     A.ok(turns.some(t => t.role === 'user' && String(t.content || '').indexOf('research AI trend now') >= 0), 'transcript captured Telegram user turn');
     A.ok(turns.some(t => t.role === 'assistant' && String(t.content || '').indexOf('Telegram answer') >= 0), 'transcript captured Telegram assistant reply');
 
+    // ---- /tools must describe the office this channel's runs ACTUALLY get -------------------------------
+    // THE BUG (2026-07-28, reported off a v0.6.8 install): runSlashForChannel read `placed` ONLY from
+    // router.stationFor(agentId), which is null for every agent NOT docked in a conveyor bay — i.e. essentially
+    // every main agent. So /tools computed placed=[] and answered "This agent has no tools yet", while the very
+    // same agent's Telegram RUNS were handed the full autonomous office all along. The readout lied about a
+    // grant that was working. No routing plan is posted in this test, so stationFor is null here exactly as it
+    // is on a real station — which is what makes this a true reproduction rather than a mocked one.
+    const llmCallsBeforeTools = llm.requests.length;
+    tg.pushText(7777, 99, '/tools');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '7777'), 8000, '/tools reply to chat 7777');
+    const toolsReply = String((tg.sends.find(s => String(s.chat_id) === '7777') || {}).text || '');
+    A.ok(!/no tools yet/.test(toolsReply), '/tools over Telegram does NOT claim the agent has no tools');
+    A.ok(/Tools for this agent/.test(toolsReply), '/tools returns the card, not the empty-state sentence');
+    // the autonomous office (capability/office.js fullOffice) — the objects hub.js's runs resolve against.
+    A.ok(/WEB & BROWSER/.test(toolsReply), '/tools lists WEB & BROWSER (dish is in the autonomous office)');
+    A.ok(/FILE CABINET/.test(toolsReply), '/tools lists FILE CABINET (cabinet is in the autonomous office)');
+    A.ok(/MEMORY NOTEBOOK/.test(toolsReply), '/tools lists MEMORY NOTEBOOK (notebook is in the autonomous office)');
+    // ...and stays HONEST about what this surface does NOT grant: fullOffice carries no WORKBENCH, and the
+    // orchestrator object is LEAD-only, so neither may be reported as active however the desktop floor looks.
+    const activeLines = toolsReply.split('\n').filter(l => l.indexOf('✓') === 0);
+    A.ok(!activeLines.some(l => /WORKBENCH/.test(l)), '/tools does not claim terminal on a channel (no workbench off-browser)');
+    A.ok(!activeLines.some(l => /TASK DELEGATION/.test(l)), '/tools does not claim delegation on a channel (orchestrator is LEAD-only)');
+    // a slash command must not spend a model turn — it is answered by the registry, not the provider.
+    A.eq(llm.requests.length, llmCallsBeforeTools, '/tools was answered by the registry without calling the provider');
+
     // ---- P1 1.2: a live channel run must appear in GET /api/state/snapshot so an SSE reconnect keeps its agent's
     // floor/HUD state (reconcileFromSnapshot clears any agent NOT listed). Drive a SECOND message on a fresh chat,
     // HOLD it in-flight via the mock gate, prove the snapshot lists it (attributed + sourced 'telegram'), then
