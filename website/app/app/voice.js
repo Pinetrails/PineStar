@@ -118,6 +118,13 @@ const Voice = (() => {
   // itself was fine, the silence ABOUT it wasn't). NB: NO permanent latch — this is a 60s cold-off that ANY
   // speaker-toggle clears, so a spurious startup 'no key' never disables voice for the whole session.
   const BILLING_COLD_MS = 60000;
+  // consecutive neural failures inside the reply that is CURRENTLY speaking. A cold-off may never guillotine
+  // a reply already in flight (see startSynth) — this counter is what eventually lets it, so a genuinely dead
+  // provider costs a couple of round-trips per reply instead of one per sentence.
+  let replyFails = 0;
+  let replyTried = false;  // has the reply currently speaking already ATTEMPTED a synth? Only then may it
+                           // outrank the cold-off — a BRAND-NEW reply still honors it in full (no hammering).
+  const MID_REPLY_GIVEUP = 2;
   let fbStreak = 0;        // consecutive neural failures (reset by the next neural success)
   let fbNotified = '';     // reason class already surfaced this outage — notify once, not once per sentence
   function classifyFallback(reason) {
@@ -146,7 +153,10 @@ const Voice = (() => {
       : '🔇 real voice unreachable · reply shown as text';
     if (toggleBtn) toggleBtn.title = fbMsg;
   }
-  function noteNeuralOk() { fbStreak = 0; if (fbNotified) { fbNotified = ''; fbMsg = ''; reflectToggle(); } }
+  // a chunk actually spoke → the neural path is PROVEN alive, so LIFT the cold-off too. Without this, a
+  // single blip's 4s cold-off kept suppressing the rest of the reply (and the next reply's opening words)
+  // even though the very next call would have succeeded.
+  function noteNeuralOk() { fbStreak = 0; replyFails = 0; neuralColdUntil = 0; if (fbNotified) { fbNotified = ''; fbMsg = ''; reflectToggle(); } }
   // ANY toggle of the speaker button clears all cold-offs and re-probes the neural path fresh (no latch).
   function clearNeuralCold() { neuralColdUntil = 0; fbStreak = 0; if (fbNotified) { fbNotified = ''; fbMsg = ''; } }
   function apiKey() { return (typeof Harness !== 'undefined' && Harness.getKey) ? (Harness.getKey() || '') : ''; }
@@ -199,6 +209,7 @@ const Voice = (() => {
   async function prewarmVoice() {
     if (!speakReplies) return;
     if (Date.now() < neuralColdUntil) return;        // neural path cooling off after a failure → don't hammer
+    if (draining) return;                            // a LIVE reply owns the voice path — never warm in front of it
     if (prewarmedFor === activePersonaId) return;   // already warmed this persona's shelf
     prewarmedFor = activePersonaId;
     const p = (typeof Personas !== 'undefined' && Personas.get) ? Personas.get(activePersonaId) : null;
@@ -210,6 +221,10 @@ const Voice = (() => {
     for (const raw of lines) {
       const text = speakable(raw);
       if (!text) continue;
+      // a reply started mid-warm → YIELD the provider to it at once. Background warm calls racing the live
+      // reply's chunks is exactly how a rate-limited provider 429s the reply's second sentence — and a single
+      // failed chunk is what used to take the whole rest of the reply down with it. Re-armed for a later warm.
+      if (draining) { prewarmedFor = null; break; }
       try {
         // warm the SAME cache key the live path will request (model|voice|style|text) — we only need the
         // sidecar to synthesize + cache it; we discard the audio. A failure is silent (best-effort).
@@ -487,39 +502,58 @@ const Voice = (() => {
   const MAX_INFLIGHT = 2;        // synth at most this many chunks ahead of playback
   const TTS_CHUNK_MAX = 1000;    // keep each synth call under the sidecar's 1200-char cap
 
-  function resetQueue() { jobs = []; playIdx = 0; synthIdx = 0; draining = false; playing = false; replyClosed = true; }
+  function resetQueue() { jobs = []; playIdx = 0; synthIdx = 0; draining = false; playing = false; replyClosed = true; replyFails = 0; replyTried = false; }
 
   // begin synthesizing one job → resolves to {kind:'neural',blob} | {kind:'silent'} | {kind:'skip'}.
   // 'neural' plays; 'silent' means "no neural audio for this chunk — advance the queue, stay quiet" (there
   // is NO robotic fallback); 'skip' is an intentional barge-in/teardown cancel. The page holds no key on
   // desktop — the sidecar /api/tts resolves its own credential (keychain/env) or the free keyless floor.
-  function startSynth(job) {
-    if (job.result) return;
+  // ONE round-trip for one chunk → {kind:'neural',blob} | {kind:'fail',reason} | {kind:'skip'}. Deliberately
+  // records NO failure state: startSynth owns the retry/cold-off policy so a retried blip isn't counted twice.
+  function synthOnce(job) {
     const cred = ttsCred(), cfg = ttsConfig();
-    // always ask the sidecar — it owns the tier ladder and decides what it can serve. Only skip the
-    // round-trip while the neural path is cooling off after a recent failure (no permanent latch).
-    if (Date.now() < neuralColdUntil) { job.result = Promise.resolve({ kind: 'silent' }); return; }
     const ac = new AbortController(); job.ac = ac; ttsAbort = ac;
-    job.result = fetch('/api/tts', {
+    return fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
       body: JSON.stringify({ key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(), text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style })
     }).then(async r => {
       const ct = r.headers.get('Content-Type') || '';
-      if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) { noteNeuralOk(); return { kind: 'neural', blob }; } }
+      if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) return { kind: 'neural', blob }; }
       let reason = 'http ' + r.status;
       try { const j = await r.json(); if (j && j.reason) reason = j.reason; } catch (_) {}
-      // cool the neural path off briefly (noteFallback lengthens this for 'no key'/'credits'); never latch.
-      neuralColdUntil = Date.now() + NEURAL_COLD_MS;
-      console.warn('[voice] neural TTS unavailable → chunk silent:', reason);
-      noteFallback(reason);
-      return { kind: 'silent' };
+      return { kind: 'fail', reason };
     }).catch(e => {
       if (e && e.name === 'AbortError') return { kind: 'skip' };   // intentionally cancelled — stay silent
-      console.warn('[voice] neural TTS error:', (e && e.message) || e);
-      neuralColdUntil = Date.now() + NEURAL_COLD_MS;
-      noteFallback('network: ' + ((e && e.message) || e));
-      return { kind: 'silent' };
+      return { kind: 'fail', reason: 'network: ' + ((e && e.message) || e) };
     });
+  }
+  function startSynth(job) {
+    if (job.result) return;
+    // always ask the sidecar — it owns the tier ladder and decides what it can serve. The cold-off exists so
+    // a DEAD provider isn't hammered once per sentence, but it must NEVER guillotine a reply that is ALREADY
+    // SPEAKING: one transient blip on the second chunk used to skip every remaining chunk's round-trip, so the
+    // agent stopped dead after its opening words ("it only says the first word", reported 2026-07-28). While a
+    // reply is mid-flight we keep asking until THIS reply has failed MID_REPLY_GIVEUP times in a row; only then
+    // does the cold-off apply to it. A reply that has not yet attempted anything (replyTried false — i.e. its
+    // OPENING chunk) still honors the cold-off in full, so a dead provider is not hammered once per sentence.
+    if (Date.now() < neuralColdUntil && (!replyTried || replyFails >= MID_REPLY_GIVEUP)) { job.result = Promise.resolve({ kind: 'silent' }); return; }
+    replyTried = true;
+    const seq = job.seq;
+    job.result = synthOnce(job)
+      // ONE immediate retry for a TRANSIENT failure (429 / network / 5xx) — a single provider blip must cost a
+      // beat of latency, not a whole sentence of the reply. 'no key' and billing are NOT transient: don't burn
+      // a second call on them. A torn-down job (barge-in bumped speakSeq) is never retried.
+      .then(res => (res.kind === 'fail' && classifyFallback(res.reason) === 'error' && seq === speakSeq) ? synthOnce(job) : res)
+      .then(res => {
+        if (res.kind === 'neural') { noteNeuralOk(); return res; }
+        if (res.kind === 'skip') return res;   // intentional barge-in/teardown cancel — not a failure
+        replyFails++;
+        // cool the neural path off briefly (noteFallback lengthens this for 'no key'/'credits'); never latch.
+        neuralColdUntil = Date.now() + NEURAL_COLD_MS;
+        console.warn('[voice] neural TTS unavailable → chunk silent:', res.reason);
+        noteFallback(res.reason);
+        return { kind: 'silent' };
+      });
   }
   function pumpSynth() { while (synthIdx < jobs.length && (synthIdx - playIdx) < MAX_INFLIGHT) startSynth(jobs[synthIdx++]); }
 
