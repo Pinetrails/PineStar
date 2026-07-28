@@ -1651,14 +1651,14 @@
     // wait() is READ-ONLY and takes no ref, so it needs no recovery — it is the tool an agent reaches for
     // precisely when it does NOT yet know what is on the page.
     async function wait(cond, budgetMs) { return driverFn(ensureDriver(), 'waitFor')(cond, budgetMs); }
-    /* find(query) — snapshot, then keep only what matches.
+    /* find(query) — snapshot the current viewport, then keep only what matches.
 
        WHY IT IS NOT JUST "snapshot with a bigger limit". A real page routinely carries hundreds of
-       interactive elements; browser.snapshot caps at 80 by default and 200 at most. On a dense page the
-       one link the agent wants may simply not be IN the list, and it has no way to tell the difference
-       between "not on the page" and "past the cap" — so it re-snapshots, scrolls, and guesses. This scans
-       at the driver's maximum and returns only the hits, which costs a fraction of the tokens and answers
-       the question the agent actually had.
+       VISIBLE interactive elements; browser.snapshot caps at 80 by default and 200 at most. On a dense
+       viewport the one link the agent wants may simply not be IN the list. This scans at the driver's
+       maximum and returns only the hits, which costs a fraction of the tokens and answers the question
+       the agent actually had. It deliberately does not claim to scan off-screen or hidden controls:
+       returned refs must describe elements the driver can act on at their reported coordinates.
 
        It mints refs and bumps `version` exactly like a snapshot, because it IS a fresh DOM read; refs from
        before it are stale (and recoverable under the same rules). */
@@ -1675,8 +1675,8 @@
         hits.push(Object.assign({}, n, { ref: refFor(n) }));
         if (hits.length >= Math.max(1, Math.min(50, Number(limit || 20)))) break;
       }
-      // scanned is reported so the agent can tell "no match on a page I fully read" from "no match, but I
-      // was capped" — without it a zero-hit answer is ambiguous in exactly the way this tool exists to fix.
+      // `scanned` and `capped` describe the VISIBLE scan only. A below-fold or closed-menu control is not in
+      // `nodes`, so even an uncapped zero must never be promoted into a whole-document absence claim.
       return { hits, scanned: (nodes || []).length, capped: (nodes || []).length >= FIND_SCAN_CAP };
     }
     /* attach(port) — drive the Commander's OWN already-running Chrome instead of a station-launched one.
@@ -2001,17 +2001,18 @@
         }),
       exec('browser.detach', 'Stop driving the Commander\'s own Chrome and go back to the station browser. Their browser keeps running and every tab stays open — this only lets go of it.', { type: 'object', properties: {} },
         async () => ({ content: await session.detach(), summary: 'detached' }), false),
-      read('browser.find', 'Find elements on the page by their visible text and/or role, and get refs you can click or type into. Prefer this over browser.snapshot on a busy page: snapshot lists the first 80 interactive elements, so on a dense page the one you want may not appear at all, while this scans the whole page and returns only what matches. Refs from earlier snapshots expire, same as after any snapshot.',
+      read('browser.find', 'Find visible elements in the current viewport by text and/or role, and get refs you can click or type into. Prefer this over browser.snapshot on a busy viewport: snapshot lists the first 80 interactive elements, while this scans up to 200 and returns only what matches. It does not scan below the fold or inside closed menus; scroll or open the menu and try again. Refs from earlier snapshots expire, same as after any snapshot.',
         { type: 'object', properties: { text: { type: 'string' }, role: { type: 'string' }, limit: { type: 'number' } } },
         async a => {
           const r = await session.find({ text: a.text, role: a.role }, a.limit);
           const what = [a.text ? 'text containing ' + JSON.stringify(a.text) : '', a.role ? 'role ' + JSON.stringify(a.role) : ''].filter(Boolean).join(' and ');
           if (!r.hits.length) {
-            /* An empty answer has two very different causes and the agent must be able to tell them apart:
-               nothing matched on a page we read fully, versus nothing matched in the part we could see. */
+            /* Snapshot intentionally filters to visible, actionable geometry. Even an uncapped scan therefore
+               proves absence only in the current viewport — never below the fold or inside a closed menu. */
             return {
-              content: 'No element matches ' + what + '. Scanned ' + r.scanned + ' interactive element(s)'
-                + (r.capped ? ' — the page has MORE than that, so the target may be further down; scroll and try again.' : ' — that is the whole page, so it is genuinely not there (it may be inside a closed menu, or it may need browser.wait).'),
+              content: 'No visible element matches ' + what + ' in the current viewport. Scanned ' + r.scanned + ' visible interactive element(s)'
+                + (r.capped ? ' and reached the 200-element scan cap.' : '.')
+                + ' The target may be off-screen, inside a closed menu, or not loaded yet; scroll or open the menu and try again, or use browser.wait.',
               summary: 'no match'
             };
           }

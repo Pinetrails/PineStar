@@ -47,6 +47,10 @@ const ROUTES = {
   '/second': () => ({ status: 200, body: PAGE('<h1>Receipt</h1><button id=print>Print receipt</button>', '<title>Receipt</title>') }),
   '/click': () => ({ status: 200, body: PAGE('<button id=go>Load</button><div id=out></div>',
     '<script>addEventListener("click",function(e){if(e.target.id==="go"){setTimeout(function(){document.getElementById("out").innerHTML="<button id=next>Second step</button>";},300);}})</script>') }),
+  // The target exists in the document but begins below the viewport. A viewport-only scan must never
+  // describe its zero hits as "the whole page" or claim the target is genuinely absent.
+  '/belowfold': () => ({ status: 200, body: PAGE(
+    '<div style="height:1600px">Top of page</div><button id=checkout>Checkout now</button>') }),
   // A menu whose real target only EXISTS on hover - the classic nav that is unreachable without it.
   '/hovermenu': () => ({ status: 200, body: PAGE(
     '<button id=menu>Products</button><div id=sub></div>',
@@ -125,6 +129,20 @@ const ROUTES = {
     {
       await driver.navigate(base + '/form');
       A.eq(driver.lastResponse().status, 200, 'status does not leak from the previous 404 navigation');
+    }
+
+    /* 2z. FIND ZERO-HIT HONESTY — snapshot/find see the viewport, not the whole document.
+       The checkout button exists below the fold. Reporting "that is the whole page" tells an agent to
+       stop looking even though one scroll would reveal the target. */
+    {
+      const browser = require('../sidecar/tools/builtin/browser.js').makeBrowserTools({ driver });
+      await browser.session.navigate(base + '/belowfold', { local: true });
+      const find = browser.tools.find(t => t.name === 'browser.find');
+      const r = await find.run({ text: 'Checkout' }, {});
+      A.eq(/genuinely not there|the whole page/.test(r.content), false,
+        'a viewport-only zero hit never claims the target is absent from the whole page');
+      A.ok(/viewport|scroll/i.test(r.content),
+        'the zero-hit result tells the agent the target may be off-screen and to scroll');
     }
 
     /* 2a. NETWORK REQUEST LOG — what the page DID, not just what it said.
