@@ -3237,9 +3237,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit RE-SIGN-IN to start again'; },
             onCode: c => {
               if (code) { code.textContent = c.user_code; code.hidden = false; }
+              // DISPLAY the bare address, OPEN the code-carrying one (open_uri) — see codexsignin.js.
               if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
-              if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.verification_uri); }; }
-              openExternal(c.verification_uri);
+              if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.open_uri || c.verification_uri); }; }
+              openExternal(c.open_uri || c.verification_uri);
             },
             onConnected: () => {
               // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
@@ -3287,9 +3288,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit RE-SIGN-IN to start again'; },
               onCode: c => {
                 if (code) { code.textContent = c.user_code; code.hidden = false; }
+                // DISPLAY the bare address, OPEN the code-carrying one — kimi's page REQUIRES ?user_code=.
                 if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
-                if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.verification_uri); }; }
-                openExternal(c.verification_uri);
+                if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.open_uri || c.verification_uri); }; }
+                openExternal(c.open_uri || c.verification_uri);
               },
               onConnected: () => {
                 // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
@@ -3492,9 +3494,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit ⏼ SIGN IN to start again'; },
           onCode: c => {
             if (code) { code.textContent = c.user_code; code.hidden = false; }
+            // DISPLAY the bare address, OPEN the code-carrying one — kimi's page REQUIRES ?user_code=.
             if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
-            if (open) { open.hidden = false; open.onclick = e2 => { e2.stopPropagation(); sfx('click'); openExternal(c.verification_uri); }; }
-            openExternal(c.verification_uri);
+            if (open) { open.hidden = false; open.onclick = e2 => { e2.stopPropagation(); sfx('click'); openExternal(c.open_uri || c.verification_uri); }; }
+            openExternal(c.open_uri || c.verification_uri);
           },
           onConnected: () => {
             // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.

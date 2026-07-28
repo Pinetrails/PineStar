@@ -52,7 +52,11 @@ const KIMI = {
 
     // A. startDeviceLogin: form-encoded POST to the device endpoint with client_id + scope + referrer
     {
-      const f = recordingFetch(() => json({ device_code: 'dc_grok', user_code: 'ABCD-1234', verification_uri: 'https://accounts.x.ai/device', verification_uri_complete: 'https://accounts.x.ai/device?code=ABCD-1234', interval: 5, expires_in: 900 }));
+      // LIVE-CAPTURED shape (2026-07-28). The invented `accounts.x.ai/device` this fixture used to carry was
+      // the WRONG PATH — the real one is /oauth2/device. A fixture that invents the destination proves the
+      // request wire and NOTHING about where we send the user; that is exactly how the kimi code-less-page
+      // bug survived a green gate. Keep these values pinned to what the issuer actually returns.
+      const f = recordingFetch(() => json({ device_code: 'dc_grok', user_code: 'ABCD-1234', verification_uri: 'https://accounts.x.ai/oauth2/device', verification_uri_complete: 'https://accounts.x.ai/oauth2/device?user_code=ABCD-1234', interval: 5, expires_in: 1800 }));
       const r = await grok.startDeviceLogin({ fetch: f });
       A.eq(f.calls[0].url, 'https://auth.x.ai/oauth2/device/code', 'grok device endpoint');
       A.eq(f.calls[0].init.method, 'POST', 'grok device is POST');
@@ -63,8 +67,8 @@ const KIMI = {
       A.ok(body.scope && body.scope.indexOf('offline_access') >= 0, 'grok sends the offline_access scope');
       A.eq(r.device_code, 'dc_grok', 'returns the opaque device_code (kept server-side by the host)');
       A.eq(r.user_code, 'ABCD-1234', 'returns user_code');
-      A.eq(r.verification_uri, 'https://accounts.x.ai/device', 'returns verification_uri');
-      A.eq(r.verification_uri_complete, 'https://accounts.x.ai/device?code=ABCD-1234', 'returns verification_uri_complete');
+      A.eq(r.verification_uri, 'https://accounts.x.ai/oauth2/device', 'returns verification_uri');
+      A.eq(r.verification_uri_complete, 'https://accounts.x.ai/oauth2/device?user_code=ABCD-1234', 'returns verification_uri_complete — the URL the browser must OPEN');
     }
 
     // B. poll classification: authorization_pending / slow_down / access_denied / expired_token / success
@@ -172,7 +176,11 @@ const KIMI = {
 
     // A. startDeviceLogin: form POST with client_id, X-Msh-* headers present, NO scope/referrer
     {
-      const f = recordingFetch(() => json({ device_code: 'dc_kimi', user_code: 'WXYZ-9', verification_uri: 'https://auth.kimi.com/device', interval: 5, expires_in: 900 }));
+      // LIVE-CAPTURED shape (2026-07-28). This fixture used to invent `auth.kimi.com/device` — wrong HOST and
+      // wrong path — and omit verification_uri_complete entirely, which is why a fully green gate never noticed
+      // that the app was opening a code-less page. The real bare URL is a code CONSUMER: it renders
+      // "Missing user_code parameter" without ?user_code=, so only the _complete form can finish a sign-in.
+      const f = recordingFetch(() => json({ device_code: 'dc_kimi', user_code: 'WXYZ-9', verification_uri: 'https://www.kimi.com/code/authorize_device', verification_uri_complete: 'https://www.kimi.com/code/authorize_device?user_code=WXYZ-9', interval: 5, expires_in: 1800 }));
       const r = await kimi.startDeviceLogin({ fetch: f });
       A.eq(f.calls[0].url, 'https://auth.kimi.com/api/oauth/device_authorization', 'kimi device endpoint');
       A.eq(f.calls[0].init.headers['Content-Type'], 'application/x-www-form-urlencoded', 'kimi device leg is form-encoded (live-proven; JSON gets a 400)');
@@ -184,6 +192,8 @@ const KIMI = {
       A.eq(body.referrer, undefined, 'kimi sends no referrer');
       A.eq(r.device_code, 'dc_kimi', 'returns device_code');
       A.eq(r.user_code, 'WXYZ-9', 'returns user_code');
+      A.eq(r.verification_uri, 'https://www.kimi.com/code/authorize_device', 'returns the bare verification_uri (DISPLAY only — it cannot accept a typed code)');
+      A.eq(r.verification_uri_complete, 'https://www.kimi.com/code/authorize_device?user_code=WXYZ-9', 'RETURNS verification_uri_complete — dropping it is what broke kimi sign-in');
     }
 
     // B. poll: form grant body carries the device-code grant + client_id + X-Msh headers

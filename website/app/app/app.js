@@ -1786,9 +1786,10 @@ const App = (() => {
       onCode: c => {
         codeEl.textContent = c.user_code; codeEl.classList.remove('hidden');
         openBtn.classList.remove('hidden');
-        openBtn.onclick = () => openExternalUrl(c.verification_uri);
+        // DISPLAY the bare address, OPEN the code-carrying one (open_uri) — see codexsignin.js.
+        openBtn.onclick = () => openExternalUrl(c.open_uri || c.verification_uri);
         statusEl.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
-        openExternalUrl(c.verification_uri);
+        openExternalUrl(c.open_uri || c.verification_uri);
       },
       onTimeout: () => { statusEl.textContent = 'sign-in timed out — start again'; statusEl.className = 'codex-status bad'; },
       onConnected: () => { codeEl.classList.add('hidden'); openBtn.classList.add('hidden'); SFX.open(); refreshCodexStatus(); loadCodexModels(); }
@@ -1905,9 +1906,10 @@ const App = (() => {
       onCode: cc => {
         codeEl.textContent = cc.user_code; codeEl.classList.remove('hidden');
         openBtn.classList.remove('hidden');
-        openBtn.onclick = () => openExternalUrl(cc.verification_uri);
+        // DISPLAY the bare address, OPEN the code-carrying one (open_uri) — kimi's page REQUIRES ?user_code=.
+        openBtn.onclick = () => openExternalUrl(cc.open_uri || cc.verification_uri);
         statusEl.innerHTML = 'enter this code at <b>' + esc(cc.verification_uri) + '</b> (opening it now)…';
-        openExternalUrl(cc.verification_uri);
+        openExternalUrl(cc.open_uri || cc.verification_uri);
       },
       onTimeout: () => { statusEl.textContent = 'sign-in timed out — start again'; statusEl.className = 'codex-status bad'; },
       onConnected: () => { codeEl.classList.add('hidden'); openBtn.classList.add('hidden'); SFX.open(); refreshOAuthGenesisStatus(pid); loadOAuthModels(pid); }
