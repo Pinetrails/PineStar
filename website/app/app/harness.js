@@ -12,7 +12,23 @@ const Harness = (() => {
   const OR = 'https://openrouter.ai/api/v1';
 
   let totals = { tokens: 0, cost: 0, calls: 0 };
-  let modelMap = {};   // id -> { id, name, pricing, context_length, supportsTools }
+  // Model catalogs are keyed BY PROVIDER. A single shared map was a real defect: ModelDock warms all
+  // ~17 providers in parallel (modeldock.js fetchModels) and every listModels(p) miss reset the one
+  // map, so whichever provider resolved LAST — usually an unconfigured one with an empty list — wiped
+  // the ACTIVE provider's catalog. contextLimitOf()/priceOf() then returned 0 for the live model, and
+  // the bottom-bar context gauge sat at unknown/"—" forever even after a real measured turn.
+  let modelsByProv = Object.create(null);   // provider -> { id -> { id, name, pricing, context_length, supportsTools } }
+
+  // Resolve a model id against the warmed catalogs, preferring the ACTIVE provider's (the same id can
+  // exist under two providers with different windows/prices, e.g. a direct slug vs an OpenRouter one).
+  function catalogModel(id) {
+    if (!id) return null;
+    const p = normalizeProviderId(getProv());
+    const own = modelsByProv[p];
+    if (own && own[id]) return own[id];
+    for (const k in modelsByProv) { const m = modelsByProv[k] && modelsByProv[k][id]; if (m) return m; }
+    return null;
+  }
   // Per-agent context-window occupancy = the latest real prompt_tokens for that same agent/model.
   // Distinct from totals.tokens (lifetime in+out), and not persisted across resumes.
   let contextByAgent = {};   // agentId -> { used, model, runId }
@@ -294,7 +310,7 @@ const Harness = (() => {
 
   /* per-million pricing for a model id, if known from the catalog */
   function priceOf(id) {
-    const m = modelMap[id];
+    const m = catalogModel(id);
     if (!m || !m.pricing) return null;
     const inP = parseFloat(m.pricing.prompt) * 1e6;
     const outP = parseFloat(m.pricing.completion) * 1e6;
@@ -306,7 +322,7 @@ const Harness = (() => {
      The sidecar's model endpoint carries OpenRouter context_length through to the browser; if
      that endpoint is unavailable we fall back to the public OpenRouter catalog. */
   function contextLimitOf(id) {
-    const m = modelMap[id];
+    const m = catalogModel(id);
     return (m && m.context_length) || 0;
   }
 
@@ -366,8 +382,11 @@ const Harness = (() => {
         else list = [];
       }
       list.sort((a, b) => a.id.localeCompare(b.id));
-      modelMap = {};
-      for (const m of list) modelMap[m.id] = m;
+      // scope the catalog to the provider it was fetched FOR — never to a shared map another
+      // provider's warm can overwrite (see modelsByProv above).
+      const map = Object.create(null);
+      for (const m of list) map[m.id] = m;
+      modelsByProv[p] = map;
       return list;
     } catch (e) {
       console.warn('[harness] model list unavailable:', e.message);
