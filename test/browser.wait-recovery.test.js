@@ -209,5 +209,54 @@ function fakeDriver(opts) {
     A.ok(/had gone stale/.test(out), 'and the pair recovery is disclosed too');
   }
 
+  /* ---- 13. browser.find — the answer to a page bigger than the snapshot cap.
+       browser.snapshot lists the first 80 interactive elements. On a dense page the element the agent
+       wants may not be in that list at all, and a zero-hit answer that cannot distinguish "not on this
+       page" from "past the cap" sends it scrolling and re-snapshotting blind. ---- */
+  {
+    const many = [];
+    for (let i = 0; i < 140; i++) many.push({ role: 'link', text: 'Item ' + i, x: 0, y: i * 10, w: 50, h: 10 });
+    many.push({ role: 'button', text: 'Checkout now', x: 0, y: 2000, w: 90, h: 20 });
+    const d = fakeDriver({ nodes: many });
+    const B = makeBrowserTools({ driver: d });
+    const find = B.tools.find(t => t.name === 'browser.find');
+    A.eq(find.scope, 'read', 'finding is a read');
+    A.eq(find.requiresConsent, false, 'and costs no consent prompt');
+
+    // The target sits at index 140 — well past browser.snapshot's default cap of 80.
+    const r = await find.run({ text: 'Checkout' }, {});
+    A.ok(/Checkout now/.test(r.content), 'an element PAST the snapshot cap is still found');
+    A.ok(/\[button\]/.test(r.content), 'and comes back with its role');
+    A.ok(/b\d+/.test(r.content), 'and a usable ref');
+    A.ok(/1 match/.test(r.summary), 'the summary counts the matches');
+
+    const byRole = await find.run({ role: 'button' }, {});
+    A.ok(/Checkout now/.test(byRole.content), 'role alone is a valid query');
+    const both = await find.run({ text: 'Item 1', role: 'link', limit: 3 }, {});
+    A.eq((both.content.match(/\[link\]/g) || []).length, 3, 'limit is honoured');
+  }
+
+  // ---- 14. A ZERO-HIT ANSWER SAYS WHICH KIND OF ZERO IT IS ----
+  {
+    const small = [{ role: 'button', text: 'Search', x: 1, y: 1, w: 10, h: 10 }];
+    const B1 = makeBrowserTools({ driver: fakeDriver({ nodes: small }) });
+    const r1 = await B1.tools.find(t => t.name === 'browser.find').run({ text: 'Checkout' }, {});
+    A.ok(/genuinely not there/.test(r1.content), 'a fully-scanned page reports a REAL absence');
+    A.eq(/may be further down/.test(r1.content), false, 'and does not hedge when it does not need to');
+
+    const huge = [];
+    for (let i = 0; i < 240; i++) huge.push({ role: 'link', text: 'Row ' + i, x: 0, y: i, w: 10, h: 10 });
+    const B2 = makeBrowserTools({ driver: fakeDriver({ nodes: huge }) });
+    const r2 = await B2.tools.find(t => t.name === 'browser.find').run({ text: 'Checkout' }, {});
+    A.ok(/may be further down/.test(r2.content), 'a CAPPED scan admits it was capped rather than claiming absence');
+    A.ok(/scroll/i.test(r2.content), 'and says what to do about it');
+  }
+
+  // ---- 15. find needs something to match on ----
+  {
+    const S = T.makeBrowserSession({ driver: fakeDriver() });
+    await rejects(S.find({}), /needs text or role/, 'an empty query is refused rather than dumping the page');
+  }
+
   A.report('browser.wait-recovery.test');
 })().catch(e => { console.log('FAIL: browser.wait-recovery.test threw -- ' + (e && e.stack || e)); process.exit(1); });

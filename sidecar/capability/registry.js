@@ -89,6 +89,7 @@
          cannot see is a waiting tool it replaces with a guess, and the guess is the flake. It has to be
          in the front row next to snapshot or it does not get used at the moment it is needed. */
       { capId: 'web', tool: 'browser.wait', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.find', scope: 'read', requiresConsent: false, network: true },
       /* Deferred: browser.attach is a specialist door, not part of the ordinary browsing loop, and every
          tool in the front row costs prompt weight on every single request. An agent that needs the
          Commander's real signed-in browser will find it through tool.search when the task calls for it —

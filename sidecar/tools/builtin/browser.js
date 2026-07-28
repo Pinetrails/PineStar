@@ -44,6 +44,9 @@
   // Paid ONLY when a snapshot came back empty — see the re-read note in snapshot().
   const SETTLE_EMPTY_GRACE_MS = 1500;
   const SNAP_DEFAULT = 80;              // node cap shared by browser.snapshot and stale-ref recovery
+  // browser.find scans at the driver's own ceiling (collectNodes clamps to 200) and then filters, so a
+  // match on a dense page is found rather than lost past the default cap.
+  const FIND_SCAN_CAP = 200;
   /* browser.wait budget. Every ACTION already auto-settles (waitForSettle), so this is not "wait for the
      page to calm down" — it is "wait for a CONDITION the agent can name": a spinner to clear, a result row
      to appear, a redirect to land. Capped because an agent that can ask for an unbounded wait will
@@ -1648,6 +1651,34 @@
     // wait() is READ-ONLY and takes no ref, so it needs no recovery — it is the tool an agent reaches for
     // precisely when it does NOT yet know what is on the page.
     async function wait(cond, budgetMs) { return driverFn(ensureDriver(), 'waitFor')(cond, budgetMs); }
+    /* find(query) — snapshot, then keep only what matches.
+
+       WHY IT IS NOT JUST "snapshot with a bigger limit". A real page routinely carries hundreds of
+       interactive elements; browser.snapshot caps at 80 by default and 200 at most. On a dense page the
+       one link the agent wants may simply not be IN the list, and it has no way to tell the difference
+       between "not on the page" and "past the cap" — so it re-snapshots, scrolls, and guesses. This scans
+       at the driver's maximum and returns only the hits, which costs a fraction of the tokens and answers
+       the question the agent actually had.
+
+       It mints refs and bumps `version` exactly like a snapshot, because it IS a fresh DOM read; refs from
+       before it are stale (and recoverable under the same rules). */
+    async function find(query, limit) {
+      const q = String((query && query.text) || '').trim().toLowerCase();
+      const role = String((query && query.role) || '').trim().toLowerCase();
+      if (!q && !role) throw new Error('browser.find needs text or role to match on');
+      const nodes = await ensureDriver().snapshot(FIND_SCAN_CAP);
+      version++;
+      const hits = [];
+      for (const n of (nodes || [])) {
+        if (role && String(n.role || '').toLowerCase() !== role) continue;
+        if (q && String(n.text || '').toLowerCase().indexOf(q) < 0) continue;
+        hits.push(Object.assign({}, n, { ref: refFor(n) }));
+        if (hits.length >= Math.max(1, Math.min(50, Number(limit || 20)))) break;
+      }
+      // scanned is reported so the agent can tell "no match on a page I fully read" from "no match, but I
+      // was capped" — without it a zero-hit answer is ambiguous in exactly the way this tool exists to fix.
+      return { hits, scanned: (nodes || []).length, capped: (nodes || []).length >= FIND_SCAN_CAP };
+    }
     /* attach(port) — drive the Commander's OWN already-running Chrome instead of a station-launched one.
 
        WHY THIS AND NOT A STEALTH ENGINE. The practical wall in agent browsing is not that a headless
@@ -1857,7 +1888,7 @@
       const d = driver || null;
       return d && typeof d.attachedPort === 'function' ? d.attachedPort() : null;
     }
-    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, evalAllowed, wait, attach, detach, attachedToUser: () => attachedToUserBrowser, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, networkLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, navEpoch: () => navEpoch, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
+    return { navigate, snapshot, click, type, press, hover, drag, select: selectOption, viewport, forward, upload, tabs, selectTab, closeTab, inspect, evalPublic, evalAllowed, wait, find, attach, detach, attachedToUser: () => attachedToUserBrowser, testInput, testEval, testState, testSnapshot, scroll, back, getText, consoleLog, networkLog, dialog, vision, screenshot, login, close, visible, headlessFallback, attachedPort, lastResponse, _internals: { refs, version: () => version, navEpoch: () => navEpoch, localMode: () => localMode, localOrigin: () => localOrigin, leaseHeld: () => leaseHeld } };
   }
 
   function makeBrowserTools(deps) {
@@ -1970,6 +2001,24 @@
         }),
       exec('browser.detach', 'Stop driving the Commander\'s own Chrome and go back to the station browser. Their browser keeps running and every tab stays open — this only lets go of it.', { type: 'object', properties: {} },
         async () => ({ content: await session.detach(), summary: 'detached' }), false),
+      read('browser.find', 'Find elements on the page by their visible text and/or role, and get refs you can click or type into. Prefer this over browser.snapshot on a busy page: snapshot lists the first 80 interactive elements, so on a dense page the one you want may not appear at all, while this scans the whole page and returns only what matches. Refs from earlier snapshots expire, same as after any snapshot.',
+        { type: 'object', properties: { text: { type: 'string' }, role: { type: 'string' }, limit: { type: 'number' } } },
+        async a => {
+          const r = await session.find({ text: a.text, role: a.role }, a.limit);
+          const what = [a.text ? 'text containing ' + JSON.stringify(a.text) : '', a.role ? 'role ' + JSON.stringify(a.role) : ''].filter(Boolean).join(' and ');
+          if (!r.hits.length) {
+            /* An empty answer has two very different causes and the agent must be able to tell them apart:
+               nothing matched on a page we read fully, versus nothing matched in the part we could see. */
+            return {
+              content: 'No element matches ' + what + '. Scanned ' + r.scanned + ' interactive element(s)'
+                + (r.capped ? ' — the page has MORE than that, so the target may be further down; scroll and try again.' : ' — that is the whole page, so it is genuinely not there (it may be inside a closed menu, or it may need browser.wait).'),
+              summary: 'no match'
+            };
+          }
+          const lines = r.hits.map(n => n.ref + ' [' + n.role + '] ' + (n.text || '(no text)') + ' @ ' + n.x + ',' + n.y + ' ' + n.w + 'x' + n.h + (n.frame ? ' (iframe ' + n.frame + ')' : ''));
+          // Same fence as browser.snapshot: this is PAGE-authored text, and a page can write anything it likes.
+          return { content: fenceExternal(lines.join('\n'), 'matching elements from the controlled browser'), summary: r.hits.length + ' match(es) of ' + r.scanned + ' scanned' };
+        }),
       /* browser.wait is READ scope and needs no consent: it changes nothing, it only looks. Its whole
          purpose is to replace the guessed sleep, which is the single biggest source of flaky agent
          browsing — and a tool the agent must pay a consent prompt for is a tool it will skip. */
