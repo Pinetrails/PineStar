@@ -22,7 +22,16 @@ global.fetch = async (url, opts) => {
   if (!m) throw new Error('unexpected fetch ' + url);
   const pid = m[1], kind = m[2];
   if (kind === 'start') {
-    return { ok: true, json: async () => ({ user_code: pid.toUpperCase() + '-9', verification_uri: 'https://auth.' + pid + '.example/device', device_auth_id: 'dev-' + pid, interval: 0.001, expires_in: 900 }) };
+    const d = { user_code: pid.toUpperCase() + '-9', verification_uri: 'https://auth.' + pid + '.example/device', device_auth_id: 'dev-' + pid, interval: 0.001, expires_in: 900 };
+    // kimi is modelled on its REAL wire (live-captured 2026-07-28): the bare verification_uri is a code
+    // CONSUMER page and only verification_uri_complete carries ?user_code=. codex publishes NO complete form.
+    if (pid === 'kimi') {
+      d.verification_uri = 'https://www.kimi.com/code/authorize_device';
+      d.verification_uri_complete = 'https://www.kimi.com/code/authorize_device?user_code=KIMI-9';
+    } else if (pid !== 'codex') {
+      d.verification_uri_complete = 'https://auth.' + pid + '.example/device?code=' + d.user_code;
+    }
+    return { ok: true, json: async () => d };
   }
   if (kind === 'poll') {
     const q = pollScripts[pid] || [];
@@ -66,6 +75,25 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
   const polls = calls.filter(c => c.url === '/api/auth/grok/poll');
   A.eq(polls.length, 2, 'exactly two grok poll ticks were sent');
   A.ok(/dev-grok/.test(polls[0].body) && /GROK-9/.test(polls[0].body), 'the grok poll carries device_auth_id + user_code');
+
+  /* ---- open_uri: the engine picks the URL that CARRIES the code ----
+     Regression for the reported "Missing user_code parameter" kimi sign-in: the engine used to forward only
+     the bare verification_uri, so every caller opened https://www.kimi.com/code/authorize_device with no
+     code — a page that can only CONSUME a user_code — and the sign-in was unfinishable while the device and
+     poll legs were healthy. onCode must expose the bare URL for DISPLAY and a separate open_uri to OPEN. */
+  {
+    const shapes = {};
+    for (const pid of ['kimi', 'codex']) {
+      pollScripts[pid] = [{ status: 'connected' }];
+      OAuthSignIn.for(pid).start({ onCode: c => { shapes[pid] = c; } });
+    }
+    await sleep(80);
+    A.eq(shapes.kimi.verification_uri, 'https://www.kimi.com/code/authorize_device', 'kimi still DISPLAYS the bare, typeable verification_uri');
+    A.eq(shapes.kimi.open_uri, 'https://www.kimi.com/code/authorize_device?user_code=KIMI-9', 'kimi OPENS verification_uri_complete — the URL carrying ?user_code=');
+    A.ok(/[?&]user_code=/.test(shapes.kimi.open_uri), 'the opened kimi URL can never be the bare code-less page again');
+    A.eq(shapes.codex.open_uri, 'https://auth.codex.example/device', 'codex publishes no complete form, so open_uri falls back to the bare verification_uri');
+    OAuthSignIn.for('kimi').cancel(); OAuthSignIn.for('codex').cancel();
+  }
 
   // ---- single-flight is PER provider: grok + kimi can be mid-flow at the same time ----
   pollScripts.grok = [{ status: 'connected' }];
