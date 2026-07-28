@@ -3387,3 +3387,134 @@ button:disabled, select:disabled, input:disabled, textarea:disabled {
 /* dim helper copy inside windows — NOT .mc-detail (that's the CONNECTORS error-detail class, alarm-red) */
 .win-note { font-size: 12px; color: var(--ph-dim); line-height: 1.45; }
 .ob-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin-top: 12px; }
+
+
+/* ---- LOOPS window (windows/loops.js) — shape picker, live stepper, review cards -------------------------
+   The stepper is the "presentation" the loop system was missing: a loop must READ as a cycle you can see
+   yourself in, not as a spinner with a status word. Only the stage the server can prove lights up. */
+.lp-shapes { display: grid; grid-template-columns: 1fr; gap: 6px; margin: 4px 0 10px; }
+.lp-shape {
+  display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto auto; gap: 1px 10px;
+  align-items: center; text-align: left; padding: 9px 11px; cursor: pointer;
+  background: var(--panel-2, rgba(0,0,0,.25)); border: 1px solid var(--ph-faint); border-left: 3px solid transparent;
+  color: var(--ph-dim); font-family: inherit; font-size: 12px; transition: border-color .12s, background .12s;
+}
+.lp-shape:hover { border-color: var(--ph); background: var(--ph-faint); }
+.lp-shape.on { border-color: var(--ph); border-left-color: var(--gold); background: var(--ph-faint); color: var(--ph-bright); }
+.lp-shape-e { grid-row: 1 / span 3; font-size: 20px; color: var(--gold); opacity: .9; }
+.lp-shape-n { font-weight: 700; letter-spacing: .04em; color: var(--ph-bright); }
+.lp-shape-t { font-size: 11.5px; color: var(--ph-dim); }
+/* RIGOR BADGE — a hard exit condition and a self-reported one must not look alike. */
+.lp-shape-r { font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; opacity: .95; }
+.lp-shape-r.hard { color: var(--gold); }
+.lp-shape-r.soft { color: var(--ph-dim); }
+
+.lp-cycle { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 2px 0 6px; font-size: 11px; }
+.lp-step { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; margin: 5px 0 3px; }
+.lp-step-i {
+  font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; padding: 2px 7px;
+  border: 1px solid var(--ph-faint); color: var(--ph-dim); background: rgba(0,0,0,.2);
+}
+.lp-step-i.on { border-color: var(--gold); color: var(--gold); background: var(--gold-faint, rgba(255,200,80,.08)); }
+.lp-step-sep { color: var(--ph-faint); font-size: 11px; }
+
+/* a candidate awaiting a verdict — the review gate, and the whole point of the panel */
+.lp-pends { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
+.lp-pend { padding: 8px 10px; border: 1px solid var(--ph-faint); border-left: 3px solid var(--gold); background: rgba(0,0,0,.22); }
+.lp-pend-h { font-size: 12px; color: var(--ph-bright); }
+.lp-pend-b { font-size: 11.5px; color: var(--ph-dim); margin-top: 4px; line-height: 1.45; white-space: pre-wrap; }
+
+.mc-lbl { display: block; font-size: 11px; letter-spacing: .05em; text-transform: uppercase; color: var(--ph-dim); margin: 6px 0 2px; }
+.mc-lbl .key-input, .mc-lbl textarea { margin-top: 3px; text-transform: none; letter-spacing: normal; }
+.lp-dir { display: flex; gap: 6px; align-items: center; }
+.lp-dir .key-input { flex: 1 1 auto; }
+.lp-agent-pick { display: flex; flex-wrap: wrap; gap: 5px; margin: 8px 0 4px; }
+@media (min-width: 560px) { .lp-shapes { grid-template-columns: 1fr 1fr; } }
+
+/* the inline rejection-reason panel (replaced a native window.prompt) */
+.lp-why { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--ph-faint); }
+.lp-why-in { width: 100%; }
+.lp-why-cost { font-size: 11px; color: var(--bad); }
+/* the dock badge — how many loop results are waiting on the Commander */
+.bb { position: relative; }
+.lp-badge {
+  position: absolute; top: 4px; right: 6px; min-width: 15px; height: 15px; padding: 0 4px;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 700; line-height: 1; border-radius: 8px;
+  background: var(--gold); color: #0a0a0a; box-shadow: 0 0 6px rgba(255,200,80,.5);
+}
+
+/* changed-file list on a review card, and the pre-flight objective preview */
+.lp-files { font-size: 11px; color: var(--ph-dim); margin-top: 5px; line-height: 1.7; }
+.lp-files code { background: rgba(0,0,0,.3); border: 1px solid var(--ph-faint); padding: 1px 5px; margin-right: 3px; }
+.lp-preview { margin: 8px 0 6px; font-size: 11.5px; }
+.lp-preview summary { cursor: pointer; color: var(--ph-dim); letter-spacing: .04em; }
+.lp-preview summary:hover { color: var(--ph-bright); }
+.lp-preview pre {
+  margin: 6px 0 0; padding: 8px 10px; max-height: 220px; overflow: auto;
+  background: rgba(0,0,0,.3); border: 1px solid var(--ph-faint); border-left: 3px solid var(--ph-faint);
+  color: var(--ph-dim); font-size: 11px; line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+
+/* the review diff — the change itself, not a description of it */
+.lp-diff { margin-top: 6px; }
+.lp-diff summary { cursor: pointer; font-size: 11px; letter-spacing: .04em; color: var(--gold); opacity: .9; }
+.lp-diff summary:hover { opacity: 1; }
+.lp-diff-note { font-size: 10.5px; margin: 4px 0 3px; }
+.lp-diff-body {
+  margin: 0; padding: 8px 10px; max-height: 320px; overflow: auto;
+  background: rgba(0,0,0,.42); border: 1px solid var(--ph-faint); border-left: 3px solid var(--gold);
+  font-size: 11px; line-height: 1.45; white-space: pre; tab-size: 2;
+}
+.lp-diff-body .d-add  { color: #7bc88a; display: block; }
+.lp-diff-body .d-del  { color: #e0736d; display: block; }
+.lp-diff-body .d-hunk { color: var(--ph); opacity: .75; display: block; }
+.lp-diff-body .d-file { color: var(--ph-bright); display: block; }
+.lp-diff-body .d-ctx  { color: var(--ph-dim); display: block; }
+
+/* ---- the stepped START A LOOP flow: one decision at a time ---- */
+.lp-wiz { display: flex; flex-direction: column; gap: 4px; }
+.lp-step-h {
+  display: flex; align-items: center; gap: 8px; margin: 12px 0 6px;
+  font-size: 11px; letter-spacing: .09em; text-transform: uppercase; color: var(--ph-bright);
+}
+.lp-wiz > .lp-step-h:first-child { margin-top: 2px; }
+.lp-num {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; border-radius: 50%; flex: 0 0 18px;
+  background: var(--gold); color: #0a0a0a; font-size: 11px; font-weight: 700; line-height: 1;
+}
+.lp-stage { border-top: 1px dashed var(--ph-faint); padding-top: 2px; animation: lpReveal .18s ease-out; }
+@keyframes lpReveal { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+
+
+/* the check TEST readout — the one field that used to have no feedback at all */
+.lp-testout { font-size: 11px; line-height: 1.5; margin-top: 4px; }
+
+/* step 3: what will actually happen, in plain English */
+.lp-ready { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
+.lp-ready-r { display: grid; grid-template-columns: 92px 1fr; gap: 10px; align-items: baseline; font-size: 11.5px; }
+.lp-ready-r b { color: var(--ph-dim); font-weight: 600; font-size: 10.5px; letter-spacing: .05em; text-transform: uppercase; }
+.lp-ready-r span { color: var(--ph-bright); line-height: 1.5; }
+.lp-go { width: 100%; }
+
+.lp-adv { margin: 10px 0 4px; }
+.lp-adv > summary { cursor: pointer; font-size: 11px; letter-spacing: .04em; color: var(--ph-dim); }
+.lp-adv > summary:hover { color: var(--ph-bright); }
+
+/* the loop row: what you asked for, and what it has done */
+.lp-ask { font-size: 11.5px; color: var(--ph-bright); opacity: .9; margin: 3px 0 1px; line-height: 1.45; }
+.lp-hist { margin-top: 6px; }
+.lp-hist > summary { cursor: pointer; font-size: 11px; color: var(--ph-dim); letter-spacing: .04em; }
+.lp-hist > summary:hover { color: var(--ph-bright); }
+.lp-hist-r { display: grid; grid-template-columns: 26px 14px 1fr; gap: 6px; align-items: baseline; font-size: 11px; padding: 2px 0; }
+.lp-hist-n { color: var(--ph-faint); }
+.lp-hist-v { text-align: center; }
+.lp-hist-t { color: var(--ph-dim); line-height: 1.4; }
+.lp-hist-why { grid-column: 3; margin: 0 0 4px 46px; font-size: 10.5px; color: var(--bad); opacity: .85; line-height: 1.4; }
+
+/* the check line: a stated fact, not a question, when we could detect it */
+.lp-checkline { font-size: 11.5px; color: var(--ph-bright); line-height: 1.6; margin: 8px 0 4px; }
+.lp-checkline code { background: rgba(0,0,0,.35); border: 1px solid var(--ph-faint); padding: 1px 6px; color: var(--gold); }
+.lp-link { font-family: inherit; font-size: 11px; color: var(--ph-dim); background: none; border: 0; border-bottom: 1px dotted var(--ph-faint); cursor: pointer; padding: 0; margin-left: 4px; }
+.lp-link:hover { color: var(--ph-bright); border-bottom-color: var(--ph); }
