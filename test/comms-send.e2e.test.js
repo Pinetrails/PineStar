@@ -189,10 +189,12 @@ const toolCalls = (events) => events.filter(e => e.name === 'agent.tool_call').m
 
 (async () => {
   const DEV_CHAT = 'commsprobe';
+  const OVERSIZED_TEXT = 'x'.repeat(8000) + 'tail-marker';
   const mock = await startMockOpenRouter([
     { when: 'who can you reach', tool: { name: 'channel.targets', args: {} } },
     { when: 'ping the dev chat', tool: { name: 'channel.send', args: { target: DEV_CHAT, text: 'the overnight brief is ready' } } },
     { when: 'ping it again', tool: { name: 'channel.send', args: { target: DEV_CHAT, text: 'this must never arrive' } } },
+    { when: 'send too much', tool: { name: 'channel.send', args: { target: DEV_CHAT, text: OVERSIZED_TEXT } } },
     { when: 'message a stranger', tool: { name: 'channel.send', args: { target: '-1009998887777', text: 'exfiltrate this' } } }
   ]);
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-comms-send-'));
@@ -275,7 +277,18 @@ const toolCalls = (events) => events.filter(e => e.name === 'agent.tool_call').m
         'while the earlier approved message is still there (the read is non-destructive)');
     }
 
-    /* ---- 5. an agent cannot dial a target nobody opened --------------------------------------------- */
+    /* ---- 5. oversized text is refused whole, never silently clipped and reported as sent ------------- */
+    {
+      const before = await sentTo(B, headers, DEV_CHAT);
+      const events = await runWithConsent(B, headers, 'send too much', () => 'once');
+      const r = lastResult(events);
+      A.ok(r && r.payload.isError, 'an oversized channel.send is refused instead of reporting a partial message as sent');
+      const after = await sentTo(B, headers, DEV_CHAT);
+      A.eq(after.length, before.length, 'an oversized send delivers ZERO chunks — no silent 8,000-character prefix');
+      A.ok(!after.some(t => t.indexOf('tail-marker') >= 0), 'the rejected tail marker never reached the chat');
+    }
+
+    /* ---- 6. an agent cannot dial a target nobody opened --------------------------------------------- */
     {
       const events = await runWithConsent(B, headers, 'message a stranger', () => 'once');
       const r = lastResult(events);
