@@ -46,18 +46,40 @@
     "if ($dlg.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dlg.SelectedPath) }"
   ].join(' ');
 
+  // FILE mode (recipe launch forms: "point me at a file" should open the real chooser, not ask the Commander to
+  // type a path from memory). Same contract as the folder script — the chosen path on stdout, nothing on cancel,
+  // exit 0 either way — so interpret() reads both modes identically. Read-only: choosing GRANTS nothing, exactly
+  // like the folder picker; the path lands in a form field the user still has to launch.
+  const PS_FILE_SCRIPT = [
+    "Add-Type -AssemblyName System.Windows.Forms | Out-Null;",
+    "Add-Type -AssemblyName System.Drawing | Out-Null;",
+    "$owner = New-Object System.Windows.Forms.Form;",
+    "$owner.TopMost = $true; $owner.ShowInTaskbar = $false;",
+    "$owner.StartPosition = 'CenterScreen'; $owner.Size = New-Object System.Drawing.Size(0,0);",
+    "$dlg = New-Object System.Windows.Forms.OpenFileDialog;",
+    "$dlg.Title = 'Choose a file for StarNet';",
+    "$dlg.Multiselect = $false; $dlg.CheckFileExists = $true;",
+    "if ($dlg.ShowDialog($owner) -eq [System.Windows.Forms.DialogResult]::OK) { [Console]::Out.Write($dlg.FileName) }"
+  ].join(' ');
+
   // per-platform command line. null = no native picker known for this platform (honest unavailable).
-  function buildCommand(platform) {
+  // `mode` is 'folder' (default — every pre-existing caller) or 'file'.
+  function buildCommand(platform, mode) {
+    const file = mode === 'file';
     if (platform === 'win32') {
-      return { cmd: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-STA', '-Command', PS_SCRIPT] };
+      return { cmd: 'powershell.exe', args: ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-STA', '-Command', file ? PS_FILE_SCRIPT : PS_SCRIPT] };
     }
     if (platform === 'darwin') {
-      // `choose folder` returns the POSIX path on stdout; user cancel exits non-zero with -128 on stderr.
-      return { cmd: 'osascript', args: ['-e', 'POSIX path of (choose folder with prompt "Choose a project folder for StarNet")'] };
+      // `choose folder` / `choose file` return the POSIX path on stdout; user cancel exits non-zero with -128 on stderr.
+      return { cmd: 'osascript', args: ['-e', file
+        ? 'POSIX path of (choose file with prompt "Choose a file for StarNet")'
+        : 'POSIX path of (choose folder with prompt "Choose a project folder for StarNet")'] };
     }
     if (platform === 'linux') {
       // zenity is the least-bad common denominator; cancel exits 1 with empty stdout.
-      return { cmd: 'zenity', args: ['--file-selection', '--directory', '--title=Choose a project folder for StarNet'] };
+      return file
+        ? { cmd: 'zenity', args: ['--file-selection', '--title=Choose a file for StarNet'] }
+        : { cmd: 'zenity', args: ['--file-selection', '--directory', '--title=Choose a project folder for StarNet'] };
     }
     return null;
   }
@@ -67,8 +89,12 @@
   //   darwin : exit 1, stderr mentions -128  (osascript "User canceled")
   //   linux  : exit 1, empty stdout          (zenity cancel)
   // Anything else non-zero is a real failure, reported as such.
-  function interpret(platform, r) {
+  // `mode` only shapes the FAILURE noun ("file picker failed" vs "folder picker failed") — a reason line that
+  // names the wrong control is exactly the kind of small lie this app doesn't ship. Defaults to folder, so every
+  // pre-existing caller (and its tests) reads unchanged.
+  function interpret(platform, r, mode) {
     r = r || {};
+    const what = mode === 'file' ? 'file' : 'folder';
     const out = String(r.stdout == null ? '' : r.stdout).replace(/[\r\n]+$/, '').trim();
     const code = r.code | 0;
     if (code === 0) {
@@ -80,7 +106,7 @@
     const err = String(r.stderr == null ? '' : r.stderr);
     if ((platform === 'darwin' && err.indexOf('-128') >= 0) || (platform === 'linux' && code === 1 && !out))
       return { ok: true, cancelled: true };
-    return { ok: false, code: 'failed', reason: 'folder picker failed (' + (err.trim().slice(0, 200) || ('exit ' + code)) + ')' };
+    return { ok: false, code: 'failed', reason: what + ' picker failed (' + (err.trim().slice(0, 200) || ('exit ' + code)) + ')' };
   }
 
   function makeFolderPick(deps) {
@@ -94,14 +120,16 @@
 
     async function pick(o) {
       o = o || {};
+      const mode = o.mode === 'file' ? 'file' : 'folder';   // default keeps every pre-existing caller on folders
+      const what = mode === 'file' ? 'file' : 'folder';
       // THE UNATTENDED RULE: only a live user action may pop a dialog on the user's screen.
       if (o.surface !== 'interactive')
-        return { ok: false, code: 'autonomous', reason: 'the folder picker is a user action — an autonomous run cannot open dialogs.' };
-      const built = buildCommand(platform);
+        return { ok: false, code: 'autonomous', reason: 'the ' + what + ' picker is a user action — an autonomous run cannot open dialogs.' };
+      const built = buildCommand(platform, mode);
       if (!built)
-        return { ok: false, code: 'unavailable', reason: 'no native folder picker is available on this platform — type the folder path instead.' };
+        return { ok: false, code: 'unavailable', reason: 'no native ' + what + ' picker is available on this platform — type the ' + what + ' path instead.' };
       if (inFlight)
-        return { ok: false, code: 'busy', reason: 'a folder picker is already open — finish or cancel it first.' };
+        return { ok: false, code: 'busy', reason: 'a ' + what + ' picker is already open — finish or cancel it first.' };
       inFlight = true;
       try {
         return await new Promise((resolve) => {
@@ -114,8 +142,8 @@
           if (child.stdout) child.stdout.on('data', (d) => { stdout += d; });
           if (child.stderr) child.stderr.on('data', (d) => { stderr += d; });
           const timer = setTimeout(() => { try { child.kill(); } catch (_) {} finish({ ok: true, cancelled: true }); }, timeoutMs);
-          child.on('error', (e) => { clearTimeout(timer); finish({ ok: false, code: 'unavailable', reason: 'could not launch the folder picker: ' + (e && e.message || e) }); });
-          child.on('close', (code) => { clearTimeout(timer); finish(interpret(platform, { code: code, stdout: stdout, stderr: stderr })); });
+          child.on('error', (e) => { clearTimeout(timer); finish({ ok: false, code: 'unavailable', reason: 'could not launch the ' + what + ' picker: ' + (e && e.message || e) }); });
+          child.on('close', (code) => { clearTimeout(timer); finish(interpret(platform, { code: code, stdout: stdout, stderr: stderr }, mode)); });
         });
       } finally {
         inFlight = false;

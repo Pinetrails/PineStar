@@ -6168,6 +6168,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/projects/bless', h: handleProjectBless },   // NS-5c: ADD a project (interactive-only, blesses through the same path-grant machinery)
   { m: 'POST', exact: '/api/projects/forget', h: handleProjectForget },   // Projects rail: hard-forget revoked metadata (never withdraws trust)
   { m: 'POST', exact: '/api/projects/pickfolder', h: handleProjectPickFolder },   // Projects rail "browse": native OS folder chooser (grants nothing)
+  { m: 'POST', exact: '/api/pickpath', h: handlePickPath },   // typed recipe fill-ins: native file OR folder chooser (grants nothing)
   { m: 'POST', exact: '/api/harness/detect', h: handleHarnessDetect },   // IMPORT-AN-AGENT: find on-disk OpenClaw/Hermes agent homes (read-only)
   { m: 'POST', exact: '/api/harness/scan', h: handleHarnessScan },       // IMPORT-AN-AGENT: read ONE agent home into a normalized preview (read-only)
   { m: 'POST', exact: '/api/autonomy/write', h: handleAutonomyWrite },
@@ -11554,6 +11555,20 @@ async function handleProjectPickFolder(req, res) {
   let r; try { r = await folderPick.pick({ surface: 'interactive' }); }
   catch (e) { return sendJson(400, { ok: false, reason: 'folder picker failed: ' + (e && e.message || e) }); }
   sendJson(r && r.ok ? 200 : 400, r || { ok: false, reason: 'folder picker failed' });
+}
+
+// POST /api/pickpath { mode:'file'|'folder' } — the GENERIC native chooser behind a recipe launch form's typed
+// fill-in ("point me at a file" opens the OS dialog instead of asking the Commander to type a path from memory).
+// Same core, same guarantees as the Projects rail's browse button: interactive-only, single-flight, honest
+// degradation, cancel-is-not-an-error — and it GRANTS NOTHING. The chosen path is returned to the form; whether
+// the agent may actually read it is still decided by the existing path-grant machinery at run time.
+async function handlePickPath(req, res) {
+  const sendJson = (code, obj) => respondJson(res, code, obj);
+  let body = {}; try { body = JSON.parse(await readBody(req, 1 << 12)) || {}; } catch (_) { body = {}; }
+  const mode = body.mode === 'file' ? 'file' : 'folder';
+  let r; try { r = await folderPick.pick({ surface: 'interactive', mode: mode }); }
+  catch (e) { return sendJson(400, { ok: false, reason: mode + ' picker failed: ' + (e && e.message || e) }); }
+  sendJson(r && r.ok ? 200 : 400, r || { ok: false, reason: mode + ' picker failed' });
 }
 
 /* ---- IMPORT-AN-AGENT (read-only): read an existing OpenClaw / Hermes agent home off disk and return a normalized

@@ -36,7 +36,7 @@
       accent: '#cf8a7d',
       blurb: 'Reads the actual diffs and sorts the open PRs into real risk, fast merges, and stale — with reasons.',
       tags: { code: 1 },
-      params: [{ key: 'scope', label: 'Repo / area', placeholder: 'e.g. the frontend, or the whole repo', required: false, default: 'the open pull requests' }],
+      params: [{ key: 'scope', label: 'Repo / area', type: 'folder', placeholder: 'the folder to sweep — or type an area', required: false, default: 'the open pull requests' }],
       task: 'Sweep {scope} and tell me which pull requests actually need my attention. Read the diffs, not just the titles. Judge each by what its code touches (hot paths, auth, data migrations count double), whether the change is tested, and how long it has sat. Sort into: real risk / fast merge / stale. Lead with the risky ones, one line of reasoning each — and flag any PR whose description does not match its diff, because that is where surprises live.',
       category: 'developer', gear: ['cabinet'], skills: ['code-review'], cadence: 'morning',
       source: 'builtin', forkedFrom: null
@@ -49,7 +49,7 @@
       accent: '#d9a85a',
       blurb: 'Reads the manifest and lockfile, ranks the real risk, and gives a safe upgrade order — not a wall of bumps.',
       tags: { code: 0.8, research: 0.2 },
-      params: [{ key: 'project', label: 'Project / manifest', placeholder: 'e.g. this repo, or package.json', required: false, default: 'this project' }],
+      params: [{ key: 'project', label: 'Project / manifest', type: 'folder', placeholder: 'the project folder', required: false, default: 'this project' }],
       task: 'Audit the dependencies of {project}. Read the manifest and lockfile, then check each major dependency for known advisories, how far behind it is, and whether the code even still uses it. Rank by REAL risk — a vulnerable transitive dep of a dev tool is not a page-one item. Give the safe upgrade path in order: what to bump first, what to run after each bump to prove nothing broke, and any package worth replacing outright rather than upgrading. Never suggest a bump you have not sanity-checked.',
       category: 'developer', gear: ['cabinet', 'workbench'], skills: ['security-sweep'], cadence: 'weekly',
       source: 'builtin', forkedFrom: null
@@ -85,7 +85,7 @@
       accent: '#b790c0',
       blurb: 'Maps the highest-leverage cleanups by payoff-vs-risk — only debt that pays rent, no cosmetic churn.',
       tags: { code: 1 },
-      params: [{ key: 'area', label: 'Code area', placeholder: 'e.g. the auth module, or a file' }],
+      params: [{ key: 'area', label: 'Code area', type: 'file', placeholder: 'a file — or type a module / area' }],
       task: 'Scout {area} for the refactors actually worth doing. Read the code and rank cleanups by payoff-versus-risk: duplication that keeps causing divergent fixes, functions doing three jobs, dead branches, abstractions leaking their internals. For each: what it costs today, the safe refactor shape, and how contained the blast radius is. Do NOT change anything — give me the map with a one-line rationale each so I can pick. Skip cosmetic churn; only debt that pays rent makes the list.',
       category: 'developer', gear: ['cabinet'], skills: ['simplify-code', 'codebase-inspection'], cadence: null,
       source: 'builtin', forkedFrom: null
@@ -105,7 +105,7 @@
       accent: '#6fa8bf',
       blurb: 'Maps an unfamiliar repo by how it actually works — entry points, data flow, and where newcomers get bitten.',
       tags: { code: 0.7, research: 0.3 },
-      params: [{ key: 'target', label: 'Repo / directory', placeholder: 'e.g. this repo, or a subfolder', required: false, default: 'this repository' }],
+      params: [{ key: 'target', label: 'Repo / directory', type: 'folder', placeholder: 'the project folder', required: false, default: 'this repository' }],
       task: 'Orient me in {target}. Read enough to map it honestly: the entry points, how data flows through it, where the core logic lives versus the plumbing, and the conventions the code actually follows — not what the README claims. Lead with a two-sentence "what this is", then the tour in reading order. End with the three files that teach the most per minute, and the one part of the system most likely to bite a newcomer.',
       category: 'developer', gear: ['cabinet'], skills: ['codebase-inspection'], cadence: null,
       source: 'builtin', forkedFrom: null
