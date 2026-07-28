@@ -1,5 +1,13 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-27 — OUTBOUND MESSAGE INTEGRITY (`agent/quality-loop-0727b`)
+
+READY TO MERGE — the new `channel.send` tool silently clipped any payload above its 8,000-character
+call ceiling, delivered the prefix in up to five chunks, and reported success. A real-sidecar DEV-channel
+reproduction sent five partial messages (reply count 2→7) while dropping the tail. The tool now exposes
+the ceiling in its schema and refuses the whole call before target resolution or transport activity.
+Regression proof: 56 focused unit assertions, 35 real-sidecar assertions, and full `test:http` green.
+
 ## 2026-07-20 — PUBLIC-REPO RELEASE PREP (branch `claude/starnet-repo-release-prep-c41845`)
 
 Getting the source repo release-shaped for the public flip (Andrew: "essentially ready for
