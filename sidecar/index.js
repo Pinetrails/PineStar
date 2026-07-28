@@ -10319,7 +10319,17 @@ async function runOnce(o) {
   // grants exactly what the Commander placed. AUTONOMOUS/headless runs keep the full default office (no floor UI in
   // the moment; stripping a scheduled/delegated run's web+files would regress shipped work). Connectors are
   // account-level (both surfaces); the LEAD alone gets the orchestrator object so a delegated worker can't re-delegate.
-  const defaultObjects = composeOffice({ surface, lead: o.lead, connectorIds: connectors.ids(), extraObjects: o.extraObjects });
+  /* THE MOAT IS A FLOOR FACT, NOT A CONSENT FACT (2026-07-28). `surface` was carrying two orthogonal meanings:
+     WHO ANSWERS an ungranted mutation (interactive = a live prompt channel; autonomous = default-deny), and
+     WHETHER THIS RUN HAS A REAL FLOOR to read placed props off. Those coincide on /api/run and on every headless
+     caller — except a channel chat that turned /approvals ON. That chat flips to surface:'interactive' purely to
+     get a prompt channel, and silently inherited the compute-ONLY office with it: no browser ever sent
+     extraObjects, so a Telegram agent dropped from 59 tools to 2 (quest.update, tool.search) the moment the
+     Commander asked to be consulted, while /tools still described the autonomous office it no longer had.
+     `floorless` states the second meaning on its own — a phone has no floor to place props on, whoever is
+     answering the prompts — so opting into approvals can never again cost a channel run its office. */
+  const officeSurface = o.floorless ? 'autonomous' : surface;
+  const defaultObjects = composeOffice({ surface: officeSurface, lead: o.lead, connectorIds: connectors.ids(), extraObjects: o.extraObjects });
   let station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
   // UNATTENDED CAPABILITY GRANT (2026-07-25) — the OBJECT half. The authority gate below now lets a granted
   // unattended run keep shell.exec/verify.run, but a capability still needs its object to exist or resolveTools

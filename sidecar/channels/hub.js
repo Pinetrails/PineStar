@@ -917,6 +917,11 @@
             key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
             emit: sink, signal: ac.signal, runId, trigger: 'event',
             surface: wantApprovals ? 'interactive' : 'autonomous',
+            // ...but ONLY for who answers a consent prompt. A phone has no floor to place props on, so this run
+            // composes the headless office either way. Without this, /approvals on silently cut the agent from
+            // the full autonomous office to compute-only (2 tools) — THE MOAT is floor-real placement, and there
+            // is no floor here to be real about. See runOnce's `floorless` note (2026-07-28).
+            floorless: true,
             prompt: consentPrompt,
             broadcast: true,   // P1: mirror this routed run's lifecycle to the station floor over SSE — it has no browser-local stream
             // A channel task is real work the agent should learn from, exactly like a COMMS task. Admission is
