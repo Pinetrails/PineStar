@@ -1808,7 +1808,7 @@ const Chat = (() => {
     if (/summon/.test(t)) return 'summon a new agent onto the crew' + (ev.argsSummary ? ' (' + ev.argsSummary + ')' : '');
     // NS-5 conversational path trust: a file was referenced OUTSIDE the agent's workspace — "Always" blesses
     // the whole project folder for future reads (revocable in Permissions); argsSummary is the proposed root.
-    if (t === 'path.trust') return 'work with files in ' + (ev.argsSummary || 'a project folder') + ' (reads; "Always" trusts it for later)';
+    if (t === 'path.trust') return 'work with files in ' + (ev.argsSummary || 'a project folder') + ' (reads; "Always" or "Full access" trusts it for later)';
     // ATTENDED BROWSER LOGIN: two-phase takeover. Phase 1 asks to open a visible Chrome window the COMMANDER
     // drives; phase 2 holds the run until they click Done. Password honesty is part of the card copy.
     if (t === 'browser.login') return 'open a browser window so YOU can log in to ' + (ev.argsSummary || 'a website') + ' (you type your password in that window — the agent never sees it)';
@@ -1831,12 +1831,12 @@ const Chat = (() => {
       // surface the decision on the bus (schema: permission.response) so listeners — e.g. the first-run tutorial —
       // can tell an approve from a deny and narrate the consent loop honestly. Additive; the run resumes via Harness.consent.
       try { if (typeof U !== 'undefined' && U.bus) U.bus.emit('permission.response', { promptId: p.promptId, decision: decision }); } catch (_) {}
-      // NS conversational anchor: "Always" on a path.trust card IS the project bless (a standing path grant +
-      // known-projects row land on the sidecar). Stamp the origin session's projectRoot with the SAME proposed
-      // root so the PROJECTS rail lists this session under its project — the identical anchor "Work here" stamps.
-      // Only "Always" (once/full grant nothing standing, so there is no project row to attach to), and never
-      // overwrite an anchor the session already has.
-      if (p.tool === 'path.trust' && decision === 'always' && ws && typeof Workstreams !== 'undefined' && Workstreams.setProjectRoot) {
+      // NS conversational anchor: "Always" — and now "Full access" — on a path.trust card IS the project bless
+      // (a standing path grant + known-projects row land on the sidecar). Stamp the origin session's projectRoot
+      // with the SAME proposed root so the PROJECTS rail lists this session under its project — the identical
+      // anchor "Work here" stamps. Both standing grades, never "once" (it grants nothing standing, so there is
+      // no project row to attach to), and never overwrite an anchor the session already has.
+      if (p.tool === 'path.trust' && (decision === 'always' || decision === 'full') && ws && typeof Workstreams !== 'undefined' && Workstreams.setProjectRoot) {
         try { if (p.argsSummary && !(Workstreams.get(ws.id) || {}).projectRoot) Workstreams.setProjectRoot(ws.id, p.argsSummary); } catch (_) {}
       }
       if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id, Date.now());   // closes the paused span — approval wait never counts as run time
