@@ -127,5 +127,73 @@ async function collect(provider, req) { const out = []; for await (const e of pr
   }
 
   A.eq(_internals.finishFor('MAX_TOKENS', false), 'length', 'MAX_TOKENS -> length');
+  /* ---- THINKING. This adapter published ['none'] and sent no thinking parameter at all, so a Commander on
+       their own Gemini key ran a NON-thinking Gemini. Two contracts, and sending BOTH to a Gemini 3 model is
+       a documented error — so the split is asserted, not assumed. ---- */
+  {
+    let seen = null;
+    // Key on the STREAM path specifically: the catalog warm-up hits the same host and would otherwise be
+    // mistaken for the generate call (and fires asynchronously, so it can land either side of it).
+    const bodyFetch = () => async (url, init) => {
+      if (!/streamGenerateContent/.test(url)) return new Response('{"models":[]}', { status: 200 });
+      seen = JSON.parse(init.body);
+      return new Response('data: {"candidates":[{"finishReason":"STOP"}]}\n\n', { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+    };
+    const ask = async (model, opts, reqOpts) => {
+      seen = null;
+      const p = makeGeminiProvider(Object.assign({ fetch: bodyFetch(), key: 'k' }, opts || {}));
+      for await (const _ of p.stream(Object.assign({ model, messages: [{ role: 'user', content: 'hi' }] }, reqOpts || {}))) { /* drain */ }
+      return seen;
+    };
+
+    // MODERN (Gemini 3+): thinkingLevel, and NEVER a budget alongside it.
+    let b = await ask('gemini-3-pro', { reasoningEffort: 'high' });
+    A.eq(b.generationConfig.thinkingConfig, { thinkingLevel: 'HIGH' }, 'a modern Gemini gets thinkingLevel');
+    A.eq(b.generationConfig.thinkingConfig.thinkingBudget, undefined, 'and NEVER a budget beside it — that pairing is a documented error');
+
+    // LEGACY (2.5): thinkingBudget, never a level.
+    b = await ask('gemini-2.5-flash', { reasoningEffort: 'high' });
+    A.eq(typeof b.generationConfig.thinkingConfig.thinkingBudget, 'number', 'a 2.5 model gets a thinkingBudget');
+    A.eq(b.generationConfig.thinkingConfig.thinkingLevel, undefined, 'and never a level — 2.5 does not support it');
+    A.ok(b.generationConfig.thinkingConfig.thinkingBudget <= 24576, 'the budget stays under the smallest cap in the family');
+
+    // 'none' means OFF on 2.5, and the floor on modern (some Gemini 3 models cannot stop thinking).
+    b = await ask('gemini-2.5-flash', { reasoningEffort: 'none' });
+    A.eq(b.generationConfig.thinkingConfig.thinkingBudget, 0, "'none' disables thinking on 2.5");
+    b = await ask('gemini-3-pro', { reasoningEffort: 'none' });
+    A.eq(b.generationConfig.thinkingConfig.thinkingLevel, 'MINIMAL', "'none' on a modern model asks for the floor rather than an unsupported off");
+
+    // An UNKNOWN Gemini defaults to the MODERN contract — an allowlist of new versions goes stale silently.
+    b = await ask('gemini-4-ultra-preview', { reasoningEffort: 'medium' });
+    A.eq(b.generationConfig.thinkingConfig.thinkingLevel, 'MEDIUM', 'an unrecognised Gemini takes the newest contract');
+
+    // A per-request effort beats the construction default, and a non-Gemini endpoint gets nothing.
+    b = await ask('gemini-3-pro', { reasoningEffort: 'low' }, { reasoningEffort: 'high' });
+    A.eq(b.generationConfig.thinkingConfig.thinkingLevel, 'HIGH', 'req.reasoningEffort overrides the provider default');
+    b = await ask('some-vendor/model', { reasoningEffort: 'high' });
+    A.eq(b.generationConfig, undefined, 'a non-Gemini model on a Gemini-shaped endpoint gets no thinking config at all');
+
+    // The published capability must match what the wire accepts, or the dock offers a dead control.
+    const p = makeGeminiProvider({ fetch: bodyFetch(), key: 'k' });
+    A.eq(p.reasoningEfforts('gemini-3-pro').indexOf('none'), -1, 'a modern model does not advertise an off switch it lacks');
+    A.ok(p.reasoningEfforts('gemini-2.5-flash').indexOf('none') >= 0, 'a 2.5 model does advertise one');
+  }
+
+  /* ---- A THOUGHT PART IS NOT THE ANSWER. Reachable before any thinking parameter existed here: the
+       `includeThoughts:false` default is documented as silently ignored on some models. ---- */
+  {
+    const sse = [
+      'data: {"candidates":[{"content":{"parts":[{"text":"let me work through this","thought":true}]}}]}',
+      '',
+      'data: {"candidates":[{"content":{"parts":[{"text":"The answer is 4."}]},"finishReason":"STOP"}]}',
+      '', ''
+    ].join('\n');
+    const p = makeGeminiProvider({ fetch: async () => new Response(sse, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }), key: 'k' });
+    const evs = [];
+    for await (const e of p.stream({ model: 'gemini-3-pro', messages: [{ role: 'user', content: 'hi' }] })) evs.push(e);
+    A.eq(evs.filter(e => e.type === 'text').map(e => e.delta).join(''), 'The answer is 4.', 'a thought part NEVER reaches the answer the Commander reads');
+    A.eq(evs.filter(e => e.type === 'reasoning').length, 1, 'it comes back as reasoning instead, so nothing is silently discarded');
+  }
+
   A.report('provider.gemini.test');
 })().catch(e => { console.log('FAIL: provider.gemini.test threw -- ' + (e && e.stack || e)); process.exit(1); });

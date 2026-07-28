@@ -2951,6 +2951,10 @@ body.crew-rail-off #screen-game.active {
 .mc-tools code { font-size: 11px; color: var(--ph); border: 1px solid var(--ph-dim); border-radius: 4px; padding: 1px 5px; background: rgba(0,0,0,.4); }
 .mc-acts { margin-top: 8px; display: flex; gap: 6px; flex-wrap: wrap; }
 .mc-form { display: flex; flex-direction: column; gap: 6px; }
+/* EXTENSIONS authoring: two fields side by side on a wide panel, stacked when the console is narrow. No
+   colours or chrome of its own — it inherits .key-input / .bb so it can never drift from the control floor. */
+.ext-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+@media (max-width: 620px) { .ext-pair { grid-template-columns: 1fr; } }
 /* ROUTINES — RUN NOW result (P0 #11): renders inline in the ACTIVE pane, spliced under the row that fired it,
    framed like a mini terminal so the paid run's output is unmissable (never streamed into the hidden CREATE pane). */
 .rt-out { margin: 2px 0 8px; border: 1px solid var(--ph-dim); border-left: 2px solid var(--ph);

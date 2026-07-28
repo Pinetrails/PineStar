@@ -52,8 +52,15 @@ test/credits.test.js
 test/friendlyerror.test.js
 test/codexsignin.test.js
 test/oauthsignin.test.js
+test/hooks.test.js
+test/shellhooks.test.js
+test/hooks.wiring.test.js
+test/plugins.test.js
 test/loop.replay.test.js
 test/loop.steer.test.js
+test/loop.verify-on-stop.test.js
+test/loop.parallel-tools.test.js
+test/loop.tool-images.test.js
 test/loop.provider-recovery.test.js
 test/compaction.test.js
 test/loopguard.test.js
@@ -173,6 +180,8 @@ test/transcript.test.js
 test/recall.test.js
 test/fs.jail.test.js
 test/fs.patch.test.js
+test/fs.stale-write.test.js
+test/docextract.test.js
 test/web.ssrf.test.js
 test/web.search.test.js
 test/web.fence.test.js
@@ -386,6 +395,7 @@ test/channels.parity.test.js
 test/channels.buttons.test.js
 test/channels.sse.test.js
 test/mcp.client.test.js
+test/mcp.resources-prompts.test.js
 test/mcp.transport.test.js
 test/mcp.stdio.test.js
 test/mcp.catalog.test.js

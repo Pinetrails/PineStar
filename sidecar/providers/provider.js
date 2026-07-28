@@ -8,6 +8,11 @@
          | { type:'tool_start', index, id, name }
          | { type:'tool_args',  index, chunk }   // argument STRING fragment
          | { type:'tool_done',  index }
+         | { type:'reasoning',  block }          // OPTIONAL, one per COMPLETED provider-native reasoning block.
+         |     `block` is OPAQUE to the loop: it parks the blocks on the assistant turn (`msg.reasoning`) and
+         |     hands them back to the same adapter on the next request. This exists because signed thinking
+         |     blocks must be replayed VERBATIM beside that turn's tool_calls or the provider rejects the turn.
+         |     Reasoning is NEVER a 'text' event — the loop concatenates those into the delivered answer.
          | { type:'usage',      usage }          // prompt_tokens, completion_tokens, total_tokens,
          |                                       //   prompt_tokens_details.cached_tokens, reasoning_tokens, cost
          | { type:'done',       finishReason, truncated? }   // finishReason normalized via normalizeFinish()
@@ -31,7 +36,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   'use strict';
 
-  const EVENT_TYPES = ['text', 'tool_start', 'tool_args', 'tool_done', 'usage', 'done'];
+  const EVENT_TYPES = ['text', 'tool_start', 'tool_args', 'tool_done', 'reasoning', 'usage', 'done'];
   const FINISH = ['tool_calls', 'stop', 'length', 'content_filter', 'error'];
 
   function normalizeFinish(r) {

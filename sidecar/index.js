@@ -29,7 +29,13 @@ const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeBrowserTools } = require('./tools/builtin/browser.js');
 const { makeComputerTools } = require('./tools/builtin/computer.js');
 const { makeDesktopTools } = require('./tools/builtin/desktop.js');
+const { makeHooks } = require('./hooks.js');                 // the hook spine: pre/post tool + llm, session, compress
+const { makeShellHooks } = require('./shellhooks.js');       // the Commander's shell scripts, on that spine
+const { makePluginLoader } = require('./plugins.js');        // packaged JS extensions, on that same spine
 const { makeFsTools } = require('./tools/builtin/fs.js');
+// fs.read extracts .docx / .xlsx / .ipynb to readable text. inflateRawSync is injected so the extractor stays
+// pure + headless-testable, and so the OOXML path needs no dependency beyond what Node already ships.
+const docExtract = require('./tools/builtin/docextract.js').makeDocExtract({ inflateRaw: require('node:zlib').inflateRawSync });
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
 const { makeToolSearchTool } = require('./tools/builtin/toolsearch.js');   // tool.search: reach a granted-but-unadvertised (deferred) tool
@@ -92,7 +98,10 @@ const { makeConsentBroker } = require('./permissions.js');
 const { makeGrantManager } = require('./permgrants.js');
 const { makeProjectsStore } = require('./projects-store.js');   // NS-5: known-projects (blessed roots) durable store
 const { makePathTrust } = require('./pathtrust.js');            // NS-5: conversational path-trust guard
-const { makeProjectBless, projectScopeLine } = require('./projectbless.js');      // NS-5c: ADD-a-project bless core (second doorway, same grant machinery) + project-scoped run context line
+// Tool-result images (browser.screenshot / browser.vision -> real pixels in the prompt). ON by default; set
+// SKYNET_TOOL_IMAGES=0 for a text-only endpoint that rejects image content parts.
+const TOOL_IMAGES_ON = String(process.env.SKYNET_TOOL_IMAGES == null ? '' : process.env.SKYNET_TOOL_IMAGES).trim() !== '0';
+const { makeProjectBless, projectScopeLine, makeProjectInstructions } = require('./projectbless.js');      // NS-5c: ADD-a-project bless core (second doorway, same grant machinery) + project-scoped run context line + the project's own AGENTS.md/CLAUDE.md house rules
 const { makeFolderPick } = require('./folderpick.js');          // Projects rail "browse": native OS folder chooser (convenience only — bless stays the consent)
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeTelegramTransport } = require('./channels/telegram.transport.js');   // multi-bot connect: getMe token probe
@@ -2056,6 +2065,9 @@ const projectScan = makeProjectScan({
   }),
   fsp, pathMod: path, isBlessed: isBlessedRoot
 });
+// The blessed project's OWN house rules (AGENTS.md / CLAUDE.md / .cursorrules). Same trust gate as the folder
+// line below it: nothing is read for a root that is not a standing blessed grant.
+const projectInstructions = makeProjectInstructions({ fsp, pathMod: path, redact });
 
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
 // full-access ("YOLO") blanket grants the user clicks mid-run: per-AGENT (not per-run), in-memory only, so a
@@ -2183,6 +2195,51 @@ function voiceFetchOpts(base, timeoutMs) {
   return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base;
 }
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
+
+/* HOOKS — the Commander's own code in the agent's path (sidecar/hooks.js + sidecar/shellhooks.js).
+   ONE spine for the whole station, built at boot and shared by every run: a hook that only fired on the
+   browser surface would be a rule the Commander thinks is enforced and isn't. The shell bridge is installed
+   once here; every (event, command) pair stays pending until explicitly allowed, so a hooks.json that arrived
+   by repo checkout or a restored backup does nothing until the Commander says so. */
+const HOOKS_FILE = path.join(WORKSPACES, 'hooks.json');
+const HOOKS_ALLOW_FILE = path.join(WORKSPACES, 'hooks-allowed.json');
+const hookSpine = makeHooks({ onError: (e) => console.warn('[hooks] ' + (e && e.hook) + ' on ' + (e && e.event) + ': ' + (e && e.error)) });
+const shellHooks = makeShellHooks({
+  spawn: childSpawn, fsp, pathMod: path, hooksFile: HOOKS_FILE, allowFile: HOOKS_ALLOW_FILE,
+  cwd: WORKSPACES, clock: { now: () => Date.now() },
+  onError: (e) => console.warn('[hooks] ' + (e && e.hook) + ': ' + (e && e.error))
+});
+/* PLUGINS — the packaged form of the same idea (sidecar/plugins.js). Scoped SURFACE: the only thing a plugin
+   is handed is `on(event, handler)` against this same spine. Inert until explicitly allowed, keyed to a hash
+   of the code itself so a silent edit re-asks. */
+const PLUGINS_DIR = path.join(WORKSPACES, 'plugins');
+const PLUGINS_ALLOW_FILE = path.join(WORKSPACES, 'plugins-allowed.json');
+const pluginLoader = makePluginLoader({
+  fsp, pathMod: path, dir: PLUGINS_DIR, allowFile: PLUGINS_ALLOW_FILE,
+  requireModule: (p) => require(p), hash: (s) => crypto.createHash('sha256').update(String(s)).digest('hex'),
+  guard: skillGuard, clock: { now: () => Date.now() },
+  onError: (e) => console.warn('[plugins] ' + (e && e.plugin) + ': ' + (e && e.error))
+});
+let pluginsLoaded = { loaded: [], pending: [], errors: [] };
+let hooksInstalled = { installed: [], pending: [], errors: [] };
+async function installShellHooks() {
+  /* ORDER IS LOAD-BEARING: plugins register BEFORE shell hooks, mirroring the reference harness. The spine
+     reports the FIRST block's reason, so on a blocking event this decides who gets to explain the refusal —
+     and an in-process plugin is the more specific authority. */
+  try {
+    pluginsLoaded = await pluginLoader.load(hookSpine);
+    for (const err of pluginsLoaded.errors) console.warn('[plugins] ' + err);
+    if (pluginsLoaded.loaded.length) console.log('  · ' + pluginsLoaded.loaded.length + ' plugin(s) active');
+    if (pluginsLoaded.pending.length) console.log('  · ' + pluginsLoaded.pending.length + ' plugin(s) awaiting approval (POST /api/plugins/allow)');
+  } catch (e) { console.warn('[plugins] load failed: ' + ((e && e.message) || e)); }
+  try { hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { console.warn('[hooks] install failed: ' + ((e && e.message) || e)); return; }
+  for (const err of hooksInstalled.errors) console.warn('[hooks] ' + err);
+  if (hooksInstalled.installed.length) console.log('  · ' + hooksInstalled.installed.length + ' shell hook(s) active');
+  // Pending is NOT a failure — it is the consent gate doing its job, and it has to be visible or the
+  // Commander will think a hook they wrote is running when it is not.
+  if (hooksInstalled.pending.length) console.log('  · ' + hooksInstalled.pending.length + ' hook(s) awaiting approval (POST /api/hooks/allow)');
+}
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 // ---- channel bot tokens: keychain-backed on desktop, plaintext-file fallback in the bare sidecar ----
 // Runtime token layer, mirroring runtimeKeys for provider API keys. On the desktop build the token source of
@@ -2587,7 +2644,7 @@ const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: (
 // *_API_KEY from the inherited env, so without this the pasted key never reaches curl (see servicekeys.runEnv).
 const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: () => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV }) });
 try { console.log('[exec-env]', JSON.stringify(executionEnvironment.describe())); } catch (_) {}
-const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200 });
+const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200, hooks: hookSpine });
 
 // per-agent inbound work-item depth (backpressure): bumped when a message is admitted, dropped when its
 // run finishes. Drives queue.status -> the queue-depth HUD. Keyed by the SAME agentId the hub routes to.
@@ -6242,6 +6299,16 @@ const ROUTES = [
   // card can validate the typed path inline instead of failing silently on Keep. Strictly less powerful than
   // the existing keep copy (which already writes to an arbitrary destPath) — this only reports exists/isDir.
   { m: 'GET', qsplit: '/api/fs/dirstat', h: handleDirStat },
+  { m: 'GET', exact: '/api/hooks', h: handleHooksList },
+  { m: 'POST', exact: '/api/hooks/allow', h: handleHooksAllow },
+  { m: 'POST', exact: '/api/hooks/revoke', h: handleHooksRevoke },
+  { m: 'POST', exact: '/api/hooks/create', h: handleHooksCreate },
+  { m: 'POST', exact: '/api/hooks/delete', h: handleHooksDelete },
+  { m: 'GET', exact: '/api/plugins', h: handlePluginsList },
+  { m: 'POST', exact: '/api/plugins/allow', h: handlePluginsAllow },
+  { m: 'POST', exact: '/api/plugins/revoke', h: handlePluginsRevoke },
+  { m: 'POST', exact: '/api/plugins/create', h: handlePluginsCreate },
+  { m: 'POST', exact: '/api/plugins/delete', h: handlePluginsDelete },
   { m: 'POST', exact: '/api/checkpoint/restore', h: handleCheckpointRestore },
   { m: 'GET', prefix: '/api/checkpoint', h: handleCheckpointList },
   { m: 'GET', exact: '/api/health', h: (req, res) => { res.writeHead(200); return res.end('ok'); } },
@@ -6335,6 +6402,9 @@ server.listen(PORT, '127.0.0.1', () => {
     ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
     () => {}
   );
+  // Install the Commander's shell hooks onto the station-wide spine. Awaited-but-guarded: a hooks file that
+  // is broken must delay nothing and break nothing at boot.
+  installShellHooks().catch(() => {});
   // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).
   try {
     const t = (channelSecrets && channelSecrets.telegram) || {};
@@ -8819,6 +8889,189 @@ async function handleWorkshopShiftNow(req, res) {
   try { res.end(); } catch (_) {}
 }
 
+/* THE AUTHORING ROUTES. Without these there was no way to make an extension except to find a folder and
+   hand-write JSON — which meant the whole feature was, in practice, unreachable. Creating through the station
+   AUTO-APPROVES: the Commander typed it here, on purpose, and asking them to then approve their own keystrokes
+   is theatre. The allowlist still governs everything that arrives by any other route. */
+async function handleHooksCreate(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const event = String((body && body.event) || '').trim();
+  if (hookSpine.events().indexOf(event) < 0) return json(400, { error: 'unknown event — pick one of: ' + hookSpine.events().join(', ') });
+  const r = await shellHooks.create({ event, command: (body && body.command) || '', name: (body && body.name) || '' });
+  if (!r.ok) return json(400, { error: r.error });
+  try { hookSpine.clear(); pluginsLoaded = await pluginLoader.load(hookSpine); hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { return json(500, { error: 'created, but could not start it: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length });
+}
+async function handleHooksDelete(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const event = String((body && body.event) || '').trim();
+  const command = String((body && body.command) || '').trim();
+  if (!event || !command) return json(400, { error: 'event and command are required' });
+  if (!(await shellHooks.remove(event, command))) return json(404, { error: 'no such hook' });
+  try { hookSpine.clear(); pluginsLoaded = await pluginLoader.load(hookSpine); hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { return json(500, { error: 'deleted, but reload failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length });
+}
+async function handlePluginsCreate(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const r = await pluginLoader.scaffold({ id: (body && body.id) || '', name: (body && body.name) || '', description: (body && body.description) || '' });
+  if (!r.ok) return json(400, { error: r.error });
+  try { hookSpine.clear(); pluginsLoaded = await pluginLoader.load(hookSpine); hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { return json(500, { error: 'created, but could not load it: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, id: r.id, active: pluginsLoaded.loaded.length });
+}
+async function handlePluginsDelete(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const id = String((body && body.id) || '').trim();
+  if (!id) return json(400, { error: 'id is required' });
+  if (!(await pluginLoader.destroy(id))) return json(404, { error: 'no such plugin' });
+  try { hookSpine.clear(); pluginsLoaded = await pluginLoader.load(hookSpine); hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { return json(500, { error: 'deleted, but reload failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: pluginsLoaded.loaded.length });
+}
+
+/* The two REVOKE routes. Written as their own handlers rather than a flag on allow, because "take this away"
+   must never be one mistyped field away from "grant this" — and because the honest answer to revoking
+   something that was never allowed is 404, not a cheerful ok:true. Both rebuild the spine in place, so the
+   revoked extension stops running immediately rather than at the next restart. */
+async function handleHooksRevoke(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const event = String((body && body.event) || '').trim();
+  const command = String((body && body.command) || '').trim();
+  if (!event || !command) return json(400, { error: 'event and command are required' });
+  if (!(await shellHooks.revoke(event, command))) return json(404, { error: 'that hook was not approved' });
+  try {
+    hookSpine.clear();
+    pluginsLoaded = await pluginLoader.load(hookSpine);
+    hooksInstalled = await shellHooks.install(hookSpine);
+  } catch (e) { return json(500, { error: 'revoked, but re-install failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length, pending: hooksInstalled.pending.length });
+}
+async function handlePluginsRevoke(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const id = String((body && body.id) || '').trim();
+  if (!id) return json(400, { error: 'id is required' });
+  if (!(await pluginLoader.revoke(id))) return json(404, { error: 'that plugin was not approved' });
+  try {
+    hookSpine.clear();
+    pluginsLoaded = await pluginLoader.load(hookSpine);
+    hooksInstalled = await shellHooks.install(hookSpine);
+  } catch (e) { return json(500, { error: 'revoked, but re-load failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: pluginsLoaded.loaded.length, pending: pluginsLoaded.pending.length });
+}
+
+/* GET /api/plugins — installed / active / pending, with each pending plugin's GUARD FINDINGS attached. The
+   findings are the point of showing them here: the Commander is about to approve third-party in-process code,
+   and an approval prompt that cannot say what the code appears to do is a rubber stamp. */
+async function handlePluginsList(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let found = { plugins: [], errors: [] };
+  try { found = await pluginLoader.discover(); } catch (_) {}
+  let pending = [];
+  try { pending = await pluginLoader.listPending(); } catch (_) {}
+  const live = new Set(pluginsLoaded.loaded.map(p => p.id));
+  const pend = new Set(pending.map(p => p.id));
+  return json(200, {
+    dir: PLUGINS_DIR,
+    plugins: found.plugins.map(p => ({
+      id: p.id, name: p.name, version: p.version, description: p.description,
+      active: live.has(p.id), pending: pend.has(p.id), digest: p.digest, findings: p.findings || null
+    })),
+    errors: (found.errors || []).concat(pluginsLoaded.errors || [])
+  });
+}
+/* POST /api/plugins/allow { id, digest } — approve THIS EXACT CODE and load it without a restart.
+   The digest is REQUIRED and must match what is on disk right now: approving by id alone would let a plugin
+   that changed between the moment the Commander read it and the moment they clicked be approved sight-unseen,
+   which is precisely the substitution the hash exists to prevent. */
+async function handlePluginsAllow(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const id = String((body && body.id) || '').trim();
+  const digest = String((body && body.digest) || '').trim();
+  if (!id || !digest) return json(400, { error: 'id and digest are required' });
+  let found;
+  try { found = await pluginLoader.discover(); } catch (_) { found = { plugins: [] }; }
+  const match = found.plugins.find(p => p.id === id);
+  if (!match) return json(404, { error: 'no such plugin installed: ' + id });
+  if (match.digest !== digest) return json(409, { error: 'this plugin changed since you read it — re-read /api/plugins and approve the current code', digest: match.digest });
+  if (!(await pluginLoader.allow(id, digest))) return json(500, { error: 'could not persist the approval' });
+  // Same in-place rebuild as the hooks route, and the same ordering: plugins first, then shell hooks.
+  try {
+    hookSpine.clear();
+    pluginsLoaded = await pluginLoader.load(hookSpine);
+    hooksInstalled = await shellHooks.install(hookSpine);
+  } catch (e) { return json(500, { error: 'approved, but re-load failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: pluginsLoaded.loaded.length, pending: pluginsLoaded.pending.length });
+}
+
+/* GET /api/hooks — what the Commander configured, what is LIVE, and what is waiting on them. The pending list
+   is the whole reason this route exists: a hook that silently never runs because it was never approved is the
+   worst outcome of the consent gate, so it has to be visible and actionable rather than buried in a boot log. */
+async function handleHooksList(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let cfg = { hooks: [], errors: [] };
+  try { cfg = await shellHooks.load(); } catch (_) {}
+  let pending = [];
+  try { pending = await shellHooks.listPending(); } catch (_) {}
+  const live = new Set(hooksInstalled.installed.map(h => h.event + ' ' + h.command));
+  return json(200, {
+    events: hookSpine.events(),
+    hooks: cfg.hooks.map(h => ({ event: h.event, command: h.command, name: h.name, active: live.has(h.event + ' ' + h.command) })),
+    pending: pending.map(h => ({ event: h.event, command: h.command, name: h.name })),
+    errors: (cfg.errors || []).concat(hooksInstalled.errors || []),
+    file: HOOKS_FILE
+  });
+}
+/* POST /api/hooks/allow { event, command } — approve one pair and install it WITHOUT a restart. Interactive
+   only, and deliberately so: approving a script that runs at station privilege on every tool call is exactly
+   the decision an unattended run must never be able to make for itself (the same unattended rule that governs
+   path blessing). The pair must already exist in hooks.json — this route approves, it never adds. */
+async function handleHooksAllow(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const event = String((body && body.event) || '').trim();
+  const command = String((body && body.command) || '').trim();
+  if (!event || !command) return json(400, { error: 'event and command are required' });
+  let cfg;
+  try { cfg = await shellHooks.load(); } catch (_) { cfg = { hooks: [] }; }
+  const match = cfg.hooks.find(h => h.event === event && h.command === command);
+  if (!match) return json(404, { error: 'no such hook in hooks.json — this route approves a configured hook, it never adds one' });
+  if (!(await shellHooks.allow(event, command))) return json(500, { error: 'could not persist the approval' });
+  // Re-install so the newly-approved hook is live immediately, with no restart. The spine is cleared IN PLACE
+  // rather than replaced: it was captured by reference at boot (by the dispatch ctx and by every in-flight
+  // run), so handing out a new object would leave those holding the old one and the reload would look like it
+  // did nothing. Clearing first is what stops the already-installed hooks being registered a second time.
+  try {
+    hookSpine.clear();
+    hooksInstalled = await shellHooks.install(hookSpine);
+  } catch (e) { return json(500, { error: 'approved, but re-install failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length, pending: hooksInstalled.pending.length });
+}
+
 /* POST /api/checkpoint/restore { agentId, snapshotId } — the manual "rewind": hard-reset an agent's workspace to
    a recorded snapshot (and drop files created since). Only restores a snapshotId IN that agent's index (never an
    arbitrary git ref); 127.0.0.1-bound. The auto-snapshots that feed this come from the opt-in dispatch hook. */
@@ -9344,7 +9597,12 @@ async function handleRun(req, res) {
   // the scanner uses). An un-blessed/revoked/garbage root injects NOTHING: the run must never assert folder
   // access the grant layer can't prove. The line rides `system` so it reaches every provider identically.
   const projectRootRaw = (body && typeof body.projectRoot === 'string') ? body.projectRoot.trim().slice(0, 4096) : '';
-  const projectLine = projectScopeLine(projectRootRaw, !!(projectRootRaw && isBlessedRoot(projectRootRaw)));
+  const projectBlessed = !!(projectRootRaw && isBlessedRoot(projectRootRaw));
+  const projectLine = projectScopeLine(projectRootRaw, projectBlessed);
+  // ...and the project's OWN house rules, on the same grant. Read ONCE here, before the run, so the text is
+  // byte-stable for the whole run and never shifts the cached system prefix mid-stream (providers/anthropic.js).
+  let projectRules = '';
+  try { projectRules = (await projectInstructions.load(projectRootRaw, projectBlessed)).text || ''; } catch (_) { projectRules = ''; }
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
   // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify
@@ -9478,7 +9736,7 @@ async function handleRun(req, res) {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system: projectLine ? (String(system || '') + projectLine) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
+      key, model, system: (projectLine || projectRules) ? (String(system || '') + projectLine + projectRules) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive', internal,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
       loginPrompt: askHuman,   // attended browser login: browser.login's two consent asks ride the same fail-closed permission.prompt channel
@@ -9810,7 +10068,7 @@ async function runOnce(o) {
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
   const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, { scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null, agentId: (o2 && o2.agentId) || agentId });
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
   widgetTools.register(registry);   // WIDGET RAILS Phase 2: widget.set — agent-fed rail readouts (memory capability: sandboxed local write, no consent, no network)
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
@@ -10135,11 +10393,31 @@ async function runOnce(o) {
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
+  let parkSeq = 0;   // distinguishes parked outputs within one run (see parkOutput below)
   const capCtx = makeCapCtx(resolved, Object.assign({
     emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal,
     origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }),   // stamped onto notebook.write records: WHICH surface formed this belief
     authorize: userControlAuthority.authorize,
     userControl: userControlAuthority,
+    // HOOKS reach the tool boundary through the dispatch ctx. registry.js consults them AFTER the authority,
+    // capability, schema and consent gates — so a hook can only ever remove a permission, never add one.
+    hooks: hookSpine,
+    cwd: WORKSPACES,
+    // OUTPUT PARKING: the host half of the tool-output cap. Over-cap output is written WHOLE into the agent's
+    // own workspace before the clamp destroys its middle, and the result points the model at the file — the
+    // work was already done and paid for, so the part that did not fit is recoverable instead of gone. Lands
+    // in the same jail fs.read already serves, so reading it back needs no new capability. Best effort by
+    // design: a parker that fails degrades to the plain clamp rather than failing the tool call.
+    parkOutput: async (content, meta) => {
+      try {
+        const ws = await executionEnvironment.ensureWorkspace(fsJail.safeAgentId(agentId || 'agent'));
+        await fsp.mkdir(path.join(ws, '.output'), { recursive: true });
+        const safeTool = String((meta && meta.tool) || 'tool').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40);
+        const rel = '.output/' + safeTool + '-' + String(runId || 'run').replace(/[^A-Za-z0-9_-]/g, '') + '-' + (parkSeq++) + '.txt';
+        await fsp.writeFile(path.join(ws, rel), String(content), 'utf8');
+        return { path: rel };   // WORKSPACE-RELATIVE: the exact string fs.read takes, not a host absolute path
+      } catch (_) { return null; }
+    },
     // Explicitly false in all current runOnce flows. This makes the deny visible at the
     // tool boundary even if a future refactor accidentally re-adds computer.use to tools.
   }, runInputContext(surface, isTask)));
@@ -10326,6 +10604,24 @@ async function runOnce(o) {
   // calls a GRANTED tool by its real dotted name also misses fromWire, and must keep falling through to the
   // ordinary capability/consent path exactly as before.
   const grantedSet = new Set(resolved.tools || []);
+
+  /* PARALLEL-SAFE PREDICATE — the host half of loop.js's batch planner. The loop sees a name and args; only
+     here does the registry exist to say what a tool actually IS. A batch runs concurrently only when EVERY
+     member passes this, so it is written to be boring: read scope, no consent prompt (two prompts racing for
+     one Commander is not a UX), granted to this run, and outside every family whose "read" quietly mutates
+     shared session state. browser.* is the one that makes the rule necessary — a snapshot invalidates the
+     previous snapshot's element refs, so two concurrent browser reads genuinely race even though both are
+     read-scope. mcp:* is excluded because a third-party server's idea of read-only is not ours to assume. */
+  const PARALLEL_UNSAFE_FAMILY = /^(browser|computer|desktop|spotify|team|brief|shell|verify)\./;
+  const parallelSafe = (wireName) => {
+    const n = String(wireName || '');
+    const real = fromWire.has(n) ? fromWire.get(n) : (allWire.get(n) || n);
+    const t = registry.get(real);
+    if (!t || !grantedSet.has(real)) return false;
+    if (t.scope !== 'read' || t.requiresConsent) return false;
+    if (/^mcp:/.test(String(t.capability || ''))) return false;
+    return !PARALLEL_UNSAFE_FAMILY.test(real);
+  };
 
   const seen = new Map();
   let toolBytes = 0;   // running total of tool-output chars fed back into the model this run
@@ -10764,11 +11060,24 @@ async function runOnce(o) {
     emit(name, payload);
   };
   try {
+    // HOOKS — on_session_start. Fired HERE rather than inside loop.js because a "session" is a run as the
+    // HOST defines it (agent, model, surface, trigger), and the loop deliberately knows nothing about the
+    // surface it was launched from. Observe-only: a hook cannot refuse a run the Commander started.
+    try { await hookSpine.invoke('on_session_start', { session_id: runId, cwd: WORKSPACES, extra: { agent_id: agentId, model, platform: surface, trigger: o.trigger || 'directive' } }); } catch (_) {}
     result = await runAgentLoop({
       messages: msgs, provider, emit: loopEmit, cost, tools: toolDefs, dispatch, capCtx,
       // Granted but unadvertised: held out of the request until tool.search reveals one (see loop.js).
       deferredTools: deferredToolDefs,
       hiddenTools: ['brief_ask', 'brief_proceed'],
+      // A turn that asks for four file reads waited four round trips for them; an all-read-only batch now
+      // overlaps. The predicate is above — the loop cannot judge tool scope on its own.
+      parallelSafe,
+      // SCREENSHOTS AS PIXELS: a browser/vision capture rides back to the model as an image, not a file path.
+      // Same wire shape the Commander's own attachments already take, so no adapter needed a change. Kill
+      // switch for a text-only endpoint that rejects image parts, resolved once at module load.
+      toolImages: TOOL_IMAGES_ON,
+      // The station-wide hook spine: pre/post_llm_call and on_pre_compress fire from inside the loop.
+      hooks: hookSpine,
       // Real backoff for the loop's bounded mid-stream retry: without an injected sleep the loop retries a
       // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
       // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
@@ -10798,6 +11107,22 @@ async function runOnce(o) {
       // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
       approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
     });
+    // HOOKS — on_session_end. The run's real outcome, not an optimistic one: `reason` is whatever the loop
+    // actually ended on ('done' | 'empty' | 'max_iters' | 'budget' | 'cancelled' | 'error'), so a hook that
+    // pages on failure pages on the truth. This is the seam for "when a run finishes, notify me / run the
+    // formatter / archive the transcript".
+    try {
+      await hookSpine.invoke('on_session_end', {
+        session_id: runId, cwd: WORKSPACES,
+        extra: {
+          agent_id: agentId, model, platform: surface,
+          reason: (result && result.reason) || 'unknown',
+          completed: !!(result && result.reason === 'done'),
+          interrupted: !!(result && result.reason === 'cancelled'),
+          turns: (result && result.turns) || 0, usd: (result && result.usd) || 0
+        }
+      });
+    } catch (_) {}
     // Persist visible task context only — never hidden reasoning. A clarification is a clean model run but not
     // completed work, so it leaves the brief waiting across restart and suppresses task-learning sweeps below.
     if (taskBrief && taskBrief.inputAction !== 'cancel' && result && result.reason === 'done') {
@@ -13382,6 +13707,10 @@ async function writeMemoryRecord(agentId, prop, opts) {
     return list;
   });
   chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
+  // HOOKS — on_memory_write, at the OTHER path that commits a record (the silent auto-save + the Keep/Edit
+  // turn-in both land here, not in notebook.write). Both sites fire it or the event would be true only half
+  // the time, which is worse than not offering it.
+  try { hookSpine.invoke('on_memory_write', { session_id: runId || '', extra: { agent_id: agentId, id: writtenId, kind: rec.kind, scope: rec.scope, source: 'turn-in' } }); } catch (_) {}
   // QUEST V2 §A — the FACT-contract sweep, wired at the ONE server-side path that commits a memory record
   // (silent auto-save + Keep/Edit turn-in both land here): the durable record IS the proof the harness learned
   // it. A fact key matches when it is the record's id, equals the committed content, or appears verbatim inside

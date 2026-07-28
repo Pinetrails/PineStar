@@ -3820,6 +3820,28 @@ const App = (() => {
     if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
     if (typeof StationUI !== 'undefined') StationUI.init();   // applies saved theme/CRT settings, wires the bottom bar
     if (typeof Updates !== 'undefined' && typeof StationUI !== 'undefined') Updates.init({ notify: StationUI.notify, rerender: StationUI.rerender });
+
+    /* EXTENSIONS AWAITING APPROVAL. Hooks and plugins are opt-in by design: an unapproved one is silently
+       inert. That is the correct security posture and the worst possible UX if it is never surfaced — the
+       Commander writes a hook, nothing happens, and there is nothing on screen that says why. So the gate
+       announces itself through the SAME channel an agent's approval prompt uses (category 'needsApproval', so
+       the existing mute honors it), and clicking lands directly on the tab that resolves it. Fire-and-forget:
+       a station with no extensions is the common case and must stay completely silent. */
+    (async () => {
+      try {
+        const [h, p] = await Promise.all([
+          fetch('/api/hooks').then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch('/api/plugins').then(r => r.ok ? r.json() : null).catch(() => null)
+        ]);
+        const waiting = ((h && h.pending) || []).length + (((p && p.plugins) || []).filter(x => x && x.pending).length);
+        if (!waiting || typeof StationUI === 'undefined' || !StationUI.notify) return;
+        StationUI.notify(
+          waiting + ' extension' + (waiting === 1 ? '' : 's') + ' awaiting your approval — click to review',
+          'warn', 'needsApproval',
+          { onClick: () => { try { StationUI.openTerm('connectors', 'extensions'); } catch (_) {} } }
+        );
+      } catch (_) { /* a station that cannot answer is a station with nothing to approve yet */ }
+    })();
     // (the title screen — RESUME / NEW STATION / the destructive NEW AGENT wipe — is gone; boot auto-resumes,
     //  see the three-way at the foot of init(). Re-entry is handled by reentry()/startCreation().)
 
