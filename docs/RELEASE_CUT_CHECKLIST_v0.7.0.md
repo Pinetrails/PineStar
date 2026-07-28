@@ -241,14 +241,20 @@ Run this **after Andrew's desktop test passes** (§F). Nothing before step 3 can
 
 ## E. Upgrade safety — will v0.7.0 break an existing install?
 
-### E1 — The installer and updater are byte-identical to the ones that shipped
+### E1 — The installer changes in exactly ONE way, and it is a fix
+
+> **UPDATED after the desktop test.** `src-tauri/` is no longer byte-identical to v0.6.8 — see
+> §G4. The diff is exactly two files: a new `installer/hooks.nsh` and the one line in
+> `tauri.conf.json` that registers it. **Nothing that decides where the app installs or where its
+> data lives moved** — `identifier`, `productName`, NSIS `installMode`, the updater `endpoints`
+> and the minisign `pubkey` are all verified unchanged. `shared/` is still byte-identical.
 
 ```
-git diff v0.6.8..HEAD -- src-tauri/   →  EMPTY
+git diff v0.6.8..HEAD -- src-tauri/   →  installer/hooks.nsh (new) + tauri.conf.json (+2/-1)
 git diff v0.6.8..HEAD -- shared/      →  EMPTY
 ```
 
-Zero bytes changed in the Tauri layer across ~217 commits. Every mechanism that decides where the
+Every mechanism that decides where the
 app installs and where its data lives is the same code that already performed a successful
 v0.6.7 → v0.6.8 update in production: `identifier` `ai.skynet.harness` (unchanged — this is what
 makes Windows install *over* the existing app rather than beside it), `productName` `StarNet`,
@@ -352,6 +358,50 @@ hardline floor** — and autonomous runs remain locked out of `execute` regardle
 not a defect so much as an unanswered product question: does "Full access" on a card mean *this
 tool*, *this connector*, or *everything*? The button copy does not say. **Not a release blocker;
 flagged for a decision.**
+
+### G4 — The manual installer could not overwrite its own node.exe (FIXED, found by Andrew)
+
+Andrew ran the candidate installer and got **"Error opening file for writing … node.exe"**. Not a
+one-off: Tauri's `CheckIfAppIsRunning` only ever kills `${MAINBINARYNAME}.exe` (the shell), and it
+does so with a hard TerminateProcess that runs neither `Drop` nor `ExitRequested` — so it
+*strands* the sidecar, and the next thing the Install section does is `File` over `node.exe`.
+Interactively that stops on Abort/Retry/Ignore; **silently (`/S`) it is worse — the error is
+auto-ignored and the install completes carrying a stale node.exe.**
+
+- **The in-app updater path was already safe** and is unchanged: `main.rs:1836` adds an
+  `on_before_exit` hook that calls `kill_sidecar()` before the plugin's `std::process::exit`.
+  This was found and canary-proven 2026-07-14 and shipped in v0.6.7 and v0.6.8. **UPDATE CENTER
+  users were never affected.**
+- The gap was the **manual** path (a download from the site) and the **orphan** path (a sidecar
+  stranded by an earlier hard kill — taskkill /F, crash, End Task — whose parent is long gone;
+  the Rust-side reaper only runs at the *next* app boot, i.e. after the installer has failed).
+- Fixed by `src-tauri/installer/hooks.nsh`, an `NSIS_HOOK_PREINSTALL` that kills the shell and
+  then the sidecar, **matched on full image path**, before the file copy.
+
+Three traps this hit, all recorded in the hook's own header:
+
+1. **Order is load-bearing.** A guardian thread respawns the sidecar every ~3s while the shell
+   lives (`main.rs` `spawn_guardian`), gated only by an in-process flag a hard kill never sets.
+   Kill node first and it is back, holding the same lock, within three seconds.
+2. **Scope is load-bearing.** Tauri's own `KillProcess` matches by NAME. On the test machine that
+   would have killed **18 unrelated `node.exe` processes**. The hook matches full image path only.
+3. **The WOW64 trap.** The NSIS installer is a **32-bit** process, so `$SYSDIR` redirects to
+   SysWOW64 and launches the 32-bit PowerShell — which can see 64-bit processes but reads their
+   `.Path` as **empty**. The first version of the hook therefore matched nothing, returned exit 0,
+   and did nothing at all. Reaching the 64-bit PowerShell via `SysNative` is the fix. Note it
+   failed **safe** (killed nothing) rather than dangerous.
+
+Proven in both directions on a real install:
+
+| | pre-hook build | with the hook |
+|---|---|---|
+| `node.exe` replaced while locked | **no** (silently skipped) | **yes** |
+| locking sidecar killed | no | yes |
+| unrelated `node.exe` killed | 0 | **0 of 16** |
+
+Then re-verified against the **real** install at `%LOCALAPPDATA%\StarNet` with a live sidecar
+running: silent install, exit 0, no dialog, registration correct, 0 of 15 unrelated node
+processes touched.
 
 ### G3 — A delegating run's per-run $ cap does not bound the total (OPEN, pre-existing)
 
