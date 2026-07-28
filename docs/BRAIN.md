@@ -2,6 +2,7 @@
 
 **The 5-minute orientation for any agent session (Claude, Codex, or human) opening this repo.**
 Last full reconciliation: **2026-07-06** (grounded against trunk + git log, not doc claims).
+Version paragraph re-grounded **2026-07-27** — it still claimed v0.2.2 and a `0.0.0` package.json.
 
 ## What this is
 
@@ -15,9 +16,11 @@ telemetry**: the UI never asserts anything the harness can't prove.
 - Lineage: UltronOS (banned from Claude API 2026-04-04) → "v7" fake sim → this real harness
   (reuses v7's canvas + U.bus). Rebranded Skynet→StarNet 2026-06-22; internal `skynet.*`
   keys are intentionally kept.
-- Current shipped desktop version: **v0.2.2** staged as a signed 4-platform draft on the
-  private `starnet-releases` repo; Andrew's installed app ~0.2.4-dev. Repo `package.json`
-  stays `0.0.0` (versions live in `src-tauri/tauri.conf.json` + `Cargo.toml`).
+- Current shipped desktop version: **v0.6.7** (public, Windows signed + macOS). The next cut is
+  **v0.6.8**, already bumped on trunk. **Three files carry the version and must agree** —
+  `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` — `release:cut` refuses to
+  build if the last two disagree. `package.json` is no longer pinned at `0.0.0`; `release:bump`
+  moves all three together.
 
 ## Architecture in one screen
 
