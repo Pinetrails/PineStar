@@ -40,7 +40,9 @@ const Build = (() => {
   const VAL_LABEL = {
     ORPHAN_SOURCE: 'NOT CONNECTED — BELT: CLICK IT, THEN A BAY', ORPHAN_BAY: 'NOT ON THE LINE', BAY_NOT_FED: 'NOT CONNECTED — BELT: CLICK IT, THEN A MACHINE',
     CYCLE: 'LOOP! — BREAK THE CIRCLE', FILTER_NO_DEFAULT: 'NO DEFAULT LANE — CLICK', DUP_AGENT: 'DUP AGENT — ONE BAY EACH',
-    UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 LANES'
+    UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 LANES',
+    // the docks feed each OTHER: no belt loop anywhere, but the work line would run forever, paying each lap
+    CHAIN_CYCLE: 'WORK LINE LOOPS — CUT ONE HANDOFF'
   };
   const esc = s => U.esc(s == null ? '' : s);   // one complete impl (escapes & < > " ' — value="…" attrs here stay injection-safe)
 

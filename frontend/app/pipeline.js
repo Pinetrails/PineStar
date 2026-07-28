@@ -185,14 +185,146 @@
       }
       return false;
     }
-    // a HOOKED bay whose belt serves NEITHER direction (no intake feeds it, no outbox receives from it)
-    // is a belt to nowhere — a warning, never a blocker (dispatch can't route to it anyway: resolveTarget
-    // only walks from sources). This replaces the old blocking DEAD_BAY, which condemned valid outbound lanes.
-    for (const b of bays) if (!reach[b.agentId] && !flowsToOutbox(b.tile)) errors.push({ code: 'BAY_NOT_FED', propId: b.propId, agentId: b.agentId, warn: true });
-
     const plan = { sources, bays, junctions, belts: map, bayTileToAgent, unboundBays, dockBays, outs, reach, errors };
+
+    /* THE CHAIN LAYER (agentic graphs, 2026-07-27) — bay -> bay edges. Until this existed the floor was a
+       DISPATCHER: it picked one agent per inbound message, the dock consumed the crate, and everything drawn
+       downstream of that dock was scenery. `chains` compiles the other half of the graph: where a dock's OUTPUT
+       goes. Computed here (not on demand) so the frontend engine, the sidecar chain runner and the REFIT nags
+       all read ONE fact — the same reason resolveTarget lives in this module. Compiled BEFORE the BAY_NOT_FED
+       pass because it is now one of the three ways a dock can be fed. */
+    plan.chains = compileChains(plan);
+    const chainFed = {};
+    for (const a in plan.chains) for (const n of plan.chains[a].next) chainFed[n] = true;
+
+    // a HOOKED bay whose belt serves NO direction — no intake feeds it, no UPSTREAM DOCK hands off to it, and
+    // no outbox receives from it — is a belt to nowhere. A warning, never a blocker (dispatch can't route to it
+    // anyway: resolveTarget only walks from sources). This replaces the old blocking DEAD_BAY, which condemned
+    // valid outbound lanes; the chainFed clause is the same correction for valid stage-two docks, which are fed
+    // by an agent rather than by a door and were being shamed for it.
+    for (const b of bays) if (!reach[b.agentId] && !chainFed[b.agentId] && !flowsToOutbox(b.tile)) errors.push({ code: 'BAY_NOT_FED', propId: b.propId, agentId: b.agentId, warn: true });
+    // A CHAIN LOOP IS A BLOCKING ERROR — and it is INVISIBLE to detectCycle. A's ship tile feeding B's dock and
+    // B's ship tile feeding A's dock are two separate physical lanes with no belt cycle anywhere; the loop only
+    // exists across the docks (consume here, respawn there). Left unguarded that is an infinite chain of PAID
+    // runs, which is exactly the bar `ok()` sets for a wholesale refusal ("a blocking error must genuinely be
+    // able to loop or void work").
+    const cc = chainCycle(plan.chains);
+    if (cc) {
+      // carry a propId so the REFIT/world overlay can ANCHOR the finding on a dock the loop runs through —
+      // an error the Commander can't see on the floor is an error they can't fix. First agent, sorted: stable.
+      const onLoop = bays.find(b => b.agentId === cc[0]);
+      errors.push(onLoop ? { code: 'CHAIN_CYCLE', agents: cc, propId: onLoop.propId } : { code: 'CHAIN_CYCLE', agents: cc });
+    }
+
     plan.hash = hashStr(JSON.stringify({ sources, bays, junctions, belts: map }));   // hash excludes the legibility extras: same dispatch topology, same hash
     return plan;
+  }
+
+  /* ---------- the chain layer: a dock's OUTPUT is another dock's INPUT ----------
+
+     A DOCK NEVER EATS ITS OWN OUTPUT. A handoff crate leaves its producer's dock and rides THROUGH every other
+     hookup tile of that same bay (a lane running along a dock's edge touches several ring tiles) — it is consumed
+     only by a FOREIGN bound bay. The engine enforces the identical rule (`fromAgentId === stopOwner` rides on),
+     which is what makes a self-loop structurally impossible rather than merely unlikely. */
+
+  // walk the flow from `starts`, fanning ALL junction lanes: which foreign docks / outboxes can this reach?
+  function chainWalk(plan, agentId, starts) {
+    const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
+    const outAt = {};
+    for (const o of (plan.outs || [])) outAt[key(o.tile.x, o.tile.y)] = true;
+    const found = {}, seen = {}, q = [];
+    let outbox = false, deadEnd = false;
+    for (const t of starts) { const k = key(t.x, t.y); if (map[k] && !seen[k]) { seen[k] = true; q.push(t); } }
+    while (q.length) {
+      const t = q.shift(), k = key(t.x, t.y), owner = bayAt[k];
+      if (owner && owner !== agentId) { found[owner] = true; continue; }   // a foreign dock CONSUMES the handoff
+      if (outAt[k]) outbox = true;                                          // this lane also ships out
+      const nts = nextTiles(map, junctions, t);
+      if (!nts.length) { if (!outAt[k]) deadEnd = true; continue; }
+      for (const nt of nts) { const nk = key(nt.x, nt.y); if (!seen[nk]) { seen[nk] = true; q.push(nt); } }
+    }
+    return { next: Object.keys(found).sort(), outbox, deadEnd };
+  }
+
+  /* which ring hookup does a dock SHIP from? A bay can touch several lanes (one in, one out). Pick the tile whose
+     onward flow actually goes somewhere, in a fixed preference so frontend and sidecar spawn on the same tile:
+     a lane that reaches another DOCK > a lane that reaches an OUTBOX > the first hookup. Deterministic: `tiles`
+     is recorded in ring-scan order. Returns { tile, next, outbox, deadEnd } or null for a beltless dock. */
+  function shipFrom(plan, bay) {
+    const tiles = (bay.tiles && bay.tiles.length) ? bay.tiles : (bay.tile ? [bay.tile] : []);
+    let viaOutbox = null, first = null;
+    for (const t of tiles) {
+      // the walk STARTS ON the hookup itself (not its successor): a dock's ring tile is very often ALSO the
+      // outbox's ring tile on a short bay->OUTBOX lane, and starting one tile downstream stepped straight over
+      // the delivery mouth and reported the ship-out lane as a dead end.
+      const r = chainWalk(plan, bay.agentId, [t]);
+      const rec = { tile: t, next: r.next, outbox: r.outbox, deadEnd: r.deadEnd };
+      if (r.next.length) return rec;                    // feeds another dock — the strongest signal
+      if (r.outbox && !viaOutbox) viaOutbox = rec;
+      if (!first) first = rec;
+    }
+    return viaOutbox || first;
+  }
+
+  // { agentId -> { tile, next:[agentId…], outbox, deadEnd } } for every belt-hooked bound bay.
+  function compileChains(plan) {
+    const out = {};
+    for (const b of (plan.bays || [])) { const r = shipFrom(plan, b); if (r) out[b.agentId] = r; }
+    return out;
+  }
+
+  // a cycle over the chain edges (A→B→…→A). Returns the agents on the loop (sorted) or null. Iterative, same
+  // three-colour marking as detectCycle — a bay graph is small, but the stack discipline is not negotiable here.
+  function chainCycle(chains) {
+    const color = {};
+    for (const root in chains) {
+      if (color[root]) continue;
+      color[root] = 1;
+      const stack = [{ a: root, i: 0 }];
+      while (stack.length) {
+        const fr = stack[stack.length - 1], kids = (chains[fr.a] && chains[fr.a].next) || [];
+        if (fr.i >= kids.length) { color[fr.a] = 2; stack.pop(); continue; }
+        const nb = kids[fr.i++];
+        if (color[nb] === 1) return stack.map(f => f.a).concat([nb]).sort().filter((v, i, a) => a.indexOf(v) === i);
+        if (!color[nb] && chains[nb]) { color[nb] = 1; stack.push({ a: nb, i: 0 }); }
+      }
+    }
+    return null;
+  }
+
+  /* chainNext(plan, agentId, ctx, pick) -> the SINGLE agent this dock's output actually hands off to, or null.
+     Mirrors the crate physics exactly (K crates in, K crates out — one output crate is one downstream run, never
+     a fan-out to every lane): follows the belt from the ship tile, a FILTER branches on the OUTPUT's tag (this is
+     how you draw "route the result by what it turned out to be"), a SPLIT round-robins through `pick`, own-dock
+     hookups are ridden through, the first foreign dock consumes. null = the handoff ships out / dead-ends, i.e.
+     this dock is a terminal stage and its reply is the pipeline's answer. */
+  function chainNext(plan, agentId, ctx, pick) {
+    if (!plan || !plan.chains || !plan.belts) return null;
+    const rec = plan.chains[agentId];
+    if (!rec || !rec.tile || !rec.next.length) return null;
+    const map = plan.belts, junctions = plan.junctions || {}, bayAt = plan.bayTileToAgent || {};
+    const tag = (ctx && ctx.tag) || 'general';
+    let t = rec.tile, guard = 0; const seen = {};
+    while (t && guard++ < 4096) {
+      const k = key(t.x, t.y);
+      if (bayAt[k] && bayAt[k] !== agentId) return bayAt[k];   // a foreign dock consumes it
+      if (seen[k]) return null;                                 // (a CYCLE is already a compile error)
+      seen[k] = true;
+      const here = map[k]; if (!here) return null;
+      const j = junctions[k];
+      let d = here;
+      if (j && j.kind === 'filter') {
+        const lanes = outLanes(map, t.x, t.y), want = j.routes && j.routes[tag];
+        d = (want && lanes.indexOf(want) >= 0) ? want : (j.def && lanes.indexOf(j.def) >= 0) ? j.def : (lanes[0] || here);
+      } else if (j && j.kind === 'split') {
+        const lanes = outLanes(map, t.x, t.y);
+        if (lanes.length) { const i = pick ? ((pick(k, lanes.length) % lanes.length) + lanes.length) % lanes.length : 0; d = lanes[i]; }
+      }
+      const v = DIRV[d], nx = t.x + v[0], ny = t.y + v[1];
+      if (!map[key(nx, ny)]) return null;                       // shipped out / sank with no dock
+      t = { x: nx, y: ny };
+    }
+    return null;
   }
 
   /* ---------- legibility layer: pure readouts of the compiled plan (no routing behavior) ----------
@@ -236,6 +368,18 @@
     // outbound: bound-bay hookups -> outbox hookups
     const outTiles = (plan.outs || []).map(o => o.tile);
     if (bayTiles.length && outTiles.length) segment(bayTiles, false, outTiles);
+    // HANDOFF: dock -> dock. A stage-to-stage lane carries real crates (and buys real runs) the moment the
+    // chain layer exists, so leaving it COLD would be the energized-tile promise lying in the other direction.
+    // Starts at the SHIP tile and ends only on a DOWNSTREAM dock's hookups, so a stub hookup that reaches no
+    // other dock stays dark instead of lighting itself.
+    const chains = plan.chains || {};
+    for (const aid in chains) {
+      const c = chains[aid];
+      if (!c || !c.tile || !c.next || !c.next.length) continue;
+      const ends = [];
+      for (const k in bayAt) if (c.next.indexOf(bayAt[k]) >= 0) { const p = k.split(','); ends.push({ x: +p[0], y: +p[1] }); }
+      if (ends.length) segment([c.tile], false, ends);
+    }
     return out;
   }
 
@@ -383,7 +527,20 @@
     return null;
   }
 
+  /* THE HANDOFF TURN — lives HERE, in the module both the sidecar executor and the browser's COMMS loop
+     already load, because the same floor must produce the same run on every surface. A downstream stage is
+     NOT the user, it is a machine being handed material, so the turn names the line explicitly. Carrying the
+     ORIGINAL request as well as the upstream output is load-bearing: a writer handed only research has no
+     idea what was asked and invents one. */
+  function handoffPrompt(originalText, fromAgentId, upstream, hop) {
+    return 'PIPELINE HANDOFF — you are stage ' + (hop + 1) + ' of a work line on this station.\n\n'
+      + 'The original request was:\n' + String(originalText || '(none recorded)') + '\n\n'
+      + 'The upstream stage (' + fromAgentId + ') produced:\n' + String(upstream) + '\n\n'
+      + 'Do YOUR part of this work and produce the output for the next stage. Do not restate the upstream '
+      + 'output — build on it. Answer with the work itself, not a description of what you would do.';
+  }
+
   const ok = plan => !plan.errors.some(e => !e.warn);   // a plan is deployable iff it has no non-warning errors
 
-  return { compileRoutingPlan, resolveTarget, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr } };
+  return { compileRoutingPlan, resolveTarget, sourceFor, ok, liveTiles, routeFrom, junctionLaneOwners, chainNext, handoffPrompt, _internals: { DIRV, OPP, LANE_ORDER, key, buildBeltMap, outLanes, beltTileNear, nextTiles, detectCycle, hashStr, compileChains, chainCycle, shipFrom } };
 });

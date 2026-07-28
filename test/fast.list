@@ -317,6 +317,7 @@ test/cron.test.js
 test/cron-store.test.js
 test/mint-ledger.test.js
 test/cron.dispatch.test.js
+test/cron.chain.test.js
 test/cron.tick.test.js
 test/cron.dst.test.js
 test/cron.durability.test.js
@@ -367,6 +368,7 @@ test/stationbake.chunk.test.js
 test/conveyor.test.js
 test/pipeline.test.js
 test/routing.b5.test.js
+test/chain.test.js
 test/propanchor.test.js
 test/waitanchor.test.js
 test/harness.integration.test.js

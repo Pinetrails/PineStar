@@ -3952,6 +3952,9 @@ const App = (() => {
   // and per-agent config (/agents, /model, /personality, …).
   return { show, refreshUsage, persist, pushRoster, refreshRail: renderRail, openWorkstream, summonAgent, summonForRequest, crewCount: () => agents.size,
     agentName: id => { const a = agents.get(id); return a ? (a.name || a.id) : null; },
+    // WORK LINES: a downstream stage runs as ANOTHER agent, so the chat host needs THAT agent's composed
+    // prompt — never the focused one's. Read-only; null for an id that is not on the live roster.
+    systemFor: id => { const a = agents.get(id); return a ? (a.systemPrompt || '') : null; },
     heroId: () => (agent ? agent.id : 'agent'),
     currentAgent: () => agent,
     agents: () => liveAgents().map(serializeAgentLite),

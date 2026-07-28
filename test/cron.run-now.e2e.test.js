@@ -178,6 +178,52 @@ async function readNdjson(res) {
     await sse.waitFor(events => events.some(e => e.name === 'workitem.placed' && e.payload && e.payload.agentId === 'research-agent' && e.payload.kind === 'cron'), 5000, 'cron workitem');
     await sse.waitFor(events => events.some(e => e.name === 'agent.run.start' && e.payload && e.payload.agentId === 'research-agent' && e.payload.trigger === 'schedule'), 5000, 'SSE run start');
     await sse.waitFor(events => events.some(e => e.name === 'agent.run.end' && e.payload && e.payload.agentId === 'research-agent'), 5000, 'SSE run end');
+
+    /* RUN NOW MUST FIRE THE WHOLE WORK LINE, exactly like the scheduled fire. This route calls runOnce
+       DIRECTLY, so it bypasses the cron driver's advanceChain seam — it shipped running four stages on
+       schedule and ONE stage from the button (caught live 2026-07-27), the same "one routine, two
+       behaviours" bug the slash-command redirect in this route already exists to prevent. */
+    const Pipeline = require('../frontend/app/pipeline.js');
+    const belt = (x, y, dir) => ({ x, y, dir });
+    const plan = Pipeline.compileRoutingPlan({
+      props: [{ id: 'i', t: 'intake', x: 0, y: 0, w: 1, h: 1 },
+              { id: 'b1', t: 'bay', x: 4, y: 0, w: 1, h: 1, agentId: 'research-agent' },
+              { id: 'b2', t: 'bay', x: 7, y: 0, w: 1, h: 1, agentId: 'writer-agent' },
+              { id: 'o', t: 'outbox', x: 10, y: 0, w: 1, h: 1 }],
+      belts: [belt(1, 0, 'E'), belt(2, 0, 'E'), belt(3, 0, 'E'), belt(5, 0, 'E'), belt(6, 0, 'E'), belt(8, 0, 'E'), belt(9, 0, 'E')]
+    });
+    A.eq(plan.chains['research-agent'].next, ['writer-agent'], 'the drawn floor chains the two docks');
+    for (const b of plan.bays.concat(plan.dockBays)) b.objects = ['computer'];   // an unequipped bay grants no compute
+    const posted = await fetch(B + '/api/routing', { method: 'POST', headers, body: JSON.stringify(plan) });
+    A.eq(posted.status, 200, 'the two-stage floor deploys');
+
+    const callsBefore = mock.requests.length;
+    const run2 = await fetch(B + '/api/cron/run', { method: 'POST', headers, body: JSON.stringify({ id: job.id }) });
+    A.eq(run2.status, 200, 'Run Now returns a stream (second fire)');
+    const panel2 = await readNdjson(run2);
+    const starts = panel2.filter(e => e.name === 'agent.run.start').map(e => e.payload.agentId);
+    A.ok(starts.indexOf('research-agent') >= 0, 'stage one ran');
+    A.ok(starts.indexOf('writer-agent') >= 0, 'RUN NOW fired the DOWNSTREAM stage too (was one stage before)');
+    A.ok(mock.requests.length >= callsBefore + 2, 'two provider calls — the line really bought both runs');
+    await sse.waitFor(events => events.some(e => e.name === 'workitem.placed' && e.payload && e.payload.agentId === 'writer-agent' && e.payload.kind === 'chain'), 5000, 'the handoff rides as a chain crate');
+
+    /* A SESSION IS NAMED AFTER THE RUN IT IS NAMED AFTER. Hops share the routine's 'cron-<runId>' stream so the
+       session shows the whole line — which means that stream now holds SEVERAL run rows, and the frontend used
+       to title/attribute the session from whichever row it read first. That titled the Commander's routine
+       session with the internal PIPELINE HANDOFF prompt and credited it to the LAST stage's agent (caught by
+       looking at the real session rail, 2026-07-27). This locks the data the picker needs: the defining row is
+       findable by runId, and it is the routine's own. */
+    const runsRes = await fetch(B + '/api/runs?agent=*&limit=50', { headers });
+    A.eq(runsRes.status, 200, 'runs list reads');
+    const rows = ((await runsRes.json()) || {}).runs || [];
+    const byStream = {};
+    for (const r of rows) if (r && typeof r.streamId === 'string' && r.streamId.indexOf('cron-') === 0) (byStream[r.streamId] = byStream[r.streamId] || []).push(r);
+    const multi = Object.keys(byStream).find(k => byStream[k].length > 1);
+    A.ok(multi, 'a chained routine records one row PER STAGE under a single stream');
+    const defining = multi ? byStream[multi].find(r => String(r.runId || '') === multi.slice('cron-'.length)) : null;
+    A.ok(defining, 'that stream still carries the run it is NAMED after');
+    A.ok(defining && String(defining.title || '').indexOf('PIPELINE HANDOFF') < 0,
+      'and the defining row is the ROUTINE, never a stage handoff — internal plumbing must not become a session title');
   } finally {
     if (sse) sse.close();
     try { child.kill(); } catch (_) {}
