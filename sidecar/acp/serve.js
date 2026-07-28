@@ -159,6 +159,13 @@ function openRun(opts) {
       let req;
       let settled = false;
       const finish = (fn, arg) => { if (settled) return; settled = true; fn(arg); };
+      /* PER-RUN state, deliberately closure-local and NOT module-level. `runId` was a module global, which
+         means two sessions prompting at once would both write it and a session/cancel could abort the OTHER
+         session's run. The core enforces one turn per SESSION, not one turn per process, so this must be
+         per-invocation. `cancelRequested` is what keeps a deliberate cancel from being reported as a failure. */
+      let runId = '';
+      let cancelRequested = false;
+      let graceTimer = null;
 
       try {
         req = http.request({
@@ -185,27 +192,47 @@ function openRun(opts) {
               if (!line.trim()) continue;                      // the hold-open keep-alive blank line
               let ev = null; try { ev = JSON.parse(line); } catch (_) { continue; }
               if (!ev || !ev.name) continue;
+              // capture the runId locally — POST /api/cancel needs it, and it must belong to THIS run
+              if (ev.name === 'agent.run.start') runId = String((ev.payload && ev.payload.runId) || '');
               if (ev.name === 'agent.run.end') { sawEnd = true; reason = String((ev.payload && ev.payload.reason) || 'done'); }
               if (ev.name === 'agent.run.error') reason = 'error';
               try { if (typeof o.onEvent === 'function') o.onEvent(ev.name, ev.payload); } catch (e) { log('onEvent threw:', (e && e.message) || e); }
             }
           });
-          /* A stream that ENDS WITHOUT agent.run.end did not finish — the socket dropped mid-run. Reporting
-             'done' there would tell the editor the turn completed successfully, which is the exact class of lie
-             this project forbids; 'error' makes the core append its honest "the run failed" note. */
-          res.on('end', () => finish(resolve, { reason: sawEnd ? reason : 'error' }));
-          res.on('close', () => finish(resolve, { reason: sawEnd ? reason : 'error' }));
-          res.on('error', e => finish(reject, e instanceof Error ? e : new Error(String(e))));
+          /* A stream that ENDS WITHOUT agent.run.end did not finish. Reporting 'done' there would tell the
+             editor the turn completed successfully — the exact class of lie this project forbids.
+             But 'error' is equally wrong for a DELIBERATE cancel: it made the core append "the run failed
+             inside StarNet — check the station log", so pressing Esc told the user their work had crashed.
+             So the fallback splits on intent: cancelled if the user asked, error only if it really dropped. */
+          const settleReason = () => (sawEnd ? reason : (cancelRequested ? 'cancelled' : 'error'));
+          const done = () => { if (graceTimer) { clearTimeout(graceTimer); graceTimer = null; } finish(resolve, { reason: settleReason() }); };
+          res.on('end', done);
+          res.on('close', done);
+          res.on('error', e => {
+            if (cancelRequested) return done();          // our own destroy, not a transport failure
+            finish(reject, e instanceof Error ? e : new Error(String(e)));
+          });
         });
       } catch (e) { return finish(reject, e instanceof Error ? e : new Error(String(e))); }
 
-      req.on('error', e => finish(reject, new Error('StarNet run stream failed: ' + ((e && e.message) || e))));
+      req.on('error', e => {
+        // A cancel destroys the socket on purpose; that surfaces here as ECONNRESET/aborted. Treating it as a
+        // transport failure is what produced "could not complete this turn: aborted" on a user-requested stop.
+        if (cancelRequested) return finish(resolve, { reason: 'cancelled' });
+        finish(reject, new Error('StarNet run stream failed: ' + ((e && e.message) || e)));
+      });
       if (typeof o.onCancel === 'function') {
-        // Cancel BOTH ways: /api/cancel is the graceful stop the station understands (it aborts the run's
-        // controller and settles the stream); destroying the socket alone would leave the run spending.
+        /* GRACEFUL FIRST. POST /api/cancel is the stop the station understands: it aborts the run's controller,
+           which emits agent.run.end{reason:'cancelled'} and closes the stream properly — so spend stops AND the
+           editor gets the real terminal reason. Destroying the socket immediately (the first cut) raced ahead of
+           that every time, so the turn always settled as a failure. The destroy is now only a FALLBACK, in case
+           the station never settles; leaving it out entirely would risk a socket held open forever. */
         o.onCancel(() => {
-          callSidecar('POST', '/api/cancel', { runId: currentRunId }).catch(() => {});
-          try { req.destroy(); } catch (_) {}
+          if (cancelRequested) return;
+          cancelRequested = true;
+          callSidecar('POST', '/api/cancel', { runId: runId }).catch(() => {});
+          graceTimer = setTimeout(() => { graceTimer = null; try { req.destroy(); } catch (_) {} }, CANCEL_GRACE_MS);
+          if (typeof graceTimer.unref === 'function') graceTimer.unref();
         });
       }
       req.write(payload);
@@ -214,9 +241,10 @@ function openRun(opts) {
   });
 }
 
-/* The runId of the turn in flight, captured off agent.run.start. POST /api/cancel needs it, and it is per-turn
-   state that only this edge cares about (the core already tracks its own copy for consent). */
-let currentRunId = '';
+/* How long a cancelled run gets to settle itself through POST /api/cancel before the socket is destroyed as a
+   fallback. Long enough for the station to abort the loop and emit agent.run.end{reason:'cancelled'} (which is
+   what makes the editor show a real cancel), short enough that a wedged stream is not held forever. */
+const CANCEL_GRACE_MS = 5000;
 
 // ---- stdio JSON-RPC: framing, outbound requests, and the pending map --------------------------
 
@@ -254,16 +282,9 @@ function notify(method, params) {
 
 const agent = core.makeAcpCore({
   callSidecar: callSidecar,
-  openRun: (o) => {
-    // keep the runId fresh for cancel, without making the core carry an edge concern
-    const inner = o.onEvent;
-    return openRun(Object.assign({}, o, {
-      onEvent: (name, payload) => {
-        if (name === 'agent.run.start') currentRunId = String((payload && payload.runId) || '');
-        if (typeof inner === 'function') inner(name, payload);
-      }
-    }));
-  },
+  // openRun captures its own runId off agent.run.start (closure-local, so concurrent sessions cannot cancel
+  // each other's run) — the core needs no wrapper here.
+  openRun: openRun,
   notify: notify,
   request: request,
   // crypto.randomUUID, not Math.random/Date.now: the determinism lint scans all of sidecar/ and exempts only

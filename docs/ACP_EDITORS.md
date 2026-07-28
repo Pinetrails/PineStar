@@ -86,8 +86,15 @@ folder-trust prompt the station uses, surfaced as an approval card.
 
 These are real gaps, listed so you are not surprised by them:
 
-- **No image attachments.** If you attach an image in the editor, the turn tells the model that N images were
+- **OpenRouter only, for now.** The bridge asks the station which model to run headless, and that resolution is
+  the same one the station's other headless host uses: provider `openrouter` plus `STARNET_DEFAULT_MODEL`. If
+  your station is set up on Codex/Grok/Kimi only, the bridge reports *"StarNet has no runnable model
+  configured"* rather than guessing — set an OpenRouter key and a default model to use ACP today.
+- **No image attachments.** The bridge does not advertise the ACP image capability, so a well-behaved editor
+  will not offer to attach one. If a client sends one anyway, the turn tells the model that N images were
   attached and could not be delivered, rather than silently answering about text it never saw.
+- **A very large prompt is truncated at 200k characters**, and the turn says so — it does not quietly drop the
+  second half.
 - **No thought stream.** StarNet's event contract reports *that* a model is reasoning, not the reasoning text
   (deliberately — a thinking delta must never be emitted as normal output). So there is nothing to show in an
   editor's "thinking" pane, and the bridge advertises none.
@@ -111,7 +118,7 @@ corrupt it). Check your editor's agent log.
 | What you see | What it means |
 |---|---|
 | `StarNet is not running (or its API token could not be read)` | the station is not up on that host/port, or the port is wrong |
-| `StarNet has no runnable model configured` | open the station and set a provider key + a default model |
+| `StarNet has no runnable model configured` | set an **OpenRouter** key and a default model (see the limits above) |
 | `StarNet rejected this bridge's API token` | the station restarted and minted a new token — restart the agent in your editor so it re-reads it |
 | `(stopped: this run hit a spend cap …)` | MISSION CONTROL → BUDGET |
 | `(stopped: reached the step limit for one turn …)` | send `continue` |

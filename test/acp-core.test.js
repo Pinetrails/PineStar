@@ -68,6 +68,15 @@ function harness(opts) {
     A.eq(r.result.agentCapabilities.loadSession, true, 'loadSession is advertised');
     A.eq(r.result.authMethods.length, 0, 'no auth methods are advertised (the station token already fences /api)');
 
+    /* CAPABILITIES MUST NOT OVER-CLAIM. This shipped as image:true in the first cut while the bridge could not
+       forward an image at all — a client reads that as "this agent can see pictures", lets the user attach a
+       screenshot, and the agent answers about text it never saw. It stays false until images really reach the
+       model. embeddedContext IS honest: a resource block's text is genuinely folded into the turn. */
+    A.eq(r.result.agentCapabilities.promptCapabilities.image, false,
+      'image is NOT advertised — the bridge cannot forward attachments, and claiming it could is a capability lie');
+    A.eq(r.result.agentCapabilities.promptCapabilities.embeddedContext, true,
+      'embeddedContext IS advertised, because embedded resource text really is delivered');
+
     /* authenticate must NOT answer ok: advertising zero auth methods and then acknowledging an auth call would
        claim a step happened that did not. */
     const auth = await h.core.handleRpc(rpc(2, 'authenticate', { methodId: 'anything' }));
@@ -323,6 +332,13 @@ function harness(opts) {
 
     const empty = await h.core.handleRpc(rpc(9, 'session/prompt', { sessionId: sid, prompt: [] }));
     A.ok(empty.error && /no usable content/.test(empty.error.message), 'an empty prompt is refused');
+
+    // an over-cap prompt is truncated — but it SAYS so, rather than letting the model answer about text
+    // whose second half never arrived
+    const huge = I.blocksToTurn([{ type: 'text', text: 'z'.repeat(250000) }]);
+    A.ok(/was TRUNCATED at/.test(huge.text), 'an over-cap prompt states that it was truncated');
+    A.ok(/250000 characters/.test(huge.text), 'and reports how much the editor actually sent');
+    A.ok(!/TRUNCATED/.test(I.blocksToTurn([{ type: 'text', text: 'short' }]).text), 'a normal prompt carries no truncation note');
   }
 
   /* ---- 13. tool kinds + titles ---------------------------------------------------------------- */
@@ -405,6 +421,13 @@ function harness(opts) {
     const card = h.requests.find(x => x.method === 'session/request_permission').params.toolCall;
     A.eq(card.title, 'Write acp-notes.md', 'the approval card NAMES THE FILE, not the tool');
     A.eq(card.locations[0].path, 'acp-notes.md', 'and carries a location the editor can jump to');
+
+    /* The FOLDER-TRUST ask is not a model tool call — it is the station's "work in <root>?" gate, and because an
+       ACP session sends its cwd as the project root it is very often the FIRST card a user ever sees. It read
+       "path.trust" before this. */
+    A.eq(I.titleOf('path.trust', I.permArgs('C:/proj/thing')), 'Allow StarNet to work in C:/proj/thing',
+      'the folder-trust card reads as a sentence, not as a tool id');
+    A.eq(I.locationsOf(I.permArgs('C:/proj/thing'))[0].path, 'C:/proj/thing', 'and a Windows path still resolves as a location');
   }
 
   /* ---- 15. protocol hygiene ------------------------------------------------------------------- */

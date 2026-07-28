@@ -145,7 +145,7 @@
           text: { type: 'string', description: 'The message body. Plain text; it is split into platform-sized parts automatically.' }
         }
       },
-      run: async (args) => {
+      run: async (args, ctx) => {
         if (typeof sendTo !== 'function') throw new Error('outbound messaging unavailable');
         const text = clean(args && args.text, TEXT_CHARS);
         if (!text) throw new Error('text is required — an empty message is never sent');
@@ -176,15 +176,21 @@
           sent++;
         }
 
-        // OUTBOUND TELEMETRY on the existing contract event, so the station floor pulses the sending agent's
-        // dish for an agent-initiated message exactly as it does for a hub reply. Never fabricated: `ok`
-        // reflects whether every part actually landed.
-        try {
-          emit('channel.delivery', {
-            channel: t.channel, chatId: t.chatId, runId: '', ok: !error,
-            chunks: sent, reason: error ? String(error).slice(0, 200) : '', agentId: t.agentId
-          });
-        } catch (_) {}
+        /* OUTBOUND TELEMETRY on the existing contract event, so the station floor pulses the sending agent's
+           dish for an agent-initiated message exactly as it does for a hub reply. Never fabricated: `ok`
+           reflects whether every part actually landed, and `chunks` is what landed, not what was attempted.
+           runId comes from the dispatch context (index.js threads it onto capCtx) so this delivery is
+           attributable to the run that sent it — the first cut hardcoded '' and made every agent-initiated
+           send an orphan row. */
+        /* Build the payload OUTSIDE the try. The catch is there so a rejected/validator-unhappy event can never
+           kill a run that already sent its message — but wrapping the CONSTRUCTION too meant a typo in this
+           object (a ReferenceError on an undefined helper, live-caught here) silently dropped the whole event
+           with no trace. Only the emit call is allowed to fail quietly. */
+        const delivery = {
+          channel: t.channel, chatId: t.chatId, runId: String((ctx && ctx.runId) || ''), ok: !error,
+          chunks: sent, reason: error ? String(error).slice(0, 200) : '', agentId: t.agentId
+        };
+        try { emit('channel.delivery', delivery); } catch (_) {}
 
         if (error) {
           throw new Error('send to ' + t.target + ' failed after ' + sent + ' of ' + parts.length

@@ -395,11 +395,23 @@
         // ---- update ----
         if (typeof updateRoutine !== 'function') throw new Error('routine editing unavailable');
         const patch = {};
-        if (args && args.name != null && args.name !== '') patch.name = clean(args.name, NAME_CHARS);
-        if (args && args.prompt != null && args.prompt !== '') patch.prompt = clean(args.prompt, PROMPT_CHARS);
-        if (args && args.schedule != null && args.schedule !== '') patch.schedule = clean(args.schedule, 200);
-        if (args && args.timezone != null && args.timezone !== '') patch.timezone = clean(args.timezone, 80);
-        if (args && args.model != null && args.model !== '') patch.model = clean(args.model, 120);
+        // Test the CLEANED value, not the raw one: `name: '   '` is not-null and not-'' but cleans to empty, and
+        // the first cut happily persisted a routine with a blank name and reported "updated (name)".
+        const set = (key, raw, max) => { const v = clean(raw, max); if (v) patch[key] = v; };
+        if (args) {
+          set('name', args.name, NAME_CHARS);
+          set('prompt', args.prompt, PROMPT_CHARS);
+          set('schedule', args.schedule, 200);
+          set('timezone', args.timezone, 80);
+          set('model', args.model, 120);
+        }
+        /* A TIMEZONE ONLY MEANS SOMETHING WITH A SCHEDULE. The host resolves tz inside the schedule parse
+           (parseCronScheduleOr400(schedule, now, tz)), so a patch carrying tz and no schedule reaches the store
+           as an empty patch: nothing changes, while the tool answers "updated routine (timezone)". Refuse it and
+           say what to pass instead — a false "done" is worse than a rejected call. */
+        if (patch.timezone && !patch.schedule) {
+          throw new Error('a timezone only applies to a schedule — pass `schedule` as well (e.g. schedule "0 9 * * *" + timezone "America/New_York")');
+        }
         if (args && args.provider != null && args.provider !== '') {
           const p = normalizeProvider(args.provider);
           if (!p) throw new Error('provider must be openrouter or codex');

@@ -44,7 +44,7 @@ const TARGETS = [
       sendTo: (target, text) => { sent.push([target, text]); return Promise.resolve({ ok: true }); },
       emit: (name, payload) => emitted.push([name, payload])
     });
-    const out = await t.sendTool.run({ target: 'bot1|55501', text: 'the build is green' });
+    const out = await t.sendTool.run({ target: 'bot1|55501', text: 'the build is green' }, { runId: 'run-77', agentId: 'agent' });
     A.eq(sent.length, 1, 'one part, one send');
     A.eq(sent[0][0], 'bot1|55501', 'the send carries the TARGET KEY (the host resolves the real chatId)');
     A.eq(sent[0][1], 'the build is green', 'the body goes through intact');
@@ -56,6 +56,14 @@ const TARGETS = [
     A.eq(d[1].ok, true, 'delivery ok reflects the real outcome');
     A.eq(d[1].chunks, 1, 'chunk count is what actually landed');
     A.eq(d[1].agentId, 'agent', 'the delivery names the agent bound to that chat, so the RIGHT dish pulses');
+    /* The delivery must be ATTRIBUTABLE to the run that sent it. The first cut hardcoded runId:'' and made
+       every agent-initiated send an orphan row; index.js already threads runId onto the dispatch context. */
+    A.eq(d[1].runId, 'run-77', 'the delivery carries the real runId from the dispatch context');
+
+    // ...and with no context (a bare caller), it degrades to '' rather than throwing or inventing an id
+    const bare = makeCommsTools({ listTargets: () => TARGETS, sendTo: () => Promise.resolve({ ok: true }), emit: (n, p) => emitted.push([n, p]) });
+    await bare.sendTool.run({ target: 'bot1|55501', text: 'x' });
+    A.eq(emitted[emitted.length - 1][1].runId, '', 'a context-less dispatch reports an empty runId, never a fabricated one');
   }
 
   // ---- the redaction seam: this is the one tool that hands text to a third party ---------------------

@@ -96,7 +96,15 @@
       }
       if (kind) unsupported.push(kind);
     }
-    return { text: clip(parts.join('\n\n'), MAX_PROMPT_CHARS), images: images, unsupported: unsupported };
+    /* A silent truncation is a lie the model cannot see: it would answer confidently about a file whose second
+       half never arrived. If the cap bites, SAY SO in the turn — same rule as the undeliverable-image note. */
+    const joined = parts.join('\n\n');
+    let text = clip(joined, MAX_PROMPT_CHARS);
+    if (joined.length > MAX_PROMPT_CHARS) {
+      text += '\n\n[the editor sent ' + joined.length + ' characters; this prompt was TRUNCATED at '
+        + MAX_PROMPT_CHARS + '. Everything after that point is missing — say so if the answer depends on it.]';
+    }
+    return { text: text, images: images, unsupported: unsupported };
   }
 
   // ---------------------------------------------------------------------------
@@ -181,6 +189,10 @@
     const n = str(name);
     const path = args && (args.path || args.file || args.filePath || args.file_path);
     const short = (v) => clip(str(v).replace(/\s+/g, ' '), 60);
+    /* path.trust is not a tool the model calls — it is the station's FOLDER-TRUST ask, and because an ACP
+       session sends its cwd as the project root it is very often the FIRST card a user ever sees here. Titling
+       it "path.trust" made the most important first impression unreadable. */
+    if (n === 'path.trust' && path) return 'Allow StarNet to work in ' + short(path);
     if (n === 'shell.exec' && args && args.cmd) return 'Run ' + short(args.cmd);
     if (n === 'shell.exec' && args && args.command) return 'Run ' + short(args.command);
     if (n === 'verify.run' && args && args.cmd) return 'Verify ' + short(args.cmd);
@@ -293,9 +305,17 @@
           // loadSession: this process can replay a session it is still holding (see session/load — it is
           // honest about a sessionId from a PREVIOUS bridge process, which it cannot know about).
           loadSession: true,
-          // image: an ACP client may hand us image blocks. We accept them into the turn as a stated count
-          // rather than silently dropping them — see blocksToTurn / the note in session/prompt.
-          promptCapabilities: { image: true, embeddedContext: true }
+          /* image: FALSE — and this must stay false until images actually reach the model.
+             It was true in the first cut, which is a capability lie of the exact kind this project forbids: a
+             client reads `image: true` as "this agent can see pictures", so it happily lets the user attach a
+             screenshot, and the agent then answers about text it was never shown. Attachments enter StarNet
+             through the station's own attachment seam (a workspace file + provider image blocks) and this
+             bridge has no path to it. Declaring false makes a client either disable image attachment or warn,
+             which is the truthful outcome; blocksToTurn still degrades gracefully and STATES the count if a
+             client sends one anyway.
+             embeddedContext: TRUE and honest — a `resource` block's text really is folded into the turn
+             (fenced and labelled as data). */
+          promptCapabilities: { image: false, embeddedContext: true }
         },
         // No auth methods: the station's own per-launch token fences /api, and this bridge is spawned locally by
         // the editor on the same machine. Advertising an auth method we do not enforce would be theatre.

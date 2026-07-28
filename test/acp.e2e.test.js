@@ -34,6 +34,7 @@ function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 /* Content-driven mock provider — a queue desyncs, because a real run also makes reflection/aux calls this test
    never asked for. See test/routine-manage.e2e.test.js for the same note. */
 function startMockOpenRouter(script) {
+  const held = [];   // completions parked open by a `hold` rule, so a run stays genuinely in flight
   function decide(body) {
     const msgs = (body && body.messages) || [];
     if (msgs.some(m => m && m.role === 'tool')) return { text: 'done' };
@@ -54,6 +55,17 @@ function startMockOpenRouter(script) {
           let parsed = null; try { parsed = JSON.parse(body); } catch (_) {}
           const turn = decide(parsed);
           res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+          if (turn.hold) {
+            // stream one delta then PARK: the run is provably in flight until release() is called
+            res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: 'working' } }] }) + '\n\n');
+            held.push(() => {
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: { content: ' finished' } }] }) + '\n\n');
+              res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'stop' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
+              res.write('data: [DONE]\n\n');
+              res.end();
+            });
+            return;
+          }
           if (turn.tool) {
             res.write('data: ' + JSON.stringify({ choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: turn.tool.name, arguments: JSON.stringify(turn.tool.args) } }] } }] }) + '\n\n');
             res.write('data: ' + JSON.stringify({ choices: [{ delta: {}, finish_reason: 'tool_calls' }], usage: { prompt_tokens: 5, completion_tokens: 3, total_tokens: 8 } }) + '\n\n');
@@ -68,7 +80,12 @@ function startMockOpenRouter(script) {
       }
       res.writeHead(404); res.end();
     });
-    server.listen(0, HOST, () => resolve({ server, base: 'http://' + HOST + ':' + server.address().port + '/api/v1' }));
+    server.listen(0, HOST, () => resolve({
+      server,
+      inflight: () => held.length,
+      release: () => { const fns = held.splice(0); fns.forEach(fn => { try { fn(); } catch (_) {} }); },
+      base: 'http://' + HOST + ':' + server.address().port + '/api/v1'
+    }));
   });
 }
 
@@ -169,7 +186,8 @@ function makeAcpClient(port, onPermission) {
     { when: 'say hello', text: 'Hello from the station.' },
     { when: 'write the notes file', tool: { name: 'fs.write', args: { path: 'acp-notes.md', content: 'written through ACP' } } },
     { when: 'write the secret file', tool: { name: 'fs.write', args: { path: 'acp-denied.md', content: 'must never exist' } } },
-    { when: 'read the notes file', tool: { name: 'fs.read', args: { path: 'acp-notes.md' } } }
+    { when: 'read the notes file', tool: { name: 'fs.read', args: { path: 'acp-notes.md' } } },
+    { when: 'work slowly', hold: true }
   ]);
   const ws = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-acp-'));
   const env = {
@@ -267,18 +285,59 @@ function makeAcpClient(port, onPermission) {
         'the REJECTED write never happened — the editor answer really is the gate');
     }
 
-    /* ---- 5. cancel: the turn stops and still resolves ------------------------------------------ */
+    /* ---- 5. cancel: the turn stops, resolves, and is reported as a CANCEL — not a failure -------
+       The first cut accepted either 'cancelled' or 'end_turn' here, and that looseness hid a real bug: the
+       cancel destroyed the socket immediately, racing ahead of the station's own settle, so the turn came back
+       as 'end_turn' with "(StarNet could not complete this turn: aborted)" AND "(stopped: the run failed inside
+       StarNet — check the station log)". Pressing Esc told the user their work had crashed. Assert the exact
+       reason, and assert the failure wording is ABSENT. */
     {
       client.clear();
+      /* The turn must still be RUNNING when the cancel lands, or this proves nothing: a fast tool turn finishes
+         inside the sleep and then honestly reports how it really ended ('done'), which is correct behaviour and
+         not a cancel. So hold the provider open. */
       const inflight = client.send('session/prompt', {
-        sessionId: sessionId, prompt: [{ type: 'text', text: 'read the notes file' }]
+        sessionId: sessionId, prompt: [{ type: 'text', text: 'work slowly (cancel probe)' }]
       }, 60000);
-      await sleep(250);
+      await sleep(1200);
+      A.ok(mock.inflight() >= 1, 'the run is genuinely in flight when the cancel is sent');
       client.notify('session/cancel', { sessionId: sessionId });
       const r = await inflight;
       A.ok(r.result, 'a cancelled prompt still RESOLVES — an unresolved turn hangs the editor forever');
-      A.ok(['cancelled', 'end_turn'].indexOf(r.result.stopReason) >= 0,
-        'and reports a real stop reason: ' + r.result.stopReason);
+      A.eq(r.result.stopReason, 'cancelled', 'a user cancel reports stopReason CANCELLED, not a generic end_turn');
+      const said = client.textFor(sessionId);
+      A.ok(!/could not complete this turn/.test(said), 'a deliberate cancel is NOT reported as a transport failure: ' + JSON.stringify(said).slice(0, 200));
+      A.ok(!/the run failed inside StarNet/.test(said), 'and does NOT tell the user to go check the station log');
+      mock.release();   // drop the parked completion so the next phase starts from a clean inflight count
+    }
+
+    /* ---- 5b. CANCELLING ONE SESSION MUST NOT TOUCH ANOTHER -------------------------------------
+       An editor keeps several sessions on one bridge process. The first cut tracked the in-flight runId in a
+       MODULE-LEVEL variable, so a second session's agent.run.start overwrote it and a session/cancel posted
+       /api/cancel with the WRONG runId — aborting the other session's run while leaving the cancelled one to
+       die on a destroyed socket. The runId is now closure-local per run; this proves it. */
+    {
+      client.clear();
+      const a = (await client.send('session/new', { cwd: process.cwd() })).result.sessionId;
+      const b = (await client.send('session/new', { cwd: process.cwd() })).result.sessionId;
+      A.ok(a !== b, 'two distinct sessions on one bridge');
+
+      const runA = client.send('session/prompt', { sessionId: a, prompt: [{ type: 'text', text: 'work slowly (alpha)' }] }, 90000);
+      await sleep(900);
+      const runB = client.send('session/prompt', { sessionId: b, prompt: [{ type: 'text', text: 'work slowly (beta)' }] }, 90000);
+      await sleep(1600);
+      A.eq(mock.inflight(), 2, 'both runs are genuinely in flight (the provider is holding two completions)');
+
+      client.notify('session/cancel', { sessionId: a });          // cancel ONLY session A
+      const rA = await runA;
+      A.eq(rA.result.stopReason, 'cancelled', 'the cancelled session reports cancelled');
+
+      await sleep(300);
+      mock.release();                                             // let B finish naturally
+      const rB = await runB;
+      A.eq(rB.result.stopReason, 'end_turn', 'the OTHER session finished normally — cancelling A did not abort B');
+      A.ok(client.textFor(b).indexOf('finished') >= 0,
+        'and B really produced its full answer: ' + JSON.stringify(client.textFor(b)).slice(0, 120));
     }
 
     /* ---- protocol hygiene: stdout carried ONLY JSON-RPC --------------------------------------- */

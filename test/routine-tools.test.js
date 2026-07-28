@@ -236,6 +236,30 @@ const call = (name, args) => ({ id: 'c1', name, args: args || {}, argsRaw: JSON.
       A.eq(JSON.parse(out.content).changed.length, 3, 'the response reports exactly what changed');
     }
 
+    /* NEVER REPORT AN EDIT THAT DID NOT HAPPEN. Two ways the first cut lied about an update:
+       (a) a timezone with no schedule — the host folds tz into the SCHEDULE parse, so a tz-only patch reached
+           the store as an empty patch: nothing changed, and the tool answered "updated routine (timezone)";
+       (b) a whitespace-only name — not null and not '', so it passed the raw guard, cleaned to '', and
+           persisted a routine with a BLANK name while reporting "updated (name)". */
+    {
+      const before = log.length;
+      let err = null;
+      try { await mt.manageTool.run({ action: 'update', id: 'j-morning', timezone: 'America/New_York' }); } catch (e) { err = e; }
+      A.ok(err && /only applies to a schedule/.test(err.message), 'a timezone with no schedule is refused, not reported as an update');
+      A.eq(log.length, before, 'and no empty patch reaches the store');
+
+      const ok = await mt.manageTool.run({ action: 'update', id: 'j-morning', schedule: '0 9 * * *', timezone: 'America/New_York' });
+      A.eq(log[log.length - 1][2].timezone, 'America/New_York', 'a timezone WITH a schedule is passed through');
+      A.eq(JSON.parse(ok.content).changed.sort().join(','), 'schedule,timezone', 'and both are reported as changed');
+    }
+    {
+      const before = log.length;
+      let err = null;
+      try { await mt.manageTool.run({ action: 'update', id: 'j-morning', name: '   ' }); } catch (e) { err = e; }
+      A.ok(err && /nothing to update/.test(err.message), 'a whitespace-only name is not an update');
+      A.eq(log.length, before, 'and a blank name never reaches the store');
+    }
+
     /* THE PRIVILEGE BOUNDARY: cron-store's updateJob accepts `unattendedGrants` — the capability families a
        routine may use with nobody watching ('workbench' = shell.exec). An agent that could patch that could
        hand its own scheduled routine a terminal it was never granted. The tool must drop it. */
