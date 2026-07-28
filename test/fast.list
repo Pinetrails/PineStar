@@ -28,6 +28,7 @@ test/halt.test.js
 test/readbody.test.js
 test/runroute.test.js
 test/checkpoint.test.js
+test/module-scope-shadowing.test.js
 test/verify.test.js
 test/provider.replay.test.js
 test/provider.openrouter.test.js

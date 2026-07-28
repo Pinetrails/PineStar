@@ -5353,7 +5353,13 @@ const workspaceLease = makeWorkspaceLease(Object.assign(
   { now: () => Date.now() },
   (_leaseWaitMs >= 0 && isFinite(_leaseWaitMs)) ? { waitMs: Math.floor(_leaseWaitMs) } : {}
 ));
-function runGit(args, opts) {   // resolves (never rejects); a missing/failing git becomes a fail-open skip upstream
+// NAME IS LOAD-BEARING: a second module-scope `function runGit(root, args, timeoutMs)` (the night-shift /
+// loop-harvest one) is declared further down this file. Two function declarations in one CommonJS scope do not
+// error — the LAST one silently wins for the whole module, including for hoisted references ABOVE it. When this
+// was called `runGit`, the checkpoint store below was handed the night-shift signature, every snapshot() returned
+// null, and the shadow-git undo net was dead in the shipped app while its own tests (which inject a fake runGit)
+// stayed green. Keep these two names distinct.
+function runGitCheckpoint(args, opts) {   // resolves (never rejects); a missing/failing git becomes a fail-open skip upstream
   return new Promise((resolve) => {
     try {
       execFile('git', args, { cwd: (opts && opts.cwd) || WORKSPACES, timeout: 15000, windowsHide: true, maxBuffer: 8 << 20 },
@@ -5366,7 +5372,7 @@ function runGit(args, opts) {   // resolves (never rejects); a missing/failing g
 // without a code change; a non-positive/blank value falls through to the store default.
 const _ckptMaxBytes = Number(ENV('CHECKPOINT_MAX_BYTES'));
 const checkpointStore = makeCheckpointStore(Object.assign(
-  { fs, pathMod: path, root: WORKSPACES, runGit: runGit, clock: { now: () => Date.now() }, keep: 50 },
+  { fs, pathMod: path, root: WORKSPACES, runGit: runGitCheckpoint, clock: { now: () => Date.now() }, keep: 50 },
   (_ckptMaxBytes > 0 && isFinite(_ckptMaxBytes)) ? { maxRepoBytes: Math.floor(_ckptMaxBytes) } : {}
 ));
 // checkpoint.* telemetry to the war-room HUD (the manual restore route has no run stream of its own); validated+redacted.
