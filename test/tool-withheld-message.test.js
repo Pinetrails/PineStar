@@ -71,6 +71,15 @@ if (fs.existsSync(mirror)) {
     'the agent-facing routine.create tool never names unattendedGrants (it builds an explicit whitelist spec)');
   A.ok(!/\.\.\.args|Object\.assign\(\{\}, args\)/.test(agentTool),
     'routine.create never spreads caller args into the spec (that would smuggle a grant through)');
+  /* routine.manage (the agent-facing EDIT path) is the same hole in a second door: cron-store's updateJob
+     patches the grant field too, so an agent that could hand it an arbitrary patch could escalate an existing
+     routine instead of a new one. It must build the patch from a named allowlist, key by key. */
+  A.ok(/const AGENT_PATCHABLE = \[/.test(agentTool),
+    'the agent-facing edit path declares an explicit patchable-field allowlist');
+  A.ok(/AGENT_PATCHABLE\.indexOf\(k\) >= 0/.test(agentTool),
+    'routine.manage filters its patch THROUGH that allowlist before it reaches the store');
+  A.ok(!/updateRoutine\(job\.id, args/.test(agentTool),
+    'routine.manage never hands raw caller args to the store as a patch');
   A.ok(!/unattendedGrants/.test(slashActions), 'the /routine slash action cannot set a grant either');
 }
 

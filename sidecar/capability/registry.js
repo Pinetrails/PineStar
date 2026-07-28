@@ -116,6 +116,18 @@
       { capId: 'web', tool: 'browser.tab_close', scope: 'execute', requiresConsent: true, network: true, deferred: true },
       // Real-screen desktop.open is not an ordinary run capability. The implementation remains
       // registered inertly for a future separate attended host channel, never a placed dish.
+      // ---- COMMS: OUTBOUND messaging reach (see tools/builtin/comms.js) ----
+      // The dish is the station's antenna: it already means "this agent can reach OUT past the station walls".
+      // Fetching a page and transmitting a message are the same physical claim on that prop, so outbound
+      // messaging hangs here rather than on a new object type. It is its OWN capId — NOT 'web' — precisely so a
+      // Commander who wants search-and-browse without letting an agent message people can switch COMMS off
+      // alone in the TOOLSETS console (a shared capId would make that impossible; see toolsets.js).
+      { capId: 'comms', tool: 'channel.targets', scope: 'read', requiresConsent: false, network: false },
+      // channel.send carries content OUT to a third party under the Commander's own bot identity — the single
+      // most consequential outward action in the tool surface and the obvious prompt-injection exfiltration
+      // target. execute + consent, like web_request and the Spotify controls: it asks every time until the
+      // Commander grants it, and an autonomous run therefore cannot spend it off a cached grant.
+      { capId: 'comms', tool: 'channel.send', scope: 'execute', requiresConsent: true, network: true }
     ],
     // CONNECTORS: a 'connector' object is a DYNAMIC capability — its grants are the tools its configured MCP
     // server reports at runtime (tools/list), which can't be statically listed here. The connector manager
@@ -162,7 +174,12 @@
       // ROUTINES panel), never through OS crontab / Windows Task Scheduler. Lead-only like the rest of
       // orchestration; creation is consent-gated because it persists autonomous future work.
       { capId: 'orchestrator', tool: 'routine.list', scope: 'read', requiresConsent: false, network: false },
-      { capId: 'orchestrator', tool: 'routine.create', scope: 'write', requiresConsent: true, network: false }
+      { capId: 'orchestrator', tool: 'routine.create', scope: 'write', requiresConsent: true, network: false },
+      // routine.manage — edit/pause/resume/delete/queue-a-fire on an EXISTING routine. Consent-gated for the
+      // same reason create is: an edit is the same surface as a create (a clean routine can be patched into a
+      // standing payload), and pausing or deleting changes what the station does unattended. One action-shaped
+      // tool rather than five verbs, because every schema here is re-sent on every turn (see the tool file).
+      { capId: 'orchestrator', tool: 'routine.manage', scope: 'write', requiresConsent: true, network: false }
     ],
     // STUDIO (media skills): text->image generation + image vision analysis, both on the SAME BYOK OpenRouter
     // key the agent already uses (no new provider). image_generate WRITES a file into the agent's workspace, so
