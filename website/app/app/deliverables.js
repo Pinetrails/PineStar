@@ -48,6 +48,25 @@
     function render() {
       list.innerHTML = rows.length ? rows.map((r, i) => '<article class="cfg-block deliverable-row" data-i="' + i + '"><div><b>' + esc(r.title || 'Untitled output') + '</b> <span class="tag">' + esc(r.status) + '</span></div><small>' + esc(r.source) + ' · ' + esc(r.agentId || 'station') + ' · ' + fmtSize(r.size) + ' · ' + esc(r.createdAt ? new Date(r.createdAt).toLocaleString() : 'time unknown') + '</small><p>' + esc(r.summary || '') + '</p><div class="row">' +
         ((r.actions && r.actions.open) ? (r.files || []).filter(f => f.openUrl).map((f, fi) => '<button class="bb sm" data-file="' + fi + '">OPEN ' + esc(f.path) + '</button>').join('') : '') + ((r.actions && r.actions.keep) ? '<button class="bb sm" data-act="keep">KEEP</button>' : '') + ((r.actions && r.actions.discard) ? '<button class="bb sm danger" data-act="discard">DISCARD</button>' : '') + '</div></article>').join('') : '<p class="muted">No deliverables match this view.</p>';
+      wireDiscards();
+    }
+    // Re-wired after every render: innerHTML replaces the buttons, so the previous listeners die with the
+    // old nodes and there is nothing to dispose. If armconfirm.js somehow did not load, the buttons stay
+    // unwired and the delegated handler discards on a single click — we do NOT fork a fourth hand-rolled
+    // copy of the arm/confirm idiom here, which is the thing that helper was extracted to prevent.
+    function wireDiscards() {
+      if (typeof ArmConfirm === 'undefined' || !ArmConfirm.wire) return;
+      list.querySelectorAll('button[data-act="discard"]').forEach(b => {
+        const r = rows[Number(b.closest('[data-i]').dataset.i)];
+        if (!r) return;
+        b.dataset.wired = '1';
+        ArmConfirm.wire(b, {
+          armedLabel: 'DISCARD — SURE?',
+          onArm: () => say('Discarding “' + (r.title || 'this output') + '” also removes its Workshop files permanently. Click again to confirm.', true),
+          onDisarm: () => say(rows.length + ' real record' + (rows.length === 1 ? '' : 's')),
+          onConfirm: () => decide(r, 'discard', b)
+        });
+      });
     }
     async function load() {
       const seq = ++loadSeq; say('Loading…');
@@ -67,17 +86,25 @@
         } else { const text = await response.text(); preview.innerHTML = '<div class="cfg-block"><b>SAFE PREVIEW · ' + esc(f.path) + '</b>' + (f.preview === 'markdown' ? safeMarkdown(text) : safeCsv(text, 50, 20)) + '</div>'; }
       } catch (e) { preview.innerHTML = ''; say('Could not preview that file: ' + e.message, true); }
     }
+    // DISCARD is irreversible (it deletes the Workshop files), so it asks — but with the station's own
+    // 2-step arm/confirm, never `window.confirm`. A native dialog is OS chrome painted over the phosphor
+    // terminal, which is exactly what armconfirm.js exists to stop ("no native dialogs inside the phosphor
+    // terminal"). The permanence sentence the dialog used to carry moves into the live message line on arm,
+    // so nothing is claimed less loudly than before — it is just said in the station's voice.
+    async function decide(r, act, b) {
+      b.disabled = true;
+      try { const j = await post('/api/workshop/decide', { agentId: r.agentId, runId: r.runId, decision: act }); say(j.decision === 'keep' ? ('Kept ' + r.title + (j.destPath ? ' in ' + j.destPath : '')) : ('Discarded ' + r.title)); await load(); }
+      catch (e) { b.disabled = false; say(e.message, true); }
+    }
     list.addEventListener('click', async ev => {
       const b = ev.target.closest('button[data-act],button[data-file]'); if (!b) return; const card = b.closest('[data-i]'), r = rows[Number(card.dataset.i)]; if (!r) return;
       if (b.hasAttribute('data-file')) return openRow(r, b.dataset.file);
-      if (b.dataset.act === 'discard' && !window.confirm('Discard “' + r.title + '” and permanently remove its Workshop files?')) return;
-      b.disabled = true;
-      try { const j = await post('/api/workshop/decide', { agentId: r.agentId, runId: r.runId, decision: b.dataset.act }); say(j.decision === 'keep' ? ('Kept ' + r.title + (j.destPath ? ' in ' + j.destPath : '')) : ('Discarded ' + r.title)); await load(); }
-      catch (e) { b.disabled = false; say(e.message, true); }
+      if (b.dataset.act === 'discard' && b.dataset.wired === '1') return;   // its own ArmConfirm listener owns it
+      decide(r, b.dataset.act, b);
     });
     let debounce = 0; q.addEventListener('input', () => { clearTimeout(debounce); debounce = setTimeout(load, 180); }); status.addEventListener('change', load); body.querySelector('#dl-refresh').addEventListener('click', load);
     body.querySelector('#dl-clean').addEventListener('click', async () => {
-      try { const p = await post('/api/deliverables/cleanup-preview', { statuses: ['discarded', 'failed'] }); cleanup.innerHTML = '<div class="cfg-block"><b>CLEANUP PREVIEW</b><p>' + p.targets.length + ' discarded/failed lifecycle record(s) will be removed. ' + p.protected.length + ' pending, kept, or produced record(s) are protected. Files are not deleted.</p><ul>' + p.targets.map(r => '<li>' + esc(r.title) + ' · ' + esc(r.status) + ' · ' + esc(r.runId || r.id) + '</li>').join('') + '</ul><button id="dl-clean-apply" ' + (p.targets.length ? '' : 'disabled') + '>REMOVE EXACTLY THESE ' + p.targets.length + ' RECORDS</button></div>'; const apply = cleanup.querySelector('#dl-clean-apply'); if (apply) apply.addEventListener('click', async () => { try { const c = await post('/api/deliverables/cleanup', { statuses: p.statuses, fingerprint: p.fingerprint }); cleanup.innerHTML = '<div class="msg ok">Removed ' + c.removed + ' record(s). <button id="dl-undo">UNDO</button></div>'; cleanup.querySelector('#dl-undo').addEventListener('click', async () => { const u = await post('/api/deliverables/cleanup-undo', { undoToken: c.undoToken }); say('Restored ' + u.restored + ' record(s).'); cleanup.innerHTML = ''; await load(); }); await load(); } catch (e) { say(e.message, true); } }); }
+      try { const p = await post('/api/deliverables/cleanup-preview', { statuses: ['discarded', 'failed'] }); cleanup.innerHTML = '<div class="cfg-block"><b>CLEANUP PREVIEW</b><p>' + p.targets.length + ' discarded/failed lifecycle record(s) will be removed. ' + p.protected.length + ' pending, kept, or produced record(s) are protected. Files are not deleted.</p><ul>' + p.targets.map(r => '<li>' + esc(r.title) + ' · ' + esc(r.status) + ' · ' + esc(r.runId || r.id) + '</li>').join('') + '</ul><button class="bb sm danger" id="dl-clean-apply" ' + (p.targets.length ? '' : 'disabled') + '>REMOVE EXACTLY THESE ' + p.targets.length + ' RECORDS</button></div>'; const apply = cleanup.querySelector('#dl-clean-apply'); if (apply) apply.addEventListener('click', async () => { try { const c = await post('/api/deliverables/cleanup', { statuses: p.statuses, fingerprint: p.fingerprint }); cleanup.innerHTML = '<div class="msg ok">Removed ' + c.removed + ' record(s). <button class="bb sm" id="dl-undo">UNDO</button></div>'; cleanup.querySelector('#dl-undo').addEventListener('click', async () => { const u = await post('/api/deliverables/cleanup-undo', { undoToken: c.undoToken }); say('Restored ' + u.restored + ' record(s).'); cleanup.innerHTML = ''; await load(); }); await load(); } catch (e) { say(e.message, true); } }); }
       catch (e) { say('Could not preview cleanup: ' + e.message, true); }
     });
     body._deliverablesCleanup = revoke;

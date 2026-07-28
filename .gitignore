@@ -44,12 +44,15 @@ src-tauri/binaries/
 # (each run writes a SHOT_DIR with a nested _profile chrome user-data-dir). Never committed.
 .uishots*/
 .mock-shot/
+# qa:summon-delegate journey scratch (seeded workspace + its own chrome profile). Never committed.
+.summon-journey/
 .qa_tmp/
 .tmpshot/
 .postcard-verify/
 .clip-verify/
 .uiplay/
 .uiresidue/
+.wallprobe*/
 .uisummon/
 .uiaudit/
 .uijourneys/

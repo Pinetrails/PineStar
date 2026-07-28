@@ -208,6 +208,25 @@ function boot(port, env, attemptsLeft) {
     const proj2 = await (await fetch(B + '/api/projects', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
     const row2 = (proj2.projects || []).find(p => path.resolve(p.root).toLowerCase() === path.resolve(proj).toLowerCase());
     A.ok(row2 && row2.blessed === false, 'post-revoke: /api/projects reports the remembered root as blessed:false');
+
+    /* ---- 6. "FULL ACCESS" ON THE CARD IS AT LEAST AS STRONG AS "ALWAYS" (live-caught 2026-07-27) ----
+       The card offers four grades; "full" used to be handled as a one-time allow that recorded nothing, so the
+       Commander clicking the STRONGEST button was asked again on the very next file touch in the same folder —
+       a user clicked it five times for five reads and never got a standing grant. Proven here over real HTTP:
+       one "full" answer, then subsequent reads carry a 'deny' answerer that must NEVER be consulted. The root
+       is un-blessed at this point (section 5 revoked it), so this starts from a genuinely cold trust store. */
+    const rFull = await driveRead('ptagent-full', fileA, 'full');
+    A.eq(rFull.prompts.filter(p => p.tool === 'path.trust').length, 1, '"full": exactly ONE path.trust prompt on the first outside read');
+    const permsFull = await (await fetch(B + '/api/permissions', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    const fullKey = (permsFull.grants || []).find(g => g.indexOf('path:') === 0 && path.resolve(g.slice(5)).toLowerCase() === path.resolve(proj).toLowerCase());
+    A.ok(fullKey, '"full" RECORDED a standing path:<root> grant, visible in /api/permissions (revocable, not invisible)');
+    const projFull = await (await fetch(B + '/api/projects', { headers: { 'X-StarNet-Token': token, Origin: B } })).json();
+    A.ok((projFull.projects || []).some(p => path.resolve(p.root).toLowerCase() === path.resolve(proj).toLowerCase() && p.blessed === true), '"full" blessed the project root (/api/projects reports blessed:true)');
+    // THE ACTUAL BUG: every following read in that folder must be silent. 'deny' would refuse IF asked.
+    for (const [i, f] of [fileB, fileA, fileB].entries()) {
+      const rAgain = await driveRead('ptagent-full-' + i, f, 'deny');
+      A.eq(rAgain.prompts.filter(p => p.tool === 'path.trust').length, 0, 'after "full", read #' + (i + 2) + ' in that folder raises NO card');
+    }
   } finally {
     try { running.child.kill(); } catch (_) {}
     try { mock.server.close(); } catch (_) {}
