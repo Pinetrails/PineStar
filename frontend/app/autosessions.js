@@ -196,8 +196,20 @@ const AutoSessions = (() => {
         const r = await fetch('/api/runs?agent=*&limit=100', { cache: 'no-store' });
         if (r.ok) runs = ((await r.json()) || {}).runs || [];
       } catch (_) { return; }   // route error → nothing to backfill, never crash
-      const seen = Object.create(null);
+      /* THE RUN THAT DEFINES A SESSION IS THE ONE IT IS NAMED AFTER. A stream can now hold SEVERAL runs — a
+         routine that fires a WORK LINE records one row per stage, all under 'cron-<runId>' so the session shows
+         the whole line. Taking whichever row the list happened to yield first therefore titled the routine's
+         session with the internal PIPELINE HANDOFF prompt and attributed it to the LAST stage's agent. The
+         session id carries its defining runId, so pick that row exactly rather than by list order. */
+      const byStream = Object.create(null);
       for (const run of runs) {
+        const sid = run && run.streamId;
+        if (!sid || String(sid).indexOf(STREAM_PREFIX) !== 0) continue;
+        const want = String(sid).slice(STREAM_PREFIX.length);
+        if (!byStream[sid] || String(run.runId || '') === want) byStream[sid] = run;
+      }
+      const seen = Object.create(null);
+      for (const run of Object.keys(byStream).map(k => byStream[k])) {
         const sid = run && run.streamId;
         if (!sid || String(sid).indexOf(STREAM_PREFIX) !== 0 || !validStream(sid)) continue;
         if (seen[sid]) continue;

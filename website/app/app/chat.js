@@ -1177,7 +1177,11 @@ const Chat = (() => {
     const d = document.createElement('div'); d.className = 'cmsg ' + role + (renderingHistory ? ' no-anim' : '');
     // COMMS-PREMIUM: the speaker chip + a dim HH:MM stamp share one header row (a flex .cmsg-head).
     const who = document.createElement('span'); who.className = 'who';
-    who.textContent = role === 'user' ? 'COMMANDER' : role === 'system' ? 'SYSTEM' : name;
+    // opts.who NAMES THE ACTUAL SPEAKER. Every agent row used to be stamped with the FOCUSED agent's name,
+    // which was true while one agent owned every turn — a work line breaks that: stages 2..N are other agents
+    // and labelling their work with the entry dock's name is a fabricated attribution (the same law that
+    // stopped the hub writing a downstream stage's reply into the entry dock's transcript).
+    who.textContent = role === 'user' ? 'COMMANDER' : role === 'system' ? 'SYSTEM' : ((opts && opts.who) || name);
     const body = document.createElement('span'); body.className = 'body';
     // TIMESTAMP TRUTH (P0): opts.stamp is `true` for a row created LIVE (real wall-clock now), a number/Date for a
     // stored turn's REAL recorded time, or falsy for a legacy turn that carries no time — in which case we render
@@ -4059,7 +4063,10 @@ const Chat = (() => {
       if (m && m.sys) { if ((m.content || '').trim()) toolLine(m.content, !!m.error); continue; }
       if (m.role !== 'assistant') continue;   // only dialogue turns render (a stray system marker never shows as an agent reply)
       if (!(m.content || '').trim()) { if (m.stopped) lastReal = m; continue; }   // zero-token stop: durable recovery truth, never a blank speech row
-      const r = row('agent', { stamp: stamp });   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
+      // a turn produced by a WORK LINE stage carries its own agentId — replay names that agent, not the focused
+      // one, or a reload would silently re-attribute two other agents' work to whoever owns the stream now.
+      const spoke = (m && m.agentId && typeof App !== 'undefined' && App.agentName) ? App.agentName(m.agentId) : null;
+      const r = row('agent', { stamp: stamp, who: spoke });   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
       if (m.error) r.d.classList.add('err');
       renderProse(r.body, m.content);   // same linkify path as live tokens, so replayed history matches
       lastReal = m;
@@ -4106,11 +4113,13 @@ const Chat = (() => {
   // caret; when an action happens (tool call/result, deliverable, approval) the caller breaks the current
   // paragraph so the action row lands BELOW it, and the next tokens open a fresh paragraph under the action —
   // so a turn reads top-to-bottom as "said this → did that → said this", classic-harness style.
-  function streamingAgent() {
+  // whoName (optional) = the speaker to stamp on every row this controller opens. Passed by a WORK LINE stage so
+  // the transcript names the agent that actually produced the text; omitted everywhere else = the focused agent.
+  function streamingAgent(whoName) {
     let seg = null, caret = null, raw = '';   // seg: the currently-open agent row; raw: its accumulated prose (so URLs can be linkified as they complete)
     function open() {
       endToolRail();   // a fresh prose paragraph opening below a rail closes it, so the next tool call starts a NEW rail under this prose (keeps chronological "said → did → said → did")
-      seg = row('agent', { stamp: true }); raw = '';
+      seg = row('agent', { stamp: true, who: whoName || null }); raw = '';
       caret = document.createElement('span'); caret.className = 'caret'; caret.textContent = '▮';
       seg.d.appendChild(caret);   // caret is a sibling of .body, so re-rendering .body's content never disturbs it
     }
@@ -5588,6 +5597,95 @@ const Chat = (() => {
     try { item.run(args); } catch (_) {}
   }
 
+  /* ═══════════════ WORK LINES IN COMMS (agentic graphs) ═══════════════════════════════════════════════
+     A directive typed here lands at ONE dock. If the Commander drew belts PAST that dock, those stages are
+     the work — and until this existed they were scenery on this surface while channel and cron work ran the
+     whole line. The sidecar advances its own lines because it owns those turns; a COMMS turn streams through
+     /api/run to the BROWSER, which owns it, so the browser asks the SAME router the same question
+     (/api/routing/chain) and runs the same hops with the SAME shared handoff prompt. One floor, one answer,
+     whoever started it.
+
+     Every stage renders as its OWN agent turn under its own name. That is not decoration: the line really is
+     three agents doing three pieces of work, and collapsing it to one reply would hide who wrote what. The
+     LAST stage's text is the answer (returned to the caller, which re-points voice/title at it).
+
+     Bounded exactly like the sidecar executor: LINE_MAX_HOPS, an agent never runs twice, and a stop / stream
+     switch / empty stage ends the line keeping the last good text. */
+  const LINE_MAX_HOPS = 6;   // mirrors MAX_HOPS in sidecar/routing/chain.js — these two must not drift
+
+  function lineTag(t) { return (typeof Classify !== 'undefined' && Classify.getTag) ? Classify.getTag(t) : 'general'; }
+
+  // WHERE DOES THIS DOCK'S OUTPUT GO? Asked of the router, never re-derived here — the browser holds a plan for
+  // drawing, but the SIDECAR's plan is the one that authorizes spend, so it is the one that decides.
+  async function nextStageOf(agentId, tag) {
+    try {
+      const h = {}, tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) || '';
+      if (tok) h['X-StarNet-Token'] = String(tok);
+      const r = await fetch('/api/routing/chain?agentId=' + encodeURIComponent(agentId) + '&tag=' + encodeURIComponent(tag || ''), { cache: 'no-store', headers: h });
+      if (!r || !r.ok) return null;
+      const j = await r.json();
+      return (j && j.next) ? String(j.next) : null;
+    } catch (_) { return null; }   // no floor, no sidecar, no line — the single-stage reply already stands
+  }
+
+  /* Run every stage downstream of `fromAgentId`. Returns { text, agentId, hops } — text is the LINE's answer
+     (the seed text unchanged when no stage ran). Never throws: a work line is an enhancement to a reply the
+     caller already has, exactly like the sidecar's. */
+  async function runWorkLine(ws, seed) {
+    const out = { text: seed.text, agentId: seed.fromAgentId, hops: 0 };
+    if (!seed.fromAgentId || !String(seed.text || '').trim()) return out;
+    const visited = {}; visited[seed.fromAgentId] = true;
+    let cur = seed.fromAgentId;
+    for (let hop = 1; hop <= LINE_MAX_HOPS; hop++) {
+      if (seed.signal && seed.signal.aborted) return out;
+      if (interrupted.has(ws.id)) return out;                       // the Commander pressed Stop — the line stops
+      const nx = await nextStageOf(cur, lineTag(out.text));
+      if (!nx || visited[nx]) return out;                           // terminal stage, or a loop the plan let through
+      const sys = (typeof App !== 'undefined' && App.systemFor) ? App.systemFor(nx) : null;
+      if (!sys) return out;                                         // a dock bound to an agent this roster doesn't have
+      visited[nx] = true;
+
+      const who = (typeof App !== 'undefined' && App.agentName && App.agentName(nx)) || nx;
+      const wiHop = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('wi-' + Date.now() + '-' + (++wiSeq));
+      const hopStart = Date.now();
+      // the floor draws the handoff exactly like a channel line's: a crate leaves this dock for the next
+      wiEmit('workitem.placed', { workitemId: wiHop, queueId: nx, agentId: nx, kind: 'chain', preview: String(out.text).replace(/\s+/g, ' ').slice(0, 40), ts: hopStart });
+      if (isActiveWs(ws)) { breakLive(); toolLine('▸ ' + who + ' — stage ' + (hop + 1) + ' of the work line'); }
+
+      const prompt = (typeof Pipeline !== 'undefined' && Pipeline.handoffPrompt)
+        ? Pipeline.handoffPrompt(seed.originalText, cur, out.text, hop) : out.text;
+      const hopRow = isActiveWs(ws) ? streamingAgent(who) : null;
+      if (hopRow) activeLiveRow = hopRow;
+      let hopAcc = '';
+      let res = null;
+      try {
+        res = await Harness.chat({
+          system: sys, messages: [{ role: 'user', content: prompt }], agentId: nx, isTask: true,
+          signal: seed.signal, streamId: ws.id,
+          placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(nx) : [],
+          stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],
+          onToken: d => { hopAcc += d; if (hopRow) hopRow.append(d); App.refreshUsage(); },
+          onToolCall: ev => { if (isActiveWs(ws)) { if (hopRow && hopRow.breakSeg) hopRow.breakSeg(); toolChip(ev); } }
+        });
+      } catch (e) { res = { error: e }; }
+      if (hopRow) hopRow.done();
+      const hopText = String((res && res.text) || hopAcc || '').trim();
+
+      // A STAGE THAT FAILED OR SAID NOTHING ENDS THE LINE WITH THE LAST GOOD ANSWER — the belt is never a gate.
+      if (!hopText || (res && res.error)) {
+        wiEmit('workitem.superseded', { workitemId: wiHop, agentId: nx, ts: Date.now() });
+        if (isActiveWs(ws)) toolLine('⚠ the work line stopped at ' + who + ' — showing ' + ((typeof App !== 'undefined' && App.agentName && App.agentName(cur)) || cur) + '’s answer above', true);
+        return out;
+      }
+      wiEmit('workitem.delivered', { workitemId: wiHop, finalQueueId: nx, agentId: nx, box: '', ms: Date.now() - hopStart, ts: Date.now() });
+      ws.history.push({ role: 'assistant', content: hopText, agentId: nx, ts: Date.now() });   // agentId = the ACTUAL speaker (renderHistory names it)
+      capHistory(ws);
+      out.text = hopText; out.agentId = nx; out.hops++;
+      cur = nx;
+    }
+    return out;
+  }
+
   async function send(text, opts) {
     const retry = !!(opts && opts.retry);   // RETRY re-runs the last user message (already in the thread) — don't echo it again
     // ATTACHMENTS: photos/files staged in the composer, snapshotted by the Enter handler into opts.attachments as
@@ -5913,6 +6011,17 @@ const Chat = (() => {
         if (isActiveWs(ws) && replyText && typeof Fork !== 'undefined' && Fork.parse) {
           const fk = Fork.parse(replyText);
           if (fk) { offerFork(fk); if (!voiceQuestion && fk.question) voiceQuestion = fk.question; }
+        }
+        /* THE WORK LINE. This dock has answered; if the Commander drew stages past it, run them now — still
+           INSIDE the run's try, so the stream stays busy and Stop/E-STOP reach the whole line rather than a
+           transcript that goes quiet while three more agents keep spending. Gated on a real TASK directive
+           (the belt is work-only — "hello" never rides), on a clean finish, and never on a run that ended by
+           ASKING something: a question is the turn's answer, and handing it downstream would answer it on the
+           Commander's behalf. finalReply is re-pointed at the line's last stage so voice speaks, and the
+           session titles from, the answer that actually leaves. */
+        if (isTask && !taskQuestion && !cutShort && (!endReason || endReason === 'done') && replyText.trim()) {
+          const line = await runWorkLine(ws, { fromAgentId: turnAgentId, text: replyText, originalText: text, signal: ac.signal });
+          if (line.hops) { finalReply = line.text; replyText = line.text; titleOk = !!line.text.trim(); }
         }
         // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
         // it arrives (onToken → pushSpeech) and flushed in the finally.

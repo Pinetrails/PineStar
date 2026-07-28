@@ -4486,7 +4486,7 @@ const World = (() => {
   const NAG_LABEL = {
     UNBOUND_BAY: 'NO AGENT — CLICK', ORPHAN_BAY: 'NOT ON THE LINE', ORPHAN_SOURCE: 'NO BELT OUT',
     BAY_NOT_FED: 'NOT CONNECTED — FIX IN REFIT', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT LANE', DUP_AGENT: 'DUP AGENT',
-    SPLIT_ONE_LANE: 'SPLITTER — ONE LANE'
+    SPLIT_ONE_LANE: 'SPLITTER — ONE LANE', CHAIN_CYCLE: 'WORK LINE LOOPS'
   };
   // project the compiled plan's error list onto floor rectangles once per recompile (zero per-frame walk)
   function buildRoutingNags() {
@@ -5109,6 +5109,18 @@ const World = (() => {
     //    (Pipeline.sourceFor — each room's INBOX feeds its own network, never another room's outbox);
     //  • unaddressed work takes the first INBOX (unchanged);
     //  • no reaching line → the work lands directly at the agent's BAY dock (a lone bay is a complete build).
+    /* A HANDOFF DOES NOT ENTER THROUGH THE FRONT DOOR. A `chain` work-item is stage N of a work line: it was
+       produced at the UPSTREAM dock and rides that dock's lane to this one. Spawning it at an INTAKE would
+       draw a lie — the station never received anything, one of its own agents did. The upstream dock is
+       derived from the compiled plan (the dock whose chain names this agent), so no event field is invented
+       for it; the crate is PRODUCT, not ore, because that is exactly what it is. */
+    if (p.kind === 'chain' && routingPlan && routingPlan.chains) {
+      p.box = 'product';
+      const ups = Object.keys(routingPlan.chains).filter(a => (routingPlan.chains[a].next || []).indexOf(p.agentId) >= 0).sort();
+      const from = ups.length ? routingPlan.chains[ups[0]] : null;
+      if (from && from.tile) { convey.enqueueAt(from.tile.x, from.tile.y, p); return; }
+      dockArrival(p); return;                                       // no drawn lane between them — land it at the dock
+    }
     let t = null;
     if (p.kind !== 'directive') {
       t = (p.agentId && routingPlan && typeof Pipeline !== 'undefined' && Pipeline.sourceFor)
@@ -5213,6 +5225,12 @@ const World = (() => {
   }
   function shipProductCrate(p) {
     if (!convey) return;
+    // A NON-TERMINAL STAGE SHIPS NOTHING OUT. If this dock's output hands off to another dock, its product IS
+    // the handoff crate (drawn when the sidecar places the next stage's work-item) — also spawning a ship-out
+    // crate here would draw the same work leaving twice, once toward a door it never went through.
+    const cAid = (p && p.agentId) || '';
+    const ch = (cAid && routingPlan && routingPlan.chains) ? routingPlan.chains[cAid] : null;
+    if (ch && ch.next && ch.next.length) return;
     const rid = (p && p.runId) || '';
     if (rid) { if (shippedRunIds.has(rid)) return; shippedRunIds.add(rid); if (shippedRunIds.size > 400) shippedRunIds.clear(); }
     const t = outboundBeltTile(p && p.agentId);

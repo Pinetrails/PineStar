@@ -106,6 +106,7 @@ const channelSecretsMod = require('./channels/secrets.js');                     
 const { makeConnectGateway } = require('./channels/discord.gateway.js');           // P2-E: the real Discord gateway WS client (inbound)
 const { makeSseHub, runTeeView } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
+const { makeChainRunner } = require('./routing/chain.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
@@ -2600,6 +2601,18 @@ function bumpQueue(agentId, d) { const n = Math.max(0, (queueDepth.get(agentId) 
 // the placed floor's RoutingPlan (posted by the app on every geo change). resolveTarget answers "which agent
 // runs this work-item?"; a non-deployable plan (cycle/orphan/dead-bay) is refused so routing can't loop.
 const router = makeRouter();
+/* THE WORK LINE (agentic graphs, 2026-07-27). resolveTarget names the dock that runs a message; `chainRunner`
+   runs everything the Commander drew DOWNSTREAM of that dock — bay -> bay, until the line ships out. One
+   instance, bound to the floor's edge function; each caller hands it its own way to execute a hop. Emits its
+   per-hop crates through the SAME validated chanEmit the channel telemetry uses, so a handoff is a real crate
+   on the floor and not a claim. */
+const chainRunner = makeChainRunner({
+  nextAgent: (agentId, ctx) => router.chainNext(agentId, ctx),
+  emit: (name, payload) => { try { chanEmit(name, payload); } catch (_) {} },
+  newId: () => 'wi_' + crypto.randomUUID().slice(0, 8),
+  now: () => Date.now(),
+  getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined)   // the SAME classifier a FILTER routes by
+});
 /* RESTART TRUTH (2026-07-06 audit): the router used to hold the posted plan ONLY in memory — after a sidecar
    restart, cron/channel work fired UNROUTED (fallback agent, default-office caps, no per-bay isolation) until
    a browser happened to open and re-post. The last ACCEPTED plan persists beside the other protected state
@@ -3145,7 +3158,35 @@ const cronDriver = makeCronDriver({
   placeWorkitem: placeCronWorkitem,
   // persona is a GETTER so each fire folds in the LIVE Commander dossier (it changes as the user edits it);
   // withDossier is a no-op when the dossier is empty, so this is byte-identical to CRON_PERSONA until one exists.
-  persona: (agentId) => cronSystemFor(agentId)
+  persona: (agentId) => cronSystemFor(agentId),
+  /* THE WORK LINE for a scheduled fire: run the stages drawn downstream of the routine's dock. Same executor,
+     same caps, same per-hop crates as a channel message — only the way a hop is executed differs (a routine has
+     no chat transcript; its hops ride the routine's own stream so the session shows the whole line). */
+  advanceChain: (o) => chainRunner.advance({
+    agentId: o.agentId, text: o.text, originalText: o.originalText, signal: o.signal,
+    runAgent: async (h) => {
+      if (o.onHop) { try { o.onHop(); } catch (_) {} }
+      const hs = { buf: '', errMsg: null, usd: 0 };
+      const sink = (name, payload) => {
+        const p = payload || {};
+        if (name === 'agent.token') { hs.buf += (p.delta || ''); return; }
+        if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
+        else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
+        else if (name === 'agent.run.end' && typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd;
+        try { const view = runTeeView(name, p); if (view) cronEmitNotify(name, view); } catch (_) {}
+      };
+      try {
+        await runOnce({
+          key: o.key, model: o.model, provider: o.provider, system: cronSystemFor(h.agentId),
+          messages: [{ role: 'user', content: h.text }], agentId: h.agentId, isTask: true,
+          emit: sink, signal: h.signal, runId: crypto.randomUUID(), streamId: o.streamId,
+          surface: 'autonomous', trigger: 'schedule', reflect: true,
+          station: router.stationFor(h.agentId) || undefined
+        });
+      } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
+      return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
+    }
+  })
 });
 let cronTimer = null;
 // TICKER HEALTH (2026-07-15 reliability audit): "armed" only proves a timer EXISTS — not that ticks are
@@ -5357,6 +5398,7 @@ function startTelegram(token, key, model, agentCfg) {
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
     resolveAgent: (ctx) => router.resolveTarget(ctx),
+    chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),                    // B5: a bay's room objects = that agent's caps
     // In-messenger control surface (channel-agnostic): list agents / switch agent / change the bound agent's model.
@@ -5613,6 +5655,7 @@ function startDiscord(token, key, model, agentCfg) {
       persona: DISCORD_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
       newId: () => crypto.randomUUID(), now: () => Date.now(),
       resolveAgent: (ctx) => router.resolveTarget(ctx),
+      chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
       // In-messenger control surface — identical to Telegram because it lives in the shared hub (roster/setModel/
@@ -5718,6 +5761,7 @@ function getDevHub() {
     groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
+    chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
     resolveStation: (agentId) => router.stationFor(agentId),
     roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
@@ -5879,6 +5923,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
       persona: channelPersona(desc.label), classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
       newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: desc.maxMessageLength,
       resolveAgent: (ctx) => router.resolveTarget(ctx),
+      chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
       // In-messenger control surface — identical across channels because it lives in the shared hub.
@@ -6085,6 +6130,7 @@ const ROUTES = [
   { m: 'GET', rx: GENERIC_CHANNEL_RX.status, h: (req, res, gm) => handleGenericChannelStatus(req, res, gm[1]) },
   { m: 'GET', qsplit: '/api/channels/events', h: handleChannelEvents },   // path match: the SSE url carries a ?token= query now
   { m: 'POST', exact: '/api/routing', h: handleRouting },
+  { m: 'GET', qsplit: '/api/routing/chain', h: handleRoutingChain },   // qsplit, not exact: `exact` compares the FULL url and this route always carries a query
   { m: 'GET', exact: '/api/budget/status', h: handleBudgetStatus },
   { m: 'GET', qsplit: '/api/credits', h: handleCredits },   // 404s (no surface) unless managed credits are configured
   { m: 'POST', exact: '/api/budget/caps', h: handleBudgetCaps },
@@ -6476,6 +6522,24 @@ function handleRouting(req, res) {
     res.writeHead(r.ok ? 200 : 422, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(r));
   }).catch(() => { try { res.writeHead(400); res.end(); } catch (_) {} });
+}
+
+/* ---- GET /api/routing/chain?agentId=&tag= — WHERE DOES THIS DOCK'S OUTPUT GO?
+
+   The one seam the BROWSER needs to run a work line. Channel and cron runs advance their line inside the
+   sidecar, but an in-app COMMS turn streams through /api/run to the browser, which owns the turn — so the
+   browser asks the SAME router the same question and drives the same hops. `pick` advances the round-robin
+   exactly like every other caller, so a SPLIT downstream of a dock spreads across surfaces instead of each
+   one always taking lane 0. Read-only apart from that counter; { next: null } for a terminal stage, an
+   unknown agent, or no routing floor at all. ---- */
+function handleRoutingChain(req, res) {
+  const u = new URL(req.url, 'http://x');
+  const agentId = String(u.searchParams.get('agentId') || '').trim();
+  const tag = String(u.searchParams.get('tag') || '').trim() || undefined;
+  let next = null;
+  try { next = agentId ? router.chainNext(agentId, { tag: tag }) : null; } catch (_) { next = null; }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ next: next || null }));
 }
 
 /* ---- GET /api/budget/status — the live spend pools (day + global) vs their caps, plus session resume headroom.
@@ -7775,6 +7839,43 @@ async function handleCronRun(req, res) {
     state.errMsg = state.errMsg || ('sidecar failure: ' + ((e && e.message) || e));
     try { emit('agent.run.error', { agentId: job.agentId, runId: runId, message: state.errMsg, transient: false }); } catch (_) {}
   } finally {
+    /* RUN NOW MUST FIRE THE WHOLE LINE, exactly like the scheduled fire does. This route calls runOnce
+       DIRECTLY (it streams to the watching browser), so it does not pass through the cron driver's
+       advanceChain seam — without this the SAME routine would run four stages on schedule and one stage
+       from the button, which is the precise bug class the slash-command redirect above already exists to
+       prevent. Hops stream into the SAME response and the SAME per-run stream, so the session shows the
+       whole line. Runs BEFORE markRun/cron.result below so the recorded outcome is the LINE's, and a chain
+       failure never changes the routine's outcome (state.errMsg is untouched). */
+    if (!state.errMsg && String(state.buf || '').trim()) {
+      try {
+        const line = await chainRunner.advance({
+          agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''), signal: ac.signal,
+          runAgent: async (h) => {
+            const hs = { buf: '', errMsg: null, usd: 0 };
+            const hopSink = (name, payload) => {
+              try { emit(name, payload); } catch (_) {}
+              const p = payload || {};
+              if (name === 'agent.token') hs.buf += (p.delta || '');
+              else if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
+              else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
+              else if (name === 'agent.run.end' && typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd;
+            };
+            try {
+              await runOnce({
+                key: key, model: model, provider: provider, system: cronSystemFor(h.agentId),
+                messages: [{ role: 'user', content: h.text }], agentId: h.agentId, isTask: true,
+                emit: hopSink, signal: h.signal, runId: crypto.randomUUID(), streamId: 'cron-' + runId,
+                surface: 'autonomous', trigger: 'schedule', broadcast: true, reflect: true,
+                station: router.stationFor(h.agentId) || undefined,
+                unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : []
+              });
+            } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
+            return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
+          }
+        });
+        if (line && String(line.text || '').trim()) state.buf = line.text;
+      } catch (e) { console.warn('[cron] run-now work line failed after ' + job.agentId + ': ' + ((e && e.message) || e)); }
+    }
     runs.delete(runId);
     runsMeta.delete(runId);
     dropSteer(runId, 'manual-run');      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun); logs a count if non-empty
@@ -11588,7 +11689,10 @@ function handleHalt(req, res) {
   });
   // multi-bot telegram: every agent-bound bot's hub runs die on E-STOP too, exactly like the station bot's.
   const tgBotInflights = [...telegramBots.values()].map((w) => (w && w.hub && w.hub._internals) ? w.hub._internals.inflight : null);
-  const halted = killAll(runs, tgInflight, dcInflight, ...genericInflights, ...tgBotInflights);   // browser runs + ALL channel hub runs, in one kill (see sidecar/halt.js)
+  // the DEV injector's hub too (SKYNET_DEV only, and null until something has used it). Its runs are REAL runs
+  // that really spend, so an E-STOP that skipped them would leave live work the panel says it stopped.
+  const devInflight = (devHub && devHub._internals) ? devHub._internals.inflight : null;
+  const halted = killAll(runs, tgInflight, dcInflight, ...genericInflights, ...tgBotInflights, devInflight);   // browser runs + ALL channel hub runs, in one kill (see sidecar/halt.js)
   let cronAborted = 0;
   try { cronAborted = cronDriver.abortAllLeases(); } catch (_) {}   // Phase 0: E-STOP also aborts in-flight cron runs (unattended spend)
   let beatAborted = 0;
