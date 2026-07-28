@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "db0dbc81cab2f654b68a7110bd3c7cc79415781d",
+    "sourceCommit": "65a5a365d6c27dd2a73362c9650516463edccdcd",
     "pathSetSha256": "ba2d0a007dbdf1fb304e041a440e8a10a26ef8a87b3fb2ad6f73c69661dabaee",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 294081,
-        "sha256": "c56042e78470630a4b6a912f0f318cb0df15e01cc7ed6631daddf17816ba78d2"
+        "bytes": 294154,
+        "sha256": "acb9f330dba6e49b714e1fc4b7195ec7ef85baba603e66e9d88c0e1382f8c57e"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -393,8 +393,8 @@
       },
       {
         "path": "frontend/app/permissionsstore.js",
-        "bytes": 7798,
-        "sha256": "0bc089ba7939a75906e6fbe4c6e4a2430ce326720efa7372ae4b0bf043d681c7"
+        "bytes": 7484,
+        "sha256": "e8d6db37c666f919f4ad1ca0401d7812e52e825179abc879f4e3d209cc78c7e1"
       },
       {
         "path": "frontend/app/personas.js",
