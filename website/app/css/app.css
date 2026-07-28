@@ -1914,6 +1914,12 @@ body:not(.no-flicker) #screen-game.active { animation: flick 7s infinite; }
 .sk-card.open .sk-body { display: block; }
 .sk-body pre { white-space: pre-wrap; word-wrap: break-word; font-size: 11px; line-height: 1.45; color: var(--text); opacity: 0.92; margin: 0; font-family: inherit; max-height: 340px; overflow-y: auto; }
 .sk-attr { font-size: 10.5px; opacity: 0.5; margin-top: 8px; font-style: italic; }
+/* WITHHELD: the skill guard is keeping this saved skill out of the agent's prompt. Reads as a
+   quarantine, not a decoration — warn phosphor on the card edge, and the reason line is the one
+   .sk-attr that is NOT dimmed to a whisper (it is the whole reason the card looks different). */
+.sk-card.held { border-color: var(--warn); }
+.sk-card.held .sk-toggle { color: var(--warn); border-color: var(--warn); }
+.sk-attr.sk-held { opacity: 0.95; font-style: normal; color: var(--warn); letter-spacing: 0.3px; line-height: 1.4; }
 
 /* SKILLS redesign (legibility) — a real ON/OFF pill SWITCH (the user's choice) + a SEPARATE readiness chip (the
    floor's grant), so the two axes never collapse into one ambiguous string. State sections group the library by
