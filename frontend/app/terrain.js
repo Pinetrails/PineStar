@@ -152,7 +152,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
   const FOREST = {
     label: 'FOREST',
     blurb: 'Landed in old growth. Deep litter, high canopy, no one around.',
-    base: '#0e1210',
+    base: '#131a15',
     PATCH: 512,                       // world px of the tiling floor texture
     DAPPLE: 640,                      // world px of the sunlight-through-canopy pass
     OVERLAY_ALPHA: 0.34,              // how hard that pass lands on the floor
@@ -174,7 +174,14 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
       MOSS_D: [19, 30, 18], MOSS_L: [58, 82, 41],
       LITTER: [92, 64, 33], TWIG: [46, 34, 22], STONE: [44, 45, 42],
       DAPPLE: [150, 132, 66],                          // warm sun on the floor, used additively
-      CAST: [10, 14, 10],                              // opaque, so hard-edging cannot erase it
+      /* THE SAME LESSON THE MOON TAUGHT, and this ground had it wrong first. At [10,14,10] the
+         canopy gaps were holes: not "floor you cannot see well", but nothing at all, and a frame
+         with a dozen of them reads as a torn photograph. Shade under a canopy is the one place in
+         nature that is emphatically NOT dark — it is full of green light bounced off ten thousand
+         leaves, which is why standing in a wood feels lit and photographs of woods do not. Keeping
+         the hue and raising the value is the whole fix; it stays far below the moss so a crown
+         still separates from the floor, but there is a forest floor down there now. */
+      CAST: [19, 26, 19],                              // opaque, so hard-edging cannot erase it
       /* five ramps, five silhouettes. A conifer is COOLER and DARKER than a maple; a birch is
          warmer and brighter than either. Hue separation is species identification at 40px. */
       LEAF: [[19, 31, 19], [30, 48, 26], [44, 68, 33], [62, 92, 41], [86, 118, 51], [116, 148, 63]],
@@ -381,6 +388,27 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         if (shade < 0.55 || rnd() > shade) continue;
         c.fillRect(Math.round(x), Math.round(y), 1 + ((rnd() * 2) | 0), 1);
       }
+
+      /* 5. THE CONTACT EDGE — the fix for the single worst thing about this forest.
+         Every crown was individually fine and the canopy still read as one lumpy green CARPET,
+         because a crown's outer leaves are its brightest and they were landing directly against the
+         next crown's outer leaves. Two bright edges touching do not make an edge; the silhouette
+         dissolved and what survived was an even mat of foliage with black holes in it.
+         Old-growth canopy seen from above is not a mat — it is a stack of discs, and you can tell
+         one from the next because each crown drops a little shade onto whatever it overlaps.
+         So: a dark band stippled just INSIDE the outline (inside, so the sprite never grows and the
+         alpha-snap has nothing to chew), heavier on the down-sun side where the crown's own bulk
+         shades its edge, present everywhere so no neighbour pair can ever merge. */
+      c.fillStyle = rgba(pal[0], 0.92);
+      for (let i = 0, n = Math.round(R * 26); i < n; i++) {
+        const th = rnd() * TAU, edge = radAt(th);
+        const t = Math.pow(rnd(), 0.55);                    // hugs the outline
+        const rr = edge * (1 - 0.13 * t);
+        const down = clamp01(0.5 + (Math.cos(th) * SUN.x + Math.sin(th) * SUN.y) * 0.5);
+        if (rnd() > (0.34 + 0.66 * down) * (1 - t * 0.55)) continue;
+        c.fillRect(Math.round(cx + Math.cos(th) * rr), Math.round(cy + Math.sin(th) * rr),
+          1 + ((rnd() * 2) | 0), 1);
+      }
     },
 
     /* ---- the scatter sprites: pre-rendered once, then one drawImage per instance ---- */
@@ -396,7 +424,14 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         const R = 28 + Math.round(rnd() * 26);
         const S = Math.ceil(R * 3.2), cx = S / 2, cy = S / 2;
         const cv = mkCv(S, S), c = cv.getContext('2d');
-        FOREST.crown(c, cx, cy, R, LT.LEAF, rnd, { density: 0.66, hole: 0.80 });
+        /* PER-VARIANT TONE. The seven broadleaf variants differed in outline and in nothing else,
+           so at play zoom the canopy was one value across the whole screen and the only visible
+           boundaries were the black gaps. Real crowns differ by a lot more than shape: age, species,
+           how much sun they win, whether they are under an emergent. Spreading the pool across a
+           third of the ramp costs nothing and is what turns a mat back into individual trees. */
+        FOREST.crown(c, cx, cy, R, LT.LEAF, rnd, {
+          density: 0.66, hole: 0.80, boost: -0.17 + v * 0.055,
+        });
         add('tree', cv, cx, cy, R);
       }
 
@@ -416,11 +451,11 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          spruce is a spiked wheel, and that silhouette is what separates it from a maple at 30px.
          The star-of-triangles version this replaces read as a sea urchin at every zoom. */
       for (let v = 0; v < 5; v++) {
-        const R = 21 + Math.round(rnd() * 15);
+        const R = 18 + Math.round(rnd() * 24);
         const S = Math.ceil(R * 3.0), cx = S / 2, cy = S / 2;
         const cv = mkCv(S, S), c = cv.getContext('2d');
         FOREST.crown(c, cx, cy, R, LT.NEEDLE, rnd, {
-          density: 0.72, hole: 0.88, teeth: 13 + ((rnd() * 6) | 0),
+          density: 0.72, hole: 0.88, teeth: 13 + ((rnd() * 6) | 0), boost: -0.10 + v * 0.05,
         });
         c.fillStyle = rgb(LT.NEEDLE[4]);                     // the lit apex, straight down the leader
         c.beginPath(); c.arc(cx - R * 0.05, cy - R * 0.05, Math.max(1.5, R * 0.11), 0, TAU); c.fill();
@@ -630,8 +665,8 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
             const pick = h01(cx, cy, 40 + k);
             /* species mix: broadleaf dominant, a real conifer minority, birch and dead snags rare
                enough to be events. A 50/50 mix reads as a garden centre, not a wood. */
-            const pool = pick < 0.06 ? 'emergent' : pick < 0.60 ? 'tree' : pick < 0.82 ? 'conifer'
-              : pick < 0.92 ? 'birch' : pick < 0.97 ? 'snag' : 'sap';
+            const pool = pick < 0.07 ? 'emergent' : pick < 0.50 ? 'tree' : pick < 0.80 ? 'conifer'
+              : pick < 0.90 ? 'birch' : pick < 0.96 ? 'snag' : 'sap';
             const arr = pools[pool] || pools.tree;
             if (!arr || !arr.length) continue;
             push(arr[(h01(cx, cy, 50 + k) * arr.length) | 0], wx, wy);
@@ -682,7 +717,10 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
     base: '#0a0a0b',
     PATCH: 768,
     DAPPLE: 1024,                      // broad albedo swathes — ray material, not sunlight
-    OVERLAY_ALPHA: 0.06,
+    /* The ray pass reads as CAMOUFLAGE if you can see its blobs. It is meant to be the faintest
+       possible hint that some of this dust came from somewhere else — felt, not seen. At 0.06 its
+       lumps were legible as lumps and the plain looked stained. */
+    OVERLAY_ALPHA: 0.038,
     CELL: 96,
 
     LIGHT: {
@@ -693,7 +731,14 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
       REG: [[19, 18, 19], [28, 27, 28], [38, 37, 37], [50, 48, 47], [63, 60, 58], [79, 76, 72]],
       RIM: [[96, 92, 87], [122, 117, 110], [152, 146, 137]],       // sun-struck crater rims, brightest thing out here
       DARK: [[16, 16, 17], [22, 22, 23]],                          // shaded regolith
-      SHADOW: [14, 14, 17],                                        // cast shadow: airless, so very nearly black
+      /* SHADOW IS NOT BLACK, and this is the single biggest correction in this pass. "Airless, so
+         the shadows are black" is true of the PHOTOGRAPH and false of the picture: an Apollo frame
+         is black in shade because the film had eight stops and spent them all on the sunlit ground.
+         The eye standing there sees into the shade fine, because the sunlit far wall of the bowl is
+         a huge grey reflector aimed straight into it. Filling shade with near-zero turned every
+         crater into a punched hole and every bowl into a silhouette — the plain read as pegboard. */
+      SHADOW: [17, 16, 18],
+      BOUNCE: [34, 32, 34],                                        // shade lit by the far wall, not by the sun
       DUST: [96, 93, 88],                                          // ray ejecta, used additively
     },
 
@@ -810,7 +855,10 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          rim — an arc, not a disc. Filling the lit wall as a circle (the first two cuts) drops a
          grey coin into the hole; a bowl is a rim you see the inside of, so the light belongs on
          the wall, and the wall is a band. */
-      ring(0.98, rgb(ramp(LT.REG, o.ghost ? 0.48 : fresh ? 0.46 : 0.42)));
+      /* THE FLOOR IS DARKER THAN THE PLAIN. At 0.46 the bowl base was the same value as the regolith
+         around it, so a crater was a ring drawn ON the ground rather than a hole IN it — flat as a
+         coin, whatever the rim did. A bowl is shaded by its own walls even where no shadow falls. */
+      ring(0.98, rgb(ramp(LT.REG, o.ghost ? 0.40 : fresh ? 0.34 : 0.30)));
       c.save();
       c.beginPath();
       for (let i = 0; i <= K; i++) {
@@ -865,16 +913,41 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         i ? c.lineTo(x, y) : c.moveTo(x, y);
       }
       c.closePath(); c.clip();
-      const Rs = R * 2.4, chord = R * ((o.deep ? 0.16 : 0.34) + (1 - pop) * 0.34);   // shallow pits, less shade
+      const Rs = R * 2.4, chord = R * ((o.deep ? 0.14 : 0.28) + (1 - pop) * 0.30);   // shallow pits, less shade
       const sx = cx + SUN.x * (Rs + chord), sy = cy + SUN.y * (Rs + chord);
+      /* THE TERMINATOR WOBBLES. A perfect arc is the one edge in the picture that could only have
+         been made by a machine — it turned the shaded half into a crisp leaf shape sitting in the
+         bowl. The line where a rim's shadow lands is the PROFILE OF THAT RIM projected across the
+         floor, so it inherits every notch the rim has. Perturbing the cutting circle with the same
+         two harmonics that lumped the rim ties the two together for almost nothing. */
       c.fillStyle = rgb(LT.SHADOW);
-      c.beginPath(); c.arc(sx, sy, Rs, 0, TAU); c.fill();
+      c.beginPath();
+      for (let i = 0; i <= K; i++) {
+        const th = (i / K) * TAU;
+        const wob = 1 + 0.030 * Math.sin(th * m1 + p1) + 0.022 * Math.sin(th * m2 * 1.7 + p2);
+        const x = sx + Math.cos(th) * Rs * wob, y = sy + Math.sin(th) * Rs * wob;
+        i ? c.lineTo(x, y) : c.moveTo(x, y);
+      }
+      c.closePath(); c.fill();
       // ...and a stippled band just outside it, so the terminator crumbles instead of cutting
       for (let i = 0, n = Math.round(R * 22); i < n; i++) {
         const a = rnd() * TAU, d = Rs + rnd() * R * 0.16;
         const x = sx + Math.cos(a) * d, y = sy + Math.sin(a) * d;
         if (rnd() > 0.55) continue;
         c.fillRect(Math.round(x), Math.round(y), 1, 1);
+      }
+      /* BOUNCE. The lit far wall is a large grey reflector pointed into the shade, so the shadowed
+         floor is brightest right where it meets the light and falls away from there. Without this
+         the shadow is a flat stencil of one value — the exact thing that reads as a hole rather
+         than as the inside of something. Stippled from the terminator inward so it has no edge. */
+      for (let i = 0, n = Math.round(R * R * 0.5); i < n; i++) {
+        const a = rnd() * TAU, t = Math.pow(rnd(), 1.7);          // 0 at the terminator, 1 deep in shade
+        const d = Rs - t * R * 0.78;
+        const x = sx + Math.cos(a) * d, y = sy + Math.sin(a) * d;
+        if ((x - cx) * (x - cx) + (y - cy) * (y - cy) > R * R * 0.94) continue;   // stay in the bowl
+        if (rnd() > (1 - t) * 0.85) continue;                     // density falls off with depth
+        c.fillStyle = rgb(mix(LT.SHADOW, LT.BOUNCE, (1 - t) * (0.55 + rnd() * 0.45)));
+        c.fillRect(Math.round(x), Math.round(y), 1 + ((rnd() * 2) | 0), 1);
       }
       c.restore();
 
@@ -886,19 +959,28 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          down-sun side both are exactly reversed. So the two bands are lit by the same term with
          OPPOSITE sign, and it is that disagreement — a light/dark pair crossing the ring — that the
          eye reads as relief. */
+      /* THE DONUT SURVIVED THE LAST PASS, in a subtler form. Two bands lit with opposite sign IS
+         the right model, but both were stroked at FULL WIDTH all the way round. So the outer band
+         put a bright arc on the up-sun side and the inner band put a bright arc on the down-sun
+         side — at two radii 14% apart, which at any real zoom is the same circle. The sum of two
+         correct half-rings was one wrong full ring, and the plain came out as pegboard.
+
+         A ridge does not have constant width in the picture: seen from above, a slope only SHOWS
+         where it turns toward or away from the light, and the two points where the ridge runs
+         parallel to the sun show nothing at all. So the band's WIDTH tapers with the same term that
+         drives its brightness, and at the two poles perpendicular to the sun both bands vanish and
+         the rim is simply plain-coloured. That gap is what stops the ring from closing. */
       const RIMPAL = [LT.DARK[0], LT.DARK[1], LT.REG[2], LT.REG[3], LT.REG[4], LT.REG[5], LT.RIM[0], LT.RIM[1]];
-      const gain = 0.20 + 0.26 * pop * (fresh ? 1 : 0.62);      // young rims are sharper and brighter
+      const gain = 0.14 + 0.20 * pop * (fresh ? 1 : 0.62);      // young rims are sharper and brighter
       const band = (rScale, sign, width) => {
-        c.lineWidth = Math.max(1.2, R * width);
-        /* ROUND CAPS. Each segment is stroked on its own, so with butt caps the neighbours meet at
-           a hairline the alpha-snap then turns into a hard gap — the rim came out COMBED, a set of
-           radial stripes visible at any zoom above 2x. Round caps make consecutive segments
-           overlap, which is what a continuous band needs. */
         c.lineCap = 'round'; c.lineJoin = 'round';
         for (let i = 0; i < K; i++) {
           const th0 = (i / K) * TAU, th1 = ((i + 1) / K) * TAU;
           const facing = -(Math.cos(th0) * SUN.x + Math.sin(th0) * SUN.y);   // +1 down-sun, -1 up-sun
-          const lit = 0.5 + sign * facing * (0.30 + gain) + (h01(i, R | 0, 77) - 0.5) * 0.12;
+          const show = Math.abs(facing);                                     // 0 at the poles, 1 at the ends
+          if (show < 0.42) continue;                                         // the ring is OPEN here
+          c.lineWidth = Math.max(1, R * width * (0.14 + 0.86 * show));
+          const lit = 0.5 + sign * facing * (0.26 + gain) + (h01(i, R | 0, 77) - 0.5) * 0.10;
           c.strokeStyle = rgb(ramp(RIMPAL, lit));
           c.beginPath();
           c.moveTo(cx + Math.cos(th0) * rad[i] * rScale, cy + Math.sin(th0) * rad[i] * rScale);
@@ -906,8 +988,8 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
           c.stroke();
         }
       };
-      band(1.07, -1, 0.13);        // outer slope: bright where it faces the sun
-      band(0.93, +1, 0.11);        // inner slope: dark there, bright on the far side
+      band(1.06, -1, 0.085);       // outer slope: bright where it faces the sun
+      band(0.94, +1, 0.075);       // inner slope: dark there, bright on the far side
 
       /* 4b. DUST THE RIM. The lip is drawn as a stroke, and a stroke has a clean edge — the one
          thing nothing else on this plain has. Scattering the ramp's own grain across the rim band
@@ -926,13 +1008,29 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
       // 5. CENTRAL PEAK — only big craters rebound one, and it is lit like a boulder: the OPPOSITE
       //    side from the bowl, which is exactly what sells the bowl as a bowl.
       if (R >= 62) {
-        const pr = R * (0.13 + rnd() * 0.06);
-        c.fillStyle = rgb(LT.SHADOW);
-        c.beginPath(); c.ellipse(cx - SUN.x * pr * 1.5, cy - SUN.y * pr * 1.5, pr * 0.95, pr * 0.6, 0, 0, TAU); c.fill();
-        c.fillStyle = rgb(ramp(LT.REG, 0.55));
-        c.beginPath(); c.arc(cx, cy, pr, 0, TAU); c.fill();
-        c.fillStyle = rgb(LT.RIM[1]);
-        c.beginPath(); c.arc(cx + SUN.x * pr * 0.4, cy + SUN.y * pr * 0.4, pr * 0.55, 0, TAU); c.fill();
+        /* NOT A BALL. Three concentric circles with a near-white cap put a bright DOT in the middle
+           of every basin, and at any zoom below 1x the dot was the only thing left of the crater —
+           the plain read as a field of fried eggs. A rebound peak is a shattered massif: an angular
+           silhouette, a couple of facets that disagree, and a value well below the sunlit rim,
+           because it stands in a bowl that is itself in shade. */
+        const pr = R * (0.12 + rnd() * 0.05);
+        const massif = (r, squash, style) => {
+          c.fillStyle = style;
+          c.beginPath();
+          for (let i = 0, n = 7 + ((rnd() * 3) | 0); i <= n; i++) {
+            const a = (i / n) * TAU, rr = r * (0.68 + 0.44 * h01(i, R | 0, 63));
+            const x = cx + Math.cos(a) * rr, y = cy + Math.sin(a) * rr * squash;
+            i ? c.lineTo(x, y) : c.moveTo(x, y);
+          }
+          c.closePath(); c.fill();
+        };
+        c.save();
+        massif(pr * 1.15, 0.72, rgb(LT.SHADOW));                        // the peak's own shadow, down-sun
+        c.translate(SUN.x * pr * 0.30, SUN.y * pr * 0.30);
+        massif(pr, 0.78, rgb(ramp(LT.REG, 0.40)));                      // the shaded body
+        c.translate(SUN.x * pr * 0.34, SUN.y * pr * 0.34);
+        massif(pr * 0.52, 0.80, rgb(ramp(LT.REG, 0.74)));               // one sunlit facet, and no more
+        c.restore();
       }
 
       /* NO TERRACES. Slumped walls are real, but two concentric arcs inside a 60px bowl read as
@@ -982,12 +1080,16 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          START level and an END level from {-1,0,+1}; the placer picks the level per column with a
          hash, so segment N's end always matches segment N+1's start and the lane wanders diagonally
          with no discontinuity anywhere. Wang tiles, essentially, in one dimension. */
-      const LT = MOON.LIGHT, W = 320, H = 320, STEP = H * 0.22, out = [];
+      const LT = MOON.LIGHT, W = 320, H = 320, STEP = H * 0.16, out = [];
       for (let a = -1; a <= 1; a++) {
         for (let b = -1; b <= 1; b++) {
           const cv = mkCv(W, H), c = cv.getContext('2d');
           const bulge = (H * 0.10) * (rnd() - 0.5) * 2;
-          const halfW = 42;                                  // SHARED: width must match at the joins
+          /* WIDER THAN IT LOOKS LIKE IT SHOULD BE. At 42 the swell came out as a dark hairline with
+             a faint light edge — a scratch across the plain, not a landform. A wrinkle ridge is a
+             low, BROAD buckle: hundreds of metres of rise spread over kilometres, so what makes it
+             read is a wide gentle value change, and a narrow one just looks like a crack. */
+          const halfW = 74;                                  // SHARED: width must match at the joins
           const wob = rnd() * TAU;
           for (let x = 0; x < W; x++) {
             const u = x / W;
@@ -1063,30 +1165,54 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
 
       /* BOULDERS — lit on the sun side with a LONG hard shadow. They are the counter-evidence to
          the craters: same plain, same light, opposite shading, which is what makes both read. */
+      /* THE TADPOLES. These boulders were the worst single feature on the plain: a near-white ball
+         with a long thin spike of shadow tapering to a point behind it. Scattered across a mare at
+         play zoom they read as tadpoles, or pins stuck in a board. Three separate mistakes:
+           - the shadow ran to a POINT. A rock's shadow is a rock-shaped blob dragged sideways; it
+             keeps the width of the thing casting it. A triangle to a vertex is a tail.
+           - it ran 2.2-4x the rock's radius. Long, but not THAT long, and length is what made it
+             a tail rather than a shadow.
+           - the cap was LT.RIM[2] — the brightest colour in the ground's whole palette — used on a
+             6px object. The brightest thing on a mare is a sunlit crater rim a hundred px across,
+             never a pebble, and a bright dot at that scale is just a highlight with no form.
+         Now: a swept blob the width of the rock, and a lit facet that is a FACET — angular, sharing
+         the rock's own silhouette — so what reads is a chip of stone, not a bead. */
       for (let v = 0; v < 6; v++) {
-        const R = 4 + Math.round(rnd() * 9);
+        const R = 3 + Math.round(rnd() * 6);
         const S = Math.ceil(R * 7), cx = S / 2, cy = S / 2;
         const cv = mkCv(S, S), c = cv.getContext('2d');
-        const len = R * (2.2 + rnd() * 1.8);                 // the sun is LOW: shadows run long
-        c.fillStyle = rgb(LT.SHADOW);
-        c.beginPath();
-        c.moveTo(cx + Math.cos(0.9) * R, cy + Math.sin(0.9) * R);
-        c.lineTo(cx - SUN.x * len, cy - SUN.y * len);
-        c.lineTo(cx + Math.cos(2.6) * R, cy + Math.sin(2.6) * R);
-        c.closePath(); c.fill();
-        c.beginPath(); c.ellipse(cx - SUN.x * R * 0.3, cy - SUN.y * R * 0.3, R * 0.95, R * 0.75, 0, 0, TAU); c.fill();
-        c.fillStyle = rgb(ramp(LT.REG, 0.45));               // the rock: faceted, never round
-        c.beginPath();
-        for (let i = 0, n = 6 + ((rnd() * 3) | 0); i <= n; i++) {
-          const a = (i / n) * TAU, r = R * (0.74 + 0.34 * h01(i, v, 29));
-          const x = cx + Math.cos(a) * r, y = cy + Math.sin(a) * r;
-          i ? c.lineTo(x, y) : c.moveTo(x, y);
+        const len = R * (1.5 + rnd() * 1.1);
+        /* the rock's outline, reused for the body AND the shadow AND the lit facet, so all three
+           agree about what shape is standing there */
+        const nF = 6 + ((rnd() * 3) | 0), fr = [];
+        for (let i = 0; i < nF; i++) fr.push(R * (0.74 + 0.34 * h01(i, v, 29)));
+        const poly = (ox, oy, k, squash, style) => {
+          c.fillStyle = style;
+          c.beginPath();
+          for (let i = 0; i <= nF; i++) {
+            const a = (i / nF) * TAU, r = fr[i % nF] * k;
+            /* squash ACROSS the sun line, not across the screen — a shadow narrows in the direction
+               it is thrown, and rotating the squash into the light's frame is what keeps it from
+               being an axis-aligned smear. */
+            const px = Math.cos(a) * r, py = Math.sin(a) * r * squash;
+            const ux = -SUN.x, uy = -SUN.y;                  // down-sun unit vector
+            const x = cx + ox + px * ux - py * uy, y = cy + oy + px * uy + py * ux;
+            i ? c.lineTo(x, y) : c.moveTo(x, y);
+          }
+          c.closePath(); c.fill();
+        };
+        /* ONE TAPERED SHADOW, NOT A STACK. Smearing the silhouette in six equal steps built a
+           rounded slab of constant width — the boulders came out as grey PILLS with a brick of
+           shadow behind them, which is worse than the tadpoles they replaced. A cast shadow keeps
+           the caster's width at the caster and narrows as it runs out, and its far end is ragged
+           because the thing throwing it is ragged. Three overlapping polys, each smaller and each
+           squashed harder, give exactly that for three fills. */
+        for (let s = 3; s >= 1; s--) {
+          const t = s / 3;
+          poly(-SUN.x * len * t, -SUN.y * len * t, 1 - 0.30 * t, 1 - 0.42 * t, rgb(LT.SHADOW));
         }
-        c.closePath(); c.fill();
-        c.fillStyle = rgb(LT.RIM[0]);                        // the sun-struck facet
-        c.beginPath(); c.arc(cx + SUN.x * R * 0.34, cy + SUN.y * R * 0.34, R * 0.52, 0, TAU); c.fill();
-        c.fillStyle = rgb(LT.RIM[2]);
-        c.beginPath(); c.arc(cx + SUN.x * R * 0.52, cy + SUN.y * R * 0.52, R * 0.24, 0, TAU); c.fill();
+        poly(0, 0, 1, 1, rgb(ramp(LT.REG, 0.34)));           // the rock: faceted, never round
+        poly(SUN.x * R * 0.32, SUN.y * R * 0.32, 0.56, 1, rgb(ramp(LT.REG, 0.60)));  // the sun-struck facet
         add('rock', cv, cx, cy, R);
       }
 
@@ -1118,12 +1244,21 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         }
       }
 
+      /* THE LOD CULL WAS DRAWING THE PEGBOARD. Pits were held back until scale 0.75 and rocks until
+         1.1, which is defensible as a cost decision and ruinous as a composition one: zoomed out —
+         the view where you can actually see the plain as a place — every small feature vanished and
+         all that was left was basins, ghosts and craters, three pools whose sizes overlap. Every
+         object on screen was then within a factor of two of every other, which is the definition of
+         a texture rather than a landscape. A real size distribution is a power law and its whole
+         character lives in the small end, so the small end is exactly the wrong thing to cull.
+         Pits now survive to 0.4 (about 200 sprites in a far view — a rounding error next to the
+         forest's scatter) and the big pools thin out to make room. */
       const grids = [
-        { C: 520, key: 'basin', p: 0.30, salt: 1, lod: 0 },
+        { C: 620, key: 'basin', p: 0.20, salt: 1, lod: 0 },
         { C: 300, key: 'ghost', p: 0.34, salt: 5, lod: 0 },
-        { C: 190, key: 'crater', p: 0.40, salt: 2, lod: 0 },
-        { C: 74, key: 'pit', p: 0.44, salt: 3, lod: 0.75 },
-        { C: 74, key: 'rock', p: 0.30, salt: 4, lod: 1.1 },
+        { C: 190, key: 'crater', p: 0.36, salt: 2, lod: 0 },
+        { C: 74, key: 'pit', p: 0.50, salt: 3, lod: 0.4 },
+        { C: 92, key: 'rock', p: 0.22, salt: 4, lod: 1.1 },
       ];
       for (const g of grids) {
         if (scale < g.lod) continue;
