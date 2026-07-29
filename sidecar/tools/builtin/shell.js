@@ -610,8 +610,8 @@
     } catch (_) {}
   }
 
-  /* ANSI/VT control sequences, stripped before any shell output reaches the model (Hermes parity: it has an
-     ansi_strip; StarNet had nothing, so escapes arrived raw). npm, git, cargo, pytest and friends emit colour
+  /* ANSI/VT control sequences, stripped before any shell output reaches the model (ref-parity: the reference
+     harness has an ansi_strip; StarNet had nothing, so escapes arrived raw). npm, git, cargo, pytest and friends emit colour
      whenever they believe a TTY is attached, and the model reads the control bytes as TOKENS — '[32m'
      is billed content that means "green" to nobody, and on a long build log it is a large fraction of the
      output. Three shapes are handled: OSC strings (window titles, hyperlinks — ESC ] … BEL or ST), CSI

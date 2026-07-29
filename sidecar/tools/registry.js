@@ -23,7 +23,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (schema, toolMod) {
   'use strict';
 
-  /* CENTRAL TOOL-OUTPUT CAP (Hermes parity: tool_output_limits). Every builtin clamps its own output today,
+  /* CENTRAL TOOL-OUTPUT CAP (ref-parity: the reference harness's tool_output_limits). Every builtin clamps its own output today,
      which means the protection is a CONVENTION — a new tool, or an MCP server behind a new connector,
      inherits none of it, and one unbounded result is enough to blow the context window and end a run.
      This is the backstop at the single point every result already passes through, so it cannot be forgotten.
