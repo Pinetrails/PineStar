@@ -62,6 +62,17 @@ async function run() {
     const f = fakeFetch(() => resp(200, { ok: true, result: { id: 7446, is_bot: true, first_name: 'Overseer Bot', username: 'OverseerBot' } }));
     const t = makeTelegramTransport({ fetch: f, token: 'TKN' });
     A.eq(await t.getMe(), { ok: true, id: '7446', username: 'OverseerBot', name: 'Overseer Bot' }, 'getMe surfaces the stable id + username');
+    /* PRIVACY MODE rides with the identity, because it decides what this bot can HEAR. With it on (Telegram's
+       default, confirmed live) a group delivers us only commands, @mentions and replies to us — so wake words
+       and observe-unmentioned receive nothing, and /mention has to say so instead of promising to follow a room
+       it is not being sent. A server that does not mention the field leaves it ABSENT: unknown, never "off". */
+    const withFlag = (v) => makeTelegramTransport({
+      fetch: fakeFetch(() => resp(200, { ok: true, result: { id: 1, is_bot: true, first_name: 'B', username: 'b', can_read_all_group_messages: v } })),
+      token: 'TKN'
+    }).getMe();
+    A.eq((await withFlag(false)).seesAllGroupMessages, false, 'privacy ON is reported as seesAllGroupMessages:false');
+    A.eq((await withFlag(true)).seesAllGroupMessages, true, 'and privacy disabled as true');
+    A.eq('seesAllGroupMessages' in (await t.getMe()), false, 'a server that never mentions it leaves the key ABSENT — unknown is not the same as "privacy is on"');
     A.eq(f.calls[0].url, 'https://api.telegram.org/botTKN/getMe', 'getMe hits the right method');
     const tbad = makeTelegramTransport({ fetch: fakeFetch(() => resp(401, { ok: false, error_code: 401, description: 'Unauthorized' })), token: 'BAD' });
     const rb = await tbad.getMe();

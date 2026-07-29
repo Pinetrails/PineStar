@@ -5421,6 +5421,10 @@ let stationBotUsername = '';
 // The bot's DISPLAY name, learned from the same getMe. It is the wake word: "@thebot check the logs" is how
 // you address a bot, "StarNet, check the logs" is how people actually type it.
 let stationBotName = '';
+// Telegram PRIVACY MODE, from the same getMe. null until we are told. With it ON (the default) a group
+// delivers us only commands, @mentions and replies to us — so wake words and observe-mode are promises we
+// cannot keep, and /mention says so instead of pretending.
+let stationBotSeesAll = null;
 let discord = null;                                     // H6.2: { adapter, hub } when connected, else null
 let discordStatus = { connected: false, state: 'down', detail: '' };
 const channelRegistry = makeChannelRegistry();          // H6.2: telegram + discord descriptors
@@ -5487,6 +5491,7 @@ function startTelegram(token, key, model, agentCfg) {
     // editMessage + deleteMessage TOGETHER are what let the hub stream a reply in place: one to grow it, one to
     // clear a partial it can no longer finish. Wiring only one would arm streaming with no way to clean up.
     deleteMessage: (chatId, msgId) => adapterRef ? adapterRef.deleteMessage(chatId, msgId) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    canReadAllGroupMessages: () => stationBotSeesAll,
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent,
     secrets: () => {
       const t = (channelSecrets && channelSecrets.telegram) || {};
@@ -5629,6 +5634,7 @@ function startTelegram(token, key, model, agentCfg) {
     .then(me => {
       if (me && me.ok && me.username) stationBotUsername = String(me.username);
       if (me && me.ok && me.name) stationBotName = String(me.name);
+      if (me && me.ok && typeof me.seesAllGroupMessages === 'boolean') stationBotSeesAll = me.seesAllGroupMessages;
     })
     .catch(() => {});
   adapter.connect();
@@ -5747,6 +5753,7 @@ function startTelegramBot(botId) {
     // editMessage + deleteMessage TOGETHER are what let the hub stream a reply in place: one to grow it, one to
     // clear a partial it can no longer finish. Wiring only one would arm streaming with no way to clean up.
     deleteMessage: (chatId, msgId) => adapterRef ? adapterRef.deleteMessage(chatId, msgId) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    canReadAllGroupMessages: () => { const v = (recOf() || {}).seesAllGroupMessages; return (typeof v === 'boolean') ? v : null; },
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent
   });
   const adapter = makeTelegramAdapter({
@@ -12440,6 +12447,8 @@ async function handleTelegramBotAdd(req, res) {
   const prev = telegramBotRecords()[botId] || {};
   const persisted = saveTelegramBotRecord(botId, {
     token: token, username: me.username || '', botName: me.name || '',
+    // privacy mode, learned once at connect — /mention reads it to tell the truth about what it can hear
+    seesAllGroupMessages: (typeof me.seesAllGroupMessages === 'boolean') ? me.seesAllGroupMessages : undefined,
     // persist the provider KEY on the record (like the station/generic channels do) — without it the bot only
     // works while a runtime/station key happens to exist and dies on restart with "no provider configured"
     // even though the add-flow validated a key. Codex/OAuth providers carry no key by design.

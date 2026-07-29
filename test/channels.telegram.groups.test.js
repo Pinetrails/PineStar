@@ -408,6 +408,54 @@ async function run() {
     await say('/mention sideways');
     A.ok(/observe/.test(sent[0]), 'the usage line offers all three states');
   }
+  /* PRIVACY MODE — found by pointing the real transport at a real bot, not by any test.
+     getMe answers can_read_all_group_messages:false by default, and with it OFF a group delivers us only slash
+     commands, @username mentions and replies to our own messages. Two of the three /mention states are then
+     promises about messages that never arrive — and "call me by name" cannot work at all, because a name is not
+     an @mention. The product must say so rather than let the member conclude the bot is broken. */
+  {
+    const mk = (privacy) => {
+      const sent = [];
+      const store = fakeStore();
+      store.saveChatRecord = () => ({});
+      const hub = makeChannelHub({
+        runOnce: async () => {}, store, send: (c, t) => { sent.push(t); return Promise.resolve({ ok: true }); },
+        secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen(),
+        canReadAllGroupMessages: privacy
+      });
+      return { sent, say: (text, ct) => hub.onInbound({ channel: 'telegram', chatId: '-1001', chatType: ct || 'group', userId: '9', text, messageId: '1', ts: 1 }) };
+    };
+
+    let h = mk(() => false);
+    await h.say('/mention observe');
+    A.ok(/privacy mode is ON/.test(h.sent[0]), 'turning ON observe while privacy blocks it says so IN THE SAME BREATH');
+    A.ok(/BotFather/.test(h.sent[0]) && /setprivacy/.test(h.sent[0]), 'and names the exact fix, not just the problem');
+    A.ok(/cannot be woken by name/.test(h.sent[0]), 'including the wake-word half, which is dead for the same reason');
+
+    h = mk(() => false);
+    await h.say('/mention off');
+    A.ok(/privacy mode is ON/.test(h.sent[0]), '"answer everything" is equally a promise Telegram will not let us keep');
+
+    h = mk(() => false);
+    await h.say('/mention on');
+    A.eq(/privacy mode is ON/.test(h.sent[0]), false, 'but plain "on" is exactly what privacy already enforces — warning there would be noise');
+
+    h = mk(() => false);
+    await h.say('/mention', 'dm');
+    A.eq(/privacy mode/.test(h.sent[0]), false, 'and a DM is never affected — privacy mode is a GROUP restriction');
+
+    h = mk(() => true);
+    await h.say('/mention observe');
+    A.eq(/privacy mode/.test(h.sent[0]), false, 'with privacy disabled the caveat disappears');
+
+    h = mk(null);
+    await h.say('/mention observe');
+    A.eq(/privacy mode/.test(h.sent[0]), false, 'and when we have not been told, we say NOTHING — inventing a limitation is as dishonest as hiding one');
+
+    h = mk(() => { throw new Error('getMe never answered'); });
+    await h.say('/mention observe');
+    A.eq(/privacy mode/.test(h.sent[0]), false, 'a throwing probe is "unknown", not "blocked"');
+  }
 
   A.report('channels.telegram.groups');
 }

@@ -190,7 +190,18 @@
         try {
           const { data, res } = await call('getMe', {});
           if (data && data.ok && data.result && data.result.id != null) {
-            return { ok: true, id: String(data.result.id), username: String(data.result.username || ''), name: String(data.result.first_name || '') };
+            /* seesAllGroupMessages — Telegram's PRIVACY MODE, and the single most consequential fact about what
+               this bot can hear. Default ON, which means that in a group Telegram delivers us only slash
+               commands, @username mentions, and replies to our own messages. Ordinary chatter never arrives,
+               and neither does "StarNet, do X" — the bot's NAME is not an @mention. Two features depend on it
+               (wake words and observe-unmentioned), so the flag has to travel with the identity, or the product
+               ends up promising to follow a room it is not being sent. */
+            const out = { ok: true, id: String(data.result.id), username: String(data.result.username || ''), name: String(data.result.first_name || '') };
+            // Only when the server actually told us. A missing field is UNKNOWN, not "privacy is on" — claiming
+            // a limitation we cannot prove is the same failure as hiding one, pointed the other way. Absent here
+            // means the whole key is absent, and every reader downstream treats that as "say nothing".
+            if (typeof data.result.can_read_all_group_messages === 'boolean') out.seesAllGroupMessages = data.result.can_read_all_group_messages;
+            return out;
           }
           const code = (data && data.error_code) || (res && res.status) || 0;
           return { ok: false, error: redact((data && data.description) || ('http ' + code)) };

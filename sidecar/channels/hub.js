@@ -537,6 +537,15 @@
        Both editMessage AND deleteMessage must be wired: arming the grow without the clean-up is what turns a
        failed edit into a duplicate reply. That pairing is also what keeps this Telegram-only for now — no other
        transport supplies either, so their behaviour is byte-identical. */
+    /* Can this bot hear a group at all? true / false / null when we have not been told. Read through a function
+       because it is learned from getMe, after this hub is built — the same late-binding the bot's own name needs.
+       A throwing or absent source answers null, and null means SAY NOTHING: inventing a limitation is as
+       dishonest as hiding one. */
+    const privacyFn = typeof o.canReadAllGroupMessages === 'function' ? o.canReadAllGroupMessages : null;
+    function privacyOk() {
+      if (!privacyFn) return null;
+      try { const v = privacyFn(); return (v === true || v === false) ? v : null; } catch (_) { return null; }
+    }
     const deleteMessage = typeof o.deleteMessage === 'function' ? o.deleteMessage : null;
     const streamOk = !!(editMessage && deleteMessage) && o.streamReplies !== false;
     const STREAM_MIN_MS = Number.isFinite(o.streamMinMs) ? Math.max(250, o.streamMinMs) : 1500;   // Telegram edits: ~1/s is safe
@@ -903,12 +912,24 @@
         const describe = { on: 'answer only when addressed, and forget everything else',
                            observe: 'answer only when addressed, but follow the conversation',
                            off: 'answer every message' };
+        /* PRIVACY MODE IS THE HARNESS TELLING US WHAT WE CANNOT HEAR, and two of these three states are a
+           promise we cannot keep without it. With privacy ON (Telegram's default) a group delivers us ONLY
+           slash commands, @username mentions and replies to our own messages — so "answer everything" and
+           "follow the conversation" would both be claims about messages that never arrive, and being called by
+           NAME cannot work either, because a name is not an @mention. Say so, with the fix, rather than let the
+           member conclude the bot is broken. Silent when we do not know (null): never invent a limitation. */
+        const seesAll = privacyOk();
+        const blind = (seesAll === false && isGroup)
+          ? '\n\n⚠ Telegram is only sending me messages that address me directly (@' + 'mention, a reply to me, or a slash command) — '
+            + 'privacy mode is ON for this bot, so I never receive ordinary chatter and cannot be woken by name. '
+            + 'Open @BotFather → /setprivacy → Disable to change that.'
+          : '';
         if (!arg) {
           await deliver(chatId, isGroup
             ? ('In this group I ' + describe[state] + '.\n\n'
                + '/mention on — only when addressed (@ me, reply to me, call me by name, or use a command)\n'
                + '/mention observe — the same, but I read the rest so I know what you were talking about\n'
-               + '/mention off — answer everything here (a real run, and real spend, per message)')
+               + '/mention off — answer everything here (a real run, and real spend, per message)' + blind)
             : 'This setting only applies to groups — in a direct chat I always answer you.', '', 'command');
           return;
         }
@@ -927,7 +948,9 @@
           observe: 'From now on I still answer only when addressed, but I read the rest of the room so I know what you were talking about. Those messages cost nothing — no model call, just context.',
           off: 'From now on I answer every message in this chat. Each one is a real run, so watch the spend.'
         };
-        await deliver(chatId, confirm[want], '', 'command');
+        // The caveat rides the two states that actually depend on hearing unaddressed messages. "on" is exactly
+        // what privacy mode already enforces, so warning about it there would be noise.
+        await deliver(chatId, confirm[want] + ((want === 'observe' || want === 'off') ? blind : ''), '', 'command');
         return;
       }
 
