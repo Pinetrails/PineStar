@@ -385,6 +385,7 @@ test/chat-stare-throttle.test.js
 test/g1bprops.test.js
 test/g3btrophy.test.js
 test/stationbake.chunk.test.js
+test/stationbake.materials.test.js
 test/conveyor.test.js
 test/pipeline.test.js
 test/routing.b5.test.js
