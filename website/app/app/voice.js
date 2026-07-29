@@ -79,6 +79,7 @@ const Voice = (() => {
   let activeVoiceId = 'agent';      // identity used to pick the current agent's voice
   let activePersonaId = (typeof Personas !== 'undefined' && Personas.DEFAULT_ID) || 'professional';   // drives the in-character task acknowledgments (overwritten from the live agent in Voice.init)
   let listening = false, speaking = false, savedStatus = '';
+  let coordinator = null;           // OAuth/local live surface hooks; null preserves the classic voice path
   // hands-free loop bookkeeping
   let rearmTimer = null;            // pending mic re-open
   let emptyStreak = 0;              // silent listens in a row (→ go passive instead of looping forever)
@@ -93,13 +94,61 @@ const Voice = (() => {
     else if (statusEl) statusEl.textContent = s;
   }
   function currentStatusText() { return statusEl ? statusEl.textContent : ''; }
+  function coordinatorEvent(name, payload) {
+    try { if (coordinator && typeof coordinator[name] === 'function') coordinator[name](payload); } catch (_) {}
+  }
 
   /* ======================================================================
      OUTPUT — the agent's voice (TTS)
      ====================================================================== */
 
-  function onSpeakStart() { speaking = true; setSpeaking(true); duckSfx(true); }
-  function onSpeakEnd() { if (!speaking) return; speaking = false; setSpeaking(false); }
+  function onSpeakStart() { speaking = true; setSpeaking(true); duckSfx(true); coordinatorEvent('onState', 'speaking'); startOutputMeter(); }
+  function onSpeakEnd() {
+    // Meter teardown is deliberately unconditional. A failed media element can fire after another
+    // path already cleared `speaking`; leaving the rAF alive in that race would pin the live panel
+    // to the agent side forever.
+    stopOutputMeter();
+    outAnalyser = null;
+    if (!speaking) return;
+    speaking = false;
+    setSpeaking(false);
+    coordinatorEvent('onState', busyNow() ? 'thinking' : 'ready');
+  }
+
+  /* ---- THE AGENT'S SIDE OF THE METER ------------------------------------------------------------
+     A phone call shows you both voices: your own level, and the other party's in its own colour. The
+     agent's half is read off `outAnalyser` — a tap on whichever chain (transmission / machine shell)
+     the CURRENT playback is routed through, i.e. the exact signal leaving for the speakers.
+     It is NOT a timer and NOT an envelope guessed from the text: when playback is dry (WebAudio routing
+     failed) there is no tap, so this reports 0 and the agent's half of the meter stays flat rather than
+     inventing motion the speakers aren't making. Only runs while a live panel is attached. */
+  let outAnalyser = null, outRaf = 0, outBuf = null;
+  function outputLevelTick() {
+    outRaf = 0;
+    if (!speaking || !coordinator) return;
+    let rms = 0;
+    const an = outAnalyser;
+    if (an) {
+      try {
+        if (!outBuf || outBuf.length !== an.fftSize) outBuf = new Float32Array(an.fftSize);
+        an.getFloatTimeDomainData(outBuf);
+        let e = 0;
+        for (let i = 0; i < outBuf.length; i++) e += outBuf[i] * outBuf[i];
+        rms = Math.sqrt(e / outBuf.length);
+      } catch (_) { rms = 0; }
+    }
+    coordinatorEvent('onOutputLevel', rms);
+    if (typeof requestAnimationFrame === 'function') outRaf = requestAnimationFrame(outputLevelTick);
+  }
+  function startOutputMeter() {
+    if (!coordinator || outRaf || typeof requestAnimationFrame !== 'function') return;
+    outRaf = requestAnimationFrame(outputLevelTick);
+  }
+  function stopOutputMeter() {
+    if (outRaf && typeof cancelAnimationFrame === 'function') { try { cancelAnimationFrame(outRaf); } catch (_) {} }
+    outRaf = 0;
+    coordinatorEvent('onOutputLevel', 0);   // the agent stopped talking: say so, don't leave the last frame lit
+  }
 
   /* ---- neural TTS — the agent's ONLY voice -----------------------------------------------------
      Hits the sidecar /api/tts and plays the returned audio. The sidecar owns the whole tier ladder
@@ -289,8 +338,18 @@ const Voice = (() => {
     return out;
   }
 
-  let currentAudio = null;
-  function stopAudio() { if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; } }
+  let currentAudio = null, currentAudioCleanup = null;
+  function stopAudio() {
+    if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; }
+    // pause() does not fire `ended`, so revoke the blob URL here as well as on a natural finish.
+    // This path is used by barge-in and replacement playback and must not leak one URL per turn.
+    if (currentAudioCleanup) {
+      const cleanup = currentAudioCleanup;
+      currentAudioCleanup = null;
+      try { cleanup(); } catch (_) {}
+    }
+    onSpeakEnd();
+  }
 
   /* ---- "transmission" color on neural playback -------------------------------------------------
      A subtle atmosphere pass so the crew sounds like a voice coming over the station's comms, not a
@@ -301,6 +360,9 @@ const Voice = (() => {
      WebAudio, a browser that won't route a blob through MediaElementSource) falls back to plain <audio>. */
   const TRANSMISSION_FX = true;   // module toggle — set false to ship the neural voice dry
   let fxCtx = null, fxIn = null, fxReady = false, fxBroken = false;
+  // A TAP on the chain's output, so the live panel can meter the agent's voice from the SAME signal the
+  // speakers get. Its own try/catch: an engine without createAnalyser must lose the meter, never the voice.
+  let fxAnalyser = null;
   // a mild tanh-ish curve → gentle harmonic warmth, NOT distortion. `k` small = barely-there.
   function makeSaturationCurve(k) {
     const n = 1024, curve = new Float32Array(n);
@@ -327,6 +389,8 @@ const Voice = (() => {
       drive.connect(out);                 // dry (processed) path
       drive.connect(delay); delay.connect(echo); echo.connect(out);   // slapback path
       out.connect(fxCtx.destination);
+      // parallel tap — an AnalyserNode reads whatever reaches it and needs no output of its own
+      try { fxAnalyser = fxCtx.createAnalyser(); fxAnalyser.fftSize = 1024; out.connect(fxAnalyser); } catch (_) { fxAnalyser = null; }
       fxReady = true;
       return true;
     } catch (_) { fxBroken = true; try { if (fxCtx) fxCtx.close(); } catch (__) {} fxCtx = null; fxIn = null; return false; }
@@ -354,6 +418,7 @@ const Voice = (() => {
      and digitize rise but never below 0.15 (the human stays underneath). Its own AudioContext; a shell persona
      BYPASSES routeThroughFx. Fully guarded: any failure → the caller's transmission/dry fallback. */
   let shCtx = null, shIn = null, shN = null, shBroken = false;
+  let shAnalyser = null;    // the shell chain's own output tap (see fxAnalyser)
   function makeQuantCurve(bits) {
     const n = 4096, c = new Float32Array(n), L = Math.pow(2, bits);
     for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.round(x * L) / L; }
@@ -401,6 +466,7 @@ const Voice = (() => {
       peak.connect(quant); quant.connect(qMix); qMix.connect(out);
       peak.connect(conv); conv.connect(revMix); revMix.connect(out);
       out.connect(shCtx.destination);
+      try { shAnalyser = shCtx.createAnalyser(); shAnalyser.fftSize = 1024; out.connect(shAnalyser); } catch (_) { shAnalyser = null; }
       shN = { comb: { fb, mix }, comb2: { fb: fb2, mix: mix2 }, rmMix, quant, qMix, revMix, peak, dry };
       return true;
     } catch (_) { shBroken = true; try { if (shCtx) shCtx.close(); } catch (__) {} shCtx = null; shIn = null; return false; }
@@ -433,12 +499,26 @@ const Voice = (() => {
   // voice register (persona ttsDeep). Vendor-prefixed setters for older engines; all guarded.
   function playBlob(blob, onEnd, volume, onFail, rate, deep, shell) {
     let url = null, a = null, done = false;
-    const cleanup = () => { if (url) { try { URL.revokeObjectURL(url); } catch (_) {} } if (currentAudio === a) currentAudio = null; };
+    const cleanup = () => {
+      if (url) { try { URL.revokeObjectURL(url); } catch (_) {} url = null; }
+      if (currentAudio === a) currentAudio = null;
+      if (currentAudioCleanup === cleanup) currentAudioCleanup = null;
+    };
     const endOk = () => { if (done) return; done = true; cleanup(); onSpeakEnd(); onEnd && onEnd(); };
+    const endFailed = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      // A decode error may arrive after `onplay`; always leave speaking + metering before advancing.
+      onSpeakEnd();
+      if (onFail) onFail();
+      else if (onEnd) onEnd();
+    };
     try {
       stopAudio();
       url = URL.createObjectURL(blob);
       a = new Audio(url); currentAudio = a;
+      currentAudioCleanup = cleanup;
       a.volume = (volume == null ? 1 : volume);
       if (rate && rate > 0) a.playbackRate = Math.max(0.5, Math.min(2, rate));
       if (deep) { try { a.preservesPitch = false; } catch (_) {} try { a.webkitPreservesPitch = false; } catch (_) {} try { a.mozPreservesPitch = false; } catch (_) {} }
@@ -448,20 +528,23 @@ const Voice = (() => {
       // own output goes silent, so ONLY route when the graph actually wires up.
       // A persona with a machine shell (Ultron) routes through the shell and SKIPS the transmission color; if
       // the shell graph can't wire, fall back to transmission (best-effort) rather than nothing.
-      if (!(shell && routeThroughShell(a, shell))) routeThroughFx(a);
+      // remember WHICH chain took this element — that chain's tap is what the live meter reads.
+      if (shell && routeThroughShell(a, shell)) outAnalyser = shAnalyser;
+      else if (routeThroughFx(a)) outAnalyser = fxAnalyser;
+      else outAnalyser = null;              // dry playback: no tap, so the meter reports nothing rather than lying
       a.onplay = () => onSpeakStart();
       a.onended = endOk;
       // a decode/format error on the neural blob is exactly the "try the browser voice" case — route
       // it to onFail (fallback) rather than treating it as a clean finish (which would go SILENT).
-      a.onerror = () => { if (done) return; done = true; cleanup(); onFail ? onFail() : (onSpeakEnd(), onEnd && onEnd()); };
+      a.onerror = endFailed;
       const p = a.play();
       if (p && p.catch) p.catch(err => {
-        if (done) return; done = true; cleanup();
+        if (done) return;
         // browser still blocking audio (no gesture yet) → tell the user instead of going silently quiet
         if (err && err.name === 'NotAllowedError') setStatus('🔇 tap anywhere to turn on the agent\'s voice');
-        onFail ? onFail() : endOk();
+        endFailed();
       });
-    } catch (_) { cleanup(); onFail ? onFail() : (onSpeakEnd(), onEnd && onEnd()); }
+    } catch (_) { endFailed(); }
   }
 
   /* Browsers block programmatic <audio> playback until the page has had a user gesture — so right after a
@@ -491,6 +574,7 @@ const Voice = (() => {
      every fetch gap, so the hands-free mic can't re-open into the agent's own voice (echo). Bumping
      `speakSeq` (barge-in / teardown) invalidates every in-flight fetch + queued playback at once. */
   let jobs = [];          // queued chunks: { text, opts, seq, result(Promise), ac(AbortController) }
+  let preferLocalTts = false;
   let playIdx = 0;        // next job to PLAY
   let synthIdx = 0;       // next job to begin SYNTHESIZING (runs ahead of playIdx for prefetch)
   let draining = false;   // a reply is in progress (queue non-empty or awaiting more chunks)
@@ -515,7 +599,11 @@ const Voice = (() => {
     const ac = new AbortController(); job.ac = ac; ttsAbort = ac;
     return fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
-      body: JSON.stringify({ key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(), text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style })
+      body: JSON.stringify({
+        key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(),
+        text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style,
+        local: preferLocalTts, localVoice: 'af_heart', speed: cfg.speed
+      })
     }).then(async r => {
       const ct = r.headers.get('Content-Type') || '';
       if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) return { kind: 'neural', blob }; }
@@ -616,6 +704,7 @@ const Voice = (() => {
     let body = opts.mutter ? clean.slice(0, 80) : clean;
     if (!body.trim()) return;
     const opening = (jobs.length === 0);   // FIRST chunk of this reply → eligible for the fast-path lead split
+    if (!opts.mutter) coordinatorEvent('onAssistant', { text: body, opening });
     replyClosed = false; draining = true;
     // on the opening chunk, peel a short lead so the first synth call (and thus first audio) is fast.
     let pieces;
@@ -711,13 +800,14 @@ const Voice = (() => {
     if (!canListen()) return;
     clearResumeCue();
     convoMode = !convoMode;
+    coordinatorEvent('onState', 'listening');
     if (typeof SFX !== 'undefined') SFX.open();
     if (convoMode) {
       savePref(LS_CONVO, true);   // remember the hands-free intent so a refresh can offer one-tap resume
       if (!speakReplies) { speakReplies = true; savePref(LS_SPEAK, true); forcedSpeak = true; reflectToggle(); }  // you have to hear it (restored on exit)
       emptyStreak = 0;
       reflectMode();
-      if (!busyNow() && !listening && !speaking) startListening();
+      if ((!busyNow() || coordinator) && !listening && !speaking) startListening();
       else setStatus('voice mode on');
     } else {
       savePref(LS_CONVO, false);   // deliberate exit — don't nag to resume next session
@@ -740,6 +830,7 @@ const Voice = (() => {
     if (forcedSpeak) { forcedSpeak = false; speakReplies = false; savePref(LS_SPEAK, false); reflectToggle(); }
     reflectMode();
     if (was && !busyNow()) setStatus('online');
+    if (was) coordinatorEvent('onState', 'ended');
   }
 
   // a silent listen in voice mode: try again a few times, then go passive so the mic isn't hot forever.
@@ -971,6 +1062,35 @@ const Voice = (() => {
     return { name: 'recorder', start, stop, abort };
   })();
 
+  // OAuth Live fallback for embedded Windows WebView2, which has MediaRecorder but no SpeechRecognition.
+  // The local sidecar invokes the OS dictation engine against the default mic; no cloud speech key is used.
+  const nativeSpeechProvider = (() => {
+    let ac = null, hooks = null;
+    async function start(h) {
+      hooks = h; ac = new AbortController();
+      try {
+        const r = await fetch('/api/stt/native', { method: 'POST', signal: ac.signal });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error && !j.text) {
+          if (j.error === 'no-speech') hooks && hooks.onError && hooks.onError('no-speech');
+          else hooks && hooks.onError && hooks.onError('native-unavailable');
+        } else if (j.text) hooks && hooks.onFinal && hooks.onFinal(j.text);
+      } catch (e) {
+        if (!(e && e.name === 'AbortError')) hooks && hooks.onError && hooks.onError('native-unavailable');
+      } finally {
+        const done = hooks; hooks = null; ac = null;
+        if (done && done.onEnd) done.onEnd();
+      }
+    }
+    function stop() {
+      const done = hooks; hooks = null;
+      if (ac) { try { ac.abort(); } catch (_) {} ac = null; }
+      if (done && done.onEnd) done.onEnd();
+    }
+    function abort() { stop(); }
+    return { name: 'native', start, stop, abort };
+  })();
+
   /* provider selection: prefer the RECORDER (server Whisper via /api/stt) wherever the mic can be recorded.
      Browser-native SpeechRecognition (Chrome) is Google-served and CENSORS profanity to asterisks with no
      opt-out — the station must transcribe what you actually said, so web-speech is only the fallback:
@@ -997,7 +1117,7 @@ const Voice = (() => {
 
   function startListening() {
     if (!canListen() || listening) return;
-    if (busyNow()) { setStatus('busy — wait for the reply'); return; }  // don't talk over a live run
+    if (busyNow() && !coordinator) { setStatus('busy — wait for the reply'); return; }  // classic mode stays half-duplex
     clearTimeout(rearmTimer); rearmTimer = null;
     stopSpeaking();                       // don't let the agent's voice bleed into the mic
     listening = true; sentThisListen = false; discarding = false; setMicState(true);
@@ -1007,6 +1127,7 @@ const Voice = (() => {
     if (typeof SFX !== 'undefined') SFX.open();
     sttProvider.start({
       onInterim: t => {
+        coordinatorEvent('onInterim', String(t || ''));
         // DRAFT PROTECTION: an interim may only replace what dictation itself wrote — never a typed draft.
         // A non-empty composer that isn't our own last interim means the Commander is typing; leave it alone
         // (the status line still shows 'listening…', so dictation isn't silently lost — it lands via onFinal).
@@ -1016,6 +1137,7 @@ const Voice = (() => {
       },
       onFinal: text => { submitTranscript(text); },
       onError: msg => {
+        coordinatorEvent('onError', String(msg || 'speech recognition failed'));
         // a DENIED mic is a hard stop, not a recoverable hiccup: don't silently retry/re-arm into a mic
         // that can never open — drop hands-free and tell the user the real problem + how to fix it.
         if (msg === 'not-allowed' || msg === 'service-not-allowed') {
@@ -1046,6 +1168,7 @@ const Voice = (() => {
     // otherwise restore whatever status was showing before we grabbed the mic (a send already set
     // 'thinking…'/'working…' via Chat, so this only fires for a plain idle stop).
     if (!busyNow() && !speaking) setStatus(savedStatus || (convoMode ? 'voice mode on' : 'online'));
+    coordinatorEvent('onState', busyNow() ? 'thinking' : 'ready');
   }
 
   // a final transcript from the mic — sent exactly like a typed message (busy/purpose/task/cost logic
@@ -1072,7 +1195,9 @@ const Voice = (() => {
     // a dedicated "got it" cue (not the generic send click) so the user knows their words landed —
     // closes the perceived gap until the agent's first spoken word.
     if (typeof SFX !== 'undefined') (SFX.think || SFX.click)();
-    if (typeof Chat !== 'undefined' && Chat.send) Chat.send(t);
+    let handled = false;
+    try { handled = !!(coordinator && typeof coordinator.onTranscript === 'function' && coordinator.onTranscript(t)); } catch (_) {}
+    if (!handled && typeof Chat !== 'undefined' && Chat.send) Chat.send(t);
   }
 
   // mic button: interrupt the agent if it's talking (barge-in), else start/stop a listen. In voice
@@ -1090,6 +1215,29 @@ const Voice = (() => {
   function toggleListen() {
     if (!canListen()) return;
     if (listening) stopListening(); else startListening();
+  }
+
+  // OAuth/local live mode keeps authentication on the existing Chat/Codex path and deliberately selects
+  // browser speech recognition for input, so the voice layer itself needs no transcription API credential.
+  function startCoordinator(hooks) {
+    if (!SR && typeof fetch === 'undefined') return false;
+    coordinator = hooks || {};
+    sttProvider = SR ? webSpeechProvider : nativeSpeechProvider;
+    if (!convoMode) toggleVoiceMode();
+    else if (!listening && !talking()) startListening();
+    return true;
+  }
+  function stopCoordinator() {
+    if (convoMode) stopConvo();
+    coordinator = null;
+  }
+  // The downloaded local speech surface owns its persistent microphone/VAD loop, but still needs the mature
+  // reply-stream hooks (captions, speaking state, barge-in) from this module.
+  function attachCoordinator(hooks) { coordinator = hooks || {}; return true; }
+  function detachCoordinator() {
+    // End the meter while its listener still exists so the panel receives the final zero sample.
+    stopOutputMeter();
+    coordinator = null;
   }
 
   /* ======================================================================
@@ -1219,7 +1367,9 @@ const Voice = (() => {
     init, speak, speakChunk, endReply, mutter, ambientLine, setAgent, isOn, setSpeakReplies,
     startListening, stopListening, toggleListen, stopSpeaking,
     toggleVoiceMode, stopConvo, onTurnEnd,
-    canListen, canSpeak, personaId: () => activePersonaId,
+    canListen, canSpeak, startCoordinator, stopCoordinator, attachCoordinator, detachCoordinator,
+    canOAuthLive: () => !!SR || typeof fetch !== 'undefined', personaId: () => activePersonaId,
+    setLocalTts: value => { preferLocalTts = !!value; },
     isListening: () => listening, isSpeaking: () => speaking, inVoiceMode: () => convoMode
   };
 })();

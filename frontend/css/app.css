@@ -1344,19 +1344,262 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .voice-toggle.off:hover svg { filter: none; }
 /* agent-voice speaking: amber glow pulse on the chip */
 .voice-toggle.speaking { animation: chip-spk .8s infinite; }
-@keyframes chip-spk { 0%,100% { box-shadow: 0 0 2px var(--ph-glow2); } 50% { box-shadow: 0 0 12px var(--ph-glow); } }
+.voice-live[aria-pressed="true"] { color: var(--ink); background: var(--ph); box-shadow: 0 0 16px var(--ph-glow); }
+.voice-live[aria-pressed="true"] svg { filter: none; }
 
-/* hands-free LIVE: filled phosphor (inverted) so the active mode clearly pops out of the row */
-/* hands-free LIVE = the held selection block: this control IS selected until toggled off */
-.voice-mode.on {
-  color: var(--ink); background: var(--ph);
-  box-shadow: 0 0 16px var(--ph-glow);
+/* ================= LOCAL LIVE VOICE — the pop-up mic module =================
+   A SMALL WINDOW, not a typical one (Andrew, 2026-07-29). Two earlier passes missed on opposite
+   sides: a 300-440px CRT panel with a bezel, a title bar and a three-row readout rail read as one
+   more window to manage; a chromeless capsule glued to the dock stopped reading as its own thing
+   at all. What this wants to be is a little piece of station hardware that POPS UP over the
+   station — framed, floating, obviously separate — and is done in one glance.
+
+   So it keeps a frame, a lift shadow and the curved-glass sheen (it is a screen), and drops every
+   piece of window furniture: no title chip, no drag bar, no engraved rail, no window buttons.
+   Every colour resolves from the phosphor tokens through one --lv-accent, and --lv-amp lights part
+   of EVERY skin, so no variant can show a level the microphone is not producing. */
+.live-voice-panel {
+  --lv-amp: 0;                 /* live mic RMS, 0..1 — written by voice-live.js pushLevel() */
+  --lv-dl: 0%;                 /* local-model download percent, when the sidecar reports one */
+  --lv-accent: var(--ph-dim);  /* per-state accent; every lit part of the module reads this */
+  --lv-talker: var(--lv-accent); /* current voice: user follows state; agent uses station gold */
+  position: fixed; z-index: 275; left: 18px; bottom: 68px;
+  width: 150px; max-width: calc(100vw - 16px);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  padding: 5px 7px 6px;
+  color: var(--text); border-radius: var(--r-lg); overflow: hidden;
+  background:
+    radial-gradient(ellipse 130% 90% at 50% 0%, var(--ph-glow2), transparent 46%),
+    linear-gradient(180deg, rgba(9, 5, 2, 0.97), rgba(4, 2, 1, 0.985));
+  /* a RIM and a LIFT, not a --bezel: one hairline of phosphor so it reads as hardware, and a deep
+     drop so it floats above the station instead of sitting in it */
+  box-shadow:
+    inset 0 0 0 1px var(--ph-dim),
+    inset 0 1px 0 rgba(var(--ph-bright-rgb), 0.08),
+    0 14px 30px rgba(0, 0, 0, 0.62),
+    0 0 22px var(--ph-glow2);
+  transform-origin: left bottom; animation: lv-pop .2s var(--ease-out);
 }
-.voice-mode.on svg { filter: none; }
-.voice-mode.on:hover { color: var(--ink); background: var(--ph-bright); border-color: var(--ph-bright); }
-/* hands-free was on last session but a refresh dropped it → pulse the chip to invite a one-tap resume */
-.voice-mode.resume { animation: chip-resume 1.3s ease-in-out infinite; }
-@keyframes chip-resume { 0%,100% { box-shadow: 0 0 0 0 var(--ph-glow2); border-color: var(--ph-dim); } 50% { box-shadow: 0 0 12px 1px var(--ph-glow); border-color: var(--ph); } }
+/* curved glass over the whole module — it is a screen, like every other StarNet surface */
+.live-voice-panel::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; z-index: 6; background: var(--glass);
+}
+.live-voice-panel[hidden] { display: none; }
+.live-voice-panel[data-dragging="true"] {
+  animation: none;
+  box-shadow: inset 0 0 0 1px var(--ph), 0 16px 34px rgba(0,0,0,.7), 0 0 26px var(--ph-glow2);
+}
+/* it POPS UP — a CRT power-on entrance on something this small reads as a glitch, not a boot */
+@keyframes lv-pop {
+  0%   { transform: scale(.9) translateY(4px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+/* per-state accent — one variable, so state reads through the pip, the lamp and the level at once.
+   Idle listening rests on the phosphor; only ACTIVELY hearing you climbs to --ph-bright, so the
+   brightest the module ever gets means "your voice is landing right now". */
+.live-voice-panel[data-state="listening"],
+.live-voice-panel[data-state="speaking"] { --lv-accent: var(--ph); }
+.live-voice-panel[data-state="hearing"] { --lv-accent: var(--ph-bright); }
+.live-voice-panel[data-state="connecting"],
+.live-voice-panel[data-state="warming"],
+.live-voice-panel[data-state="thinking"],
+.live-voice-panel[data-state="transcribing"],
+.live-voice-panel[data-state="reconnecting"] { --lv-accent: var(--warn); }
+.live-voice-panel[data-state="offline"] { --lv-accent: var(--bad); }
+.live-voice-panel[data-talker="agent"] { --lv-talker: var(--gold); }
+
+/* ---- head: the state line doubles as the grab handle (makeDraggable binds it), so no skin may
+   collapse it to nothing — a pop-up you cannot move out of the way is worse than a window. ---- */
+.lv-head {
+  position: relative; z-index: 7; flex: 1 0 100%;
+  display: flex; align-items: center; gap: 5px;
+  min-height: 12px; padding: 0 1px 1px; cursor: grab; touch-action: none; user-select: none;
+}
+.live-voice-panel[data-dragging="true"] .lv-head { cursor: grabbing; }
+/* the LOCAL LIVE title chip is most of what made this read as a window. The mode is already
+   obvious from the composer's lit LIVE toggle — the module does not need to introduce itself. */
+.lv-brand { display: none; }
+.lv-pip {
+  flex: 0 0 auto; width: 5px; height: 5px;
+  background: var(--lv-accent); box-shadow: 0 0 6px var(--lv-accent);
+  animation: lv-pip 1.3s infinite;
+}
+@keyframes lv-pip { 0%, 100% { opacity: 1; } 50% { opacity: .28; } }
+/* the state WORD is gone from the resting module (Andrew, 2026-07-29). It was the widest thing in
+   a 150px module and it repeated what the colour already says: the pip and the whole meter carry
+   the state ladder. It comes back under the cursor, where the exact word is worth the room. */
+.lv-state {
+  display: none;
+  flex: 1 1 auto; color: var(--lv-accent);
+  font-size: 9px; letter-spacing: var(--ls-1); text-shadow: 0 0 8px var(--ph-glow2);
+}
+/* HOVER NO LONGER OPENS THE MODULE (Andrew, 2026-07-29). Passing the cursor over a thing is not a
+   request to read it, and a module that grows under the pointer moves the target you were aiming at —
+   the meter is also the barge-in button, so the resting box must hold still. Everything below opens on
+   FOCUS only (click it, or tab to it), which is a deliberate act with a way back out. */
+.live-voice-panel:focus-within .lv-state { display: block; }
+/* ✕ stays reachable but stops taking resting-state real estate. pointer-events ride the opacity so
+   an invisible button can never eat a click and drop you out of voice mode. */
+.lv-x {
+  flex: 0 0 auto; margin-left: auto; padding: 0 3px; font-size: 10px; background: none;
+  opacity: 0; pointer-events: none; transition: opacity var(--t-fast) linear;
+}
+.live-voice-panel:hover .lv-x,
+.live-voice-panel:focus-within .lv-x { opacity: .75; pointer-events: auto; }
+.lv-x:hover { opacity: 1; color: var(--bad); border-color: var(--bad); background: none; }
+
+@media (hover: none), (pointer: coarse) {
+  /* Touch has no hover reveal. Keep close reachable and make the whole top strip an honest drag target. */
+  .lv-x { opacity: .75; pointer-events: auto; min-width: 24px; min-height: 20px; }
+  .lv-head { min-height: 24px; }
+}
+
+/* ---- the level IS the control (Andrew, 2026-07-29: no icon, only the volume indicator). Every
+   face we tried — orb, lamp, mic glyph, vu column, aperture, slit — was a second thing to look at
+   sitting beside a meter that already said everything this module knows. So the meter is the whole
+   instrument AND the whole button: press anywhere on your own voice to cut in. That keeps the
+   barge-in reachable by mouse, touch and keyboard without drawing a single icon. ---- */
+.lv-stage {
+  position: relative; z-index: 5; flex: 1 0 100%; min-width: 0;
+  display: flex; align-items: center; padding: 0;
+}
+.lv-meter {
+  position: relative; overflow: hidden; flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; height: 24px; padding: 0 5px;
+  color: inherit; font-family: inherit; cursor: pointer;
+  background: linear-gradient(180deg, rgba(0,0,0,.6), rgba(0,0,0,.36));
+  border: 1px solid var(--ph-faint); border-radius: var(--r-sm);
+  box-shadow: var(--well), 0 0 calc(2px + var(--lv-amp) * 13px) color-mix(in srgb, var(--lv-talker) 32%, transparent);
+  transition: border-color var(--t-med) var(--ease-soft), box-shadow var(--t-fast) linear, transform var(--t-fast) var(--ease-out);
+}
+.lv-meter:hover { border-color: var(--lv-talker); }
+/* it travels when you press it — a control that does not move is a picture of a control */
+.lv-meter:active { transform: translateY(1px); box-shadow: inset 0 2px 7px rgba(0,0,0,.92); }
+.lv-meter:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
+
+/* level — a rolling window of real RMS, oldest at the left, TYPED in the station's own block ramp
+   (▁▂▃▄▅▆▇█, the same glyphs the link-status bars use). Scaled rectangles read as a widget drawn
+   over the terminal; glyphs read as the terminal itself printing what it hears. voice-live.js
+   writes one character per column — nothing here interpolates, so a step you see is a step the
+   microphone actually sent. */
+.lv-wave {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: flex-end; gap: 2px;
+  /* the glyph must be NARROWER than its cell or the columns touch and fuse into one shape — a
+     block character fills its own em box by definition, so the gap has to come from the cell */
+  font-size: 13px; line-height: .8; letter-spacing: 0;
+  color: var(--lv-accent); text-shadow: 0 0 calc(3px + var(--lv-amp) * 8px) var(--ph-glow2);
+  transition: text-shadow 70ms linear;
+}
+/* one equal CELL per column with a hairline between: butted up against each other the block glyphs
+   fuse into one solid shape and the meter stops reading as columns at all */
+.lv-wave i {
+  flex: 1 1 0; min-width: 0; text-align: center; font-style: normal; opacity: .92;
+}
+/* The history is one strip, but every cell retains who produced it. This makes turn ownership
+   readable without a legend or a second meter: user samples use the live state color, agent
+   samples use the station's established gold voice color. */
+.lv-wave i[data-src="self"] { color: var(--lv-accent); }
+.lv-wave i[data-src="agent"] { color: var(--gold); text-shadow: 0 0 7px color-mix(in srgb, var(--gold) 42%, transparent); }
+
+/* working states (connecting / warming / thinking / transcribing): the station is BUSY, not
+   hearing. A sweep across the meter says so WITHOUT touching the bars — the bars are the
+   microphone and must never move to a timer, or the module would claim to hear a silent room. */
+.live-voice-panel[data-state="connecting"] .lv-meter::after,
+.live-voice-panel[data-state="warming"] .lv-meter::after,
+.live-voice-panel[data-state="thinking"] .lv-meter::after,
+.live-voice-panel[data-state="transcribing"] .lv-meter::after {
+  content: ''; position: absolute; inset: 0; width: 45%;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, var(--ph-glow2), transparent);
+  animation: lv-sweep 1.6s var(--ease-soft) infinite;
+}
+@keyframes lv-sweep {
+  from { transform: translateX(-100%); }
+  to   { transform: translateX(240%); }
+}
+
+/* ---- the one line of text worth carrying: it answers "did it hear me right" without opening
+   COMMS. The reply line only exists once there IS a reply. ---- */
+/* the transcript is the thing you read ONCE, not the thing you watch — at rest it costs two rows
+   for a line COMMS already owns, so it waits under the cursor with the state word and the rail */
+.lv-heard {
+  display: none;
+  position: relative; z-index: 5; flex: 1 0 100%; margin: 1px 1px 0;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  color: var(--ph-bright); font-size: var(--fs-0); line-height: 1.3; letter-spacing: var(--ls-1);
+  text-shadow: 0 0 8px var(--ph-glow2);
+}
+.live-voice-panel:focus-within .lv-heard { display: -webkit-box; }
+.lv-say { display: none; }
+.lv-say.on { display: none; }
+.live-voice-panel:focus-within .lv-say.on {
+  position: relative; z-index: 5; flex: 1 0 100%; margin: 1px 1px 0;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  color: var(--ph-dim); font-size: 10px; line-height: 1.3; letter-spacing: var(--ls-1);
+}
+.lv-say.on::before { content: '▸ '; color: var(--ph); }
+
+/* ---- ROUTE / SPEECH / TASK are diagnostics, not glanceable state, and carrying them at rest is
+   what forced a 300px panel. Hidden at rest, wrapped onto one line on hover — HIDDEN, never faked:
+   this hover is now the only place a model download reports itself, so the fill stays real. ---- */
+.lv-rail { display: none; }
+.live-voice-panel:focus-within .lv-rail {
+  position: relative; z-index: 5; flex: 1 0 100%;
+  display: flex; flex-flow: row wrap; gap: 1px 9px; margin: 3px 1px 0; padding-top: 4px;
+  border-top: 1px solid var(--ph-faint);
+  background: none; box-shadow: none; overflow: visible;
+}
+.lv-row {
+  position: relative; display: flex; align-items: baseline; gap: 5px;
+  min-width: 0; padding: 0; border-bottom: 0;
+}
+.lv-row dt { flex: 0 0 auto; color: var(--ph-dim); opacity: .5; font-size: 9px; letter-spacing: var(--ls-2); }
+.lv-row dd {
+  flex: 0 1 auto; min-width: 0; margin: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ph); font-size: 9px; letter-spacing: var(--ls-1);
+}
+/* model download: a real fill sweeps the SPEECH row, driven by the sidecar's reported percent */
+.lv-row-dl::before {
+  content: ''; position: absolute; left: -3px; top: -1px; bottom: -1px; width: var(--lv-dl);
+  background: linear-gradient(90deg, var(--ph-glow2), transparent);
+  transition: width var(--t-slow) var(--ease-soft); pointer-events: none;
+}
+.lv-task.busy { color: var(--ph-bright); text-shadow: 0 0 8px var(--ph-glow2); }
+.lv-task.pending { color: var(--warn); text-shadow: 0 0 8px var(--ph-glow2); }
+
+/* ---- a fault is the one thing allowed to grow the module, because a silent dead mic is this
+   feature's worst failure. Still a strip, not a card. ---- */
+.lv-error {
+  position: relative; z-index: 5; flex: 1 0 100%; margin: 4px 1px 0;
+  padding: 4px 0 0; border-top: 1px solid var(--bad);
+  color: var(--bad); background: none; box-shadow: none;
+  font-size: 9px; line-height: 1.35; letter-spacing: var(--ls-1);
+}
+/* [hidden] is the UA's display:none — a bare `display: block` here silently OUT-SPECIFIES it and
+   left TRY AGAIN sitting under a healthy session. Restate the hidden case. */
+.lv-retry[hidden] { display: none; }
+.lv-retry {
+  position: relative; z-index: 5; display: block; flex: 0 0 auto; margin: 5px 1px 0 auto;
+  padding: 2px 9px; cursor: pointer;
+  color: var(--ph); background: var(--panel2);
+  border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
+  font-family: inherit; font-size: 9px; letter-spacing: var(--ls-2); text-shadow: none;
+  box-shadow: var(--raise);
+}
+.lv-retry:hover { color: var(--ph-bright); border-color: var(--ph); box-shadow: var(--raise), 0 0 10px var(--ph-glow2); }
+
+
+@media (prefers-reduced-motion: reduce) {
+  .live-voice-panel { animation: none; }
+  .lv-pip { animation: none !important; }
+  .lv-meter::after { animation: none !important; opacity: .5; }
+}
+
+@keyframes chip-spk { 0%,100% { box-shadow: 0 0 2px var(--ph-glow2); } 50% { box-shadow: 0 0 12px var(--ph-glow); } }
 
 /* ---------- onboarding / save additions ---------- */
 /* (title-screen rules removed with the title screen; #data-status now styled by .title-status at the top of this file) */
