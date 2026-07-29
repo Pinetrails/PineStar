@@ -10382,6 +10382,38 @@ async function runOnce(o) {
       // stay just under the true ceiling: the transport may add its own prefix/footer to a chunk.
       return (isFinite(n) && n > 200) ? (n - 100) : 1900;
     },
+    /* OUTBOUND FILES (2026-07-29). readFile is the JAIL PROOF and it lives here, not in the tool: comms.js is
+       pure and must not learn about the filesystem. resolveInside is the same proof the fs.* tools and user
+       attachments use, so an agent can only attach something inside its OWN workspace — `../` or an absolute
+       path is a refusal, not a traversal. Never throws: a miss is { ok:false, error } the tool reports honestly. */
+    readFile: async (agentId, rel) => {
+      try {
+        // resolveInside THROWS on a jail violation ('illegal path' / 'path escapes workspace') and otherwise
+        // answers { base, abs } — the catch below turns a violation into an honest refusal, never a traversal.
+        const r = await fsJail.resolveInside(String(agentId || ''), String(rel || ''), { scope: 'read' });
+        const abs = r && r.abs;
+        if (!abs) return { ok: false, error: 'that path is outside your workspace' };
+        const st = await fsp.stat(abs).catch(() => null);
+        if (!st || !st.isFile()) return { ok: false, error: 'not a file' };
+        if (st.size > CHANNEL_UPLOAD_MAX_BYTES) return { ok: false, error: 'file is ' + Math.round(st.size / (1024 * 1024)) + 'MB (limit ' + Math.round(CHANNEL_UPLOAD_MAX_BYTES / (1024 * 1024)) + 'MB)' };
+        const buffer = await fsp.readFile(abs);
+        if (!buffer.length) return { ok: false, error: 'file is empty' };
+        return { ok: true, buffer: buffer, name: path.basename(abs), mime: mimeForPath(abs) };
+      } catch (e) { return { ok: false, error: (e && e.message) || 'read failed' }; }
+    },
+    // Upload through the SAME target-key resolution sendTo uses, so an agent can attach a file exactly where it
+    // may already send words — known-targets-only is unchanged by this feature.
+    sendMediaTo: (target, item) => {
+      let rec = null;
+      try { rec = channelStore.getChatRecord(String(target)) || null; } catch (_) { rec = null; }
+      if (!rec) return Promise.resolve({ ok: false, error: 'unknown chat target' });
+      const channel = String(rec.channel || 'telegram');
+      const live = liveChannelFor(channel);
+      if (!(live && live.adapter)) return Promise.resolve({ ok: false, error: channel + ' is not connected' });
+      if (typeof live.adapter.sendMedia !== 'function') return Promise.resolve({ ok: false, error: channel + ' cannot carry files' });
+      return Promise.resolve(live.adapter.sendMedia(String(rec.chatId || target), item))
+        .catch(e => ({ ok: false, error: (e && e.message) || 'upload failed' }));
+    },
     redact: redact,
     emit: chanEmit
   }).register(registry);
@@ -13411,6 +13443,16 @@ const MIME = {
   '.mkv': 'video/x-matroska', '.avi': 'video/x-msvideo',
   '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.ogg': 'audio/ogg', '.wav': 'audio/wav', '.flac': 'audio/flac', '.opus': 'audio/ogg; codecs=opus'
 };
+// OUTBOUND CHANNEL FILES (channel.send `files`): the ceiling we enforce BEFORE reading a file into memory, and
+// the mime the platform is told. 20MB sits under Telegram's 50MB bot-upload cap with headroom for the multipart
+// framing, and it is a size a phone on mobile data can actually receive. `MIME` is the same table the static
+// server uses — one source of truth, so a type served correctly on the station is typed correctly in the chat.
+const CHANNEL_UPLOAD_MAX_BYTES = 20 * 1024 * 1024;
+function mimeForPath(abs) {
+  const m = MIME[path.extname(String(abs || '')).toLowerCase()];
+  // strip the charset — the Bot API wants a bare content-type on a form part
+  return m ? String(m).split(';')[0].trim() : 'application/octet-stream';
+}
 const ACTIVE_DELIVERABLE_EXTS = new Set([
   '.html', '.htm', '.xhtml', '.js', '.mjs', '.cjs', '.svg', '.xml', '.xsl', '.xslt', '.wasm'
 ]);

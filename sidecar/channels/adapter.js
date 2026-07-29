@@ -337,6 +337,22 @@
         catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'setCommands threw' }); }
       },
 
+      // ---- OUTBOUND MEDIA (transport-optional, same probe-and-degrade contract) ---------------------------
+      // A channel whose transport cannot upload answers { ok:false, error } and the hub falls back to naming
+      // the file's workspace path in text. That fallback is the whole reason this is a capability method and
+      // not a hard dependency: Discord/Slack/Matrix/Signal keep working untouched until they grow their own.
+      sendMedia(chatId, item, mediaOpts) {
+        if (typeof transport.sendMedia !== 'function') return Promise.resolve({ ok: false, error: 'sending files is not supported on this channel', retryable: false });
+        try { return Promise.resolve(transport.sendMedia(String(chatId), item, mediaOpts || {})); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'sendMedia threw', retryable: false }); }
+      },
+
+      sendMediaGroup(chatId, items, groupOpts) {
+        if (typeof transport.sendMediaGroup !== 'function') return Promise.resolve({ ok: false, error: 'albums are not supported on this channel', retryable: false });
+        try { return Promise.resolve(transport.sendMediaGroup(String(chatId), items, groupOpts || {})); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'sendMediaGroup threw', retryable: false }); }
+      },
+
       // Download one media file's bytes (transport-optional): { ok, buffer?, error? }, never throws. A transport
       // without getFile answers honestly instead of pretending — the hub's note then says media isn't supported.
       getFile(fileId, opts2) {

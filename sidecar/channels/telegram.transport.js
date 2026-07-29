@@ -25,6 +25,20 @@
   const ALLOWED_UPDATES = ['message', 'callback_query'];   // ignore edited/channel/poll/etc. updates server-side
   const DEFAULT_API_BASE = 'https://api.telegram.org';
 
+  // ---- outbound media limits + method table (Bot API facts, not our policy) ----
+  const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;   // Bot API upload ceiling for a bot (photos are lower; Telegram re-encodes)
+  const MAX_CAPTION_LENGTH = 1024;             // a media caption is 1024, NOT the 4096 a message body gets
+  const MAX_ALBUM_ITEMS = 10;
+  // kind -> the method that makes Telegram render it that way, and the form field it expects the bytes under.
+  const MEDIA_METHODS = {
+    photo:     { method: 'sendPhoto',     field: 'photo' },
+    document:  { method: 'sendDocument',  field: 'document' },
+    video:     { method: 'sendVideo',     field: 'video' },
+    audio:     { method: 'sendAudio',     field: 'audio' },
+    voice:     { method: 'sendVoice',     field: 'voice' },
+    animation: { method: 'sendAnimation', field: 'animation' }
+  };
+
   function makeTelegramTransport(opts) {
     const o = opts || {};
     const fetchImpl = o.fetch;
@@ -33,12 +47,83 @@
     if (!token || typeof token !== 'string') throw new Error('makeTelegramTransport: a bot token is required');
     const BASE = (o.apiBase || DEFAULT_API_BASE).replace(/\/+$/, '') + '/bot' + token;   // token only ever here
 
+    /* THE BOT TOKEN LIVES IN THE URL, AND FETCH PUTS THE URL IN ITS ERROR MESSAGE.
+       Node's undici renders a transport failure as "request to https://api.telegram.org/bot<TOKEN>/sendMessage
+       failed, reason: …". Every catch in this file used to pass `e.message` straight out — into console.error,
+       and into the `error` field of a SendResult that the hub emits on `channel.delivery` and surfaces in the
+       panel. One DNS blip was therefore enough to print a live bot token into a log the member might paste into
+       a bug report. Redact at the one place that knows the secret: here.
+
+       Two rules, belt and suspenders: strike THIS token wherever it appears (it can also arrive inside a
+       description echoed back), and strike anything shaped like a Bot API token in a /bot<...>/ path — a proxy
+       or a self-hosted api server may name a DIFFERENT token in its error text, and a redactor that only knows
+       its own secret would sail straight past it. */
+    const TOKEN_RE = new RegExp(token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    function redact(s) {
+      let out = String(s == null ? '' : s);
+      if (token) out = out.replace(TOKEN_RE, '<redacted-bot-token>');
+      // any surviving /bot<digits>:<secret> path segment (another token, or a partially-rewritten one)
+      out = out.replace(/\/bot\d{5,}:[A-Za-z0-9_-]{10,}/g, '/bot<redacted-bot-token>');
+      return out;
+    }
+    // every error string leaving this module goes through here — never `e.message` raw.
+    const errOf = (e, fallback) => redact((e && e.message) || fallback || 'error');
+
     // one Bot API call -> { res, data }. data.ok distinguishes success ({result}) from error ({error_code,description}).
     async function call(method, payload, signal) {
       const res = await fetchImpl(BASE + '/' + method, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify(payload || {}),
+        signal: signal
+      });
+      let data;
+      try { data = await res.json(); }
+      catch (e) { data = { ok: false, error_code: (res && res.status) || 0, description: 'non-JSON response' }; }
+      return { res: res, data: data };
+    }
+
+    /* MULTIPART — the one thing sendMessage never needed and every send*-media method does.
+       The Bot API takes file uploads as multipart/form-data ONLY; this transport was JSON-only, which is the
+       real reason the agent could receive a file and never send one back. Hand-rolled on purpose: one small
+       encoder over Buffer.concat beats a dependency for a format this fixed. Deterministic — the boundary is
+       derived from a caller-supplied counter, never from a clock or rng, so a test can assert the exact bytes.
+
+       fields: { name: scalar }  (numbers/strings/booleans; objects are JSON-stringified, which is exactly what
+                                  the Bot API wants for reply_markup and the sendMediaGroup `media` array)
+       files:  [{ field, filename, contentType, buffer }] */
+    let partSeq = 0;
+    function encodeMultipart(fields, files, seq) {
+      const boundary = '----StarNetFormBoundary' + String(seq == null ? (++partSeq) : seq).padStart(12, '0');
+      const chunks = [];
+      const push = (s) => chunks.push(Buffer.from(String(s), 'utf8'));
+      for (const k in (fields || {})) {
+        if (!Object.prototype.hasOwnProperty.call(fields, k)) continue;
+        const v = fields[k];
+        if (v === undefined || v === null) continue;
+        const body = (typeof v === 'object') ? JSON.stringify(v) : String(v);
+        push('--' + boundary + '\r\nContent-Disposition: form-data; name="' + k + '"\r\n\r\n' + body + '\r\n');
+      }
+      for (const f of (files || [])) {
+        if (!f || !f.buffer) continue;
+        // a quote or newline in a filename would break the header out of its own field — strip, don't escape
+        const fname = String(f.filename || 'file').replace(/[\r\n"\\]/g, '_').slice(0, 200);
+        push('--' + boundary + '\r\nContent-Disposition: form-data; name="' + f.field + '"; filename="' + fname
+          + '"\r\nContent-Type: ' + (f.contentType || 'application/octet-stream') + '\r\n\r\n');
+        chunks.push(Buffer.isBuffer(f.buffer) ? f.buffer : Buffer.from(f.buffer));
+        push('\r\n');
+      }
+      push('--' + boundary + '--\r\n');
+      return { boundary: boundary, body: Buffer.concat(chunks) };
+    }
+
+    // one multipart Bot API call. Same { res, data } contract as call(), so every caller reads results identically.
+    async function callMultipart(method, fields, files, signal) {
+      const { boundary, body } = encodeMultipart(fields, files);
+      const res = await fetchImpl(BASE + '/' + method, {
+        method: 'POST',
+        headers: { 'content-type': 'multipart/form-data; boundary=' + boundary },
+        body: body,
         signal: signal
       });
       let data;
@@ -64,9 +149,9 @@
             return { ok: true, id: String(data.result.id), username: String(data.result.username || ''), name: String(data.result.first_name || '') };
           }
           const code = (data && data.error_code) || (res && res.status) || 0;
-          return { ok: false, error: (data && data.description) || ('http ' + code) };
+          return { ok: false, error: redact((data && data.description) || ('http ' + code)) };
         } catch (e) {
-          return { ok: false, error: (e && e.message) || 'network error' };
+          return { ok: false, error: errOf(e, 'network error') };
         }
       },
 
@@ -77,7 +162,7 @@
         }, a.signal);
         if (data && data.ok) return Array.isArray(data.result) ? data.result : [];
         const code = (data && data.error_code) || (res && res.status) || 0;
-        const desc = (data && data.description) || '';
+        const desc = redact((data && data.description) || '');
         const err = new Error('telegram getUpdates failed: ' + code + ' ' + desc);
         err.code = code;
         if (code === 401 || code === 404) err.fatal = true;   // invalid/unknown token -> stop polling for good
@@ -100,7 +185,7 @@
         try {
           const { data } = await call('getFile', { file_id: String(fileId) }, o3.signal);
           if (!data || !data.ok || !data.result || !data.result.file_path) {
-            return { ok: false, error: (data && data.description) || 'getFile failed' };
+            return { ok: false, error: redact((data && data.description) || 'getFile failed') };
           }
           const url = (o.apiBase || DEFAULT_API_BASE).replace(/\/+$/, '') + '/file/bot' + token + '/' + String(data.result.file_path);
           const res = await fetchImpl(url, { method: 'GET', signal: o3.signal });
@@ -115,7 +200,7 @@
           return { ok: true, buffer: buffer };
         } catch (e) {
           if (e && (e.name === 'AbortError' || e.aborted)) return { ok: false, error: 'aborted' };
-          return { ok: false, error: (e && e.message) || 'network error' };
+          return { ok: false, error: errOf(e, 'network error') };
         }
       },
 
@@ -129,10 +214,10 @@
           if (data && data.ok) return { ok: true };
           const code = (data && data.error_code) || (res && res.status) || 0;
           const retryAfter = data && data.parameters && data.parameters.retry_after;
-          return { ok: false, error: (data && data.description) || ('http ' + code), retryable: code === 429 || code >= 500, retryAfter: retryAfter };
+          return { ok: false, error: redact((data && data.description) || ('http ' + code)), retryable: code === 429 || code >= 500, retryAfter: retryAfter };
         } catch (e) {
           if (e && (e.name === 'AbortError' || e.aborted)) return { ok: false, error: 'aborted', retryable: false };
-          return { ok: false, error: (e && e.message) || 'network error', retryable: true };
+          return { ok: false, error: errOf(e, 'network error'), retryable: true };
         }
       },
 
@@ -147,9 +232,9 @@
           const { data, res } = await call('answerCallbackQuery', payload);
           if (data && data.ok) return { ok: true };
           const code = (data && data.error_code) || (res && res.status) || 0;
-          return { ok: false, error: (data && data.description) || ('http ' + code) };
+          return { ok: false, error: redact((data && data.description) || ('http ' + code)) };
         } catch (e) {
-          return { ok: false, error: (e && e.message) || 'network error' };
+          return { ok: false, error: errOf(e, 'network error') };
         }
       },
 
@@ -183,9 +268,9 @@
           }
           if (data && data.ok) return { ok: true };
           const code = (data && data.error_code) || (res && res.status) || 0;
-          return { ok: false, error: (data && data.description) || ('http ' + code) };
+          return { ok: false, error: redact((data && data.description) || ('http ' + code)) };
         } catch (e) {
-          return { ok: false, error: (e && e.message) || 'network error' };
+          return { ok: false, error: errOf(e, 'network error') };
         }
       },
 
@@ -202,9 +287,101 @@
           const { data, res } = await call('setMyCommands', { commands: commands });
           if (data && data.ok) return { ok: true, count: commands.length };
           const code = (data && data.error_code) || (res && res.status) || 0;
-          return { ok: false, error: (data && data.description) || ('http ' + code) };
+          return { ok: false, error: redact((data && data.description) || ('http ' + code)) };
         } catch (e) {
-          return { ok: false, error: (e && e.message) || 'network error' };
+          return { ok: false, error: errOf(e, 'network error') };
+        }
+      },
+
+      /* ---- OUTBOUND MEDIA -------------------------------------------------------------------------------
+         Until now the agent could RECEIVE a file and could not send one back: it would generate an image or
+         write a report and then describe it in prose. These are the Bot API's upload methods, all multipart.
+
+         sendMedia(chatId, item, opts?) — ONE file.
+           item = { kind, buffer, filename?, mime?, caption? }
+           kind picks the method, and the method decides how Telegram RENDERS it: 'photo' shows inline (and is
+           re-encoded/compressed by Telegram), 'document' keeps the exact bytes and the filename, 'voice' is the
+           round push-to-play bubble (opus/ogg only), 'audio' is a music player row, 'video'/'animation' play
+           inline. An unknown kind degrades to 'document' — the one method that can carry ANY bytes, so a new
+           kind never becomes a failed send.
+         sendMediaGroup(chatId, items, opts?) — 2..10 photos/videos as ONE album (Telegram's own limits).
+
+         Both NEVER throw and return the same normalized SendResult shape as send(), so the adapter's bounded
+         resend and the hub's degrade path read them identically. */
+      async sendMedia(chatId, item, mediaOpts) {
+        const it = item || {}, o2 = mediaOpts || {};
+        const buf = it.buffer;
+        if (!buf || !buf.length) return { ok: false, error: 'no bytes to send', retryable: false };
+        if (buf.length > MAX_UPLOAD_BYTES) {
+          return { ok: false, error: 'file is too large for Telegram (' + Math.round(buf.length / (1024 * 1024)) + 'MB > 50MB)', retryable: false };
+        }
+        const spec = MEDIA_METHODS[String(it.kind || '').toLowerCase()] || MEDIA_METHODS.document;
+        const fields = { chat_id: chatId };
+        for (const k in o2) if (k !== 'signal' && Object.prototype.hasOwnProperty.call(o2, k)) fields[k] = o2[k];
+        // The caption rides the SAME markdown->HTML converter as send(), with the same plain-text floor: a
+        // caption is the one piece of prose on a media send and would otherwise show raw `**bold**`.
+        let formatted = false;
+        const rawCap = it.caption == null ? '' : String(it.caption);
+        if (rawCap) {
+          fields.caption = rawCap.slice(0, MAX_CAPTION_LENGTH);
+          if (!fields.parse_mode) {
+            try {
+              const f = fmt.toTelegramHtml(fields.caption);
+              if (f && f.converted) { fields.caption = f.html; fields.parse_mode = 'HTML'; formatted = true; }
+            } catch (_) { /* a formatter fault must never cost the file */ }
+          }
+        }
+        const file = [{ field: spec.field, filename: String(it.filename || spec.field), contentType: String(it.mime || '') || 'application/octet-stream', buffer: buf }];
+        try {
+          let { data, res } = await callMultipart(spec.method, fields, file, o2.signal);
+          if (!(data && data.ok) && formatted && fmt.isParseError(data && data.description)) {
+            const plain = Object.assign({}, fields, { caption: fmt.toPlainText(rawCap).slice(0, MAX_CAPTION_LENGTH) });
+            delete plain.parse_mode;
+            ({ data, res } = await callMultipart(spec.method, plain, file, o2.signal));
+          }
+          if (data && data.ok) return { ok: true, messageId: String((data.result && data.result.message_id) != null ? data.result.message_id : '') };
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          const retryAfter = data && data.parameters && data.parameters.retry_after;
+          return { ok: false, error: redact((data && data.description) || ('http ' + code)), retryable: code === 429 || code >= 500, retryAfter: retryAfter };
+        } catch (e) {
+          if (e && (e.name === 'AbortError' || e.aborted)) return { ok: false, error: 'aborted', retryable: false };
+          return { ok: false, error: errOf(e, 'network error'), retryable: true };
+        }
+      },
+
+      async sendMediaGroup(chatId, items, groupOpts) {
+        const list = (Array.isArray(items) ? items : []).filter(x => x && x.buffer && x.buffer.length);
+        if (list.length < 2) return { ok: false, error: 'an album needs at least 2 items', retryable: false };
+        const use = list.slice(0, MAX_ALBUM_ITEMS);
+        const o2 = groupOpts || {};
+        const total = use.reduce((n, x) => n + x.buffer.length, 0);
+        if (total > MAX_UPLOAD_BYTES) return { ok: false, error: 'album is too large for Telegram (' + Math.round(total / (1024 * 1024)) + 'MB > 50MB)', retryable: false };
+        // Each item is described in a JSON `media` array and its bytes attach under a generated field name that
+        // the description points at with attach://<field> — that indirection IS the Bot API's album contract.
+        const files = [], media = [];
+        use.forEach((it, i) => {
+          const field = 'file' + i;
+          const kind = String(it.kind || '').toLowerCase();
+          const type = (kind === 'video' || kind === 'audio' || kind === 'document') ? kind : 'photo';
+          const entry = { type: type, media: 'attach://' + field };
+          if (i === 0 && it.caption) entry.caption = String(it.caption).slice(0, MAX_CAPTION_LENGTH);   // Telegram shows only the FIRST caption
+          media.push(entry);
+          files.push({ field: field, filename: String(it.filename || field), contentType: String(it.mime || '') || 'application/octet-stream', buffer: it.buffer });
+        });
+        const fields = { chat_id: chatId, media: media };
+        for (const k in o2) if (k !== 'signal' && Object.prototype.hasOwnProperty.call(o2, k)) fields[k] = o2[k];
+        try {
+          const { data, res } = await callMultipart('sendMediaGroup', fields, files, o2.signal);
+          if (data && data.ok) {
+            const arr = Array.isArray(data.result) ? data.result : [];
+            return { ok: true, messageId: String((arr[0] && arr[0].message_id) != null ? arr[0].message_id : ''), count: arr.length };
+          }
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          const retryAfter = data && data.parameters && data.parameters.retry_after;
+          return { ok: false, error: redact((data && data.description) || ('http ' + code)), retryable: code === 429 || code >= 500, retryAfter: retryAfter };
+        } catch (e) {
+          if (e && (e.name === 'AbortError' || e.aborted)) return { ok: false, error: 'aborted', retryable: false };
+          return { ok: false, error: errOf(e, 'network error'), retryable: true };
         }
       },
 
@@ -243,14 +420,14 @@
           if (data && data.ok) return { ok: true, messageId: String((data.result && data.result.message_id) != null ? data.result.message_id : '') };
           const code = (data && data.error_code) || (res && res.status) || 0;
           const retryAfter = data && data.parameters && data.parameters.retry_after;
-          return { ok: false, error: (data && data.description) || ('http ' + code), retryable: code === 429 || code >= 500, retryAfter: retryAfter };
+          return { ok: false, error: redact((data && data.description) || ('http ' + code)), retryable: code === 429 || code >= 500, retryAfter: retryAfter };
         } catch (e) {
           if (e && (e.name === 'AbortError' || e.aborted)) return { ok: false, error: 'aborted', retryable: false };
-          return { ok: false, error: (e && e.message) || 'network error', retryable: true };   // transient transport failure
+          return { ok: false, error: errOf(e, 'network error'), retryable: true };   // transient transport failure
         }
       }
     };
   }
 
-  return { makeTelegramTransport, ALLOWED_UPDATES, DEFAULT_API_BASE };
+  return { makeTelegramTransport, ALLOWED_UPDATES, DEFAULT_API_BASE, MAX_UPLOAD_BYTES, MAX_CAPTION_LENGTH, MAX_ALBUM_ITEMS, MEDIA_METHODS };
 });
