@@ -276,7 +276,7 @@ const StationBake = (() => {
   // FALLBACK ONLY — projected geometry always carries matOf, so this map is not what you see in
   // game. WorldModel.ROOM_KINDS[kind].mat is the authority; keep the two in step.
   const MAT_BY_KIND = { hab: 'spine', corridor: 'spine', bridge: 'panel', lab: 'tile', factory: 'tread', storage: 'tread', quarters: 'soft' };
-  const MAT_PITCH = { plate: [2, 2], panel: [4, 1], tile: [2, 2], tread: [2, 2], soft: [3, 2], grate: [1, 1], hex: [1, 1], plank: [5, 1], turf: [1, 1], spine: [4, 3] };
+  const MAT_PITCH = { plate: [2, 2], panel: [4, 1], tile: [2, 2], tread: [2, 2], soft: [3, 2], grate: [1, 1], hex: [1, 1], plank: [5, 1], turf: [1, 1], spine: [4, 3], runner: [2, 2], treadway: [3, 2], meshway: [3, 3] };
   const MAT_NO_WEAR = { tile: 1, grate: 1, turf: 1 };   // gloss, open mesh and growth don't take boot scuffs
   // the room's deck material — the model's per-room choice when it has one, else the kind default
   // (a station built before the material axis existed has none, and bakes exactly as it always did).
@@ -555,7 +555,137 @@ const StationBake = (() => {
     if (((y % 9) + 9) % 9 === 0) { px(X, Y, T, 1, sh(-0.34)); px(X, Y + 1, T, 1, sh(0.09)); }
   }
 
+  /* ---------- THE CORRIDOR DECK CANDIDATES (2026-07-28) ----------
+     Andrew, after the hallway deck was moved onto the room material: "it doesnt really look good in
+     my opinion, make a new tile set for the hallway to better match". A hallway sharing the rooms'
+     deck exactly is correct about CONTINUITY and wrong about CHARACTER — spine's 4×3 panels are
+     sized for a room's span, and in a 3-tile passage you only ever see a sliver of one.
+
+     All three are AXIS-NEUTRAL on purpose. A corridor can run either way, `paintDeck` is not told
+     which, and the REFIT palette samples the same function for its chip — a recipe that assumed
+     "along the walk" would be wrong half the time in game and always wrong in the swatch. Direction
+     is not the job of the deck here; it was tried as a full-length channel and deleted twice
+     (SPINE's service trench, then the old corridor's gutters).
+     Each one carries ONE idea, per the wall lane's finding that a second element competes with the
+     first rather than supporting it. */
+
+  /* RUNNER — spine's own vocabulary at a corridor's scale: bolted panels, brushed grain, four
+     corner fixings, and the heavier transverse seam. The only change is PITCH, 4×3 → 2×2, because
+     plate size follows span — a narrow passage is decked in narrower plates, which is true of real
+     structures and is why this reads as the same station rather than a different one. The most
+     conservative of the three: it matches by speaking the identical language. */
+  function deckRunner(b, base, x, y, X, Y, z, n, fd) {
+    const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
+    const sh = d => U.shade(base, d * fd);
+    const sk = Math.max(0, DEPTH.deckSeam);
+    const band = Math.floor(y / 2), off = (band % 2);
+    const pcx = Math.floor((x - off) / 2);
+    const lx = ((x - off) % 2 + 2) % 2, ly = ((y % 2) + 2) % 2;
+    const pn = h2(pcx, band, z + ':rn');
+    const body = ((pn % 5) - 2) * 0.013;
+    px(X, Y, T, T, sh(body));
+    for (let i = 1; i < T; i += 3) px(X, Y + i, T, 1, sh(body + ((i & 1) ? 0.024 : -0.018)));   // brushed grain
+    if (lx === 0) px(X + 2, Y, 1, T, sh(body - 0.09));                                          // panel recess
+    if (lx === 1) px(X + T - 3, Y, 1, T, sh(body - 0.09));
+    if (ly === 0) px(X, Y + 2, T, 1, sh(body - 0.09));
+    if (ly === 1) px(X, Y + T - 3, T, 1, sh(body - 0.09));
+    if (lx === 0) { px(X, Y, 1, T, sh(-0.26 * sk)); px(X + 1, Y, 1, T, sh(body + 0.07 * sk)); }  // plate joint
+    if (ly === 0) { px(X, Y, T, 1, sh(-0.26 * sk)); px(X, Y + 1, T, 1, sh(body + 0.07 * sk)); }
+    const bolt = (bx, by) => { px(bx, by, 2, 2, sh(0.15)); px(bx, by, 1, 1, sh(0.27)); px(bx + 1, by + 1, 1, 1, sh(-0.22)); };
+    if (ly === 0 && lx === 0) bolt(X + 3, Y + 3);
+    if (ly === 0 && lx === 1) bolt(X + T - 5, Y + 3);
+    if (ly === 1 && lx === 0) bolt(X + 3, Y + T - 5);
+    if (ly === 1 && lx === 1) bolt(X + T - 5, Y + T - 5);
+    if (((y % 6) + 6) % 6 === 0) { px(X, Y, T, 1, sh(-0.32)); px(X, Y + 1, T, 1, sh(0.09)); }    // transverse structural seam
+  }
+
+  /* TREADWAY — raised anti-slip DIAMOND plate, the surface real gangways and service passages are
+     actually floored in. A lattice of small lozenges, each lit on its up-screen face and shaded
+     below, so the deck reads as textured-for-grip rather than panelled. The one deck in the catalog
+     whose marks are not axis-aligned, which is exactly what stops it reading as another grid: the
+     diamonds sit on absolute bake-pixel coords (not tile-local), so the lattice crosses tile
+     borders unbroken and a chunk bake lands identically to a monolithic one. */
+  function deckTreadway(b, base, x, y, X, Y, z, n, fd) {
+    const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
+    // every stud is clipped to THIS tile: the lattice is absolute, the painting is per-tile
+    const pxc = (a, c, w, h, col) => {
+      const a0 = Math.max(X, a), a1 = Math.min(X + T, a + w);
+      const c0 = Math.max(Y, c), c1 = Math.min(Y + T, c + h);
+      if (a1 <= a0 || c1 <= c0) return;
+      b.fillStyle = col; b.fillRect(a0, c0, a1 - a0, c1 - c0);
+    };
+    const sh = d => U.shade(base, d * fd);
+    const sk = Math.max(0, DEPTH.deckSeam);
+    const pcx = Math.floor(x / 3), pcy = Math.floor(y / 2);
+    const pn = h2(pcx, pcy, z + ':tw');
+    const body = ((pn % 5) - 2) * 0.011;
+    px(X, Y, T, T, sh(body));
+    const lit = sh(body + 0.20), dim = sh(body - 0.20);
+    /* THE MARK IS A BAR, NOT A DOT. Real chequer (durbar) plate is raised TEARDROPS laid in
+       alternating diagonal pairs — the alternation is the whole reason it reads as a manufactured
+       anti-slip surface instead of a field of studs. A round-ish lozenge on a lattice came out as a
+       repeating glyph, which is the same failure mode as any mark that has a silhouette of its own:
+       the eye reads the shape, not the surface. Each bar here is 3px long with a 1px rise across it,
+       lit along the top and shaded along the bottom, and the lean flips on (row + col) parity. */
+    const P = 5;
+    const r0 = Math.floor(Y / P), r1 = Math.floor((Y + T - 1) / P);
+    for (let r = r0; r <= r1; r++) {
+      const cy = r * P, ox = (((r % 2) + 2) % 2) ? 2 : 0;
+      const c0 = Math.floor((X - ox) / P), c1 = Math.floor((X + T - 1 - ox) / P);
+      for (let c = c0; c <= c1; c++) {
+        const cx = c * P + ox;
+        if (((r + c) & 1) === 0) {          // leans up to the right
+          pxc(cx, cy + 1, 2, 1, lit);  pxc(cx + 2, cy, 1, 1, lit);
+          pxc(cx, cy + 2, 2, 1, dim);  pxc(cx + 2, cy + 1, 1, 1, dim);
+        } else {                             // leans up to the left
+          pxc(cx, cy, 1, 1, lit);      pxc(cx + 1, cy + 1, 2, 1, lit);
+          pxc(cx, cy + 1, 1, 1, dim);  pxc(cx + 1, cy + 2, 2, 1, dim);
+        }
+      }
+    }
+    if (x % 3 === 0) px(X, Y, 1, T, sh(-0.24 * sk));                                             // plate joint
+    if (y % 2 === 0) px(X, Y, T, 1, sh(-0.24 * sk));
+    px(X, Y, T, T, 'rgba(0,0,0,' + (0.04 * fd).toFixed(3) + ')');                                // knock the stud contrast back a touch
+    if (pn % 6 === 0) { px(X + 2, Y + 2, 2, 2, sh(0.14)); px(X + 3, Y + 3, 1, 1, sh(-0.20)); }    // occasional fixing
+  }
+
+  /* MESHWAY — a solid deck PERFORATED for drainage: a regular field of small dark holes, each with
+     a catch-lit upper rim, punched through a plain plate. Its ancestor is GRATE, but where grate is
+     an open catwalk that reads from its voids, this is a floor you could set a crate on — the holes
+     are a detail on a surface, not the surface itself. The busiest of the three; kept honest by
+     having no plate dressing at all beyond the joints, so the perforation is the only idea. */
+  function deckMeshway(b, base, x, y, X, Y, z, n, fd) {
+    const px = (a, c, w, h, col) => { b.fillStyle = col; b.fillRect(a, c, w, h); };
+    const pxc = (a, c, w, h, col) => {
+      const a0 = Math.max(X, a), a1 = Math.min(X + T, a + w);
+      const c0 = Math.max(Y, c), c1 = Math.min(Y + T, c + h);
+      if (a1 <= a0 || c1 <= c0) return;
+      b.fillStyle = col; b.fillRect(a0, c0, a1 - a0, c1 - c0);
+    };
+    const sh = d => U.shade(base, d * fd);
+    const sk = Math.max(0, DEPTH.deckSeam);
+    const pcx = Math.floor(x / 3), pcy = Math.floor(y / 3);
+    const pn = h2(pcx, pcy, z + ':mw');
+    const body = ((pn % 5) - 2) * 0.012;
+    px(X, Y, T, T, sh(body));
+    px(X, Y + 1, T, 1, sh(body + 0.05));                                                          // faint rolled grain
+    const hole = sh(body - 0.44), rim = sh(body + 0.16);
+    const P = 4;                                                                                  // perforation lattice, absolute coords
+    const r0 = Math.floor(Y / P), r1 = Math.floor((Y + T - 1) / P);
+    const c0 = Math.floor(X / P), c1 = Math.floor((X + T - 1) / P);
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) {
+      const hx = c * P + 1, hy = r * P + 1;
+      pxc(hx, hy - 1, 2, 1, rim);                                                                 // catch-lit upper rim
+      pxc(hx, hy, 2, 2, hole);
+    }
+    if (x % 3 === 0) { px(X, Y, 1, T, sh(-0.28 * sk)); px(X + 1, Y, 1, T, sh(body + 0.06 * sk)); }
+    if (y % 3 === 0) { px(X, Y, T, 1, sh(-0.28 * sk)); px(X, Y + 1, T, 1, sh(body + 0.06 * sk)); }
+  }
+
   function paintDeck(b, mat, base, x, y, X, Y, z, n, fd) {
+    if (mat === 'runner') return deckRunner(b, base, x, y, X, Y, z, n, fd);
+    if (mat === 'treadway') return deckTreadway(b, base, x, y, X, Y, z, n, fd);
+    if (mat === 'meshway') return deckMeshway(b, base, x, y, X, Y, z, n, fd);
     if (mat === 'spine') return deckSpine(b, base, x, y, X, Y, z, n, fd);
     if (mat === 'grate') return deckGrate(b, base, x, y, X, Y, z, n, fd);
     if (mat === 'hex') return deckHex(b, base, x, y, X, Y, z, n, fd);

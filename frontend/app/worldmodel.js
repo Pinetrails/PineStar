@@ -161,8 +161,13 @@ const WorldModel = (() => {
     hex:   { label: 'HEX',    pitch: [1, 1], suggest: 'sterile' },
     plank: { label: 'PLANK',  pitch: [5, 1], suggest: 'walnut' },
     turf:  { label: 'TURF',   pitch: [1, 1], suggest: 'meadow' },
+    // v6 CORRIDOR candidates — decks sized and surfaced for a passage rather than a room.
+    // See the note above deckRunner in stationbake.js.
+    runner:   { label: 'RUNNER',   pitch: [2, 2], suggest: null },
+    treadway: { label: 'TREADWAY', pitch: [3, 2], suggest: null },
+    meshway:  { label: 'MESHWAY',  pitch: [3, 3], suggest: null },
   };
-  const MAT_ORDER = ['spine', 'plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
+  const MAT_ORDER = ['spine', 'runner', 'treadway', 'meshway', 'plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
 
   /* the WALL material catalog — the deck's opposite number. Walls carry the same two axes as the
      floor (hue × recipe) and read from the same FLOOR_STYLES hue catalog, because a room should be
