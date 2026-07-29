@@ -106,7 +106,15 @@ function kill(child) { return new Promise(r => { try { child.on('exit', () => r(
     s = await status();
     A.eq(s.away, false, 'mid-run: an in-flight interactive run reads as PRESENT (the Commander is watching their own work)');
     A.eq(s.binding, 'present', 'mid-run: the binding gate is "present" — no beat may fire while the user\'s run streams');
-    A.ok(s.awaySince > Date.now(), 'mid-run: awaySince is in the future (telemetry agrees with the driver)');
+    /* The same guarantee the old assertion made, under the name that actually says it: `awayAt` is the FUTURE
+       instant away flips true, so mid-run it is still ahead of now (telemetry agrees with the driver).
+       `awaySince` now means what "since" means — the PAST instant the idle window opened — because
+       frontend/app/nightreport.js documents its own `awaySince` as "the epoch the away window OPENED" and
+       filters `ts >= awaySince` with it. Wiring this route in under the old meaning would have scoped every
+       night-shift decision OUT of the morning report and rendered a blank morning. */
+    A.ok(s.awayAt > Date.now(), 'mid-run: awayAt is in the future (telemetry agrees with the driver)');
+    A.ok(s.awaySince <= Date.now(), 'mid-run: awaySince is a PAST boundary — a "since" is never in the future');
+    A.eq(s.awayAt - s.awaySince, s.awayAfterMs, 'awayAt is exactly awaySince + the disclosed away threshold');
 
     // ===== 2. the away clock restarts at run END, then flips honestly after the threshold =====
     await runP;   // the mock stream ends (~3s total); the route's finally re-stamps activity

@@ -2057,7 +2057,19 @@ const Chat = (() => {
   //   'never'   — PERMANENT: rated already, not the hero, or no real work — stop asking
   function maybeStandaloneRate(agentId, runId) {
     if (!log || !runId || workRatedRuns.has(runId)) return 'never';
-    if ((agentId || 'agent') !== 'agent') return 'never';               // hero-only, mirroring the post-run slot
+    // S1 SPECIALIST RATE-STARVE FIX. This was hero-only, which starved every summoned specialist of the PRIMARY
+    // leveling beat: an interactive run in a specialist-bound workstream could only ever be rated if it happened
+    // to also produce a memory turn-in card (the one other control that routes by the run's own agentId). So a
+    // specialist stayed Lv 1 forever while the hero collected the whole roster's growth.
+    // The beat renders into the ONE shared #chat-log, so the honest predicate is not "is this the hero" but
+    // "is this run's agent the one whose stream is ON SCREEN" (the activeWs idiom used by the skill aside).
+    // Deliberately ADDITIVE: the hero keeps its exact prior behavior (it may fire while another stream is
+    // displayed); only the non-hero case is new, and it waits for its own stream rather than rendering a
+    // specialist's rating into somebody else's transcript. 'blocked' (not 'never') so armRateFallback keeps
+    // retrying — switching to that stream within the fallback window still lands the beat.
+    // A dispatched WORKER's forwarded run.end never reaches here: it has no runWork stash (only the local stream
+    // loop sets one), so the real-work gate below returns 'never' — its credit rides the lead's crewSplit instead.
+    if ((agentId || 'agent') !== 'agent' && !(activeWs && (activeWs.agentId || 'agent') === (agentId || 'agent'))) return 'blocked';
     const w = runWork.get(runId);
     if (!w || ((w.toolsOk || 0) < 1 && (w.delivered || 0) < 1)) return 'never';   // real work only — pure chat is never rate-prompted
     if (isBusy() || interview) return 'blocked';                        // never mid-run / mid-awakening
@@ -3959,7 +3971,12 @@ const Chat = (() => {
     curiosityWired = true;
     U.bus.on('agent.run.end', p => {
       if (!p || p.reason !== 'done') return;   // only after a clean, successful run — never nag after a stop/limit/error
-      if ((p.agentId || 'agent') !== 'agent') return;   // only the HERO's runs drive the hero-dossier beat — a summoned worker's run must not fire a curiosity/suggestion/seed nudge
+      // S1: the hero gate used to sit HERE, which meant a specialist's clean run never even ARMED the rate
+      // fallback — the second half of the rate-starve. It now sits just below the rate attempt (search
+      // `isHeroRun`): every gentle nudge (suggestion / seed / curiosity / recruitment) stays hero-only exactly
+      // as before, but RATE THE WORK — which is about the run itself, not an unsolicited ask — reaches the
+      // agent that actually did the work.
+      const isHeroRun = (p.agentId || 'agent') === 'agent';
       const runId = p.runId || p.id;
       setTimeout(() => {
         // G2.4: arm the self-retrying rate fallback FIRST, before any stand-down guard — a focused
@@ -3983,6 +4000,9 @@ const Chat = (() => {
         // it takes the one post-run slot (the same attempt the armed fallback retries — real-work-gated, so
         // a pure chat reply is never rate-prompted; 'blocked'/'never' fall through to the gentler beats).
         if (runId && maybeStandaloneRate(p.agentId || 'agent', runId) === 'fired') return;
+        // S1: from here down is the GENTLE-NUDGE slot, and it stays HERO-ONLY — a summoned worker's clean run
+        // must never fire a curiosity / suggestion / seed / recruitment ask against the hero's dossier.
+        if (!isHeroRun) return;
         // FIRE ON SALIENCE, not after every run: a basic conversational turn (not a task) earns NO proactive beat —
         // the station only reaches for a suggestion / seed / get-to-know-you question after it did real WORK. This
         // mirrors the server's reflection gate (isTask) so chatter never triggers an ask. Fail-open if meta is unknown.

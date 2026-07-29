@@ -48,7 +48,7 @@
   const CAP_INFO = {
     compute:      { power: 'a WORKSTATION', gear: 'a DESK',       does: 'run at all' },
     web:          { power: 'WEB ACCESS',    gear: 'a DISH',       does: 'search or fetch the web' },
-    cabinet:      { power: 'FILE ACCESS',   gear: 'a CABINET',    does: 'read or write files' },
+    cabinet:      { power: 'FILE ACCESS',   gear: 'an INTEL CAB', does: 'read or write files' },
     workbench:    { power: 'a TERMINAL',    gear: 'a WORKBENCH',  does: 'run commands or control the computer' },
     memory:       { power: 'MEMORY',        gear: 'a NOTEBOOK',   does: 'keep long-term memory' },
     studio:       { power: 'IMAGE TOOLS',   gear: 'a STUDIO',     does: 'generate or analyze images' },
@@ -157,7 +157,7 @@
   }
 
   // Build the beginner capdenied sentence naming the exact power + its gear, e.g.
-  //   "This task needs FILE ACCESS — the CABINET isn't on station. Open REFIT to place it."
+  //   "This task needs FILE ACCESS — an INTEL CAB isn't on station. Open REFIT to place it."
   // Falls back to the generic KINDS.capdenied copy when the capability can't be parsed.
   function capdeniedMessage(cap) {
     const info = cap && CAP_INFO[cap];
