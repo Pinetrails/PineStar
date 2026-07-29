@@ -37,8 +37,8 @@ const CLIP_SEL = process.env.CLIP || '#live-voice-panel';
 const SHOT_SCALE = Number(process.env.SCALE || 2);
 const CLIP_PAD = Number(process.env.PAD || 24);
 
-async function shotPanel(cdp, name) {
-  const box = await evalJS(cdp, `(() => {
+async function measure(cdp) {
+  return evalJS(cdp, `(() => {
     const p = document.getElementById('live-voice-panel');
     if (!p || p.hidden) return null;
     const t = p.matches(${JSON.stringify(CLIP_SEL)}) ? p : p.querySelector(${JSON.stringify(CLIP_SEL)});
@@ -46,6 +46,13 @@ async function shotPanel(cdp, name) {
     const r = t.getBoundingClientRect();
     return { x: r.left, y: r.top, width: r.width, height: r.height };
   })()`);
+}
+
+// `box` may be pre-measured: pushLevel() writes the meter every ~46ms off the live mic, so ANY
+// round trip between stamping a demo level and the shutter is a chance for the real (near silent)
+// room to overwrite it. Measure first, stamp last, capture immediately.
+async function shotPanel(cdp, name, box) {
+  if (box === undefined) box = await measure(cdp);
   if (!box) { console.log(`  ${name}: PANEL NOT VISIBLE`); return false; }
   const pad = CLIP_PAD;
   const clip = { x: Math.max(0, box.x - pad), y: Math.max(0, box.y - pad),
@@ -96,7 +103,7 @@ if (process.env.RAW) {
     amp: getComputedStyle(document.getElementById('live-voice-panel')).getPropertyValue('--lv-amp'),
     state: document.getElementById('live-voice-panel').dataset.state,
     skin: document.getElementById('live-voice-panel').dataset.skin,
-    bars: [...document.querySelectorAll('#lv-wave i')].map(b => b.style.transform).slice(0, 5),
+    bars: [...document.querySelectorAll('#lv-wave i')].map(b => b.textContent).join(''),
     heard: document.getElementById('lv-heard').textContent,
     model: document.getElementById('lv-model').textContent,
     route: document.getElementById('lv-route').textContent
@@ -112,8 +119,6 @@ const THEMES = (process.env.THEMES || 'amber').split(',');
 const STATES = (process.env.STATES || 'listening,hearing,thinking,speaking,offline').split(',');
 
 for (const skin of SKINS) {
-  // the skin switcher was a candidate-picking scaffold and is gone now that the design is settled;
-  // SKINS= still works against any build that kept it, and is a no-op against one that did not
   // SKINS= drives the candidate attribute directly. It used to call VoiceLive.setSkin(), but that
   // switcher is scaffolding for CHOOSING a design and gets deleted once one is chosen — stamping
   // data-skin keeps this sweep usable for the next round without re-adding a live API.
@@ -139,12 +144,6 @@ for (const skin of SKINS) {
         const amp = S === 'hearing' ? 0.72 : S === 'listening' ? 0.2 : 0.05;
         p.style.setProperty('--lv-amp', String(amp));
         p.style.setProperty('--lv-dl', S === 'thinking' ? '64%' : '0%');
-        const bars = [...document.querySelectorAll('#lv-wave i')];
-        bars.forEach((b, i) => {
-          const v = Math.abs(Math.sin(i * 0.9 + 1.4)) * (S === 'hearing' ? 1 : S === 'listening' ? 0.34 : 0.08)
-                  * (0.35 + (i / bars.length) * 0.65);
-          b.style.transform = 'scaleY(' + (0.09 + v * 0.91).toFixed(3) + ')';
-        });
         document.getElementById('lv-heard').textContent =
           S === 'offline' ? 'Microphone is offline.' : 'what is the status of the harness backend';
         const ag = document.getElementById('lv-agent');
@@ -164,25 +163,23 @@ for (const skin of SKINS) {
         return p.dataset.state;
       })()`);
       await sleep(180);
-      // Re-stamp the level IMMEDIATELY before the shutter. pushLevel() is still running against the
-      // live mic, so anything written 180ms ago has already been overwritten by the real (near
-      // silent) room — the first version of this script photographed a --lv-amp of ~0.04 while
-      // claiming to show 0.72, which reads as "the indicator is broken" when it is telling the
-      // truth. Force it last, capture first.
-      await evalJS(cdp, `(() => {
-        const S = ${JSON.stringify(st)};
-        const p = document.getElementById('live-voice-panel');
-        const amp = S === 'hearing' ? 0.72 : S === 'listening' ? 0.2 : 0.05;
-        p.style.setProperty('--lv-amp', String(amp));
-        const bars = [...document.querySelectorAll('#lv-wave i')];
-        bars.forEach((b, i) => {
-          const v = Math.abs(Math.sin(i * 0.9 + 1.4)) * (S === 'hearing' ? 1 : S === 'listening' ? 0.34 : 0.08)
-                  * (0.35 + (i / bars.length) * 0.65);
-          b.style.transform = 'scaleY(' + (0.09 + v * 0.91).toFixed(3) + ')';
-        });
-        return p.style.getPropertyValue('--lv-amp');
+      const box = await measure(cdp);
+      // THE METER IS NEVER FAKED. Earlier drafts wrote demo glyphs into the columns and a demo
+      // --lv-amp, then lost a race with pushLevel() (which writes every ~46ms off the live mic) and
+      // photographed the real near-silent room while captioning it 0.72 — a frame that lies about
+      // the one thing this module exists to show. So the surrounding TEXT is staged and the level
+      // is not: wait for a real frame with something in it, then shoot immediately.
+      const lively = await evalJS(cdp, `(async () => {
+        const read = () => [...document.querySelectorAll('#lv-wave i')].map(b => b.textContent).join('');
+        for (let i = 0; i < 40; i++) {
+          const s = read();
+          if ([...s].filter(c => c !== '▁').length >= 4) return s;
+          await new Promise(r => setTimeout(r, 60));
+        }
+        return read();
       })()`);
-      await shotPanel(cdp, `${skin}-${theme}-${st}`);
+      await shotPanel(cdp, `${skin}-${theme}-${st}`, box);
+      console.log(`    level (real): ${lively}`);
     }
   }
 }

@@ -1239,9 +1239,9 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   --lv-dl: 0%;                 /* local-model download percent, when the sidecar reports one */
   --lv-accent: var(--ph-dim);  /* per-state accent; every lit part of the module reads this */
   position: fixed; z-index: 275; left: 18px; bottom: 68px;
-  width: 210px; max-width: calc(100vw - 16px);
-  display: flex; flex-wrap: wrap; align-items: center; gap: 6px;
-  padding: 7px 9px 8px;
+  width: 150px; max-width: calc(100vw - 16px);
+  display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+  padding: 5px 7px 6px;
   color: var(--text); border-radius: var(--r-lg); overflow: hidden;
   background:
     radial-gradient(ellipse 130% 90% at 50% 0%, var(--ph-glow2), transparent 46%),
@@ -1301,10 +1301,16 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   animation: lv-pip 1.3s infinite;
 }
 @keyframes lv-pip { 0%, 100% { opacity: 1; } 50% { opacity: .28; } }
+/* the state WORD is gone from the resting module (Andrew, 2026-07-29). It was the widest thing in
+   a 150px module and it repeated what the colour already says: the pip and the whole meter carry
+   the state ladder. It comes back under the cursor, where the exact word is worth the room. */
 .lv-state {
+  display: none;
   flex: 1 1 auto; color: var(--lv-accent);
-  font-size: 10px; letter-spacing: var(--ls-2); text-shadow: 0 0 8px var(--ph-glow2);
+  font-size: 9px; letter-spacing: var(--ls-1); text-shadow: 0 0 8px var(--ph-glow2);
 }
+.live-voice-panel:hover .lv-state,
+.live-voice-panel:focus-within .lv-state { display: block; }
 /* ✕ stays reachable but stops taking resting-state real estate. pointer-events ride the opacity so
    an invisible button can never eat a click and drop you out of voice mode. */
 .lv-x {
@@ -1326,7 +1332,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .lv-meter {
   position: relative; overflow: hidden; flex: 1 1 auto; min-width: 0;
-  display: flex; align-items: center; height: 34px; padding: 0 7px;
+  display: flex; align-items: center; height: 24px; padding: 0 5px;
   color: inherit; font-family: inherit; cursor: pointer;
   background: linear-gradient(180deg, rgba(0,0,0,.6), rgba(0,0,0,.36));
   border: 1px solid var(--ph-faint); border-radius: var(--r-sm);
@@ -1338,19 +1344,24 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .lv-meter:active { transform: translateY(1px); box-shadow: inset 0 2px 7px rgba(0,0,0,.92); }
 .lv-meter:focus-visible { outline: 2px solid var(--ph); outline-offset: 2px; }
 
-/* level — a rolling window of real RMS, oldest at the left */
+/* level — a rolling window of real RMS, oldest at the left, TYPED in the station's own block ramp
+   (▁▂▃▄▅▆▇█, the same glyphs the link-status bars use). Scaled rectangles read as a widget drawn
+   over the terminal; glyphs read as the terminal itself printing what it hears. voice-live.js
+   writes one character per column — nothing here interpolates, so a step you see is a step the
+   microphone actually sent. */
 .lv-wave {
-  flex: 1 1 auto; min-width: 0; height: 22px;
-  display: flex; align-items: center; justify-content: space-between; gap: 2px;
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: flex-end; gap: 2px;
+  /* the glyph must be NARROWER than its cell or the columns touch and fuse into one shape — a
+     block character fills its own em box by definition, so the gap has to come from the cell */
+  font-size: 13px; line-height: .8; letter-spacing: 0;
+  color: var(--lv-accent); text-shadow: 0 0 calc(3px + var(--lv-amp) * 8px) var(--ph-glow2);
+  transition: text-shadow 70ms linear;
 }
+/* one equal CELL per column with a hairline between: butted up against each other the block glyphs
+   fuse into one solid shape and the meter stops reading as columns at all */
 .lv-wave i {
-  flex: 1 1 0; min-width: 0; height: 20px; border-radius: 1px;
-  /* one hue per bar — blending the accent into --ph-dim muddied the warn/bad states, which are
-     deliberately theme-CONSTANT and so clash with whatever phosphor is loaded */
-  background: linear-gradient(180deg, var(--lv-accent), color-mix(in srgb, var(--lv-accent) 30%, transparent));
-  transform: scaleY(.09); transform-origin: center;
-  transition: transform 60ms linear;
-  opacity: .85;
+  flex: 1 1 0; min-width: 0; text-align: center; font-style: normal; opacity: .92;
 }
 
 /* working states (connecting / warming / thinking / transcribing): the station is BUSY, not
@@ -1372,14 +1383,21 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 
 /* ---- the one line of text worth carrying: it answers "did it hear me right" without opening
    COMMS. The reply line only exists once there IS a reply. ---- */
+/* the transcript is the thing you read ONCE, not the thing you watch — at rest it costs two rows
+   for a line COMMS already owns, so it waits under the cursor with the state word and the rail */
 .lv-heard {
+  display: none;
   position: relative; z-index: 5; flex: 1 0 100%; margin: 1px 1px 0;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+  -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
   color: var(--ph-bright); font-size: var(--fs-0); line-height: 1.3; letter-spacing: var(--ls-1);
   text-shadow: 0 0 8px var(--ph-glow2);
 }
+.live-voice-panel:hover .lv-heard,
+.live-voice-panel:focus-within .lv-heard { display: -webkit-box; }
 .lv-say { display: none; }
-.lv-say.on {
+.lv-say.on { display: none; }
+.live-voice-panel:hover .lv-say.on,
+.live-voice-panel:focus-within .lv-say.on {
   position: relative; z-index: 5; flex: 1 0 100%; margin: 1px 1px 0;
   display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
   color: var(--ph-dim); font-size: 10px; line-height: 1.3; letter-spacing: var(--ls-1);
@@ -1437,64 +1455,6 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .lv-retry:hover { color: var(--ph-bright); border-color: var(--ph); box-shadow: var(--raise), 0 0 10px var(--ph-glow2); }
 
-
-/* ================= SIZE LADDER (candidates — one survives) =================
-   210x103 was still too big. These are the same module with progressively less in it, so the
-   question stops being "which design" and becomes "how much of it do you want at all". Each step
-   removes a whole ROW, not a few pixels — that is where the height actually lives.
-
-   What every step keeps: the frame (it pops up, it is its own thing), the state colour ladder, the
-   live level, a grabbable head, a reachable ✕. What it drops is text. */
-
-/* ---- s1 · 150x52 — the state word and the level. Transcript moves to hover: it is the thing you
-   read once, not the thing you watch. ---- */
-.live-voice-panel[data-skin="s1"] { width: 150px; padding: 5px 7px 6px; gap: 4px; }
-.live-voice-panel[data-skin="s1"] .lv-state { font-size: 9px; letter-spacing: var(--ls-1); }
-.live-voice-panel[data-skin="s1"] .lv-meter { height: 24px; padding: 0 5px; }
-.live-voice-panel[data-skin="s1"] .lv-wave { height: 15px; }
-.live-voice-panel[data-skin="s1"] .lv-wave i { height: 14px; }
-.live-voice-panel[data-skin="s1"] .lv-heard { display: none; }
-.live-voice-panel[data-skin="s1"]:hover .lv-heard,
-.live-voice-panel[data-skin="s1"]:focus-within .lv-heard { display: -webkit-box; -webkit-line-clamp: 2; }
-.live-voice-panel[data-skin="s1"] .lv-say { display: none; }
-
-/* ---- s2 · 112x34 — no words at all: a pip for state, a level for everything else. The state word
-   and the transcript both live on hover. ---- */
-.live-voice-panel[data-skin="s2"] { width: 112px; padding: 4px 6px 5px; gap: 3px; }
-.live-voice-panel[data-skin="s2"] .lv-head { flex: 0 0 auto; position: absolute; top: 5px; left: 7px; z-index: 8; }
-.live-voice-panel[data-skin="s2"] .lv-state { display: none; }
-.live-voice-panel[data-skin="s2"]:hover .lv-state,
-.live-voice-panel[data-skin="s2"]:focus-within .lv-state { display: block; font-size: 9px; }
-.live-voice-panel[data-skin="s2"] .lv-stage { padding-left: 11px; }
-.live-voice-panel[data-skin="s2"] .lv-meter { height: 20px; padding: 0 4px; border-radius: 2px; }
-.live-voice-panel[data-skin="s2"] .lv-wave { height: 13px; gap: 1px; }
-.live-voice-panel[data-skin="s2"] .lv-wave i { height: 12px; }
-.live-voice-panel[data-skin="s2"] .lv-heard { display: none; }
-.live-voice-panel[data-skin="s2"]:hover .lv-heard,
-.live-voice-panel[data-skin="s2"]:focus-within .lv-heard { display: -webkit-box; -webkit-line-clamp: 2; }
-.live-voice-panel[data-skin="s2"] .lv-say { display: none; }
-
-/* ---- s3 · 84x26 — the floor. One row: pip, level, nothing else. Below this the bars stop being
-   readable as a level and it may as well be a dot. ---- */
-.live-voice-panel[data-skin="s3"] { width: 84px; padding: 3px 5px 4px; gap: 3px; }
-.live-voice-panel[data-skin="s3"] .lv-head { flex: 0 0 auto; position: absolute; top: 4px; left: 5px; z-index: 8; }
-.live-voice-panel[data-skin="s3"] .lv-state { display: none; }
-.live-voice-panel[data-skin="s3"]:hover .lv-state,
-.live-voice-panel[data-skin="s3"]:focus-within .lv-state { display: block; font-size: 9px; }
-.live-voice-panel[data-skin="s3"] .lv-stage { padding-left: 10px; }
-.live-voice-panel[data-skin="s3"] .lv-meter { height: 16px; padding: 0 3px; border-radius: 2px; }
-.live-voice-panel[data-skin="s3"] .lv-wave { height: 11px; gap: 2px; }
-.live-voice-panel[data-skin="s3"] .lv-wave i { height: 10px; }
-/* 17 bars across 74px is 3px each and reads as noise, not a level. Show every other one: the
-   window is still the same rolling history, just sampled — nothing is invented to fill the row. */
-.live-voice-panel[data-skin="s3"] .lv-wave i:nth-child(even) { display: none; }
-.live-voice-panel[data-skin="s3"] .lv-heard,
-.live-voice-panel[data-skin="s3"] .lv-say { display: none; }
-.live-voice-panel[data-skin="s3"]:hover .lv-heard,
-.live-voice-panel[data-skin="s3"]:focus-within .lv-heard { display: -webkit-box; -webkit-line-clamp: 2; }
-/* at this size the ✕ would own a third of the module, so ending live voice is the composer's LIVE
-   toggle (and Escape) rather than a 10px target you would hit by accident */
-.live-voice-panel[data-skin="s3"] .lv-x { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
   .live-voice-panel { animation: none; }

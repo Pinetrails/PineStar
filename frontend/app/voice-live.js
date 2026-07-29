@@ -16,9 +16,13 @@ const VoiceLive = (() => {
   // SETTLED (Andrew, 2026-07-29): a small pop-up module with NO icon — a state line, the volume
   // indicator, and the transcript. The four-shape and four-icon switchers that got us here are
   // deleted; shipping the candidates was never the goal, choosing one was.
-  // Scope readout: a rolling window of mic RMS, oldest at the left. The bars ARE the microphone —
-  // never animate them off a timer, or the panel would claim to hear a room it cannot hear.
+  // Level readout: a rolling window of mic RMS, oldest at the left. The columns ARE the microphone
+  // — never animate them off a timer, or the module would claim to hear a room it cannot hear.
+  // TYPED, not drawn: one block glyph per column, from the same ▁▂▃ ramp the link-status bars in
+  // app.js already speak, so the meter belongs to the CRT instead of sitting on top of it.
   const WAVE_BARS = 17;
+  const RAMP = '▁▂▃▄▅▆▇█';
+  const glyphFor = level => RAMP[Math.min(RAMP.length - 1, Math.round(level * (RAMP.length - 1)))];
   let waveBars = null, waveHistory = new Array(WAVE_BARS).fill(0);
 
   function clampPanel(panel) {
@@ -116,7 +120,11 @@ const VoiceLive = (() => {
       '<button id="lv-retry" class="lv-retry" type="button" hidden>TRY AGAIN</button>'
     ].join('');
     const wave = panel.querySelector('#lv-wave');
-    for (let i = 0; i < WAVE_BARS; i++) wave.appendChild(document.createElement('i'));
+    for (let i = 0; i < WAVE_BARS; i++) {
+      const col = document.createElement('i');
+      col.textContent = RAMP[0];   // a silent room is a flat line, never an empty row
+      wave.appendChild(col);
+    }
     document.body.appendChild(panel);
     waveBars = Array.from(wave.children);
     restorePosition(panel);
@@ -126,14 +134,16 @@ const VoiceLive = (() => {
     $('lv-barge').onclick = bargeIn;
   }
 
-  // Amplitude drives the meter bars AND the module's own bloom, so the whole light level of the
-  // thing is the real mic level — one signal, never a decorative loop pretending to be one.
+  // Amplitude drives the meter AND the module's own bloom, so the whole light level of the thing is
+  // the real mic level — one signal, never a decorative loop pretending to be one.
+  //
   function pushLevel(value) {
     const level = Math.max(0, Math.min(1, value));
     waveHistory.push(level);
     waveHistory.shift();
     if (waveBars) for (let i = 0; i < waveBars.length; i++) {
-      waveBars[i].style.transform = `scaleY(${(0.09 + waveHistory[i] * 0.91).toFixed(3)})`;
+      const glyph = glyphFor(waveHistory[i]);
+      if (waveBars[i].textContent !== glyph) waveBars[i].textContent = glyph;
     }
     const panel = $('live-voice-panel');
     if (panel) panel.style.setProperty('--lv-amp', level.toFixed(3));
@@ -141,7 +151,7 @@ const VoiceLive = (() => {
 
   function resetLevel() {
     waveHistory = new Array(WAVE_BARS).fill(0);
-    if (waveBars) waveBars.forEach(bar => { bar.style.transform = 'scaleY(0.09)'; });
+    if (waveBars) waveBars.forEach(bar => { bar.textContent = RAMP[0]; });
     const panel = $('live-voice-panel');
     if (panel) panel.style.setProperty('--lv-amp', '0');
   }
