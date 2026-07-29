@@ -1578,18 +1578,40 @@ const StationBake = (() => {
     }
   }
 
-  /* corridor ceiling lights + cable run — feeds lampPos for the lightmap carve */
+  /* corridor ceiling lights + cable run — feeds lampPos for the lightmap carve.
+
+     LIGHT THE HALLWAY LIKE A ROOM (2026-07-29). Three rounds of corridor DECK work all failed for
+     the same reason, and it was never the deck. With the IDENTICAL material laid in both, a room's
+     floor is modelled by light across a 58-luma low-frequency spread peaking at 79, and a corridor's
+     across 35 peaking at 58 — it never gets a lit area at all. `bakeRoomLighting` skips corridors
+     outright, so they got no warm floor pool and no sheen; this function substituted ONE cold
+     `rgba(220,230,236,0.10)` dab, half a room's alpha and the wrong colour temperature (measured
+     deck warmth R-B: room 7.9, corridor 3.8).
+     A floor lit by a flat wash has nothing but its pattern to show, which is exactly why a quiet
+     deck (spine) read as a blank card and a busy one (meshway/treadway) read as wallpaper. The
+     texture was being asked to do the light's job.
+     LAW: if a surface looks wrong everywhere you put it, measure the LIGHT on it before redrawing
+     it. Corridors stay DIMMER than rooms — that is the tunnel-vs-hall read and it is deliberate —
+     but dim is a level, not an absence of modelling. */
   function bakeCorridorDressing(b) {
     for (const r of G.allRects) {
       if (!G.isCorridor(r.z)) continue;
       const vertical = (r.y2 - r.y1) > (r.x2 - r.x1);
       const cx = (r.x1 + r.x2 + 1) / 2 * T, cy = (r.y1 + r.y2 + 1) / 2 * T;
+      const cross = (vertical ? (r.x2 - r.x1 + 1) : (r.y2 - r.y1 + 1)) * T;
       b.globalCompositeOperation = 'lighter';
+      // the room's own floor pool, sized to the passage: warm, at LIGHT.floor, with the polished
+      // sheen streak under it. Radius follows the CROSS span so the pool fills the hallway's width
+      // and falls off along its length — which is what puts light and shade down a corridor.
+      const rad = Math.min(60, Math.max(22, cross * 0.85));
       const pool = (lx, ly) => {
-        const g = b.createRadialGradient(lx, ly, 1, lx, ly, 20);
-        g.addColorStop(0, 'rgba(220,230,236,0.10)'); g.addColorStop(1, 'rgba(220,230,236,0)');
-        b.fillStyle = g; b.fillRect(lx - 20, ly - 20, 40, 40);
-        lampPos.push({ x: lx, y: ly, r: 30 });
+        const g = b.createRadialGradient(lx, ly, 1, lx, ly, rad * 0.7);
+        g.addColorStop(0, 'rgba(250,236,206,' + LIGHT.floor + ')');
+        g.addColorStop(0.6, 'rgba(250,236,206,' + (LIGHT.floor * 0.32).toFixed(3) + ')');
+        g.addColorStop(1, 'rgba(250,236,206,0)');
+        b.fillStyle = g; b.fillRect(lx - rad * 0.7, ly - rad * 0.7, rad * 1.4, rad * 1.4);
+        bakeSheen(b, lx, ly + T * 0.9, rad * 0.34);
+        lampPos.push({ x: lx, y: ly, r: rad * 1.4 });
       };
       if (vertical) for (let y = r.y1 + 1; y <= r.y2; y += 4) pool(cx, (y + 0.5) * T);
       else for (let x = r.x1 + 1; x <= r.x2; x += 4) pool((x + 0.5) * T, cy);
@@ -1765,9 +1787,26 @@ const StationBake = (() => {
     };
     for (const r of G.allRects) {
       const X = r.x1 * T, Y = r.y1 * T, RW = (r.x2 - r.x1 + 1) * T, RH = (r.y2 - r.y1 + 1) * T;
-      if (G.isCorridor(r.z)) { cut(X + RW / 2, Y + RH / 2, Math.max(RW, RH) * 0.5, LIGHT.corridor); continue; }
-      const n = Math.max(1, Math.round(RW / (RH * 1.4)));
-      for (let i = 0; i < n; i++) cut(X + RW * (i + 0.5) / n, Y + RH * 0.42, Math.max(RH * 0.78, RW / n * 0.62), LIGHT.room);
+      /* ONE CUT PER LAMP, ALONG THE LONG AXIS — for corridors too. A corridor used to take a single
+         radial cut spanning its ENTIRE run, which is a uniform wash by construction: the longer the
+         hallway, the flatter it got. A room's rhythm comes from several overlapping pools, and that
+         rhythm is most of why its floor reads as lit. Same formula either way, resolved on the
+         space's own long/cross axes rather than assuming width-is-long — a vertical corridor is the
+         case that assumption gets wrong, and it is the commonest shape on a real station.
+         `LIGHT.corridor` stays BELOW `LIGHT.room`: a hallway should still be the dimmer space. */
+      const cor = G.isCorridor(r.z);
+      const vert = RH > RW;
+      const along = vert ? RH : RW, cross = vert ? RW : RH;
+      const n = Math.max(1, Math.round(along / (cross * 1.4)));
+      const rad = Math.max(cross * 0.78, along / n * 0.62);
+      const lift = cor ? LIGHT.corridor : LIGHT.room;
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n;
+        // rooms keep their established 0.42-down-the-height placement; a corridor is lit from its
+        // centre line, because a passage has no far wall to throw the pool against.
+        if (vert) cut(X + RW * (cor ? 0.5 : 0.42), Y + RH * t, rad, lift);
+        else cut(X + RW * t, Y + RH * (cor ? 0.5 : 0.42), rad, lift);
+      }
     }
     /* THE CROWN CUT — a flat, hard-edged pull on the ambient over every rect the crown painted, so
        the wall's lit top surface always reads ABOVE the hull skirt outside it (the skirt hangs in
