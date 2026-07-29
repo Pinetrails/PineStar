@@ -4301,24 +4301,29 @@ const Chat = (() => {
     // verdict to { label, run } — capdenied -> REFIT (with the named capability), auth/no-key -> the real key
     // field or "reconnect ChatGPT", model-not-found -> models. One source of truth; no local per-action ladder.
     const btn = (typeof Friendly !== 'undefined' && Friendly.actionButton) ? Friendly.actionButton(verdict) : null;
-    if (btn) { choices([{ label: btn.label, value: verdict.action }], () => btn.run()); diagAffordance(); return; }
-    if (verdict.retryable) { offerTryAgain(); diagAffordance(); return; }
+    if (btn) { choices([{ label: btn.label, value: verdict.action }], () => btn.run()); diagAffordance(verdict); return; }
+    if (verdict.retryable) { offerTryAgain(); diagAffordance(verdict); return; }
     // non-retryable with no destination: leave no primary chip rather than inviting a doomed re-run — but a stuck
     // user still gets the quiet bug-report affordance so they can grab a diagnostic readout in place.
-    diagAffordance();
+    diagAffordance(verdict);
   }
   // T3.9 — a SECONDARY, quiet "copy diagnostics for a bug report" affordance dropped under a failed turn, alongside
   // whatever recovery chip offerRetry rendered. Kept low-key (a subdued pill) so it never competes with the primary
   // action; one tap copies the sidecar-assembled, SECRET-FREE report (Diag.copy) so a user in a failure state can
   // email a useful report without leaving the moment. Appends its OWN row so picking the primary chip doesn't wipe it.
-  function diagAffordance() {
+  // `verdict` (optional) rides into Diag.copy as opts.context so the PAGE-SIDE fallback report — the one that
+  // renders when the sidecar itself can't be read — carries the failure text, its classified kind, and the
+  // measured engine-liveness verdict. Without it a dead-engine report would say "something failed" and nothing
+  // more, which is the same dead end as the screenshot-only bug reports this whole change exists to end.
+  function diagAffordance(verdict) {
     if (!log || typeof Diag === 'undefined' || !Diag.copy) return;
+    const context = verdict ? { error: verdict.raw, kind: verdict.kind, engineAlive: verdict.engineAlive } : null;
     const rowEl = document.createElement('div'); rowEl.className = 'choice-row';
     const b = document.createElement('button'); b.className = 'choice quiet'; b.type = 'button';
     b.textContent = '⧉ copy diagnostics for a bug report';   // ⧉ = the house copy glyph (not the 📋 emoji)
     b.addEventListener('click', () => {
       b.disabled = true;
-      Diag.copy({ notify: false }).then(ok => {
+      Diag.copy({ notify: false, context: context }).then(ok => {
         b.textContent = ok ? '✓ diagnostics copied — paste into your report' : 'copy failed — try again';
         if (!ok) { b.disabled = false; return; }
         if (typeof SFX !== 'undefined' && SFX.click) SFX.click();
@@ -5938,7 +5943,10 @@ const Chat = (() => {
       if (error) {
         // PLAIN-LANGUAGE: lead with the beginner-facing message, keep the raw error as a dim sub-line; persist
         // the friendly text (not the plumbing) so a switch-back / replay shows the same readable failure.
-        const v = (typeof Friendly !== 'undefined') ? Friendly.friendlyError(error) : { userMessage: error, retryable: true, action: null, raw: error };
+        // engineAlive:true is PROVEN, not assumed: `error` is IN-BAND, so the sidecar composed and streamed it —
+        // it was alive serving this request. Matters because a forwarded upstream stream failure reads as
+        // `terminated`/`premature close`, so this path used to tell healthy users to restart. (2026-07-29)
+        const v =(typeof Friendly !== 'undefined') ? Friendly.friendlyError(error, null, { engineAlive: true }) : { userMessage: error, retryable: true, action: null, raw: error };
         // A mutex race can still happen after the local preflight. The sidecar is authoritative, but this is an
         // availability state — not an assistant turn. Undo the optimistic user row, restore its directive to the
         // composer, and let the existing run remain the only durable conversation activity.
@@ -6076,13 +6084,19 @@ const Chat = (() => {
         if (isActiveWs(ws)) offerTryAgain();
         if (!isTask && isActiveWs(ws) && acc.trim()) World.say(acc);
       } else {
-        // A throw that is NOT a deliberate Stop: an unexpected disconnect (the reader aborted with no Stop) or a
-        // hard fetch/network error. An unexpected abort here means the connection dropped — classify it as a
-        // network fault (NOT a user cancel) so it reads "can't reach the sidecar" and still offers a retry.
-        const v = (typeof Friendly !== 'undefined')
-          ? Friendly.friendlyError(aborted ? new Error('cannot reach the STARNET sidecar — connection dropped') : e)
-          : { userMessage: aborted ? 'Lost the connection — try again.' : (e.message || String(e)), retryable: true, action: null, raw: (e && e.message) || String(e) };
+        // A throw that is NOT a deliberate Stop: an unexpected disconnect or a hard fetch/network error. Persist
+        // whatever streamed FIRST — before the await below (ordering locked by test/comms-presence.test.js).
+        // NEVER synthesize 'cannot reach the STARNET sidecar' here again (2026-07-29): it forced the "restart the
+        // app" copy onto every abort, including a dead PROVIDER stream on a healthy install. Say only what we
+        // witnessed and let Harness.pingEngine measure the rest — full rationale in harness.js + friendlyerror.js.
         persistPartial(ws, acc);
+        let engineAlive = null;
+        if (typeof Harness !== 'undefined' && Harness.pingEngine) {
+          try { engineAlive = await Harness.pingEngine(); } catch (_) { engineAlive = null; }
+        }
+        const v = (typeof Friendly !== 'undefined')
+          ? Friendly.friendlyError(aborted ? new Error('connection dropped mid-reply') : e, null, { engineAlive: engineAlive })
+          : { userMessage: aborted ? 'Lost the connection — try again.' : (e.message || String(e)), retryable: true, action: null, raw: (e && e.message) || String(e) };
         if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.error(v.userMessage, v.raw); resolvePresence(ws, { error: true }); }
         ws.history.push({ role: 'assistant', content: '⚠ ' + v.userMessage, error: true, ts: Date.now() });   // keep a readable trace of the failure
         if (isActiveWs(ws)) offerRetry(v);   // RETRY: context-aware recovery chip (a dropped connection is retryable)

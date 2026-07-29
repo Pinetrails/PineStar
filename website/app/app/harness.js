@@ -787,7 +787,49 @@ const Harness = (() => {
   // (U.bus) loads before this file; the chat reader keeps a direct-fold fallback for busless embeds.
   if (typeof U !== 'undefined' && U.bus) { try { U.bus.on('agent.cost', foldContextCost); } catch (_) {} }
 
+  /* IS THE LOCAL ENGINE ACTUALLY UP? (2026-07-29 — the "Can't reach StarNet's local service" misdiagnosis.)
+     A dead response stream and a dead sidecar are INDISTINGUISHABLE from the thrown fetch error alone (see the
+     long note on isTransportLoss in friendlyerror.js), and the app used to assert the sidecar was gone and tell
+     people to restart — sending users chasing a phantom for days when the real drop was the model's stream.
+     This is the measurement that turns that guess into proof.
+
+     GET /api/health is the right probe and the only one that works here: it is in apiauth's TOKEN_EXEMPT set, so
+     it needs no X-StarNet-Token (a stale-token 403 would otherwise read as "dead" — a second lie), and its
+     handler is a bare writeHead(200)/end('ok') that touches no store, so it cannot itself fail for load reasons.
+     Bounded by an AbortController, because a socket the sidecar accepted and never answered (the exact
+     hung-request bug this fix exists for) would otherwise hang the error row forever. On timeout we return
+     `null`, NOT false — an unanswered probe has not proven the engine dead, and under truthful telemetry an
+     inconclusive measurement must never be reported as a conclusive one.
+
+     THE 4s BUDGET IS MEASURED, NOT GUESSED (2026-07-29, Chromium/WebView2, dead loopback port, n=13). A REFUSED
+     connection does NOT fail in microseconds as you would expect — it is BIMODAL: ~250ms or ~1750-2015ms
+     (Chromium appears to retry a dead keep-alive socket with a ~2s backoff before surfacing "Failed to fetch").
+     Samples: 249,250,251,251,268,1754,1771,1773,1794,2015 + 251,1778,2030. A 2000ms budget therefore lands
+     exactly ON the slow mode and half of all genuinely-dead engines time out into `null` — which is the ONE case
+     where "restart StarNet" is the correct advice, so it must not be lost to an impatient probe. 4000ms clears
+     the observed tail ~2x. Cost is bounded and rare: the common in-band failure path proves liveness by receipt
+     and never calls this at all, and a healthy engine answers /api/health in ~1ms.
+     Resolves true | false | null. Never throws, never rejects. */
+  function pingEngine(timeoutMs) {
+    const budget = (typeof timeoutMs === 'number' && timeoutMs > 0) ? timeoutMs : 4000;
+    let ac = null, timer = null;
+    try { ac = new AbortController(); } catch (_) { ac = null; }
+    let timedOut = false;
+    if (ac) timer = setTimeout(() => { timedOut = true; try { ac.abort(); } catch (_) {} }, budget);
+    const done = (v) => { if (timer) clearTimeout(timer); return v; };
+    let p;
+    try {
+      p = fetch('/api/health', Object.assign({ cache: 'no-store' }, ac ? { signal: ac.signal } : {}));
+    } catch (_) { return Promise.resolve(done(false)); }   // synchronous throw = no request left the page
+    return Promise.resolve(p)
+      // Any ANSWER at all proves something is listening and serving on the port — even a non-2xx. The claim
+      // under test is "can't REACH the local service", so reachability, not the status code, is the verdict.
+      .then(() => done(true))
+      .catch(() => done(timedOut ? null : false));
+  }
+
   return {
+    pingEngine,
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
     getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential, setDesktopConfigured,
     listModels, probeProvider, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, summonAck, notebook,

@@ -5,7 +5,13 @@
 const A = require('./_assert.js');
 const { friendlyError, actionButton, KINDS, CAP_INFO } = require('../frontend/app/friendlyerror.js');
 
-// ---- transport loss during an established SSE stream => local-service recovery, never "unknown" ----
+/* ---- transport loss during an established SSE stream => retryable `network`, never "unknown" ----
+   THIS BLOCK USED TO ASSERT THE DEFECT (fixed 2026-07-29). It required every one of these strings to produce
+   "local service / reload / restart" guidance. But these five are precisely the shapes undici emits when the
+   MODEL PROVIDER's stream dies mid-answer, which the sidecar forwards verbatim — so the assertion was pinning
+   in place a message that told users with a perfectly healthy install to restart and reinstall. A 0.7.0 user
+   lost a day to it. The kind and retryability are unchanged (they drive behavior); what is now locked is that
+   the COPY only ever names the local service when liveness was actually MEASURED. */
 for (const raw of [
   'terminated',
   'socket hang up',
@@ -14,9 +20,23 @@ for (const raw of [
   'read ECONNRESET'
 ]) {
   const v = friendlyError(new Error(raw));
-  A.eq(v.kind, 'network', raw + ' classifies as a local-service/network disconnect');
+  A.eq(v.kind, 'network', raw + ' classifies as a transport disconnect');
   A.eq(v.retryable, true, raw + ' remains retryable after the station returns');
-  A.ok(/local service|app.*running|reload|restart/i.test(v.userMessage), raw + ' gives concrete local-service recovery guidance');
+  A.ok(/try again/i.test(v.userMessage), raw + ' still gives a concrete next step');
+  // the regression guard: unprobed, it must not blame (or absolve) the local engine.
+  A.eq(v.engineAlive, null, raw + ' unprobed => engineAlive null');
+  A.ok(!/local service|restart/i.test(v.userMessage), raw + ' unprobed must NOT prescribe restarting the app');
+
+  // measured DOWN => the restart advice is earned, and only here.
+  const down = friendlyError(new Error(raw), null, { engineAlive: false });
+  A.ok(/local service/i.test(down.userMessage), raw + ' + proven-down engine names the local service');
+  A.ok(/restart/i.test(down.userMessage), raw + ' + proven-down engine prescribes a restart');
+
+  // measured UP => naming the local service would be a lie; it must point at the stream instead.
+  const up = friendlyError(new Error(raw), null, { engineAlive: true });
+  A.ok(!/Can't reach/i.test(up.userMessage), raw + ' + proven-up engine never claims it is unreachable');
+  A.ok(/reply stream/i.test(up.userMessage), raw + ' + proven-up engine names the reply stream');
+  A.eq(up.retryable, true, raw + ' + proven-up engine is still retryable');
 }
 
 // ---- managed-credit exhaustion => STORE upsell (only reachable when a credits backend is wired) ----

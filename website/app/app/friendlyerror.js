@@ -5,7 +5,7 @@
    payload, a capdenied string — and the ↻ retry chip fired blindly regardless of WHY it failed. This
    maps any error (the thrown Error from Harness.chat + an optional HTTP status) to:
 
-     friendlyError(err, status) -> { userMessage, kind, retryable, action, raw }
+     friendlyError(err, status, opts) -> { userMessage, kind, retryable, action, raw, engineAlive }
 
    • userMessage — one plain-language sentence to LEAD the error row with.
    • kind        — a stable class (mirrors the sidecar classifier's reasons, plus the UI-level
@@ -125,9 +125,35 @@
   }
   // Browser fetch implementations do not agree on the message used when an established response stream dies.
   // Chromium commonly reports "Failed to fetch"; undici/Tauri can surface only "terminated", a socket close,
-  // or ECONNRESET. They all mean the same user-visible fact here: COMMS lost its local sidecar transport.
+  // or ECONNRESET. They all mean ONE thing: the response stream died before it finished.
+  //
+  // ⚠ WHAT THEY DO **NOT** TELL YOU IS *WHERE* IT DIED (2026-07-29). This predicate used to be documented as
+  // "COMMS lost its local sidecar transport" and the copy asserted "Can't reach StarNet's local service —
+  // restart the app". That is an UNPROVEN claim, and it is wrong in at least two common cases:
+  //   • the MODEL PROVIDER's stream drops mid-answer (undici surfaces exactly `terminated` /
+  //     `other side closed` / `premature close` / ECONNRESET) — the sidecar is perfectly healthy;
+  //   • a request the sidecar never answered (a throw above index.js's central route guard is only LOGGED by
+  //     surfaceProcessError, so the socket hangs — see the same note in sidecar/openai-compat.js) — again, alive.
+  // In both, the app told the user to restart/reinstall and they burned days on a phantom. Truthful telemetry:
+  // the transport wording is now chosen by PROOF (opts.engineAlive, from a real /api/health probe), never by
+  // assumption. Keep this predicate about the SHAPE of the failure; let the caller establish the LOCATION.
   function isTransportLoss(raw) {
     return /cannot reach|can'?t reach|unreachable|failed to fetch|fetch failed|networkerror|load failed|connection (?:refused|reset)|disconnected|\bterminated\b|socket (?:hang up|closed)|other side closed|premature close|econnreset|epipe/i.test(String(raw || ''));
+  }
+  // The three HONEST readings of a transport loss, keyed on whether the local engine was actually PROVEN to be
+  // up. `engineAlive` comes from a token-free GET /api/health probe (Harness.pingEngine) — true/false are
+  // measured; null/undefined means nobody probed, so we must not name a culprit at all.
+  //   false → the engine really is unreachable: today's copy, now EARNED.
+  //   true  → the engine answered, so "restart StarNet" is actively bad advice; name the stream instead.
+  //   null  → unproven. Say only what happened, prescribe the cheap step, and do NOT blame a component.
+  function transportMessage(engineAlive) {
+    if (engineAlive === false) return KINDS.network.msg;
+    if (engineAlive === true) {
+      return "The reply stream stopped before it finished — StarNet's local service answered a health check, so "
+        + 'the app itself is running; this was the connection carrying the reply. Try again.';
+    }
+    return 'The connection dropped before the reply finished — try again. If it keeps happening, use "copy '
+      + 'diagnostics for a bug report" below so the cause can be identified.';
   }
   // a user-initiated stop (Esc / Stop button → AbortController) reads as an AbortError or an "abort" message.
   // A user abort is NOT a fault — it must not produce a scary error row.
@@ -204,8 +230,11 @@
   }
 
   /* err: the thrown Error / in-band error string from Harness.chat. status: an optional HTTP status if the
-     caller has it separately. Returns a complete, well-typed verdict — never throws. */
-  function friendlyError(err, status) {
+     caller has it separately. opts.engineAlive: MEASURED local-engine liveness (true/false), or omitted when
+     the caller did not probe — it only ever changes the `network` (transport-loss) wording, never the kind, so
+     every existing consumer keeps its behavior. Returns a complete, well-typed verdict — never throws. */
+  function friendlyError(err, status, opts) {
+    const engineAlive = (opts && typeof opts.engineAlive === 'boolean') ? opts.engineAlive : null;
     const raw = rawText(err);
     if (isUserAbort(err)) {
       const k = KINDS.user_abort;
@@ -293,6 +322,11 @@
       const userMessage = nm ? ('Your ' + nm + ' sign-in expired — reconnect it (or add a provider key instead).') : k.msg;
       return { userMessage: userMessage, kind: kind, retryable: k.retryable, action: k.action, provider: provider, raw: raw };
     }
+    // transport loss: the ONE kind whose copy names a component, so it is the one kind that owes proof. The
+    // measured verdict rides along on `engineAlive` so a diagnostic report can state what was actually probed.
+    if (kind === 'network') {
+      return { userMessage: transportMessage(engineAlive), kind: kind, retryable: k.retryable, action: k.action, raw: raw, engineAlive: engineAlive };
+    }
     return { userMessage: k.msg, kind: kind, retryable: k.retryable, action: k.action, raw: raw };
   }
 
@@ -378,5 +412,5 @@
   }
 
   return { friendlyError, actionButton, KINDS, CAP_INFO,
-    _internals: { kindFromRaw, isTransportLoss, isUserAbort, REASON_TO_KIND, capFromRaw, capdeniedMessage, codexConnected } };
+    _internals: { kindFromRaw, isTransportLoss, isUserAbort, REASON_TO_KIND, capFromRaw, capdeniedMessage, codexConnected, transportMessage } };
 });

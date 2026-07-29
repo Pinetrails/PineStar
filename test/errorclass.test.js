@@ -125,7 +125,7 @@ const R = (err, ctx) => classifyApiError(err, ctx || {});
 // ---- I. friendlyError (frontend) — the BEGINNER-FACING layer over the classifier (B5). It turns the raw
 //        thrown Error / in-band error string the COMMS panel sees into { userMessage, kind, retryable, action,
 //        raw }, leading with plain language and pointing non-retryable faults at the right destination. ----
-const F = (err, status) => friendlyError(err, status);
+const F = (err, status, opts) => friendlyError(err, status, opts);
 {
   // 5xx / "sidecar HTTP 5xx" -> retryable server_error
   let v = F(new Error('sidecar HTTP 500'));
@@ -136,12 +136,33 @@ const F = (err, status) => friendlyError(err, status);
   A.ok(/sidecar HTTP 500/.test(v.raw), 'raw technical text preserved for the dim sub-line');
   A.eq(F({ status: 503 }).kind, 'server_error', 'a bare 503 status -> server_error');
 
-  // network / sidecar-unreachable -> retryable network
+  // network / transport loss -> retryable network. The KIND is unchanged by proof; only the COPY moves, because
+  // the kind drives behavior (retry, no door) while the copy is the part that names a culprit.
   v = F(new Error('cannot reach the STARNET sidecar — start it with `npm start`'));
-  A.eq(v.kind, 'network', 'sidecar-unreachable -> network');
+  A.eq(v.kind, 'network', 'transport loss -> network');
   A.eq(v.retryable, true, 'network retryable');
-  A.ok(/Can't reach StarNet's local service/i.test(v.userMessage), 'network friendly headline');
   A.eq(F(new Error('Failed to fetch')).kind, 'network', 'browser "Failed to fetch" -> network');
+
+  /* THE COPY OWES PROOF (2026-07-29 regression guard). This block previously asserted that ANY transport loss
+     leads with "Can't reach StarNet's local service" — i.e. the test was pinning the defect in place. That
+     sentence tells the user to restart the app, and it was being shown for an upstream model-stream drop against
+     a perfectly healthy sidecar (a real 0.7.0 user report: days lost restarting and reinstalling). The wording
+     is now a function of a MEASURED /api/health probe, and the three states must stay distinguishable. */
+  v = F(new Error('terminated'), null, { engineAlive: false });
+  A.eq(v.kind, 'network', 'proven-dead engine is still the network kind');
+  A.eq(v.engineAlive, false, 'measured verdict rides on the verdict object');
+  A.ok(/Can't reach StarNet's local service/i.test(v.userMessage), 'engine proven DOWN earns the restart copy');
+
+  v = F(new Error('terminated'), null, { engineAlive: true });
+  A.eq(v.kind, 'network', 'proven-alive engine is still the network kind (retryable, no door)');
+  A.eq(v.engineAlive, true, 'measured alive verdict preserved');
+  A.ok(!/Can't reach StarNet's local service/i.test(v.userMessage), 'engine proven UP must NOT claim it is unreachable');
+  A.ok(/reply stream/i.test(v.userMessage), 'engine proven UP names the stream instead');
+
+  v = F(new Error('terminated'));
+  A.eq(v.engineAlive, null, 'no probe -> engineAlive null (unproven, never coerced to false)');
+  A.ok(!/Can't reach StarNet's local service/i.test(v.userMessage), 'unprobed transport loss must not assert the service is unreachable');
+  A.ok(/connection dropped/i.test(v.userMessage), 'unprobed transport loss states only what was witnessed');
 
   // 429 / rate / quota -> retryable rate_limit
   v = F(new Error('sidecar HTTP 429'));
