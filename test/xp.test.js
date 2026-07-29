@@ -247,6 +247,140 @@ A.eq(Xp.levelForXp(Infinity), 1, 'levelForXp(Infinity) -> 1, never Infinity');
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(Infinity, 'bad')).awards.xp, 0, 'non-finite feedback delta -> 0 xp');
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'kept')).awards.xp, 50, 'huge finite kept-feedback delta remains capped at +50 xp');
 
+/* ---- S4: THE MID-GAME RUNGS. The catalogue used to fire four badges in session one and then light nothing
+        until 25 tasks / Lv 10. These five sit in that gap, and each one must be earned by a counter the
+        HARNESS wrote — never by a user tap, and never before the evidence exists. ---- */
+// (a) the shipped-task ladder now has a rung at 5 — and it is the SAME rung credential() publishes as a tier,
+//     so the trophy and the agent's dispatch briefing gaining a line are one event.
+const four = run([done(0, 'r1'), done(0, 'r2'), done(0, 'r3'), done(0, 'r4')]);
+A.eq(four.stats.milestones.indexOf('still_here'), -1, 'STILL HERE stays locked at 4 shipped tasks');
+A.eq(Xp.credential(four.stats).tier, null, '…and the credential publishes no tier yet either');
+const five = run([done(0, 'r5')], four.stats);
+A.ok(five.awards[0].milestones.indexOf('still_here') !== -1, 'STILL HERE lights on the 5th shipped task');
+A.eq(Xp.credential(five.stats).tier, 5, 'the badge and the credential tier cross on the SAME task — one ladder, not two');
+A.eq(five.stats.xp, 0, 'the mid-game rungs mint no XP (they are recognition, never a currency)');
+
+// (b) HANDS ON — the first badge in the catalogue to read toolsOk. Real successful tool calls only.
+let hands = Xp.fresh();
+for (let i = 0; i < 24; i++) hands = Xp.applyEvent(hands, toolOk('r')).stats;
+A.eq(hands.counters.toolsOk, 24, '24 successful tool calls counted');
+A.eq(hands.milestones.indexOf('hands_on'), -1, 'HANDS ON stays locked at 24 tool calls');
+const hands25 = Xp.applyEvent(hands, toolOk('r'));
+A.ok(hands25.awards.milestones.indexOf('hands_on') !== -1, 'HANDS ON lights on the 25th successful tool call');
+// a FAILED tool call is not a tool call: toolsOk only counts ok && !isError, so it cannot buy the badge.
+let failing = Xp.fresh();
+for (let i = 0; i < 30; i++) failing = Xp.applyEvent(failing, { name: 'agent.tool_result', payload: { agentId: 'a', runId: 'r', callId: 'c', ok: false, isError: true } }).stats;
+A.eq(failing.milestones.indexOf('hands_on'), -1, '30 FAILED tool calls earn nothing — the badge reads successes only');
+
+// (c) LONG MEMORY — 10 reuse EVENTS, and reuse is credited once per completed run (never once per recalled
+//     chunk), so a single 10-chunk recall must not buy it.
+const bigOne = run([memUsed('m1'), memUsed('m2'), memUsed('m3'), memUsed('m4'), memUsed('m5'), memUsed('m6'), memUsed('m7'), memUsed('m8'), memUsed('m9'), memUsed('m10'), done()]);
+A.eq(bigOne.stats.counters.memReused, 1, 'one run recalling 10 chunks is ONE reuse event');
+A.eq(bigOne.stats.milestones.indexOf('long_memory'), -1, 'LONG MEMORY is not bought by a single fat recall');
+let habit = Xp.fresh();
+for (let i = 1; i <= 10; i++) habit = run([memUsed('m' + i, 'run' + i), done(0, 'run' + i)], habit).stats;
+A.eq(habit.counters.memReused, 10, '10 separate recalling runs = 10 reuse events');
+A.ok(habit.milestones.indexOf('long_memory') !== -1, 'LONG MEMORY lights after 10 real reuses');
+
+// (d) DEPENDABLE — the harness-observed twin of TRUSTED. It defers to reliability() for the 85% threshold so it
+//     can never disagree with the dossier's B2 gauge, and adds a VOLUME floor so it is a mid-game badge and not
+//     a sixth session-one one (the band alone reaches 'dependable' at MIN_RUNS = 3).
+const threeClean = run([done(0, 'a1'), done(0, 'a2'), done(0, 'a3')]);
+A.eq(Xp.reliability(threeClean.stats).band, 'dependable', 'the B2 gauge reads DEPENDABLE after 3 clean runs…');
+A.eq(threeClean.stats.milestones.indexOf('dependable'), -1, '…but the BADGE waits for a real body of work');
+let sustained = Xp.fresh();
+for (let i = 1; i <= 10; i++) sustained = Xp.applyEvent(sustained, done(0, 'd' + i)).stats;
+A.ok(sustained.milestones.indexOf('dependable') !== -1, 'DEPENDABLE lights at 10 owned runs held above 85%');
+// a shaky agent with the volume but not the finish rate earns nothing…
+let shaky = Xp.fresh();
+for (let i = 1; i <= 6; i++) shaky = Xp.applyEvent(shaky, done(0, 's' + i)).stats;
+for (let i = 1; i <= 6; i++) shaky = Xp.applyEvent(shaky, ended('max_iters', 'x' + i)).stats;
+A.eq(Xp.reliability(shaky).pct, 50, 'a 6-of-12 agent reads 50%');
+A.eq(shaky.milestones.indexOf('dependable'), -1, 'DEPENDABLE stays locked for a 50% finish rate at 12 runs');
+// …and PROVIDER faults never count against it: excluded runs move neither the ratio nor the volume floor.
+let faulted = Xp.fresh();
+for (let i = 1; i <= 10; i++) faulted = Xp.applyEvent(faulted, done(0, 'f' + i)).stats;
+for (let i = 1; i <= 20; i++) faulted = Xp.applyEvent(faulted, errd('e' + i)).stats;
+A.ok(faulted.milestones.indexOf('dependable') !== -1, '20 provider failures never revoke or block DEPENDABLE — they were never this agent’s fault');
+
+// (e) SEASONED — the one rung on an otherwise empty Lv1 -> Lv10 ladder. XP-gated, so still user-approval-only.
+const nearFive = { xp: 499, level: 4, lifetimeXp: 499, confidence: 50, samples: 0, counters: {}, milestones: [] };
+A.eq(Xp.applyEvent(nearFive, done()).stats.milestones.indexOf('seasoned'), -1, 'a run completion cannot buy SEASONED at 499 xp');
+const sz = Xp.applyEvent(nearFive, keep());
+A.eq(sz.stats.level, 5, 'positive feedback crossing 500 xp -> level 5');
+A.ok(sz.awards.milestones.indexOf('seasoned') !== -1, 'SEASONED lights at level 5');
+
+// (f) the catalogue is still internally consistent: unique ids, and every badge carries label + hint + predicate.
+const ids = Xp.MILESTONES.map(m => m.id);
+A.eq(new Set(ids).size, ids.length, 'every milestone id is unique');
+A.ok(Xp.MILESTONES.every(m => m.label && m.hint && typeof m.when === 'function'), 'every milestone has a label, an unlock hint, and a predicate');
+
+/* ---- S4: RECONCILE — light what a save has ALREADY earned, with no event.
+        Milestones only ever fired inside applyEvent, so a save written before a badge existed carries the
+        record that earns it and none of the credit: the trophy case would show a LOCKED badge whose hint the
+        dossier above it has visibly already met. ---- */
+const preS4 = { xp: 0, level: 1, lifetimeXp: 0, confidence: 50, samples: 0, counters: { tasksDone: 8, runs: 9, toolsOk: 30 }, milestones: [] };
+A.eq(Xp.milestones(preS4).filter(m => m.earned).length, 0, 'the pre-S4 save reads as having earned nothing');
+const rec = Xp.reconcile(preS4);
+A.eq(rec.earned, ['first_light', 'still_here', 'hands_on'], 'reconcile lights exactly the badges the record already earned');
+A.eq(preS4.milestones, [], 'reconcile is PURE — the caller’s save object is not mutated');
+A.eq(Xp.reconcile(rec.stats).earned, [], 'reconcile is idempotent — a second boot earns nothing');
+A.eq(rec.stats.counters.tasksDone, 8, 'reconcile carries the counters through untouched');
+A.eq(rec.stats.xp, 0, 'reconcile mints no XP');
+// it can only ADD: a trophy records that you REACHED a bar, so a since-fallen band never revokes one.
+const fell = Xp.reconcile({ xp: 0, level: 1, lifetimeXp: 0, confidence: 20, samples: 9, counters: {}, milestones: ['trusted'] });
+A.ok(fell.stats.milestones.indexOf('trusted') !== -1, 'a badge already earned survives a reconcile after the meter fell');
+A.eq(Xp.reconcile(null).earned, [], 'reconcile(null) is safe and earns nothing');
+const corrupt = Xp.reconcile({ xp: Infinity, level: NaN, lifetimeXp: NaN, confidence: Infinity, samples: NaN, counters: { tasksDone: 5 }, milestones: [] });
+A.ok(Number.isFinite(corrupt.stats.level) && Number.isFinite(corrupt.stats.xp), 'reconcile sanitizes a corrupted save like applyEvent does');
+A.ok(corrupt.stats.milestones.indexOf('still_here') !== -1, '…and still awards what the intact counters prove');
+
+/* ---- S5: PRACTICE — what the agent has actually LEARNED, as opposed to what it has been paid in.
+        A FOURTH separately-labelled meter, deliberately NOT a redefinition of level: level is a monotonic,
+        user-approval-only ladder every existing save already climbed under that rule. ---- */
+const sk = (o) => Object.assign({ state: 'active', createdBy: 'agent', useCount: 0, withheld: false }, o);
+
+// the honesty split that a plain [] cannot express: an unread skillbase is not an empty one.
+A.eq(Xp.practice(null).known, false, 'an unread skillbase reports known:false…');
+A.eq(Xp.practice(null).label, '—', '…and renders a dash, never a confident 0');
+A.eq(Xp.practice([]).known, true, 'a skillbase we DID read reports known — zero is a real answer');
+A.eq(Xp.practice([]).count, 0, '…and that answer is 0');
+A.eq(Xp.practice([]).band, 'none', 'no procedures -> band none');
+
+// THE ANTI-FARM LINE: authoring a procedure counts for nothing. Only one that was really USED counts.
+A.eq(Xp.practice([sk({ useCount: 0 }), sk({ useCount: 0 }), sk({ useCount: 0 })]).count, 0, 'three self-written, never-used skills earn a count of ZERO — writing is not learning');
+A.eq(Xp.practice([sk({ useCount: 0 }), sk({ useCount: 0 })]).idle, 2, '…and the unused ones are counted and nameable, not silently dropped');
+A.eq(Xp.practice([sk({ useCount: 1 })]).count, 1, 'a procedure the model actually loaded into real work counts');
+
+// each exclusion is a claim we refuse to make.
+A.eq(Xp.practice([sk({ useCount: 9, withheld: true })]).count, 0, 'a WITHHELD skill was never handed to the model — it cannot be known');
+A.eq(Xp.practice([sk({ useCount: 9, withheld: true })]).withheld, 1, '…and the withheld one is surfaced so the Commander can act on it');
+A.eq(Xp.practice([sk({ useCount: 9, createdBy: 'user' })]).count, 0, 'a skill the COMMANDER wrote is given, not learned');
+A.eq(Xp.practice([sk({ useCount: 9, createdBy: 'user' })]).given, 1, '…counted separately, never folded in');
+A.eq(Xp.practice([sk({ useCount: 9, state: 'archived' })]).count, 0, 'a retired procedure is not carried knowledge');
+A.eq(Xp.practice([sk({ useCount: 9, state: 'stale' })]).count, 1, 'a STALE skill is still in force (only archived is retired)');
+// every flavour of agent authorship counts; the background passes are the agent distilling too.
+for (const by of ['agent', 'reflection', 'background-review', 'agent-created', 'curator']) {
+  A.eq(Xp.practice([sk({ useCount: 1, createdBy: by })]).count, 1, 'createdBy ' + by + ' is the agent distilling its own procedure');
+}
+const practiceMix = Xp.practice([
+  sk({ useCount: 3 }), sk({ useCount: 1, createdBy: 'reflection' }), sk({ useCount: 5 }),
+  sk({ useCount: 0 }), sk({ useCount: 9, withheld: true }), sk({ useCount: 9, createdBy: 'user' }), sk({ useCount: 9, state: 'archived' })
+]);
+A.eq(practiceMix.count, 3, 'a practiceMix skillbase counts only the three that were distilled, held, allowed and used');
+A.eq(practiceMix.authored, 5, 'authored = everything the agent distilled and still holds (used + idle + withheld)');
+A.eq([practiceMix.idle, practiceMix.withheld, practiceMix.given, practiceMix.retired], [1, 1, 1, 1], 'every excluded skill is accounted for by name');
+A.eq(practiceMix.band, 'practised', '3 learned -> practised');
+A.eq(Xp.practice([sk({ useCount: 1 })]).band, 'forming', '1 learned -> forming');
+A.eq(Xp.practice(Array.from({ length: 7 }, () => sk({ useCount: 1 }))).band, 'fluent', '7 learned -> fluent');
+// defensive: junk rows and junk counters must never poison the number.
+A.eq(Xp.practice([null, undefined, 'nope', 42, sk({ useCount: 1 })]).count, 1, 'junk rows are skipped, not counted');
+A.eq(Xp.practice([sk({ useCount: NaN }), sk({ useCount: Infinity }), sk({ useCount: -5 })]).count, 0, 'a non-finite or negative useCount never proves a use');
+// PRACTICE is descriptive: it touches neither the ladder nor the other meters.
+A.eq(typeof Xp.practice([]).pct, 'undefined', 'practice publishes no percentage — it is a count, not a ratio');
+const untouched = run([done(), keep()]).stats;
+A.eq(Xp.compute(untouched).level, Xp.compute(Xp.applyEvent(untouched, done()).stats).level, 'nothing about practice can move the level ladder');
+
 // ---- milestone CATALOGUE (render-state for the trophy case): every badge, with earned flags + unlock hints ----
 const catFresh = Xp.milestones(Xp.fresh());
 A.eq(catFresh.length, Xp.MILESTONES.length, 'catalogue lists every milestone');
@@ -269,5 +403,132 @@ A.eq(cg.samples, 2, 'compute surfaces the feedback sample count');
 A.eq(cg.positiveFeedback, 1, 'compute surfaces positive feedback count');
 A.eq(cg.negativeFeedback, 1, 'compute surfaces negative feedback count');
 A.eq(Xp.compute(Xp.fresh()).tasksDone, 0, 'fresh agent has 0 tasks done');
+
+/* ---- S2 RELIABILITY: the SECOND axis — what the HARNESS observed, not what the Commander said ----
+   The whole point is that it is provable without a single user tap, AND that it never becomes a second XP
+   faucet. Every assertion below pairs "the meter moved" with "the ladder did not". */
+
+// calibration honesty, exactly like confidence: no number before there is evidence for one
+const rFresh = Xp.reliability(Xp.fresh());
+A.eq(rFresh.known, false, 'a fresh agent reports reliability known:false (never a made-up %)');
+A.eq(rFresh.pct, null, 'an uncalibrated reliability has NO percentage');
+A.eq(rFresh.label, '—', 'an uncalibrated reliability renders as a dash');
+A.eq(rFresh.band, 'calibrating', 'an uncalibrated reliability bands as calibrating');
+A.eq(rFresh.toKnown, Xp.MIN_RUNS, 'a fresh agent needs MIN_RUNS attributable runs before a % is honest');
+A.eq(Xp.reliability(null).known, false, 'reliability(null) is safe and uncalibrated');
+
+// a clean track record
+const rAll = Xp.reliability(run([done(), done(), done()]).stats);
+A.eq(rAll.known, true, 'MIN_RUNS attributable runs calibrate the meter');
+A.eq(rAll.completed, 3, 'completed counts the done runs');
+A.eq(rAll.attempted, 3, 'attempted counts the runs the agent owned');
+A.eq(rAll.pct, 100, 'three clean runs read 100%');
+A.eq(rAll.band, 'dependable', '100% bands as dependable');
+
+// engaged-but-fell-short IS the agent's own outcome and DOES count against it
+const rShort = Xp.reliability(run([done(), done(), ended('max_iters')]).stats);
+A.eq(rShort.attempted, 3, 'a max_iters run is attributable (the agent engaged and fell short)');
+A.eq(rShort.completed, 2, 'a max_iters run is not a completion');
+A.eq(rShort.pct, 67, 'two of three reads 67%');
+A.eq(rShort.band, 'consistent', '67% bands as consistent');
+A.eq(Xp.reliability(run([done(), done(), ended('budget')]).stats).attempted, 3, 'a budget stop is attributable');
+A.eq(Xp.reliability(run([done(), done(), ended('refusal')]).stats).attempted, 3, 'a refusal is attributable');
+
+/* THE HONESTY LINE — a provider fault is NOT the agent's failure. This is the case that actually happens: a
+   dead model id, a 404, an out-of-credit key. Charging it to the agent would understate every agent on a
+   misconfigured station. Excluded runs are still COUNTED so the dossier can name them. */
+const rFault = Xp.reliability(run([done(), done(), done(), errd(), errd(), ended('empty')]).stats);
+A.eq(rFault.attempted, 3, 'provider faults (error/empty) are EXCLUDED from the denominator');
+A.eq(rFault.pct, 100, 'a provider outage cannot drag an agent\'s reliability down');
+A.eq(rFault.faulted, 3, 'faulted runs are still counted, so the dossier can name them');
+A.eq(rFault.excluded, 3, 'excluded = faulted + neutral');
+
+// a Commander cancel, and a neutral Task Brief question, are likewise not the agent's outcome
+const rNeutral = Xp.reliability(run([done(), done(), done(), ended('cancelled'), ended('clarifying')]).stats);
+A.eq(rNeutral.attempted, 3, 'cancelled + clarifying are EXCLUDED from the denominator');
+A.eq(rNeutral.neutral, 2, 'neutral runs are counted separately from provider faults');
+A.eq(rNeutral.pct, 100, 'stopping a run yourself never marks the agent down');
+
+// an unknown FUTURE terminal value falls through to neither bucket — the safe, non-lying default
+const rUnknown = run([done(), done(), done(), ended('some_future_reason')]).stats;
+A.eq(Xp.reliability(rUnknown).attempted, 3, 'an unrecognised terminal reason is never guessed into a bucket');
+A.eq(Xp.reliability(rUnknown).excluded, 0, 'an unrecognised terminal reason is not counted as excluded either');
+A.eq(rUnknown.counters.runs, 4, 'but every attempt still increments the raw run count (unchanged meaning)');
+
+/* THE XP LAW HOLDS: reliability reads real outcomes, and NONE of them mint XP, move the level, or touch the
+   satisfaction meter. If this ever goes red, the two axes have been blurred back into one. */
+const mixed = run([done(), done(), done(), ended('max_iters'), errd(), ended('cancelled')]).stats;
+A.eq(mixed.xp, 0, 'S2 outcomes mint NO XP — XP stays explicit-user-approval-only');
+A.eq(mixed.level, 1, 'S2 outcomes never move the level ladder');
+A.eq(mixed.samples, 0, 'S2 outcomes are not satisfaction samples');
+A.eq(Xp.compute(mixed).known, false, 'S2 outcomes never calibrate the CONFIDENCE meter');
+A.eq(Xp.reliability(mixed).known, true, '…while the reliability meter IS calibrated by those same runs');
+
+/* LEGACY SAVES: a save written before S2 has no buckets. We report calibrating rather than back-filling from
+   runs/tasksDone — `runs` counts provider errors and cancellations too, so a derived number would understate
+   every existing agent. Never ship a number you cannot stand behind. */
+const legacy = Xp.fresh(); legacy.counters = { runs: 40, tasksDone: 31, toolsOk: 90 };
+const rLegacy = Xp.reliability(legacy);
+A.eq(rLegacy.known, false, 'a pre-S2 save reads calibrating, not a number derived from the raw run count');
+A.eq(rLegacy.pct, null, 'a pre-S2 save shows no fabricated percentage');
+A.eq(rLegacy.attempted, 0, 'a pre-S2 save proves NOTHING about reliability — the S2 counters are the only source');
+A.eq(Xp.compute(legacy).tasksDone, 31, 'its older, differently-scoped counters are untouched and still surface elsewhere');
+// and it recalibrates from real evidence once it runs again, without inheriting the legacy history
+const rLegacyRan = Xp.reliability(run([done(), done(), done()], legacy).stats);
+A.eq(rLegacyRan.attempted, 3, 'a pre-S2 agent calibrates from its NEW runs only');
+A.eq(rLegacyRan.known, true, 'and becomes known after MIN_RUNS real, attributable runs');
+
+/* ---- S3 CREDENTIAL: the coarse, earned-only track record that makes the meters load-bearing ----
+   Two properties carry the whole slice: it must say NOTHING about an unproven agent (silence, never a rank),
+   and its `key` must be STABLE across ordinary work (or the roster republishes on every event). */
+
+// nothing earned => nothing said. A new specialist must not be described as unproven — that reads as a ranking.
+const cFresh = Xp.credential(Xp.fresh());
+A.eq(cFresh.text, '', 'a brand-new agent publishes NO track record (silence, never "Lv 1 · unproven")');
+A.eq(cFresh.key, '', 'an unearned credential has an empty key, so "has one at all" is a truthiness check');
+A.eq(cFresh.tier, null, 'no experience tier before any tasks ship');
+A.eq(Xp.credential(null).text, '', 'credential(null) is safe and says nothing');
+
+// each part appears ONLY once its own evidence bar is cleared
+const fiveDone = reasons => run(reasons.map((r, i) => ended(r, 'r' + i))).stats;
+A.eq(Xp.credential(fiveDone(['done', 'done', 'done', 'done'])).tier, null, 'four shipped tasks is below the first tier — still nothing claimed');
+const c5 = Xp.credential(fiveDone(['done', 'done', 'done', 'done', 'done']));
+A.eq(c5.tier, 5, 'the first experience tier lands at 5 shipped tasks');
+A.ok(/5\+ tasks shipped/.test(c5.text), 'the tier is published as a THRESHOLD, never a live count');
+A.eq(c5.confBand, null, 'an unrated agent claims no Commander rating');
+A.ok(!/Commander rating/.test(c5.text), '…and the phrase is absent entirely, not empty');
+A.eq(c5.relBand, 'dependable', 'five clean runs DO calibrate the harness-observed finish rate');
+A.ok(/finish rate: DEPENDABLE/.test(c5.text), 'the finish rate is published once MIN_RUNS attributable runs exist');
+
+// a rated agent adds the Commander's own verdict, and the two stay distinguishable in the text
+let rated = fiveDone(['done', 'done', 'done', 'done', 'done']);
+for (let i = 0; i < 3; i++) rated = Xp.applyEvent(rated, { name: 'memory.feedback', payload: { agentId: 'a', id: 'm' + i, delta: 2, reason: 'work_great' } }).stats;
+const cRated = Xp.credential(rated);
+A.ok(/Commander rating: /.test(cRated.text), 'a rated agent publishes the Commander rating');
+A.ok(/finish rate: /.test(cRated.text), '…alongside the separately-sourced finish rate');
+A.ok(cRated.text.indexOf('Commander rating') < cRated.text.indexOf('finish rate'), 'what you said is listed before what the station saw');
+
+/* THE CHURN GUARD — this is what makes the credential safe to publish into a briefing. Ordinary work must not
+   move the key; only a tier crossing or a band flip may. If this goes red, S3 re-POSTs the whole roster
+   (every agent's composed system prompt) on essentially every event. */
+const base = fiveDone(['done', 'done', 'done', 'done', 'done']);
+const keyBefore = Xp.credential(base).key;
+let churned = Xp.clone(base);
+for (const ev of [ended('done', 'x1'), ended('done', 'x2'), toolOk('x1'), delivered(), memUsed('m', 'x3'), ended('done', 'x3')]) churned = Xp.applyEvent(churned, ev).stats;
+A.eq(Xp.credential(churned).key, keyBefore, 'ordinary work does NOT move the credential key (no roster churn)');
+A.ok(churned.counters.tasksDone > base.counters.tasksDone, '…even though the underlying task count really did grow');
+// …and a genuine crossing DOES move it
+let crossed = Xp.clone(base);
+for (let i = 0; i < 20; i++) crossed = Xp.applyEvent(crossed, ended('done', 'c' + i)).stats;
+A.eq(Xp.credential(crossed).tier, 25, 'crossing into the next tier moves the tier');
+A.ok(Xp.credential(crossed).key !== keyBefore, '…and therefore moves the key, so the roster republishes exactly then');
+// a band flip alone is also a real change
+let flipped = Xp.clone(base);
+for (let i = 0; i < 6; i++) flipped = Xp.applyEvent(flipped, ended('max_iters', 'f' + i)).stats;
+A.eq(Xp.credential(flipped).relBand, 'uneven', 'a run of shortfalls flips the finish-rate band');
+A.ok(Xp.credential(flipped).key !== keyBefore, 'a band flip moves the key even with no tier change');
+
+// the credential is a READOUT — it never mints anything
+A.eq(Xp.credential(crossed).text === '' ? 0 : crossed.xp, crossed.xp, 'credential() is pure readout — it mints no XP');
 
 A.report('xp.test');

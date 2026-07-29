@@ -1343,6 +1343,44 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="gx-well' + (g.bonus ? ' gold' : '') + '"><span class="gx-lbl">Feedback bonus</span><span class="v">' + (g.bonus ? '+' + g.bonus + '%' : '—') + '</span></div>' +
       '</div>';
 
+    /* S2 RELIABILITY — the harness's OWN read, sitting under Satisfaction so the pair reads as what it is:
+       B is what the Commander SAID, B2 is what the station OBSERVED. Deliberately not merged into one score
+       (a well-liked agent that keeps hitting its ceiling must be able to show both truths at once), and
+       deliberately dossier-only — it is a number that can look bad, and the always-visible chrome is not where
+       an honest bad number belongs. Excluded runs are NAMED, not silently dropped from the denominator. */
+    const rl = Xp.reliability ? Xp.reliability(a.stats) : null;
+    const excludedNote = rl && rl.excluded
+      ? '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">' + rl.excluded + ' run' + (rl.excluded === 1 ? '' : 's') + ' set aside — ' +
+        (rl.faulted ? rl.faulted + ' the provider failed' : '') + (rl.faulted && rl.neutral ? ', ' : '') +
+        (rl.neutral ? rl.neutral + ' you stopped or it asked a question' : '') + ' — never charged to this agent</div>'
+      : '';
+    const reliabilityBlk = !rl ? '' :
+      // spans both columns of the existing .gx-2 grid (no CSS change; still correct under the 1-col media query)
+      '<div style="grid-column:1/-1;">' +
+      '<div class="gx-sec"><span class="gx-ref">B2</span><span class="gx-title">Reliability</span><span class="gx-tag">' +
+        (rl.known ? 'runs it finished, of the runs it owned (' + Xp.MIN_RUNS + '+ runs)' : 'calibrating &middot; ' + rl.attempted + ' of ' + Xp.MIN_RUNS + ' attributable runs so far') + '</span></div>' +
+      '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
+        '<span class="gx-confnum' + (rl.known ? '' : ' cal') + '">' + (rl.known ? rl.pct + '<span style="font-size:18px;color:var(--ph-dim);">%</span>' : '—') + '</span>' +
+        '<span class="gx-band' + (rl.known ? '' : ' cal') + '">' + (rl.known ? rl.band.toUpperCase() : 'CALIBRATING') + '</span></div>' +
+      '<div class="gx-trk" style="margin-bottom:5px;"><div class="gx-fill" style="width:' + (rl.known ? rl.pct : 0) + '%;"></div></div>' +
+      '<div class="gx-well"><span class="gx-lbl">Finished / owned</span><span class="v">' + rl.completed + ' <span class="gx-dim">/</span> ' + rl.attempted + '</span></div>' +
+      // the honest distinction from Satisfaction — these two meters measure different things and may disagree.
+      '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">what the station observed — Satisfaction above is what you said</div>' +
+      excludedNote +
+      '</div>';
+
+    /* S5 PRACTICE — the fourth meter, and the only one that is not folded from the event bus: what this agent
+       has actually LEARNED (procedures it distilled from real work and has used since). The skillbase is a
+       per-agent sidecar read, so the block mounts as a host and loadPractice() fills it — the same
+       render-placeholder-then-fetch shape the SKILLS pane already uses. Until it resolves it says "reading",
+       never a zero: an unread skillbase is not an empty one. */
+    const practiceBlk =
+      '<div id="gx-practice" style="grid-column:1/-1;">' +
+      '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span>' +
+      '<span class="gx-tag">reading the skillbase&hellip;</span></div>' +
+      '<div style="display:flex;align-items:baseline;gap:10px;"><span class="gx-confnum cal">&mdash;</span>' +
+      '<span class="gx-band cal">READING</span></div></div>';
+
     const tros = cat.map(m =>
       '<div class="gx-tro ' + (m.earned ? 'on' : 'off') + '">' +
       '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (m.earned ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + m.label + '</span></div>' +
@@ -1372,9 +1410,49 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return '<div class="gx">' +
       '<div class="gx-head"><div><div class="gx-kicker">AGENT DOSSIER // GROWTH READOUT</div><div class="gx-name">' + esc(a.name) + '</div></div>' +
       '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">CLEARANCE</div><span class="gx-clear"><span class="k">LEVEL</span><span class="v">' + pad2(g.level) + '</span></span></div></div>' +
-      '<div class="gx-2">' + progression + confidence + '</div>' +
+      '<div class="gx-2">' + progression + confidence + reliabilityBlk + practiceBlk + '</div>' +
       trophies + station +
       '</div>';
+  }
+
+  /* Fill the B3 PRACTICE block for `agentId`. Reads through Harness.agentSkillsRead so a FAILED read renders
+     as an unknown, never as a confident zero — "you have none" and "I could not ask" are different claims, and
+     the plain agentSkills() wrapper collapses both to []. The resolve is re-checked against the agent still
+     selected, so a slow read for one agent can never paint another agent's dossier. */
+  function loadPractice(agentId) {
+    const host = $('#gx-practice');
+    if (!host || typeof Xp === 'undefined' || !Xp.practice) return;
+    const fail = (why) => {
+      const h = $('#gx-practice'); if (!h) return;
+      h.innerHTML = '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span>' +
+        '<span class="gx-tag">' + why + '</span></div>' +
+        '<div style="display:flex;align-items:baseline;gap:10px;"><span class="gx-confnum cal">&mdash;</span>' +
+        '<span class="gx-band cal">UNREAD</span></div>';
+    };
+    if (!(typeof Harness === 'object' && Harness.agentSkillsRead)) return fail('skillbase unavailable');
+    Harness.agentSkillsRead(agentId, { archived: true }).then(r => {
+      const h = $('#gx-practice'); if (!h) return;
+      const now = present[sel]; if (!now || now.id !== agentId) return;   // the Commander moved on — never paint the wrong agent
+      if (!r || !r.ok) return fail('could not read the skillbase');
+      const p = Xp.practice(r.skills);
+      // every exclusion is NAMED rather than silently shrinking the count (the same rule B2 follows for the
+      // runs it sets aside) — a withheld or never-used procedure is a real thing the Commander can act on.
+      const aside = [];
+      if (p.withheld) aside.push(p.withheld + ' withheld pending your approval');
+      if (p.idle) aside.push(p.idle + ' written but never used yet');
+      if (p.given) aside.push(p.given + ' you wrote yourself');
+      h.innerHTML =
+        '<div class="gx-sec"><span class="gx-ref">B3</span><span class="gx-title">Practice</span><span class="gx-tag">' +
+          (p.count ? 'procedures it worked out and has actually used' : 'nothing distilled from real work yet') + '</span></div>' +
+        '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
+          '<span class="gx-confnum' + (p.count ? '' : ' cal') + '">' + p.count + '</span>' +
+          '<span class="gx-band' + (p.count ? '' : ' cal') + '">' + p.band.toUpperCase() + '</span></div>' +
+        '<div class="gx-well"><span class="gx-lbl">Learned / held</span><span class="v">' + p.count + ' <span class="gx-dim">/</span> ' + p.authored + '</span></div>' +
+        // the anti-farm line, said out loud: writing a skill is not learning one.
+        '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">what it taught itself from your work — writing one counts for nothing until it is used</div>' +
+        // (every aside is a count plus a fixed literal — no agent- or user-supplied text reaches this markup)
+        (aside.length ? '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">' + aside.join(' &middot; ') + '</div>' : '');
+    }).catch(() => fail('could not read the skillbase'));
   }
 
   function agSkills(agentId) {
@@ -2176,6 +2254,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     wireConfig(host);
     wireMemoryLive();
     loadMemoryCore(a);
+    loadPractice(a && a.id ? a.id : 'agent');   // S5: fill the GROWTH tab's B3 meter from the agent's real skillbase
     drawPortrait(host.querySelector('#ag-portrait'), a);
   }
   function drawPortrait(cv, a) {
