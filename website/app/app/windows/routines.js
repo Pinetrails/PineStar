@@ -186,7 +186,9 @@
       try {
         const j = await Harness.api.get('/api/cron');
         const jobs = (j && j.jobs) || [];
-        schedulerArmed = !!(j && j.enabled);   // the live cronArmed — feeds the create-confirm's honest arm-state line
+        // the live cronArmed — feeds the create-confirm's honest arm-state line. A HALTED scheduler is not armed no
+        // matter what the intent flag says, or the create-confirm promises a fire that an E-STOP is holding down.
+        schedulerArmed = !!(j && j.enabled && !j.halted);
         // HONEST disabled-state + one-click ENABLE (G4.6): when the scheduler is OFF, say plainly that routines
         // will NOT fire and offer a one-click ENABLE that arms the live timer (no env edit / restart). When ON,
         // show the armed state + a DISABLE control. `enabled` comes straight from GET /api/cron (the live
@@ -195,7 +197,18 @@
         // APPROVE ask uses) with the ENABLE SCHEDULING action inline, so "saved but won't fire" reads loudly and
         // the fix is one click away. When ON, the calm one-liner + DISABLE control is enough. `#rt-arm`/data-arm
         // stay identical so the arm/disarm wiring below binds unchanged.
-        gateEl.innerHTML = j && j.enabled
+        // E-STOP WINS OVER `enabled` (bug-sweep P0). GET /api/cron carries `halted` — the durable stand-down written
+        // by the emergency stop. `enabled` still records the user's ARM INTENT while halted, so rendering off
+        // `enabled` alone printed "● scheduler armed — routines fire automatically" over a frozen timer. Say the
+        // truth loudly and offer the one-click lift (POST /api/cron/arm {enabled:true} clears the halt server-side,
+        // which is exactly what the existing #rt-arm data-arm="1" handler already does). Mirrors windows/loops.js.
+        gateEl.innerHTML = j && j.halted
+          ? '<div class="brief-block" style="border-left-color:var(--bad);margin-bottom:8px">' +
+              '<div class="brief-k" style="color:var(--bad)">✕ SCHEDULING IS STOPPED (E-STOP)</div>' +
+              '<div class="brief-v">Your routines are saved but <b>will not fire</b> — an emergency stop is engaged and it survives a restart.' +
+              '<div style="margin-top:8px"><button class="bb xs" id="rt-arm" data-arm="1">▶ RESUME SCHEDULING</button></div>' +
+            '</div></div>'
+          : j && j.enabled
           ? '<span style="color:var(--gold)">● scheduler armed</span> <span class="dim">— routines fire automatically.</span>' + tickHealthLine(j) + ' ' +
             '<button class="bb xs" id="rt-arm" data-arm="0">⏸ DISABLE SCHEDULING</button>'
           : '<div class="brief-block" style="border-left-color:var(--bad);margin-bottom:8px">' +

@@ -3769,8 +3769,18 @@ const App = (() => {
           if (msg) msg.textContent = 'checking for an update…';
           try {
             const snap = await Updates.check(true, 'future-save-gate');
-            if (snap && snap.phase === 'available') { try { await Updates.install(); } catch (_) {} }
-            else if (msg) msg.textContent = 'no newer build is published yet — check back shortly.';
+            const phase = (snap && snap.phase) || '';
+            // ⛔ ONLY `current` MEANS "NOTHING NEWER IS PUBLISHED". Everything that is not 'available' used to
+            // collapse into that one reassuring line — including 'error' (the check FAILED and we told the
+            // Commander all was well), 'unsupported' (this build has no updater at all), and 'checking' (a
+            // re-click while a check is in flight returns the busy snapshot immediately). This gate is a HARD
+            // STOP on a save this build cannot read: a false "check back shortly" strands the user with no
+            // idea that the one action on the screen didn't work. Name each state for what it is.
+            if (phase === 'available') { try { await Updates.install(); } catch (e) { if (msg) msg.textContent = 'update found, but the install failed — open the Update Center and retry.'; } }
+            else if (phase === 'current') { if (msg) msg.textContent = 'no newer build is published yet — check back shortly.'; }
+            else if (phase === 'error') { if (msg) msg.textContent = 'the update check failed' + (snap && snap.error ? ' — ' + snap.error : '') + '. Check your connection and try again.'; }
+            else if (phase === 'checking' || phase === 'downloading' || phase === 'installing' || phase === 'restarting') { if (msg) msg.textContent = 'an update check is already running — one moment…'; }
+            else if (msg) msg.textContent = 'this build cannot check for updates — download the latest StarNet from starnetos.com, then reopen.';
           } catch (_) { if (msg) msg.textContent = 'update check failed — try again in a moment.'; }
         } else if (msg) {
           msg.textContent = 'Update StarNet to the latest version (in the desktop app: Update Center), then reopen.';
