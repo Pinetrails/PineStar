@@ -427,6 +427,47 @@ Two design rules worth keeping:
   arguably correct as a constant (bot-to-bot is an unbounded spend loop, not a preference); `allowedUsers`
   wants a real UI, not a chat command, because it is a security control.
 
+## 4.7 LIVE VERIFICATION — 2026-07-29, against api.telegram.org
+
+Everything above was proven with fakes. This section records what has now been run against a **real bot**
+(`@bottest173bot`), driving the **real `telegram.transport.js`** rather than curl, and — just as important —
+what is still unproven and why.
+
+### Proven live
+
+| Path | Evidence |
+|---|---|
+| `getMe` | Real id / username / display name through our own transport. |
+| **Privacy mode** | `can_read_all_group_messages: false`. See below — this found a real bug. |
+| `setCommands` | Published the hub's real 13-command table; `getMyCommands` read it back **in the same order, `/mention` included**. A true round-trip. |
+| **Multipart encoder** | `sendPhoto`, `sendDocument` (filename containing a quote *and* a newline) and a 2-item `sendMediaGroup` all reach **`chat not found`** — i.e. Telegram *parsed* our hand-rolled body and got to chat validation. A framing bug answers differently. |
+| Error normalisation | `send`, `editMessage`, `deleteMessage`, `setReaction`, `sendChatAction`, `getFile` all return the normalized shape carrying Telegram's real description. |
+| **Token redaction** | No answer from any path contains the token. |
+| **409 conflict** | Two concurrent pollers on one token: both got the real `Conflict: terminated by other getUpdates request; make sure that only one bot instance is running`, and our transport reported `fatal:true`, `code:409` and the rewritten actionable message. That sentence is now a **live-captured fixture** in `channels.telegram.test` — an invented string can only prove the code matches itself. |
+| `deleteWebhook`, `getWebhookInfo` | Clean; the webhook slot is empty and `allowed_updates` reflects our new six-kind subscription. |
+
+### ⚠ THE BUG LIVE TESTING FOUND — privacy mode
+
+`getMe` reports `can_read_all_group_messages: false` by default. With privacy mode ON a group delivers a bot
+**only** slash commands, `@username` mentions, and replies to its own messages. So:
+
+- **N5 observe-unmentioned receives nothing.** Ordinary chatter never arrives.
+- **N4 wake words cannot fire at all.** A bot's *name* is not an `@mention`.
+
+`/mention observe` would have confirmed "I read the rest of the room" — the app asserting state the harness
+cannot deliver. Fixed: the flag now travels with the identity from `getMe`, and `/mention` names both the
+limitation and the fix (@BotFather → `/setprivacy` → Disable). A second, subtler bug in that fix was caught by
+an existing deep-equal on `getMe`'s shape: a **missing** field was being coerced to `false`, claiming a
+limitation we had not been told about. Absent now means unknown, and unknown says nothing.
+
+### Still unproven — needs a real chat
+
+A bot cannot start a conversation, so every outbound path needs someone to message it first. Open:
+inbound admission end to end, **thread routing into a real forum topic** (the N1 fix), reply-quoting,
+reaction acks on a real run, **live streaming edits**, voice-note STT, album batching, `edited_message`,
+`channel_post` and its echo guard, and `my_chat_member` on a real block. Full end-to-end also needs a
+provider key, i.e. real spend.
+
 ## 5. Honest sizing
 
 P1–P3 are the ones a member would notice tomorrow, and they are mostly wiring over engines we

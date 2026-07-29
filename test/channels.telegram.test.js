@@ -55,6 +55,17 @@ async function run() {
     const t409 = makeTelegramTransport({ fetch: fakeFetch(() => resp(409, { ok: false, error_code: 409, description: 'Conflict: terminated by other getUpdates request' })), token: 'TKN' });
     e = null; try { await t409.getUpdates({ offset: 0 }); } catch (x) { e = x; }
     A.ok(e && e.fatal === true && /another instance|webhook/i.test(e.message), '409 -> fatal with actionable detail');
+    /* THE REAL WORDING, captured live from api.telegram.org on 2026-07-29 by running two pollers on one token.
+       The abbreviated fixture above would keep passing even if Telegram's phrasing drifted past our regex — an
+       invented string can only prove the code matches itself. This one is the sentence the platform actually
+       sends, so a future tightening of the pattern cannot silently stop recognising a conflict and leave the
+       channel looping against a token another instance owns. */
+    const LIVE_409 = 'Conflict: terminated by other getUpdates request; make sure that only one bot instance is running';
+    const tLive = makeTelegramTransport({ fetch: fakeFetch(() => resp(409, { ok: false, error_code: 409, description: LIVE_409 })), token: 'TKN' });
+    e = null; try { await tLive.getUpdates({ offset: 0 }); } catch (x) { e = x; }
+    A.eq(e && e.fatal, true, "Telegram's ACTUAL conflict sentence is recognised as fatal (live-captured fixture)");
+    A.eq(e && e.code, 409, 'and carries the code the poll loop reads');
+    A.ok(e && /stop the other poller/.test(e.message), 'and is rewritten into something the member can act on');
   }
 
   // ---- B7. getMe: token probe — id/username surfaced; bad token / network -> { ok:false }, never throws ----
