@@ -181,4 +181,43 @@ for (const raw of [
   A.eq(rl.retryable, true, 'and still offers a retry');
 }
 
+/* ---- THE BROWSER PATH, which is the one real users take -------------------------------------------
+   friendlyerror.js pulls the sidecar's classifyApiError in through `require` — "never required in the
+   browser", says its own comment. So under node every verdict comes from the shared truth table, and in the
+   BROWSER every verdict comes from the kindFromRaw fallback. A test that only runs under node therefore
+   proves the half users never execute: this exact gap is why the live app still said "the provider is busy"
+   for a spent weekly quota after the shared table had already been fixed. Load the module with no `require`
+   in scope — a real browser sandbox — and assert the fallback on the shapes Harness actually throws. */
+{
+  const vm = require('vm');
+  const fs2 = require('fs');
+  const path2 = require('path');
+  const src = fs2.readFileSync(path2.join(__dirname, '..', 'frontend', 'app', 'friendlyerror.js'), 'utf8');
+  const sandbox = { console };
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(src + '\nthis.__F = Friendly;', sandbox, { filename: 'friendlyerror.js' });
+  const B = sandbox.__F;
+  A.ok(B && typeof B.friendlyError === 'function', 'the module loads with no require() in scope (the browser shape)');
+
+  const kindOf = (m, st) => B.friendlyError(m, st);
+  const weekly = kindOf("sidecar HTTP 429 — codex: You've hit your usage limit. Resets in 3 days");
+  A.eq(weekly.kind, 'quota_exhausted', 'BROWSER: a spent weekly allowance is quota_exhausted');
+  A.eq(weekly.retryable, false, 'BROWSER: and offers no doomed retry');
+  A.ok(/allowance is used up/i.test(weekly.userMessage), 'BROWSER: with copy that names the spent allowance');
+  A.ok(!/wait a few seconds/i.test(weekly.userMessage), 'BROWSER: and never the busy-provider line');
+
+  A.eq(kindOf('sidecar HTTP 429 — gemini: Quota exceeded for quota metric: requests per minute').kind, 'rate_limit',
+    'BROWSER: a PER-MINUTE quota stays a plain rate limit');
+  A.eq(kindOf('sidecar HTTP 429 — rate limited, slow down').kind, 'rate_limit', 'BROWSER: a bare 429 is unchanged');
+  A.eq(kindOf('sidecar HTTP 429 — openai: insufficient_quota').kind, 'billing',
+    'BROWSER: an out-of-money account is billing, not a busy provider');
+  A.eq(kindOf("codex: You've hit your usage limit. Resets in 3 days", 429).kind, 'quota_exhausted',
+    'BROWSER: the explicit status argument works too');
+  // the shared table and the fallback must agree, or the two halves drift again
+  A.eq(kindOf("sidecar HTTP 429 — codex: You've hit your usage limit. Resets in 3 days").kind,
+    friendlyError(Object.assign(new Error("codex http 429 — You've hit your usage limit. Resets in 3 days"), { status: 429 })).kind,
+    'the browser fallback and the shared sidecar table give the SAME verdict');
+}
+
 A.report('friendlyerror.test');

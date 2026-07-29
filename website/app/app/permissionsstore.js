@@ -19,6 +19,10 @@ const PermissionsStore = (() => {
   let grants = [];        // cached standing grants (dangerKey strings) — last seen from the server
   let grantable = [];     // cached curated catalog keys the server will accept
   let meta = {};          // cached provenance { dangerKey: { grantedAt } } — additive, may be {} for legacy stores
+  /* The mid-run FULL ACCESS wildcards the server reports. Kept separate from `grants` on purpose: a blanket is
+     NOT a danger key, so normalizeGrants would drop it (that is the same shape as the path:/mcp: bug), and it is
+     process-lifetime rather than durable. The ledger renders it above the durable rows with its own REVOKE. */
+  let blanket = [];
   let loaded = false;     // a successful load/refresh has happened at least once
   let error = '';         // last authority/mutation failure; never replace confirmed grants with guessed emptiness
 
@@ -48,6 +52,10 @@ const PermissionsStore = (() => {
         if (r && Array.isArray(r.grants)) grants = norm(r.grants);
         if (r && Array.isArray(r.grantable)) grantable = r.grantable.slice();
         meta = normMeta(r && r.meta);   // additive: absent → {}, no provenance shown (legacy store)
+        // additive: a server with no blanket support, or none standing, yields []
+        blanket = Array.isArray(r && r.blanket)
+          ? r.blanket.filter(b => b && b.key).map(b => ({ key: String(b.key), agentId: String(b.agentId || ''), scope: String(b.scope || '') }))
+          : [];
         loaded = true;
         error = '';
       } catch (e) { error = String((e && e.message) || 'permissions service unavailable'); }
@@ -63,6 +71,7 @@ const PermissionsStore = (() => {
       grants: grants.slice(),
       grantable: grantable.length ? grantable.slice() : (ready() ? Permissions.grantableKeys() : []),
       meta: Object.assign({}, meta),   // provenance { key: { grantedAt } } — additive; {} when the store is legacy
+      blanket: blanket.map(b => Object.assign({}, b)),
       level: currentLevel(),
       loaded,
       error
@@ -124,10 +133,14 @@ const PermissionsStore = (() => {
   // with no api wired); the revoke calls are still INITIATED synchronously. Non-curated grants are left to the user.
   function reset() {
     const keys = ready() ? Permissions.grantableKeys() : ['cabinet:write'];
-    grants = []; grantable = []; meta = {}; loaded = false; error = '';
+    const had = blanket.slice();
+    grants = []; grantable = []; meta = {}; blanket = []; loaded = false; error = '';
     if (!deps.api || typeof deps.api.revoke !== 'function') return Promise.resolve();
     const jobs = [];
     for (const k of keys) { try { jobs.push(Promise.resolve(deps.api.revoke(k)).catch(() => {})); } catch (_) {} }
+    // ...and any standing FULL ACCESS wildcard. A "reset everything" that left the broadest grant in the
+    // product standing would be the same lie as the ledger not listing it.
+    for (const b of had) { try { jobs.push(Promise.resolve(deps.api.revoke(b.key)).catch(() => {})); } catch (_) {} }
     return Promise.all(jobs);
   }
 

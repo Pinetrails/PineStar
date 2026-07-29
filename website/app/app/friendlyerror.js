@@ -173,6 +173,14 @@
 
   // browser fallback: classify the UI-level error string + optional HTTP status into a kind, using the SAME
   // vocabulary the sidecar reasons map onto. Order: most-specific intent first.
+  /* Kept in step with the same three patterns in sidecar/providers/errorClass.js. A spent SUBSCRIPTION
+     allowance ("you've hit your usage limit", "resets in 3 days", a weekly/monthly quota) is terminal; a
+     PER-MINUTE limit is not, and Gemini phrases one as "Quota exceeded for quota metric", which a bare
+     /quota/ test swallowed. OpenAI's `insufficient_quota` is an empty wallet and stays billing. */
+  const QUOTA_EXHAUSTED_RE = /usage[_ ]?limit[_ ]?reached|hit (?:your|the) (?:usage|weekly|monthly|plan|daily) limit|(?:weekly|monthly|daily) (?:quota|limit)|resets? in \s*\d+\s*(?:day|hour|week)|resets? (?:on|at) \d|quota (?:will )?reset(?:s)? (?:in|on|at)/;
+  const SHORT_WINDOW_RE = /per[- ]?(?:minute|second)|quota metric|rpm|tpm|requests per/;
+  const TERMINAL_BILLING_RE = /insufficient[_ ]?quota|exceeded your current quota|out of credit|add credits|payment required/;
+
   function kindFromRaw(raw, status) {
     const low = String(raw || '').toLowerCase();
     // Harness pre-flight guards ("no API key set" / "no model selected"): a misconfig, not a fault — point at
@@ -195,11 +203,21 @@
       if (s === 402) return /(resets? at|retry[- ]?after|rate limit)/.test(low) ? 'rate_limit' : 'billing';
       if (s === 404) return 'model_not_found';
       if (s === 408 || s === 504) return 'timeout';
-      if (s === 429) return 'rate_limit';
+      /* A 429 IS NOT ALWAYS "wait a few seconds". This fallback is the path REAL USERS take: classifyApiError
+         above is require()-only (node/test), so in the browser every verdict comes from here. A
+         ChatGPT-subscription weekly quota resets in DAYS, and an OpenAI account with no money answers
+         `insufficient_quota` with 429 — neither clears by waiting, and offering ↻ Try again on either is a
+         doomed instruction. Mirrors the same split in sidecar/providers/errorClass.js; keep the two in step. */
+      if (s === 429) {
+        if (QUOTA_EXHAUSTED_RE.test(low) && !SHORT_WINDOW_RE.test(low)) return 'quota_exhausted';
+        if (TERMINAL_BILLING_RE.test(low)) return 'billing';
+        return 'rate_limit';
+      }
       if (s >= 500) return 'server_error';
       if (s === 400 || s === 413 || s === 422) return /context length|maximum context|context window|too many tokens|reduce the length/.test(low) ? 'context_overflow' : 'unknown';
     }
     // message patterns (no status / in-band error text)
+    if (QUOTA_EXHAUSTED_RE.test(low) && !SHORT_WINDOW_RE.test(low)) return 'quota_exhausted';
     if (/rate limit|too many requests|rate-limit/.test(low)) return 'rate_limit';
     if (/insufficient|out of credit|not enough credit|quota|payment required|add credits|billing/.test(low)) return 'billing';
     if (/unauthorized|invalid api key|invalid key|no auth credentials|authentication|key was rejected|rejected/.test(low)) return 'auth';
