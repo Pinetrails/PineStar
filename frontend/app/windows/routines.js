@@ -308,13 +308,21 @@
       const act = btn.dataset.act;
       if (act === 'remove') {
         if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = '✕ CONFIRM'; sfx('bad'); setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '✕ DELETE'; } }, 5000); return; }
-        sfx('bad'); try { await post('/api/cron/remove', { id }); notify('routine deleted'); } catch (_) {} refresh(); return;
+        // ⛔ FETCH RESOLVES ON 4xx/5xx. `await post(...)` only rejects on a network failure, so the toast used to
+        // announce a delete the sidecar had REFUSED — and then refresh() re-drew the still-present row underneath it.
+        sfx('bad');
+        try { const r = await post('/api/cron/remove', { id }); notify(r.ok ? 'routine deleted' : 'could not delete this routine', r.ok ? 'good' : 'warn'); }
+        catch (_) { notify('could not reach the station — the routine was not deleted', 'warn'); }
+        refresh(); return;
       }
       if (act === 'revoke') {
         // withdraw every unattended grant. Immediate and unconfirmed BY DESIGN: revoking a permission is the
         // safe direction, so it must never be harder than granting it was (delete keeps its two-step arm).
         sfx('click');
-        try { await post('/api/cron/update', { id, patch: { unattendedGrants: [] } }); notify('access revoked', 'good'); } catch (_) {}
+        // A REVOKE CLAIM MUST BE PROVEN, not assumed: a rejected request left the standing unattended grant in
+        // force while the station said "access revoked" — the one lie a permission surface can never tell.
+        try { const r = await post('/api/cron/update', { id, patch: { unattendedGrants: [] } }); notify(r.ok ? 'access revoked' : 'could NOT revoke access — the routine still has it', r.ok ? 'good' : 'warn'); }
+        catch (_) { notify('could not reach the station — access was NOT revoked', 'warn'); }
         refresh(); return;
       }
       if (act === 'toggle') {

@@ -5096,7 +5096,10 @@ const Chat = (() => {
     try {
       const key = slashCatalogKey();
       const r = await fetch('/api/skills?placed=' + encodeURIComponent(key), { cache: 'no-store' });
-      const j = r.ok ? await r.json() : null;
+      // ⛔ AN ERRORED ENDPOINT IS NOT AN EMPTY ONE. A non-2xx used to collapse to `[]` and print the confirmed
+      // "No skill recipes are installed." — a station that could not be asked, reported as a station with none.
+      if (!r.ok) return localLine('Could not load skills from the sidecar (HTTP ' + r.status + ') — this is not a claim that you have none.');
+      const j = await r.json();
       const skills = (j && Array.isArray(j.skills)) ? j.skills : [];
       if (!skills.length) return localLine('No skill recipes are installed.');
       const active = skills.filter(s => s.enabled && s.available).map(s => s.slug);
@@ -5126,15 +5129,18 @@ const Chat = (() => {
     let skillCount = 0, activeSkills = [];
     try {
       const r = await fetch('/api/skills?placed=' + encodeURIComponent(slashCatalogKey()), { cache: 'no-store' });
-      const j = r.ok ? await r.json() : null;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
       const skills = (j && Array.isArray(j.skills)) ? j.skills : [];
       skillCount = skills.length;
       activeSkills = skills.filter(s => s.enabled && s.available).map(s => s.slug);
-    } catch (_) {}
+    } catch (_) { skillCount = null; }   // null = COULD NOT ASK, never "you have zero" (see skillsCommand)
     localLine('Bundles: ' + recipes.length + ' recipe blueprint' + (recipes.length === 1 ? '' : 's')
       + (recipes.length ? ' (' + recipes.slice(0, 6).map(r => r.id).join(', ') + ')' : '')
-      + '; ' + skillCount + ' skill recipe' + (skillCount === 1 ? '' : 's')
-      + (activeSkills.length ? ', active: ' + activeSkills.slice(0, 6).join(', ') : '') + '.');
+      + (skillCount == null
+        ? '; skill recipes could not be read from the sidecar'
+        : '; ' + skillCount + ' skill recipe' + (skillCount === 1 ? '' : 's')
+          + (activeSkills.length ? ', active: ' + activeSkills.slice(0, 6).join(', ') : '')) + '.');
   }
   function recipeByRef(raw) {
     const q = String(raw || '').trim().toLowerCase();
@@ -5195,7 +5201,9 @@ const Chat = (() => {
         return localLine(r.ok && j ? ('Routines scheduler ' + (j.enabled ? 'enabled' : 'disabled') + '.') : 'Could not update the routines scheduler.');
       }
       const r = await fetch('/api/cron', { cache: 'no-store' });
-      const j = r.ok ? await r.json() : null;
+      // an errored read is NOT "scheduler off, 0 jobs" — that reassuring line is exactly the lie to avoid.
+      if (!r.ok) return localLine('Could not read the routines scheduler (HTTP ' + r.status + ') — its real state is unknown.');
+      const j = await r.json();
       const jobs = (j && Array.isArray(j.jobs)) ? j.jobs : [];
       const bits = jobs.slice(0, 5).map((job, i) => (i + 1) + '. ' + (job.name || job.id || 'routine') + (job.enabled === false ? ' [paused]' : ''));
       localLine('Routines: scheduler ' + (j && j.enabled ? 'on' : 'off') + ', ' + jobs.length + ' job' + (jobs.length === 1 ? '' : 's')
@@ -5206,7 +5214,9 @@ const Chat = (() => {
     const target = String(args || '').trim();
     try {
       const r = await fetch('/api/connectors', { cache: 'no-store' });
-      const j = r.ok ? await r.json() : null;
+      // an errored read is NOT "no connectors are configured" — say which one it is.
+      if (!r.ok) return localLine('Could not read your MCP connectors (HTTP ' + r.status + ') — this is not a claim that you have none.');
+      const j = await r.json();
       let conns = (j && Array.isArray(j.connectors)) ? j.connectors : [];
       if (target) conns = conns.filter(c => String(c.id || '').toLowerCase() === target.toLowerCase());
       if (!conns.length) return localLine(target ? ('No MCP connector matched "' + target + '".') : 'No MCP connectors are configured.');

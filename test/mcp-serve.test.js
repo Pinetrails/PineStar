@@ -208,6 +208,24 @@ function parseToolResult(result) {
     A.ok(r.isError === true, 'a data tool marks isError when the sidecar is unreachable');
     A.ok(r.data.sidecarReachable === false && /StarNet/i.test(r.data.error), 'the error tells the operator to start StarNet');
 
+    // ⛔ STATION RESTART: THE SCRAPED TOKEN IS PER-LAUNCH AND GOES STALE. StarNet is a desktop app the
+    // Commander closes and reopens; every launch mints a NEW api token. This bridge is spawned once by the MCP
+    // client and lives for that whole session, so a token cached for the process lifetime meant the FIRST
+    // restart killed every tool with "returned HTTP 401" (and left the SSE feed re-presenting the dead token
+    // every 3s) until the user knew to restart their MCP client. Boot a fresh sidecar on the SAME port and
+    // prove the very next tool call works with no restart of serve.js.
+    let restarted = null;
+    try { restarted = await boot(port, env, 0); } catch (e) { restarted = null; }
+    A.ok(restarted && restarted.port === port, 'a fresh sidecar came back up on the same port (fixture guard)');
+    if (restarted) {
+      sidecar = restarted.child;
+      await sleep(400);
+      r = parseToolResult(await rpc.request('tools/call', { name: 'conversations_list', arguments: { limit: 5 } }));
+      A.ok(!r.isError && !/40[13]/.test(String(r.data.error || '')),
+        'THE FIX: after a station restart the bridge re-discovers the new token instead of 401ing forever');
+      A.ok(Array.isArray(r.data.conversations), 'the re-authenticated call returns real data');
+    }
+
   } finally {
     try { serve.stdin.end(); } catch (_) {}
     try { serve.kill(); } catch (_) {}
