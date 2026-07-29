@@ -463,14 +463,23 @@
         } catch (_) {}
       }
       if (opts2.bump !== false) {
-        out = clone(out);
-        out.viewCount = (out.viewCount || 0) + 1;
-        out.useCount = (out.useCount || 0) + 1;
-        out.lastUsedAt = now();
-        if (out.state === 'stale') out.state = 'active';
+        const bumped = {
+          viewCount: (s.viewCount || 0) + 1,
+          useCount: (s.useCount || 0) + 1,
+          lastUsedAt: now(),
+          state: s.state === 'stale' ? 'active' : s.state
+        };
         // RAM-only: the bump rides the next real mutation / compaction flush instead of appending a JSONL line
         // per view (unbounded growth was the whole problem). See bumpView.
-        bumpView(out);
+        //
+        // The bump carries ONLY the counters, and it carries them onto the STORED record — never onto the
+        // hydrated copy. `out.body` may be the whole RENDERED SKILL.md (setup + body + support-file
+        // pointers); writing that into `latest` makes the next persist — markUsed() runs on EVERY run —
+        // re-render '## Setup' in front of a body that already has one, and persist() does not clamp, so
+        // it grows without bound and re-stamps contentDigest (invalidating any Commander approval) every
+        // single cycle.
+        bumpView(Object.assign(clone(s), bumped));
+        out = Object.assign(clone(out), bumped);
       }
       return projectSkill(out, true);
     }

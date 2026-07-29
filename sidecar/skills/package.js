@@ -60,6 +60,49 @@
       : '';
     return frontmatter(skill) + '\n\n' + (setup ? '## Setup\n' + setup + '\n\n' : '') + body + pointers + '\n';
   }
+  /* INVERSE of renderSkillMd's composition. hydrate() reads back a document THIS module wrote, so the
+     leading '## Setup' section and the trailing '## Support Files' pointer list in it are RENDERED
+     artifacts, not part of the author's body. Handing them back as `body` breaks the round-trip: the
+     next persist renders a second '## Setup' in front of a body that already has one — unbounded growth,
+     one copy per cycle — and skill.view prints the setup twice, because it composes setup + body + files
+     itself from the separate fields.
+
+     The Setup section's END is a blank line, and a setup value may itself contain blank lines, so the
+     boundary CANNOT be recovered from the document text alone. Do not guess: strip the EXACT block the
+     renderer would have written for the values we already hold (`known`), repeatedly, so a package
+     already corrupted by the re-append heals instead of carrying its duplicates forever.
+
+     When the document has a '## Setup' heading we cannot claim exactly — someone hand-edited SKILL.md,
+     which the package dir is explicitly there to invite — we keep the WHOLE region as the body and
+     report setup:'' rather than guessing a split. Nothing is lost (the setup text stays where the author
+     put it) and the round-trip is still a fixed point: an empty setup renders no Setup block, so the
+     next hydrate reads back the same bytes.
+
+     The trailing pointer list IS unambiguous (every line is a backtick-quoted path), so it is matched
+     structurally — that also strips a list gone stale against the files now on disk. A '## Support
+     Files' section written as prose does not match and is left alone. */
+  function splitRendered(text, known) {
+    let body = str(text).trim();
+    known = known || {};
+    const knownSetup = str(known.setup).trim();
+    let setup = '';
+    if (knownSetup) {
+      const block = '## Setup\n' + knownSetup;
+      while (body === block || body.indexOf(block + '\n') === 0) {
+        body = body.slice(block.length).replace(/^(?:\r?\n)+/, '');
+        setup = knownSetup;
+      }
+    }
+    // No claim possible and the region still opens with a Setup heading: hand-edited. Leave it in the body.
+    if (!setup && /^##[ \t]+Setup[ \t]*(?:\r?\n|$)/.test(body)) setup = '';
+    else if (!setup) setup = knownSetup;   // the heading is simply absent; keep what we hold
+    for (;;) {
+      const tail = body.match(/(?:^|\r?\n)##[ \t]+Support Files[ \t]*\r?\n(?:[ \t]*-[ \t]+`[^`\r\n]*`[ \t]*(?:\r?\n|$))+$/);
+      if (!tail) break;
+      body = body.slice(0, body.length - tail[0].length).replace(/(?:\r?\n)+$/, '');
+    }
+    return { setup, body: body.trim() };
+  }
   function parseFrontmatter(text) {
     const t = str(text);
     const m = t.match(/^---\s*\r?\n([\s\S]*?)\r?\n---\s*\r?\n?([\s\S]*)$/);
@@ -84,7 +127,7 @@
     const path = opts.pathMod;
     const root = opts.root;
     if (!fs || !path || !root) {
-      return { writePackage() {}, hydrate(skill) { return skill; }, packageDir() { return ''; }, renderSkillMd, parseFrontmatter };
+      return { writePackage() {}, hydrate(skill) { return skill; }, packageDir() { return ''; }, renderSkillMd, parseFrontmatter, splitRendered };
     }
     function packageDir(skill) {
       return path.join(root, safeSegment(skill.agentId || 'agent'), safeSegment(skill.id || skill.name || 'skill'));
@@ -184,14 +227,20 @@
       if (parsed) {
         out.description = parsed.meta.description || out.description || out.summary || '';
         out.platforms = Array.isArray(parsed.meta.platforms) ? parsed.meta.platforms : (out.platforms || []);
-        out.body = parsed.body || out.body || '';
+        // Split the rendered artifacts back off, so hydrate -> persist re-renders the SAME bytes
+        // instead of nesting another '## Setup' / pointer list on every cycle. See splitRendered.
+        const split = splitRendered(parsed.body || '', skill);
+        // A body region that split down to nothing (a setup-only document) is legitimately empty; a
+        // region that was ALREADY empty means a blank/unreadable SKILL.md, so keep what we hold.
+        out.body = split.body || (str(parsed.body).trim() ? '' : (out.body || ''));
+        out.setup = split.setup;
       }
       out.files = files.length ? files : (out.files || []);
       out.packagePath = dir;
       return out;
     }
-    return { writePackage, hydrate, packageDir, archiveDir, renderSkillMd, parseFrontmatter, supportPath };
+    return { writePackage, hydrate, packageDir, archiveDir, renderSkillMd, parseFrontmatter, splitRendered, supportPath };
   }
 
-  return { makePackageStore, renderSkillMd, parseFrontmatter, supportPath, safeSegment, SUPPORT_DIRS };
+  return { makePackageStore, renderSkillMd, parseFrontmatter, splitRendered, supportPath, safeSegment, SUPPORT_DIRS };
 });

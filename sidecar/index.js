@@ -9617,7 +9617,10 @@ function serveAgentSkills(req, res) {
        the reviewer; they cannot approve what they cannot read. What it gains is the truth about what
        the MODEL sees: withheld/approvable/digest, so a card can say "withheld, needs your approval"
        instead of implying the agent is using a skill it was never given. */
-    skills = skillGate.annotate(skills).map(s => Object.assign({}, s, { guardDigest: skillGate.stampOf(s) }));
+    /* verify (not decide) whenever bodies were loaded: the panel is where "Approved by you for this
+       exact content" is printed, and only a re-digest of the delivered bytes can tell whether that is
+       still true. Without it the card blesses a package whose SKILL.md was rewritten after review. */
+    skills = skillGate.annotate(skills, { verify: includeBody }).map(s => Object.assign({}, s, { guardDigest: skillGate.stampOf(s) }));
     json(200, { agentId, skills, withheld: skills.filter(s => s.withheld).length });
   } catch (e) { json(200, { skills: [] }); }
 }
@@ -9656,7 +9659,12 @@ async function handleAgentSkillAllow(req, res) {
   }
   const decision = skillGate.decide(skill);
   if (decision.action === 'block') return json(400, { error: 'the skill guard blocked this skill outright - it cannot be approved. Edit the skill to remove the flagged content.', findings: decision.categories });
-  const digest = skillGate.stampOf(skill);
+  /* Key the approval to the digest of the bytes the Commander JUST READ. `skill` here is the HYDRATED
+     record (view() hydrates by default), so on a package whose SKILL.md has drifted from the JSONL the
+     stored stamp describes bytes nobody reviewed — and verify() re-decides against the live digest, so a
+     stamp-keyed approval could never clear the drift. Fall back to the lifecycle stamp only when there is
+     no body to digest. */
+  const digest = typeof skill.body === 'string' ? skillGate.digestOf(skill) : skillGate.stampOf(skill);
   skillApprovals[key] = { digest, action: 'allow', at: Date.now(), name: skill.name };
   persistSkillApprovals();
   const after = skillGate.annotate([skillStore.view(agentId, skill.id, { includeArchived: true, bump: false }) || skill])[0];
