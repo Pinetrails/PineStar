@@ -164,6 +164,11 @@ const ModelDock = (() => {
     return raw.replace(/[-_]+/g, ' ').replace(/\s+/g, ' ').trim();
   }
 
+  function selectorLabel(model, effort) {
+    const name = model ? modelLabel({ id: model }) : 'no model selected';
+    return 'Model selector: ' + name + ', ' + effortDef(effort).title;
+  }
+
   function groupOf(item) {
     return providerLabel((item && item.provider) || provider());
   }
@@ -595,6 +600,7 @@ const ModelDock = (() => {
   function reflect() {
     const current = getModel();
     const p = provider();
+    const toggle = el('model-dock-toggle');
     const providerEl = el('model-dock-provider');
     const currentEl = el('model-dock-current-model');
     const chip = el('model-dock-effort-chip');
@@ -603,6 +609,7 @@ const ModelDock = (() => {
     if (currentEl) currentEl.textContent = current ? modelLabel({ id: current }) : 'NO MODEL';
     const effort = ensureCurrentEffort();
     if (chip) chip.textContent = effortLabel(effort);
+    if (toggle) toggle.setAttribute('aria-label', selectorLabel(current, effort));
     if (chrome && chrome.nameEl) {
       const short = shortModelName(current);
       chrome.nameEl.textContent = short || '—';
@@ -760,7 +767,7 @@ const ModelDock = (() => {
     catalog: (o) => computeCatalog(!!(o && o.force), o && o.ensure),
     labels: { model: modelLabel, provider: providerLabel, group: groupOf, short: shortModelName, normProvider: normalizeProvider, orGroup: openRouterGroupName },
     efforts: { optionsFor: effortOptionsFor, label: effortLabel, clamp: clampEffortForModel, list: () => EFFORTS.slice() },
-    _internals: { effortOptionsFor, clampEffortForModel, modelFamily, supportsReasoning }
+    _internals: { effortOptionsFor, clampEffortForModel, modelFamily, supportsReasoning, selectorLabel }
   };
 })();
 
