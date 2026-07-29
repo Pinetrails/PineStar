@@ -1613,6 +1613,19 @@ const StationBake = (() => {
         bakeSheen(b, lx, ly + T * 0.9, rad * 0.34);
         lampPos.push({ x: lx, y: ly, r: rad * 1.4 });
       };
+      /* A WALL WASH PER FIXTURE WAS TRIED HERE AND REMOVED (2026-07-29) — keep the result, it is
+         not obvious. The theory was that a corridor's pool is centred on the passage and sized to
+         its narrow cross span, so nothing reaches the flanking walls; the fix was an extra clipped
+         cut on each long wall under every fixture. MEASURED, it did the exact opposite of its
+         intent. The wall already peaks AT the fixtures (luma 24.6 / 23.8) and dips between them
+         (14.4) — the rhythm was never missing. Because the lightmap cut is MULTIPLICATIVE
+         (destination-out), a second cut can only remove what ambient is LEFT, and the least is left
+         exactly where a fixture already cut it: the wash added +1.1 at the fixtures and +4.4 in the
+         dark middle. It was a fill light, and it flattened the wall it was meant to model.
+         LAW: on a multiplicative light mask you cannot add a HIGHLIGHT, only lift a SHADOW. To make
+         a surface read brighter, raise the surface's own tone or its lamp's reach — do not stack
+         another cut where one already landed. The real defect was the wall's TONE (see
+         worldmodel's wallStyleOfRoom). */
       if (vertical) for (let y = r.y1 + 1; y <= r.y2; y += 4) pool(cx, (y + 0.5) * T);
       else for (let x = r.x1 + 1; x <= r.x2; x += 4) pool((x + 0.5) * T, cy);
       b.globalCompositeOperation = 'source-over';
