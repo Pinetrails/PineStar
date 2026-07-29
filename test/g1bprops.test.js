@@ -73,7 +73,12 @@ const appSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/app.js'), '
 A.ok(/setOnMissionBoard/.test(appSrc) && /openTerm\('quests'\)/.test(appSrc), 'app.js routes the board click to the QUEST LOG panel');
 const psSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/propsprites.js'), 'utf8');
 A.ok(/setMissionPins/.test(psSrc) && /missionboard/.test(psSrc), 'propsprites carries the pin feed + the board sprite');
-const buildSrc = fs.readFileSync(path.join(__dirname, '../frontend/app/build.js'), 'utf8');
-A.ok(/command:/.test(buildSrc), 'the builder palette names the COMMAND category');
+// The palette's category display names moved out of build.js and into propsprites.js, next to the
+// catalog they describe, so propsearch.js can match on them too. Assert the DATA, not a source grep:
+// a grep for /command:/ passed for the wrong reason the moment the map lived anywhere else.
+const PropSprites = require('../frontend/app/propsprites.js');
+A.eq(PropSprites.CAT_LABEL.command, 'COMMAND', 'the builder palette names the COMMAND category');
+A.ok((PropSprites.CATS.command || []).some(c => c.id === 'missionboard'),
+  'the MISSION BOARD is on the COMMAND shelf the palette renders');
 
 A.report('g1bprops.test');

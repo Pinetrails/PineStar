@@ -7726,6 +7726,19 @@ const PropSprites = (() => {
   for (const c of CATALOG) BY_ID[c.id] = c;
   const CATS = CATALOG.reduce((o, c) => { (o[c.cat] = o[c.cat] || []).push(c); return o; }, {});
 
+  /* The display names for the two TIERS and every CATEGORY. These live HERE, with the catalog they
+     describe, because more than one consumer needs them: build.js paints them on the palette tabs and
+     propsearch.js matches against them (typing "systems" or "workstations" must find what the tab says).
+     They used to be private to build.js and hand-copied into the test, which is a drift waiting to
+     happen — a renamed tab would leave the test asserting a label no user can see. One map, one truth.
+     A category with no entry is not an error: callers fall back to the id, uppercased. */
+  const TIER_LABEL = { functional: '⚙ SYSTEMS', cosmetic: '✦ DECOR' };
+  const CAT_LABEL = {
+    workstation: 'WORKSTATIONS', workflow: 'WORKFLOW', capability: 'CAPABILITY', isolation: 'ISOLATION',
+    command: 'COMMAND',   // G1b: mission surfaces — functional-but-not-capability (MISSION BOARD)
+    screens: 'SCREENS', lab: 'LAB', storage: 'STORAGE', comms: 'COMMS', lounge: 'LOUNGE', decor: 'DECOR',
+  };
+
   const spec = id => BY_ID[id] || null;
   const has = id => !!F[id];
 
@@ -7883,6 +7896,8 @@ const PropSprites = (() => {
     setMissionPins,
     // G3b TROPHY CASE earned-trophy count (the world layer feeds this from the live trophy projection)
     setTrophyCount,
+    // tab/tier display names — shared with build.js (palette tabs) and propsearch.js (matching)
+    TIER_LABEL, CAT_LABEL,
     // exposed for tests / reuse
     _F: F,
   };

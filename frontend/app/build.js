@@ -203,12 +203,14 @@ const Build = (() => {
      Props are split into two TIERS (functional vs cosmetic) carried on each CATALOG entry, then grouped by
      `cat` within the tier. This is the "clean area for the stuff that actually does something" split. */
   const TIER_ORDER = ['functional', 'cosmetic'];
-  const TIER_LABEL = { functional: '⚙ SYSTEMS', cosmetic: '✦ DECOR' };   // display names; the internal tier keys stay functional/cosmetic
-  const CAT_LABEL = {
-    workstation: 'WORKSTATIONS', workflow: 'WORKFLOW', capability: 'CAPABILITY', isolation: 'ISOLATION',
-    command: 'COMMAND',   // G1b: mission surfaces — functional-but-not-capability (MISSION BOARD)
-    screens: 'SCREENS', lab: 'LAB', storage: 'STORAGE', comms: 'COMMS', lounge: 'LOUNGE', decor: 'DECOR',
-  };
+  // The tier/category DISPLAY names now live with the catalog they describe (PropSprites), because the
+  // palette is no longer their only reader — propsearch.js matches against them so typing what the tab
+  // SAYS finds what the tab shows. Copying them here again is how the tab and the search drift apart.
+  // Read LAZILY, not snapshotted into a const at IIFE-load time: this file is a plain <script> and a
+  // const would freeze whatever PropSprites happened to be when build.js parsed. index.html loads
+  // propsprites.js first today, but a silently-empty label map is a miserable way to find that out.
+  const TIER_LABEL = () => (typeof PropSprites !== 'undefined' && PropSprites.TIER_LABEL) || {};
+  const CAT_LABEL = () => (typeof PropSprites !== 'undefined' && PropSprites.CAT_LABEL) || {};
   // the agent-assignable workstation types — the 'computer' props the agent walks to + sits at (matches
   // world.js isWorkstationProp / deskPropFor seating + the CATALOG seat:true set). These open the picker on place/click.
   const WORKSTATION_TYPES = { desk: 1, desk2: 1, console: 1, consoleL: 1, pixelrig: 1, bench: 1 };
@@ -231,14 +233,34 @@ const Build = (() => {
        1. a keystroke rebuilds the GALLERY ONLY — never the row holding the <input>, or focus dies;
        2. while a search is up the tier/cat rows are HIDDEN, not just ignored. A lit "LOUNGE" tab above a
           grid of workstations is the UI asserting something false about what you're looking at. */
-  const catLabelOf = c => CAT_LABEL[c] || String(c || '').toUpperCase();
+  const catLabelOf = c => CAT_LABEL()[c] || String(c || '').toUpperCase();
+  const tierLabelOf = t => TIER_LABEL()[t] || String(t || '').toUpperCase();
+  // the power word printed on the tile's badge (COMPUTE / WEB / FILES / …), or '' for inert decor.
+  // It is on screen, so it has to be typeable — the prop -> capability map lives in the world model.
+  const grantLabelOf = c => ((typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp)
+    ? (WorldModel.grantLabelForProp(c && c.id) || '') : '');
+  // one options bundle so the palette and the unit test match on IDENTICAL surfaces
+  const searchOpts = () => ({ catLabel: catLabelOf, tierLabel: tierLabelOf, extra: grantLabelOf });
   const isSearching = () => (typeof PropSearch !== 'undefined') && PropSearch.active(propQuery);
 
   // what the gallery is showing right now: matches across the WHOLE catalog, or the chosen tab
   function propsForGrid() {
-    if (isSearching()) return PropSearch.matchProps(catalog(), propQuery, catLabelOf);
+    if (isSearching()) return PropSearch.matchProps(catalog(), propQuery, searchOpts());
     const CATS = (typeof PropSprites !== 'undefined') ? PropSprites.CATS : {};
     return CATS[propCat] || [];
+  }
+
+  /* Leave search mode and go back to browsing. This must rebuild the WHOLE palette, not just the
+     gallery: picking a prop out of a search result moves propTier/propCat to that prop's own drawer,
+     so the tier and category buttons carry stale `active` classes until they are re-created. Clearing
+     with only a grid re-render is what left the palette showing WORKSTATIONS with nothing lit while a
+     beanbag was the armed prop. Re-focus the field afterwards — the caller is still typing. */
+  function clearSearch({ refocus = true } = {}) {
+    propQuery = '';
+    renderPalette();
+    if (!refocus) return;
+    const f = root && root.querySelector('#refit-propsearch-input');
+    if (f) f.focus();
   }
 
   function propSearchRow() {
@@ -259,7 +281,7 @@ const Build = (() => {
     inp.onkeydown = (ev) => {
       if (ev.key !== 'Escape') return;
       ev.stopPropagation();   // a clear must never bubble out and close REFIT behind the Commander
-      if (inp.value) { inp.value = ''; propQuery = ''; renderPropGrid(); sfx('click'); }
+      if (inp.value) { clearSearch(); sfx('click'); }
       else inp.blur();        // an already-empty field hands Escape back to the editor
     };
     row.appendChild(inp);
@@ -269,12 +291,7 @@ const Build = (() => {
     clr.className = 'bb sm refit-searchclear';
     clr.textContent = '✕';
     clr.title = 'clear search';
-    clr.onclick = () => {
-      propQuery = '';
-      const f = root && root.querySelector('#refit-propsearch-input');
-      if (f) { f.value = ''; f.focus(); }
-      renderPropGrid(); sfx('click');
-    };
+    clr.onclick = () => { clearSearch(); sfx('click'); };
     row.appendChild(clr);
     return row;
   }
@@ -360,7 +377,7 @@ const Build = (() => {
         b.type = 'button';
         b.className = 'bb sm refit-tier refit-tier-' + t + (t === propTier ? ' active' : '');
         b.setAttribute('aria-pressed', t === propTier ? 'true' : 'false');
-        b.textContent = TIER_LABEL[t];
+        b.textContent = tierLabelOf(t);
         b.onclick = () => { propQuery = ''; propTier = t; const cs = catsForTier(t); propCat = cs[0]; if (CATS[propCat] && CATS[propCat][0]) propType = CATS[propCat][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
         tierRow.appendChild(b);
       });
@@ -374,7 +391,7 @@ const Build = (() => {
         b.className = 'bb sm refit-propcat' + (g === propCat ? ' active' : '');
         b.dataset.cat = g;   // lets the tutorial light the exact category tab a step needs
         b.setAttribute('aria-pressed', g === propCat ? 'true' : 'false');
-        b.textContent = CAT_LABEL[g] || g.toUpperCase();
+        b.textContent = catLabelOf(g);
         b.onclick = () => { propQuery = ''; propCat = g; if (CATS[g] && CATS[g][0]) propType = CATS[g][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
         catRow.appendChild(b);
       });
@@ -520,9 +537,17 @@ const Build = (() => {
     b.setAttribute('aria-pressed', c.id === propType ? 'true' : 'false');
     const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(c.id) : null;
     b.title = c.label + ' · ' + c.w + '×' + c.h + (grant ? ' · grants ' + grant : '');   // native fallback; the rich Fallout-style card is the hover surface
-    // grid-only re-render: a full renderPalette() here would rebuild the search field and steal focus
-    // out of it mid-search (and it has nothing else to update — picking a tile changes no tab state).
-    b.onclick = () => { propType = c.id; renderPropGrid(); setHint(); sfx('click'); };
+    // Grid-only re-render: a full renderPalette() here would rebuild the search field and steal focus
+    // out of it mid-search. But a pick out of a SEARCH result does change tab state — the prop almost
+    // always lives under a different tier/category than the one still selected behind the results. Move
+    // the tabs to the prop's own drawer NOW (silently, no re-render) so that whenever the search is
+    // cleared the palette opens on the shelf holding what you actually armed, with the tile lit. Without
+    // this, clearing dropped you back on WORKSTATIONS with nothing selected while a beanbag was armed.
+    b.onclick = () => {
+      propType = c.id;
+      if (isSearching()) { propTier = c.tier || 'cosmetic'; propCat = c.cat || propCat; }
+      renderPropGrid(); setHint(); sfx('click');
+    };
     b.onmouseenter = (e) => showPropCard(c, null, e.clientX, e.clientY);   // "what does this do?" card
     b.onmouseleave = hidePropCard;
 
