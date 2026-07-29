@@ -1432,11 +1432,21 @@ const Build = (() => {
     ctx.setTransform(zoom, 0, 0, zoom, panX, panY);
     ctx.imageSmoothingEnabled = false;
     const ox = cache.origin.tx * t, oy = cache.origin.ty * t;
-    // the ground, in world space under the bake — REFIT blits the station at (ox,oy), so the
-    // clearing must be placed there too, not at the origin like the live world.
+    /* the ground, in world space under the bake — REFIT blits the station at (ox,oy), so the
+       clearing must be placed there too, not at the origin like the live world.
+
+       THE CLEARING'S SIZE COMES FROM THE GEOMETRY, NOT FROM THE BAKE CANVAS. `cache.baseCv` only
+       exists on the WHOLE-CANVAS bake; when StationBake.bakeIncremental is available the cache is
+       CHUNKED and has no baseCv at all, so reading `.width` off it threw a TypeError out of the
+       draw function before a single pixel of ground or station was painted — REFIT went black.
+       The line below it already knew this (it picks drawBase over drawImage(cache.baseCv) for
+       exactly that reason); this call did not. cacheGeo carries COLS/ROWS in tiles on both paths. */
     if (typeof Terrain !== 'undefined' && Terrain.active()) {
+      const bt = (cacheGeo && cacheGeo.TILE) || t;
+      const bw = cacheGeo ? cacheGeo.COLS * bt : (cache.baseCv ? cache.baseCv.width : 0);
+      const bh = cacheGeo ? cacheGeo.ROWS * bt : (cache.baseCv ? cache.baseCv.height : 0);
       Terrain.draw(ctx, { scale: zoom, panX, panY }, cv.width, cv.height,
-        { x: ox, y: oy, w: cache.baseCv.width, h: cache.baseCv.height });
+        { x: ox, y: oy, w: bw, h: bh });
     }
     const drawVisibleRect = visibleBakeRect(cacheGeo);
     if (StationBake.drawBase) StationBake.drawBase(ctx, cache, ox, oy, drawVisibleRect);
