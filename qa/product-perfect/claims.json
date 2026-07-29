@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "ee1be9aeaff60c835a3a1c9babd0b796f1a6490f",
+    "sourceCommit": "6c62af7eb96888c2c343ca05d6df7041bfc36f61",
     "pathSetSha256": "af9ad09edfc5cfca11ef337473fa52a4231aac027fa96bc0d00026a69427c890",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 294351,
-        "sha256": "4719c8408421947feb28fb60b6df79450c37564e2d3954f1b7b2cc55918a97de"
+        "bytes": 295725,
+        "sha256": "f1c4eb8bfa0cd362d7fa808d2412420bc4ba6f41e3e66f7f9ae8d7a0deeadcdd"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 460364,
-        "sha256": "c9a58c6f1332f442376d7b5524493461ec01daffe7c1ddc1b6dff54c5d39b25e"
+        "bytes": 461392,
+        "sha256": "45cefea68607d8d29e195397312fb7ef8f44cd7127389400362af297acc128a5"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -283,13 +283,13 @@
       },
       {
         "path": "frontend/app/intake.js",
-        "bytes": 7826,
-        "sha256": "24abcf22eb63d0903ae8fade254b7fcb0a3e8781cf17e95d0d098af195ff14e2"
+        "bytes": 8256,
+        "sha256": "9053e96f9a473f98df8a517dfa001fc83fa319d2fc6a89fa78122239b7508822"
       },
       {
         "path": "frontend/app/interview.js",
-        "bytes": 8647,
-        "sha256": "8649e3f0de14a3937a0851a201a8c5b39430d76064f0644ba36dc1a88309bf50"
+        "bytes": 10029,
+        "sha256": "2eda416911c1ec352b4729c3fb1a6f26d1b0986cf238a8846955d9d15d263d18"
       },
       {
         "path": "frontend/app/keepawake.js",
@@ -383,13 +383,13 @@
       },
       {
         "path": "frontend/app/onboarding.js",
-        "bytes": 68227,
-        "sha256": "c57078b777239807b847812190280261c5aaf6e9cdbac6bcf047c3fe2fa4d46e"
+        "bytes": 68668,
+        "sha256": "dca918a62991ddd7543f6d9d6bb56aebcb26be4d865fa23becac2020067a0b37"
       },
       {
         "path": "frontend/app/permissions.js",
-        "bytes": 9679,
-        "sha256": "1c72d178af61b4a596e983338f4c957fafd5e9eb6bd255180bcc7497ee22e6a6"
+        "bytes": 10683,
+        "sha256": "d2242405113217a24c0ea583464dd38baa447b8be1db696e0a4c0bd64eed73c4"
       },
       {
         "path": "frontend/app/permissionsstore.js",
@@ -773,8 +773,8 @@
       },
       {
         "path": "frontend/app/windows/loops.js",
-        "bytes": 41954,
-        "sha256": "f9194fd8f6e26958d7a3a8a7b8d71f4b211e6adaac97ccc5f442b96d446728e7"
+        "bytes": 42728,
+        "sha256": "728fafc0b714e3110a2cf787c0101cda19cf9c458116215a78762afd309b757e"
       },
       {
         "path": "frontend/app/windows/messaging.js",
@@ -793,8 +793,8 @@
       },
       {
         "path": "frontend/app/windows/routines.js",
-        "bytes": 29055,
-        "sha256": "a04000d0c3cee86f5e3244f5f10900b9dd15e5b680caca0de349e0a536c3c037"
+        "bytes": 31151,
+        "sha256": "7a282ab3098f2af714db5f34c84db8e048912126eded364557abb2ca89b2614e"
       },
       {
         "path": "frontend/app/windows/trophies.js",
