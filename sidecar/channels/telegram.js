@@ -15,10 +15,27 @@
        message.text = the caption (may be ''). Photos pick the LARGEST size; videos/animations/video notes also
        carry their server-generated preview thumbnail as an extra { kind:'photo' } item so a vision model can SEE
        a frame of the clip even though no provider ingests raw video. Static stickers ride as webp photos.
+     • a NON-FILE user payload (location/venue/contact/poll/dice/story, and animated/video stickers) ->
+       { offset, message } whose text is a DESCRIPTOR line (describeOf) — see below.
      • a callback_query -> { offset, callback }  (inline-keyboard taps, used by consent in C6)
-     • anything else (edited/poll/…) -> { offset, message:null }  (advance the offset, deliver nothing)
+     • anything else (a service message: joins/leaves/pins/title changes) -> { offset, message:null }
+       (advance the offset, deliver nothing)
    It is pure and exported standalone so the parse is unit-tested without any transport. Downloading the actual
-   bytes is the transport's getFile (driven by the hub); normalize only names WHAT arrived. */
+   bytes is the transport's getFile (driven by the hub); normalize only names WHAT arrived.
+
+   TWO ADDITIONS (2026-07-29), both closing "the bot ignored me" gaps against the reference harness:
+
+   1. SILENT DROPS (describeOf). A location, a contact card, a poll, a dice roll or an ANIMATED sticker used to
+      fall through to `message:null` — the offset advanced and the member got NOTHING BACK AT ALL, which reads
+      exactly like a dead bot. None of those carry bytes any provider ingests, but every one of them carries
+      meaning, so they now arrive as a bracketed descriptor line the model can answer. The list is an explicit
+      ALLOWLIST of *user content*: a service message (someone joined, a pin, a title change) must stay silent,
+      or the bot starts replying to the group's own furniture.
+
+   2. REPLY CONTEXT (replyOf). `reply_to_message` was never read, so the single most natural Telegram gesture —
+      long-press a photo or a message, hit Reply, ask "what is this?" — reached the model as three bare words
+      with the referent missing. The quoted message's text AND its media now ride on `msg.replyTo`; the hub
+      quotes the one and ingests the other. */
 'use strict';
 (function (root, factory) {
   if (typeof module !== 'undefined' && module.exports) {
@@ -69,22 +86,100 @@
     return items;
   }
 
+  // Describe a user payload that carries no ingestible bytes but DOES carry meaning, as one bracketed line the
+  // model can answer. Returns '' for anything not on the list — which is the point: this is an ALLOWLIST of user
+  // content, so Telegram's service messages (new_chat_members, left_chat_member, pinned_message, new_chat_title,
+  // …) keep falling through to message:null and the bot stays quiet about the group's own housekeeping. Pure;
+  // every field is optional on the wire, so every read degrades to a shorter sentence rather than throwing.
+  function describeOf(m) {
+    if (!m || typeof m !== 'object') return '';
+    const trim = (v, n) => String(v == null ? '' : v).replace(/\s+/g, ' ').trim().slice(0, n || 120);
+    if (m.venue) {
+      const v = m.venue, loc = v.location || {};
+      const where = [trim(v.title, 80), trim(v.address, 120)].filter(Boolean).join(' — ');
+      const at = (loc.latitude != null && loc.longitude != null) ? (' (' + loc.latitude + ', ' + loc.longitude + ')') : '';
+      return '[the user shared a place: ' + (where || 'unnamed') + at + ']';
+    }
+    if (m.location) {
+      const loc = m.location;
+      const live = Number(loc.live_period) > 0 ? 'live ' : '';
+      if (loc.latitude == null || loc.longitude == null) return '[the user shared a ' + live + 'location]';
+      return '[the user shared a ' + live + 'location: ' + loc.latitude + ', ' + loc.longitude + ']';
+    }
+    if (m.contact) {
+      const c = m.contact;
+      const who = [trim(c.first_name, 60), trim(c.last_name, 60)].filter(Boolean).join(' ');
+      const num = trim(c.phone_number, 40);
+      return '[the user shared a contact card' + (who ? ': ' + who : '') + (num ? ' ' + num : '') + ']';
+    }
+    if (m.poll) {
+      const p = m.poll;
+      const opts = (Array.isArray(p.options) ? p.options : []).slice(0, 10).map(x => trim(x && x.text, 60)).filter(Boolean);
+      return '[the user shared a poll: "' + trim(p.question, 200) + '"' + (opts.length ? ' — options: ' + opts.join(' / ') : '') + ']';
+    }
+    if (m.dice) {
+      const d = m.dice;
+      return '[the user rolled ' + trim(d.emoji, 8) + (d.value != null ? ' and got ' + d.value : '') + ']';
+    }
+    if (m.story) return '[the user shared a story — its contents are not readable through the Bot API]';
+    if (m.sticker) {
+      // A STATIC sticker also rides as a webp photo (mediaOf), so this line is the label on pixels the model can
+      // already see. An animated/video sticker (.tgs/.webm) has no frame any provider ingests, and used to be
+      // dropped whole — its emoji is the only meaning available, and it is better than silence.
+      const s = m.sticker, e = trim(s.emoji, 8), set = trim(s.set_name, 60);
+      const kind = (s.is_animated || s.is_video) ? 'an animated sticker' : 'a sticker';
+      return '[the user sent ' + kind + (e ? ': ' + e : '') + (set ? ' (from the "' + set + '" pack)' : '') + ']';
+    }
+    return '';
+  }
+
+  // The message this one is REPLYING TO, as neutral context: { text, userName?, fromBot?, media? }. Returns null
+  // when there is no reply, when the target carries nothing we can show, or in the two cases where Telegram sets
+  // reply_to_message for a reason that is NOT a reply:
+  //   • inside a forum topic EVERY message carries reply_to_message = the topic's own creation message, so
+  //     quoting it would staple a phantom "in reply to" onto every single group turn;
+  //   • the same shape appears on the service message that opened the topic.
+  // Media on the quoted message rides through so the hub can ingest the actual photo the member long-pressed.
+  function replyOf(m) {
+    const rt = m && m.reply_to_message;
+    if (!rt || typeof rt !== 'object') return null;
+    if (rt.forum_topic_created) return null;
+    if (m.is_topic_message && rt.message_id != null && m.message_thread_id != null
+        && Number(rt.message_id) === Number(m.message_thread_id)) return null;
+    const from = rt.from || {};
+    const text = typeof rt.text === 'string' ? rt.text
+      : (typeof rt.caption === 'string' ? rt.caption : (describeOf(rt) || ''));
+    const media = mediaOf(rt);
+    if (!text && !media.length) return null;   // a reply to a service message quotes nothing
+    const out = { text: text };
+    const who = from.username || from.first_name;
+    if (who) out.userName = String(who);
+    if (from.is_bot) out.fromBot = true;
+    if (media.length) out.media = media;
+    return out;
+  }
+
   function normalize(u) {
     if (!u || typeof u.update_id !== 'number') return null;   // not a real update -> skip without advancing
     const offset = u.update_id;
-    if (u.message && (typeof u.message.text === 'string' || mediaOf(u.message).length)) {
+    if (u.message && (typeof u.message.text === 'string' || mediaOf(u.message).length || describeOf(u.message))) {
       const m = u.message;
       const chat = m.chat || {};
       const from = m.from || {};
       const media = mediaOf(m);
+      // A descriptor never overwrites real text: it is the text for a payload that HAS none (a bare location, an
+      // animated sticker), and the label under a static sticker's pixels.
+      const written = typeof m.text === 'string' ? m.text : (typeof m.caption === 'string' ? m.caption : '');
       const msg = {
         chatId: chat.id,
         chatType: chat.type === 'private' ? 'dm' : 'group',
         userId: from.id,
         userName: from.username || from.first_name,
-        text: typeof m.text === 'string' ? m.text : (typeof m.caption === 'string' ? m.caption : ''),
+        text: written || describeOf(m) || '',
         messageId: m.message_id
       };
+      const replyTo = replyOf(m);
+      if (replyTo) msg.replyTo = replyTo;   // additive — a non-reply keeps the exact old shape
       if (media.length) msg.media = media;   // additive — text-only messages keep the exact old shape
       // album marker: N messages of one album share media_group_id; the hub debounce-merges them into ONE turn
       if (media.length && m.media_group_id != null) msg.mediaGroupId = String(m.media_group_id);
@@ -127,5 +222,5 @@
     });
   }
 
-  return { makeTelegramAdapter, normalize, mediaOf, MAX_MESSAGE_LENGTH };
+  return { makeTelegramAdapter, normalize, mediaOf, describeOf, replyOf, MAX_MESSAGE_LENGTH };
 });

@@ -90,6 +90,41 @@
     return out;
   }
 
+  /* Render an inbound message's `replyTo` as the preamble that goes ABOVE the member's own words in the turn.
+
+     WHY THIS EXISTS: long-press a message, hit Reply, ask "what is this?" is the most natural gesture on the
+     platform, and until now the model received exactly three words with the referent missing — so it either
+     guessed or asked the member to repeat themselves. The quoted text goes here; the quoted message's MEDIA is
+     ingested separately by the caller (that is the "reply to a photo" half).
+
+     THE FENCE IS DELIBERATE and it is NOT a refusal. The quote is text the member is POINTING AT, which may be
+     another person's words or the bot's own earlier reply — so the preamble names who wrote it and says plainly
+     which part is the live request. It must not tell the model to ignore instructions inside the quote: a member
+     replying to their own "write the summary" with "do it now" means exactly that, and refusing would be its own
+     bug. Attribute, don't forbid.
+
+     Bounded on purpose: a reply to a 4000-character message must not push the member's actual sentence out of
+     the model's attention (or the turn out of the context window). Pure — no clock, no I/O. */
+  const REPLY_QUOTE_MAX = 500;
+  function replyPreamble(replyTo) {
+    if (!replyTo || typeof replyTo !== 'object') return '';
+    let quoted = String(replyTo.text == null ? '' : replyTo.text).replace(/\s+$/, '');
+    const nMedia = Array.isArray(replyTo.media) ? replyTo.media.length : 0;
+    if (!quoted && !nMedia) return '';
+    if (quoted.length > REPLY_QUOTE_MAX) quoted = quoted.slice(0, REPLY_QUOTE_MAX).replace(/\s+\S*$/, '') + ' […quoted message truncated]';
+    const who = String(replyTo.userName == null ? '' : replyTo.userName).trim();
+    const bot = !!replyTo.fromBot;
+    const label = who ? (who + (bot ? ' (a bot)' : '')) : (bot ? 'a bot' : 'someone');
+    const out = ['[The message below is a REPLY to an earlier message from ' + label
+      + '. That earlier message is quoted between the markers — it is what the user is pointing at, and their'
+      + ' actual request is the text AFTER the end marker.]',
+      '--- quoted message ---'];
+    if (quoted) out.push(quoted);
+    if (nMedia) out.push('(' + nMedia + ' file(s) attached to that quoted message are included with this turn)');
+    out.push('--- end quoted message ---');
+    return out.join('\n');
+  }
+
   // Map a TYPED reply onto a live choice keyboard: "2" / "2." / "2)" pick by position, and an exact
   // (case-insensitive) option text picks itself. Everything else returns null and passes straight through as a
   // new instruction — a Commander who changes their mind mid-question must never have that silently re-read as
@@ -336,6 +371,7 @@
       })().catch(function () {});
     }
     const MAX_MEDIA_PER_MESSAGE = 10;                // a full Telegram album is 10 items; a merged album must fit
+    const MAX_REPLY_MEDIA = 4;                       // files lifted off a QUOTED message — context, never the bulk
     const MAX_MEDIA_BYTES = 8 * 1024 * 1024;         // mirrors attachments.js MAX_BYTES (saveAttachment re-enforces)
     if (typeof runOnce !== 'function') throw new Error('makeChannelHub: runOnce is required');
     if (!store || typeof store.loadHistory !== 'function') throw new Error('makeChannelHub: a channel store is required');
@@ -668,15 +704,19 @@
       if (media.length > items.length) notes.push('[' + (media.length - items.length) + ' additional file(s) in this message were not ingested — resend them separately]');
       for (const it of items) {
         const kind = String((it && it.kind) || 'file'), name = String((it && it.name) || 'file');
-        if (!fetchMedia || !saveAttachmentFn) { notes.push('[the user sent a ' + kind + ' ("' + name + '") but media ingest is not wired on this channel]'); continue; }
-        if (Number(it.size) > MAX_MEDIA_BYTES) { notes.push('[' + kind + ' "' + name + '" is too large to ingest (' + Math.round(Number(it.size) / (1024 * 1024)) + 'MB > 8MB) — ask the user for a smaller version]'); continue; }
+        // Provenance: an item lifted off the message the user REPLIED TO must say so, or the model reads a photo
+        // from three messages ago as something just sent and answers the wrong question.
+        const from = (it && it.fromReply) ? ' (from the quoted message they replied to)' : '';
+        if (!fetchMedia || !saveAttachmentFn) { notes.push('[the user sent a ' + kind + ' ("' + name + '")' + from + ' but media ingest is not wired on this channel]'); continue; }
+        if (Number(it.size) > MAX_MEDIA_BYTES) { notes.push('[' + kind + ' "' + name + '"' + from + ' is too large to ingest (' + Math.round(Number(it.size) / (1024 * 1024)) + 'MB > 8MB) — ask the user for a smaller version]'); continue; }
         let got; try { got = await fetchMedia(Object.assign({}, it, { maxBytes: MAX_MEDIA_BYTES })); } catch (e) { got = { ok: false, error: (e && e.message) || 'download threw' }; }
-        if (!got || got.ok === false || !got.buffer || !got.buffer.length) { notes.push('[could not download the ' + kind + ' "' + name + '" from ' + channel + ': ' + ((got && got.error) || 'unknown error') + ']'); continue; }
+        if (!got || got.ok === false || !got.buffer || !got.buffer.length) { notes.push('[could not download the ' + kind + ' "' + name + '"' + from + ' from ' + channel + ': ' + ((got && got.error) || 'unknown error') + ']'); continue; }
         const dataUrl = 'data:' + (String(it.mime || '') || 'application/octet-stream') + ';base64,' + Buffer.from(got.buffer).toString('base64');
         let saved; try { saved = await saveAttachmentFn(agentId, name, dataUrl); } catch (e) { saved = { ok: false, error: (e && e.message) || 'save threw' }; }
-        if (!saved || saved.ok === false) { notes.push('[could not store the ' + kind + ' "' + name + '": ' + ((saved && saved.error) || 'unknown error') + ']'); continue; }
+        if (!saved || saved.ok === false) { notes.push('[could not store the ' + kind + ' "' + name + '"' + from + ': ' + ((saved && saved.error) || 'unknown error') + ']'); continue; }
         refs.push({ id: saved.id, name: saved.name, path: saved.path, mediaType: saved.mediaType, kind: saved.kind, srcKind: kind });
-        if (saved.kind !== 'image') notes.push('[' + kind + ' "' + name + '" received and saved to ' + saved.path + ' in your workspace]');
+        if (saved.kind !== 'image') notes.push('[' + kind + ' "' + name + '"' + from + ' received and saved to ' + saved.path + ' in your workspace]');
+        else if (from) notes.push('[the image "' + name + '"' + from + ' is attached to this turn]');
       }
       // truthful cross-reference: only claim a visible video still when BOTH the clip and its frame actually saved
       if (refs.some(r => r.srcKind === 'video') && refs.some(r => r.kind === 'image' && /preview-frame/.test(String(r.name)))) {
@@ -846,12 +886,25 @@
       // MEDIA: download + store what the user actually sent (photos/videos/voice/files) BEFORE the turn is built,
       // so the model's view of this message carries the real pixels/files instead of a blind spot it has to
       // apologize for. ingestMedia never throws by contract; the belt-and-suspenders catch degrades to a note.
+      // REPLY MEDIA rides in the SAME ingest as the message's own: "what is this?" sent as a reply to a photo is
+      // one turn that needs those pixels. Tagged with fromReply so every note it produces says where it came
+      // from, and bounded separately so a quoted album can never crowd out what the member just sent.
+      const ownMedia = Array.isArray(msg.media) ? msg.media : [];
+      const replyMedia = (msg.replyTo && Array.isArray(msg.replyTo.media))
+        ? msg.replyTo.media.slice(0, MAX_REPLY_MEDIA).map(it => Object.assign({}, it, { fromReply: true })) : [];
+      const allMedia = ownMedia.concat(replyMedia);
       let mediaIngest = { attachments: [], notes: [] };
-      if (hasMedia) {
-        try { mediaIngest = await ingestMedia(agentId, msg.media); }
+      if (allMedia.length) {
+        try { mediaIngest = await ingestMedia(agentId, allMedia); }
         catch (e) { mediaIngest = { attachments: [], notes: ['[media ingest failed: ' + ((e && e.message) || e) + ']'] }; }
       }
-      const turnText = String(msg.text || '') + (mediaIngest.notes.length ? ((msg.text ? '\n' : '') + mediaIngest.notes.join('\n')) : '');
+      // The quoted preamble goes ABOVE the member's own words — it is the context their sentence refers back to.
+      // It is built from msg.replyTo only, never from msg.text, so routing/classification/commands (which all ran
+      // on the RAW text above) are untouched by it.
+      const replyLead = replyPreamble(msg.replyTo);
+      const bodyText = String(msg.text || '');
+      const turnText = (replyLead ? replyLead + '\n\n' : '') + bodyText
+        + (mediaIngest.notes.length ? ((bodyText ? '\n' : '') + mediaIngest.notes.join('\n')) : '');
 
       // durable transcript: load prior turns, persist the new user turn, build the replay messages. The persisted
       // turn carries the media notes (with saved .attachments/ paths), so an agent in a LATER turn can still reach
@@ -1171,9 +1224,9 @@
 
     return {
       onInbound, onCallback, onStatus,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk }
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA }
     };
   }
 
-  return { makeChannelHub, chunkText, endNote, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal, coerceChoice, menuCommands, helpText, COMMANDS, _internals: { TASK_SUFFIX, DEFAULT_PERSONA, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal, coerceChoice, menuCommands, helpText, COMMANDS } };
+  return { makeChannelHub, chunkText, endNote, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal, coerceChoice, menuCommands, helpText, replyPreamble, REPLY_QUOTE_MAX, COMMANDS, _internals: { TASK_SUFFIX, DEFAULT_PERSONA, parseCommand, matchAgent, fmtAgentLine, isSupersedeRaceRefusal, coerceChoice, menuCommands, helpText, replyPreamble, COMMANDS } };
 });

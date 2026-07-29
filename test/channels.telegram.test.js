@@ -146,7 +146,9 @@ async function run() {
     A.eq(normalize({ update_id: 2, message: { message_id: 10, text: 'yo', chat: { id: -200, type: 'supergroup' }, from: { id: 6, first_name: 'X' } } }).message.userName, 'X', 'falls back to first_name when no username');
     A.eq(normalize({ update_id: 3, callback_query: { id: 'q1', data: 'approve:p1', from: { id: 7 }, message: { message_id: 11, chat: { id: 111 } } } }),
       { offset: 3, callback: { chatId: 111, userId: 7, data: 'approve:p1', callbackId: 'q1', messageId: 11 } }, 'callback_query -> callback');
-    A.eq(normalize({ update_id: 4, message: { message_id: 12, chat: { id: 111, type: 'private' }, sticker: {} } }), { offset: 4, message: null }, 'unknown/empty payload -> message:null (offset still advances)');
+    // A SERVICE message (someone joined) is the real "nothing to say" case — it must stay silent. (A sticker used
+    // to live here; it is user content and now arrives as a descriptor — see channels.telegram.context.test.js.)
+    A.eq(normalize({ update_id: 4, message: { message_id: 12, chat: { id: 111, type: 'private' }, new_chat_members: [{ id: 3 }] } }), { offset: 4, message: null }, 'service message -> message:null (offset still advances)');
     A.eq(normalize({ foo: 1 }), null, 'no update_id -> null (skipped, no offset advance)');
   }
 
@@ -179,7 +181,11 @@ async function run() {
     A.eq(doc.message.media[0], { kind: 'document', fileId: 'd1', name: 'report.pdf', mime: 'application/pdf', size: 0 }, 'document admitted with name+mime');
     // static sticker = viewable webp photo; animated/video stickers stay out
     A.eq(normalize({ update_id: 15, message: { message_id: 25, chat, from, sticker: { file_id: 's1' } } }).message.media[0].mime, 'image/webp', 'static sticker -> webp photo');
-    A.eq(normalize({ update_id: 16, message: { message_id: 26, chat, from, sticker: { file_id: 's2', is_animated: true } } }), { offset: 16, message: null }, 'animated sticker stays dropped');
+    // an animated sticker carries no frame any provider ingests, so it has no media — but it is NOT nothing:
+    // it now arrives as a descriptor instead of being dropped into silence (channels.telegram.context.test.js).
+    const anim = normalize({ update_id: 16, message: { message_id: 26, chat, from, sticker: { file_id: 's2', is_animated: true, emoji: '🔥' } } });
+    A.eq('media' in anim.message, false, 'animated sticker still carries no ingestible media');
+    A.ok(/animated sticker/.test(anim.message.text), 'animated sticker is described, not dropped');
     // text-only messages keep the EXACT old shape (no media field) — additive contract
     A.eq('media' in normalize({ update_id: 17, message: { message_id: 27, chat, from, text: 'plain' } }).message, false, 'text-only message has no media field');
     // album parts carry media_group_id -> mediaGroupId (the hub's merge key)

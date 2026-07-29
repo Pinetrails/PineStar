@@ -91,6 +91,25 @@ platforms except through the capability-probe seam.
 `0a7e1771` `/approvals` no longer strips the office · `71806559` `/tools` honesty ·
 `12922944` markdown→HTML, `/start`, poll-loop wedge. Baseline for everything below.
 
+### P0.5 — DONE (2026-07-29): inbound context — reply quoting + the silent drops
+Found on a SECOND pass (§1.5 below), built ahead of P1 because both are "the bot ignored me"
+from the member's side and both are small.
+
+- `reply_to_message` is now read (`telegram.js` `replyOf`). The quoted text rides as a fenced,
+  attributed preamble above the member's own words (`hub.js` `replyPreamble`, bounded to 500
+  chars); the quoted message's MEDIA is ingested with the turn, tagged `fromReply` so every
+  note says where the file came from. **The forum trap is handled:** inside a topic Telegram
+  sets `reply_to_message` on EVERY message (pointing at the topic-creation message), so that
+  case is suppressed or every group turn would carry a phantom quote.
+- Location / venue / contact / poll / dice / story / animated + video stickers no longer fall
+  through to `message:null` (`telegram.js` `describeOf`) — they arrive as a descriptor line.
+  `describeOf` is an **allowlist of user content**: service messages (joins, leaves, pins,
+  title changes) still return `message:null`, or the bot starts narrating group housekeeping.
+- The preamble is built from `msg.replyTo` only, never `msg.text`, so command parsing, floor
+  routing and task classification still see the raw message.
+- Proof: `test/channels.telegram.context.test.js` (57 assertions, in `test/fast.list`), each
+  half proven by reverting the fix and watching it go red.
+
 ### P1 — Outbound media *(biggest functional hole)*
 Today the agent can receive a file and **cannot send one back**. It generates an image or
 writes a report and can only describe it.

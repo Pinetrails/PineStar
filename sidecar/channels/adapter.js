@@ -161,6 +161,10 @@
         // mediaGroupId marks one album part; the hub debounce-merges parts sharing it into a single turn.
         if (Array.isArray(m.media) && m.media.length) im.media = m.media;
         if (m.mediaGroupId != null && m.mediaGroupId !== '') im.mediaGroupId = String(m.mediaGroupId);
+        // replyTo ({ text, userName?, fromBot?, media? }) rides through untouched, same additive contract as
+        // media: the platform's normalize decides whether this message quotes an earlier one, the hub decides
+        // how to render it. A platform that never sets it is byte-identical to before.
+        if (m.replyTo && typeof m.replyTo === 'object') im.replyTo = m.replyTo;
         onInbound(im);
       } else if (n.callback && onCallback) {
         /* Only the owner's taps act — and an UNCLAIMED owner is not a licence, it is the absence of one.
