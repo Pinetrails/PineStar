@@ -16,7 +16,7 @@
      them back over the live object. They had drifted (up 9, side 12) behind the shipped 14/7, so
      RESET restored a state that never shipped and side 12 pushed the wall band past the hull
      silhouette it is pinned to. Add a WALL knob, add it here. */
-  const WALL_DEFAULTS = { up: 14, corUp: 0, skirt: 32, side: 7, capH: 3, sideCap: 5 };
+  const WALL_DEFAULTS = { up: 14, corUp: 8, skirt: 32, side: 7, capH: 3, sideCap: 5 };
   const DEPTH_DEFAULTS = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1 };
   // TUBE APERTURE — the CSS glass vignette over the feed (app.css :root --tube-*). NOT the barrel warp:
   // `curve` bows the picture, these dim its outer band, and they move independently. Seeded from the live
@@ -35,7 +35,7 @@
     'Dark + pools':    { light: { ambient: 0.82, pool: 1.0, floor: 0.26 } },
     // side is pinned at `pad` (7) — past it the wall band juts out of the station's own silhouette
     'Flat (old)':      { wall: { up: 0, corUp: 0, skirt: 12, side: 4 }, depth: { wallShadow: 0, sheen: 0, cornerAO: 0, dither: 0, floorWear: 0, floorDetail: 0, deckSeam: 0, wallDetail: 0 } },
-    'Tall halls':      { wall: { up: 10, corUp: 0, skirt: 32, side: 7 } },
+    'Tall halls':      { wall: { up: 10, corUp: 6, skirt: 32, side: 7 } },
     'Towering':        { wall: { up: 32, corUp: 15, skirt: 38, side: 7 } },
     'Depth+':          { crt: { dust: 0.5, aberr: 0.35, grain: 0.24 }, depth: { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1 } },
     // A/B the WHOLE aperture — in-canvas vignette + overscan + the CSS glass together. `curve` is 0.09 in
