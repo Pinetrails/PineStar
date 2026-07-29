@@ -12,7 +12,11 @@ const { makeShellTool } = require('../sidecar/tools/builtin/shell.js');
 // a fake spawn: each child exposes _emit(data) and _close(code) so the test drives the lifecycle by hand.
 function makeFakeSpawn() {
   const spawn = function (cmd, opts) {
-    if (cmd === 'taskkill') { spawn.taskkills++; return { pid: 0, on() {}, stdout: { on() {} }, stderr: { on() {} } }; }
+    if (cmd === 'taskkill') {
+      spawn.taskkills++;
+      spawn.order.push('taskkill');
+      return { pid: 0, on() {}, unref() {}, stdout: { on() {} }, stderr: { on() {} } };
+    }
     let dataCb = null, closeCb = null, errCb = null;
     const child = {
       cmd, opts, pid: 1000 + spawn.children.length, killed: false, unrefed: false,
@@ -20,7 +24,7 @@ function makeFakeSpawn() {
       stderr: { on: () => {} },
       on: (ev, fn) => { if (ev === 'close') closeCb = fn; else if (ev === 'error') errCb = fn; },
       unref: function () { this.unrefed = true; },
-      kill: function () { this.killed = true; },
+      kill: function () { this.killed = true; spawn.order.push('child.kill'); },
       _emit: (s) => { if (dataCb) dataCb(Buffer.from(String(s))); },
       _close: (code) => { if (closeCb) closeCb(code); },
       _err: () => { if (errCb) errCb(new Error('spawn err')); }
@@ -28,7 +32,7 @@ function makeFakeSpawn() {
     spawn.children.push(child);
     return child;
   };
-  spawn.children = []; spawn.taskkills = 0;
+  spawn.children = []; spawn.taskkills = 0; spawn.order = [];
   return spawn;
 }
 
@@ -73,10 +77,25 @@ let T = 1000; const clock = { now: () => T };
   const bg = makeShellBg({ spawn, clock, onExit: (e) => exits.push(e), maxPerAgent: 5, isWin: true });
   bg.start({ agentId: 'a', cmd: 'sleep 99' });   // bg_1
   const k = bg.kill('a', 'bg_1');
-  A.ok(k.ok, 'kill ok'); A.ok(spawn.children[0].killed, 'the child was killed');
+  A.ok(k.ok, 'kill ok');
+  A.eq(spawn.order, ['taskkill'], 'Windows asks taskkill /T to discover the live tree BEFORE killing its root');
+  A.ok(!spawn.children[0].killed, 'the direct child kill does not race taskkill tree discovery');
   spawn.children[0]._close(137);   // the OS reaps it after the kill
   A.eq(exits[0].killed, true, 'a killed process reports killed:true on exit');
   A.ok(!bg.kill('a', 'nope').ok, 'killing an unknown id -> not ok');
+}
+
+// ---- Windows reaper launch failure falls back to the direct child ----
+{
+  const baseSpawn = makeFakeSpawn();
+  const spawn = function (cmd, opts) {
+    if (cmd === 'taskkill') throw new Error('taskkill unavailable');
+    return baseSpawn(cmd, opts);
+  };
+  const bg = makeShellBg({ spawn, clock, maxPerAgent: 5, isWin: true });
+  bg.start({ agentId: 'a', cmd: 'sleep 99' });
+  A.ok(bg.kill('a', 'bg_1').ok, 'kill still reports accepted when taskkill cannot start');
+  A.ok(baseSpawn.children[0].killed, 'taskkill launch failure falls back to direct child.kill');
 }
 
 // ---- redacted command + exact OS identity pin ----

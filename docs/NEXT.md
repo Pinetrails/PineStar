@@ -1,5 +1,18 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-29 — WINDOWS BACKGROUND PROCESS TREE REAP (`agent/quality-loop-0729e`)
+
+READY TO MERGE. A real-process reproduction confirmed `shell.bg.kill` could orphan the command
+and its descendants on Windows: `killTree` terminated the shell leader before launching
+`taskkill /T`, so tree discovery raced a disappearing root. After 1.2 seconds, both the command
+parent and a planted grandchild were still alive. Windows now lets `taskkill /T /F` own the first
+termination attempt and falls back to direct `child.kill()` only when the reaper cannot start or
+exits unsuccessfully. The identical post-fix reproduction reported both descendants dead.
+
+Regression: `shell-bg.test` 37 assertions (including tree-reaper ordering and launch-failure
+fallback) plus `shell-bg-io` 29 assertions. Final verification: touched-file syntax checks,
+`test:fast` 436/436 green, and full `test:http` green. No push, merge, deploy, publish, or PR.
+
 ## 2026-07-27 — PERMISSIONS OFFLINE STATE STAYS TRUTHFUL (`agent/community-bughunt-0727`)
 
 A Settings/permissions audit confirmed a fail-closed enforcement but fail-open-looking UI defect:

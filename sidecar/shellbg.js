@@ -37,10 +37,33 @@
   const WIN = (typeof process !== 'undefined' && process.platform) === 'win32';
 
   function killTree(spawn, child, isWin) {
+    /* On Windows taskkill must see the LIVE root in order to discover `/T` descendants. Killing the shell
+       leader first races that discovery: taskkill then reports "process not found" while the command and its
+       grandchildren keep running. Let the tree reaper own the first attempt; direct child.kill is only the
+       fallback when taskkill itself cannot start or exits unsuccessfully. */
+    if (isWin && child.pid) {
+      let fellBack = false;
+      const fallback = () => {
+        if (fellBack) return;
+        fellBack = true;
+        try { child.kill(); } catch (_) {}
+      };
+      try {
+        const killer = spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+        if (killer && typeof killer.on === 'function') {
+          killer.on('error', fallback);
+          killer.on('close', (code) => { if (code !== 0) fallback(); });
+        }
+        try { if (killer && typeof killer.unref === 'function') killer.unref(); } catch (_) {}
+        return;
+      } catch (_) {
+        fallback();
+        return;
+      }
+    }
     try { child.kill(); } catch (_) {}
     try {
-      if (isWin && child.pid) spawn('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true });
-      else if (child.pid) process.kill(child.pid, 'SIGKILL');
+      if (child.pid) process.kill(child.pid, 'SIGKILL');
     } catch (_) {}
   }
 
