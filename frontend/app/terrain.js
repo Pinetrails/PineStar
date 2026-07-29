@@ -680,8 +680,8 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
     label: 'THE MOON',
     blurb: 'Landed on a mare plain. Long shadows, no air, no one coming.',
     base: '#0a0a0b',
-    PATCH: 512,
-    DAPPLE: 768,                      // broad albedo swathes — ray material, not sunlight
+    PATCH: 768,
+    DAPPLE: 1024,                      // broad albedo swathes — ray material, not sunlight
     OVERLAY_ALPHA: 0.06,
     CELL: 96,
 
@@ -710,7 +710,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
           /* regolith is churned powder: broad tonal drift, then a hard 1px hash on top. The hash
              is doing most of the work — dust has no structure at any scale you can see from here,
              only tooth. */
-          const soft = n1(u, v) * 0.30 + n2(u, v) * 0.30 + n3(u, v) * 0.40;
+          const soft = n1(u, v) * 0.16 + n2(u, v) * 0.28 + n3(u, v) * 0.56;
           const col = dither(LT.REG, soft * 0.74 + 0.14, x, y, 17);
           D[p] = col[0]; D[p + 1] = col[1]; D[p + 2] = col[2]; D[p + 3] = 255;
           p += 4;
@@ -770,8 +770,10 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
     crater(c, cx, cy, R, rnd, opt) {
       const o = opt || {}, LT = MOON.LIGHT;
       const fresh = o.fresh !== false;
-      const pop = clamp01((R - 7) / 38);        // 0 = a shallow pit, 1 = a proper crater
-      const K = 64, rad = new Float32Array(K);
+      const pop = (o.ghost ? 0.10 : 1) * clamp01((R - 7) / 38);   // 0 = a pit or a ghost, 1 = a proper crater
+      /* K is the rim's own resolution: each band is stroked segment by segment, so too few
+         segments makes a 12px-wide band out of 9px chords and the crater comes out FACETED. */
+      const K = 144, rad = new Float32Array(K);
       const a1 = 0.010 + rnd() * 0.014, a2 = 0.006 + rnd() * 0.012;
       const p1 = rnd() * TAU, p2 = rnd() * TAU;
       const m1 = 9 + ((rnd() * 4) | 0), m2 = 15 + ((rnd() * 7) | 0);
@@ -808,7 +810,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
          rim — an arc, not a disc. Filling the lit wall as a circle (the first two cuts) drops a
          grey coin into the hole; a bowl is a rim you see the inside of, so the light belongs on
          the wall, and the wall is a band. */
-      ring(0.98, rgb(ramp(LT.REG, fresh ? 0.54 : 0.50)));
+      ring(0.98, rgb(ramp(LT.REG, o.ghost ? 0.48 : fresh ? 0.46 : 0.42)));
       c.save();
       c.beginPath();
       for (let i = 0; i <= K; i++) {
@@ -817,10 +819,26 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         i ? c.lineTo(x, y) : c.moveTo(x, y);
       }
       c.closePath(); c.clip();
-      const down = Math.atan2(-SUN.y, -SUN.x);                              // the wall the sun reaches
-      c.strokeStyle = rgb(ramp(LT.REG, fresh ? 0.88 : 0.68));
-      c.lineWidth = R * 0.30;
-      c.beginPath(); c.arc(cx, cy, R * 0.86, down - 1.25, down + 1.25); c.stroke();
+      /* The lit inner wall runs ALL THE WAY ROUND with its brightness varying by angle — the same
+         law the rim had to learn. Stroking it only from `down-1.25` to `down+1.25` leaves two butt
+         ends inside the bowl, and a bright band that stops dead reads as a strip of tape stuck to
+         the crater floor. It was visible on every mid-size crater in the previous pass. */
+      /* STIPPLED, NOT STROKED. A stroked band has two hard edges, and inside a bowl that reads as
+         a rubber gasket seated in the crater — visible on every mid-size crater until now. Stamping
+         the wall as grain whose density fades to nothing at both edges gives the same lighting with
+         no boundary anywhere, and it lands in the same tooth as the plain. */
+      const wallHi = fresh ? 0.92 : 0.72;
+      for (let i = 0, n = Math.round(R * R * 1.5); i < n; i++) {
+        const th = rnd() * TAU;
+        const t = rnd();                                       // 0 at the floor edge, 1 at the rim
+        const d = R * (0.66 + t * 0.34);
+        if (rnd() > Math.sin(t * Math.PI) * 0.92) continue;    // density profile = the soft edge
+        const facing = -(Math.cos(th) * SUN.x + Math.sin(th) * SUN.y);   // +1 down-sun, -1 up-sun
+        const lit = 0.32 + (wallHi - 0.32) * clamp01(0.5 + facing * 0.72) + (rnd() - 0.5) * 0.22;
+        c.fillStyle = rgb(ramp(LT.REG, lit));
+        c.fillRect(Math.round(cx + Math.cos(th) * d), Math.round(cy + Math.sin(th) * d),
+          1 + ((rnd() * 2) | 0), 1);
+      }
       /* GRAIN INSIDE THE BOWL. Flat fills are the tell of vector art, and a crater made of three
          smooth regions reads as a logo. The same hashed tooth that carries the plain has to run
          through the bowl too, or the two surfaces are visibly different materials. */
@@ -847,7 +865,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
         i ? c.lineTo(x, y) : c.moveTo(x, y);
       }
       c.closePath(); c.clip();
-      const Rs = R * 2.4, chord = R * ((o.deep ? 0.44 : 0.62) + (1 - pop) * 0.30);   // shallow pits, less shade
+      const Rs = R * 2.4, chord = R * ((o.deep ? 0.16 : 0.34) + (1 - pop) * 0.34);   // shallow pits, less shade
       const sx = cx + SUN.x * (Rs + chord), sy = cy + SUN.y * (Rs + chord);
       c.fillStyle = rgb(LT.SHADOW);
       c.beginPath(); c.arc(sx, sy, Rs, 0, TAU); c.fill();
@@ -860,45 +878,55 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
       }
       c.restore();
 
-      /* 4. THE RIM — a bright lip up-sun, dark down-sun. Drawn as a thin arc pair rather than a
-         full ring: a ring of even value reads as a washer, which is what a crater is not. */
-      /* A CONTINUOUS RING, NOT TWO ARCS. Stroking a bright arc from 0.47 to 0.78 of a turn leaves
-         two abrupt ends, and a bright band that stops dead reads as a fingernail lying on the
-         ground. The rim is a ridge all the way round; only its BRIGHTNESS varies, brightest where
-         it faces the sun and darkest on its own shaded back. Drawing it segment by segment gives
-         that gradient without ever drawing an end. */
-      c.lineWidth = Math.max(1.6, R * 0.16);
+      /* 4. THE RIM IS A RIDGE, AND A RIDGE HAS TWO SLOPES.
+         Drawing it as ONE band whose brightness varies by angle — the previous cut — gives a bright
+         circle with a dark circle opposite: a DONUT, an outline of a crater rather than a crater.
+         What makes a raised rim read as raised is that its two slopes disagree. On the up-sun side
+         the OUTER slope faces the sun (bright) while the INNER slope faces away (dark); on the
+         down-sun side both are exactly reversed. So the two bands are lit by the same term with
+         OPPOSITE sign, and it is that disagreement — a light/dark pair crossing the ring — that the
+         eye reads as relief. */
       const RIMPAL = [LT.DARK[0], LT.DARK[1], LT.REG[2], LT.REG[3], LT.REG[4], LT.REG[5], LT.RIM[0], LT.RIM[1]];
       const gain = 0.20 + 0.26 * pop * (fresh ? 1 : 0.62);      // young rims are sharper and brighter
-      for (let i = 0; i < K; i++) {
-        const th0 = (i / K) * TAU, th1 = ((i + 1) / K) * TAU;
-        const facing = -(Math.cos(th0) * SUN.x + Math.sin(th0) * SUN.y);   // +1 down-sun, -1 up-sun
-        const lit = 0.5 - facing * (0.30 + gain) + (h01(i, R | 0, 77) - 0.5) * 0.12;
-        c.strokeStyle = rgb(ramp(RIMPAL, lit));
-        c.beginPath();
-        c.moveTo(cx + Math.cos(th0) * rad[i], cy + Math.sin(th0) * rad[i]);
-        c.lineTo(cx + Math.cos(th1) * rad[(i + 1) % K], cy + Math.sin(th1) * rad[(i + 1) % K]);
-        c.stroke();
-      }
+      const band = (rScale, sign, width) => {
+        c.lineWidth = Math.max(1.2, R * width);
+        /* ROUND CAPS. Each segment is stroked on its own, so with butt caps the neighbours meet at
+           a hairline the alpha-snap then turns into a hard gap — the rim came out COMBED, a set of
+           radial stripes visible at any zoom above 2x. Round caps make consecutive segments
+           overlap, which is what a continuous band needs. */
+        c.lineCap = 'round'; c.lineJoin = 'round';
+        for (let i = 0; i < K; i++) {
+          const th0 = (i / K) * TAU, th1 = ((i + 1) / K) * TAU;
+          const facing = -(Math.cos(th0) * SUN.x + Math.sin(th0) * SUN.y);   // +1 down-sun, -1 up-sun
+          const lit = 0.5 + sign * facing * (0.30 + gain) + (h01(i, R | 0, 77) - 0.5) * 0.12;
+          c.strokeStyle = rgb(ramp(RIMPAL, lit));
+          c.beginPath();
+          c.moveTo(cx + Math.cos(th0) * rad[i] * rScale, cy + Math.sin(th0) * rad[i] * rScale);
+          c.lineTo(cx + Math.cos(th1) * rad[(i + 1) % K] * rScale, cy + Math.sin(th1) * rad[(i + 1) % K] * rScale);
+          c.stroke();
+        }
+      };
+      band(1.07, -1, 0.13);        // outer slope: bright where it faces the sun
+      band(0.93, +1, 0.11);        // inner slope: dark there, bright on the far side
 
       /* 4b. DUST THE RIM. The lip is drawn as a stroke, and a stroke has a clean edge — the one
          thing nothing else on this plain has. Scattering the ramp's own grain across the rim band
          breaks that edge into the same tooth as the regolith, which is what stops the crater
          reading as a sticker laid on top of the ground. */
-      for (let i = 0, n = Math.round(R * R * 0.45); i < n; i++) {
+      for (let i = 0, n = Math.round(R * R * 0.16); i < n; i++) {
         const th = rnd() * TAU;
-        const d = R * (0.90 + rnd() * 0.26);
+        const d = R * (0.97 + rnd() * 0.14);
         const x = cx + Math.cos(th) * d, y = cy + Math.sin(th) * d;
         const sun = -(Math.cos(th) * SUN.x + Math.sin(th) * SUN.y);        // +1 down-sun, -1 up-sun
-        const lit = 0.52 - sun * 0.34 + (rnd() - 0.5) * 0.34;
+        const lit = 0.52 - sun * 0.40 + (rnd() - 0.5) * 0.26;
         c.fillStyle = rgb(ramp(LT.REG, lit));
         c.fillRect(Math.round(x), Math.round(y), 1 + ((rnd() * 2) | 0), 1);
       }
 
       // 5. CENTRAL PEAK — only big craters rebound one, and it is lit like a boulder: the OPPOSITE
       //    side from the bowl, which is exactly what sells the bowl as a bowl.
-      if (R >= 46) {
-        const pr = R * (0.14 + rnd() * 0.07);
+      if (R >= 62) {
+        const pr = R * (0.13 + rnd() * 0.06);
         c.fillStyle = rgb(LT.SHADOW);
         c.beginPath(); c.ellipse(cx - SUN.x * pr * 1.5, cy - SUN.y * pr * 1.5, pr * 0.95, pr * 0.6, 0, 0, TAU); c.fill();
         c.fillStyle = rgb(ramp(LT.REG, 0.55));
@@ -910,6 +938,80 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
       /* NO TERRACES. Slumped walls are real, but two concentric arcs inside a 60px bowl read as
          pen strokes on every frame they appeared in — a detail that only survives at a scale this
          camera never reaches is a decoration, not a detail. */
+
+      /* 6. RAYS — the splash of fresh material a young impact throws for many crater diameters.
+         This is the one lunar feature that operates at a LARGER scale than the crater itself, and
+         it is why a real mare never looks like an evenly-pocked field: a couple of ray systems cut
+         right across everything and give the plain a direction. Only the young get them, and each
+         ray is stippled, not filled — it is dust thrown thin, and the ground shows through it. */
+      if (o.rays) {
+        const nRay = 9 + ((rnd() * 7) | 0);
+        for (let r = 0; r < nRay; r++) {
+          const a0 = rnd() * TAU;
+          const spread = 0.05 + rnd() * 0.10;
+          const reach = R * (2.0 + rnd() * 1.9);
+          for (let i = 0, n = Math.round(R * 16); i < n; i++) {
+            const t = Math.pow(rnd(), 0.7);                       // dense near the rim, thin far out
+            const d = R * 1.12 + t * (reach - R * 1.12);
+            const a = a0 + (rnd() - 0.5) * spread * (0.4 + t);    // the wedge widens with distance
+            if (rnd() > 1 - t * 0.86) continue;                   // thins out rather than stopping
+            const x = cx + Math.cos(a) * d, y = cy + Math.sin(a) * d;
+            c.fillStyle = rgb(ramp(LT.REG, 0.70 + rnd() * 0.30));
+            c.fillRect(Math.round(x), Math.round(y), 1 + ((rnd() * 2) | 0), 1);
+          }
+        }
+      }
+    },
+
+    /* ---- WRINKLE RIDGES — the large-scale relief a mare actually has ----
+       A plain of nothing but craters reads as a texture with dots on it: every feature is the same
+       size and roughly round, so there is no composition at any scale bigger than one crater. Real
+       mare basalt is crossed by wrinkle ridges — long, low, sinuous swells, hundreds of px of gentle
+       rise, and under a low sun they are the most legible thing out there.
+
+       BUILT AS CHAINABLE SEGMENTS, not drawn per frame. Stamping a ridge pixel by pixel in world
+       space would be twenty thousand fillRects a frame; instead each segment sprite carries its
+       crest through the vertical CENTRE at both its left and right edges, so any two segments in
+       any order join seamlessly and a lane of them is one continuous ridge for the cost of four
+       drawImage calls. */
+    buildRidges(rnd) {
+      /* CHAINED BY ENDPOINT LEVEL, so a lane is not a straight line.
+         The first cut gave every segment the same crest height at both edges, which chains
+         perfectly — and produces a dead-horizontal ridge running the full width of the world.
+         Two of those across a frame read as seams, not landforms. Instead each segment declares a
+         START level and an END level from {-1,0,+1}; the placer picks the level per column with a
+         hash, so segment N's end always matches segment N+1's start and the lane wanders diagonally
+         with no discontinuity anywhere. Wang tiles, essentially, in one dimension. */
+      const LT = MOON.LIGHT, W = 320, H = 320, STEP = H * 0.22, out = [];
+      for (let a = -1; a <= 1; a++) {
+        for (let b = -1; b <= 1; b++) {
+          const cv = mkCv(W, H), c = cv.getContext('2d');
+          const bulge = (H * 0.10) * (rnd() - 0.5) * 2;
+          const halfW = 42;                                  // SHARED: width must match at the joins
+          const wob = rnd() * TAU;
+          for (let x = 0; x < W; x++) {
+            const u = x / W;
+            const s = u * u * (3 - 2 * u);                      // smoothstep between the two levels
+            const crest = H / 2 + (a * STEP) + (b - a) * STEP * s
+              + bulge * Math.sin(u * Math.PI) * (0.7 + 0.3 * Math.sin(u * Math.PI * 3 + wob));
+            const w = halfW * (0.66 + 0.34 * Math.sin(u * Math.PI * 2));   // = 0.66 at both ends
+            for (let k = -w; k <= w; k++) {
+              const t = k / w;                                 // -1 up-sun flank, +1 down-sun flank
+              const edge = 1 - Math.abs(t);
+              /* DITHERED FALLOFF. A ridge with an edge is a wall; the swell has to fade into the
+                 plain, and the only way to fade without drawing a contour is to thin the stipple. */
+              const yy = Math.round(crest + k);
+              if (yy < 0 || yy >= H) continue;
+              if (h01(x, yy, 98 + a * 3 + b) > edge * 0.92) continue;
+              const lit = 0.5 - t * 0.62 + (h01(x, yy, 55) - 0.5) * 0.20;
+              c.fillStyle = rgb(ramp(LT.REG, lit));
+              c.fillRect(x, yy, 1, 1);
+            }
+          }
+          out.push({ kind: 'ridge', cv, ox: 0, oy: H / 2, R: W, W, H, a, b, z: -1 });
+        }
+      }
+      return out;
     },
 
     buildSprites(rnd) {
@@ -917,25 +1019,42 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
       const out = [];
       const add = (kind, cv, ox, oy, R) => out.push({ kind, cv: hardEdge(cv), ox, oy, R });
 
-      /* BASINS — the rare big ones with peaks and terraces. */
-      for (let v = 0; v < 3; v++) {
+      /* AGE IS THE VARIABLE THAT MATTERS. A plain where every crater is equally deep and equally
+         fresh reads as a stamp repeated, however good the stamp is — and that was the last thing
+         wrong with this ground. A real mare holds the whole sequence at once: yesterday's sharp
+         bright ray crater, a middle-aged bowl, and a ghost whose rim has been sandblasted almost
+         flat. So depth, rim gain, ejecta and rays all ride one `age` value per variant. */
+
+      /* BASINS — the rare big ones, with a rebound peak. One in three is a young ray system. */
+      for (let v = 0; v < 4; v++) {
         const R = 62 + Math.round(rnd() * 34);
-        const S = Math.ceil(R * 4.6), cx = S / 2, cy = S / 2;
+        const rays = v === 0;
+        const S = Math.ceil(R * (rays ? 8.2 : 4.6)), cx = S / 2, cy = S / 2;
         const cv = mkCv(S, S), c = cv.getContext('2d');
-        MOON.crater(c, cx, cy, R, rnd, { fresh: rnd() < 0.6, deep: true });
+        MOON.crater(c, cx, cy, R, rnd, { fresh: v < 2, deep: v % 2 === 0, rays });
         add('basin', cv, cx, cy, R);
       }
-      /* CRATERS — the everyday size, half of them old and subdued. */
-      for (let v = 0; v < 8; v++) {
-        const R = 22 + Math.round(rnd() * 30);
-        const S = Math.ceil(R * 4.6), cx = S / 2, cy = S / 2;
+      /* CRATERS — the everyday size, across the whole age range. */
+      for (let v = 0; v < 14; v++) {
+        const R = 17 + Math.round(rnd() * 42);
+        const rays = v === 1;
+        const S = Math.ceil(R * (rays ? 8.2 : 4.6)), cx = S / 2, cy = S / 2;
         const cv = mkCv(S, S), c = cv.getContext('2d');
-        MOON.crater(c, cx, cy, R, rnd, { fresh: v % 2 === 0 });
+        MOON.crater(c, cx, cy, R, rnd, { fresh: v % 3 !== 2, deep: v % 3 === 0, rays });
         add('crater', cv, cx, cy, R);
       }
+      /* GHOSTS — old craters nearly buried: a trace of rim, no shadow worth the name. They are what
+         makes the sharp ones look sharp. */
+      for (let v = 0; v < 6; v++) {
+        const R = 24 + Math.round(rnd() * 48);
+        const S = Math.ceil(R * 3.4), cx = S / 2, cy = S / 2;
+        const cv = mkCv(S, S), c = cv.getContext('2d');
+        MOON.crater(c, cx, cy, R, rnd, { fresh: false, ghost: true });
+        add('ghost', cv, cx, cy, R);
+      }
       /* PITS — small, sharp, everywhere. These are what make the plain feel worked over. */
-      for (let v = 0; v < 8; v++) {
-        const R = 6 + Math.round(rnd() * 11);
+      for (let v = 0; v < 11; v++) {
+        const R = 5 + Math.round(rnd() * 13);
         const S = Math.ceil(R * 4.2), cx = S / 2, cy = S / 2;
         const cv = mkCv(S, S), c = cv.getContext('2d');
         MOON.crater(c, cx, cy, R, rnd, { fresh: v % 3 !== 0 });
@@ -978,8 +1097,30 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
        Three grids at three scales, because a cratered plain IS a scale hierarchy and one grid can
        only ever produce one size of thing evenly spread — the definition of a texture. */
     place(push, x0, y0, x1, y1, clr, scale, pools) {
+      /* THE RIDGES FIRST — chained left to right along their lane. Each segment's crest passes
+         through its own vertical centre at both edges, so consecutive segments join exactly and
+         the lane reads as one ridge running off both sides of the screen. They carry z = -1, so
+         the sort paints every crater and boulder over them. */
+      const ridges = pools.ridge;
+      if (ridges && ridges.length) {
+        const W = ridges[0].W || 320, LANE = 880;
+        /* the level a lane sits at in column sx — a pure hash, so the segment placed at sx always
+           ENDS where the segment at sx+1 STARTS, no matter which column the scan begins from. */
+        const level = (lane, sx) => ((h01(sx, lane, 94) * 3) | 0) - 1;
+        for (let lane = Math.floor(y0 / LANE) - 1; lane <= Math.ceil(y1 / LANE); lane++) {
+          if (h01(lane, 0, 91) > 0.52) continue;               // not every lane carries one
+          const laneY = lane * LANE + h01(lane, 1, 92) * LANE * 0.8;
+          for (let sx = Math.floor(x0 / W) - 1; sx <= Math.ceil(x1 / W); sx++) {
+            const a = level(lane, sx), b = level(lane, sx + 1);
+            const sp = ridges.find(r => r.a === a && r.b === b) || ridges[0];
+            push(sp, sx * W, laneY);
+          }
+        }
+      }
+
       const grids = [
-        { C: 520, key: 'basin', p: 0.34, salt: 1, lod: 0 },
+        { C: 520, key: 'basin', p: 0.30, salt: 1, lod: 0 },
+        { C: 300, key: 'ghost', p: 0.34, salt: 5, lod: 0 },
         { C: 190, key: 'crater', p: 0.40, salt: 2, lod: 0 },
         { C: 74, key: 'pit', p: 0.44, salt: 3, lod: 0.75 },
         { C: 74, key: 'rock', p: 0.30, salt: 4, lod: 1.1 },
@@ -1022,7 +1163,7 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
     const rnd = mulberry32(0x0FE57);         // fixed: the ground is a place, not a dice roll
     const patchCv = G.buildPatch(rnd);
     const dappleCv = G.buildOverlay ? G.buildOverlay(rnd) : null;
-    const sprites = G.buildSprites(rnd);
+    const sprites = G.buildSprites(rnd).concat(G.buildRidges ? G.buildRidges(rnd) : []);
     const pools = {};
     for (const s of sprites) (pools[s.kind] || (pools[s.kind] = [])).push(s);
     st = { patchCv, dappleCv, pattern: null, dapplePat: null, sprites, pools };
@@ -1092,7 +1233,9 @@ const Terrain = (typeof document === 'undefined') ? { active: () => false } : ((
        crown must cover the one behind it, and undergrowth must sit under the tree it grows beside.
        Sorting by world y is exactly the painter's order for a top-down-with-a-tilt camera. */
     const view = ITEMS.slice(0, itemN);
-    view.sort((a, b) => a.y - b.y);
+    /* z first, then y: a wrinkle ridge is RELIEF IN the ground, so anything that stands ON the
+       ground must paint over it regardless of where it sits. */
+    view.sort((a, b) => ((a.sp.z || 0) - (b.sp.z || 0)) || (a.y - b.y));
     for (let i = 0; i < view.length; i++) {
       const it = view[i], sp = it.sp;
       ctx.drawImage(sp.cv, Math.round(it.x - sp.ox), Math.round(it.y - sp.oy));
