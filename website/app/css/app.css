@@ -1437,6 +1437,65 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .lv-retry:hover { color: var(--ph-bright); border-color: var(--ph); box-shadow: var(--raise), 0 0 10px var(--ph-glow2); }
 
+
+/* ================= SIZE LADDER (candidates — one survives) =================
+   210x103 was still too big. These are the same module with progressively less in it, so the
+   question stops being "which design" and becomes "how much of it do you want at all". Each step
+   removes a whole ROW, not a few pixels — that is where the height actually lives.
+
+   What every step keeps: the frame (it pops up, it is its own thing), the state colour ladder, the
+   live level, a grabbable head, a reachable ✕. What it drops is text. */
+
+/* ---- s1 · 150x52 — the state word and the level. Transcript moves to hover: it is the thing you
+   read once, not the thing you watch. ---- */
+.live-voice-panel[data-skin="s1"] { width: 150px; padding: 5px 7px 6px; gap: 4px; }
+.live-voice-panel[data-skin="s1"] .lv-state { font-size: 9px; letter-spacing: var(--ls-1); }
+.live-voice-panel[data-skin="s1"] .lv-meter { height: 24px; padding: 0 5px; }
+.live-voice-panel[data-skin="s1"] .lv-wave { height: 15px; }
+.live-voice-panel[data-skin="s1"] .lv-wave i { height: 14px; }
+.live-voice-panel[data-skin="s1"] .lv-heard { display: none; }
+.live-voice-panel[data-skin="s1"]:hover .lv-heard,
+.live-voice-panel[data-skin="s1"]:focus-within .lv-heard { display: -webkit-box; -webkit-line-clamp: 2; }
+.live-voice-panel[data-skin="s1"] .lv-say { display: none; }
+
+/* ---- s2 · 112x34 — no words at all: a pip for state, a level for everything else. The state word
+   and the transcript both live on hover. ---- */
+.live-voice-panel[data-skin="s2"] { width: 112px; padding: 4px 6px 5px; gap: 3px; }
+.live-voice-panel[data-skin="s2"] .lv-head { flex: 0 0 auto; position: absolute; top: 5px; left: 7px; z-index: 8; }
+.live-voice-panel[data-skin="s2"] .lv-state { display: none; }
+.live-voice-panel[data-skin="s2"]:hover .lv-state,
+.live-voice-panel[data-skin="s2"]:focus-within .lv-state { display: block; font-size: 9px; }
+.live-voice-panel[data-skin="s2"] .lv-stage { padding-left: 11px; }
+.live-voice-panel[data-skin="s2"] .lv-meter { height: 20px; padding: 0 4px; border-radius: 2px; }
+.live-voice-panel[data-skin="s2"] .lv-wave { height: 13px; gap: 1px; }
+.live-voice-panel[data-skin="s2"] .lv-wave i { height: 12px; }
+.live-voice-panel[data-skin="s2"] .lv-heard { display: none; }
+.live-voice-panel[data-skin="s2"]:hover .lv-heard,
+.live-voice-panel[data-skin="s2"]:focus-within .lv-heard { display: -webkit-box; -webkit-line-clamp: 2; }
+.live-voice-panel[data-skin="s2"] .lv-say { display: none; }
+
+/* ---- s3 · 84x26 — the floor. One row: pip, level, nothing else. Below this the bars stop being
+   readable as a level and it may as well be a dot. ---- */
+.live-voice-panel[data-skin="s3"] { width: 84px; padding: 3px 5px 4px; gap: 3px; }
+.live-voice-panel[data-skin="s3"] .lv-head { flex: 0 0 auto; position: absolute; top: 4px; left: 5px; z-index: 8; }
+.live-voice-panel[data-skin="s3"] .lv-state { display: none; }
+.live-voice-panel[data-skin="s3"]:hover .lv-state,
+.live-voice-panel[data-skin="s3"]:focus-within .lv-state { display: block; font-size: 9px; }
+.live-voice-panel[data-skin="s3"] .lv-stage { padding-left: 10px; }
+.live-voice-panel[data-skin="s3"] .lv-meter { height: 16px; padding: 0 3px; border-radius: 2px; }
+.live-voice-panel[data-skin="s3"] .lv-wave { height: 11px; gap: 2px; }
+.live-voice-panel[data-skin="s3"] .lv-wave i { height: 10px; }
+/* 17 bars across 74px is 3px each and reads as noise, not a level. Show every other one: the
+   window is still the same rolling history, just sampled — nothing is invented to fill the row. */
+.live-voice-panel[data-skin="s3"] .lv-wave i:nth-child(even) { display: none; }
+.live-voice-panel[data-skin="s3"] .lv-heard,
+.live-voice-panel[data-skin="s3"] .lv-say { display: none; }
+.live-voice-panel[data-skin="s3"]:hover .lv-heard,
+.live-voice-panel[data-skin="s3"]:focus-within .lv-heard { display: -webkit-box; -webkit-line-clamp: 2; }
+/* at this size the ✕ would own a third of the module, so ending live voice is the composer's LIVE
+   toggle (and Escape) rather than a 10px target you would hit by accident */
+.live-voice-panel[data-skin="s3"] .lv-x { display: none; }
+
 @media (prefers-reduced-motion: reduce) {
   .live-voice-panel { animation: none; }
   .lv-pip { animation: none !important; }

@@ -114,7 +114,15 @@ const STATES = (process.env.STATES || 'listening,hearing,thinking,speaking,offli
 for (const skin of SKINS) {
   // the skin switcher was a candidate-picking scaffold and is gone now that the design is settled;
   // SKINS= still works against any build that kept it, and is a no-op against one that did not
-  await evalJS(cdp, `(typeof VoiceLive.setSkin === 'function' ? VoiceLive.setSkin(${JSON.stringify(skin)}) : 'no-switcher')`);
+  // SKINS= drives the candidate attribute directly. It used to call VoiceLive.setSkin(), but that
+  // switcher is scaffolding for CHOOSING a design and gets deleted once one is chosen — stamping
+  // data-skin keeps this sweep usable for the next round without re-adding a live API.
+  await evalJS(cdp, `(() => {
+    const p = document.getElementById('live-voice-panel');
+    if (typeof VoiceLive.setSkin === 'function') return VoiceLive.setSkin(${JSON.stringify(skin)});
+    p.dataset.skin = ${JSON.stringify(skin)};
+    return p.dataset.skin;
+  })()`);
   for (const theme of THEMES) {
     await evalJS(cdp, `(() => {
       document.body.className = document.body.className.replace(/\\btheme-\\S+/g, '').trim();
