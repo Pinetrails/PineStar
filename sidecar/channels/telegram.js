@@ -193,12 +193,48 @@
     return out;
   }
 
+  /* Is there anything in this Message a member could expect an answer to? Text (even empty), ingestible bytes,
+     or a describable payload. Shared by every message-shaped update kind so a photo in a channel post and a
+     photo in a DM are admitted by the SAME rule. */
+  function hasContent(m) {
+    return !!m && (typeof m.text === 'string' || mediaOf(m).length > 0 || !!describeOf(m));
+  }
+
   function normalize(u) {
     if (!u || typeof u.update_id !== 'number') return null;   // not a real update -> skip without advancing
     const offset = u.update_id;
-    if (u.message && (typeof u.message.text === 'string' || mediaOf(u.message).length || describeOf(u.message))) {
-      const m = u.message;
+    /* FOUR message-shaped update kinds, ONE parse. Telegram delivers the same Message object under four
+       different keys, and reading only `message` is why an edit changed nothing and a broadcast channel was
+       silence. `edited` and `channelPost` ride out as flags rather than as separate shapes, so the policy
+       question ("should an edit re-run?", "who sent a post with no `from`?") is answered once, downstream,
+       instead of four times here. */
+    const msgSrc = u.message ? { m: u.message, edited: false, post: false }
+      : u.edited_message ? { m: u.edited_message, edited: true, post: false }
+      : u.channel_post ? { m: u.channel_post, edited: false, post: true }
+      : u.edited_channel_post ? { m: u.edited_channel_post, edited: true, post: true }
+      : null;
+    /* my_chat_member — OUR OWN membership changed: we were added, promoted, blocked or kicked. Being blocked was
+       invisible before, so the notifier kept posting into a chat that could never receive it. Reported as a
+       neutral third shape (neither a message nor a callback) because the consumer is a store update, not a run. */
+    if (u.my_chat_member) {
+      const mc = u.my_chat_member;
+      const chat = mc.chat || {};
+      const nw = mc.new_chat_member || {};
+      if (chat.id == null || !nw.status) return { offset: offset, message: null };
+      return { offset: offset, membership: {
+        chatId: chat.id,
+        chatType: chat.type === 'private' ? 'dm' : 'group',
+        status: String(nw.status),                                  // 'member'|'administrator'|'left'|'kicked'|'restricted'|'creator'
+        byUserId: (mc.from && mc.from.id) == null ? '' : String(mc.from.id)
+      } };
+    }
+    if (msgSrc && hasContent(msgSrc.m)) {
+      const m = msgSrc.m;
       const chat = m.chat || {};
+      /* A CHANNEL POST HAS NO `from`. The author is the channel itself (`sender_chat`), optionally with an
+         `author_signature`. Reading `from` blindly would leave userId/userName empty on every broadcast post —
+         and, worse, would make the is_bot check silently vacuous on the one surface where the bot can hear its
+         own voice. That echo is stopped by message-id in adapter.js, not here. */
       const from = m.from || {};
       const media = mediaOf(m);
       // A descriptor never overwrites real text: it is the text for a payload that HAS none (a bare location, an
@@ -208,10 +244,12 @@
         chatId: chat.id,
         chatType: chat.type === 'private' ? 'dm' : 'group',
         userId: from.id,
-        userName: from.username || from.first_name,
+        userName: from.username || from.first_name || m.author_signature || undefined,
         text: written || describeOf(m) || '',
         messageId: m.message_id
       };
+      if (msgSrc.edited) msg.edited = true;         // the hub decides whether a correction earns a fresh run
+      if (msgSrc.post) msg.channelPost = true;      // a broadcast post: no human sender, and it can echo back to us
       if (from.is_bot) msg.fromBot = true;                       // another BOT is talking — the adapter drops these
       /* WHICH FORUM TOPIC this arrived in, so the answer can go back to it. Read ONLY for a real topic message:
          in a plain supergroup Telegram also sets message_thread_id on a reply chain, and echoing that back as a

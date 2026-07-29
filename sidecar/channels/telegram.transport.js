@@ -22,7 +22,19 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (fmt) {
   'use strict';
 
-  const ALLOWED_UPDATES = ['message', 'callback_query'];   // ignore edited/channel/poll/etc. updates server-side
+  /* WHAT TELEGRAM IS ALLOWED TO SEND US. This list is a SUBSCRIPTION, not a filter: an update kind that is not
+     named here is never delivered at all, so anything missing is a kind the bot is structurally deaf to.
+
+     'edited_message'      — a member fixing a typo used to change nothing; we answered the typo.
+     'channel_post' + its edit — added to a broadcast channel, the bot was completely deaf. There is no `from`
+                             on a channel post, so the echo guard in adapter.js (not an is_bot check) is what
+                             stops the bot answering its own posts.
+     'my_chat_member'      — being blocked or kicked. Subscribed together with its consumer (the chat is marked
+                             unreachable and its queued backlog is dropped); a detected fact with no reader is
+                             one of this project's named bug classes.
+     Deliberately still absent: 'message_reaction' (we SET reactions, we do not need to hear other people's),
+     'poll'/'poll_answer', 'chat_member', 'chat_join_request' — each would be traffic with no consumer. */
+  const ALLOWED_UPDATES = ['message', 'edited_message', 'channel_post', 'edited_channel_post', 'callback_query', 'my_chat_member'];
   const DEFAULT_API_BASE = 'https://api.telegram.org';
 
   // ---- outbound media limits + method table (Bot API facts, not our policy) ----
@@ -325,6 +337,26 @@
           return { ok: false, error: redact((data && data.description) || ('http ' + code)) };
         } catch (e) {
           return { ok: false, error: errOf(e, 'network error') };
+        }
+      },
+
+      /* setMessageReaction — the cheapest possible "I heard you": one API call, no message, no chunking, and
+         nothing for the member to scroll past. A 👀 goes on the question while the run is thinking and is
+         cleared when the answer lands, so the acknowledgement never outlives the thing it acknowledges.
+
+         `emoji` empty/absent CLEARS every reaction we set. Bots may only use emoji from Telegram's fixed
+         reaction set — an unlisted one is a 400, which is why the choice lives in the hub as a constant rather
+         than being configurable prose. NEVER throws, and every caller treats a failure as nothing: a bot without
+         the react permission simply shows no tick, and the reply is unaffected. */
+      async setReaction(chatId, messageId, emoji) {
+        try {
+          const reaction = emoji ? [{ type: 'emoji', emoji: String(emoji) }] : [];
+          const { data, res } = await call('setMessageReaction', { chat_id: chatId, message_id: messageId, reaction: reaction });
+          if (data && data.ok) return { ok: true };
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          return { ok: false, error: redact((data && data.description) || ('http ' + code)), retryable: code === 429 || code >= 500 };
+        } catch (e) {
+          return { ok: false, error: errOf(e, 'network error'), retryable: true };
         }
       },
 

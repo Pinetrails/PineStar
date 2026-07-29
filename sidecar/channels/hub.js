@@ -447,17 +447,33 @@
        Fields are neutral ({ threadId, replyTo }); only telegram.transport.js knows the Bot API's names, and the
        other four transports ignore opts they do not recognise, so their behaviour is byte-identical. */
     const MAX_ROUTES = 500;
-    const routes = new Map();   // chatId -> { threadId, replyTo }
+    const routes = new Map();   // chatId -> { threadId, replyTo, lastMessageId }
     function noteRoute(msg) {
       const chatId = String(msg.chatId);
       const threadId = (msg.threadId == null || msg.threadId === '') ? '' : String(msg.threadId);
       // Quoting in a DM is noise — there is only one other person and nothing to disambiguate. Groups only,
       // which is also where a detached answer actually costs the reader something.
       const replyTo = (msg.chatType === 'group' && msg.messageId != null && msg.messageId !== '') ? String(msg.messageId) : '';
+      const lastMessageId = (msg.messageId == null || msg.messageId === '') ? '' : String(msg.messageId);
       routes.delete(chatId);                        // re-insert so Map iteration order is least-recently-used first
-      if (!threadId && !replyTo) return;            // a plain DM keeps no route at all
-      routes.set(chatId, { threadId: threadId, replyTo: replyTo });
+      routes.set(chatId, { threadId: threadId, replyTo: replyTo, lastMessageId: lastMessageId });
       while (routes.size > MAX_ROUTES) { const k = routes.keys().next().value; routes.delete(k); }
+    }
+
+    /* IS THIS EDIT WORTH A FRESH RUN?
+       Telegram now delivers `edited_message`, which closes a real gap — fixing a typo used to change nothing and
+       the bot went on answering the typo. But "an edit is just another message" is too blunt: editing something
+       from last week would fire a run out of nowhere, and it would be spend the member never asked for.
+
+       The bound is the narrowest one that still fixes the case people actually hit: an edit counts only when it
+       edits the LAST message we saw in that chat. Anything older is somebody tidying history, not asking again.
+       No record (a fresh boot) also declines — we cannot tell an ancient edit from a fresh one, and inventing a
+       run is worse than doing nothing. When it IS accepted, the supersede rule downstream does the rest: a
+       correction made while the bot is still thinking aborts the stale run and re-answers the corrected text. */
+    function editIsCurrent(msg) {
+      const r = routes.get(String(msg.chatId));
+      if (!r || !r.lastMessageId) return false;
+      return String(msg.messageId || '') === r.lastMessageId;
     }
     // first=true asks for the quote as well (and spends it). Returns null when this chat has no route, so the
     // send call is byte-identical to before on every platform that never sets one.
@@ -468,6 +484,35 @@
       if (r.threadId) out.threadId = r.threadId;
       if (first && r.replyTo) { out.replyTo = r.replyTo; r.replyTo = ''; }
       return (out.threadId || out.replyTo) ? out : null;
+    }
+
+    /* ---- REACTION ACK: "I heard you", for the price of one API call -----------------------------------------
+       The typing bubble answers "is it working?" only while you are looking at the chat. A reaction is durable:
+       put 👀 on the question when the run starts, take it off when the answer lands. It costs no message, adds
+       nothing to scroll past, and it is the one acknowledgement that still reads correctly when the member comes
+       back twenty minutes later — a run that is still thinking is still marked.
+
+       Purely cosmetic, and it must stay that way: transport-optional (a channel without reactions returns
+       ok:false and we never try again for that run), every failure swallowed, and the clear is best-effort. The
+       emoji is a CONSTANT, not a setting — bots may only use Telegram's fixed reaction set and an unlisted emoji
+       is a 400 that would make the ack look broken. */
+    const ACK_EMOJI = '👀';
+    const setReaction = typeof o.setReaction === 'function' ? o.setReaction : null;
+    const reactionAck = o.reactionAck !== false;   // opt-out for a host that finds it noisy; on by default
+    function startAck(chatId, messageId) {
+      if (!setReaction || !reactionAck || messageId == null || messageId === '') return function () {};
+      let armed = false, cleared = false;
+      const set = Promise.resolve()
+        .then(() => setReaction(chatId, messageId, ACK_EMOJI))
+        .then(r => { armed = !!(r && r.ok); })
+        .catch(() => {});
+      return function () {
+        if (cleared) return;
+        cleared = true;
+        // Wait for the SET to resolve before clearing: a clear that overtakes its own set leaves the 👀 stuck on
+        // a question that was answered ages ago — the exact "the app asserts state the harness can't prove" bug.
+        set.then(() => { if (armed) return setReaction(chatId, messageId, ''); }).catch(() => {});
+      };
     }
 
     // ---- typing keep-alive: refresh the platform's "typing…" bubble while a run is in flight ---------------
@@ -526,7 +571,18 @@
       // 'prompt' joins 'command' as ephemeral: a permission ask whose keyboard failed to send is answered by the
       // host's fail-closed timer within seconds — redelivering that dead question hours later would invite a tap
       // on a run that ended long ago.
-      if (!ok && reason !== 'command' && reason !== 'prompt' && typeof store.pushOutbox === 'function') {
+      // …unless the chat is KNOWN unreachable. Queueing for a chat that blocked us is not resilience, it is a
+      // pile of retries that can only ever fail — and every one of them is an API call. See onMembership.
+      // Read the record only on the failure path: this runs on every delivered message, and the happy path must
+      // not pay a store read to answer a question that only matters when a send has already failed.
+      let unreachable = false;
+      if (!ok) {
+        try { const r0 = typeof store.getChatRecord === 'function' ? store.getChatRecord(String(chatId)) : null; unreachable = !!(r0 && r0.unreachable); } catch (_) {}
+      }
+      if (!ok && unreachable) {
+        try { console.error('[' + channel + '] reply for chat ' + chatId + ' NOT queued — this chat has blocked or removed the bot'); } catch (_) {}
+      }
+      if (!ok && !unreachable && reason !== 'command' && reason !== 'prompt' && typeof store.pushOutbox === 'function') {
         try {
           const remainder = '⌛ delayed reply — the channel was unreachable when this was first sent:\n' + chunks.slice(failedAt).join('');
           store.pushOutbox({ channel: channel, chatId: String(chatId), text: remainder, runId: runId || '', agentId: agentId ? String(agentId) : '', reason: reason || '' });
@@ -554,6 +610,11 @@
       try {
         const items = store.loadOutbox(channel);
         for (const it of items) {
+          // A chat that blocked us cannot be redelivered to. onMembership already drops its backlog, but a flush
+          // racing that drop would otherwise spend a failed send per item and then stop the whole pass.
+          let dead = false;
+          try { const r0 = typeof store.getChatRecord === 'function' ? store.getChatRecord(String(it.chatId)) : null; dead = !!(r0 && r0.unreachable); } catch (_) {}
+          if (dead) { try { store.removeOutbox(it.id); } catch (_) {} continue; }
           const chunks = chunkText(it.text, maxMessageLength);
           let ok = true;
           for (const c of chunks) {
@@ -912,9 +973,26 @@
       const hasMedia = !!(msg && Array.isArray(msg.media) && msg.media.length);
       if (!msg || (!msg.text && !hasMedia)) return;   // empty update; media-only messages ARE admitted
       const chatId = String(msg.chatId);
+      // An edit is only a question if it edits the thing we last heard — checked BEFORE noteRoute overwrites the
+      // record it reads. Declining is silent by design: the member sees their own edit, and a bot that pipes up
+      // about a two-week-old correction is worse than one that stays out of it.
+      if (msg.edited && !editIsCurrent(msg)) {
+        try { console.log('[' + channel + '] ignoring an edit of an older message in chat ' + chatId); } catch (_) {}
+        return;
+      }
       // Remember where this came from BEFORE anything can reply — the very first deliver() below (a command
       // answer, a config error) must already land in the right topic, not just the run's final reply.
       noteRoute(msg);
+      /* THEY ARE BACK. A chat marked unreachable (we were blocked or kicked) has just spoken, which is proof the
+         block is over — clear the flag here rather than waiting for a `my_chat_member` we may never be sent.
+         A stale unreachable flag would suppress this chat's outbox forever, which is the failure mode that made
+         the flag worth having in the first place, pointed the other way. */
+      if (typeof store.getChatRecord === 'function' && typeof store.saveChatRecord === 'function') {
+        try {
+          const rec0 = store.getChatRecord(chatId);
+          if (rec0 && rec0.unreachable) store.saveChatRecord(chatId, { unreachable: false });
+        } catch (_) {}
+      }
 
       // Runtime config (live each message): { key?, model, provider?, agentId?, system? }. When the app supplies the
       // REAL agentId + composed system prompt at connect, Telegram runs as the SAME agent as in the app —
@@ -1026,6 +1104,8 @@
       // the finally BEFORE deliver() so the bubble can expire rather than linger past the answer. The wrapper
       // try/finally does not re-indent the body (matches this file's existing low-indent try style below).
       const stopTyping = startTyping(chatId);
+      // …and mark the QUESTION itself, which survives the member closing the app. Cleared in the same finally.
+      const clearAck = startAck(chatId, msg.messageId);
       // hoisted OUT of the typing try-block: deliver() below the finally reads all three.
       let state = null;          // the LAST attempt's assembled state (buf/errMsg/reason/transient)
       let lastRunId = '';        // the runId actually delivered under (the last attempt's)
@@ -1067,7 +1147,12 @@
       const bodyText = spoken ? (attributed ? attributed + '\n' + spoken : spoken) : attributed;
       // The words only became available just now — classify them, or a spoken task runs without the task prompt.
       if (spoken && !isTask) { try { isTask = !!classify(mediaIngest.transcripts.join(' ')); } catch (_) {} }
-      const turnText = (replyLead ? replyLead + '\n\n' : '') + bodyText
+      /* AN EDIT IS A CORRECTION, AND IT MUST SAY SO. The original text is already in history — replaying it
+         followed by a near-identical turn reads to the model as the member saying two slightly different things
+         and can have it answer both, or split the difference. One line naming what happened is the difference
+         between "they repeated themselves" and "the earlier version is void". */
+      const editLead = msg.edited ? '[the previous message was edited — this is the corrected version, treat it as replacing what came before]' : '';
+      const turnText = (editLead ? editLead + '\n' : '') + (replyLead ? replyLead + '\n\n' : '') + bodyText
         + (mediaIngest.notes.length ? ((bodyText ? '\n' : '') + mediaIngest.notes.join('\n')) : '');
 
       // durable transcript: load prior turns, persist the new user turn, build the replay messages. The persisted
@@ -1305,7 +1390,7 @@
         if (state.reason && state.reason !== 'done') reply += endNote(state.reason, state);
       }
 
-      } finally { stopTyping(); }   // cease refreshes BEFORE deliver — the bubble must die with the reply, not after
+      } finally { stopTyping(); clearAck(); }   // both die BEFORE deliver — neither may outlive the reply it announced
       const dr = await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), finalAgentId,
         choiceEntry ? { reply_markup: keyboardFor(choiceEntry) } : undefined);
       // Stitch the delivered message onto the keyboard's registry entry so a tap can edit THAT message in place.
@@ -1386,9 +1471,40 @@
       if (s && s.state === 'up') { try { const p = flushOutbox(); if (p && typeof p.catch === 'function') p.catch(function () {}); } catch (_) {} }
     }
 
+    /* OUR OWN MEMBERSHIP CHANGED — we were blocked, kicked, or let back in.
+       This was invisible before: the notifier went on posting into a chat that could never receive it, every
+       send failed, every failure queued another retry, and nothing in the product ever said why. The DETECTION
+       was deliberately not built alone — a stamped field with no reader is one of this project's named bug
+       classes — so it lands here with its consumer:
+
+         · the chat is marked `unreachable`, which stops deliver() queueing anything new for it;
+         · its already-queued backlog is dropped NOW, each with the same honest `redelivery-gave-up` delivery
+           event a repeatedly-failed item gets. It is the same fact — we are not going to deliver this — and
+           inventing a new event name would mean editing the owned shared/events.js contract.
+
+       Clearing is not done here: `left` can arrive for reasons that are not a block, so the flag is lifted by
+       the chat actually speaking again (processInbound), which is proof rather than inference. */
+    function onMembership(ev) {
+      const chatId = String((ev && ev.chatId) || '');
+      const status = String((ev && ev.status) || '');
+      if (!chatId || !status) return;
+      const gone = status === 'kicked' || status === 'left';
+      if (!gone) return;                                    // added/promoted/restricted: nothing to stop doing
+      try { if (typeof store.saveChatRecord === 'function') store.saveChatRecord(chatId, { unreachable: true }); } catch (_) {}
+      try { console.error('[' + channel + '] chat ' + chatId + ' has ' + (status === 'kicked' ? 'blocked or banned' : 'removed') + ' this bot — queued replies for it are being dropped'); } catch (_) {}
+      if (typeof store.loadOutbox !== 'function' || typeof store.removeOutbox !== 'function') return;
+      let items = [];
+      try { items = store.loadOutbox(channel) || []; } catch (_) { items = []; }
+      for (const it of items) {
+        if (String(it.chatId) !== chatId) continue;
+        try { store.removeOutbox(it.id); } catch (_) {}
+        try { emit('channel.delivery', { channel, chatId: chatId, runId: it.runId || '', ok: false, chunks: 0, reason: 'redelivery-gave-up' }); } catch (_) {}
+      }
+    }
+
     return {
-      onInbound, onCallback, onStatus,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES }
+      onInbound, onCallback, onStatus, onMembership,
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI }
     };
   }
 

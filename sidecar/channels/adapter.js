@@ -65,6 +65,7 @@
     const onInbound = typeof o.onInbound === 'function' ? o.onInbound : function () {};
     const onCallback = typeof o.onCallback === 'function' ? o.onCallback : null;   // C6: inline-keyboard taps
     const onStatus = typeof o.onStatus === 'function' ? o.onStatus : null;         // channel.connect telemetry
+    const onMembership = typeof o.onMembership === 'function' ? o.onMembership : null;   // we were added/blocked/kicked
     const pollTimeoutSec = o.pollTimeoutSec || DEFAULT_POLL_TIMEOUT_SEC;
     const backoff = Array.isArray(o.backoffMs) && o.backoffMs.length ? o.backoffMs.slice() : DEFAULT_BACKOFF.slice();
     const sleep = typeof o.sleep === 'function' ? o.sleep : (ms => new Promise(r => setTimeout(r, ms)));
@@ -146,8 +147,27 @@
       return false;
     }
 
+    /* ECHO GUARD — the bot must never answer itself.
+       In a group Telegram simply does not deliver our own messages back, so `is_bot` on the sender was enough.
+       A BROADCAST CHANNEL has no sender to check: a channel post carries no `from` at all, and a post the bot
+       itself made arrives looking exactly like one an admin made. Left unguarded that is not a cosmetic bug, it
+       is an unbounded loop — every reply becomes a new question. So we remember the message ids WE created and
+       refuse them on the way back in. Platform-agnostic on purpose: any future transport that echoes is covered
+       by the same net. Bounded and FIFO — this is a recent-echo guard, not a transcript. */
+    const MAX_SENT_IDS = 400;
+    const sentIds = new Set();   // 'chatId|messageId'
+    function rememberSent(chatId, messageId) {
+      if (messageId == null || messageId === '') return;
+      const k = String(chatId) + '|' + String(messageId);
+      sentIds.delete(k); sentIds.add(k);
+      while (sentIds.size > MAX_SENT_IDS) { const f = sentIds.values().next().value; sentIds.delete(f); }
+    }
+    const wasOurs = (chatId, messageId) =>
+      messageId != null && messageId !== '' && sentIds.has(String(chatId) + '|' + String(messageId));
+
     // DM-only first cut: a direct message is always admitted; a group/channel message only if whitelisted.
     function admitted(m) {
+      if (wasOurs(m.chatId, m.messageId)) return false;                // our own post, echoed back to us
       if (ignoreBots && m.fromBot) return false;                       // never answer another bot, in any chat
       if (allowedUsers.size && !allowedUsers.has(String(m.userId == null ? '' : m.userId))) return false;
       if (m.chatType === 'dm') return true;
@@ -223,6 +243,10 @@
         // later). Neutral and additive: the hub remembers it per chat and hands it straight back on every send,
         // and a platform whose normalize never sets it behaves exactly as before.
         if (m.threadId != null && m.threadId !== '') im.threadId = String(m.threadId);
+        // Both additive flags, both POLICY questions the hub answers: is a correction worth a fresh run, and is
+        // this a broadcast post rather than a person talking. A platform that sets neither behaves as before.
+        if (m.edited) im.edited = true;
+        if (m.channelPost) im.channelPost = true;
         if (Array.isArray(m.mentions) && m.mentions.length) im.mentions = m.mentions.slice();
         onInbound(im);
       } else if (n.callback && onCallback) {
@@ -233,6 +257,18 @@
            never be the trust-on-first-use moment either: the keyboard is on a message WE sent, so it proves
            nothing about who is talking. Fail closed, exactly like the empty-userId DM case. */
         if (owner && String(n.callback.userId) === owner) onCallback(n.callback);
+      } else if (n.membership && onMembership) {
+        /* OUR OWN membership changed. Not admission-gated and not owner-gated: "you were kicked out of chat X"
+           is true regardless of who did it, and a chat that has just removed us can hardly prove it is allowed
+           to say so. The consumer decides what it means; this is only the wire fact. */
+        onMembership({
+          channel: name,
+          chatId: String(n.membership.chatId),
+          chatType: n.membership.chatType === 'group' ? 'group' : 'dm',
+          status: String(n.membership.status || ''),
+          byUserId: String(n.membership.byUserId || ''),
+          ts: clock.now()
+        });
       }
     }
 
@@ -357,6 +393,7 @@
           await sleep(waitMs);
           r = await transport.send(String(chatId), t, sendOpts || {});
         }
+        if (r && r.ok) rememberSent(chatId, r.messageId);   // so a channel echoing this back is not taken for input
         return r;
       },
 
@@ -398,19 +435,33 @@
         catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'setCommands threw' }); }
       },
 
+      // React to a message instead of replying to it — the cheapest acknowledgement there is. Transport-optional
+      // like every other capability here; a channel that cannot react simply shows nothing.
+      setReaction(chatId, messageId, emoji) {
+        if (typeof transport.setReaction !== 'function') return Promise.resolve({ ok: false, error: 'reactions not supported on this channel', retryable: false });
+        try { return Promise.resolve(transport.setReaction(String(chatId), String(messageId), emoji || '')); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'setReaction threw', retryable: false }); }
+      },
+
       // ---- OUTBOUND MEDIA (transport-optional, same probe-and-degrade contract) ---------------------------
       // A channel whose transport cannot upload answers { ok:false, error } and the hub falls back to naming
       // the file's workspace path in text. That fallback is the whole reason this is a capability method and
       // not a hard dependency: Discord/Slack/Matrix/Signal keep working untouched until they grow their own.
       sendMedia(chatId, item, mediaOpts) {
         if (typeof transport.sendMedia !== 'function') return Promise.resolve({ ok: false, error: 'sending files is not supported on this channel', retryable: false });
-        try { return Promise.resolve(transport.sendMedia(String(chatId), item, mediaOpts || {})); }
+        try {
+          return Promise.resolve(transport.sendMedia(String(chatId), item, mediaOpts || {}))
+            .then(r => { if (r && r.ok) rememberSent(chatId, r.messageId); return r; });
+        }
         catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'sendMedia threw', retryable: false }); }
       },
 
       sendMediaGroup(chatId, items, groupOpts) {
         if (typeof transport.sendMediaGroup !== 'function') return Promise.resolve({ ok: false, error: 'albums are not supported on this channel', retryable: false });
-        try { return Promise.resolve(transport.sendMediaGroup(String(chatId), items, groupOpts || {})); }
+        try {
+          return Promise.resolve(transport.sendMediaGroup(String(chatId), items, groupOpts || {}))
+            .then(r => { if (r && r.ok) rememberSent(chatId, r.messageId); return r; });
+        }
         catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'sendMediaGroup threw', retryable: false }); }
       },
 
@@ -428,7 +479,7 @@
         return { id: String(chatId), type: allowed.has(String(chatId)) ? 'group' : 'dm' };
       },
 
-      _internals: { admitted, ownerOk, normalizeAllowed, dispatch, isFatal, isAbort, DEFAULT_BACKOFF, get offset() { return offset; }, get owner() { return owner; } }
+      _internals: { admitted, ownerOk, normalizeAllowed, dispatch, isFatal, isAbort, DEFAULT_BACKOFF, rememberSent, wasOurs, sentIds, MAX_SENT_IDS, get offset() { return offset; }, get owner() { return owner; } }
     };
   }
 

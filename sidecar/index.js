@@ -5479,6 +5479,8 @@ function startTelegram(token, key, model, agentCfg) {
     prompts: makePromptRegistry({ newId: () => crypto.randomUUID() }),
     answerCallback: (cbId, text) => adapterRef ? adapterRef.answerCallback(cbId, text) : Promise.resolve({ ok: false, error: 'no adapter' }),
     editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // 👀 on the question while the run thinks, cleared when the answer lands — cosmetic, never load-bearing.
+    setReaction: (chatId, msgId, emoji) => adapterRef ? adapterRef.setReaction(chatId, msgId, emoji) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent,
     secrets: () => {
       const t = (channelSecrets && channelSecrets.telegram) || {};
@@ -5590,6 +5592,9 @@ function startTelegram(token, key, model, agentCfg) {
     },
 
     onCallback: hub.onCallback,
+    // being blocked/kicked used to be invisible — the notifier kept posting into a chat that could never
+    // receive it. The hub marks the chat unreachable and drops its queued backlog.
+    onMembership: hub.onMembership,
     onStatus: (s) => {
       const state = (s && s.state) || 'down';
       // Truthful telemetry: CONNECTED only when the transport actually proved 'up' AND we still hold a live adapter.
@@ -5721,6 +5726,8 @@ function startTelegramBot(botId) {
     prompts: makePromptRegistry({ newId: () => crypto.randomUUID() }),
     answerCallback: (cbId, text) => adapterRef ? adapterRef.answerCallback(cbId, text) : Promise.resolve({ ok: false, error: 'no adapter' }),
     editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
+    // 👀 on the question while the run thinks, cleared when the answer lands — cosmetic, never load-bearing.
+    setReaction: (chatId, msgId, emoji) => adapterRef ? adapterRef.setReaction(chatId, msgId, emoji) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent
   });
   const adapter = makeTelegramAdapter({
@@ -5743,6 +5750,7 @@ function startTelegramBot(botId) {
     },
     onInbound: (m) => { Promise.resolve(hub.onInbound(m)).catch(e => console.warn('[telegram:' + botId + '] inbound error:', (e && e.message) || e)); },
     onCallback: hub.onCallback,
+    onMembership: hub.onMembership,   // same unreachable consumer, per bot
     onStatus: (s) => {
       const state = (s && s.state) || 'down';
       entry.status = { connected: state === 'up' && telegramBots.get(botId) === entry, state: state, detail: (s && s.detail) || '' };

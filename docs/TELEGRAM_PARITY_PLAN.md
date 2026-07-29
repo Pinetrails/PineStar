@@ -295,9 +295,9 @@ That is a nuance, not a gap.
 | N3 | **The P3 gates are unreachable.** `requireMention` / `ignoreBots` / `allowedUsers` are read in `adapter.js` but **`index.js` passes none of them** — they are hardcoded defaults with no command, no route and no UI. | P3 shipped a behaviour change (groups now answer only when addressed) with **no escape hatch**: a member who wants free response in their group cannot get it. | S |
 | N4 | **No `mention_patterns`.** We match `@username` entities and `/cmd@bot` only. | "StarNet, summarise that" does not wake the bot — the most natural way to address it by name. | S |
 | N5 | **No `observe_unmentioned`.** An unmentioned group message is dropped whole, not kept as context. | When finally mentioned the agent has **no idea what the room was discussing** — the mention gate bought spend safety and paid in amnesia. | M |
-| N6 | **`edited_message` never arrives** (`ALLOWED_UPDATES` excludes it). | Fixing a typo in your question does nothing; the bot answers the typo. | S |
-| N7 | **`channel_post` never arrives.** Hermes subscribes `Update.ALL_TYPES` and routes via `effective_message`. | The bot is **completely deaf** when added to a broadcast channel. | S |
-| N8 | **No reactions.** Hermes acks with `setMessageReaction` (`on_processing_start` / `on_processing_complete`, `_set_reaction` / `_clear_reactions`). | The cheapest possible "I heard you" — one API call, no message, no chunking. | S |
+| N6 | ~~**`edited_message` never arrives**~~ **DONE** — see below. | Fixing a typo in your question does nothing; the bot answers the typo. | S |
+| N7 | ~~**`channel_post` never arrives**~~ **DONE** — see below. | The bot is **completely deaf** when added to a broadcast channel. | S |
+| N8 | ~~**No reactions**~~ **DONE** — see below. | The cheapest possible "I heard you" — one API call, no message, no chunking. | S |
 | N9 | **No status indicator.** Hermes writes `setMyShortDescription` on connect/disconnect (`_set_status_indicator`, `status_online` / `status_offline`). | The bot's profile card never says whether the station is up. | S |
 | N10 | **No link-preview control** (`disable_link_previews` / `_link_preview_kwargs`). | Any URL in a reply drags a full unfurl card. | XS |
 | N11 | **No `deleteMessage`.** Hermes deletes its own transient progress/status messages. | Prerequisite for P4 streaming cleanup. | XS |
@@ -327,6 +327,10 @@ That is a nuance, not a gap.
 N1 leads because it is the only remaining item that sends a message to the **wrong place**; everything
 else above is a missing capability, not a wrong one.
 
+**The first four are done** (below). What is left, in order: **P4 live streaming** (the one that changes how
+the product feels, and the one with real engineering risk), then **N5 observe-unmentioned**, **N4
+mention_patterns**, **N14 loose-photo/text batching**, and the breadth items **N9–N13, N15–N17**.
+
 ### DONE from this sweep (2026-07-29, same lane)
 
 - **N1 + N2 — thread and reply routing.** `normalize` reads `message_thread_id` (only for
@@ -348,6 +352,30 @@ else above is a missing capability, not a wrong one.
   lookup keeps the gate ON, and a plain boolean still behaves identically. A DM says the setting is
   group-only instead of storing a value that can never apply. 16 new assertions in
   `channels.telegram.groups`.
+- **N6 + N7 + `my_chat_member` — the deaf update kinds.** `ALLOWED_UPDATES` is a **subscription, not a filter**:
+  a kind not named there is never delivered at all. It now names `edited_message`, `channel_post`,
+  `edited_channel_post` and `my_chat_member` alongside `message` and `callback_query`.
+  - **Edits** are flagged, not auto-run. An edit counts only when it edits the **last message we saw in that
+    chat** — anything older is somebody tidying history, and a fresh boot with no record declines too. When it
+    is accepted the turn carries a one-line correction label, because the original is already in history and two
+    near-identical turns read to the model as the member saying two different things. The existing supersede
+    rule then does the rest: correcting a question mid-run aborts the stale run and re-answers.
+  - **Channel posts** carry no `from` at all, so `is_bot` cannot tell the bot's own post from an admin's.
+    Unguarded that is not a cosmetic bug, it is an **unbounded loop** — every reply becomes a new question. The
+    guard is an `adapter.js` set of the message ids **we** created (bounded, FIFO, keyed chat+id, platform-
+    agnostic so any future echoing transport is covered). `author_signature` becomes the speaker name.
+  - **`my_chat_member`** ships **with its consumer**, as §4.5 demanded: the chat is marked `unreachable`, which
+    stops `deliver()` queueing for it and drops its existing backlog — each dropped item reported on the
+    **existing** `channel.delivery` `redelivery-gave-up` event rather than inventing a name in the owned
+    `shared/events.js`. The flag is lifted by the chat **speaking again** (proof), not by a `left` we might
+    never be sent.
+- **N8 — reaction ack.** 👀 on the question while the run thinks, cleared when the answer lands, on the same
+  lifecycle as the typing bubble. Unlike the bubble it survives the member closing the app. Transport-optional
+  and entirely cosmetic; the emoji is a **constant** because bots may only use Telegram's fixed reaction set.
+  The clear **waits for its own set** — a clear that overtakes it leaves a 👀 stuck on an answered question,
+  which is the app asserting state the harness can't prove.
+  `test/channels.telegram.updates.test.js`, 58 assertions, in `fast.list`.
+
   Still open under N3: `ignoreBots` and `allowedUsers` remain construction-time only. `ignoreBots` is
   arguably correct as a constant (bot-to-bot is an unbounded spend loop, not a preference); `allowedUsers`
   wants a real UI, not a chat command, because it is a security control.
