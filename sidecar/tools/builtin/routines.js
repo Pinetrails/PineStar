@@ -197,6 +197,14 @@
     const triggerRoutine = deps.triggerRoutine;
     const armScheduler = deps.armScheduler;
     const schedulerState = typeof deps.schedulerState === 'function' ? deps.schedulerState : function () { return false; };
+    /* THE E-STOP IS A SECOND, INDEPENDENT FACT. `schedulerArmed` reports the arm INTENT, which E-STOP deliberately
+       leaves true — so every readout here said "armed" about a scheduler the Commander had durably stood down, and
+       run_now told the model the routine "fires on its next tick (within ~1 minute)" when no tick was coming. */
+    const schedulerHalted = typeof deps.schedulerHalted === 'function' ? deps.schedulerHalted : function () { return false; };
+    const armedNote = function () {
+      if (schedulerHalted()) return "the scheduler is STOPPED by the Commander's E-STOP — nothing fires until they resume it";
+      return schedulerState() ? null : 'the scheduler is DISARMED — nothing fires until it is armed';
+    };
     const roster = typeof deps.roster === 'function' ? deps.roster : function () { return new Map(); };
     // W6: the plain anti-retry line + the per-agent "you already maintain: …" summary. Injected so this tool
     // stays node-testable; defaults keep it a no-op when the host doesn't wire the mint ledger.
@@ -230,7 +238,7 @@
         if (agentId && !validId(agentId)) throw new Error('agentId must be one of your station agents');
         let jobs = (listJobs() || []).map(packJob).filter(Boolean);
         if (agentId) jobs = jobs.filter(j => j.agentId === agentId);
-        return { content: JSON.stringify({ schedulerArmed: !!schedulerState(), jobs: jobs }), summary: jobs.length + ' routine(s)' };
+        return { content: JSON.stringify({ schedulerArmed: !!schedulerState(), schedulerHalted: !!schedulerHalted(), schedulerNote: armedNote() || undefined, jobs: jobs }), summary: jobs.length + ' routine(s)' };
       }
     };
 
@@ -314,6 +322,9 @@
         const body = {
           ok: true,
           schedulerArmed: !!schedulerState(),
+          schedulerHalted: !!schedulerHalted(),
+          // so the model cannot report "this will run daily" over a stopped scheduler
+          schedulerNote: armedNote() || undefined,
           armError: armError,
           routedTo: route.agentId,
           routingReason: route.reason,
@@ -382,7 +393,7 @@
           if (typeof setRoutineEnabled !== 'function') throw new Error('routine pause/resume unavailable');
           const updated = await setRoutineEnabled(job.id, action === 'resume');
           return {
-            content: JSON.stringify({ ok: true, action: action, schedulerArmed: !!schedulerState(), job: packJob(updated || job) }),
+            content: JSON.stringify({ ok: true, action: action, schedulerArmed: !!schedulerState(), schedulerHalted: !!schedulerHalted(), schedulerNote: armedNote() || undefined, job: packJob(updated || job) }),
             summary: (action === 'resume' ? 'resumed' : 'paused') + ' routine "' + job.name + '"'
           };
         }
@@ -390,15 +401,19 @@
         if (action === 'run_now') {
           if (typeof triggerRoutine !== 'function') throw new Error('routine trigger unavailable');
           const updated = await triggerRoutine(job.id);
-          const armed = !!schedulerState();
+          const halted = !!schedulerHalted();
+          const armed = !!schedulerState() && !halted;
           return {
             content: JSON.stringify({
-              ok: true, action: action, queued: true, schedulerArmed: armed,
+              ok: true, action: action, queued: true, schedulerArmed: !!schedulerState(), schedulerHalted: halted,
               // TRUTHFUL TELEMETRY: this did NOT run the routine, it moved its next fire to now. Say so, or the
-              // model reports "I ran it" to the Commander and then reads no result.
-              note: armed
-                ? 'queued — the scheduler fires this routine on its next tick (within ~1 minute); it has not run yet'
-                : 'queued, but the scheduler is DISARMED so nothing will fire until it is armed',
+              // model reports "I ran it" to the Commander and then reads no result. And an E-STOP means no tick
+              // is coming at all — promising one "within ~1 minute" is the same lie with a deadline on it.
+              note: halted
+                ? "queued, but the scheduler is STOPPED by the Commander's E-STOP so nothing will fire until they resume it"
+                : armed
+                  ? 'queued — the scheduler fires this routine on its next tick (within ~1 minute); it has not run yet'
+                  : 'queued, but the scheduler is DISARMED so nothing will fire until it is armed',
               job: packJob(updated || job)
             }),
             summary: 'queued routine "' + job.name + '" to fire on the next tick' + (armed ? '' : ' (scheduler disarmed)')

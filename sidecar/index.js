@@ -7769,7 +7769,7 @@ async function createCronJobFromSpec(body) {
       // R3: pass through the caller-supplied provenance bag ({ recipeId } from MAKE ROUTINE). cron-store normMeta
       // keeps only a plain object; absent → null. Additive — no existing caller sends it and old jobs load fine.
       meta: body.meta
-    }, { id: id, now: Date.now() }));
+    }, { id: id, now: Date.now(), defaultTz: CRON_HOST_TZ }));
   } catch (e) { return out(500, { error: 'could not save the routine: ' + ((e && e.message) || e) }); }
   recordMint(agentId, { name: body.name, kind: 'routine' });   // W6: log the creation in the agent's ledger
   return out(200, { ok: true, job: cronStore.getJob(cronJobs, id) });
@@ -7790,8 +7790,16 @@ function handleCronUpdate(req, res) {
       if (!scan.ok) return json(400, { error: scan.error, blocked: scan.patternId });
     }
     if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
-      try { patch.schedule = parseCronScheduleOr400(patch.schedule, Date.now()); } catch (e) { return json(e.code || 400, { error: e.message }); }
+      /* CARRY THE TIMEZONE. This route parsed the schedule patch with NO tz, so editing any field of a routine
+         that WAS created with an explicit zone silently stripped it and re-anchored the job in UTC — the
+         routine.manage tool path (updateRoutine) already passed patch.timezone; only the HTTP route dropped it.
+         Prefer an explicitly supplied zone, else keep the one the job is already on, so a plain field edit never
+         moves a routine's wall-clock. */
+      let keepTz = patch.timezone || patch.tz || '';
+      if (!keepTz) { try { const cur = cronStore.getJob(cronJobs, id); keepTz = (cur && cur.schedule && cur.schedule.tz) || ''; } catch (_) {} }
+      try { patch.schedule = parseCronScheduleOr400(patch.schedule, Date.now(), keepTz || undefined); } catch (e) { return json(e.code || 400, { error: e.message }); }
     }
+    delete patch.timezone; delete patch.tz;   // the zone lives on schedule.tz — never as a loose editable field
     if (Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
       try { patch.agentId = parseCronAgentIdOr400(patch.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
     }
@@ -7804,8 +7812,8 @@ function handleCronUpdate(req, res) {
       // G4.3: the full edit (updateJob + optional pause/resume) is ONE re-read-modify-write under the lock,
       // so it cannot clobber a concurrent advance and the pause/resume sees the just-updated job.
       await withCronWrite(jobs => {
-        let next = cronStore.updateJob(jobs, id, patch, { now: Date.now() });
-        if (enabled === true) next = cronStore.resumeJob(next, id, { now: Date.now() });
+        let next = cronStore.updateJob(jobs, id, patch, { now: Date.now(), defaultTz: CRON_HOST_TZ });
+        if (enabled === true) next = cronStore.resumeJob(next, id, { now: Date.now(), defaultTz: CRON_HOST_TZ });
         else if (enabled === false) next = cronStore.pauseJob(next, id);
         return next;
       });
@@ -7917,7 +7925,7 @@ async function handleCronRun(req, res) {
     try { out = await runSlashRoutine(String(job.prompt), { agentId: job.agentId, runId: runIdC, emit: emitC }); }
     catch (e) { out = { ok: false, text: 'that command failed: ' + ((e && e.message) || e) }; }
     try {
-      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runIdC, status: out.ok ? 'ok' : 'error', reason: out.ok ? 'done' : 'error', error: out.ok ? undefined : out.text }, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runIdC, status: out.ok ? 'ok' : 'error', reason: out.ok ? 'done' : 'error', error: out.ok ? undefined : out.text }, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
     } catch (_) {}
     try { cronEmit('cron.result', { jobId: job.id, runId: runIdC, outcome: out.ok ? 'ok' : 'failed', reason: out.ok ? 'done' : 'error' }); } catch (_) {}
     try { res.end(); } catch (_) {}
@@ -8012,7 +8020,7 @@ async function handleCronRun(req, res) {
     try {
       // G4.3: record the manual run's outcome as a re-read-modify-write under the lock (don't clobber a
       // concurrent advance/CRUD save with a stale in-memory snapshot).
-      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.markRun(jobs, job.id, { runId: runId, status: ok ? 'ok' : 'error', reason: state.reason || (ok ? 'done' : 'error'), error: state.errMsg || undefined, transient: state.transient }, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
     } catch (_) {}
     try { cronEmit('cron.result', { jobId: job.id, runId: runId, outcome: !ok ? 'failed' : ((state.buf || '').trim() === '[SILENT]' ? 'silent' : 'ok'), reason: state.reason || (ok ? 'done' : 'error') }); } catch (_) {}
     kaOff();
@@ -8234,7 +8242,7 @@ async function armWorkshopShift(agentId) {
     await withCronWrite(jobs => cronStore.createJob(jobs, {
       id: jobId, name: 'Away workshop — ' + id, prompt: WORKSHOP_MARK, schedule: schedule,
       agentId: id, enabled: true, meta: { workshop: true }
-    }, { id: jobId, now: Date.now() }));
+    }, { id: jobId, now: Date.now(), defaultTz: CRON_HOST_TZ }));
   } catch (e) { console.warn('[workshop] arm routine failed:', (e && e.message) || e); return false; }
   // arming the shift needs the tick timer running so it actually fires unattended; arm cron if it isn't already.
   // Respect a durable E-STOP halt: record the arm INTENT but never silently restart the timer the Commander
@@ -9359,7 +9367,7 @@ const slashActions = slashActionsMod.makeSlashActions({
       if (!cronStore.getJob(cronJobs, id)) return { ok: false, error: 'no such routine' };
       const want = on === true;
       try {
-        await withCronWrite(jobs => want ? cronStore.resumeJob(jobs, id, { now: Date.now() }) : cronStore.pauseJob(jobs, id));
+        await withCronWrite(jobs => want ? cronStore.resumeJob(jobs, id, { now: Date.now(), defaultTz: CRON_HOST_TZ }) : cronStore.pauseJob(jobs, id));
       } catch (e) { return { ok: false, error: (e && e.message) || 'the write failed' }; }
       return { ok: true, job: cronStore.getJob(cronJobs, id) };
     },
@@ -10319,7 +10327,7 @@ async function runOnce(o) {
           id: id, name: spec.name, prompt: spec.prompt, schedule: schedule,
           agentId: spec.agentId, model: spec.model, provider: spec.provider,
           deliver: spec.deliver, enabled: spec.enabled, repeat: spec.repeat
-        }, { id: id, now: Date.now() });
+        }, { id: id, now: Date.now(), defaultTz: CRON_HOST_TZ });
         created = cronStore.getJob(next, id);
         return next;
       }).catch(e => console.warn('[cron] routine.create persist failed:', (e && e.message) || e));
@@ -10352,7 +10360,7 @@ async function runOnce(o) {
       if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
         next.schedule = parseCronScheduleOr400(patch.schedule, Date.now(), patch.timezone);
       }
-      await withCronWrite(jobs => cronStore.updateJob(jobs, id, next, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.updateJob(jobs, id, next, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
       return cronStore.getJob(cronJobs, id);
     },
     removeRoutine: async (id) => {
@@ -10365,7 +10373,7 @@ async function runOnce(o) {
     },
     setRoutineEnabled: async (id, enabled) => {
       await withCronWrite(jobs => enabled
-        ? cronStore.resumeJob(jobs, id, { now: Date.now() })
+        ? cronStore.resumeJob(jobs, id, { now: Date.now(), defaultTz: CRON_HOST_TZ })
         : cronStore.pauseJob(jobs, id));
       return cronStore.getJob(cronJobs, id);
     },
@@ -10375,18 +10383,27 @@ async function runOnce(o) {
     // cronStore.triggerJob, NOT resumeJob — resume RE-ANCHORS the schedule, which for `0 9 * * *` lands on 09:00
     // TOMORROW and fires nothing now (caught by test/routine-manage.e2e.test.js, which read the time back).
     triggerRoutine: async (id) => {
-      await withCronWrite(jobs => cronStore.triggerJob(jobs, id, { now: Date.now() }));
+      await withCronWrite(jobs => cronStore.triggerJob(jobs, id, { now: Date.now(), defaultTz: CRON_HOST_TZ }));
       return cronStore.getJob(cronJobs, id);
     },
     armScheduler: (enabled) => {
       const want = enabled === true;
       saveCronArmed(want);
       cronArmed = want;
-      // same resume semantics as POST /api/cron/arm: a deliberate arm write lifts a durable E-STOP halt.
-      if (cronHalted) { cronHalted = false; saveCronHalted(false); }
-      if (want) armCron(); else disarmCron();
+      /* RESPECT A DURABLE E-STOP. This is a MODEL-FACING DEFAULT, not a deliberate human resume: routine.create's
+         `arm` schema says "Default true", so the agent never has to think about it — and a Commander who pressed
+         E-STOP and later asked for "a daily brief" had their emergency stop silently lifted by approving that one
+         create, with every previously-halted routine resuming and nothing in the transcript, the card or any panel
+         saying so. The halt "lifts only on an explicit resume (POST /api/cron/arm or an autonomy-dial re-write)",
+         and there is a documented single seam for that (liftCronHalt) whose callers are exactly those paths. So
+         record the arm INTENT and never restart the timer the Commander paused — the same rule the workshop
+         auto-arm already states and implements. */
+      if (want) { if (!cronHalted) armCron(); } else disarmCron();
       return cronArmed;
-    }
+    },
+    // ...and tell the tool, so its response can say the scheduler is still stood down rather than implying the
+    // routine will fire. A caller that cannot see the halt cannot disclose it.
+    schedulerHalted: () => !!cronHalted
   }).register(registry);
   /* channel.targets / channel.send — OUTBOUND messaging reach (see tools/builtin/comms.js for the security
      rationale on known-targets-only). Both hang off the placed DISH under their own 'comms' capId. */
@@ -10529,7 +10546,13 @@ async function runOnce(o) {
   // — only a watched, interactive lead can let a worker write/run shell, and only with a human's click.
   const consent = o.consent || makeConsentBroker({
     bypass: FULL_ACCESS || agentFullAccess, hardline: hardlineFloor, sessionKey: runId,
-    grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId),
+    grantsSession, grantsPermanent, persist: persistAllowlist,
+    /* THE UNATTENDED RULE APPLIES TO 'FULL ACCESS' TOO. The blanket is per-AGENT and process-lifetime, and this
+       is the SAME runOnce host the messaging hub drives with surface:'autonomous' — so one "Full access" click in
+       a watched session also blessed that agent's Telegram / cron / night-shift file and memory writes until the
+       sidecar exited, with no readout and no revoke anywhere. A watched click is consent for the watched surface;
+       widening unattended reach is a separate, explicit decision everywhere else in this product. */
+    grantsBlanket: surface === 'interactive' ? blanketSetFor(agentId) : null,
     networkOf: (call) => !!resolved.networkCaps[call.name],
     // AWAY WORKSHOP (W1): the Commander's recorded per-agent grant. The broker only consults it for an autonomous
     // cabinet:write / notebook:write (jail-scoped) — exec stays locked, non-jail tools unchanged. A read of the
@@ -11580,8 +11603,17 @@ async function handleConsentAck(req, res) {
 // (honest — includes any non-curated class blessed via a past prompt) + the curated catalog the panel may add.
 // Privileged: behind the same x-starnet-token + loopback gate as every other /api route (apiauth, not TOKEN_EXEMPT).
 function handlePermissionsList(req, res) {
+  /* The panel's own header promises "every capability it may use unattended … and a REVOKE for each", and the
+     mid-run "Full access" wildcard appeared in NEITHER: consent.snapshot() returns only { permanent, session },
+     so one click bought a per-agent '*' that no surface listed and no action could withdraw — only restarting
+     the sidecar cleared it. Report it beside the durable grants, keyed so the existing revoke can take it. */
+  const snap = grantManager.snapshot() || {};
+  const blanket = [];
+  for (const [aid, set] of grantsBlanketByAgent) {
+    if (set && set.has('*')) blanket.push({ key: 'blanket:' + aid, agentId: aid, scope: 'watched sessions, until the app restarts' });
+  }
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
-  res.end(JSON.stringify(grantManager.snapshot()));
+  res.end(JSON.stringify(Object.assign({}, snap, { blanket: blanket })));
 }
 // POST /api/permissions/grant { key } — proactively PRE-BLESS a curated, LOCAL-only capability (cabinet:write)
 // so an autonomous run can use it with no mid-run prompt. Refuses any non-curated/exec/network class; fail-closed
@@ -11596,6 +11628,15 @@ async function handlePermissionsGrant(req, res) {
 // non-curated class). Fail-closed: a torn persist keeps the grant rather than reporting a phantom revoke.
 async function handlePermissionsRevoke(req, res) {
   let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
+  // the mid-run full-access wildcard is revocable through the same door as any other standing grant
+  const rawKey = String((body && body.key) || '');
+  if (rawKey.indexOf('blanket:') === 0) {
+    const aid = rawKey.slice('blanket:'.length);
+    const had = grantsBlanketByAgent.has(aid) && grantsBlanketByAgent.get(aid).has('*');
+    grantsBlanketByAgent.delete(aid);
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    return res.end(JSON.stringify({ ok: true, key: rawKey, revoked: had }));
+  }
   const r = grantManager.revoke(body && body.key);
   res.writeHead(r.ok ? 200 : 400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(r));
@@ -11816,7 +11857,7 @@ async function handleAutonomyWrite(req, res) {
   // the REAL broker on the autonomous surface — NOT a hardcoded allow. hardline: hardlineFloor keeps .env/.git
   // unwritable; granted cabinet:write clears the cache tier; otherwise the autonomous mutation default-denies.
   const sessionKey = 'autowrite-' + Date.now();
-  const consent = makeConsentBroker({ bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId), surface: 'autonomous' });
+  const consent = makeConsentBroker({ bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: null, surface: 'autonomous' });   // never the watched-click blanket — see the unattended rule at runOnce
   // CHECKPOINT NET: snapshot BEFORE the write (mirrors the runOnce dispatch wrapper) so it's one rollback away.
   // Keep the snapshot id EVEN when created:false — an unchanged workspace returns the existing HEAD, which is a
   // valid, restorable PRE-write rollback point (the common case for a fresh drafts/* write). Discarding it on
