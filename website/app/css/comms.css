@@ -538,7 +538,7 @@
 .chat-charcount[hidden] { display: none; }
 .chat-charcount.warn { color: var(--warn); opacity: 1; }
 
-/* CONTROL CLUSTER — the model dock hugs the left; voice/voice-mode/mic are pushed to the right edge.
+/* CONTROL CLUSTER — the model dock hugs the left; agent voice / Local Live / push-to-talk sit at the right edge.
    The model-dock popover stays absolutely positioned against #chat-inputrow (still position:relative),
    so it keeps floating above the whole composer — this wrapper is a static parent and doesn't reparent it. */
 .chat-tools { display: flex; align-items: center; gap: 7px; min-width: 0; padding: 1px 0; }

@@ -2502,7 +2502,7 @@ const App = (() => {
     if (typeof PropSprites !== 'undefined' && WorldModel.setPropRules) {
       WorldModel.setPropRules((t) => {
         const s = PropSprites.spec(t);
-        return s ? { mount: s.mount || null, surface: !!s.surface } : null;
+        return s ? { mount: s.mount || null, stack: !!s.stack, surface: !!s.surface } : null;
       });
     }
     station = (pendingStationDoc && pendingStationDoc.rooms) ? WorldModel.deserialize(pendingStationDoc) : WorldModel.create();

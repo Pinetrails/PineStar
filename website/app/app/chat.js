@@ -4228,6 +4228,16 @@ const Chat = (() => {
     renderQueued();
     if (typeof SFX !== 'undefined' && SFX.type) SFX.type();
   }
+  function sendOrQueue(text) {
+    const value = String(text == null ? '' : text).trim();
+    if (!value || !activeWs) return { ok: false, state: 'empty' };
+    if (isBusy()) {
+      enqueue(value);
+      return { ok: true, state: 'queued', workstreamId: activeWs.id };
+    }
+    send(value);
+    return { ok: true, state: 'started', workstreamId: activeWs.id };
+  }
   function renderQueued() {
     const strip = el('chat-queued'); if (!strip) return;
     const arr = (activeWs && queued.get(activeWs.id)) || [];
@@ -5090,7 +5100,7 @@ const Chat = (() => {
     const raw = String(args || '').trim().toLowerCase();
     if (!raw || raw === 'status') {
       return localLine('Voice: replies ' + (Voice.isOn && Voice.isOn() ? 'on' : 'off')
-        + ', hands-free ' + (Voice.inVoiceMode && Voice.inVoiceMode() ? 'on' : 'off')
+        + ', Local Live ' + (typeof VoiceLive !== 'undefined' && VoiceLive.isActive && VoiceLive.isActive() ? 'on' : 'off')
         + ', listening support ' + (Voice.canListen && Voice.canListen() ? 'yes' : 'no')
         + ', speech support ' + (Voice.canSpeak && Voice.canSpeak() ? 'yes' : 'no') + '.');
     }
@@ -5099,15 +5109,23 @@ const Chat = (() => {
       return localLine('Voice replies are on.');
     }
     if (/^(off|false|no|mute)$/.test(raw)) {
+      if (typeof VoiceLive !== 'undefined' && VoiceLive.end) VoiceLive.end();
       if (Voice.stopConvo) Voice.stopConvo();
       if (Voice.setSpeakReplies) Voice.setSpeakReplies(false);
       return localLine('Voice replies are off.');
     }
     if (/^(handsfree|hands-free|convo|conversation|live)$/.test(raw)) {
-      if (Voice.toggleVoiceMode) Voice.toggleVoiceMode();
-      return localLine('Hands-free voice mode toggled.');
+      if (typeof VoiceLive === 'undefined' || !VoiceLive.start || !VoiceLive.end) {
+        return localLine('Local Live voice is not available in this surface.');
+      }
+      if (VoiceLive.isActive && VoiceLive.isActive()) {
+        VoiceLive.end();
+        return localLine('Local Live voice stopped.');
+      }
+      VoiceLive.start(false);
+      return localLine('Local Live voice is opening.');
     }
-    localLine('Usage: /voice [on|off|status|handsfree]');
+    localLine('Usage: /voice [on|off|status|live]');
   }
   // /tools and /usage are dispatch:'server' — the sidecar owns CAP_REGISTRY and the spend ledger, so it answers
   // them (see sidecar/slash-actions.js). The browser versions were removed rather than kept as a fallback: a
@@ -6360,5 +6378,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
+  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
 })();

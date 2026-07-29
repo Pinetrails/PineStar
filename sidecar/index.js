@@ -22,6 +22,7 @@ const budgetCaps = require('./budgetcaps.js');   // pure resolve(env,overrides) 
 const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved) + validate patch — SETTINGS→Models fallback chain (P0-3)
 const { makeConcurrencyGate } = require('./concurrency.js');
 const { makeWorkspaceLease } = require('./workspace-lease.js');
+const { makeAgentLifecycle } = require('./agent-lifecycle.js');
 const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
@@ -67,6 +68,7 @@ const { summarizeCapabilities } = require('./capability/capsummary.js');   // tr
 const { starnetManual } = require('./manual.js');   // truthful "how StarNet works" so the agent can guide a stuck Commander (interactive only)
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const edgetts = require('./edgetts.js');   // V-EDGE: free keyless neural TTS floor (decoupled from the LLM provider)
+const localVoice = require('./local-voice.js');
 const {
   selectProvider,
   listProviderProfiles,
@@ -212,6 +214,8 @@ const cronGuard = require('./cron-guard.js');                        // routine 
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const loopbackListenerProbe = makeLoopbackListenerProbe({ execFile, platform: process.platform, env: process.env });
 const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
+const { makeRealtimeVoice } = require('./realtime-voice.js');       // browser WebRTC voice coordinator; API key never leaves this process
+const { makeNativeStt } = require('./native-stt.js');                // keyless Windows dictation fallback for OAuth Live voice
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 const sharedSpecialties = require('../shared/specialties.js');   // Class Loadouts S1: the ONE class catalog — no hardcoded class prose here
 // the specialist classes as {id, tagline}, composed from the shared catalog so team.summon's class list +
@@ -1467,6 +1471,13 @@ function providerHasCredential(provider, key, baseUrl) {
   if (providerRequiresKey(id) && !String(key || '').trim()) return false;
   return true;
 }
+
+const realtimeVoice = makeRealtimeVoice({
+  fetch: globalThis.fetch,
+  resolveKey: () => providerRuntimeKey('openai', ''),
+  safetySeed: API_TOKEN
+});
+const nativeStt = makeNativeStt({ platform: process.platform, execFile });
 function providerCredentialError(provider) {
   const id = normalizeProvider(provider);
   const profile = getProviderProfile(id);
@@ -5400,6 +5411,10 @@ const workspaceLease = makeWorkspaceLease(Object.assign(
   { now: () => Date.now() },
   (_leaseWaitMs >= 0 && isFinite(_leaseWaitMs)) ? { waitMs: Math.floor(_leaseWaitMs) } : {}
 ));
+const agentLifecycle = makeAgentLifecycle({
+  workspaceLease,
+  isActive: (agentId) => concurrencyGate.inFlight(agentId) > 0
+});
 // NAME IS LOAD-BEARING: a second module-scope `function runGit(root, args, timeoutMs)` (the night-shift /
 // loop-harvest one) is declared further down this file. Two function declarations in one CommonJS scope do not
 // error — the LAST one silently wins for the whole module, including for hoisted references ABOVE it. When this
@@ -6174,6 +6189,13 @@ const TG_BOT_RX = {
 };
 const ROUTES = [
   { m: 'POST', exact: '/api/session', h: handleApiSession },
+  { m: 'GET', exact: '/api/realtime/status', h: handleRealtimeStatus },
+  { m: 'POST', exact: '/api/realtime/session', h: handleRealtimeSession },
+  { m: 'GET', exact: '/api/stt/native/status', h: handleNativeSttStatus },
+  { m: 'POST', exact: '/api/stt/native', h: handleNativeStt },
+  { m: 'GET', exact: '/api/local-voice/status', h: handleLocalVoiceStatus },
+  { m: 'POST', exact: '/api/local-voice/warm', h: handleLocalVoiceWarm },
+  { m: 'POST', exact: '/api/local-voice/transcribe', h: handleLocalVoiceTranscribe },
   { m: 'POST', exact: '/api/run', h: handleRun, errorPolicy: runFailPolicy },
   { m: 'POST', exact: '/api/tts', h: handleTts, errorPolicy: ttsFailOpenPolicy },
   // stt: qsplit == the old (url === '/api/stt' || url.indexOf('/api/stt?') === 0) disjunction, verbatim.
@@ -6732,6 +6754,64 @@ async function handleBudgetCaps(req, res) {
 function handleApiSession(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ ok: true }));
+}
+function handleRealtimeStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(realtimeVoice.status()));
+}
+async function handleRealtimeSession(req, res) {
+  let offer;
+  try { offer = await readBody(req, 1 << 20, res); }
+  catch (e) {
+    if (!res.headersSent) {
+      res.writeHead(e && e.tooLarge ? 413 : 400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: e && e.tooLarge ? 'SDP offer too large' : 'invalid SDP offer' }));
+    }
+    return;
+  }
+  const out = await realtimeVoice.createCall(offer);
+  res.writeHead(out.status, { 'Content-Type': out.contentType, 'Cache-Control': 'no-store' });
+  res.end(out.body);
+}
+function handleNativeSttStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(nativeStt.status()));
+}
+async function handleNativeStt(req, res) {
+  const ac = new AbortController();
+  res.on('close', () => { if (!res.writableEnded) ac.abort(); });
+  const out = await nativeStt.recognize({ signal: ac.signal });
+  if (res.destroyed || res.writableEnded) return;
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(out));
+}
+function handleLocalVoiceStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(localVoice.status()));
+}
+async function handleLocalVoiceWarm(req, res) {
+  const json = (code, value) => {
+    res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(value));
+  };
+  // Loading continues on the server even if the panel closes. The client polls status for download progress.
+  localVoice.warm().catch(error => console.error('[local-voice] warm failed:', error && error.message || error));
+  json(202, localVoice.status());
+}
+async function handleLocalVoiceTranscribe(req, res) {
+  const json = (code, value) => {
+    res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(value));
+  };
+  let pcm;
+  try { pcm = await readBodyBuffer(req, 4 * 16000 * 30, res); }
+  catch (error) { if (!res.headersSent) json(error && error.tooLarge ? 413 : 400, { error: 'invalid audio payload' }); return; }
+  try {
+    const text = await localVoice.transcribe(pcm);
+    json(200, { ok: true, text });
+  } catch (error) {
+    json(503, { ok: false, error: String(error && error.message || error) });
+  }
 }
 /* ---- POST /api/budget/resume { scope } — the one-click "keep going" after a SOFT pool cap is hit: grant another
    base-cap of headroom to that scope for the rest of the session. scope ∈ {day, global}. ---- */
@@ -9138,7 +9218,13 @@ async function handleCheckpointRestore(req, res) {
   const snapshotId = String(body.snapshotId || '');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'bad agentId' });
   if (!checkpointStore.isValidId(snapshotId)) return json(400, { error: 'bad snapshotId' });
-  let ok; try { ok = await checkpointStore.restore(agentId, snapshotId); } catch (e) { return json(500, { error: 'restore failed: ' + ((e && e.message) || e) }); }
+  const operationId = 'restore-' + crypto.randomUUID();
+  const lifecycle = await agentLifecycle.acquireMutation(agentId, operationId);
+  if (!lifecycle.ok) return json(409, { error: lifecycle.deleting ? 'agent is being deleted' : 'workspace busy' });
+  let ok;
+  try { ok = await checkpointStore.restore(agentId, snapshotId); }
+  catch (e) { return json(500, { error: 'restore failed: ' + ((e && e.message) || e) }); }
+  finally { lifecycle.release(); }
   if (!ok) return json(404, { error: 'no such snapshot for that agent' });
   try { checkpointEmit('checkpoint.restored', { agentId: agentId, runId: '', toSnapshotId: snapshotId, reason: 'manual' }); } catch (_) {}
   json(200, { ok: true });
@@ -9236,6 +9322,11 @@ async function handleAgentDelete(req, res) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'invalid agentId' });   // same id regex as roster/fs-jail surfaces
   if (agentId === 'agent') return json(400, { error: 'cannot delete the hero agent' });   // the founder is undeletable (resume depends on it)
 
+  const deletion = await agentLifecycle.beginDelete(agentId, 'delete-' + crypto.randomUUID());
+  if (!deletion.ok) {
+    return json(409, { error: deletion.active ? 'agent is active; stop its runs before deleting' : 'agent lifecycle is busy' });
+  }
+  try {
   const archived = [];
   try {
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -9285,6 +9376,9 @@ async function handleAgentDelete(req, res) {
     latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
   } catch (_) {}
   return json(200, { ok: true, agentId, rosterRemoved: removed, archived, cronRemoved });
+  } finally {
+    deletion.finish();
+  }
 }
 
 // POST /api/dossier { block } — the browser pushes the composed Commander-dossier block whenever it changes,
@@ -10011,6 +10105,12 @@ async function runOnce(o) {
   // Refuse a run only when a NEW distinct agent would exceed the in-flight cap; a 2nd run of an already-
   // admitted agent always passes (no new slot). On refusal emit the same start→error→end shape every other
   // up-front refusal uses (Codex sign-in / non-tool model), reason 'error', transient (a slot may free up).
+  if (!agentLifecycle.canStart(agentId)) {
+    emit('agent.run.start', { agentId, runId, trigger: trigger, model });
+    emit('agent.run.error', { agentId, runId, transient: true, message: 'This agent is being deleted and cannot start new work.' });
+    emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
+    return;
+  }
   if (!concurrencyGate.tryEnter(agentId)) {
     emit('agent.run.start', { agentId, runId, trigger: trigger, model });
     emit('agent.run.error', { agentId, runId, transient: true, message: 'Too many agents are working at once (limit ' + concurrencyGate.max() + '). Wait for one to finish, or raise STARNET_MAX_CONCURRENT_AGENTS.' });
@@ -11777,8 +11877,11 @@ async function handleAutonomyWrite(req, res) {
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20 }, redact }).register(reg);
   // the REAL broker on the autonomous surface — NOT a hardcoded allow. hardline: hardlineFloor keeps .env/.git
   // unwritable; granted cabinet:write clears the cache tier; otherwise the autonomous mutation default-denies.
-  const sessionKey = 'autowrite-' + Date.now();
+  const sessionKey = 'autowrite-' + crypto.randomUUID();
   const consent = makeConsentBroker({ bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId), surface: 'autonomous' });
+  const lifecycle = await agentLifecycle.acquireMutation(agentId, sessionKey);
+  if (!lifecycle.ok) return sendJson(409, { ok: false, reason: lifecycle.deleting ? 'agent is being deleted' : 'workspace busy' });
+  try {
   // CHECKPOINT NET: snapshot BEFORE the write (mirrors the runOnce dispatch wrapper) so it's one rollback away.
   // Keep the snapshot id EVEN when created:false — an unchanged workspace returns the existing HEAD, which is a
   // valid, restorable PRE-write rollback point (the common case for a fresh drafts/* write). Discarding it on
@@ -11789,6 +11892,9 @@ async function handleAutonomyWrite(req, res) {
   const r = await reg.dispatch(call, { agentId: agentId, consent: consent, emit: function () {}, timeoutMs: 10000 });
   if (r && r.ok) return sendJson(200, { ok: true, path: rel, snapshot: snapshot, summary: r.summary });
   return sendJson((r && r.summary === 'denied') ? 403 : 400, { ok: false, path: rel, reason: (r && (r.content || r.summary)) || 'write failed' });
+  } finally {
+    lifecycle.release();
+  }
 }
 
 // POST /api/autonomy/posture { posture:{ initiative, reach, leashPerDay }, beliefs?:{ known, beliefs } } — the
@@ -13137,6 +13243,44 @@ async function handleTts(req, res) {
   // ElevenLabs branch — user-trained voices (e.g. the Commander's own Ultron clone). Its own key + cache
   // namespace; the provider chain below is irrelevant there, so dispatch BEFORE the no-key gate.
   if (String((body && body.provider) || '').trim().toLowerCase() === 'elevenlabs') return ttsElevenLabs(res, body, text, fallback);
+  // Local Live explicitly opts into the downloaded voice. Other voice surfaces retain their configured
+  // provider ladder, so this experimental path cannot silently change an existing persona.
+  if (body && body.local) {
+    try {
+      const localVoiceId = String(body.localVoice || 'af_heart');
+      const localSpeed = Number(body.speed) || 1;
+      const ck = crypto.createHash('sha1').update(`local-kokoro/q4|${localVoiceId}|${localSpeed}|${text}`).digest('hex');
+      const cachePath = path.join(VOICE_CACHE_DIR, `local-${ck}.wav`);
+      try {
+        const cached = await fsp.readFile(cachePath);
+        res.writeHead(200, {
+          'Content-Type': 'audio/wav',
+          'Cache-Control': 'no-store',
+          'X-Voice-Provider': 'local-kokoro',
+          'X-Voice-Cache': 'hit'
+        });
+        return res.end(cached);
+      } catch (_) {}
+      const buf = await localVoice.synthesize(text, {
+        voice: localVoiceId,
+        speed: localSpeed
+      });
+      try {
+        const tmp = `${cachePath}.${crypto.randomUUID()}.tmp`;
+        await fsp.writeFile(tmp, buf);
+        await fsp.rename(tmp, cachePath);
+      } catch (_) {}
+      res.writeHead(200, {
+        'Content-Type': 'audio/wav',
+        'Cache-Control': 'no-store',
+        'X-Voice-Provider': 'local-kokoro',
+        'X-Voice-Cache': 'miss'
+      });
+      return res.end(buf);
+    } catch (error) {
+      console.error('[tts] local Kokoro failed, falling through:', error && error.message || error);
+    }
+  }
 
   // WHICH credential speaks: an explicit key from the page (tagged with its provider) wins; otherwise
   // the first provider in the chain the sidecar itself holds a credential for (runtime push / keychain
