@@ -2766,6 +2766,12 @@ body.crew-rail-off #screen-game.active {
   font-family: 'VT323', monospace; color: var(--ph-dim); text-shadow: 0 0 5px var(--ph-glow2);
 }
 .refit-searchnote.none { color: var(--bad); text-shadow: none; }
+/* The gallery's wrapper MUST claim the full column. .refit-palette is a wrapping FLEX row, so an
+   undeclared child shrink-wraps to its content — and .refit-propgrid's own `width:100%` then resolves
+   against that shrunken box, collapsing repeat(auto-fill, 84px) from four columns to ONE. Every other
+   full-width row here (.refit-tiers, .refit-propcats, .refit-propsearch) declares the same thing for
+   the same reason. Tile COUNT looks perfect while this is wrong, which is why it took a real frame. */
+#refit-propgrid-host { width: 100%; min-width: 0; }
 
 /* TIER toggle — the hard, obvious split: ⚙ FUNCTIONAL (props that DO something) vs ✦ COSMETIC (looks only) */
 .refit-tiers { display: flex; gap: 6px; width: 100%; min-width: 0; margin-bottom: 2px; }
