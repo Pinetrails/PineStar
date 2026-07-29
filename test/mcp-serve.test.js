@@ -214,8 +214,12 @@ function parseToolResult(result) {
     // restart killed every tool with "returned HTTP 401" (and left the SSE feed re-presenting the dead token
     // every 3s) until the user knew to restart their MCP client. Boot a fresh sidecar on the SAME port and
     // prove the very next tool call works with no restart of serve.js.
+    // attemptsLeft:0 on purpose — a drifted port would silently invalidate the proof (serve.js is pinned to
+    // `port`). Windows can hold the just-closed listener for a moment, so retry the SAME port a few times.
     let restarted = null;
-    try { restarted = await boot(port, env, 0); } catch (e) { restarted = null; }
+    for (let attempt = 0; attempt < 3 && !restarted; attempt++) {
+      try { restarted = await boot(port, env, 0); } catch (e) { restarted = null; await sleep(700); }
+    }
     A.ok(restarted && restarted.port === port, 'a fresh sidecar came back up on the same port (fixture guard)');
     if (restarted) {
       sidecar = restarted.child;
