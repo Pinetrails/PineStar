@@ -59,6 +59,7 @@ const Build = (() => {
   let dupe = null;   // DUPE tool clipboard: {type:'prop'|'room', rects (rel to top-left), …} — armed = ghost follows cursor, click stamps
   let convey = null, lastFrameTs = 0;   // editor conveyor sim (boxes flow live as you build)
   let propThumbs = [], lastThumbTs = 0; // visual prop palette: live animated preview tiles + redraw throttle
+  let propQuery = '';                   // palette SEARCH text: non-empty = browse the whole catalog flat, ignoring tier/cat
 
   const T = () => (station ? station.TILE : 12);
   const MAX_REFIT_CHUNKS = 18;
@@ -224,6 +225,92 @@ const Build = (() => {
     return a ? (a.name || a.id) : aid;
   };
 
+  /* ---------- palette SEARCH (the flat way into a 120-prop catalog) ----------
+     PropSearch owns the matching rules and is unit-tested against the real catalog; everything here is
+     presentation. Two things are load-bearing and easy to get wrong:
+       1. a keystroke rebuilds the GALLERY ONLY — never the row holding the <input>, or focus dies;
+       2. while a search is up the tier/cat rows are HIDDEN, not just ignored. A lit "LOUNGE" tab above a
+          grid of workstations is the UI asserting something false about what you're looking at. */
+  const catLabelOf = c => CAT_LABEL[c] || String(c || '').toUpperCase();
+  const isSearching = () => (typeof PropSearch !== 'undefined') && PropSearch.active(propQuery);
+
+  // what the gallery is showing right now: matches across the WHOLE catalog, or the chosen tab
+  function propsForGrid() {
+    if (isSearching()) return PropSearch.matchProps(catalog(), propQuery, catLabelOf);
+    const CATS = (typeof PropSprites !== 'undefined') ? PropSprites.CATS : {};
+    return CATS[propCat] || [];
+  }
+
+  function propSearchRow() {
+    const row = document.createElement('div'); row.className = 'refit-propsearch';
+    const inp = document.createElement('input');
+    // type=text, NOT type=search — a search field gets the UA's own ✕ and cancel affordance, which is raw
+    // OS chrome sitting inside a CRT panel (the no-white-controls order). We draw our own clear key.
+    inp.type = 'text';
+    inp.className = 'refit-input refit-searchfield';
+    inp.id = 'refit-propsearch-input';
+    inp.value = propQuery;
+    inp.spellcheck = false;
+    inp.autocomplete = 'off';
+    inp.setAttribute('aria-label', 'Search props');
+    // the count is READ from the catalog — a hardcoded "120" becomes a lie the first time a prop lands
+    inp.placeholder = 'SEARCH ' + catalog().length + ' PROPS — NAME OR CATEGORY';
+    inp.oninput = () => { propQuery = inp.value; renderPropGrid(); };
+    inp.onkeydown = (ev) => {
+      if (ev.key !== 'Escape') return;
+      ev.stopPropagation();   // a clear must never bubble out and close REFIT behind the Commander
+      if (inp.value) { inp.value = ''; propQuery = ''; renderPropGrid(); sfx('click'); }
+      else inp.blur();        // an already-empty field hands Escape back to the editor
+    };
+    row.appendChild(inp);
+
+    const clr = document.createElement('button');
+    clr.type = 'button';
+    clr.className = 'bb sm refit-searchclear';
+    clr.textContent = '✕';
+    clr.title = 'clear search';
+    clr.onclick = () => {
+      propQuery = '';
+      const f = root && root.querySelector('#refit-propsearch-input');
+      if (f) { f.value = ''; f.focus(); }
+      renderPropGrid(); sfx('click');
+    };
+    row.appendChild(clr);
+    return row;
+  }
+
+  /* rebuild ONLY the gallery (and the rows a search hides). Runs on every keystroke and every tile
+     pick, so it must never re-create the <input> above it. */
+  function renderPropGrid() {
+    const host = root && root.querySelector('#refit-propgrid-host');
+    if (!host) return;
+    const on = isSearching();
+    // .refit-tiers/.refit-propcats declare `display:flex`, which beats the UA's [hidden] rule — so the
+    // visibility toggle has to be an inline display, not the hidden attribute.
+    const tiers = root.querySelector('.refit-tiers'), cats = root.querySelector('.refit-propcats');
+    if (tiers) tiers.style.display = on ? 'none' : '';
+    if (cats) cats.style.display = on ? 'none' : '';
+    const clr = root.querySelector('.refit-searchclear');
+    if (clr) clr.style.display = propQuery ? '' : 'none';
+
+    propThumbs.length = 0;   // the gallery is the only thumb source; free the outgoing tiles' canvases
+    host.innerHTML = '';
+    const list = propsForGrid();
+    if (on) {
+      const note = document.createElement('div');
+      note.className = 'refit-searchnote' + (list.length ? '' : ' none');
+      note.textContent = list.length
+        ? list.length + (list.length === 1 ? ' MATCH' : ' MATCHES') + ' · ALL TIERS'
+        : 'NO PROP MATCHES "' + propQuery.trim().toUpperCase() + '"';
+      host.appendChild(note);
+    }
+    const grid = document.createElement('div'); grid.className = 'refit-propgrid';
+    grid.setAttribute('aria-label', 'Props');
+    list.forEach(c => grid.appendChild(propTile(c)));
+    host.appendChild(grid);
+    try { paintThumbs(performance.now()); } catch (e) {}   // first frame now, so the gallery isn't blank for a beat
+  }
+
   function renderPalette() {
     const pal = root.querySelector('#refit-palette');
     if (!pal) return;
@@ -260,6 +347,11 @@ const Build = (() => {
       if (TIER_ORDER.indexOf(propTier) < 0) propTier = 'functional';
       let cats = catsForTier(propTier);
       if (cats.indexOf(propCat) < 0) { propCat = cats[0]; if (CATS[propCat] && CATS[propCat][0]) propType = CATS[propCat][0].id; }
+      // row -1 — SEARCH. Two tiers × ~11 category tabs is a fine map once you know which drawer a thing
+      // lives in and useless when you don't; with 120 props the taxonomy became the slow path. A query
+      // here goes FLAT across the whole catalog (both tiers, every category) and hides the browse rows
+      // while it's active, so what's on screen never disagrees with the lit tab.
+      pal.appendChild(propSearchRow());
       // row 0 — the TIER toggle: a clear, hard split between props that DO something and props that are just looks
       const tierRow = document.createElement('div'); tierRow.className = 'refit-tiers';
       tierRow.setAttribute('aria-label', 'Prop tiers');
@@ -269,7 +361,7 @@ const Build = (() => {
         b.className = 'bb sm refit-tier refit-tier-' + t + (t === propTier ? ' active' : '');
         b.setAttribute('aria-pressed', t === propTier ? 'true' : 'false');
         b.textContent = TIER_LABEL[t];
-        b.onclick = () => { propTier = t; const cs = catsForTier(t); propCat = cs[0]; if (CATS[propCat] && CATS[propCat][0]) propType = CATS[propCat][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
+        b.onclick = () => { propQuery = ''; propTier = t; const cs = catsForTier(t); propCat = cs[0]; if (CATS[propCat] && CATS[propCat][0]) propType = CATS[propCat][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
         tierRow.appendChild(b);
       });
       pal.appendChild(tierRow);
@@ -283,16 +375,17 @@ const Build = (() => {
         b.dataset.cat = g;   // lets the tutorial light the exact category tab a step needs
         b.setAttribute('aria-pressed', g === propCat ? 'true' : 'false');
         b.textContent = CAT_LABEL[g] || g.toUpperCase();
-        b.onclick = () => { propCat = g; if (CATS[g] && CATS[g][0]) propType = CATS[g][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
+        b.onclick = () => { propQuery = ''; propCat = g; if (CATS[g] && CATS[g][0]) propType = CATS[g][0].id; hidePropCard(); renderPalette(); setHint(); sfx('click'); };
         catRow.appendChild(b);
       });
       pal.appendChild(catRow);
-      // row 2 — a scrollable gallery of LIVE previews: each tile draws the real animated sprite, not just its name
-      const grid = document.createElement('div'); grid.className = 'refit-propgrid';
-      grid.setAttribute('aria-label', 'Props');
-      (CATS[propCat] || []).forEach(c => grid.appendChild(propTile(c)));
-      pal.appendChild(grid);
-      try { paintThumbs(performance.now()); } catch (e) {}   // first frame now, so the gallery isn't blank for a beat
+      // row 2 — a scrollable gallery of LIVE previews: each tile draws the real animated sprite, not just its name.
+      // It lives in its own HOST because every keystroke rebuilds the gallery and NOTHING else: re-running
+      // renderPalette() here would replace the <input> mid-word and the field would lose focus (and the caret)
+      // after a single character — the classic way a search box ships broken.
+      const gridHost = document.createElement('div'); gridHost.id = 'refit-propgrid-host';
+      pal.appendChild(gridHost);
+      renderPropGrid();
     } else if (tool === 'paint') {
       /* SURFACE — TWO AXES, TWO SECTIONS: the MATERIAL (what the surface is made of) and the HUE
          (what colour it is). They compose — every material renders in whatever colour is selected
@@ -427,7 +520,9 @@ const Build = (() => {
     b.setAttribute('aria-pressed', c.id === propType ? 'true' : 'false');
     const grant = (typeof WorldModel !== 'undefined' && WorldModel.grantLabelForProp) ? WorldModel.grantLabelForProp(c.id) : null;
     b.title = c.label + ' · ' + c.w + '×' + c.h + (grant ? ' · grants ' + grant : '');   // native fallback; the rich Fallout-style card is the hover surface
-    b.onclick = () => { propType = c.id; renderPalette(); setHint(); sfx('click'); };
+    // grid-only re-render: a full renderPalette() here would rebuild the search field and steal focus
+    // out of it mid-search (and it has nothing else to update — picking a tile changes no tab state).
+    b.onclick = () => { propType = c.id; renderPropGrid(); setHint(); sfx('click'); };
     b.onmouseenter = (e) => showPropCard(c, null, e.clientX, e.clientY);   // "what does this do?" card
     b.onmouseleave = hidePropCard;
 
