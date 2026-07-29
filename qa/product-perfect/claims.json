@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f016f09cce4df0cd3f7c041fe2f66ec409743f8f",
+    "sourceCommit": "b103854f4e69f05f19d4541d7f9758d29a9bb450",
     "pathSetSha256": "af9ad09edfc5cfca11ef337473fa52a4231aac027fa96bc0d00026a69427c890",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 294351,
-        "sha256": "4719c8408421947feb28fb60b6df79450c37564e2d3954f1b7b2cc55918a97de"
+        "bytes": 296410,
+        "sha256": "1dec96c15f57721ae9fb34cae3bf809683198418aa2c3fa6ba89b45ca1295089"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -843,13 +843,13 @@
       },
       {
         "path": "frontend/app/xp.js",
-        "bytes": 26453,
-        "sha256": "40c8849b7f952272c1b384c0f0d2cd97c5a32d91cf658c4cd1138f8b21ed3105"
+        "bytes": 28766,
+        "sha256": "228a44c601be8ccd4285ea1d22c6e539131b44a47abd77bfd5470f1e22320a5b"
       },
       {
         "path": "frontend/app/xpstore.js",
-        "bytes": 7504,
-        "sha256": "cf4e50ff9eba8de03a98c03ac937972fb87b438e35445fc4693578a01d313de3"
+        "bytes": 8440,
+        "sha256": "66a06abc3109ab27505966d944d1bce82f3a6c8c618dc713710736ed08fdeef5"
       },
       {
         "path": "frontend/app/zones.js",
