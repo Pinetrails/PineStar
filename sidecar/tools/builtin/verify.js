@@ -70,7 +70,9 @@
         if (!environment) { try { fs.mkdirSync(cwd, { recursive: true }); } catch (_) {} }
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
         const run = environment && typeof environment.execute === 'function'
-          ? environment.execute({ agentId: aid, cmd: cmd, cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now } })
+          // ctx.surface rides along (host authority): an unattended run receives only the service keys whose
+          // unattended grant is flipped ON — the same rule resolveForRequest enforces on web_request.
+          ? environment.execute({ agentId: aid, cmd: cmd, cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, surface: ctx.surface })
           : runCommand({ spawn: spawn, cmd: cmd, cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin });
         return run.then(function (res) {
           const verdict = interpret(res);
