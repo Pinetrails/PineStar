@@ -93,6 +93,15 @@ const Voice = (() => {
     else if (statusEl) statusEl.textContent = s;
   }
   function currentStatusText() { return statusEl ? statusEl.textContent : ''; }
+  /* A DIAGNOSTIC status must outlive the same-tick restore. The recorder's finish() writes the /api/stt
+     degrade reason and then calls cb.onEnd() -> endListening() inside the SAME synchronous .then body, and
+     Chat.status is a plain `textContent =` with no queue, so the browser only ever painted the LAST write:
+     the reason had a zero-frame lifetime and the only surviving trace was a console.warn nobody has open.
+     Park it here instead — endListening's restore and the hands-free give-up line both prefer it, and it is
+     cleared as soon as it has been honored or a listen actually produces a transcript. */
+  let pendingDiag = '';
+  function setDiagStatus(msg) { pendingDiag = String(msg == null ? '' : msg); setStatus(pendingDiag); }
+  function takeDiag() { const d = pendingDiag; pendingDiag = ''; return d; }
 
   /* ======================================================================
      OUTPUT — the agent's voice (TTS)
@@ -127,10 +136,34 @@ const Voice = (() => {
   const MID_REPLY_GIVEUP = 2;
   let fbStreak = 0;        // consecutive neural failures (reset by the next neural success)
   let fbNotified = '';     // reason class already surfaced this outage — notify once, not once per sentence
+  /* A reason is a semicolon-joined LADDER of everything the sidecar tried, not one verdict:
+       'no key; edge: edge timeout'                              (keyless station, the free floor blipped)
+       'openrouter 402 — insufficient credits; edge: empty audio' (wallet empty AND the floor blipped)
+     Two different questions get asked of it, and answering both with one terminal-class-first substring
+     test was the bug: on a keyless station 'no key' is a STRUCTURAL constant the sidecar always prefixes,
+     so the transient half was invisible — the one-shot retry never fired, the 60s billing cold-off armed
+     instead of the 4s one, and the tooltip demanded a credential for a network hiccup on a voice path that
+     is keyless by design. Split the two questions:
+       classifyFallback  -> WHAT TO SAY   (the worst thing that is actually actionable)
+       retryableFallback -> HOW LONG TO BACK OFF (is any leg worth trying again in seconds?) */
+  // An empty wallet will not fix itself. NB 'insufficient_quota' is OpenAI's TERMINAL billing error and
+  // must stay here, while Gemini answers a PER-MINUTE 429 with "Quota exceeded for quota metric" — a bare
+  // /quota/ test conflated the two and bought 60s of silence for something that clears in seconds.
+  const TERMINAL_BILLING = /\b402\b|insufficient[ _-]?credit|insufficient[ _-]?quota|payment required|billing|out of credit/i;
+  const TRANSIENT_LEG = /\b429\b|\b5\d\d\b|rate[ _-]?limit|quota exceeded|too many requests|timeout|timed out|temporarily|unavailable|unreachable|network|socket|ECONN|ETIMEDOUT|EAI_AGAIN|empty audio|aborted/i;
   function classifyFallback(reason) {
-    if (/no key/i.test(reason)) return 'nokey';
-    if (/\b402\b|insufficient credit|payment|billing|quota/i.test(reason)) return 'credits';
+    const r = String(reason == null ? '' : reason);
+    if (TERMINAL_BILLING.test(r)) return 'credits';
+    // 'no key' is structural. With a transient leg in the ladder the station does NOT need a credential —
+    // the free floor does have voice and simply blipped, so sending the user to buy a key would be a lie.
+    if (/no key/i.test(r)) return TRANSIENT_LEG.test(r) ? 'error' : 'nokey';
     return 'error';
+  }
+  function retryableFallback(reason) {
+    const r = String(reason == null ? '' : reason);
+    if (TRANSIENT_LEG.test(r)) return true;                        // something in the ladder may well work now
+    if (TERMINAL_BILLING.test(r) || /no key/i.test(r)) return false;
+    return true;                                                   // an unclassified error is treated as transient
   }
   // TRUTHFUL TELEMETRY, off the header. The voice swap must never be silent, but the COMMS status bar
   // (#chat-status) is for RUN-STATE only — never voice-outage banners (Andrew 2026-07-13: "there should
@@ -142,8 +175,9 @@ const Voice = (() => {
   function noteFallback(reason) {
     fbStreak++;
     const cls = classifyFallback(reason);
-    // 'no key' and 'credits' are non-transient → a longer 60s cold-off (any speaker-toggle clears it).
-    if (cls === 'credits' || cls === 'nokey') neuralColdUntil = Date.now() + BILLING_COLD_MS;
+    // The long cold-off is bought by IRRECOVERABILITY, not by the message class: a ladder whose last leg
+    // was a timeout or a rate limit is worth retrying in seconds even when an earlier leg said 402.
+    if (!retryableFallback(reason)) neuralColdUntil = Date.now() + BILLING_COLD_MS;
     if (fbNotified === cls || (cls === 'error' && fbStreak < 3)) return;
     fbNotified = cls;
     // Truthful: there is no "backup voice" anymore — a failed chunk plays nothing and the reply stays
@@ -541,9 +575,11 @@ const Voice = (() => {
     const seq = job.seq;
     job.result = synthOnce(job)
       // ONE immediate retry for a TRANSIENT failure (429 / network / 5xx) — a single provider blip must cost a
-      // beat of latency, not a whole sentence of the reply. 'no key' and billing are NOT transient: don't burn
-      // a second call on them. A torn-down job (barge-in bumped speakSeq) is never retried.
-      .then(res => (res.kind === 'fail' && classifyFallback(res.reason) === 'error' && seq === speakSeq) ? synthOnce(job) : res)
+      // beat of latency, not a whole sentence of the reply. A missing credential and an empty wallet are NOT
+      // transient: don't burn a second call on them. Ask retryableFallback, not the message class: a keyless
+      // station's reason ALWAYS carried the structural 'no key', which made this branch dead code there.
+      // A torn-down job (barge-in bumped speakSeq) is never retried.
+      .then(res => (res.kind === 'fail' && retryableFallback(res.reason) && seq === speakSeq) ? synthOnce(job) : res)
       .then(res => {
         if (res.kind === 'neural') { noteNeuralOk(); return res; }
         if (res.kind === 'skip') return res;   // intentional barge-in/teardown cancel — not a failure
@@ -695,6 +731,17 @@ const Voice = (() => {
   // through all of it, or the re-opened mic would capture the agent's own voice (echo). (No synth queue
   // to consider — neural is the only voice path now.)
   function talking() { return draining || playing || !!currentAudio; }
+  /* MUTING MID-REPLY MUST NOT WEDGE HANDS-FREE. The rearm heartbeat has exactly two triggers: chat.js's
+     onTurnEnd(), which lands FIRST while audio is still draining and then correctly bails (the mic must
+     never open into the agent's own voice), and the queue's onReplyDone. stopSpeaking() nulls onReplyDone,
+     so muting the speaker while the agent was still speaking discarded the ONE surviving trigger — the mic
+     never re-opened and the mode button went on reading 'hands-free ON' over a dead conversation. Every
+     other stopSpeaking() caller covers itself (onMicClick re-arms after 150ms, stopConvo/init leave the
+     mode entirely); the two mute paths were the leak, so they share this one. */
+  function muteStopSpeaking() {
+    stopSpeaking();
+    if (convoMode) maybeRearm();
+  }
   function maybeRearm() {
     if (!convoMode || !canListen() || rearmTimer) return;
     if (busyNow() || listening || talking()) return;   // not ready — a finishing event re-calls this
@@ -745,7 +792,9 @@ const Voice = (() => {
   // a silent listen in voice mode: try again a few times, then go passive so the mic isn't hot forever.
   function handleEmptyListen() {
     emptyStreak++;
-    if (emptyStreak >= MAX_EMPTY) { emptyStreak = 0; setStatus('voice mode — tap 🎤 when ready'); return; }
+    // Hands-free gave up after three "empty" listens without ever naming why. If those listens failed for a
+    // REASON (a 403 after a respawn, a provider 500), say that instead of implying nobody spoke.
+    if (emptyStreak >= MAX_EMPTY) { emptyStreak = 0; setStatus(takeDiag() || 'voice mode — tap 🎤 when ready'); return; }
     maybeRearm();
   }
 
@@ -892,6 +941,20 @@ const Voice = (() => {
       if (key) headers['X-OpenRouter-Key'] = key;
       const r = await fetch('/api/stt', { method: 'POST', headers, body: blob });
       const j = await r.json().catch(() => ({}));
+      /* CHECK r.ok. `fetch` RESOLVES on 4xx/5xx, and the route's honest 200-degrade envelope is not the only
+         thing that can come back: rejectBadApiToken answers 403 with the plain text 'forbidden token' BEFORE
+         the route table is reached — the documented state after a sidecar respawn, where the page still holds
+         the old X-StarNet-Token — and any 5xx/HTML/empty error body behaves the same. r.json() then rejects,
+         the catch yields {}, and an UNREACHABLE endpoint was laundered into a CONFIRMED-EMPTY transcript:
+         the user's spoken sentence disappeared with no error and no diagnostic, byte-identical to having said
+         nothing into a dead room. An unknown is not an empty. */
+      if (!r.ok && !(j && (j.text || j.reason))) {
+        const reason = r.status === 403
+          ? 'the station restarted — reload the page to reconnect'
+          : 'transcription unreachable (HTTP ' + r.status + ')';
+        console.warn('[voice] STT HTTP', r.status);
+        return { text: '', reason, failed: true };
+      }
       if (j && j.reason) console.warn('[voice] STT:', j.reason);
       return { text: (j && j.text) || '', reason: j && j.reason };
     }
@@ -902,7 +965,9 @@ const Voice = (() => {
       if (aborted || !blob || !blob.size) { cb && cb.onEnd && cb.onEnd(); return; }
       transcribe(blob).then(({ text, reason }) => {
         if (aborted) { cb && cb.onEnd && cb.onEnd(); return; }
-        if (!text && reason) { setStatus('voice: ' + String(reason).slice(0, 60)); maybeFallbackToWebSpeech(reason); }
+        // setDiagStatus, not setStatus: cb.onEnd() below runs endListening() in this same synchronous block
+        // and its restore would otherwise repaint 'online' over this before a single frame is drawn.
+        if (!text && reason) { setDiagStatus('voice: ' + String(reason).slice(0, 60)); maybeFallbackToWebSpeech(reason); }
         cb && cb.onFinal && cb.onFinal(String(text || '').trim());
         cb && cb.onEnd && cb.onEnd();
       }).catch(e => {
@@ -1045,7 +1110,9 @@ const Voice = (() => {
     if (convoMode && !sentThisListen && !busyNow() && !speaking) { handleEmptyListen(); return; }
     // otherwise restore whatever status was showing before we grabbed the mic (a send already set
     // 'thinking…'/'working…' via Chat, so this only fires for a plain idle stop).
-    if (!busyNow() && !speaking) setStatus(savedStatus || (convoMode ? 'voice mode on' : 'online'));
+    // A diagnostic written by this listen OUTRANKS the restore — savedStatus was captured at startListening,
+    // before the failure existed, so it can never carry it.
+    if (!busyNow() && !speaking) setStatus(takeDiag() || savedStatus || (convoMode ? 'voice mode on' : 'online'));
   }
 
   // a final transcript from the mic — sent exactly like a typed message (busy/purpose/task/cost logic
@@ -1114,7 +1181,14 @@ const Voice = (() => {
     if (!toggleBtn) return;
     toggleBtn.classList.toggle('off', !speakReplies);
     toggleBtn.innerHTML = speakReplies ? ICON.spkOn : ICON.spkOff;
-    toggleBtn.title = speakReplies ? 'agent voice: ON — click to mute' : 'agent voice: OFF — click to unmute';
+    /* The pinned degrade reason OUTRANKS the plain on/off copy. This tooltip is the only sanctioned channel
+       for voice-outage telemetry (#chat-status is run-state only), so overwriting it unconditionally left the
+       station silent while asserting 'agent voice: ON' with no way to find out why — the exact 2026-07-07
+       escape the fbMsg machinery exists to prevent. Every path that legitimately clears the reason calls
+       clearNeuralCold()/noteNeuralOk() first, which empty fbMsg; init() did not, and it runs on agent focus,
+       persona change and dossier apply. Guarding here covers every caller instead of one. */
+    toggleBtn.title = (speakReplies && fbMsg) ? fbMsg
+      : (speakReplies ? 'agent voice: ON — click to mute' : 'agent voice: OFF — click to unmute');
     toggleBtn.setAttribute('aria-pressed', speakReplies ? 'true' : 'false');
     toggleBtn.setAttribute('aria-label', speakReplies ? 'Agent voice: on, click to mute' : 'Agent voice: off, click to unmute');
   }
@@ -1149,7 +1223,7 @@ const Voice = (() => {
     speakReplies = !speakReplies; savePref(LS_SPEAK, speakReplies);
     forcedSpeak = false;   // a manual speaker change is the user's own choice — keep it (don't restore on voice-mode exit)
     clearNeuralCold();     // ANY toggle re-probes the neural path fresh — no cold-off survives a deliberate flip
-    if (!speakReplies) stopSpeaking();
+    if (!speakReplies) muteStopSpeaking();
     else prewarmVoice();   // turning ON → quietly warm the stock lines so mutters/samples play instantly
     reflectToggle();
     if (typeof SFX !== 'undefined') SFX.click();
@@ -1160,7 +1234,7 @@ const Voice = (() => {
     if (speakReplies === want) { reflectToggle(); return speakReplies; }
     speakReplies = want; savePref(LS_SPEAK, speakReplies);
     forcedSpeak = false;
-    if (!speakReplies) stopSpeaking();
+    if (!speakReplies) muteStopSpeaking();
     else prewarmVoice();
     reflectToggle();
     return speakReplies;

@@ -13141,7 +13141,13 @@ async function handleTts(req, res) {
   // Cache key: model+voice+STYLE+text (pacing is client-side, so it stays out of the key for better hits).
   // OpenRouter and native Gemini SHARE a key (same model + prebuilt voice ⇒ same clip); OpenAI is a different
   // vendor voice, so it gets its own namespace (like elevenlabs/) and can never collide.
-  let keyedReason = ttsKey ? '' : 'no key';
+  /* 'no key' is a STRUCTURAL fact about the keyed tier, never a diagnosis of the failure that actually
+     happened. With the free keyless Edge floor enabled, a station holding no credential still has working
+     voice — so reporting an Edge blip as "no key" tells the user to go buy an API key to fix a network
+     hiccup, and the client (which classifies by substring and takes the terminal class first) then treats
+     the whole composite as terminal: no retry, and a 60s dead-voice cold-off instead of 4s. Carry it into
+     the reason only when the floor cannot serve either — there the credential really is what is missing. */
+  let keyedReason = '';
   if (ttsKey) {
     const ck = (ttsProvider === 'openai')
       ? crypto.createHash('sha1').update('openai/' + OPENAI_TTS_MODEL + '|' + OPENAI_TTS_VOICE + '|' + style + '|' + text).digest('hex')
@@ -13178,7 +13184,9 @@ async function handleTts(req, res) {
     let ebuf;
     try { ebuf = await edgetts.synth(text, { voice: edgeVoice, nowMs: Date.now() }); }   // clock injected here (index.js = ambient composition root)
     catch (e) { return fallback(keyedReason ? (keyedReason + '; edge: ' + ((e && e.message) || e)) : ('edge: ' + ((e && e.message) || e))); }
-    if (!ebuf || !ebuf.length) return fallback(keyedReason || 'edge: empty audio');
+    // APPEND the edge detail, never let the keyed reason swallow it: the client needs the transient leg to
+    // pick a 4s cool-off over a 60s one, and 'edge: empty audio' is the only leg that names what just failed.
+    if (!ebuf || !ebuf.length) return fallback(keyedReason ? (keyedReason + '; edge: empty audio') : 'edge: empty audio');
     try { const tmp = path.join(VOICE_CACHE_DIR, eck + '.mp3.' + crypto.randomUUID() + '.tmp'); await fsp.writeFile(tmp, ebuf); await fsp.rename(tmp, path.join(VOICE_CACHE_DIR, eck + '.mp3')); } catch (_) {}
     res.writeHead(200, { 'Content-Type': 'audio/mpeg', 'Cache-Control': 'no-store', 'X-Voice-Cache': 'miss' });
     res.end(ebuf); sweepMaybe(); return;
