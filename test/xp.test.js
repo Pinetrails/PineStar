@@ -335,6 +335,52 @@ const corrupt = Xp.reconcile({ xp: Infinity, level: NaN, lifetimeXp: NaN, confid
 A.ok(Number.isFinite(corrupt.stats.level) && Number.isFinite(corrupt.stats.xp), 'reconcile sanitizes a corrupted save like applyEvent does');
 A.ok(corrupt.stats.milestones.indexOf('still_here') !== -1, '…and still awards what the intact counters prove');
 
+/* ---- S5: PRACTICE — what the agent has actually LEARNED, as opposed to what it has been paid in.
+        A FOURTH separately-labelled meter, deliberately NOT a redefinition of level: level is a monotonic,
+        user-approval-only ladder every existing save already climbed under that rule. ---- */
+const sk = (o) => Object.assign({ state: 'active', createdBy: 'agent', useCount: 0, withheld: false }, o);
+
+// the honesty split that a plain [] cannot express: an unread skillbase is not an empty one.
+A.eq(Xp.practice(null).known, false, 'an unread skillbase reports known:false…');
+A.eq(Xp.practice(null).label, '—', '…and renders a dash, never a confident 0');
+A.eq(Xp.practice([]).known, true, 'a skillbase we DID read reports known — zero is a real answer');
+A.eq(Xp.practice([]).count, 0, '…and that answer is 0');
+A.eq(Xp.practice([]).band, 'none', 'no procedures -> band none');
+
+// THE ANTI-FARM LINE: authoring a procedure counts for nothing. Only one that was really USED counts.
+A.eq(Xp.practice([sk({ useCount: 0 }), sk({ useCount: 0 }), sk({ useCount: 0 })]).count, 0, 'three self-written, never-used skills earn a count of ZERO — writing is not learning');
+A.eq(Xp.practice([sk({ useCount: 0 }), sk({ useCount: 0 })]).idle, 2, '…and the unused ones are counted and nameable, not silently dropped');
+A.eq(Xp.practice([sk({ useCount: 1 })]).count, 1, 'a procedure the model actually loaded into real work counts');
+
+// each exclusion is a claim we refuse to make.
+A.eq(Xp.practice([sk({ useCount: 9, withheld: true })]).count, 0, 'a WITHHELD skill was never handed to the model — it cannot be known');
+A.eq(Xp.practice([sk({ useCount: 9, withheld: true })]).withheld, 1, '…and the withheld one is surfaced so the Commander can act on it');
+A.eq(Xp.practice([sk({ useCount: 9, createdBy: 'user' })]).count, 0, 'a skill the COMMANDER wrote is given, not learned');
+A.eq(Xp.practice([sk({ useCount: 9, createdBy: 'user' })]).given, 1, '…counted separately, never folded in');
+A.eq(Xp.practice([sk({ useCount: 9, state: 'archived' })]).count, 0, 'a retired procedure is not carried knowledge');
+A.eq(Xp.practice([sk({ useCount: 9, state: 'stale' })]).count, 1, 'a STALE skill is still in force (only archived is retired)');
+// every flavour of agent authorship counts; the background passes are the agent distilling too.
+for (const by of ['agent', 'reflection', 'background-review', 'agent-created', 'curator']) {
+  A.eq(Xp.practice([sk({ useCount: 1, createdBy: by })]).count, 1, 'createdBy ' + by + ' is the agent distilling its own procedure');
+}
+const practiceMix = Xp.practice([
+  sk({ useCount: 3 }), sk({ useCount: 1, createdBy: 'reflection' }), sk({ useCount: 5 }),
+  sk({ useCount: 0 }), sk({ useCount: 9, withheld: true }), sk({ useCount: 9, createdBy: 'user' }), sk({ useCount: 9, state: 'archived' })
+]);
+A.eq(practiceMix.count, 3, 'a practiceMix skillbase counts only the three that were distilled, held, allowed and used');
+A.eq(practiceMix.authored, 5, 'authored = everything the agent distilled and still holds (used + idle + withheld)');
+A.eq([practiceMix.idle, practiceMix.withheld, practiceMix.given, practiceMix.retired], [1, 1, 1, 1], 'every excluded skill is accounted for by name');
+A.eq(practiceMix.band, 'practised', '3 learned -> practised');
+A.eq(Xp.practice([sk({ useCount: 1 })]).band, 'forming', '1 learned -> forming');
+A.eq(Xp.practice(Array.from({ length: 7 }, () => sk({ useCount: 1 }))).band, 'fluent', '7 learned -> fluent');
+// defensive: junk rows and junk counters must never poison the number.
+A.eq(Xp.practice([null, undefined, 'nope', 42, sk({ useCount: 1 })]).count, 1, 'junk rows are skipped, not counted');
+A.eq(Xp.practice([sk({ useCount: NaN }), sk({ useCount: Infinity }), sk({ useCount: -5 })]).count, 0, 'a non-finite or negative useCount never proves a use');
+// PRACTICE is descriptive: it touches neither the ladder nor the other meters.
+A.eq(typeof Xp.practice([]).pct, 'undefined', 'practice publishes no percentage — it is a count, not a ratio');
+const untouched = run([done(), keep()]).stats;
+A.eq(Xp.compute(untouched).level, Xp.compute(Xp.applyEvent(untouched, done()).stats).level, 'nothing about practice can move the level ladder');
+
 // ---- milestone CATALOGUE (render-state for the trophy case): every badge, with earned flags + unlock hints ----
 const catFresh = Xp.milestones(Xp.fresh());
 A.eq(catFresh.length, Xp.MILESTONES.length, 'catalogue lists every milestone');

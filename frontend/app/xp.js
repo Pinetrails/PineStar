@@ -1,8 +1,10 @@
 /* STARNET — xp.js : the AGENT-GROWTH model — XP, Level, and a Confidence (reliability) gauge.
    Pure + testable (UMD: an `Xp` global in the browser, module.exports under node).
 
-   Three HONEST meters — never fabricated, mirroring ctxgauge.js. The first two read off explicit user
-   satisfaction; the third reads off what the harness itself observed:
+   Four HONEST meters — never fabricated, mirroring ctxgauge.js. The first two read off explicit user
+   satisfaction; the third reads off what the harness itself observed; the fourth off what the agent has
+   actually learned and put to work. They are never averaged into one score: two meters that can disagree is
+   the truthful shape.
      • XP / LEVEL  — cumulative, MONOTONIC user trust. You never lose a level.
                      Curve: cumulative XP to REACH level n = LEVEL_K * n * (n-1)
                      (L2=50, L3=150, L5=500, L10=2250, L28=18900).
@@ -13,6 +15,8 @@
                      What the HARNESS observed, not what the Commander said, so it can honestly disagree
                      with CONFIDENCE. Mints NO XP; provider faults and Commander cancellations are excluded
                      from the ratio, never charged to the agent. Same calibration honesty (MIN_RUNS).
+     • PRACTICE     — (S5) distilled procedures the agent wrote from real work AND has actually used since.
+                     Descriptive capability, not currency: authoring earns nothing, so it cannot be farmed.
 
    The design rule: these DESCRIBE the agent's user-approved growth/reliability — they never GATE it. No
    capability is ever locked behind a level. The station-wide rollup uses the SAME engine fed
@@ -450,6 +454,45 @@
     };
   }
 
+  /* S5 — PRACTICE: what this agent has actually LEARNED, as opposed to what it has been paid in.
+     The lane's original S5 sketch was to redefine LEVEL as a readout of accumulated capability. That is the
+     right IDEA and the wrong PLACE: level is a monotonic, user-approval-only ladder that every existing save
+     has already climbed under that rule, so redefining it would silently rewrite records the Commander earned,
+     and it renders synchronously in the world/topbar where this data (an async per-agent skill list) cannot go.
+     So it lands the way RELIABILITY did — a FOURTH separately-labelled meter, never averaged into the others.
+
+     A procedure counts as LEARNED only when all four hold, and each exclusion is a lie we refuse to tell:
+       • the AGENT wrote it (createdBy agent/reflection/background-review/curator). A skill the Commander
+         authored is GIVEN, not learned — counted separately, never folded in.
+       • it is not ARCHIVED — a retired procedure is not carried knowledge.
+       • the guard is not WITHHOLDING it. A withheld skill was never handed to the model, so claiming the agent
+         "knows" it would assert something the harness can prove false.
+       • it has been USED at least once (useCount >= 1). THIS is the anti-farm line and the whole point: an
+         agent can author skills all day, and authoring moves nothing. The count only advances when a distilled
+         procedure was actually loaded into real work — a fact the store writes, not the model.
+     `known` splits "we could not read the skillbase" (null in → known:false, label '—') from the honest,
+     precise answer zero ([] in → known:true, count 0). A count of nothing is evidence; a count we never
+     fetched is not. Nothing here gates anything — it describes, exactly like every other meter in this file. */
+  const PRACTICE_AUTHORED = { agent: 1, reflection: 1, 'background-review': 1, 'agent-created': 1, curator: 1 };
+  function practice(skills) {
+    const known = Array.isArray(skills);
+    const list = known ? skills : [];
+    let learned = 0, idle = 0, withheld = 0, given = 0, retired = 0;
+    for (const s of list) {
+      if (!s || typeof s !== 'object') continue;
+      if (String(s.state || 'active').toLowerCase() === 'archived') { retired++; continue; }
+      if (!PRACTICE_AUTHORED[String(s.createdBy || 'agent').toLowerCase()]) { given++; continue; }
+      if (s.withheld) { withheld++; continue; }
+      if (Math.max(0, Math.floor(num(s.useCount, 0))) >= 1) learned++; else idle++;
+    }
+    return {
+      known, count: learned, idle, withheld, given, retired,
+      authored: learned + idle + withheld,          // everything the agent distilled and still holds
+      label: known ? String(learned) : '—',
+      band: !known ? 'unknown' : learned >= 7 ? 'fluent' : learned >= 3 ? 'practised' : learned >= 1 ? 'forming' : 'none',
+    };
+  }
+
   // the FULL milestone catalogue as render-state: every badge with its label, unlock hint, and earned flag —
   // earned ones lit, locked ones shown with what unlocks them. Pure → drives the trophy case in the dossier.
   function milestones(stats) {
@@ -457,5 +500,5 @@
     return MILESTONES.map(m => ({ id: m.id, label: m.label, hint: m.hint, earned: earned.indexOf(m.id) !== -1 }));
   }
 
-  return { fresh, clone, applyEvent, reconcile, compute, reliability, credential, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES, MIN_RUNS, workSize, crewSplit };
+  return { fresh, clone, applyEvent, reconcile, compute, reliability, credential, practice, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES, MIN_RUNS, workSize, crewSplit };
 });
