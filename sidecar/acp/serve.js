@@ -62,8 +62,20 @@ const BASE_LABEL = 'http://' + CFG.host + ':' + CFG.port;
 function log() { try { process.stderr.write('[acp] ' + Array.prototype.join.call(arguments, ' ') + '\n'); } catch (_) {} }
 
 // ---- token discovery: explicit wins; else scrape the served page once (browser-identical) ------
+// ⛔ THE STATION'S API TOKEN IS PER-LAUNCH, SO A SCRAPED ONE GOES STALE (same defect as sidecar/mcp/serve.js).
+// An editor spawns this agent once and keeps it for the whole editing session, while StarNet is a desktop app the
+// Commander closes and reopens — every launch mints a NEW token. A token cached for the process lifetime meant the
+// first station restart broke every prompt until the editor itself was restarted. An EXPLICIT token (--token= /
+// env) is the operator's choice and is never invalidated.
+const TOKEN_IS_EXPLICIT = !!CFG.token;
 let cachedToken = CFG.token || '';
 let tokenPromise = null;
+function invalidateToken(why) {
+  if (TOKEN_IS_EXPLICIT || !cachedToken) return false;
+  log('token rejected (' + why + ') — re-discovering; the station was probably restarted');
+  cachedToken = '';
+  return true;
+}
 function discoverToken() {
   if (cachedToken) return Promise.resolve(cachedToken);
   if (tokenPromise) return tokenPromise;
@@ -111,7 +123,13 @@ function rawRequest(method, path, body, withToken, token) {
 
 async function callSidecar(method, path, body) {
   const token = await discoverToken();
-  return rawRequest(method, path, body == null ? null : body, true, token);
+  const res = await rawRequest(method, path, body == null ? null : body, true, token);
+  // ONE re-auth retry on a rejected token: the station restarted and minted a new one (see invalidateToken).
+  if (res && res.ok && (res.status === 401 || res.status === 403) && invalidateToken('HTTP ' + res.status)) {
+    const fresh = await discoverToken();
+    if (fresh && fresh !== token) return rawRequest(method, path, body == null ? null : body, true, fresh);
+  }
+  return res;
 }
 
 /* ---- openRun: POST /api/run and stream its NDJSON into the core -------------------------------
@@ -128,7 +146,13 @@ function openRun(opts) {
     discoverToken().then(async (token) => {
       if (!token) return reject(new Error('StarNet is not running (or its API token could not be read) at ' + BASE_LABEL + ' — start StarNet and try again'));
 
-      const info = await rawRequest('GET', '/api/runtime/agent', null, true, token);
+      let info = await rawRequest('GET', '/api/runtime/agent', null, true, token);
+      // A rejected token means the station restarted. Re-scrape the live one and retry ONCE, rather than telling
+      // the Commander to restart their editor — closing and reopening StarNet should not cost them that.
+      if (info.ok && (info.status === 401 || info.status === 403) && invalidateToken('HTTP ' + info.status)) {
+        const fresh = await discoverToken();
+        if (fresh && fresh !== token) { token = fresh; info = await rawRequest('GET', '/api/runtime/agent', null, true, token); }
+      }
       if (!info.ok) return reject(new Error('StarNet is not reachable at ' + BASE_LABEL + ': ' + (info.error || 'connection failed')));
       if (info.status === 401 || info.status === 403) return reject(new Error('StarNet rejected this bridge\'s API token — restart the editor so it re-reads the station token'));
       const rt = info.json || {};
