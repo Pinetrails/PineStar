@@ -99,6 +99,35 @@ function runGit(args, opts) {
     const targetId = rebuilt.snapshots[rebuilt.snapshots.length - 1].id;
     A.ok(await store.restore(aid, targetId), 'restore works against a rebuilt-from-git index');
 
+    /* ---- 10b. the WRITE order a live run actually takes ------------------------------------------
+       Case 10 covers the READ order: wipe both files, then list. A real mutating tool call SNAPSHOTS
+       FIRST. snapshot() was async but used the SYNC loadIndex, which returns an EMPTY index when
+       index.json and its .bak are both gone — so it recorded on top of nothing and persisted ONE entry.
+       readIndexRaw then reports 'ok' forever, loadIndexResilient short-circuits and never reaches the
+       git-log rebuild again, and restore() refuses every surviving commit: the rewind UI shows a single
+       restore point while the Commander's real history sits intact on disk, unreachable. */
+    const preCrashIds = rebuilt.snapshots.map(x => x.id);
+    A.ok(preCrashIds.length >= 5, 'we have a real pre-crash history to lose');
+    fs.rmSync(idxFile, { force: true });
+    fs.rmSync(idxFile + '.bak', { force: true });
+    write('report.md', 'edited again after the index loss\n');
+    const afterCrash = await store.snapshot(aid, { runId: 'r-after', turn: 99, label: 'fs.write' });
+    A.ok(afterCrash && afterCrash.id, 'the post-crash snapshot still commits');
+    const idxAfter = await store.listResilient(aid);
+    A.ok(idxAfter.snapshots.length > 1,
+      'snapshot() REBUILT from git instead of collapsing the history to ONE entry (got ' + idxAfter.snapshots.length + ')');
+    A.eq(idxAfter.snapshots.length, 5, 'the index is back at the keep cap, not at 1');
+    /* The rebuild reads the SHADOW REPO, which holds more history than the pruned index did, so the exact
+       overlap with the previous window is not the invariant — these are: the newest pre-crash snapshot is
+       still recorded, and the Commander can still roll back to one. Before the fix the index held exactly
+       the post-crash entry and restore() refused every id above. */
+    const survived = preCrashIds.filter(id => idxAfter.snapshots.some(x => x.id === id));
+    A.ok(survived.length >= 1, 'pre-crash snapshots are still recorded (' + survived.length + ' of ' + preCrashIds.length + ' within the keep cap)');
+    A.ok(idxAfter.snapshots.some(x => x.id === preCrashIds[preCrashIds.length - 1]),
+      'the NEWEST pre-crash snapshot specifically survived the post-crash write');
+    A.ok(await store.restore(aid, survived[survived.length - 1]),
+      'and the Commander can still roll back to a pre-crash snapshot');
+
     // ---- 11. SIZE CEILING: a tiny threshold forces a sweep; the repo shrinks and stays restorable ----
     const aid2 = 'sz';
     const wt2 = path.join(root, aid2);
