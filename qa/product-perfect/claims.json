@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "849a6727f1ace7ef32c23408d3d82e034b3f308d",
+    "sourceCommit": "011cddaaf62bdf6f86316f0567665279ee936664",
     "pathSetSha256": "628f7c987f905a7ff6647df8f7e5ec9c86b50b9e4541e13a32e70107599e46f4",
     "files": [
       {
@@ -663,8 +663,8 @@
       },
       {
         "path": "frontend/app/terrain.js",
-        "bytes": 73729,
-        "sha256": "7f51caf1d487124cae7207e3906b176454dd389b4a4292dcf52612be9d511899"
+        "bytes": 84513,
+        "sha256": "363816fe64a6c4ed19f3375928da98b1b5fce440d029e05dacc9c370eb878ade"
       },
       {
         "path": "frontend/app/testapi.js",
