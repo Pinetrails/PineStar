@@ -15,7 +15,9 @@ Default. Commands run on the host machine inside the agent's per-agent workspace
 ```
 
 This preserves the existing behavior: persistent cwd, `shell.exec`, `verify.run`, `shell.exec background:true`,
-`shell.bg.status`, `shell.bg.kill`, checkpoints, and `fs.*` all keep working.
+`shell.bg.status`, `shell.bg.read`, `shell.bg.write`, `shell.bg.kill`, checkpoints, and `fs.*` all keep working.
+(The `docker` backend does not implement background processes at all, so `read`/`write` refuse there the same
+way `start` already does.)
 
 ### `docker`
 

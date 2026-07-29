@@ -9,7 +9,8 @@
 
    makeEnvironmentManager({ spawn, fs, pathMod, root, bg?, clock?, env?, config? })
      -> { backendId, describe, ensureWorkspace, workspaceRoot, getCwd,
-          rememberCwd, execute, startBackground, statusBackground, killBackground }
+          rememberCwd, execute, startBackground, statusBackground, readBackground,
+          writeBackground, closeBackgroundStdin, killBackground }
 */
 'use strict';
 (function (root, factory) {
@@ -279,6 +280,15 @@
       statusBackground: function (agentId, bgId) {
         return bg && typeof bg.status === 'function' ? bg.status(safeAgentId(agentId || 'agent'), bgId) : (bgId ? null : []);
       },
+      readBackground: function (agentId, bgId, opts) {
+        return bg && typeof bg.read === 'function' ? bg.read(safeAgentId(agentId || 'agent'), bgId, opts) : { ok: false, error: 'background processes are not available for the local backend' };
+      },
+      writeBackground: function (agentId, bgId, opts) {
+        return bg && typeof bg.write === 'function' ? bg.write(safeAgentId(agentId || 'agent'), bgId, opts) : { ok: false, error: 'background processes are not available for the local backend' };
+      },
+      closeBackgroundStdin: function (agentId, bgId) {
+        return bg && typeof bg.closeStdin === 'function' ? bg.closeStdin(safeAgentId(agentId || 'agent'), bgId) : { ok: false, error: 'background processes are not available for the local backend' };
+      },
       killBackground: function (agentId, bgId) {
         return bg && typeof bg.kill === 'function' ? bg.kill(safeAgentId(agentId || 'agent'), bgId) : { ok: false, error: 'background processes are not available for the local backend' };
       },
@@ -397,6 +407,9 @@
         return { ok: false, error: 'background processes are not available for the docker backend yet; run a foreground command or switch STARNET_EXEC_BACKEND=local' };
       },
       statusBackground: function () { return []; },
+      readBackground: function () { return { ok: false, error: 'background processes are not available for the docker backend yet' }; },
+      writeBackground: function () { return { ok: false, error: 'background processes are not available for the docker backend yet' }; },
+      closeBackgroundStdin: function () { return { ok: false, error: 'background processes are not available for the docker backend yet' }; },
       killBackground: function () { return { ok: false, error: 'background processes are not available for the docker backend yet' }; },
       killAllBackground: function () { return 0; },
       _internals: { dockerArgs: dockerArgs, posixInside: posixInside }
@@ -424,6 +437,9 @@
       execute: backend.execute,
       startBackground: backend.startBackground,
       statusBackground: backend.statusBackground,
+      readBackground: backend.readBackground,
+      writeBackground: backend.writeBackground,
+      closeBackgroundStdin: backend.closeBackgroundStdin,
       killBackground: backend.killBackground,
       killAllBackground: backend.killAllBackground,
       _backend: backend,
