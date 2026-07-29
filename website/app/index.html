@@ -766,6 +766,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/confbeats.js"></script><!-- confidence narrative beats (G3a): fire-once calibration-complete + TRUSTED spoken moments (own key) -->
 <script src="app/bottlestore.js"></script><!-- R5 "bottle a run": post-run offer to save a 👍-rated interactive run as a custom recipe (own key, one beat slot, dismiss=stop-forever) -->
 <script src="app/resummonstore.js"></script><!-- P3.1 "run it again?": post-run offer to re-run a 👍-rated run's shape — pre-fills a fresh run (agent + directive), never auto-runs (own key, one beat slot, dismiss=stop-forever) -->
+<script src="app/logoclip.js"></script><!-- brand-mark occlusion geometry: subtracts the floating-window rects from the z960 #logo so a panel dragged into the top-left covers it instead of bleeding through (BEFORE app.js, which calls LogoClip.clipFor) -->
 <script src="app/app.js"></script>
 <script src="app/keycta.js"></script><!-- cold-start honesty: after a KEYLESS awakening, one standing world banner "agent is awake but has no key" → SETTINGS; pure projection of Harness.hasStoredCredential, vanishes the instant a key lands (after app.js so App/Harness/StationUI exist) -->
 <script src="app/topbar.js"></script><!-- topbar instrument cluster: read-only STATION-XP + live SPEND-TODAY wiring (after app.js so Harness/Xp/XpStore/U exist) -->
