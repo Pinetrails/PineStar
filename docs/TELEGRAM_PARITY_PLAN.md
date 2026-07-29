@@ -327,12 +327,42 @@ That is a nuance, not a gap.
 N1 leads because it is the only remaining item that sends a message to the **wrong place**; everything
 else above is a missing capability, not a wrong one.
 
-**N1, N2, N3, N4, N5, N6, N7, N8 and `my_chat_member` are all done** (below). What is left, in order:
-**P4 live streaming** — the one that changes how the product *feels* and the only remaining item with real
-engineering risk (edit rate limits, partial state, overflow past 4096) — then **N14** loose-photo/text
-batching, and the breadth items **N9–N13, N15–N17**. N10 (link previews) is worth noting precisely: the
+**N1–N8, `my_chat_member` and P4 are all done** (below). What is left is breadth, not depth: **N14**
+loose-photo/text batching, and **N9, N11–N13, N15–N17**. N10 (link previews) is worth stating precisely: the
 transport already passes `link_preview_options` straight through from send opts, so the capability is
 *reachable* today; what is missing is a product decision about the default, which is why no knob was added.
+N11 (`deleteMessage`) shipped as part of P4.
+
+### P4 — LIVE STREAMING (done, 2026-07-29)
+
+The reply is written in front of you: the first sentences go out as a real message, and each throttle window
+edits that same message with everything produced so far. The token deltas were already being accumulated in
+one place (`state.buf += p.delta`), so that is where the stream is fed.
+
+**The invariant, and the plan's own acceptance bar: exactly one complete reply, whatever fails.** Streaming is
+an optimisation on top of `deliver()`, never a replacement, and every failure mode converges on the same place:
+
+| Failure | What the member gets |
+|---|---|
+| Cannot seed (send failed, channel cannot edit) | `deliver()` sends normally; nothing was left behind |
+| An intermediate edit 429s or blips | Skipped; the next window retries; the final edit carries everything |
+| **The final edit fails** | The stranded partial is **deleted**, then the reply is sent whole — never half an answer sitting above the real one |
+| The reply outgrows 4096 | Streaming stops at the limit; `deliver()` chunks as always, chunk 0 replacing the streamed message in place |
+| The run is superseded / E-STOPped | The partial is deleted — it answers a question that was withdrawn |
+| `message is not modified` | Treated as success: it means we streamed the exact final text |
+
+Two design rules worth keeping:
+
+- **`editMessage` and `deleteMessage` must BOTH be wired or streaming does not arm.** Arming the grow without
+  the clean-up is precisely how a failed edit becomes a duplicate reply. That pairing is also what keeps this
+  Telegram-only — no other transport supplies either, so the other four are byte-identical.
+- **Never stream a protocol marker.** The reply the member reads is not always the raw buffer: a
+  `TASK_QUESTION: …` answer is parsed, stripped and re-rendered as a numbered list with a keyboard. Streaming
+  the buffer put the internal marker on screen for several seconds first. An opening ALL-CAPS token followed by
+  a colon is a marker, not prose, so that run does not stream. **Found by the real-sidecar buttons e2e, not by
+  a unit test** — the raw marker showed up on the wire.
+
+`test/channels.telegram.stream.test.js`, 34 assertions, in `fast.list`, written as failure modes first.
 
 ### DONE from this sweep (2026-07-29, same lane)
 

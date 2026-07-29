@@ -495,6 +495,14 @@
         catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'setCommands threw' }); }
       },
 
+      // Remove a message we sent. Only the streaming path uses it, and only to clear a partial reply it can no
+      // longer finish in place. Transport-optional like the rest.
+      deleteMessage(chatId, messageId) {
+        if (typeof transport.deleteMessage !== 'function') return Promise.resolve({ ok: false, error: 'deleting messages is not supported on this channel' });
+        try { return Promise.resolve(transport.deleteMessage(String(chatId), String(messageId))); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'deleteMessage threw' }); }
+      },
+
       // React to a message instead of replying to it — the cheapest acknowledgement there is. Transport-optional
       // like every other capability here; a channel that cannot react simply shows nothing.
       setReaction(chatId, messageId, emoji) {

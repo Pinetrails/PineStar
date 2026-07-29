@@ -515,6 +515,86 @@
       };
     }
 
+    /* ---- LIVE STREAMING: the reply is written in front of you ------------------------------------------------
+       Until now a long answer was a typing bubble followed, thirty seconds later, by a wall of text. This grows
+       the reply in place: the first sentences go out as a real message, and each subsequent throttle window
+       edits that same message with everything produced so far.
+
+       THE INVARIANT, and the only one that matters: **exactly one complete reply, whatever fails.** Streaming is
+       an optimisation on top of the existing deliver() path, never a replacement for it. Every failure mode
+       converges on the same place:
+         · cannot seed (send failed, channel cannot edit) -> streaming is dead for this run, deliver() sends
+           normally, and nothing was left behind because nothing was sent;
+         · an intermediate edit fails (429, a blip) -> skipped, the next window tries again, the final edit
+           still carries the whole text;
+         · the FINAL edit fails -> the stale partial is DELETED and the reply is sent whole, so the member never
+           ends up reading half an answer sitting above the real one;
+         · the reply outgrows one message -> streaming stops at the limit and deliver() chunks as it always did,
+           with chunk 0 replacing the streamed message in place;
+         · the run is superseded or E-STOPped -> the partial is deleted, because it answers a question that has
+           been withdrawn.
+
+       Both editMessage AND deleteMessage must be wired: arming the grow without the clean-up is what turns a
+       failed edit into a duplicate reply. That pairing is also what keeps this Telegram-only for now — no other
+       transport supplies either, so their behaviour is byte-identical. */
+    const deleteMessage = typeof o.deleteMessage === 'function' ? o.deleteMessage : null;
+    const streamOk = !!(editMessage && deleteMessage) && o.streamReplies !== false;
+    const STREAM_MIN_MS = Number.isFinite(o.streamMinMs) ? Math.max(250, o.streamMinMs) : 1500;   // Telegram edits: ~1/s is safe
+    const STREAM_MIN_CHARS = Number.isFinite(o.streamMinChars) ? Math.max(1, o.streamMinChars) : 60;   // don't seed on "Su"
+    const notModified = (e) => /not modified/i.test(String(e || ''));
+
+    function startStream(chatId) {
+      if (!streamOk) return null;
+      let seedId = '', shown = '', lastAt = -Infinity, dead = false, inFlight = false, done = false;
+      const clockNow = () => (now ? now() : 0);
+      return {
+        get messageId() { return seedId; },
+        // Fire-and-forget: called on every token delta with the FULL text so far. Never awaited by the run, and
+        // it drops any delta that arrives while an edit is in flight — the next one carries that text anyway.
+        push(full) {
+          if (dead || done || inFlight) return;
+          const text = String(full == null ? '' : full);
+          if (!text.trim() || text === shown) return;
+          /* NEVER STREAM A PROTOCOL MARKER. The reply that reaches the member is not always `state.buf`: a
+             `TASK_QUESTION: …` answer is parsed, stripped and re-rendered as a numbered list with a keyboard
+             under it. Streaming the raw buffer would put the internal marker on the member's screen for a few
+             seconds before it turned into the real thing — the app showing something the harness never meant to
+             assert. Cheap and general: an opening ALL-CAPS token followed by a colon is a marker, not prose, so
+             this run simply does not stream. It still delivers, in full, the ordinary way. */
+          if (/^\s*[A-Z][A-Z_]{3,}:/.test(text)) { dead = true; return; }
+          // Past the single-message limit there is nothing left to stream INTO. Stop, and let deliver() chunk —
+          // it will still replace this message in place with chunk 0.
+          if (text.length > maxMessageLength) { dead = true; return; }
+          const t = clockNow();
+          if (seedId && (t - lastAt) < STREAM_MIN_MS) return;
+          if (!seedId && text.length < STREAM_MIN_CHARS) return;
+          inFlight = true;
+          const p = seedId
+            ? editMessage(chatId, seedId, text, {})
+            : send(chatId, text, routeOpts(chatId, true) || undefined);
+          Promise.resolve(p).then((r) => {
+            if (r && r.ok) {
+              shown = text; lastAt = clockNow();
+              if (!seedId) { seedId = String(r.messageId || ''); if (!seedId) dead = true; }   // no id back = nothing to edit
+            } else if (!seedId) {
+              dead = true;   // could not even start — one probe, then leave the run entirely alone
+            }
+          }).catch(() => { if (!seedId) dead = true; })
+            .then(() => { inFlight = false; });
+        },
+        // deliver() takes it from here: '' means "send normally", an id means "replace that message in place".
+        seal() { done = true; return seedId; },
+        // The question was withdrawn (superseded / E-STOP). A partial answer to a question nobody is waiting for
+        // is worse than no answer, so remove it.
+        abandon() {
+          done = true;
+          const id = seedId; seedId = '';
+          if (!id) return;
+          try { Promise.resolve(deleteMessage(chatId, id)).catch(() => {}); } catch (_) {}
+        }
+      };
+    }
+
     // ---- typing keep-alive: refresh the platform's "typing…" bubble while a run is in flight ---------------
     // Returns a stop() closure. The loop is detached (fire-and-forget) and PURELY cosmetic: any failure degrades
     // to no bubble, never touches the reply path. Backoff mirrors send(): a 429's retry_after (capped 30s) is
@@ -546,9 +626,12 @@
     // sendOpts (optional) rides ONLY on the FINAL chunk — a keyboard must land under the last thing the user
     // reads, and Telegram would otherwise render one set of buttons per chunk of a long reply. Returns the final
     // chunk's messageId too, which is what a keyboard needs in order to be edited/stripped once it is tapped.
-    async function deliver(chatId, text, runId, reason, agentId, sendOpts) {
+    async function deliver(chatId, text, runId, reason, agentId, sendOpts, seedId) {
       const chunks = chunkText(text, maxMessageLength);
       let ok = true, failedAt = -1, messageId = '';
+      // A message the stream already put in the chat. Chunk 0 REPLACES it rather than being sent again — that
+      // replacement is the whole difference between "streamed" and "streamed, then repeated".
+      let seed = (seedId && editMessage) ? String(seedId) : '';
       for (let i = 0; i < chunks.length; i++) {
         const last = i === chunks.length - 1;
         // The route rides EVERY chunk (all of a split reply belongs in one topic) while the quote and the
@@ -558,7 +641,24 @@
         const terminal = (last && sendOpts) ? sendOpts : null;
         const opts = (rt || terminal) ? Object.assign({}, terminal || {}, rt || {}) : undefined;
         let r;
-        try { r = await send(chatId, chunks[i], opts); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
+        if (i === 0 && seed) {
+          // Replace the streamed partial with the finished chunk. "message is not modified" means the text we
+          // streamed was already the final text — a success wearing a 400.
+          try { r = await editMessage(chatId, seed, chunks[0], opts || {}); } catch (e) { r = { ok: false, error: (e && e.message) || 'editMessage threw' }; }
+          if (r && r.ok === false && notModified(r.error)) r = { ok: true, messageId: seed };
+          if (!r || r.ok === false) {
+            /* The partial is stranded: we cannot update it and we are about to send the real answer. Remove it
+               first, or the member reads half an answer immediately above the whole one. The delete is
+               best-effort — if it fails too, delivering the reply still matters more than the duplicate. */
+            try { await deleteMessage(chatId, seed); } catch (_) {}
+            seed = '';
+            try { r = await send(chatId, chunks[0], opts); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
+          } else if (!r.messageId) {
+            r = { ok: true, messageId: seed };   // an edit answers with no id of its own; it is still that message
+          }
+        } else {
+          try { r = await send(chatId, chunks[i], opts); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
+        }
         if (!r || r.ok === false) { ok = false; failedAt = i; break; }
         if (last && r.messageId) messageId = String(r.messageId);
       }
@@ -1143,6 +1243,9 @@
       const stopTyping = startTyping(chatId);
       // …and mark the QUESTION itself, which survives the member closing the app. Cleared in the same finally.
       const clearAck = startAck(chatId, msg.messageId);
+      // …and write the ANSWER in front of them as it is produced. Null on every channel that cannot edit, in
+      // which case every path below behaves exactly as it did before streaming existed.
+      const stream = startStream(chatId);
       // hoisted OUT of the typing try-block: deliver() below the finally reads all three.
       let state = null;          // the LAST attempt's assembled state (buf/errMsg/reason/transient)
       let lastRunId = '';        // the runId actually delivered under (the last attempt's)
@@ -1150,6 +1253,9 @@
       let choiceEntry = null;    // the registered choice keyboard for a TASK_QUESTION reply (null = plain text)
       let finalAgentId = agentId;   // WHO produced the delivered reply — the LAST stage of the work line, not the first
       let firstStageText = null;    // what the ENTRY dock itself said, when a work line went on to replace it
+      // Hoisted for the finally below: `myRec` lives in the attempt scope, but the stream's clean-up decision
+      // (finish in place vs. delete the partial) is taken out here, after every return path has run.
+      let withdrawn = false;
       try {
 
       // MEDIA: download + store what the user actually sent (photos/videos/voice/files) BEFORE the turn is built,
@@ -1251,7 +1357,9 @@
         const sink = (name, payload) => {
           let p; try { p = redact(payload); } catch (_) { p = payload; }
           if (name === 'agent.run.start') state.runId = p.runId || state.runId;
-          else if (name === 'agent.token') state.buf += (p.delta || '');
+          // The reply is already being assembled here, delta by delta — so this is also where it can be SHOWN.
+          // stream.push is fire-and-forget and throttled; it can never delay or fail the run.
+          else if (name === 'agent.token') { state.buf += (p.delta || ''); if (stream) stream.push(state.buf); }
           else if (name === 'agent.run.error') { state.errMsg = p.message || 'run error'; state.transient = !!p.transient; }
           else if (name === 'capdenied') state.errMsg = state.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
           else if (name === 'agent.run.end') { state.reason = p.reason; state.budgetScope = p.budgetScope || null; state.budgetCapUsd = (typeof p.budgetCapUsd === 'number' && isFinite(p.budgetCapUsd)) ? p.budgetCapUsd : null; }
@@ -1297,7 +1405,7 @@
 
         // a newer message (or E-STOP) took over this chat — abandon this run's (now stale) partial reply, and do
         // NOT retry (the newer message owns the conversation now and is running its own replacement).
-        if (myRec.superseded) return;
+        if (myRec.superseded) { withdrawn = true; return; }
 
         // Retry ONLY the same-agent workspace-mutex race, and only while attempts remain. On the final failed
         // attempt fall through so the loop exits and the honest "still busy" reply below is delivered.
@@ -1307,7 +1415,7 @@
           // to release the shared workspace slot. Injected sleep so tests run instantly with a fake clock. The
           // record stays in `inflight` across this wait so a mid-backoff message can supersede us (checked next).
           await sleep(supersedeBackoffMs * Math.pow(2, attempt - 1));
-          if (myRec.superseded) return;
+          if (myRec.superseded) { withdrawn = true; return; }
           continue;
         }
         break;
@@ -1362,7 +1470,7 @@
           state.buf = state.buf + chain.stopNote(line);   // stage one answered but the line never got going — say so
         }
       }
-      if (myRec.superseded) return;
+      if (myRec.superseded) { withdrawn = true; return; }
       } finally {
         // release the (single) inflight record exactly once — but only if a NEWER message hasn't already replaced it
         // (the supersede path installs its own record under this chatId; clobbering it would drop the live run).
@@ -1427,9 +1535,13 @@
         if (state.reason && state.reason !== 'done') reply += endNote(state.reason, state);
       }
 
-      } finally { stopTyping(); clearAck(); }   // both die BEFORE deliver — neither may outlive the reply it announced
+      // all three die BEFORE deliver — none of them may outlive the reply it announced. The stream is ABANDONED
+      // (its partial deleted) only when the run was withdrawn; on every other path deliver() finishes it in place.
+      } finally { stopTyping(); clearAck(); if (stream && withdrawn) stream.abandon(); }
+      // seal() hands deliver() the streamed message so chunk 0 replaces it in place. It also closes the stream,
+      // so a late token delta can never race the final text back out of order.
       const dr = await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), finalAgentId,
-        choiceEntry ? { reply_markup: keyboardFor(choiceEntry) } : undefined);
+        choiceEntry ? { reply_markup: keyboardFor(choiceEntry) } : undefined, stream ? stream.seal() : '');
       // Stitch the delivered message onto the keyboard's registry entry so a tap can edit THAT message in place.
       // A send that failed retires the token immediately: leaving it would let a phantom keyboard (buttons the
       // user can see from a partially-sent reply) resolve against a question they never fully received.
@@ -1541,7 +1653,7 @@
 
     return {
       onInbound, onCallback, onStatus, onMembership,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI, observeTurn }
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI, observeTurn, startStream, streamOk, notModified }
     };
   }
 

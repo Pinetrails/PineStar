@@ -5484,6 +5484,9 @@ function startTelegram(token, key, model, agentCfg) {
     editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // 👀 on the question while the run thinks, cleared when the answer lands — cosmetic, never load-bearing.
     setReaction: (chatId, msgId, emoji) => adapterRef ? adapterRef.setReaction(chatId, msgId, emoji) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    // editMessage + deleteMessage TOGETHER are what let the hub stream a reply in place: one to grow it, one to
+    // clear a partial it can no longer finish. Wiring only one would arm streaming with no way to clean up.
+    deleteMessage: (chatId, msgId) => adapterRef ? adapterRef.deleteMessage(chatId, msgId) : Promise.resolve({ ok: false, error: 'no adapter' }),
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent,
     secrets: () => {
       const t = (channelSecrets && channelSecrets.telegram) || {};
@@ -5741,6 +5744,9 @@ function startTelegramBot(botId) {
     editMessage: (chatId, msgId, text, opts) => adapterRef ? adapterRef.editMessage(chatId, msgId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // 👀 on the question while the run thinks, cleared when the answer lands — cosmetic, never load-bearing.
     setReaction: (chatId, msgId, emoji) => adapterRef ? adapterRef.setReaction(chatId, msgId, emoji) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    // editMessage + deleteMessage TOGETHER are what let the hub stream a reply in place: one to grow it, one to
+    // clear a partial it can no longer finish. Wiring only one would arm streaming with no way to clean up.
+    deleteMessage: (chatId, msgId) => adapterRef ? adapterRef.deleteMessage(chatId, msgId) : Promise.resolve({ ok: false, error: 'no adapter' }),
     askConsent: channelAskConsent, resolveConsent: channelResolveConsent
   });
   const adapter = makeTelegramAdapter({

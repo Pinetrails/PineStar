@@ -340,6 +340,22 @@
         }
       },
 
+      /* deleteMessage — remove a message WE sent. Exactly one caller: live streaming, when the partially-written
+         reply can no longer be updated in place (the edit failed, or the run was superseded before it finished).
+         Leaving a half-written answer above the real one is worse than any tidiness argument for keeping it.
+         NEVER throws; a failed delete is logged nowhere and costs nothing — Telegram also refuses after 48h,
+         which is far outside the seconds this is used within. */
+      async deleteMessage(chatId, messageId) {
+        try {
+          const { data, res } = await call('deleteMessage', { chat_id: chatId, message_id: messageId });
+          if (data && data.ok) return { ok: true };
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          return { ok: false, error: redact((data && data.description) || ('http ' + code)) };
+        } catch (e) {
+          return { ok: false, error: errOf(e, 'network error') };
+        }
+      },
+
       /* setMessageReaction — the cheapest possible "I heard you": one API call, no message, no chunking, and
          nothing for the member to scroll past. A 👀 goes on the question while the run is thinking and is
          cleared when the answer lands, so the acknowledgement never outlives the thing it acknowledges.
