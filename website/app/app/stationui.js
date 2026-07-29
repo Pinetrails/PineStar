@@ -2374,7 +2374,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       skills.map((s, i) => {
         const lockable = !s.on && s.cap;
         return '<div class="perk ' + (s.on ? 'on' : '') + (lockable ? ' perk-locked' : '') + '"' +
-          (lockable ? ' data-perk-cap="' + esc(s.cap) + '" role="button" tabindex="0" title="Open REFIT to place a ' + esc(SK_OBJ_NAME[s.cap] || String(s.cap).toUpperCase()) + '"' : '') +
+          (lockable ? ' data-perk-cap="' + esc(s.cap) + '" role="button" tabindex="0" title="Open REFIT to place ' + skArt(SK_OBJ_NAME[s.cap] || s.cap) + esc(SK_OBJ_NAME[s.cap] || String(s.cap).toUpperCase()) + '"' : '') +
           ' style="--ci:' + i + '">' +
           '<div class="perk-icon">' + s.icon + '</div>' +
           '<div class="perk-name">' + s.name + '</div>' +
@@ -2460,11 +2460,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       });
   }
 
-  const SK_OBJ_NAME = { cabinet: 'CABINET', dish: 'DISH', workbench: 'WORKBENCH', studio: 'STUDIO', notebook: 'NOTEBOOK', jukebox: 'JUKEBOX', computer: 'COMPUTER', orchestrator: 'ORCHESTRATOR', connector: 'CONNECTOR' };
+  // The gear names here are the REFIT palette's own labels (the cabinet cap's representative prop is the INTEL CAB),
+  // so a "place a …" nudge names something the Commander can actually find in the palette. skArt keeps the article
+  // right for a vowel-initial label ("place an INTEL CAB", not "a INTEL CAB").
+  const SK_OBJ_NAME = { cabinet: 'INTEL CAB', dish: 'DISH', workbench: 'WORKBENCH', studio: 'STUDIO', notebook: 'NOTEBOOK', jukebox: 'JUKEBOX', computer: 'COMPUTER', orchestrator: 'ORCHESTRATOR', connector: 'CONNECTOR' };
   // Each capability objectType → the representative placeable prop (CAP_PROP_MAP) and the REFIT palette category tab
   // that holds it. Lets a locked skill's "PLACE" button land the user on the exact gear in the real build surface.
+  const skArt = (label) => (/^[AEIOU]/.test(String(label || '')) ? 'an ' : 'a ');
   const SK_PLACE = {
-    cabinet:  { prop: 'safe',      cat: 'capability' },
+    cabinet:  { prop: 'war_intelcab', cat: 'capability' },
     dish:     { prop: 'comms_dish', cat: 'capability' },
     workbench:{ prop: 'workbench', cat: 'workstation' },
     studio:   { prop: 'studio',    cat: 'capability' },
@@ -2478,15 +2482,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const spot = SK_PLACE[objType];
     const label = SK_OBJ_NAME[objType] || String(objType).toUpperCase();
     if (typeof Build === 'undefined' || !(Build.open || Build.toggle)) {
-      notify('Open ⚒ BUILD and place a ' + label + ' to unlock this skill', 'warn'); return;
+      notify('Open ⚒ BUILD and place ' + skArt(label) + label + ' to unlock this skill', 'warn'); return;
     }
     try { if (open.skills) minimizeTerm('skills'); } catch (_) {}
     try {
       if (Build.isOpen && Build.isOpen()) { /* already in REFIT */ }
       else if (Build.open) Build.open();
       else Build.toggle();
-    } catch (_) { notify('Could not open REFIT — open ⚒ BUILD and place a ' + label, 'warn'); return; }
-    notify('Place a ' + label + ' at ' + (agentName || 'the agent') + '’s desk to unlock this skill', 'good');
+    } catch (_) { notify('Could not open REFIT — open ⚒ BUILD and place ' + skArt(label) + label, 'warn'); return; }
+    notify('Place ' + skArt(label) + label + ' at ' + (agentName || 'the agent') + '’s desk to unlock this skill', 'good');
     if (!spot) return;   // no known prop mapping — REFIT is open, the toast named the gear; that's the floor of acceptable
     // Drive the palette to the PROP tool → FUNCTIONAL tier → the missing cap's category tab → its prop tile so the
     // very next floor-click drops it. REFIT builds its DOM synchronously in open(), so the FIRST pass runs inline
@@ -2549,7 +2553,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       : '<span class="sk-badge free">no gear needed</span>';
     // one PLACE button per missing object → the real REFIT placement surface (placeGearForSkill).
     const placeBtns = (missing) => missing.map(r =>
-      '<button class="sk-place" data-place="' + esc(r) + '" title="Open REFIT to place a ' + esc(objLabel(r)) + '">→ PLACE ' + esc(objLabel(r)) + '</button>').join('');
+      '<button class="sk-place" data-place="' + esc(r) + '" title="Open REFIT to place ' + skArt(objLabel(r)) + esc(objLabel(r)) + '">→ PLACE ' + esc(objLabel(r)) + '</button>').join('');
     let ci = 0;
     const card = (s) => {
       const missing = (s.requires || []).filter(r => !placedSet[r]);

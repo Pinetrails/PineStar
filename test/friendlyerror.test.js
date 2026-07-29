@@ -78,10 +78,10 @@ for (const raw of [
   A.ok(/REFIT/.test(v.userMessage), 'the copy points at REFIT as the door');
 }
 {
-  // a files denial names FILE ACCESS + the CABINET
+  // a files denial names FILE ACCESS + the INTEL CAB (the real palette prop, not a generic "cabinet")
   const v = friendlyError(new Error('no cabinet — no capability for fs.write in room ops'));
   A.eq(v.cap, 'cabinet', 'a cabinet denial parses to cabinet');
-  A.ok(/FILE ACCESS/.test(v.userMessage) && /CABINET/.test(v.userMessage), 'the copy names FILE ACCESS + the CABINET');
+  A.ok(/FILE ACCESS/.test(v.userMessage) && /INTEL CAB/.test(v.userMessage), 'the copy names FILE ACCESS + the INTEL CAB');
 }
 {
   // the compute (turn-precondition) denial the loop emits: "no compute — no compute capability …"
