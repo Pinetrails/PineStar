@@ -896,7 +896,26 @@
       // agentId/startedAt ride in the record so GET /api/state/snapshot can list THIS run (attributed to the acting
       // agent, aged from startedAt) — a reconnect then keeps the agent's live floor/HUD state instead of clearing it.
       // abort/superseded are what halt.js's E-STOP reads; the extra fields are additive and invisible to it.
-      const myRec = { runId: '', abort: null, superseded: false, agentId: agentId, startedAt: null };
+      const myRec = { runId: '', abort: null, superseded: false, halted: false, agentId: agentId, startedAt: null };
+
+      /* AN E-STOP IS NOT A SUPERSEDE. Both set `superseded`, because both must abandon this run's now-stale
+         partial reply — but a supersede means a NEWER message owns the conversation and is already running its
+         replacement, while an E-STOP means nothing else is coming at all. Returning the same silence for both
+         made a deliberate stop indistinguishable from a crashed bot on the one surface that has no floor, no
+         browser and no other signal to read. /stop typed from that same chat answers "Stopped the run in
+         progress."; the station's E-STOP owes the chat the same courtesy. halt.js sets `halted` for exactly
+         this. Delivered at most once per run, whichever abandon-point is reached first. */
+      let haltNoticeSent = false;
+      const abandoned = async () => {
+        if (!myRec.superseded) return false;
+        if (myRec.halted && !haltNoticeSent) {
+          haltNoticeSent = true;
+          try {
+            await deliver(chatId, '⏹ Stopped — E-STOP was pressed in the station. This message got no reply and nothing further will run for it.', myRec.runId || '', 'command');
+          } catch (_) { /* a stop notice must never crash the teardown */ }
+        }
+        return true;
+      };
       inflight.set(chatId, myRec);
       let attempt = 0;
       try {
@@ -957,8 +976,9 @@
         }
 
         // a newer message (or E-STOP) took over this chat — abandon this run's (now stale) partial reply, and do
-        // NOT retry (the newer message owns the conversation now and is running its own replacement).
-        if (myRec.superseded) return;
+        // NOT retry (the newer message owns the conversation now and is running its own replacement). On an
+        // E-STOP nothing is coming, so abandoned() says so instead of returning the same silence.
+        if (await abandoned()) return;
 
         // Retry ONLY the same-agent workspace-mutex race, and only while attempts remain. On the final failed
         // attempt fall through so the loop exits and the honest "still busy" reply below is delivered.
@@ -968,7 +988,7 @@
           // to release the shared workspace slot. Injected sleep so tests run instantly with a fake clock. The
           // record stays in `inflight` across this wait so a mid-backoff message can supersede us (checked next).
           await sleep(supersedeBackoffMs * Math.pow(2, attempt - 1));
-          if (myRec.superseded) return;
+          if (await abandoned()) return;
           continue;
         }
         break;
@@ -1023,7 +1043,7 @@
           state.buf = state.buf + chain.stopNote(line);   // stage one answered but the line never got going — say so
         }
       }
-      if (myRec.superseded) return;
+      if (await abandoned()) return;
       } finally {
         // release the (single) inflight record exactly once — but only if a NEWER message hasn't already replaced it
         // (the supersede path installs its own record under this chatId; clobbering it would drop the live run).
@@ -1127,21 +1147,39 @@
       // Only add the tick when the label doesn't already open with its own marker — a consent button reads
       // "✅ Allow for this session", and prefixing that produced a doubled "✓ ✅" in the live toast.
       const shown = String(opt.display || opt.label).trim().slice(0, 60);
-      await ack((/^[\p{L}\p{N}]/u.test(shown) ? '✓ ' : '') + shown);
 
-      // Stamp the decision into the original message and strip the spent buttons. Cosmetic ONLY: the decision
-      // below is recorded whether or not this edit lands (Telegram 400s a no-op edit, and the message may have
-      // been deleted by the user), which is why it is fired inside its own guard and its result is not read.
-      if (editMessage && entry.messageId) {
-        try { await editMessage(chatId, entry.messageId, String(entry.meta.text || '') + '\n\n▸ ' + String(opt.display || opt.value), {}); } catch (_) {}
-      }
-
+      /* SETTLE A CONSENT TAP BEFORE WRITING ANYTHING THAT CLAIMS IT LANDED. Both the ack toast and the
+         message stamp assert the decision took effect, and both used to be written BEFORE the host was asked
+         whether the decision was still live — so a tap that lost the race with the fail-closed timer (or with
+         E-STOP, or with a superseding message) left the permission message permanently rewritten to end
+         "▸ ✅ Allow once" on a request the harness had DENIED. A follow-up correction was sent, so the chat
+         read in order was honest, but the permanent record of a security decision — the thing a Commander
+         scrolls back to — said the opposite of what happened.
+         resolveConsent is a local in-memory settle (consentwait.js), not a network hop, so asking first costs
+         nothing against the spinner deadline the early ack exists for. */
+      let lostRace = false;
       if (entry.kind === 'consent') {
         let done = false;
         try { done = !!resolveConsent(entry.meta.runId, entry.meta.promptId, opt.value); } catch (_) { done = false; }
+        lostRace = !done;
+      }
+      await ack(lostRace ? '⚠ Already expired — denied' : ((/^[\p{L}\p{N}]/u.test(shown) ? '✓ ' : '') + shown));
+
+      // Stamp the OUTCOME into the original message and strip the spent buttons. Cosmetic ONLY in the sense
+      // that the decision is already recorded whether or not this edit lands (Telegram 400s a no-op edit, and
+      // the message may have been deleted by the user) — which is why it is fired inside its own guard and its
+      // result is not read. What it must never be is a different answer from the one the broker applied.
+      if (editMessage && entry.messageId) {
+        const outcome = lostRace
+          ? '▸ ⚠ expired — DENIED, the run moved on'
+          : '▸ ' + String(opt.display || opt.value);
+        try { await editMessage(chatId, entry.messageId, String(entry.meta.text || '') + '\n\n' + outcome, {}); } catch (_) {}
+      }
+
+      if (entry.kind === 'consent') {
         // The host had already settled it — the fail-closed timer fired, the run was superseded, or E-STOP hit.
         // Telling the user their tap landed would be a lie about what the harness actually did.
-        if (!done) { try { await deliver(chatId, '⚠ That permission request had already expired — the action was denied and the run moved on.', entry.meta.runId || '', 'prompt'); } catch (_) {} }
+        if (lostRace) { try { await deliver(chatId, '⚠ That permission request had already expired — the action was denied and the run moved on.', entry.meta.runId || '', 'prompt'); } catch (_) {} }
         return;
       }
 

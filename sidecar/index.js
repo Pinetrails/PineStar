@@ -3096,6 +3096,24 @@ function liveChannelFor(channel) {
   if (!channel || channel === 'telegram') return telegram;
   return genericChannels[channel] || null;
 }
+/* The HONEST health bit for a channel, beside the handle. A live handle is not reachability: the handle is
+   nulled only by an explicit teardown (start / shutdown / the disconnect route), so a revoked token, a
+   Discord 4004, or a second poller stealing the token breaks the poll loop and leaves the object alive —
+   adapter.js reports { state: 'error' } and breaks, and that is the ONLY place the failure is recorded.
+   Deriving reachability from the handle therefore told an agent "reachable now" about a channel the panel
+   was simultaneously showing as errored, and it also said so during the honest 'connecting' phase, before
+   any round-trip had been proved. Each status object already requires state === 'up' AND its own live
+   handle, so this is the bit to read. DEV is genuinely always reachable — its send is a local capture. */
+function channelLiveHealth(channel) {
+  if (channel === 'dev') return { connected: !!DEV_MODE, state: DEV_MODE ? 'up' : 'down' };
+  if (channel === 'discord') return discordStatus || { connected: false, state: 'down' };
+  if (typeof channel === 'string' && channel.indexOf('telegram:') === 0) {
+    const w = telegramBots.get(channel.slice('telegram:'.length));
+    return (w && w.status) || { connected: false, state: 'down' };
+  }
+  if (!channel || channel === 'telegram') return telegramStatus || { connected: false, state: 'down' };
+  return genericStatus[channel] || { connected: false, state: 'down' };
+}
 const autoNotifier = makeAutoNotifier({
   send: (chatId, text, channel) => {
     const ch = liveChannelFor(channel);
@@ -10393,7 +10411,9 @@ async function runOnce(o) {
             channel: channel,
             chatId: String(rec.chatId || key),
             agentId: String(rec.agentId || ''),
-            connected: !!(live && live.adapter)
+            // A handle is not a heartbeat — see channelLiveHealth. Both must hold: something to send THROUGH,
+            // and a transport that has actually proved a round-trip and not since failed.
+            connected: !!(live && live.adapter) && !!channelLiveHealth(channel).connected
           };
         });
       } catch (_) { return []; }
