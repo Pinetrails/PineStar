@@ -207,6 +207,7 @@ test/specialties.test.js
 test/profile.test.js
 test/worksignal.test.js
 test/recruiter.test.js
+test/topicmatch.test.js
 test/prospect.test.js
 test/interests.test.js
 test/scout.test.js

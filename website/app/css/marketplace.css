@@ -529,6 +529,16 @@ button.mkt-archive-head:focus-visible { outline: 2px solid var(--gold); outline-
 .mkt-curated-sect + .mkt-rec-rail .mkt-rec { border-color: rgba(var(--gold-rgb), .55); }
 .mkt-curated-sect + .mkt-rec-rail .mkt-rec::before { background: linear-gradient(180deg, var(--gold) 0 62%, transparent); opacity: .9; }
 .mkt-curated-sect + .mkt-rec-rail .mkt-rec:hover { border-color: var(--gold); box-shadow: 0 0 15px rgba(var(--gold-rgb), .5); }
+/* UNCOVERED — a warm learned topic nobody on the crew handles. It reports an ABSENCE, not an earned rank, so it
+   reads in the station's own BRIGHT PHOSPHOR rather than the gold "you earned this" language of the shelves
+   above. Both vars are per-theme (--ph-bright / --ph-bright-rgb), so it re-skins with every theme; there is no
+   --warn-rgb in the token set, and a literal amber would break the skins. Same rail geometry as every shelf. */
+.mkt-sect-h.mkt-gap-sect { color: var(--ph-bright); text-shadow: 0 0 10px rgba(var(--ph-bright-rgb), .35); }
+.mkt-sect-h.mkt-gap-sect::after { background: linear-gradient(90deg, rgba(var(--ph-bright-rgb), .45), var(--ph-faint) 88%); }
+.mkt-sect-h.mkt-gap-sect::before { color: var(--ph-bright); }
+.mkt-gap-sect + .mkt-rec-rail .mkt-rec { border-color: rgba(var(--ph-bright-rgb), .4); }
+.mkt-gap-sect + .mkt-rec-rail .mkt-rec::before { background: linear-gradient(180deg, var(--ph-bright) 0 62%, transparent); opacity: .85; }
+.mkt-gap-sect + .mkt-rec-rail .mkt-rec:hover { border-color: var(--ph-bright); box-shadow: 0 0 15px rgba(var(--ph-bright-rgb), .4); }
 .mkt-rec-rail { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; margin-bottom: 4px; }
 .mkt-rec { position: relative; display: flex; flex-direction: column; gap: 7px; padding: 10px 10px 10px 13px; border-radius: 2px;
   background: rgba(0,0,0,.3);
