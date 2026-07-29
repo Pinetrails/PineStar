@@ -1,4 +1,4 @@
-﻿/* node test/diagnostics-support-email.test.js â€” the support-email seam (frontend/app/diagnostics.js).
+/* node test/diagnostics-support-email.test.js â€” the support-email seam (frontend/app/diagnostics.js).
 
    Trust/honesty guard: an UNSET or still-PLACEHOLDER support address must NEVER render literally to a user. The
    render sites (Settings copy + copy-success toast) gate every email clause through Diag.supportEmail(): a real
