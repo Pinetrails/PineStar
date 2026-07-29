@@ -31,17 +31,25 @@ const CDP_PORT = Number(process.env.CDPP || 9341);
 const APP = `http://127.0.0.1:${PORT}/`;
 mkdirSync(OUT, { recursive: true });
 
+// CLIP=<selector> tightens the crop onto one part (CLIP='#lv-barge' SCALE=6 to judge the key's
+// face) — a 34px control inside a 210px module is unreadable in a panel-sized frame.
+const CLIP_SEL = process.env.CLIP || '#live-voice-panel';
+const SHOT_SCALE = Number(process.env.SCALE || 2);
+const CLIP_PAD = Number(process.env.PAD || 24);
+
 async function shotPanel(cdp, name) {
   const box = await evalJS(cdp, `(() => {
     const p = document.getElementById('live-voice-panel');
     if (!p || p.hidden) return null;
-    const r = p.getBoundingClientRect();
+    const t = p.matches(${JSON.stringify(CLIP_SEL)}) ? p : p.querySelector(${JSON.stringify(CLIP_SEL)});
+    if (!t) return null;
+    const r = t.getBoundingClientRect();
     return { x: r.left, y: r.top, width: r.width, height: r.height };
   })()`);
   if (!box) { console.log(`  ${name}: PANEL NOT VISIBLE`); return false; }
-  const pad = 24;
+  const pad = CLIP_PAD;
   const clip = { x: Math.max(0, box.x - pad), y: Math.max(0, box.y - pad),
-                 width: box.width + pad * 2, height: box.height + pad * 2, scale: 2 };
+                 width: box.width + pad * 2, height: box.height + pad * 2, scale: SHOT_SCALE };
   const r = await cdp.send('Page.captureScreenshot', { format: 'png', clip, captureBeyondViewport: false });
   writeFileSync(join(OUT, `${name}.png`), Buffer.from(r.data, 'base64'));
   console.log(`  ${name}.png  (${Math.round(box.width)}x${Math.round(box.height)})`);
@@ -146,6 +154,24 @@ for (const skin of SKINS) {
         return p.dataset.state;
       })()`);
       await sleep(180);
+      // Re-stamp the level IMMEDIATELY before the shutter. pushLevel() is still running against the
+      // live mic, so anything written 180ms ago has already been overwritten by the real (near
+      // silent) room — the first version of this script photographed a --lv-amp of ~0.04 while
+      // claiming to show 0.72, which reads as "the indicator is broken" when it is telling the
+      // truth. Force it last, capture first.
+      await evalJS(cdp, `(() => {
+        const S = ${JSON.stringify(st)};
+        const p = document.getElementById('live-voice-panel');
+        const amp = S === 'hearing' ? 0.72 : S === 'listening' ? 0.2 : 0.05;
+        p.style.setProperty('--lv-amp', String(amp));
+        const bars = [...document.querySelectorAll('#lv-wave i')];
+        bars.forEach((b, i) => {
+          const v = Math.abs(Math.sin(i * 0.9 + 1.4)) * (S === 'hearing' ? 1 : S === 'listening' ? 0.34 : 0.08)
+                  * (0.35 + (i / bars.length) * 0.65);
+          b.style.transform = 'scaleY(' + (0.09 + v * 0.91).toFixed(3) + ')';
+        });
+        return p.style.getPropertyValue('--lv-amp');
+      })()`);
       await shotPanel(cdp, `${skin}-${theme}-${st}`);
     }
   }

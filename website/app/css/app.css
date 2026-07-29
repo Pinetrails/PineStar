@@ -1320,45 +1320,25 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   position: relative; z-index: 5; flex: 1 1 auto; min-width: 0;
   display: flex; align-items: center; gap: 8px; padding: 0;
 }
+/* the KEY: a recessed square you could imagine pressing, not a floating orb. A soft glowing circle
+   was the one part of the module that did not belong to a station made of pixels, keycaps and CRT
+   glass — the housing is hardware, and each candidate below only changes the face it carries. */
 .lv-orb {
   flex: 0 0 auto; position: relative; width: 34px; height: 34px; padding: 0; font-family: inherit;
-  background: radial-gradient(circle at 38% 32%, var(--ph-faint), rgba(0,0,0,.92) 74%);
-  border: 1px solid var(--lv-accent); border-radius: 50%; cursor: pointer;
+  background: linear-gradient(180deg, rgba(var(--ph-bright-rgb), 0.05), rgba(0,0,0,.9) 62%);
+  border: 1px solid var(--ph-dim); border-radius: var(--r-sm); cursor: pointer;
   box-shadow:
-    inset 0 0 11px rgba(0,0,0,.9),
-    0 0 calc(5px + var(--lv-amp) * 18px) var(--ph-glow2);
-  transition: border-color var(--t-med) var(--ease-soft), box-shadow var(--t-fast) linear;
+    inset 0 1px 0 rgba(var(--ph-bright-rgb), 0.08),
+    inset 0 0 10px rgba(0,0,0,.85),
+    0 0 calc(3px + var(--lv-amp) * 14px) var(--ph-glow2);
+  transition: border-color var(--t-med) var(--ease-soft), box-shadow var(--t-fast) linear, transform var(--t-fast) var(--ease-out);
 }
-.lv-orb:hover { box-shadow: inset 0 0 11px rgba(0,0,0,.9), 0 0 18px var(--ph-glow); }
-.lv-orb > span { position: absolute; left: 50%; top: 50%; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
-/* halo — a ring that inflates with the real mic level, so the lamp breathes with the room */
-.lv-halo {
-  width: 100%; height: 100%; border: 1px solid var(--lv-accent);
-  opacity: calc(.12 + var(--lv-amp) * .55);
-  transform: translate(-50%, -50%) scale(calc(1 + var(--lv-amp) * .42));
-  transition: transform 70ms linear, opacity 70ms linear;
-}
-.lv-iris {
-  width: 16px; height: 16px; border: 1px solid var(--lv-accent); opacity: .5;
-  transform: translate(-50%, -50%) scale(calc(1 + var(--lv-amp) * .2));
-  transition: transform 70ms linear;
-}
-.lv-pupil {
-  width: 6px; height: 6px; background: var(--lv-accent);
-  box-shadow: 0 0 calc(3px + var(--lv-amp) * 12px) var(--lv-accent);
-  transition: box-shadow 70ms linear;
-}
-/* thinking / transcribing: the station is working, not hearing — the iris sweeps */
-.live-voice-panel[data-state="thinking"] .lv-iris,
-.live-voice-panel[data-state="transcribing"] .lv-iris,
-.live-voice-panel[data-state="warming"] .lv-iris,
-.live-voice-panel[data-state="connecting"] .lv-iris {
-  border-style: dashed; animation: lv-spin 2.4s linear infinite;
-}
-@keyframes lv-spin {
-  from { transform: translate(-50%, -50%) rotate(0deg); }
-  to   { transform: translate(-50%, -50%) rotate(360deg); }
-}
+.lv-orb:hover { border-color: var(--lv-accent); box-shadow: inset 0 0 10px rgba(0,0,0,.85), 0 0 16px var(--ph-glow); }
+/* it travels when you press it — a key that does not move is a picture of a key */
+.lv-orb:active { transform: translateY(1px); box-shadow: inset 0 0 14px rgba(0,0,0,.95); }
+.lv-orb > span { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+/* the three spans (.lv-halo / .lv-iris / .lv-pupil) carry NO shared geometry any more — each
+   indicator candidate below owns its own face, so nothing here presumes a circle. */
 .live-voice-panel[data-state="speaking"] .lv-pupil { animation: lv-talk .42s var(--ease-soft) infinite alternate; }
 @keyframes lv-talk { to { box-shadow: 0 0 16px var(--lv-accent); } }
 
@@ -1447,67 +1427,116 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 }
 .lv-retry:hover { color: var(--ph-bright); border-color: var(--ph); box-shadow: var(--raise), 0 0 10px var(--ph-glow2); }
 
-/* ================= THE FOUR MODULE SHAPES (candidates — one survives) =================
-   Four silhouettes of the same small pop-up, selected by data-skin, CSS-ONLY over the ONE markup
-   tree above so the readouts, the telemetry wiring and the state machine can never drift between
-   candidates. `.live-voice-panel[data-skin="x"] .lv-thing` is (0,3,0) and cleanly beats the base
-   `.lv-thing` (0,1,0) — no !important anywhere.
+/* ================= THE INDICATOR (candidates — one survives) =================
+   The pod shape is PICKED (Andrew, 2026-07-29). What is still open is the thing you press: the
+   glowing circle was the weak part of it — a soft orb in a station built out of pixels, keycaps
+   and CRT glass. So every candidate below is angular hardware you could imagine your thumb
+   landing on, and the housing is a recessed square KEY rather than a lens.
 
-   Every one keeps a grabbable state line, a close that fades in, the state ladder, and a part lit
-   by --lv-amp. `pod` needs no rules — it IS the base. */
+   All four are CSS-only over the SAME three spans the button already carries
+   (.lv-halo / .lv-iris / .lv-pupil), so the barge-in click, the aria label and the state machine
+   are identical between them — only the face changes. Each one is lit by --lv-amp, so pressing
+   nothing still shows you the real microphone. */
 
-/* ---- 2 · tower — the handheld. ~124x186 portrait: lamp on top, level beneath it, state at the
-   foot. Narrow enough to park against a screen edge without covering the station. ---- */
-.live-voice-panel[data-skin="tower"] {
-  width: 124px; padding: 9px 9px 10px;
+/* ---- 1 · mic — a pixel microphone glyph on the key, drawn in box-shadow pixels (the station's
+   own idiom: no SVG, no font icon, no anti-aliased curve). It brightens with your voice. ---- */
+/* the key face lifts with your voice, but only so far: at full wash the bloom swallowed the glyph
+   it exists to light, and an indicator you cannot read is not an indicator */
+.live-voice-panel[data-skin="mic"] .lv-halo {
+  inset: 0; width: auto; height: auto; border: 0; border-radius: inherit;
+  transform: none;
+  box-shadow: inset 0 0 calc(2px + var(--lv-amp) * 9px) var(--lv-accent);
+  opacity: calc(.18 + var(--lv-amp) * .34);
+  transition: box-shadow 70ms linear, opacity 70ms linear;
 }
-.live-voice-panel[data-skin="tower"] .lv-head { order: 3; justify-content: center; padding-top: 2px; }
-.live-voice-panel[data-skin="tower"] .lv-state { flex: 0 0 auto; font-size: 9px; }
-.live-voice-panel[data-skin="tower"] .lv-x { position: absolute; top: 6px; right: 7px; z-index: 8; margin: 0; }
-.live-voice-panel[data-skin="tower"] .lv-stage { flex-direction: column; gap: 9px; }
-.live-voice-panel[data-skin="tower"] .lv-orb { width: 62px; height: 62px; }
-.live-voice-panel[data-skin="tower"] .lv-iris { width: 28px; height: 28px; }
-.live-voice-panel[data-skin="tower"] .lv-pupil { width: 10px; height: 10px; }
-.live-voice-panel[data-skin="tower"] .lv-wave { width: 100%; flex: 0 0 auto; height: 46px; }
-.live-voice-panel[data-skin="tower"] .lv-wave i { height: 34px; }
-/* too narrow to carry prose honestly — three clipped words are worse than none, and COMMS has it */
-.live-voice-panel[data-skin="tower"] .lv-heard,
-.live-voice-panel[data-skin="tower"] .lv-say.on { display: none; }
+.live-voice-panel[data-skin="mic"] .lv-iris { display: none; }
+/* 3px pixels on a 5x8 grid — capsule, cradle arms, stand, base. Deliberately CHUNKY: at 2px the
+   glyph turned to mush, which is the same legibility floor the sprites live under. The element
+   itself is the top-left capsule pixel; every other pixel is a box-shadow offset from it, and the
+   negative margin re-centres the finished 15x24 glyph inside the key. */
+.live-voice-panel[data-skin="mic"] .lv-pupil {
+  width: 3px; height: 3px; border-radius: 0; background: var(--lv-accent);
+  margin: -11px 0 0 -3px;
+  box-shadow:
+    3px 0 0 var(--lv-accent), 6px 0 0 var(--lv-accent),
+    0 3px 0 var(--lv-accent), 3px 3px 0 var(--lv-accent), 6px 3px 0 var(--lv-accent),
+    0 6px 0 var(--lv-accent), 3px 6px 0 var(--lv-accent), 6px 6px 0 var(--lv-accent),
+    -3px 9px 0 var(--lv-accent), 9px 9px 0 var(--lv-accent),
+    -3px 12px 0 var(--lv-accent), 0 12px 0 var(--lv-accent), 3px 12px 0 var(--lv-accent),
+    6px 12px 0 var(--lv-accent), 9px 12px 0 var(--lv-accent),
+    3px 15px 0 var(--lv-accent),
+    3px 18px 0 var(--lv-accent),
+    0 21px 0 var(--lv-accent), 3px 21px 0 var(--lv-accent), 6px 21px 0 var(--lv-accent);
+  filter: drop-shadow(0 0 calc(1px + var(--lv-amp) * 7px) var(--lv-accent));
+  transition: filter 70ms linear;
+}
 
-/* ---- 3 · eye — the watching lens. 132x132 square: one big lamp, the state under it, the level
-   reduced to a hairline at the foot. The barest module that is still unmistakably a device. ---- */
-.live-voice-panel[data-skin="eye"] {
-  width: 132px; padding: 10px 10px 9px; justify-content: center;
+/* ---- 2 · vu — a segmented meter column. The fill is literally --lv-amp: the hard gradient stop
+   IS the level, and the dark rungs over it cut the column into segments. No interpolation, no
+   easing — what lights up is what the microphone sent. ---- */
+.live-voice-panel[data-skin="vu"] .lv-halo { display: none; }
+/* five fat segments, not fine stripes: the first draft cut the column every 5px and read as
+   texture, so the lit height was invisible — the whole point of the candidate */
+.live-voice-panel[data-skin="vu"] .lv-iris {
+  width: 16px; height: 26px; border: 1px solid var(--ph-faint); border-radius: 1px;
+  opacity: 1; transform: translate(-50%, -50%);
+  background:
+    repeating-linear-gradient(0deg, transparent 0 4px, rgba(2,1,0,.96) 4px 6px),
+    linear-gradient(0deg,
+      var(--lv-accent) 0 calc(var(--lv-amp) * 100%),
+      rgba(var(--ph-bright-rgb), 0.05) calc(var(--lv-amp) * 100%) 100%);
+  box-shadow: inset 0 0 6px rgba(0,0,0,.8), 0 0 calc(2px + var(--lv-amp) * 12px) var(--ph-glow2);
+  transition: background 60ms linear, box-shadow 70ms linear;
 }
-.live-voice-panel[data-skin="eye"] .lv-head { order: 3; justify-content: center; }
-.live-voice-panel[data-skin="eye"] .lv-state { flex: 0 0 auto; font-size: 9px; }
-.live-voice-panel[data-skin="eye"] .lv-x { position: absolute; top: 6px; right: 7px; z-index: 8; margin: 0; }
-.live-voice-panel[data-skin="eye"] .lv-stage { flex-direction: column; gap: 7px; }
-.live-voice-panel[data-skin="eye"] .lv-orb { width: 74px; height: 74px; }
-.live-voice-panel[data-skin="eye"] .lv-iris { width: 34px; height: 34px; }
-.live-voice-panel[data-skin="eye"] .lv-pupil { width: 12px; height: 12px; }
-.live-voice-panel[data-skin="eye"] .lv-wave {
-  width: 100%; flex: 0 0 auto; height: 10px; padding: 0 2px;
-  background: none; box-shadow: none;
-}
-.live-voice-panel[data-skin="eye"] .lv-wave i { height: 9px; }
-.live-voice-panel[data-skin="eye"] .lv-heard,
-.live-voice-panel[data-skin="eye"] .lv-say.on { display: none; }
+.live-voice-panel[data-skin="vu"] .lv-pupil { display: none; }
 
-/* ---- 4 · slate — the readout. 250x96 landscape: the level runs the full width as the hero and
-   the transcript sits under it, so this is the one you pick if seeing what was heard matters more
-   than the module being tiny. ---- */
-.live-voice-panel[data-skin="slate"] {
-  width: 250px; padding: 7px 9px 9px;
+/* ---- 3 · shutter — an aperture, not a lens: an octagon whose blades close as your voice rises,
+   with a hard square core behind them. The eerie one — it reads as a machine watching. ---- */
+/* a FILLED octagon glow, not a clipped outline: clip-path cuts the border box, so a rotated ringed
+   octagon lost its corners and rendered as four floating shards */
+.live-voice-panel[data-skin="shutter"] .lv-halo {
+  width: 28px; height: 28px; border: 0; border-radius: 0;
+  background: var(--lv-accent);
+  clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+  opacity: calc(.1 + var(--lv-amp) * .26);
+  transform: translate(-50%, -50%) scale(calc(.78 + var(--lv-amp) * .22));
+  transition: transform 90ms linear, opacity 70ms linear;
 }
-.live-voice-panel[data-skin="slate"] .lv-stage { flex: 1 0 100%; }
-.live-voice-panel[data-skin="slate"] .lv-orb { width: 22px; height: 22px; }
-.live-voice-panel[data-skin="slate"] .lv-iris { display: none; }
-.live-voice-panel[data-skin="slate"] .lv-pupil { width: 5px; height: 5px; }
-.live-voice-panel[data-skin="slate"] .lv-wave { height: 30px; }
-.live-voice-panel[data-skin="slate"] .lv-wave i { height: 22px; }
-.live-voice-panel[data-skin="slate"] .lv-heard { -webkit-line-clamp: 1; margin-top: 3px; }
-.live-voice-panel[data-skin="slate"] .lv-say.on { -webkit-line-clamp: 1; }
+.live-voice-panel[data-skin="shutter"] .lv-iris {
+  width: 17px; height: 17px; border: 2px solid var(--lv-accent); border-radius: 0; opacity: .85;
+  clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%);
+  /* blades CLOSE as the level rises — loud voice, tight aperture */
+  transform: translate(-50%, -50%) scale(calc(1 - var(--lv-amp) * .38));
+  transition: transform 90ms linear;
+}
+.live-voice-panel[data-skin="shutter"] .lv-pupil {
+  width: 5px; height: 5px; border-radius: 0; background: var(--lv-accent);
+  box-shadow: 0 0 calc(2px + var(--lv-amp) * 12px) var(--lv-accent);
+}
+
+/* ---- 4 · slit — a scanner slot cut into the key: a vertical bar of light that swells with your
+   voice, in a machined recess. The most minimal, and the most "the station is a machine". ---- */
+.live-voice-panel[data-skin="slit"] .lv-halo {
+  width: 20px; height: 24px; border: 0; border-radius: 1px;
+  background: rgba(0,0,0,.7); box-shadow: var(--well);
+  opacity: 1; transform: translate(-50%, -50%);
+}
+.live-voice-panel[data-skin="slit"] .lv-iris { display: none; }
+.live-voice-panel[data-skin="slit"] .lv-pupil {
+  width: calc(3px + var(--lv-amp) * 9px); height: 18px; border-radius: 1px;
+  background: linear-gradient(180deg, transparent, var(--lv-accent) 18%, var(--lv-accent) 82%, transparent);
+  box-shadow: 0 0 calc(3px + var(--lv-amp) * 14px) var(--lv-accent);
+  transition: width 70ms linear, box-shadow 70ms linear;
+}
+
+/* working states (connecting / warming / thinking / transcribing): the station is BUSY, not
+   hearing — the face pulses on a timer instead of on the mic, which is the one time a moving part
+   here is honest, because it is reporting work rather than sound. */
+.live-voice-panel[data-state="thinking"] .lv-orb > span,
+.live-voice-panel[data-state="transcribing"] .lv-orb > span,
+.live-voice-panel[data-state="warming"] .lv-orb > span,
+.live-voice-panel[data-state="connecting"] .lv-orb > span { animation: lv-work 1.05s steps(2, end) infinite; }
+@keyframes lv-work { 0%, 100% { opacity: .3; } 50% { opacity: 1; } }
 
 @media (prefers-reduced-motion: reduce) {
   .live-voice-panel { animation: none; }

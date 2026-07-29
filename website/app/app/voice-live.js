@@ -13,12 +13,12 @@ const VoiceLive = (() => {
   let warmupNotice = false;
   const $ = id => document.getElementById(id);
   const POSITION_KEY = 'starnet.liveVoice.position.v1';
-  // Four shapes of ONE small pop-up module over ONE markup tree, so the readouts, the telemetry
-  // wiring and the state machine can never drift between them — only the styling does.
-  // pod (lamp + level + transcript) · tower (handheld) · eye (one big lens) · slate (level +
-  // readout). Pop-up station hardware, never a typical window. VoiceLive.setSkin() flips live.
+  // The module's SHAPE is settled (the small pop-up "pod"). What these four select is the face of
+  // the barge-in KEY — mic glyph · vu column · shutter · slit — over the SAME markup, so the
+  // click, the aria label, the readouts and the state machine are identical between candidates and
+  // only the styling differs. One will be picked and the rest deleted. setSkin() flips it live.
   const SKIN_KEY = 'starnet.liveVoice.skin.v1';
-  const SKINS = ['pod', 'tower', 'eye', 'slate'];
+  const SKINS = ['mic', 'vu', 'shutter', 'slit'];
   // Scope readout: a rolling window of mic RMS, oldest at the left. The bars ARE the microphone —
   // never animate them off a timer, or the panel would claim to hear a room it cannot hear.
   const WAVE_BARS = 17;
