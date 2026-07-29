@@ -3379,6 +3379,12 @@ const World = (() => {
      fill included, so callers never pre-fill. `cam` lets finite-distance layers parallax; the
      fallback exists because a missing SpaceBG must still leave a black stage, not a stale frame. */
   function drawBackdrop(now, cam) {
+    // A LANDED station has no sky to draw: the ground layer covers the whole frame in world
+    // space below, so building and blitting a starfield underneath it would be pure waste.
+    if (typeof Terrain !== 'undefined' && Terrain.active()) {
+      ctx.fillStyle = Terrain.baseColor(); ctx.fillRect(0, 0, cv.width, cv.height);
+      return;
+    }
     if (typeof SpaceBG !== 'undefined') SpaceBG.draw(ctx, cv.width, cv.height, now, cam);
     else { ctx.fillStyle = '#040302'; ctx.fillRect(0, 0, cv.width, cv.height); }
   }
@@ -3469,6 +3475,17 @@ const World = (() => {
     drawBackdrop(now, { panX, panY, scale });
 
     ctx.setTransform(scale, 0, 0, scale, panX, panY); ctx.imageSmoothingEnabled = false;
+
+    /* THE GROUND — only when the station is landed. Drawn HERE, inside the world transform and
+       before the bake, which is the entire reason it works: pan, zoom and the station's own
+       coordinate frame are already applied, so ground at the station's plane needs no parallax
+       maths at all. A backdrop must never zoom; the ground must always zoom. Same picker,
+       opposite requirement — which is why they are two layers and not one.
+       The bake occupies world rect (0,0,baseCv.w,baseCv.h), so that IS the station footprint. */
+    if (typeof Terrain !== 'undefined' && Terrain.active()) {
+      Terrain.draw(ctx, { scale, panX, panY }, cv.width, cv.height,
+        { x: 0, y: 0, w: cache.baseCv.width, h: cache.baseCv.height });
+    }
 
     ctx.drawImage(cache.baseCv, 0, 0);
 
