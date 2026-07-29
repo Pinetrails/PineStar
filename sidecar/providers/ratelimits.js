@@ -87,7 +87,9 @@
 
   function makeRateLimits(deps) {
     deps = deps || {};
-    const now = (deps.clock && typeof deps.clock.now === 'function') ? deps.clock.now : () => Date.now();
+    // Clock is INJECTED (lint-determinism): a module that reads the wall clock itself cannot be replayed.
+    // The host wires the real one in index.js; a bare instance reads time 0, which keeps tests deterministic.
+    const now = (deps.clock && typeof deps.clock.now === 'function') ? deps.clock.now : () => 0;
     const MAX_PROVIDERS = deps.maxProviders || 24;
     // Fraction of the limit at or below which a bucket is "tight". A single big turn can consume a meaningful
     // slice of a token bucket, so the warning has to come well before zero to be worth anything.
