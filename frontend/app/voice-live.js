@@ -13,10 +13,12 @@ const VoiceLive = (() => {
   let warmupNotice = false;
   const $ = id => document.getElementById(id);
   const POSITION_KEY = 'starnet.liveVoice.position.v1';
-  // Four console skins over ONE markup tree, so the readouts, the telemetry wiring and the state
+  // Four HUD sizes over ONE markup tree, so the readouts, the telemetry wiring and the state
   // machine can never drift between them — only the styling does. VoiceLive.setSkin() flips live.
+  // Richest to barest: pill (lamp + level + transcript) · orb (the eye alone) · strip (level only)
+  // · chip (a topbar-register badge). Hands-free is a MODE, not a place — none of these is a window.
   const SKIN_KEY = 'starnet.liveVoice.skin.v1';
-  const SKINS = ['console', 'handset', 'scope', 'monolith'];
+  const SKINS = ['pill', 'orb', 'strip', 'chip'];
   // Scope readout: a rolling window of mic RMS, oldest at the left. The bars ARE the microphone —
   // never animate them off a timer, or the panel would claim to hear a room it cannot hear.
   const WAVE_BARS = 17;

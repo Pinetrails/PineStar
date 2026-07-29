@@ -1223,44 +1223,44 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .voice-live[aria-pressed="true"] { color: var(--ink); background: var(--ph); box-shadow: 0 0 16px var(--ph-glow); }
 .voice-live[aria-pressed="true"] svg { filter: none; }
 
-/* ================= LOCAL LIVE VOICE — the station's mic console =================
-   A small persistent controller that follows the user across every StarNet dock. Conversation
-   stays in COMMS; this window is only mic / model / task state and can be dragged out of the way.
+/* ================= LOCAL LIVE VOICE — the station's mic HUD =================
+   NOT a window. Hands-free is a MODE, not a place: the conversation lives in COMMS and this
+   element only has to say "I am listening", "here is the level", "this is what I heard". An
+   earlier pass built it as a full CRT panel — bezel ring, title bar, three-row readout rail, four
+   different silhouettes of it — and every one read as one more window to manage (Andrew,
+   2026-07-29: "I'm not sure a window is needed for this... these are too big").
 
-   It is a CRT monitor like every other StarNet surface: --bezel ring, --glass curvature, VT323,
-   power-on entrance. EVERY colour resolves from the phosphor tokens — an earlier draft hardcoded
-   mint green (#8fffc7 / rgba(83,255,170,…)) which floated as an off-brand card in the amber
-   station and stayed green through all six themes. No literal colours below. */
+   So: no --bezel, no --glass dome, no title chip, no engraved rail. A capsule of station hardware
+   that sits over the dock and gets out of the way. Every colour still resolves from the phosphor
+   tokens through one --lv-accent, and --lv-amp still drives a lit part of EVERY skin, so no
+   variant can show a level the microphone is not actually producing. */
 .live-voice-panel {
   --lv-amp: 0;                 /* live mic RMS, 0..1 — written by voice-live.js pushLevel() */
   --lv-dl: 0%;                 /* local-model download percent, when the sidecar reports one */
-  --lv-accent: var(--ph-dim);  /* per-state accent; every lit part of the console reads this */
+  --lv-accent: var(--ph-dim);  /* per-state accent; every lit part of the HUD reads this */
   position: fixed; z-index: 275; left: 18px; bottom: 68px;
-  width: min(300px, calc(100vw - 16px)); padding: 0 0 var(--s-2);
-  color: var(--text); border-radius: var(--r-lg); overflow: hidden;
-  background:
-    radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%),
-    rgba(5, 3, 1, 0.97);
-  box-shadow: var(--bezel);
-  transform-origin: center; animation: lv-power .38s var(--ease-out);
-}
-/* curved-glass over the whole console, like .term::before */
-.live-voice-panel::after {
-  content: ''; position: absolute; inset: 0; border-radius: inherit;
-  pointer-events: none; z-index: 6; background: var(--glass);
+  width: max-content; max-width: min(280px, calc(100vw - 16px));
+  display: flex; flex-wrap: wrap; align-items: center; gap: 7px;
+  padding: 4px 10px 4px 5px;
+  color: var(--text); border-radius: 999px;
+  background: linear-gradient(180deg, rgba(10, 6, 2, 0.96), rgba(4, 2, 1, 0.98));
+  box-shadow: inset 0 0 0 1px var(--ph-faint), var(--raise), 0 0 16px var(--ph-glow2);
+  transform-origin: left center; animation: lv-pop .22s var(--ease-out);
 }
 .live-voice-panel[hidden] { display: none; }
-.live-voice-panel[data-dragging="true"] { animation: none; box-shadow: var(--bezel), 0 0 26px var(--ph-glow2); }
-@keyframes lv-power {
-  0%   { transform: scale(1, .02); filter: brightness(5); opacity: .9; }
-  46%  { transform: scale(1.004, 1.04); filter: brightness(2); }
-  100% { transform: scale(1, 1); filter: brightness(1); }
+.live-voice-panel[data-dragging="true"] {
+  animation: none;
+  box-shadow: inset 0 0 0 1px var(--ph-dim), var(--raise), 0 0 22px var(--ph-glow2);
+}
+/* it POPS, it does not power on — a CRT warm-up entrance on a 30px capsule reads as a glitch */
+@keyframes lv-pop {
+  0%   { transform: scale(.82); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
 }
 
-/* per-state accent — one variable, so state reads through the pip, the orb, the scope and the
-   title rule at once instead of recolouring a single word */
-/* idle listening rests on the phosphor; only ACTIVELY hearing you climbs to --ph-bright, so the
-   brightest the console ever gets means "your voice is landing right now" */
+/* per-state accent — one variable, so state reads through the pip, the lamp and the level at once.
+   Idle listening rests on the phosphor; only ACTIVELY hearing you climbs to --ph-bright, so the
+   brightest the HUD ever gets means "your voice is landing right now". */
 .live-voice-panel[data-state="listening"],
 .live-voice-panel[data-state="speaking"] { --lv-accent: var(--ph); }
 .live-voice-panel[data-state="hearing"] { --lv-accent: var(--ph-bright); }
@@ -1271,54 +1271,54 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .live-voice-panel[data-state="reconnecting"] { --lv-accent: var(--warn); }
 .live-voice-panel[data-state="offline"] { --lv-accent: var(--bad); }
 
-/* ---- head: drag handle in the .term-head register — inverted title chip + state readout ---- */
+/* ---- head: a GRIP, not a title bar. makeDraggable() binds this element, so no skin may collapse
+   it to nothing — a HUD you cannot move out of the way is worse than a window. ---- */
 .lv-head {
-  position: relative; z-index: 7;
-  display: flex; align-items: center; gap: var(--s-2);
-  padding: 6px 7px 6px 9px; cursor: grab; touch-action: none; user-select: none;
-  background: linear-gradient(180deg, var(--ph-glow2), transparent);
-  border-bottom: 1px solid var(--ph-dim);
+  position: relative; z-index: 7; flex: 0 0 auto;
+  display: flex; align-items: center; gap: 5px;
+  padding: 0 1px; cursor: grab; touch-action: none; user-select: none;
 }
 .live-voice-panel[data-dragging="true"] .lv-head { cursor: grabbing; }
-.lv-brand {
-  flex: 0 0 auto; color: var(--ink); background: var(--ph);
-  padding: 1px 9px; border-radius: var(--r-sm);
-  font-size: var(--fs-1); letter-spacing: var(--ls-3); text-shadow: none;
-  box-shadow: 0 0 12px var(--ph-glow2);
-}
+/* the LOCAL LIVE title chip is most of what made this read as a window. The mode is already
+   obvious from the composer's lit LIVE toggle — the HUD does not need to introduce itself. */
+.lv-brand { display: none; }
 .lv-pip {
-  flex: 0 0 auto; width: 6px; height: 6px; margin-left: auto;
-  background: var(--lv-accent); box-shadow: 0 0 7px var(--lv-accent);
+  flex: 0 0 auto; width: 5px; height: 5px;
+  background: var(--lv-accent); box-shadow: 0 0 6px var(--lv-accent);
   animation: lv-pip 1.3s infinite;
 }
 @keyframes lv-pip { 0%, 100% { opacity: 1; } 50% { opacity: .28; } }
 .lv-state {
   flex: 0 0 auto; color: var(--lv-accent);
-  font-size: var(--fs-0); letter-spacing: var(--ls-3);
-  text-shadow: 0 0 8px var(--ph-glow2);
+  font-size: 10px; letter-spacing: var(--ls-2); text-shadow: 0 0 8px var(--ph-glow2);
 }
-.lv-x { flex: 0 0 auto; background: rgba(0,0,0,.35); font-size: var(--fs-0); padding: 2px 6px; }
-.lv-x:hover { color: var(--bad); border-color: var(--bad); background: var(--ph-faint); }
+/* ✕ stays reachable but stops taking up resting-state real estate. pointer-events go with the
+   opacity so an invisible button can never eat a click and drop you out of voice mode. */
+.lv-x {
+  flex: 0 0 auto; padding: 0 3px; font-size: 10px; background: none;
+  opacity: 0; pointer-events: none; transition: opacity var(--t-fast) linear;
+}
+.live-voice-panel:hover .lv-x,
+.live-voice-panel:focus-within .lv-x { opacity: .75; pointer-events: auto; }
+.lv-x:hover { opacity: 1; color: var(--bad); border-color: var(--bad); background: none; }
 
-/* ---- stage: the orb is the hero, the scope beside it is the microphone itself ---- */
+/* ---- stage: a small lamp and the level beside it ---- */
 .lv-stage {
-  position: relative; z-index: 5;
-  display: flex; align-items: center; gap: var(--s-3);
-  padding: var(--s-3) var(--s-3) var(--s-2);
+  position: relative; z-index: 5; flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; gap: 7px; padding: 0;
 }
 .lv-orb {
-  flex: 0 0 auto; position: relative; width: 54px; height: 54px; padding: 0; font-family: inherit;
+  flex: 0 0 auto; position: relative; width: 24px; height: 24px; padding: 0; font-family: inherit;
   background: radial-gradient(circle at 38% 32%, var(--ph-faint), rgba(0,0,0,.92) 74%);
   border: 1px solid var(--lv-accent); border-radius: 50%; cursor: pointer;
   box-shadow:
-    inset 0 0 18px rgba(0,0,0,.9),
-    inset 0 0 0 1px rgba(0,0,0,.85),
-    0 0 calc(8px + var(--lv-amp) * 22px) var(--ph-glow2);
+    inset 0 0 9px rgba(0,0,0,.9),
+    0 0 calc(4px + var(--lv-amp) * 16px) var(--ph-glow2);
   transition: border-color var(--t-med) var(--ease-soft), box-shadow var(--t-fast) linear;
 }
-.lv-orb:hover { box-shadow: inset 0 0 18px rgba(0,0,0,.9), 0 0 22px var(--ph-glow); }
+.lv-orb:hover { box-shadow: inset 0 0 9px rgba(0,0,0,.9), 0 0 16px var(--ph-glow); }
 .lv-orb > span { position: absolute; left: 50%; top: 50%; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
-/* halo — a ring that inflates with the real mic level, so the orb breathes with the room */
+/* halo — a ring that inflates with the real mic level, so the lamp breathes with the room */
 .lv-halo {
   width: 100%; height: 100%; border: 1px solid var(--lv-accent);
   opacity: calc(.12 + var(--lv-amp) * .55);
@@ -1326,13 +1326,13 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   transition: transform 70ms linear, opacity 70ms linear;
 }
 .lv-iris {
-  width: 26px; height: 26px; border: 1px solid var(--lv-accent); opacity: .55;
+  width: 11px; height: 11px; border: 1px solid var(--lv-accent); opacity: .5;
   transform: translate(-50%, -50%) scale(calc(1 + var(--lv-amp) * .2));
   transition: transform 70ms linear;
 }
 .lv-pupil {
-  width: 9px; height: 9px; background: var(--lv-accent);
-  box-shadow: 0 0 calc(5px + var(--lv-amp) * 14px) var(--lv-accent);
+  width: 5px; height: 5px; background: var(--lv-accent);
+  box-shadow: 0 0 calc(3px + var(--lv-amp) * 10px) var(--lv-accent);
   transition: box-shadow 70ms linear;
 }
 /* thinking / transcribing: the station is working, not hearing — the iris sweeps */
@@ -1347,18 +1347,17 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   to   { transform: translate(-50%, -50%) rotate(360deg); }
 }
 .live-voice-panel[data-state="speaking"] .lv-pupil { animation: lv-talk .42s var(--ease-soft) infinite alternate; }
-@keyframes lv-talk { to { box-shadow: 0 0 18px var(--lv-accent); } }
+@keyframes lv-talk { to { box-shadow: 0 0 14px var(--lv-accent); } }
 
-/* scope — a rolling window of real RMS, oldest at the left, recessed into a control well */
+/* level — a rolling window of real RMS, oldest at the left. No well, no frame: at HUD size the
+   recessed control rail was pure window furniture. */
 .lv-wave {
-  flex: 1 1 auto; min-width: 0; height: 42px;
+  flex: 1 1 auto; min-width: 52px; height: 18px;
   display: flex; align-items: center; justify-content: space-between; gap: 2px;
-  padding: 0 7px; border-radius: var(--r-sm);
-  background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.3));
-  box-shadow: var(--well);
+  padding: 0; background: none; box-shadow: none;
 }
 .lv-wave i {
-  flex: 1 1 0; min-width: 0; height: 26px; border-radius: 1px;
+  flex: 1 1 0; min-width: 0; height: 16px; border-radius: 1px;
   /* one hue per bar — blending the accent into --ph-dim muddied the warn/bad states, which are
      deliberately theme-CONSTANT and so clash with whatever phosphor is loaded */
   background: linear-gradient(180deg, var(--lv-accent), color-mix(in srgb, var(--lv-accent) 30%, transparent));
@@ -1367,272 +1366,135 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   opacity: .85;
 }
 
-/* ---- transcript pair: what you said, what the console answered ---- */
-/* clamp on WHOLE lines — a plain max-height sliced the last row of glyphs in half */
+/* ---- the one line of text worth carrying: it answers "did it hear me right" without opening
+   COMMS. One line, its own row, and the reply line only exists once there IS a reply. ---- */
 .lv-heard {
-  position: relative; z-index: 5; margin: 0 var(--s-3);
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
-  color: var(--ph-bright); font-size: var(--fs-2); line-height: 1.2;
+  position: relative; z-index: 5; flex: 1 0 100%; margin: 0 6px 1px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden;
+  color: var(--ph-bright); font-size: var(--fs-0); line-height: 1.25; letter-spacing: var(--ls-1);
   text-shadow: 0 0 8px var(--ph-glow2);
 }
-/* the reply line only exists once there IS a reply — an always-reserved empty row punched a
-   dead band between the heard text and the rail */
 .lv-say { display: none; }
 .lv-say.on {
-  position: relative; z-index: 5; margin: 6px var(--s-3) 0;
-  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
-  color: var(--ph-dim); font-size: var(--fs-1); line-height: 1.25; letter-spacing: var(--ls-1);
+  position: relative; z-index: 5; flex: 1 0 100%; margin: 0 6px 1px;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 1; overflow: hidden;
+  color: var(--ph-dim); font-size: 10px; line-height: 1.25; letter-spacing: var(--ls-1);
 }
 .lv-say.on::before { content: '▸ '; color: var(--ph); }
 
-/* ---- rail: three engraved readouts (route / speech / task), label-left value-right ---- */
-.lv-rail {
-  position: relative; z-index: 5; margin: var(--s-3) var(--s-3) 0;
-  display: flex; flex-direction: column; gap: 1px;
-  border-radius: var(--r-sm); overflow: hidden; box-shadow: var(--well);
-  background: rgba(0,0,0,.42);
+/* ---- ROUTE / SPEECH / TASK are diagnostics, not glanceable state, and carrying them at rest is
+   what forced a 300px panel. Hidden at rest, one wrapped line on hover — HIDDEN, never faked: this
+   hover is now the only place a model download reports itself, so the fill stays real. ---- */
+.lv-rail { display: none; }
+.live-voice-panel:hover .lv-rail,
+.live-voice-panel:focus-within .lv-rail {
+  position: relative; z-index: 5; flex: 1 0 100%;
+  display: flex; flex-flow: row wrap; gap: 2px 9px; margin: 1px 6px 2px;
+  background: none; box-shadow: none; overflow: visible;
 }
 .lv-row {
-  position: relative; display: flex; align-items: baseline; gap: var(--s-2);
-  padding: 5px 8px; border-bottom: 1px solid var(--ph-faint);
+  position: relative; display: flex; align-items: baseline; gap: 5px;
+  min-width: 0; padding: 0; border-bottom: 0;
 }
-.lv-row:last-child { border-bottom: 0; }
-.lv-row dt {
-  flex: 0 0 46px; color: var(--ph-dim); opacity: .75;
-  font-size: var(--fs-0); letter-spacing: var(--ls-2);
-}
+.lv-row dt { flex: 0 0 auto; color: var(--ph-dim); opacity: .5; font-size: 9px; letter-spacing: var(--ls-2); }
 .lv-row dd {
-  flex: 1 1 auto; min-width: 0; margin: 0;
+  flex: 0 1 auto; min-width: 0; margin: 0;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  color: var(--ph); font-size: var(--fs-0); letter-spacing: var(--ls-1);
+  color: var(--ph); font-size: 9px; letter-spacing: var(--ls-1);
 }
 /* model download: a real fill sweeps the SPEECH row, driven by the sidecar's reported percent */
 .lv-row-dl::before {
-  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--lv-dl);
+  content: ''; position: absolute; left: -3px; top: -1px; bottom: -1px; width: var(--lv-dl);
   background: linear-gradient(90deg, var(--ph-glow2), transparent);
   transition: width var(--t-slow) var(--ease-soft); pointer-events: none;
 }
 .lv-task.busy { color: var(--ph-bright); text-shadow: 0 0 8px var(--ph-glow2); }
 .lv-task.pending { color: var(--warn); text-shadow: 0 0 8px var(--ph-glow2); }
 
-/* ---- error + retry, in the station's fault language ---- */
+/* ---- a fault is the one thing allowed to grow the HUD, because a silent dead mic is the worst
+   failure this feature has. Still a strip, not a card. ---- */
 .lv-error {
-  position: relative; z-index: 5; margin: var(--s-2) var(--s-3) 0;
-  padding: 7px 9px; border-radius: var(--r-sm);
-  color: var(--bad); border-left: 2px solid var(--bad);
-  background: rgba(0,0,0,.45); box-shadow: var(--raise);
-  font-size: var(--fs-0); line-height: 1.35; letter-spacing: var(--ls-1);
+  position: relative; z-index: 5; flex: 1 0 100%; margin: 1px 6px 2px;
+  padding: 3px 0 0; border-top: 1px solid var(--bad);
+  color: var(--bad); background: none; box-shadow: none;
+  font-size: 9px; line-height: 1.35; letter-spacing: var(--ls-1);
 }
 /* [hidden] is the UA's display:none — a bare `display: block` here silently OUT-SPECIFIES it and
    left TRY AGAIN sitting under a healthy session. Restate the hidden case. */
 .lv-retry[hidden] { display: none; }
 .lv-retry {
-  position: relative; z-index: 5; display: block; margin: var(--s-2) var(--s-3) 0 auto;
-  padding: 4px 11px; cursor: pointer;
+  position: relative; z-index: 5; display: block; flex: 0 0 auto; margin: 0 6px 2px auto;
+  padding: 1px 8px; cursor: pointer;
   color: var(--ph); background: var(--panel2);
-  border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
-  font-family: inherit; font-size: var(--fs-0); letter-spacing: var(--ls-3); text-shadow: none;
-  box-shadow: var(--raise);
+  border: 1px solid var(--ph-dim); border-radius: 999px;
+  font-family: inherit; font-size: 9px; letter-spacing: var(--ls-2); text-shadow: none;
 }
-.lv-retry:hover { color: var(--ph-bright); border-color: var(--ph); box-shadow: var(--raise), 0 0 12px var(--ph-glow2); }
-@media (max-width: 420px) {
-  .live-voice-panel { left: 8px; width: calc(100vw - 16px); }
+.lv-retry:hover { color: var(--ph-bright); border-color: var(--ph); box-shadow: 0 0 10px var(--ph-glow2); }
+
+/* ================= THE FOUR HUD SKINS (candidates — one survives) =================
+   Four sizes of "the station is listening", selected by data-skin, CSS-ONLY over the ONE markup
+   tree above so the readouts, the telemetry wiring and the state machine can never drift between
+   candidates. `.live-voice-panel[data-skin="x"] .lv-thing` is (0,3,0) and cleanly beats the base
+   `.lv-thing` (0,1,0) — no !important anywhere.
+
+   They run richest → barest. Every one of them keeps: a grabbable grip, a reachable ✕, the state
+   ladder, and at least one part lit by --lv-amp. `pill` needs no rules — it IS the base. */
+
+/* ---- 2 · orb — just the eye. ~76×54. No words, no level bars: the halo IS the level and the
+   colour IS the state. The grip becomes a vertical rail on the left so it stays draggable. ---- */
+.live-voice-panel[data-skin="orb"] {
+  padding: 4px 6px 4px 3px; gap: 4px;
 }
+.live-voice-panel[data-skin="orb"] .lv-head { flex-direction: column; gap: 6px; align-self: center; }
+.live-voice-panel[data-skin="orb"] .lv-state { display: none; }
+.live-voice-panel[data-skin="orb"]:hover .lv-state,
+.live-voice-panel[data-skin="orb"]:focus-within .lv-state {
+  display: block; writing-mode: vertical-rl; font-size: 8px; letter-spacing: var(--ls-1);
+}
+.live-voice-panel[data-skin="orb"] .lv-orb { width: 46px; height: 46px; }
+.live-voice-panel[data-skin="orb"] .lv-iris { width: 21px; height: 21px; }
+.live-voice-panel[data-skin="orb"] .lv-pupil { width: 8px; height: 8px; }
+.live-voice-panel[data-skin="orb"] .lv-wave,
+.live-voice-panel[data-skin="orb"] .lv-heard,
+.live-voice-panel[data-skin="orb"] .lv-say.on { display: none; }
+
+/* ---- 3 · strip — the level, and nothing else. ~200×22. The lamp shrinks to a pilot light and the
+   state word only appears under the cursor; at rest this is a bar of your own voice. ---- */
+.live-voice-panel[data-skin="strip"] {
+  width: 200px; border-radius: var(--r-sm); padding: 3px 9px 3px 5px; gap: 6px;
+}
+.live-voice-panel[data-skin="strip"] .lv-state { display: none; }
+.live-voice-panel[data-skin="strip"]:hover .lv-state,
+.live-voice-panel[data-skin="strip"]:focus-within .lv-state { display: block; font-size: 9px; }
+.live-voice-panel[data-skin="strip"] .lv-orb { width: 14px; height: 14px; }
+.live-voice-panel[data-skin="strip"] .lv-iris { display: none; }
+.live-voice-panel[data-skin="strip"] .lv-pupil { width: 4px; height: 4px; }
+.live-voice-panel[data-skin="strip"] .lv-wave { height: 14px; }
+.live-voice-panel[data-skin="strip"] .lv-wave i { height: 12px; }
+.live-voice-panel[data-skin="strip"] .lv-heard,
+.live-voice-panel[data-skin="strip"] .lv-say.on { display: none; }
+
+/* ---- 4 · chip — the smallest honest thing. ~120×22, in the exact register of the topbar chips, so
+   it reads as one more piece of the station's own instrumentation rather than an overlay. The 10px
+   lamp keeps the amplitude visible — a chip that only said LISTENING would be a claim with no
+   evidence behind it. ---- */
+.live-voice-panel[data-skin="chip"] {
+  border-radius: var(--r-sm); padding: 3px 9px 3px 6px; gap: 6px;
+}
+.live-voice-panel[data-skin="chip"] .lv-orb { width: 10px; height: 10px; order: 2; }
+.live-voice-panel[data-skin="chip"] .lv-iris { display: none; }
+.live-voice-panel[data-skin="chip"] .lv-pupil { width: 3px; height: 3px; }
+.live-voice-panel[data-skin="chip"] .lv-wave,
+.live-voice-panel[data-skin="chip"] .lv-say.on { display: none; }
+/* the transcript is the one thing worth expanding to, so it comes back on hover */
+.live-voice-panel[data-skin="chip"] .lv-heard { display: none; }
+.live-voice-panel[data-skin="chip"]:hover .lv-heard,
+.live-voice-panel[data-skin="chip"]:focus-within .lv-heard { display: -webkit-box; max-width: 240px; }
+
 @media (prefers-reduced-motion: reduce) {
   .live-voice-panel { animation: none; }
   .lv-pip, .lv-iris, .lv-pupil { animation: none !important; }
 }
-
-/* ================= THE OTHER THREE SKINS (candidates — one survives) =================
-   Four silhouettes over the ONE markup tree above, selected by data-skin. CSS-ONLY on purpose:
-   the readouts, the telemetry wiring and the state machine live in voice-live.js and can never
-   drift between candidates. `.live-voice-panel[data-skin="x"] .lv-thing` is (0,3,0) and cleanly
-   beats the base `.lv-thing` (0,1,0) without a single !important.
-
-   RULES every skin below obeys:
-   - the state ladder is untouched — --lv-accent still rests on --ph, climbs to --ph-bright only
-     while actively HEARING you, --warn while working, --bad offline
-   - --lv-amp still drives something visible, so no skin can turn real telemetry decorative
-   - no `display` on .lv-error / .lv-retry: those are JS-toggled via [hidden], and any class-level
-     display silently out-specifies the UA rule (that bug already shipped once, see above)
-   - `skin=console` needs nothing here — it IS the base block. */
-
-/* ---- 2 · handset — the intercom bar. Wide, short, docked out of the way; the head becomes a
-   vertical grip so the silhouette reads as a handset rather than another window. It deliberately
-   SURRENDERS readout density: the SPEECH row is hidden (not faked — the console skin is where you
-   go to watch a model download), and ROUTE/TASK ride as two inline chips. ---- */
-.live-voice-panel[data-skin="handset"] {
-  width: min(440px, calc(100vw - 16px));
-  display: grid; grid-template-columns: 26px minmax(0, 1fr); align-items: center;
-  padding: 0 0 var(--s-2);
-  column-gap: var(--s-2);
-}
-.live-voice-panel[data-skin="handset"] > * { grid-column: 2; }
-/* static, so the state readout below can hang off the PANEL instead of the grip */
-.live-voice-panel[data-skin="handset"] .lv-head {
-  position: static;
-  grid-column: 1; grid-row: 1 / -1; align-self: stretch;
-  flex-direction: column; gap: 6px; padding: 7px 0;
-  border-bottom: 0; border-right: 1px solid var(--ph-dim);
-  background: linear-gradient(90deg, var(--ph-glow2), transparent);
-}
-.live-voice-panel[data-skin="handset"] .lv-brand {
-  writing-mode: vertical-rl; padding: 7px 1px; letter-spacing: var(--ls-1);
-  font-size: var(--fs-0);
-}
-.live-voice-panel[data-skin="handset"] .lv-pip { margin: auto 0 0; }
-/* the state word stays HORIZONTAL and rides the bar's top-right. Set vertically it was ~90px of
-   glyphs and it — not the content — was setting the whole bar's height, which is the one thing
-   this skin exists to avoid. */
-.live-voice-panel[data-skin="handset"] .lv-state {
-  position: absolute; z-index: 8; top: 7px; right: 11px;
-  font-size: 10px; letter-spacing: var(--ls-2); opacity: .85;
-}
-.live-voice-panel[data-skin="handset"] .lv-x { padding: 1px 3px; }
-.live-voice-panel[data-skin="handset"] .lv-stage { padding: var(--s-2) var(--s-3) 4px 0; gap: var(--s-2); }
-.live-voice-panel[data-skin="handset"] .lv-orb { width: 38px; height: 38px; }
-.live-voice-panel[data-skin="handset"] .lv-iris { width: 17px; height: 17px; }
-.live-voice-panel[data-skin="handset"] .lv-pupil { width: 6px; height: 6px; }
-/* the scope takes the whole bar — on a handset the level IS the interface */
-.live-voice-panel[data-skin="handset"] .lv-wave { height: 34px; }
-.live-voice-panel[data-skin="handset"] .lv-wave i { height: 20px; }
-/* one line each: a bar that grows three lines tall stops being a bar */
-.live-voice-panel[data-skin="handset"] .lv-heard {
-  margin: 0 var(--s-3) 0 0; -webkit-line-clamp: 1; font-size: var(--fs-1);
-}
-.live-voice-panel[data-skin="handset"] .lv-say.on {
-  margin: 2px var(--s-3) 0 0; -webkit-line-clamp: 1; font-size: var(--fs-0);
-}
-/* rail → two chips, no well, no engraving */
-.live-voice-panel[data-skin="handset"] .lv-rail {
-  flex-direction: row; gap: 6px; margin: 6px var(--s-3) 0 0;
-  background: none; box-shadow: none; overflow: visible;
-}
-.live-voice-panel[data-skin="handset"] .lv-row-dl { display: none; }
-.live-voice-panel[data-skin="handset"] .lv-row {
-  min-width: 0; padding: 2px 7px; border-bottom: 0; border-radius: var(--r-sm);
-  background: rgba(0,0,0,.45); box-shadow: var(--raise);
-}
-.live-voice-panel[data-skin="handset"] .lv-row:first-child { flex: 0 1 auto; }
-.live-voice-panel[data-skin="handset"] .lv-row:last-child { flex: 1 1 auto; }
-.live-voice-panel[data-skin="handset"] .lv-row dt { flex: 0 0 auto; font-size: 9px; }
-/* a fault becomes an underline strip — a raised card would double the bar's height */
-.live-voice-panel[data-skin="handset"] .lv-error {
-  margin: 6px var(--s-3) 0 0; padding: 4px 0 3px;
-  background: none; box-shadow: none; border-left: 0; border-bottom: 2px solid var(--bad);
-  border-radius: 0;
-}
-.live-voice-panel[data-skin="handset"] .lv-retry { margin: 5px var(--s-3) 0 auto; }
-
-/* ---- 3 · scope — the test-equipment terminal. The waveform is the hero behind a graticule, the
-   transcript reads as terminal log output, and the rail drops into a bottom nameplate in the
-   .term-plate register with the orb seated in it as an indicator lamp. `.lv-stage { display:
-   contents }` is what lets a CSS-only skin split the orb away from the scope: both become direct
-   grid children of the panel, so the lamp can sit in the plate while the scope stays up top. ---- */
-.live-voice-panel[data-skin="scope"] {
-  width: min(360px, calc(100vw - 16px));
-  display: grid; grid-template-columns: auto minmax(0, 1fr);
-  align-items: center; padding: 0 0 var(--s-2);
-}
-.live-voice-panel[data-skin="scope"] .lv-head { grid-column: 1 / -1; grid-row: 1; }
-.live-voice-panel[data-skin="scope"] .lv-stage { display: contents; }
-.live-voice-panel[data-skin="scope"] .lv-wave {
-  grid-column: 1 / -1; grid-row: 2; position: relative;
-  height: 92px; margin: var(--s-3) var(--s-3) var(--s-2); padding: 0 9px; gap: 3px;
-  border-radius: var(--r-sm);
-  /* graticule on both axes, drawn from the accent so it re-hues with the state and the theme */
-  background:
-    repeating-linear-gradient(90deg, color-mix(in srgb, var(--lv-accent) 13%, transparent) 0 1px, transparent 1px 26px),
-    repeating-linear-gradient(180deg, color-mix(in srgb, var(--lv-accent) 13%, transparent) 0 1px, transparent 1px 18px),
-    linear-gradient(180deg, rgba(0,0,0,.62), rgba(0,0,0,.4));
-}
-/* corner ticks. ABSOLUTE on purpose — .lv-wave is a flex row, so an in-flow pseudo-element would
-   become a flex item and steal a bar's worth of width. */
-.live-voice-panel[data-skin="scope"] .lv-wave::before,
-.live-voice-panel[data-skin="scope"] .lv-wave::after {
-  content: ''; position: absolute; width: 9px; height: 9px;
-  border: 0 solid color-mix(in srgb, var(--lv-accent) 55%, transparent);
-}
-.live-voice-panel[data-skin="scope"] .lv-wave::before { left: 4px; top: 4px; border-left-width: 1px; border-top-width: 1px; }
-.live-voice-panel[data-skin="scope"] .lv-wave::after { right: 4px; bottom: 4px; border-right-width: 1px; border-bottom-width: 1px; }
-.live-voice-panel[data-skin="scope"] .lv-wave i { height: 66px; }
-.live-voice-panel[data-skin="scope"] .lv-heard {
-  grid-column: 1 / -1; grid-row: 3; font-size: var(--fs-1); letter-spacing: var(--ls-1);
-}
-.live-voice-panel[data-skin="scope"] .lv-heard::before { content: '> '; color: var(--ph-dim); }
-.live-voice-panel[data-skin="scope"] .lv-say { grid-column: 1 / -1; grid-row: 4; }
-.live-voice-panel[data-skin="scope"] .lv-say.on::before { content: '< '; }
-/* the orb becomes a lamp bolted into the nameplate: no iris ring at this size, just a lit pupil
-   inside a halo that still inflates on --lv-amp */
-.live-voice-panel[data-skin="scope"] .lv-orb {
-  grid-column: 1; grid-row: 5; width: 22px; height: 22px;
-  margin: var(--s-3) 0 0 var(--s-3);
-}
-.live-voice-panel[data-skin="scope"] .lv-iris { display: none; }
-.live-voice-panel[data-skin="scope"] .lv-pupil { width: 7px; height: 7px; }
-.live-voice-panel[data-skin="scope"] .lv-rail {
-  grid-column: 2; grid-row: 5;
-  flex-direction: row; align-items: center; gap: var(--s-2);
-  margin: var(--s-3) var(--s-3) 0 var(--s-2);
-  background: none; box-shadow: none; overflow: visible;
-  border-top: 1px solid var(--ph-faint); padding-top: 5px;
-}
-/* equal thirds — one greedy row made the other two read as "ASR READ…" mush */
-.live-voice-panel[data-skin="scope"] .lv-row { flex: 1 1 0; min-width: 0; padding: 0; border-bottom: 0; }
-.live-voice-panel[data-skin="scope"] .lv-row dt { flex: 0 0 auto; letter-spacing: var(--ls-3); opacity: .6; }
-.live-voice-panel[data-skin="scope"] .lv-row dd { font-size: 10px; }
-.live-voice-panel[data-skin="scope"] .lv-error { grid-column: 1 / -1; grid-row: 6; }
-.live-voice-panel[data-skin="scope"] .lv-retry { grid-column: 1 / -1; grid-row: 7; }
-
-/* ---- 4 · monolith — the watching eye. Tall, narrow, borderless, mostly empty: the orb is the
-   whole instrument and everything else is one dim centred line. The eerie-not-cute extreme — the
-   station as a presence listening to you rather than a panel reporting to you. The scope survives
-   as a hairline strip so the level stays PROVABLE at a glance; the halo does the loud reading. ---- */
-.live-voice-panel[data-skin="monolith"] {
-  width: min(240px, calc(100vw - 16px));
-  padding: 0 0 var(--s-4); text-align: center;
-  background:
-    radial-gradient(ellipse 130% 62% at 50% 4%, var(--ph-glow2), transparent 48%),
-    radial-gradient(ellipse 116% 96% at 50% 52%, transparent 26%, rgba(0,0,0,.86) 100%),
-    rgba(4, 2, 1, 0.985);
-}
-/* the head is a hairline: no brand chip, no window furniture — just the state word and the ✕ */
-.live-voice-panel[data-skin="monolith"] .lv-head {
-  padding: 5px 6px 5px 11px; border-bottom: 0; background: none;
-}
-.live-voice-panel[data-skin="monolith"] .lv-brand { display: none; }
-.live-voice-panel[data-skin="monolith"] .lv-pip { margin-left: 0; }
-.live-voice-panel[data-skin="monolith"] .lv-state { margin-left: auto; font-size: 10px; opacity: .8; }
-.live-voice-panel[data-skin="monolith"] .lv-x { background: none; opacity: .6; }
-.live-voice-panel[data-skin="monolith"] .lv-stage {
-  flex-direction: column; gap: var(--s-3); padding: var(--s-4) var(--s-4) var(--s-3);
-}
-.live-voice-panel[data-skin="monolith"] .lv-orb { width: 140px; height: 140px; }
-.live-voice-panel[data-skin="monolith"] .lv-halo { opacity: calc(.1 + var(--lv-amp) * .6); }
-.live-voice-panel[data-skin="monolith"] .lv-iris { width: 62px; height: 62px; }
-.live-voice-panel[data-skin="monolith"] .lv-pupil { width: 17px; height: 17px; }
-.live-voice-panel[data-skin="monolith"] .lv-wave {
-  width: 100%; height: 14px; padding: 0; gap: 3px; background: none; box-shadow: none; opacity: .55;
-}
-.live-voice-panel[data-skin="monolith"] .lv-wave i { height: 12px; }
-.live-voice-panel[data-skin="monolith"] .lv-heard {
-  -webkit-line-clamp: 2; font-size: var(--fs-1); letter-spacing: var(--ls-1); opacity: .92;
-}
-.live-voice-panel[data-skin="monolith"] .lv-say.on { -webkit-line-clamp: 2; font-size: var(--fs-0); }
-.live-voice-panel[data-skin="monolith"] .lv-say.on::before { content: ''; }
-/* readouts recede to three unlit lines — present for honesty, silent by design */
-.live-voice-panel[data-skin="monolith"] .lv-rail {
-  gap: 2px; margin-top: var(--s-4); background: none; box-shadow: none; overflow: visible;
-}
-.live-voice-panel[data-skin="monolith"] .lv-row {
-  justify-content: center; gap: 6px; padding: 1px 8px; border-bottom: 0;
-}
-.live-voice-panel[data-skin="monolith"] .lv-row dt { flex: 0 0 auto; font-size: 9px; opacity: .45; }
-.live-voice-panel[data-skin="monolith"] .lv-row dd { flex: 0 1 auto; font-size: 9px; opacity: .7; color: var(--ph-dim); }
-.live-voice-panel[data-skin="monolith"] .lv-error {
-  background: none; box-shadow: none; border-left: 0; text-align: left;
-}
-.live-voice-panel[data-skin="monolith"] .lv-retry { margin-right: var(--s-3); }
 
 @keyframes chip-spk { 0%,100% { box-shadow: 0 0 2px var(--ph-glow2); } 50% { box-shadow: 0 0 12px var(--ph-glow); } }
 
