@@ -549,15 +549,15 @@
    with the interrupt shown, so it simply spilled — the mic hung 18px (63px mid-run) past the panel
    edge and off the screen. Every member was flex:0 0 auto, so nothing gave. Two rules fix it:
    1. the MODEL CHIP is the only elastic member — it is the one control whose width is text, and a
-      truncated model name still reads while a clipped mic is just gone. The sigil is pinned so the
-      chip's icon never squashes as it gives width back.
-   2. below 312px of composer the chip stops shrinking and DEGRADES: the resting model name drops
-      (the dock still names the model on click), metrics tighten one notch. That buys ~70px, which
-      is what the interrupt button costs — so the busy row fits too.
+      truncated model name still reads while a clipped mic is just gone.
+   2. below 312px of composer the chip stops shrinking and DEGRADES: the resting EFFORT TIER drops
+      (the tooltip and the dock still name it), the model name tightens one notch, metrics tighten.
+      That buys ~70px, which is what the interrupt button costs — so the busy row fits too.
+      The name is the last thing to go, not the first: with the sigil removed it is the only thing
+      that identifies the control at all.
    Verified live at --chat-w 300/308/320/328/340/360/500 × idle+busy × MED/XHIGH: mic right edge
    never passes the panel's, .chat-tools scrollWidth never exceeds clientWidth. */
 .chat-tools .model-dock-toggle { flex: 0 1 auto; }
-.chat-tools .model-dock-sigil { flex: 0 0 auto; }
 @container comms-composer (max-width: 312px) {
   .chat-tools { gap: 5px; }
   .chat-tools .chat-stop,
@@ -565,8 +565,8 @@
   .chat-tools .voice-toggle,
   .chat-tools .mic-btn { width: 34px; }
   .chat-tools .model-dock-toggle { min-width: 44px; padding: 0 7px; gap: 5px; }
-  .chat-tools .model-dock-model-name { display: none; }
-  .chat-tools .model-dock-effort-chip { max-width: 34px; }
+  .chat-tools .model-dock-model-name { max-width: 62px; font-size: 12px; letter-spacing: 0.3px; }
+  .chat-tools .model-dock-effort-chip { display: none; }
 }
 
 /* ============================================================
