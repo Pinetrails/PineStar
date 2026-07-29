@@ -4141,6 +4141,16 @@ const Chat = (() => {
     renderQueued();
     if (typeof SFX !== 'undefined' && SFX.type) SFX.type();
   }
+  function sendOrQueue(text) {
+    const value = String(text == null ? '' : text).trim();
+    if (!value || !activeWs) return { ok: false, state: 'empty' };
+    if (isBusy()) {
+      enqueue(value);
+      return { ok: true, state: 'queued', workstreamId: activeWs.id };
+    }
+    send(value);
+    return { ok: true, state: 'started', workstreamId: activeWs.id };
+  }
   function renderQueued() {
     const strip = el('chat-queued'); if (!strip) return;
     const arr = (activeWs && queued.get(activeWs.id)) || [];
@@ -6155,5 +6165,5 @@ const Chat = (() => {
   // only" gate maybeStandaloneRate uses — so a pure-chat run is never bottle-offered. Used by App.runBottleInfo (R5).
   function runDidWork(id) { const w = id ? runWork.get(id) : null; return !!(w && ((w.toolsOk || 0) >= 1 || (w.delivered || 0) >= 1)); }
 
-  return { init, load, send, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
+  return { init, load, send, sendOrQueue, stopActive, status, localLine, broadcast, setSystem, getHistory, abort, isBusy, beatBusy: skillBeatBusy, beginInterview, endInterview, echoUser, prefill, autoGrowInput, choices, clearChoices, typeLine, nudge, clearNudge, offerCuriosity, offerFork, briefingReceipt, runMeta, runDidWork, awayDigest, awayReview, awayRate, workshopReturn, refreshIdBar: renderIdBar, setRosterStatus };
 })();

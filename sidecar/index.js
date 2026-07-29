@@ -56,6 +56,7 @@ const { summarizeCapabilities } = require('./capability/capsummary.js');   // tr
 const { starnetManual } = require('./manual.js');   // truthful "how StarNet works" so the agent can guide a stuck Commander (interactive only)
 const { makeOpenRouterProvider } = require('./providers/openrouter.js');
 const edgetts = require('./edgetts.js');   // V-EDGE: free keyless neural TTS floor (decoupled from the LLM provider)
+const localVoice = require('./local-voice.js');
 const {
   selectProvider,
   listProviderProfiles,
@@ -182,6 +183,8 @@ const cronGuard = require('./cron-guard.js');                        // routine 
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const loopbackListenerProbe = makeLoopbackListenerProbe({ execFile, platform: process.platform, env: process.env });
 const { makeSubagentManager } = require('./subagents.js');          // durable background worker registry
+const { makeRealtimeVoice } = require('./realtime-voice.js');       // browser WebRTC voice coordinator; API key never leaves this process
+const { makeNativeStt } = require('./native-stt.js');                // keyless Windows dictation fallback for OAuth Live voice
 const Classify = require('../frontend/app/classify.js');   // the SAME task-vs-talk classifier the browser uses
 const sharedSpecialties = require('../shared/specialties.js');   // Class Loadouts S1: the ONE class catalog — no hardcoded class prose here
 // the specialist classes as {id, tagline}, composed from the shared catalog so team.summon's class list +
@@ -1416,6 +1419,13 @@ function providerHasCredential(provider, key, baseUrl) {
   if (providerRequiresKey(id) && !String(key || '').trim()) return false;
   return true;
 }
+
+const realtimeVoice = makeRealtimeVoice({
+  fetch: globalThis.fetch,
+  resolveKey: () => providerRuntimeKey('openai', ''),
+  safetySeed: API_TOKEN
+});
+const nativeStt = makeNativeStt({ platform: process.platform, execFile });
 function providerCredentialError(provider) {
   const id = normalizeProvider(provider);
   const profile = getProviderProfile(id);
@@ -5030,6 +5040,13 @@ const TG_BOT_RX = {
 };
 const ROUTES = [
   { m: 'POST', exact: '/api/session', h: handleApiSession },
+  { m: 'GET', exact: '/api/realtime/status', h: handleRealtimeStatus },
+  { m: 'POST', exact: '/api/realtime/session', h: handleRealtimeSession },
+  { m: 'GET', exact: '/api/stt/native/status', h: handleNativeSttStatus },
+  { m: 'POST', exact: '/api/stt/native', h: handleNativeStt },
+  { m: 'GET', exact: '/api/local-voice/status', h: handleLocalVoiceStatus },
+  { m: 'POST', exact: '/api/local-voice/warm', h: handleLocalVoiceWarm },
+  { m: 'POST', exact: '/api/local-voice/transcribe', h: handleLocalVoiceTranscribe },
   { m: 'POST', exact: '/api/run', h: handleRun, errorPolicy: runFailPolicy },
   { m: 'POST', exact: '/api/tts', h: handleTts, errorPolicy: ttsFailOpenPolicy },
   // stt: qsplit == the old (url === '/api/stt' || url.indexOf('/api/stt?') === 0) disjunction, verbatim.
@@ -5532,6 +5549,64 @@ async function handleBudgetCaps(req, res) {
 function handleApiSession(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify({ ok: true }));
+}
+function handleRealtimeStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(realtimeVoice.status()));
+}
+async function handleRealtimeSession(req, res) {
+  let offer;
+  try { offer = await readBody(req, 1 << 20, res); }
+  catch (e) {
+    if (!res.headersSent) {
+      res.writeHead(e && e.tooLarge ? 413 : 400, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+      res.end(JSON.stringify({ error: e && e.tooLarge ? 'SDP offer too large' : 'invalid SDP offer' }));
+    }
+    return;
+  }
+  const out = await realtimeVoice.createCall(offer);
+  res.writeHead(out.status, { 'Content-Type': out.contentType, 'Cache-Control': 'no-store' });
+  res.end(out.body);
+}
+function handleNativeSttStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(nativeStt.status()));
+}
+async function handleNativeStt(req, res) {
+  const ac = new AbortController();
+  res.on('close', () => { if (!res.writableEnded) ac.abort(); });
+  const out = await nativeStt.recognize({ signal: ac.signal });
+  if (res.destroyed || res.writableEnded) return;
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(out));
+}
+function handleLocalVoiceStatus(req, res) {
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify(localVoice.status()));
+}
+async function handleLocalVoiceWarm(req, res) {
+  const json = (code, value) => {
+    res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(value));
+  };
+  // Loading continues on the server even if the panel closes. The client polls status for download progress.
+  localVoice.warm().catch(error => console.error('[local-voice] warm failed:', error && error.message || error));
+  json(202, localVoice.status());
+}
+async function handleLocalVoiceTranscribe(req, res) {
+  const json = (code, value) => {
+    res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+    res.end(JSON.stringify(value));
+  };
+  let pcm;
+  try { pcm = await readBodyBuffer(req, 4 * 16000 * 30, res); }
+  catch (error) { if (!res.headersSent) json(error && error.tooLarge ? 413 : 400, { error: 'invalid audio payload' }); return; }
+  try {
+    const text = await localVoice.transcribe(pcm);
+    json(200, { ok: true, text });
+  } catch (error) {
+    json(503, { ok: false, error: String(error && error.message || error) });
+  }
 }
 /* ---- POST /api/budget/resume { scope } — the one-click "keep going" after a SOFT pool cap is hit: grant another
    base-cap of headroom to that scope for the rest of the session. scope ∈ {day, global}. ---- */
@@ -11270,6 +11345,44 @@ async function handleTts(req, res) {
   // ElevenLabs branch — user-trained voices (e.g. the Commander's own Ultron clone). Its own key + cache
   // namespace; the provider chain below is irrelevant there, so dispatch BEFORE the no-key gate.
   if (String((body && body.provider) || '').trim().toLowerCase() === 'elevenlabs') return ttsElevenLabs(res, body, text, fallback);
+  // Local Live explicitly opts into the downloaded voice. Other voice surfaces retain their configured
+  // provider ladder, so this experimental path cannot silently change an existing persona.
+  if (body && body.local) {
+    try {
+      const localVoiceId = String(body.localVoice || 'af_heart');
+      const localSpeed = Number(body.speed) || 1;
+      const ck = crypto.createHash('sha1').update(`local-kokoro/q4|${localVoiceId}|${localSpeed}|${text}`).digest('hex');
+      const cachePath = path.join(VOICE_CACHE_DIR, `local-${ck}.wav`);
+      try {
+        const cached = await fsp.readFile(cachePath);
+        res.writeHead(200, {
+          'Content-Type': 'audio/wav',
+          'Cache-Control': 'no-store',
+          'X-Voice-Provider': 'local-kokoro',
+          'X-Voice-Cache': 'hit'
+        });
+        return res.end(cached);
+      } catch (_) {}
+      const buf = await localVoice.synthesize(text, {
+        voice: localVoiceId,
+        speed: localSpeed
+      });
+      try {
+        const tmp = `${cachePath}.${crypto.randomUUID()}.tmp`;
+        await fsp.writeFile(tmp, buf);
+        await fsp.rename(tmp, cachePath);
+      } catch (_) {}
+      res.writeHead(200, {
+        'Content-Type': 'audio/wav',
+        'Cache-Control': 'no-store',
+        'X-Voice-Provider': 'local-kokoro',
+        'X-Voice-Cache': 'miss'
+      });
+      return res.end(buf);
+    } catch (error) {
+      console.error('[tts] local Kokoro failed, falling through:', error && error.message || error);
+    }
+  }
 
   // WHICH credential speaks: an explicit key from the page (tagged with its provider) wins; otherwise
   // the first provider in the chain the sidecar itself holds a credential for (runtime push / keychain

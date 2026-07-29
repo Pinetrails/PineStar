@@ -79,6 +79,7 @@ const Voice = (() => {
   let activeVoiceId = 'agent';      // identity used to pick the current agent's voice
   let activePersonaId = (typeof Personas !== 'undefined' && Personas.DEFAULT_ID) || 'professional';   // drives the in-character task acknowledgments (overwritten from the live agent in Voice.init)
   let listening = false, speaking = false, savedStatus = '';
+  let coordinator = null;           // OAuth/local live surface hooks; null preserves the classic voice path
   // hands-free loop bookkeeping
   let rearmTimer = null;            // pending mic re-open
   let emptyStreak = 0;              // silent listens in a row (→ go passive instead of looping forever)
@@ -93,13 +94,16 @@ const Voice = (() => {
     else if (statusEl) statusEl.textContent = s;
   }
   function currentStatusText() { return statusEl ? statusEl.textContent : ''; }
+  function coordinatorEvent(name, payload) {
+    try { if (coordinator && typeof coordinator[name] === 'function') coordinator[name](payload); } catch (_) {}
+  }
 
   /* ======================================================================
      OUTPUT — the agent's voice (TTS)
      ====================================================================== */
 
-  function onSpeakStart() { speaking = true; setSpeaking(true); duckSfx(true); }
-  function onSpeakEnd() { if (!speaking) return; speaking = false; setSpeaking(false); }
+  function onSpeakStart() { speaking = true; setSpeaking(true); duckSfx(true); coordinatorEvent('onState', 'speaking'); }
+  function onSpeakEnd() { if (!speaking) return; speaking = false; setSpeaking(false); coordinatorEvent('onState', busyNow() ? 'thinking' : 'ready'); }
 
   /* ---- neural TTS — the agent's ONLY voice -----------------------------------------------------
      Hits the sidecar /api/tts and plays the returned audio. The sidecar owns the whole tier ladder
@@ -476,6 +480,7 @@ const Voice = (() => {
      every fetch gap, so the hands-free mic can't re-open into the agent's own voice (echo). Bumping
      `speakSeq` (barge-in / teardown) invalidates every in-flight fetch + queued playback at once. */
   let jobs = [];          // queued chunks: { text, opts, seq, result(Promise), ac(AbortController) }
+  let preferLocalTts = false;
   let playIdx = 0;        // next job to PLAY
   let synthIdx = 0;       // next job to begin SYNTHESIZING (runs ahead of playIdx for prefetch)
   let draining = false;   // a reply is in progress (queue non-empty or awaiting more chunks)
@@ -502,7 +507,11 @@ const Voice = (() => {
     const ac = new AbortController(); job.ac = ac; ttsAbort = ac;
     job.result = fetch('/api/tts', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, signal: ac.signal,
-      body: JSON.stringify({ key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(), text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style })
+      body: JSON.stringify({
+        key: cred.key, keyProvider: cred.provider, preferProvider: runProvider(),
+        text: job.text, model: cfg.model, voice: cfg.voice, style: cfg.style,
+        local: preferLocalTts, localVoice: 'af_heart', speed: cfg.speed
+      })
     }).then(async r => {
       const ct = r.headers.get('Content-Type') || '';
       if (r.ok && ct.indexOf('audio') === 0) { const blob = await r.blob(); if (blob && blob.size) { noteNeuralOk(); return { kind: 'neural', blob }; } }
@@ -582,6 +591,7 @@ const Voice = (() => {
     let body = opts.mutter ? clean.slice(0, 80) : clean;
     if (!body.trim()) return;
     const opening = (jobs.length === 0);   // FIRST chunk of this reply → eligible for the fast-path lead split
+    if (!opts.mutter) coordinatorEvent('onAssistant', { text: body, opening });
     replyClosed = false; draining = true;
     // on the opening chunk, peel a short lead so the first synth call (and thus first audio) is fast.
     let pieces;
@@ -677,13 +687,14 @@ const Voice = (() => {
     if (!canListen()) return;
     clearResumeCue();
     convoMode = !convoMode;
+    coordinatorEvent('onState', 'listening');
     if (typeof SFX !== 'undefined') SFX.open();
     if (convoMode) {
       savePref(LS_CONVO, true);   // remember the hands-free intent so a refresh can offer one-tap resume
       if (!speakReplies) { speakReplies = true; savePref(LS_SPEAK, true); forcedSpeak = true; reflectToggle(); }  // you have to hear it (restored on exit)
       emptyStreak = 0;
       reflectMode();
-      if (!busyNow() && !listening && !speaking) startListening();
+      if ((!busyNow() || coordinator) && !listening && !speaking) startListening();
       else setStatus('voice mode on');
     } else {
       savePref(LS_CONVO, false);   // deliberate exit — don't nag to resume next session
@@ -706,6 +717,7 @@ const Voice = (() => {
     if (forcedSpeak) { forcedSpeak = false; speakReplies = false; savePref(LS_SPEAK, false); reflectToggle(); }
     reflectMode();
     if (was && !busyNow()) setStatus('online');
+    if (was) coordinatorEvent('onState', 'ended');
   }
 
   // a silent listen in voice mode: try again a few times, then go passive so the mic isn't hot forever.
@@ -937,6 +949,35 @@ const Voice = (() => {
     return { name: 'recorder', start, stop, abort };
   })();
 
+  // OAuth Live fallback for embedded Windows WebView2, which has MediaRecorder but no SpeechRecognition.
+  // The local sidecar invokes the OS dictation engine against the default mic; no cloud speech key is used.
+  const nativeSpeechProvider = (() => {
+    let ac = null, hooks = null;
+    async function start(h) {
+      hooks = h; ac = new AbortController();
+      try {
+        const r = await fetch('/api/stt/native', { method: 'POST', signal: ac.signal });
+        const j = await r.json().catch(() => ({}));
+        if (!r.ok || j.error && !j.text) {
+          if (j.error === 'no-speech') hooks && hooks.onError && hooks.onError('no-speech');
+          else hooks && hooks.onError && hooks.onError('native-unavailable');
+        } else if (j.text) hooks && hooks.onFinal && hooks.onFinal(j.text);
+      } catch (e) {
+        if (!(e && e.name === 'AbortError')) hooks && hooks.onError && hooks.onError('native-unavailable');
+      } finally {
+        const done = hooks; hooks = null; ac = null;
+        if (done && done.onEnd) done.onEnd();
+      }
+    }
+    function stop() {
+      const done = hooks; hooks = null;
+      if (ac) { try { ac.abort(); } catch (_) {} ac = null; }
+      if (done && done.onEnd) done.onEnd();
+    }
+    function abort() { stop(); }
+    return { name: 'native', start, stop, abort };
+  })();
+
   /* provider selection: prefer the RECORDER (server Whisper via /api/stt) wherever the mic can be recorded.
      Browser-native SpeechRecognition (Chrome) is Google-served and CENSORS profanity to asterisks with no
      opt-out — the station must transcribe what you actually said, so web-speech is only the fallback:
@@ -963,7 +1004,7 @@ const Voice = (() => {
 
   function startListening() {
     if (!canListen() || listening) return;
-    if (busyNow()) { setStatus('busy — wait for the reply'); return; }  // don't talk over a live run
+    if (busyNow() && !coordinator) { setStatus('busy — wait for the reply'); return; }  // classic mode stays half-duplex
     clearTimeout(rearmTimer); rearmTimer = null;
     stopSpeaking();                       // don't let the agent's voice bleed into the mic
     listening = true; sentThisListen = false; discarding = false; setMicState(true);
@@ -973,6 +1014,7 @@ const Voice = (() => {
     if (typeof SFX !== 'undefined') SFX.open();
     sttProvider.start({
       onInterim: t => {
+        coordinatorEvent('onInterim', String(t || ''));
         // DRAFT PROTECTION: an interim may only replace what dictation itself wrote — never a typed draft.
         // A non-empty composer that isn't our own last interim means the Commander is typing; leave it alone
         // (the status line still shows 'listening…', so dictation isn't silently lost — it lands via onFinal).
@@ -982,6 +1024,7 @@ const Voice = (() => {
       },
       onFinal: text => { submitTranscript(text); },
       onError: msg => {
+        coordinatorEvent('onError', String(msg || 'speech recognition failed'));
         // a DENIED mic is a hard stop, not a recoverable hiccup: don't silently retry/re-arm into a mic
         // that can never open — drop hands-free and tell the user the real problem + how to fix it.
         if (msg === 'not-allowed' || msg === 'service-not-allowed') {
@@ -1012,6 +1055,7 @@ const Voice = (() => {
     // otherwise restore whatever status was showing before we grabbed the mic (a send already set
     // 'thinking…'/'working…' via Chat, so this only fires for a plain idle stop).
     if (!busyNow() && !speaking) setStatus(savedStatus || (convoMode ? 'voice mode on' : 'online'));
+    coordinatorEvent('onState', busyNow() ? 'thinking' : 'ready');
   }
 
   // a final transcript from the mic — sent exactly like a typed message (busy/purpose/task/cost logic
@@ -1038,7 +1082,9 @@ const Voice = (() => {
     // a dedicated "got it" cue (not the generic send click) so the user knows their words landed —
     // closes the perceived gap until the agent's first spoken word.
     if (typeof SFX !== 'undefined') (SFX.think || SFX.click)();
-    if (typeof Chat !== 'undefined' && Chat.send) Chat.send(t);
+    let handled = false;
+    try { handled = !!(coordinator && typeof coordinator.onTranscript === 'function' && coordinator.onTranscript(t)); } catch (_) {}
+    if (!handled && typeof Chat !== 'undefined' && Chat.send) Chat.send(t);
   }
 
   // mic button: interrupt the agent if it's talking (barge-in), else start/stop a listen. In voice
@@ -1057,6 +1103,25 @@ const Voice = (() => {
     if (!canListen()) return;
     if (listening) stopListening(); else startListening();
   }
+
+  // OAuth/local live mode keeps authentication on the existing Chat/Codex path and deliberately selects
+  // browser speech recognition for input, so the voice layer itself needs no transcription API credential.
+  function startCoordinator(hooks) {
+    if (!SR && typeof fetch === 'undefined') return false;
+    coordinator = hooks || {};
+    sttProvider = SR ? webSpeechProvider : nativeSpeechProvider;
+    if (!convoMode) toggleVoiceMode();
+    else if (!listening && !talking()) startListening();
+    return true;
+  }
+  function stopCoordinator() {
+    if (convoMode) stopConvo();
+    coordinator = null;
+  }
+  // The downloaded local speech surface owns its persistent microphone/VAD loop, but still needs the mature
+  // reply-stream hooks (captions, speaking state, barge-in) from this module.
+  function attachCoordinator(hooks) { coordinator = hooks || {}; return true; }
+  function detachCoordinator() { coordinator = null; }
 
   /* ======================================================================
      UI wiring
@@ -1185,7 +1250,9 @@ const Voice = (() => {
     init, speak, speakChunk, endReply, mutter, ambientLine, setAgent, isOn, setSpeakReplies,
     startListening, stopListening, toggleListen, stopSpeaking,
     toggleVoiceMode, stopConvo, onTurnEnd,
-    canListen, canSpeak, personaId: () => activePersonaId,
+    canListen, canSpeak, startCoordinator, stopCoordinator, attachCoordinator, detachCoordinator,
+    canOAuthLive: () => !!SR || typeof fetch !== 'undefined', personaId: () => activePersonaId,
+    setLocalTts: value => { preferLocalTts = !!value; },
     isListening: () => listening, isSpeaking: () => speaking, inVoiceMode: () => convoMode
   };
 })();

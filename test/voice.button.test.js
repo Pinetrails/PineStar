@@ -176,6 +176,26 @@ const tick = (n = 12) => new Promise(r => setTimeout(r, n));
     A.ok(t.Voice.isListening() === true, 'recorder: mic works after re-grant');
   }
 
+  // --- OAuth Live coordinator: keyless speech stays open while a task is busy ------------------
+  {
+    const t = boot();
+    const heard = [], states = [];
+    t.sandbox.__busy = true;
+    const started = t.Voice.startCoordinator({
+      onState: state => states.push(state),
+      onTranscript: text => { heard.push(text); return true; }
+    });
+    await tick();
+    A.ok(started === true, 'oauth live: coordinator starts when browser speech recognition is available');
+    A.ok(t.Voice.isListening() === true, 'oauth live: mic opens while the active task is busy (steer/barge-in path)');
+    A.ok(states.includes('listening'), 'oauth live: listening state is surfaced to the live panel');
+    srInstances[srInstances.length - 1].fireFinal('change direction'); await tick();
+    A.ok(heard[0] === 'change direction', 'oauth live: final transcript reaches the coordinator');
+    A.ok(t.sandbox.__sent.length === 0, 'oauth live: a claimed transcript is not double-sent through classic Chat.send');
+    t.Voice.stopCoordinator(); await tick();
+    A.ok(t.Voice.inVoiceMode() === false, 'oauth live: coordinator teardown closes hands-free mode');
+  }
+
   // --- voice degrade NEVER writes to the COMMS status bar (#chat-status) ------------------------
   // When neural TTS fails, the honest "backup voice active" reason must ride the speaker toggle's
   // TOOLTIP only — never the run-state header bar (Andrew 2026-07-13: "there should never be text on

@@ -32,6 +32,9 @@ test/verify.test.js
 test/provider.replay.test.js
 test/provider.openrouter.test.js
 test/provider.openai-compatible.test.js
+test/realtime-voice.test.js
+test/native-stt.test.js
+test/local-voice.test.js
 test/transcript.compaction.e2e.test.js
 test/provider.anthropic.test.js
 test/provider.gemini.test.js
@@ -139,6 +142,7 @@ test/usercommands.test.js
 test/slash.palette.test.js
 test/slash.config.test.js
 test/voice.button.test.js
+test/voice-live-ui.test.js
 test/voice.draftguard.test.js
 test/save.test.js
 test/saveversion.test.js

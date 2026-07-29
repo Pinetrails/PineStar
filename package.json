@@ -122,5 +122,9 @@
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "kokoro-js": "^1.2.1"
   }
 }

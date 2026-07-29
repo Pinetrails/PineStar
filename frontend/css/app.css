@@ -1220,6 +1220,228 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .voice-toggle.off:hover svg { filter: none; }
 /* agent-voice speaking: amber glow pulse on the chip */
 .voice-toggle.speaking { animation: chip-spk .8s infinite; }
+.voice-live[aria-pressed="true"] { color: var(--ink); background: var(--ph); box-shadow: 0 0 16px var(--ph-glow); }
+.voice-live[aria-pressed="true"] svg { filter: none; }
+
+/* ================= LOCAL LIVE VOICE — the station's mic console =================
+   A small persistent controller that follows the user across every StarNet dock. Conversation
+   stays in COMMS; this window is only mic / model / task state and can be dragged out of the way.
+
+   It is a CRT monitor like every other StarNet surface: --bezel ring, --glass curvature, VT323,
+   power-on entrance. EVERY colour resolves from the phosphor tokens — an earlier draft hardcoded
+   mint green (#8fffc7 / rgba(83,255,170,…)) which floated as an off-brand card in the amber
+   station and stayed green through all six themes. No literal colours below. */
+.live-voice-panel {
+  --lv-amp: 0;                 /* live mic RMS, 0..1 — written by voice-live.js pushLevel() */
+  --lv-dl: 0%;                 /* local-model download percent, when the sidecar reports one */
+  --lv-accent: var(--ph-dim);  /* per-state accent; every lit part of the console reads this */
+  position: fixed; z-index: 275; left: 18px; bottom: 68px;
+  width: min(300px, calc(100vw - 16px)); padding: 0 0 var(--s-2);
+  color: var(--text); border-radius: var(--r-lg); overflow: hidden;
+  background:
+    radial-gradient(ellipse 130% 100% at 50% 0%, var(--ph-glow2), transparent 42%),
+    rgba(5, 3, 1, 0.97);
+  box-shadow: var(--bezel);
+  transform-origin: center; animation: lv-power .38s var(--ease-out);
+}
+/* curved-glass over the whole console, like .term::before */
+.live-voice-panel::after {
+  content: ''; position: absolute; inset: 0; border-radius: inherit;
+  pointer-events: none; z-index: 6; background: var(--glass);
+}
+.live-voice-panel[hidden] { display: none; }
+.live-voice-panel[data-dragging="true"] { animation: none; box-shadow: var(--bezel), 0 0 26px var(--ph-glow2); }
+@keyframes lv-power {
+  0%   { transform: scale(1, .02); filter: brightness(5); opacity: .9; }
+  46%  { transform: scale(1.004, 1.04); filter: brightness(2); }
+  100% { transform: scale(1, 1); filter: brightness(1); }
+}
+
+/* per-state accent — one variable, so state reads through the pip, the orb, the scope and the
+   title rule at once instead of recolouring a single word */
+/* idle listening rests on the phosphor; only ACTIVELY hearing you climbs to --ph-bright, so the
+   brightest the console ever gets means "your voice is landing right now" */
+.live-voice-panel[data-state="listening"],
+.live-voice-panel[data-state="speaking"] { --lv-accent: var(--ph); }
+.live-voice-panel[data-state="hearing"] { --lv-accent: var(--ph-bright); }
+.live-voice-panel[data-state="connecting"],
+.live-voice-panel[data-state="warming"],
+.live-voice-panel[data-state="thinking"],
+.live-voice-panel[data-state="transcribing"],
+.live-voice-panel[data-state="reconnecting"] { --lv-accent: var(--warn); }
+.live-voice-panel[data-state="offline"] { --lv-accent: var(--bad); }
+
+/* ---- head: drag handle in the .term-head register — inverted title chip + state readout ---- */
+.lv-head {
+  position: relative; z-index: 7;
+  display: flex; align-items: center; gap: var(--s-2);
+  padding: 6px 7px 6px 9px; cursor: grab; touch-action: none; user-select: none;
+  background: linear-gradient(180deg, var(--ph-glow2), transparent);
+  border-bottom: 1px solid var(--ph-dim);
+}
+.live-voice-panel[data-dragging="true"] .lv-head { cursor: grabbing; }
+.lv-brand {
+  flex: 0 0 auto; color: var(--ink); background: var(--ph);
+  padding: 1px 9px; border-radius: var(--r-sm);
+  font-size: var(--fs-1); letter-spacing: var(--ls-3); text-shadow: none;
+  box-shadow: 0 0 12px var(--ph-glow2);
+}
+.lv-pip {
+  flex: 0 0 auto; width: 6px; height: 6px; margin-left: auto;
+  background: var(--lv-accent); box-shadow: 0 0 7px var(--lv-accent);
+  animation: lv-pip 1.3s infinite;
+}
+@keyframes lv-pip { 0%, 100% { opacity: 1; } 50% { opacity: .28; } }
+.lv-state {
+  flex: 0 0 auto; color: var(--lv-accent);
+  font-size: var(--fs-0); letter-spacing: var(--ls-3);
+  text-shadow: 0 0 8px var(--ph-glow2);
+}
+.lv-x { flex: 0 0 auto; background: rgba(0,0,0,.35); font-size: var(--fs-0); padding: 2px 6px; }
+.lv-x:hover { color: var(--bad); border-color: var(--bad); background: var(--ph-faint); }
+
+/* ---- stage: the orb is the hero, the scope beside it is the microphone itself ---- */
+.lv-stage {
+  position: relative; z-index: 5;
+  display: flex; align-items: center; gap: var(--s-3);
+  padding: var(--s-3) var(--s-3) var(--s-2);
+}
+.lv-orb {
+  flex: 0 0 auto; position: relative; width: 54px; height: 54px; padding: 0; font-family: inherit;
+  background: radial-gradient(circle at 38% 32%, var(--ph-faint), rgba(0,0,0,.92) 74%);
+  border: 1px solid var(--lv-accent); border-radius: 50%; cursor: pointer;
+  box-shadow:
+    inset 0 0 18px rgba(0,0,0,.9),
+    inset 0 0 0 1px rgba(0,0,0,.85),
+    0 0 calc(8px + var(--lv-amp) * 22px) var(--ph-glow2);
+  transition: border-color var(--t-med) var(--ease-soft), box-shadow var(--t-fast) linear;
+}
+.lv-orb:hover { box-shadow: inset 0 0 18px rgba(0,0,0,.9), 0 0 22px var(--ph-glow); }
+.lv-orb > span { position: absolute; left: 50%; top: 50%; border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+/* halo — a ring that inflates with the real mic level, so the orb breathes with the room */
+.lv-halo {
+  width: 100%; height: 100%; border: 1px solid var(--lv-accent);
+  opacity: calc(.12 + var(--lv-amp) * .55);
+  transform: translate(-50%, -50%) scale(calc(1 + var(--lv-amp) * .42));
+  transition: transform 70ms linear, opacity 70ms linear;
+}
+.lv-iris {
+  width: 26px; height: 26px; border: 1px solid var(--lv-accent); opacity: .55;
+  transform: translate(-50%, -50%) scale(calc(1 + var(--lv-amp) * .2));
+  transition: transform 70ms linear;
+}
+.lv-pupil {
+  width: 9px; height: 9px; background: var(--lv-accent);
+  box-shadow: 0 0 calc(5px + var(--lv-amp) * 14px) var(--lv-accent);
+  transition: box-shadow 70ms linear;
+}
+/* thinking / transcribing: the station is working, not hearing — the iris sweeps */
+.live-voice-panel[data-state="thinking"] .lv-iris,
+.live-voice-panel[data-state="transcribing"] .lv-iris,
+.live-voice-panel[data-state="warming"] .lv-iris,
+.live-voice-panel[data-state="connecting"] .lv-iris {
+  border-style: dashed; animation: lv-spin 2.4s linear infinite;
+}
+@keyframes lv-spin {
+  from { transform: translate(-50%, -50%) rotate(0deg); }
+  to   { transform: translate(-50%, -50%) rotate(360deg); }
+}
+.live-voice-panel[data-state="speaking"] .lv-pupil { animation: lv-talk .42s var(--ease-soft) infinite alternate; }
+@keyframes lv-talk { to { box-shadow: 0 0 18px var(--lv-accent); } }
+
+/* scope — a rolling window of real RMS, oldest at the left, recessed into a control well */
+.lv-wave {
+  flex: 1 1 auto; min-width: 0; height: 42px;
+  display: flex; align-items: center; justify-content: space-between; gap: 2px;
+  padding: 0 7px; border-radius: var(--r-sm);
+  background: linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.3));
+  box-shadow: var(--well);
+}
+.lv-wave i {
+  flex: 1 1 0; min-width: 0; height: 26px; border-radius: 1px;
+  /* one hue per bar — blending the accent into --ph-dim muddied the warn/bad states, which are
+     deliberately theme-CONSTANT and so clash with whatever phosphor is loaded */
+  background: linear-gradient(180deg, var(--lv-accent), color-mix(in srgb, var(--lv-accent) 30%, transparent));
+  transform: scaleY(.09); transform-origin: center;
+  transition: transform 60ms linear;
+  opacity: .85;
+}
+
+/* ---- transcript pair: what you said, what the console answered ---- */
+/* clamp on WHOLE lines — a plain max-height sliced the last row of glyphs in half */
+.lv-heard {
+  position: relative; z-index: 5; margin: 0 var(--s-3);
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+  color: var(--ph-bright); font-size: var(--fs-2); line-height: 1.2;
+  text-shadow: 0 0 8px var(--ph-glow2);
+}
+/* the reply line only exists once there IS a reply — an always-reserved empty row punched a
+   dead band between the heard text and the rail */
+.lv-say { display: none; }
+.lv-say.on {
+  position: relative; z-index: 5; margin: 6px var(--s-3) 0;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden;
+  color: var(--ph-dim); font-size: var(--fs-1); line-height: 1.25; letter-spacing: var(--ls-1);
+}
+.lv-say.on::before { content: '▸ '; color: var(--ph); }
+
+/* ---- rail: three engraved readouts (route / speech / task), label-left value-right ---- */
+.lv-rail {
+  position: relative; z-index: 5; margin: var(--s-3) var(--s-3) 0;
+  display: flex; flex-direction: column; gap: 1px;
+  border-radius: var(--r-sm); overflow: hidden; box-shadow: var(--well);
+  background: rgba(0,0,0,.42);
+}
+.lv-row {
+  position: relative; display: flex; align-items: baseline; gap: var(--s-2);
+  padding: 5px 8px; border-bottom: 1px solid var(--ph-faint);
+}
+.lv-row:last-child { border-bottom: 0; }
+.lv-row dt {
+  flex: 0 0 46px; color: var(--ph-dim); opacity: .75;
+  font-size: var(--fs-0); letter-spacing: var(--ls-2);
+}
+.lv-row dd {
+  flex: 1 1 auto; min-width: 0; margin: 0;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  color: var(--ph); font-size: var(--fs-0); letter-spacing: var(--ls-1);
+}
+/* model download: a real fill sweeps the SPEECH row, driven by the sidecar's reported percent */
+.lv-row-dl::before {
+  content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: var(--lv-dl);
+  background: linear-gradient(90deg, var(--ph-glow2), transparent);
+  transition: width var(--t-slow) var(--ease-soft); pointer-events: none;
+}
+.lv-task.busy { color: var(--ph-bright); text-shadow: 0 0 8px var(--ph-glow2); }
+.lv-task.pending { color: var(--warn); text-shadow: 0 0 8px var(--ph-glow2); }
+
+/* ---- error + retry, in the station's fault language ---- */
+.lv-error {
+  position: relative; z-index: 5; margin: var(--s-2) var(--s-3) 0;
+  padding: 7px 9px; border-radius: var(--r-sm);
+  color: var(--bad); border-left: 2px solid var(--bad);
+  background: rgba(0,0,0,.45); box-shadow: var(--raise);
+  font-size: var(--fs-0); line-height: 1.35; letter-spacing: var(--ls-1);
+}
+/* [hidden] is the UA's display:none — a bare `display: block` here silently OUT-SPECIFIES it and
+   left TRY AGAIN sitting under a healthy session. Restate the hidden case. */
+.lv-retry[hidden] { display: none; }
+.lv-retry {
+  position: relative; z-index: 5; display: block; margin: var(--s-2) var(--s-3) 0 auto;
+  padding: 4px 11px; cursor: pointer;
+  color: var(--ph); background: var(--panel2);
+  border: 1px solid var(--ph-dim); border-radius: var(--r-sm);
+  font-family: inherit; font-size: var(--fs-0); letter-spacing: var(--ls-3); text-shadow: none;
+  box-shadow: var(--raise);
+}
+.lv-retry:hover { color: var(--ph-bright); border-color: var(--ph); box-shadow: var(--raise), 0 0 12px var(--ph-glow2); }
+@media (max-width: 420px) {
+  .live-voice-panel { left: 8px; width: calc(100vw - 16px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .live-voice-panel { animation: none; }
+  .lv-pip, .lv-iris, .lv-pupil { animation: none !important; }
+}
 @keyframes chip-spk { 0%,100% { box-shadow: 0 0 2px var(--ph-glow2); } 50% { box-shadow: 0 0 12px var(--ph-glow); } }
 
 /* hands-free LIVE: filled phosphor (inverted) so the active mode clearly pops out of the row */
