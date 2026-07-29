@@ -163,4 +163,22 @@ for (const raw of [
   }
 }
 
+/* ---- a SPENT ALLOWANCE must not be dressed up as a busy moment ------------------------------------
+   A ChatGPT-subscription weekly quota resets in DAYS. The old copy said "wait a few seconds and try again"
+   with retryable:true, so the row offered a doomed retry and named nothing the user could act on. */
+{
+  const q = friendlyError(Object.assign(new Error("codex http 429 — You've hit your usage limit. Resets in 3 days"), { status: 429 }));
+  A.eq(q.kind, 'quota_exhausted', 'a spent allowance gets its own kind');
+  A.eq(q.retryable, false, 'no doomed retry is offered');
+  A.ok(!/wait a few seconds|too many requests/i.test(q.userMessage), 'and the busy-provider copy is gone');
+  A.ok(/allowance is used up/i.test(q.userMessage), 'the copy says the allowance is spent');
+  A.ok(/weekly/i.test(q.userMessage), 'and names the subscription schedule, not a seconds-scale wait');
+  A.ok(/PROVIDERS/.test(q.userMessage), 'and points at a door that can keep the work moving now');
+  A.eq(q.action, 'settings', 'the action opens that door');
+  // a real rate limit is untouched
+  const rl = friendlyError(Object.assign(new Error('openrouter http 429 — slow down'), { status: 429 }));
+  A.eq(rl.kind, 'rate_limit', 'a plain 429 is still a rate limit');
+  A.eq(rl.retryable, true, 'and still offers a retry');
+}
+
 A.report('friendlyerror.test');

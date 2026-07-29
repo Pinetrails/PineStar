@@ -10638,11 +10638,34 @@ async function runOnce(o) {
   // is key-independent → cost stays correct) tagged with credKey so the loop's onFallback can cool it on failure.
   // OpenRouter only (Codex authenticates by OAuth token, not an API key). Empty pool = byte-identical to today.
   let rotationFallbacks = [];
+  let activePrimaryKey = runKey;
   const primaryProfile = getProviderProfile(providerId);
   if (!usingCodex && !usingDeviceOAuth && primaryProfile && primaryProfile.credentialPool) {
     const pool = (Array.isArray(o.keyPool) ? o.keyPool : String(ENV('KEY_POOL') || '').split(','))
       .map(s => String(s || '').trim()).filter(s => s && s !== runKey);
-    rotationFallbacks = credPool.order(pool).map(rk => ({
+    /* THE COOLDOWN HAS TO REACH THE PRIMARY KEY. penalize() is called with the OUTGOING key, which on the first
+       rotation is the run's PRIMARY — but the only consumer of a cooldown is credPool.order(), and the list
+       handed to it has just had the primary filtered out (it is the key we are already on). The next run's
+       primary is re-derived from providerRuntimeKey(), not from this ordering, so the cooldown recorded for the
+       key MOST likely to be rate-limited — the one always tried first — could never affect anything, and every
+       run inside the 5-minute window opened on it again and burned a wasted round-trip plus one of the loop's
+       bounded recovery slots. Cooldowns for ALTERNATE keys always worked; only the primary was inert.
+       So: if the primary is cooling and the pool holds a key that is NOT, start on that one instead and demote
+       the cooling primary into the rotation list — still available, just no longer first. */
+    const ordered = credPool.order(pool);
+    const nowMs = Date.now();
+    const primaryCooling = credPool.coolingUntil(runKey) > nowMs;
+    if (primaryCooling) {
+      const warm = ordered.find(rk => credPool.coolingUntil(rk) <= nowMs);
+      if (warm) {
+        activePrimaryKey = warm;
+        provider = selectProvider({ provider: providerId, fetch: globalThis.fetch, key: warm, baseUrl, reasoningEffort });
+        auxVisionProvider = provider;
+        ordered.splice(ordered.indexOf(warm), 1);
+        ordered.push(runKey);   // the cooling primary becomes the LAST resort rather than the first try
+      }
+    }
+    rotationFallbacks = ordered.map(rk => ({
       provider: selectProvider({ provider: providerId, fetch: globalThis.fetch, key: rk, baseUrl, reasoningEffort }),
       model, credKey: rk
     }));
@@ -10686,7 +10709,18 @@ async function runOnce(o) {
   // spend stays visible; that event deliberately OMITS tokensIn/tokensOut so the context-occupancy gauge (which
   // reads agent.cost.tokensIn as "current prompt size") is not transiently corrupted by the summarizer's small
   // prompt. The loop owns the accounting; this emit is for the cost stream only.
-  async function summarize(older, prevSummary) {
+  /* `live` carries the loop's CURRENT provider/model/cost. This closure is built BEFORE the loop starts and
+     captured index.js's own `provider` and `model`, neither of which is ever reassigned — so after a credential
+     rotation or a cross-provider fallback the summarizer still called the DEAD credential / failed endpoint.
+     Two failures flip compactionOff (loop.js), which makes the later shouldCompress recovery a no-op, so the
+     run then dies 'error' on a context_overflow it could have folded and survived; on a rate-limited key it
+     also kept hammering the exact credential credPool had just cooled. The failover was fixed at one producer
+     and did not generalize to the injected summarizer. Optional and additive: a caller that passes nothing
+     (every existing test's fake summarizer) behaves exactly as before. */
+  async function summarize(older, prevSummary, live) {
+    const sProvider = (live && live.provider) || provider;
+    const sModel = (live && live.model) || model;
+    const sCost = (live && live.cost) || cost;
     // TRANSCRIPT DRAIN (before the fold): `older` is the exact slice compaction is about to delete from the live
     // messages array. Turns THIS run produced that land in the fold would otherwise never reach the durable
     // transcript at all — the run-end append can only see what SURVIVED the fold. Draining here keeps the durable
@@ -10709,17 +10743,17 @@ async function runOnce(o) {
     const prev = (typeof prevSummary === 'string' && prevSummary.trim()) ? prevSummary.trim() : '';   // H5.2: a prior fold's running summary to merge into
     const prevBlock = prev ? 'PREVIOUS SUMMARY (update this — merge the new turns in, drop anything now obsolete):\n' + prev + '\n\n' : '';
     const userMsg = (memBlock ? memBlock + '\n\n' : '') + prevBlock + 'Summarize this earlier part of the conversation so it can replace the raw turns:\n\n' + transcript;
-    const req = { model, stream: true, signal, messages: [
+    const req = { model: sModel, stream: true, signal, messages: [
       { role: 'system', content: compactionSummaryPrompt({ prevSummary: !!prev }) },   // H5.1 structured template; H5.2 merge-update variant when a prior summary exists
       { role: 'user', content: userMsg }
     ] };
     let out = '', usage = null;
-    for await (const ev of provider.stream(req)) {
+    for await (const ev of sProvider.stream(req)) {
       if (ev && ev.type === 'text') out += ev.delta;
       else if (ev && ev.type === 'usage') usage = ev.usage;
     }
-    const c = cost.reconcile(usage, model);
-    emit('agent.cost', { agentId, runId, usd: c.usd || 0, model, reconciled: true });   // display-only; no token fields (gauge-safe)
+    const c = sCost.reconcile(usage, sModel);
+    emit('agent.cost', { agentId, runId, usd: c.usd || 0, model: sModel, reconciled: true });   // display-only; no token fields (gauge-safe)
     const r = { summary: out.trim(), usd: c.usd || 0, tokens: (c.tokensIn || 0) + (c.tokensOut || 0) };
     if (c.unpriced) r.unpricedUsage = [{ model, tokensIn: c.tokensIn || 0, tokensOut: c.tokensOut || 0 }];
     return r;
@@ -11281,7 +11315,9 @@ async function runOnce(o) {
       budget: runBudget, context: ctxMgr, summarize, fallbacks,
       // P0.2 credential rotation: the live key + a hook the loop calls as it rotates away from a failed one,
       // so a rate-limit/auth/billing key gets a cooldown (credPool) and isn't tried first next run.
-      credKey: providerUnmetered ? null : runKey,
+      // activePrimaryKey, NOT runKey: when the run's own key was still cooling we STARTED on a warm pool key,
+      // and penalizing the key we never called would cool the wrong credential.
+      credKey: providerUnmetered ? null : activePrimaryKey,
       onFallback: ({ rotate, credKey, retryAfterMs, resetAtMs }) => {
         if (!rotate || !credKey) return;
         // H6.1: honor a server-stated wait — a relative Retry-After directly, or an absolute reset_at minus now.

@@ -73,6 +73,12 @@
     server_error:  { retryable: true,  action: null,       msg: 'The local StarNet service hit an error — give it a moment and try again.' },
     network:       { retryable: true,  action: null,       msg: "Can't reach StarNet's local service — if the app closed, restart it; if it restarted, reload this window, then try again." },
     rate_limit:    { retryable: true,  action: null,       msg: 'The model provider is busy (too many requests) — wait a few seconds and try again.' },
+    /* A SPENT ALLOWANCE is not a busy moment. A ChatGPT-subscription weekly quota resets in DAYS, so offering
+       "wait a few seconds and try again" made every retry doomed and told the user nothing they could act on.
+       The copy names the meter that was actually spent — the ChatGPT subscription, NOT API billing — and the
+       door is PROVIDERS, where a different key or provider can pick the work up now. retryable:false, so the
+       row offers no ↻ Try again. */
+    quota_exhausted: { retryable: false, action: 'settings', msg: "This provider's plan allowance is used up — it resets on the provider's own schedule (a ChatGPT subscription resets weekly, not in seconds). To keep working now, switch to another provider or key under SETTINGS → PROVIDERS." },
     // auth: the pure message is context-blind (classify time can't know if ChatGPT is already connected). It names the
     // one honest next step; the action BUTTON (actionButton) tailors the door — "add a key" vs "sign in with ChatGPT".
     auth:          { retryable: false, action: 'settings', msg: 'No model is connected yet — add a provider key (or sign in with ChatGPT) to let it run.' },
@@ -112,7 +118,7 @@
   // the sidecar classifier speaks in `reason`s; map each onto our UI kind. (Most are 1:1; `overloaded` and
   // `format_error` fold into the closest beginner-facing bucket.)
   const REASON_TO_KIND = {
-    auth: 'auth', billing: 'billing', rate_limit: 'rate_limit', overloaded: 'server_error',
+    auth: 'auth', billing: 'billing', rate_limit: 'rate_limit', quota_exhausted: 'quota_exhausted', overloaded: 'server_error',
     server_error: 'server_error', timeout: 'timeout', context_overflow: 'context_overflow',
     model_not_found: 'model_not_found', content_policy_blocked: 'content_policy_blocked',
     format_error: 'unknown', unknown: 'unknown'

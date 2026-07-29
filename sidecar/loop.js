@@ -464,7 +464,9 @@
         try { await hooks.invoke('on_pre_compress', { session_id: runId, extra: { agent_id: agentId, model, before_tokens: beforeTokens, folding: plan.older.length, turn: turns } }); } catch (_) {}
       }
       let r;
-      try { r = summarize ? await summarize(plan.older, prevSummary) : ''; }   // prevSummary => the summarizer MERGE-updates it (H5.2)
+      // Pass the loop's CURRENT provider/model/cost: after a rotation or a cross-provider fallback these are the
+      // only live ones, and the injected summarizer captured its own bindings before the run started.
+      try { r = summarize ? await summarize(plan.older, prevSummary, { provider, model, cost }) : ''; }   // prevSummary => the summarizer MERGE-updates it (H5.2)
       catch (e) { if (++compactionFails >= 2) compactionOff = true; lastUsage = null; return false; }   // summarizer threw -> skip
       if (signal.aborted) return false;
       const summary = (typeof r === 'string') ? r : ((r && r.summary) || '');
