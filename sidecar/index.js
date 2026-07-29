@@ -3353,7 +3353,13 @@ function nightFocusInputs() {
   // Pass the ADOPTED slot, NOT effectiveNorthStar (which would surface the pending proposal).
   let northStar = null;
   try { northStar = nightfocus.northStarEvidence(QuestRefresh.normalize(questRefreshState).northStar, goal); } catch (_) { northStar = null; }
-  return { projects, threads, goal, quests, northStar, now };
+  // LEARNED TOPICS (2026-07-28): the interest histogram the scout lane already maintains, handed to the resolver as
+  // a CAPPED tie-break (nightfocus.TOPIC_BOOST_MAX) so a night lands on the subject the Commander keeps working on
+  // when two candidates are otherwise close on recency. Only WARM topics can move anything (TopicMatch's anchor
+  // rule), so a cold histogram leaves the resolution byte-identical. Bounded + fail-open like every field above.
+  let topics = [];
+  try { topics = Interests.summary(interestsState, { now: now, limit: 8 }); } catch (_) { topics = []; }
+  return { projects, threads, goal, quests, northStar, topics, now };
 }
 
 // ensure a day-keyed focus for the current night; persist iff it changed; return the focus (or null → improv). When

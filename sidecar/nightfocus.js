@@ -31,10 +31,17 @@
    access the user initiates — it only stops the resolver from DECLARING that target as the autonomous priority. */
 'use strict';
 (function (root, factory) {
-  const api = factory();
+  // the pure learned-topic matcher (frontend/app/topicmatch.js — the SAME engine the bay's shelves use, reused
+  // server-side exactly as autopilot.js / prospect.js already are). Absent module → null → every topic boost is
+  // 0 and the resolver ranks precisely as it did before topics existed. It is pure (no clock/rng), so it does
+  // not disturb this file's determinism split.
+  const TM = (typeof module !== 'undefined' && module.exports)
+    ? (() => { try { return require('../frontend/app/topicmatch.js'); } catch (_) { return null; } })()
+    : ((root.SK && root.SK.topicmatch) || root.TopicMatch || null);
+  const api = factory(TM);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else { (root.SK = root.SK || {}).nightfocus = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (TopicMatch) {
   'use strict';
 
   const STATE_VERSION = 1;
@@ -62,6 +69,31 @@
   // ledger quest) and 'northstar' (the confirmed inferred long-term direction) are the flagship cross-wire (a
   // night beat can actually ADVANCE a work quest / serve the star). Steering is still project/thread/goal only.
   const FOCUS_KINDS = ['project', 'thread', 'goal', 'quest', 'northstar'];
+
+  /* ---- the LEARNED-TOPIC TIE-BREAK (2026-07-28) ----
+     Until now this resolver ranked purely on RECENCY: the most recently touched project won the night, whatever
+     the Commander actually keeps working ON. The station already learns that (interests.js — an evidence-backed
+     topic histogram), and a focus that matches a warm topic is measurably more likely to be the thing worth
+     moving. So a matched candidate gets a SMALL boost and cites the topic in its `why`.
+
+     DELIBERATELY A TIE-BREAK, NOT A RE-RANKER. The cap is 0.2 against a recency term that spans a full 1.0, so
+     it can only reorder candidates already within ~6 days of each other — a genuinely stale project can never
+     be dragged over fresh work by a topic match. And TopicMatch's anchor rule means the boost is exactly 0
+     until a topic is WARM, so a cold station resolves the identical focus it resolved before this existed.
+
+     Applied ONLY to the three evidence-derived kinds with real subject text (project / thread / quest). The goal
+     arc and the north star are the Commander's EXPLICIT direction with flat scores — boosting those by an
+     inferred topic would double-count the same signal and let an inference outrank a stated intent. */
+  const TOPIC_BOOST_MAX = 0.2;
+  function topicBoost(topics, corpus) {
+    if (!TopicMatch || !TopicMatch.match || !str(corpus)) return null;
+    let m = null;
+    try { m = TopicMatch.match(topics, corpus); } catch (_) { return null; }
+    if (!m) return null;
+    const boost = TopicMatch.term(m, TOPIC_BOOST_MAX, TOPIC_BOOST_MAX);
+    if (!(boost > 0)) return null;
+    return { boost: boost, why: TopicMatch.reason(m) };
+  }
 
   // linear recency score in [0,1]: today = 1, decaying to 0 at RECENCY_DECAY_DAYS. Unknown/future ts → 0.
   function recency(ts, now) {
@@ -155,6 +187,7 @@
          goal:      { text, done, total, next } | null,                                // the active goal arc
          quests:    [{ id, title, contractType, createdAt }],                          // OPEN ledger quests (flagship cross-wire)
          northStar: { text, groundedIn } | null,                                       // CONFIRMED inferred star (via northStarEvidence)
+         topics:    [{ label, weight, count, evidence }],                              // learned interests (interests.summary) — a capped TIE-BREAK only
          steer:     { ref, kind, setAt } | null                                        // a durable user directive
        }
      A fresh steer short-circuits to itself (source:'steer'). Otherwise every candidate is scored by recency and the
@@ -196,9 +229,11 @@
       const mentions = Math.max(0, Math.floor(num(p.mentionCount)));
       const why = ['you worked in ' + label + (tag ? ' — last touched ' + tag : '') + (p.isGitRepo ? ' (a git repo I can read + patch)' : '')];
       if (mentions > 0) why.push(mentions + ' recent run' + (mentions === 1 ? '' : 's') + ' point at it');
+      const tb = topicBoost(inputs.topics, label + ' ' + str(p.displayPath || p.root));
+      if (tb && tb.why) why.push(tb.why);   // the boost is only ever taken WITH its cited evidence
       // a project with NO touch metadata still scores a small floor (it IS blessed = the user chose it) so it can
       // lead when there is nothing fresher; a recently-touched root dominates via the recency term.
-      const score = 1.0 * r + 0.15 * Math.min(mentions, 4) + (num(p.lastTouchedAt) ? 0 : 0.1);
+      const score = 1.0 * r + 0.15 * Math.min(mentions, 4) + (num(p.lastTouchedAt) ? 0 : 0.1) + (tb ? tb.boost : 0);
       cands.push({ order: 0, score, focus: { kind: 'project', ref: str(p.root), label, why, source: 'evidence', resolvedAt: now } });
     }
 
@@ -209,7 +244,9 @@
       const tag = dayTag(t.updatedAt, now);
       const title = str(t.title).replace(/\s+/g, ' ').trim().slice(0, 120);
       const why = ['an open thread you raised but never acted on: "' + title + '"' + (tag ? ' (' + tag + ')' : '')];
-      const score = 0.85 * r + 0.2;   // a live thread is worth chasing even when a touch is a few days old
+      const tb = topicBoost(inputs.topics, title + ' ' + str(t.spec));
+      if (tb && tb.why) why.push(tb.why);
+      const score = 0.85 * r + 0.2 + (tb ? tb.boost : 0);   // a live thread is worth chasing even when a touch is a few days old
       cands.push({ order: 1, score, focus: { kind: 'thread', ref: str(t.id), label: title, why, source: 'evidence', threadId: str(t.id), resolvedAt: now } });
     }
 
@@ -227,7 +264,9 @@
       const isWork = (ctype === 'run' || ctype === 'artifact');
       const why = [(isWork ? 'an open work quest a beat can advance: "' : 'an open quest on your slate: "') + title + '"'
         + (ctype ? ' [' + ctype + ']' : '') + (tag ? ' (' + tag + ')' : '')];
-      const score = isWork ? (0.85 * r + 0.28) : (0.7 * r + 0.15);
+      const tb = topicBoost(inputs.topics, title);
+      if (tb && tb.why) why.push(tb.why);
+      const score = (isWork ? (0.85 * r + 0.28) : (0.7 * r + 0.15)) + (tb ? tb.boost : 0);
       cands.push({ order: 1, score, focus: { kind: 'quest', ref: str(q.id) || ('quest:' + title), label: title, why, source: 'evidence', resolvedAt: now } });
     }
 
@@ -348,7 +387,7 @@
   return {
     resolveFocus, focusLine, ensureFocus, steerActive, applySteer, clearSteer, northStarEvidence,
     applyAvoid, removeAvoid, isAvoided, normAvoid, sameRef,
-    fresh, normalize, loadEnvelope, toEnvelope, dayOf, recency, dayTag, baseName,
-    STATE_VERSION, STEER_STALE_MS, DAY_MS, PROJECT_WINDOW_DAYS, FOCUS_KINDS, AVOID_MAX
+    fresh, normalize, loadEnvelope, toEnvelope, dayOf, recency, dayTag, baseName, topicBoost,
+    STATE_VERSION, STEER_STALE_MS, DAY_MS, PROJECT_WINDOW_DAYS, FOCUS_KINDS, AVOID_MAX, TOPIC_BOOST_MAX
   };
 });

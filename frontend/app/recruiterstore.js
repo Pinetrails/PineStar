@@ -54,6 +54,44 @@ const RecruiterStore = (() => {
     });
   }
 
+  /* the INTEREST GAP read: warm learned topics NOBODY on the crew covers (engine: Recruiter.interestGaps).
+     Separate from recommend() by design — that one can only ever surface classes whose kit the Commander's work
+     already touches, so it structurally cannot recommend a capability the station lacks. Same glass-box gate:
+     learning OFF → nothing (the Commander opted out of being modelled, and this reads the learned histogram).
+     Topics come from the SERVER's histogram via ProspectStore (GET /api/scout) — never invented here; with no
+     read yet, or nothing warm, this returns [] and the bay renders exactly what it renders today. */
+  function interestGaps() {
+    if (typeof Recruiter === 'undefined' || !Recruiter.interestGaps) return { items: [] };
+    if (typeof Specialties === 'undefined' || !Specialties.builtins) return { items: [] };
+    if (!learningOn()) return { items: [] };
+    let topics = [];
+    try { topics = (typeof ProspectStore !== 'undefined' && ProspectStore.interests) ? (ProspectStore.interests() || []) : []; } catch (_) { topics = []; }
+    if (!topics.length) return { items: [] };
+    return Recruiter.interestGaps({
+      topics: topics,
+      roster: rosterIds(),
+      rosterSpecs: rosterSpecs(),
+      catalog: Specialties.builtins()
+    });
+  }
+
+  // the crew's REAL class specs — the catalog record for a rostered class, plus any CUSTOM class the catalog
+  // never held (a custom specialist absolutely counts as covering its topic). Coverage is tested against these.
+  function rosterSpecs() {
+    const out = [];
+    try {
+      const agents = (typeof App !== 'undefined' && App.agents) ? (App.agents() || []) : [];
+      for (const a of agents) {
+        if (!a) continue;
+        let spec = null;
+        try { spec = (a.specialtyId && Specialties.get) ? Specialties.get(a.specialtyId) : null; } catch (_) { spec = null; }
+        if (spec) out.push(spec);
+        else if (a.name || a.purpose) out.push({ name: a.name || '', tagline: a.tagline || '', blurb: a.blurb || '', purpose: a.purpose || '', tags: a.tags || {} });
+      }
+    } catch (_) {}
+    return out;
+  }
+
   // the single best NEW hire (the beat proposes exactly one), or null when the signal is cold/thin — so the beat
   // NEVER fires on unearned data. { classId, spec, why, confidence } (spec = the full catalog record).
   function topPick() {
@@ -65,7 +103,7 @@ const RecruiterStore = (() => {
     return { classId: top.classId, spec, why: top.why, confidence: top.confidence, evidence: top.evidence };
   }
 
-  return { recommend, topPick };
+  return { recommend, topPick, interestGaps };
 })();
 
 if (typeof module !== 'undefined' && module.exports) module.exports = { RecruiterStore };

@@ -19,13 +19,19 @@
    so the personalization recommender ranks them in the bay's "RECOMMENDED FOR YOU" shelf with no engine change.
 
    UMD-light: a `Recipes` global in the browser, module.exports under node (so the registry + the launch
-   primitives are unit-testable without a DOM). */
+   primitives are unit-testable without a DOM). It leans on the pure TopicMatch engine (the SAME matcher the
+   archetype shelf uses) so the FOR YOU row can rank on the station's LEARNED TOPICS, not just the 3-bucket
+   profile — resolved with the recruiter.js conditional-require pattern so a missing module simply means the
+   topic term is 0 (the ranking then behaves exactly as it did before topics existed). */
 'use strict';
 (function (root, factory) {
-  const api = factory();
+  const TM = (typeof module !== 'undefined' && module.exports)
+    ? (() => { try { return require('./topicmatch.js'); } catch (_) { return null; } })()
+    : (root.TopicMatch || null);
+  const api = factory(TM);
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else { root.Recipes = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (TopicMatch) {
   'use strict';
 
   const STORE_KEY = 'starnet.recipes.v2';        // localStorage home for custom (save-your-own) recipes (schema v2)
@@ -676,15 +682,74 @@
   }
   function goalKeywordScore(recipe, goalText) { return goalKeywordHits(recipe, goalText).length; }
 
+  /* MERGE NOTE (2026-07-28): the learned-topic lane landed its own stoplist here, deliberately scoped to filter
+     only which hit a REASON may NAME — never the score — because re-ranking every Commander's row was outside
+     that lane's mandate, and it flagged "the underlying rank noise is real and worth its own decision". This
+     branch IS that decision: the stoplist now lives INSIDE goalKeywordHits (above) and applies to the rank too,
+     so hits and score can never disagree. Its `namableGoalHits` filter is therefore already satisfied by every
+     hit list this module produces, and folding the two stoplists into one is what keeps them from drifting. */
+  const namableGoalHits = (hits) => (Array.isArray(hits) ? hits : []).filter(w => !GOAL_STOP.has(String(w)));
+
+  /* ---- the LEARNED-TOPIC term (2026-07-28) ----
+     The station's interest histogram (sidecar/interests.js, served to the browser via GET /api/scout and cached
+     in ProspectStore.interests()) knows WHAT the Commander keeps working on — "gpu price tracking", not just
+     "research". Until now the FOR YOU row could not read it. This folds it in as ONE MORE POSITIVE TERM.
+
+     STRICTLY ADDITIVE, and that is the safety property: TopicMatch.match returns null unless a WARM topic
+     (weight ≥ 0.8) covers a majority of the recipe's tokens, so on a cold/calibrating station the term is
+     exactly 0 and every ranking is byte-identical to before. Because it can only ever RAISE a score, it can
+     never shrink the survivor set the way the negative outcome term could (the 2026-07-26 blank-shelf trap) —
+     it can only promote a recipe the Commander's real, evidenced work points at.
+
+     CAPPED on purpose: interests.fold grows a topic's weight by ~1 per observation with no ceiling, so an
+     uncapped term would eventually swamp affinity, goals and outcomes alike and freeze the row on one subject. */
+  const TOPIC_SCALE = 1.5;   // one warm topic fully covered (weight 1.0) ≈ a two-keyword goal match
+  const TOPIC_CAP = 3;       // …and no amount of accumulated weight may exceed a strong goal match
+  function topicMatch(recipe, topics) {
+    if (!TopicMatch || !TopicMatch.match || !recipe) return null;
+    const corpus = (recipe.name || '') + ' ' + (recipe.tagline || '') + ' ' + (recipe.blurb || '') + ' ' +
+      Object.keys(recipe.tags || {}).join(' ') + ' ' + (recipe.category || '');
+    try { return TopicMatch.match(topics, corpus); } catch (_) { return null; }
+  }
+  function topicScore(recipe, topics) {
+    const m = topicMatch(recipe, topics);
+    return m ? TopicMatch.term(m, TOPIC_SCALE, TOPIC_CAP) : 0;
+  }
+
+  /* forYouReason — the honest WHY for one FOR YOU card, recomputed from the SAME inputs that ranked it (pure,
+     no state). Precedence is most-specific-evidence first: a learned topic names the actual subject and its
+     observation count; a goal match names the matched word; then the Commander's own verdicts, then launches.
+     Returns '' when no term the caller can honestly phrase fired — the caller then falls back to its profile-
+     affinity copy, or shows no reason at all. Truthful-telemetry law: every string here traces to a real
+     persisted counter, so a card can never claim a reason the backend cannot prove. */
+  function forYouReason(recipe, opts) {
+    opts = opts || {};
+    if (!recipe) return '';
+    const m = topicMatch(recipe, opts.topics);
+    if (m && TopicMatch && TopicMatch.reason) { const r = TopicMatch.reason(m); if (r) return r; }
+    const gh = namableGoalHits(goalKeywordHits(recipe, opts.goalText || ''));
+    if (gh.length) return 'matches your goal: “' + gh[0] + '”';
+    const u = (opts.launches && typeof opts.launches === 'object') ? opts.launches[recipe.id] : null;
+    const rated = (u && typeof u === 'object' && u.rated && typeof u.rated === 'object') ? u.rated : null;
+    const great = rated && Number.isFinite(rated.great) && rated.great > 0 ? Math.floor(rated.great) : 0;
+    if (great > 0) return 'you rated this work great ' + great + '×';
+    const n = (u && typeof u === 'object') ? u.n : u;
+    if (Number.isFinite(n) && n > 0) return 'you have launched this ' + Math.floor(n) + '×';
+    return '';
+  }
+
   // RANK the "FOR YOU" row deterministically. `opts`:
   //   score(itemTags) -> number  — the profile affinity scorer (ProfileStore.score), or null when learning is off/thin.
   //   goalText        -> string  — the user's goals belief text (keyword-matched into the ranking as a small nudge).
   //   launches        -> {id: {n, rated?}} or {id: n} — REAL per-recipe launch counts (the scout usage read), each
   //                      optionally carrying rate-the-work outcome counters {great, ok, miss}. Launching ranks a
   //                      recipe up (capped nudge); the Commander's own verdicts rank what actually HELPED.
+  //   topics          -> [row]   — the station's LEARNED interest topics (interests.summary rows, as served by
+  //                      GET /api/scout and cached in ProspectStore.interests()). A warm topic that covers the
+  //                      recipe adds a capped POSITIVE term — never subtracts, so it cannot empty the row.
   //   exclude         -> id      — a recipe to omit (e.g. the one already in the dossier).
   //   limit           -> N       — how many to return (default 4).
-  // Signal blend: (profile affinity × 4) + (goal-keyword hits × 2) + min(launches, 5) + OUTCOME, where OUTCOME =
+  // Signal blend: (profile affinity × 4) + (goal-keyword hits × 2) + min(launches, 5) + OUTCOME + TOPIC, where OUTCOME =
   // min(great, 3) − 2·min(miss, 3) — asymmetric on purpose: a recipe the Commander keeps rating 👎 sinks fast and
   // can drop out of the row entirely (score ≤ 0 is filtered — the honest sink), while 👍 lifts it gently. Ratings
   // never count as a signal on their own (a rating implies a launch, which already signals). Tie-broken by original
@@ -717,14 +782,18 @@
       const m = (Number.isFinite(r.miss) && r.miss > 0) ? Math.min(3, Math.floor(r.miss)) : 0;
       return g - 2 * m;
     };
+    const topics = Array.isArray(opts.topics) ? opts.topics : null;
     const pool = list0.filter(r => r && r.id !== exclude);
     let anySignal = false;
     const scored = pool.map((r, idx) => {
       const aff = scoreFn ? (Number(scoreFn(r.tags || {})) || 0) : 0;
       const goal = goalKeywordScore(r, goalText);
       const use = launchCount(r.id);
-      if (aff > 0 || goal > 0 || use > 0) anySignal = true;   // ratings never signal alone: a rating implies a launch
-      return { r, idx, s: aff * 4 + goal * 2 + use + outcomeScore(r.id) };
+      // a WARM learned topic is real evidence in its own right (it is only ever folded from observed activity),
+      // so it counts as signal — a station that has learned a habit but launched nothing is NOT cold-start.
+      const topic = topics ? topicScore(r, topics) : 0;
+      if (aff > 0 || goal > 0 || use > 0 || topic > 0) anySignal = true;   // ratings never signal alone: a rating implies a launch
+      return { r, idx, s: aff * 4 + goal * 2 + use + outcomeScore(r.id) + topic };
     });
     if (anySignal) {
       let top = scored
@@ -768,6 +837,7 @@
     list, builtins, customs: customList, get, exists,
     fillTask, requiredMissing, paramsFromTemplate, draft, forkFrom, mintFromRun, saveCustom, removeCustom, impliesOutbound,
     // R6 marketplace surface
-    EXPORT_FORMAT, exportRecipe, validateImport, importRecipe, rankRecipes, goalKeywordScore, goalKeywordHits
+    EXPORT_FORMAT, exportRecipe, validateImport, importRecipe, rankRecipes, goalKeywordScore,
+    goalKeywordHits, forYouReason, topicScore, TOPIC_SCALE, TOPIC_CAP
   };
 });

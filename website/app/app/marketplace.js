@@ -523,6 +523,7 @@ const Marketplace = (() => {
       if (summon) html += summonConfigHTML();
       html += glassHTML();          // '' in pick mode; STATION FAMILIARITY glass box in deploy mode
       html += recShelfHTML();
+      html += interestGapShelfHTML();   // a warm topic nobody covers — renders only when both counters say so
       html += prospectShelfHTML();
       html += scoutLogHTML();   // the attempt ledger (both kinds) — clean top-level view only (filtering is false here)
     }
@@ -1211,22 +1212,42 @@ const Marketplace = (() => {
     for (const k in t) { const v = Number(t[k]); if (isFinite(v) && v > bv) { bv = v; best = k; } }
     return best;
   }
+  // the searchable corpus of a class, for the learned-topic match (same shape the archetype matcher reads).
+  function specCorpus(s) {
+    return ((s && s.name) || '') + ' ' + ((s && s.tagline) || '') + ' ' + ((s && s.blurb) || '') + ' ' +
+      ((s && s.purpose) || '') + ' ' + Object.keys((s && s.tags) || {}).join(' ');
+  }
+  // the class's LEARNED-TOPIC match, or null. Same engine, thresholds and cap as the FOR YOU row (TopicMatch),
+  // so "the station knows you keep doing X" means one identical thing across every shelf in the bay.
+  const SPEC_TOPIC_SCALE = 1.5, SPEC_TOPIC_CAP = 3;
+  function specTopicMatch(s, topics) {
+    if (typeof TopicMatch === 'undefined' || !TopicMatch || !TopicMatch.match || !s) return null;
+    try { return TopicMatch.match(topics, specCorpus(s)); } catch (_) { return null; }
+  }
   function rankSpecs(items, excludeId) {
     const ps = profileApi();
     const learningOn = !!(ps && (!ps.enabled || ps.enabled()));
     const scoreFn = (learningOn && ps && ps.score) ? (t => ps.score(t)) : null;
     const gt = goalText();
+    const topics = learningOn ? learnedTopics() : [];   // same glass-box gate as the affinity scorer (see forYouShelfHTML)
     const pool = (items || []).filter(s => s && s.id !== excludeId);
     let anySignal = false;
     const scored = pool.map((s, idx) => {
       const aff = scoreFn ? (Number(scoreFn(s.tags || {})) || 0) : 0;
       const goalHits = specGoalHits(s, gt);
       const goal = goalHits.length;
-      if (aff > 0 || goal > 0) anySignal = true;
-      // the honest per-pick WHY: profile affinity beats goal match when both fire (it's the stronger signal). When
-      // it's a goal match, NAME the matched keyword (from the persisted goals text) rather than ×3 boilerplate.
-      const why = (aff > 0 ? becauseText(s) : '') || (goal > 0 ? ('matches your goal: “' + goalHits[0] + '”') : '');
-      return { s, idx, v: aff * 4 + goal * 2, why };
+      // the LEARNED-TOPIC term: strictly additive and capped, and exactly 0 until a WARM topic covers the class —
+      // so a cold station ranks byte-identically to before, and this can only ever PROMOTE a class the Commander's
+      // real observed work points at. It can never shrink the shelf.
+      const tm = specTopicMatch(s, topics);
+      const topic = tm ? TopicMatch.term(tm, SPEC_TOPIC_SCALE, SPEC_TOPIC_CAP) : 0;
+      if (aff > 0 || goal > 0 || topic > 0) anySignal = true;
+      // the honest per-pick WHY, most-specific evidence first: a learned topic NAMES the actual subject and its
+      // observation count, so it outranks both priors; then profile affinity (the stronger of the two remaining);
+      // then a goal match, which NAMES the matched keyword rather than ×3 boilerplate.
+      const why = (topic > 0 ? TopicMatch.reason(tm) : '') ||
+        (aff > 0 ? becauseText(s) : '') || (goal > 0 ? ('matches your goal: “' + goalHits[0] + '”') : '');
+      return { s, idx, v: aff * 4 + goal * 2 + topic, why };
     });
     if (anySignal) {
       return { personalized: true, items: scored.filter(x => x.v > 0).sort((a, b) => (b.v - a.v) || (a.idx - b.idx)).slice(0, 3) };
@@ -1268,6 +1289,24 @@ const Marketplace = (() => {
       .filter(x => x.s && x.s.id !== excludeId);
     if (!cards.length) return '';
     return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">◆ CURATED FOR YOUR WORKFLOW — based on your recent runs · the next hire your real work points to</div>' +
+      '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
+  }
+  /* ---------- UNCOVERED: a warm learned topic NOBODY on the crew handles (2026-07-28) ----------
+     The curated shelf above can only ever rank classes whose kit the Commander's work ALREADY touches, so it can
+     never surface the recommendation that actually grows the station: "you keep asking about X and no one here
+     can do it." This shelf answers that from two real persisted counters — the topic's own observation count and
+     the crew's actual coverage — and renders ONLY when both say so. Empty (cold topics, or a crew that already
+     covers everything warm) → '' , so nothing that renders today can be displaced by it. */
+  function interestGapShelfHTML() {
+    if (typeof RecruiterStore === 'undefined' || !RecruiterStore.interestGaps) return '';
+    let res; try { res = RecruiterStore.interestGaps(); } catch (_) { return ''; }
+    if (!res || !res.items || !res.items.length) return '';
+    const excludeId = ctx && ctx.currentSpecialtyId;
+    const cards = res.items
+      .map(it => ({ s: Specialties.get(it.classId), why: it.why }))
+      .filter(x => x.s && x.s.id !== excludeId);
+    if (!cards.length) return '';
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-gap-sect">◆ UNCOVERED — work you keep doing that nobody on the crew handles</div>' +
       '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
   /* ---------- PROSPECTS: bespoke DRAFTS the station authored from the Commander's real work (Slice 4) ----------
@@ -1317,31 +1356,40 @@ const Marketplace = (() => {
     const scoreFn = (ps && ps.score && !learningOff) ? (tags => ps.score(tags)) : null;
     // launches = the Commander's OWN real per-recipe launch counts (scout usage read) — engagement feeds the rank.
     let launches = null; try { launches = (typeof ProspectStore !== 'undefined' && ProspectStore.launches) ? ProspectStore.launches() : null; } catch (_) {}
+    // topics ride the SAME glass-box switch as the affinity scorer: the learned histogram IS a model of the
+    // Commander, so learning OFF means it may not rank anything (consent), and — because a positive term flips
+    // `anySignal` — it also guarantees the row can never shrink: whenever topics are live the profile is live
+    // too, so the positive filter was already engaged and an additive term can only ever ADD survivors.
+    const topics = learningOff ? [] : learnedTopics();
     const gt = goalText();
     // THREE, not four: the rail wraps to a second row at four cards on a standard bay, and a shelf that spends
     // two rows above the library is the thing that pushed the catalog off screen. Three also matches the
     // specialists shelf next door, so both tabs speak the same visual language.
-    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: gt, launches: launches, limit: 3 });
+    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: gt, launches: launches, topics: topics, limit: 3 });
     if (!items || !items.length) return '';
+    // the honest per-card WHY, recomputed from the SAME inputs that ranked the row (Recipes.forYouReason). This
+    // shelf blends four real signals and used to explain NONE of them — every other shelf in the bay names its
+    // reason, and truthful telemetry means the flagship row should too.
+    const reasonFor = (r) => {
+      let why = '';
+      try { why = Recipes.forYouReason ? (Recipes.forYouReason(r, { topics: topics, goalText: gt, launches: launches }) || '') : ''; } catch (_) { why = ''; }
+      return why || (scoreFn ? becauseText(r) : '');   // affinity copy lives in ONE place (BECAUSE) — fall back to it
+    };
     return '<div class="mkt-sect-h mkt-foryou-sect">◈ FOR YOU</div><div class="mkt-rec-rail">' +
-      items.map(r => forYouCardHTML(r, gt, launches)).join('') + '</div>';
+      items.map(r => forYouCardHTML(r, reasonFor(r))).join('') + '</div>';
   }
-  // the honest per-pick REASON, in the order the ranker itself weighs them: a named goal keyword beats profile
-  // affinity beats the Commander's own launch history; a card with none of those is in the row on the category
-  // spread and says so by simply showing its bucket. Never an invented "popular" or "trending".
-  function forYouWhy(r, gt, launches) {
-    const hits = (gt && Recipes.goalKeywordHits) ? Recipes.goalKeywordHits(r, gt) : [];
-    if (hits.length) return 'matches your goal: “' + hits[0] + '”';
-    const because = becauseText(r);
-    if (because) return because;
-    const u = (launches || {})[r.id];
-    const n = (u && typeof u === 'object') ? u.n : u;
-    if (Number.isFinite(n) && n > 0) return 'you’ve launched this ' + Math.floor(n) + '×';
-    return '';
+  // the station's LEARNED interest topics (server truth: GET /api/scout, cached in ProspectStore). Empty until a
+  // read lands or the histogram warms — and an empty list makes every topic term exactly 0, so the shelves rank
+  // precisely as they did before topics existed. The frontend never asserts topic state it hasn't been served.
+  function learnedTopics() {
+    try { return (typeof ProspectStore !== 'undefined' && ProspectStore.interests) ? (ProspectStore.interests() || []) : []; }
+    catch (_) { return []; }
   }
-  function forYouCardHTML(r, gt, launches) {
+  // MERGE NOTE: this branch grew its own forYouWhy (goal keyword → affinity → launches). Recipes.forYouReason —
+  // which reasonFor above calls — is the same idea with the learned-topic term in front of it, so the local copy
+  // is dropped rather than kept as a second, quietly-diverging explanation of the same row.
+  function forYouCardHTML(r, why) {
     const cat = CAT_LABEL[railBucket(r)] || 'GENERAL';
-    const why = forYouWhy(r, gt, launches);
     return '<button class="mkt-rec mkt-foryou" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
       '<div class="mkt-rec-top">' + sealHTML(r, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
