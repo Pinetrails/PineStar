@@ -14,11 +14,12 @@ Each slice carries its own claims re-lock. Two slices landed somewhere other tha
 them; both deviations are recorded under their slice below.
 
 Grounded against trunk by reading the code, not the docs. Current gate for this subsystem is green:
-`test/xp.test.js` 146 assertions · `test/xpstore.test.js` 29 · `test/xp-crewsplit.test.js` 19.
+`test/xp.test.js` 268 assertions · `test/xpstore.test.js` 43 · `test/xp-crewsplit.test.js` 19 ·
+`test/roster-track.e2e.test.js` 25 (the counts at audit time were 146 / 29 / 19 / none).
 
 ---
 
-## The finding
+## The finding (as audited, BEFORE the work — each item now carries the slice that closed it)
 
 The engine is not the problem. `frontend/app/xp.js` is a careful, honest model: XP mints **only** on explicit
 positive user approval, confidence reports `known:false` until `MIN_SAMPLES` (3) real samples exist, and
@@ -27,7 +28,8 @@ product's truthful-telemetry law correctly applied to a growth meter.
 
 The problem is everything around it.
 
-**1. Nothing consumes the numbers.** Every reader of `a.stats` is a *display* surface:
+**1. Nothing consumes the numbers.** *(closed by S3 — the sidecar's per-run `[ORCHESTRATION]` briefing now
+carries each specialist's earned credential.)* Every reader of `a.stats` is a *display* surface:
 
 | Consumer | What it does with it |
 | --- | --- |
@@ -42,25 +44,26 @@ Grepping `sidecar/subagents.js`, `sidecar/nightshift.js`, `sidecar/runroute.js`,
 `confidence` or `level` returns **zero hits**. A Lv 20 / TRUSTED 92% agent and a Lv 1 stranger are treated
 identically by delegation, night shift, and every ranked shelf. A trust number nothing acts on is decoration.
 
-**2. XP has exactly one mint source.** In `scoreEvent`, `agent.run.end` has six outcome branches
+**2. XP has exactly one mint source.** *(closed by S2 + S5 — as two new axes, not a looser faucet; XP is
+still user-approval-only, exactly as the standing law below demands.)* In `scoreEvent`, `agent.run.end` has six outcome branches
 (`done`/`max_iters`/`budget`/`refusal`/`error`/`cancelled`) and **all six return `{ xp: 0 }`**; so do
 `agent.tool_result`, `memory.write`, `memory.used`, `workitem.delivered`, and `channel.delivery`. Only
 `memory.feedback` with quality 1 mints. Progression therefore tracks *how often somebody taps ▲*, not work
 done — while the harness sits on provable facts (successful tool calls, deliverables, reconciled spend,
 terminal reason) that never move any meter.
 
-**3. Specialists are structurally starved.** `maybeStandaloneRate` ([chat.js:2060](../frontend/app/chat.js))
+**3. Specialists are structurally starved.** *(closed by S1.)* `maybeStandaloneRate` ([chat.js:2060](../frontend/app/chat.js))
 returns `'never'` when `agentId !== 'agent'`. The rate control renders from five sites — the standalone beat
 (hero-only), the away-digest/OUTBOX rows (any agent), and the turn-in memory batch card (any agent) — so a
 workstream bound to a specialist earns the **primary leveling beat only if that run happened to produce a
 memory proposal**. Interactive specialist work is otherwise unrateable, and non-hero agents sit at Lv 1
 indefinitely while the hero collects everything.
 
-**4. The mid-game is empty.** `MILESTONES` has 9 entries, four of which fire in session one (`first_light`,
+**4. The mid-game is empty.** *(closed by S4 — 14 badges now, five of them mid-curve.)* `MILESTONES` has 9 entries, four of which fire in session one (`first_light`,
 `approved`, `pack_rat`, `night_shift`), then a cliff to `archivist` (10 memories), `workhorse` (25 tasks),
 `veteran` (Lv 10), `centurion` (100 tasks).
 
-**5. It is frontend-only.** Stats live in the save envelope and are folded in the browser. A Telegram-only
+**5. It is frontend-only.** *(STILL OPEN — the only finding this lane did not close.)* Stats live in the save envelope and are folded in the browser. A Telegram-only
 Commander never levels anything until they open the desktop app (the return ritual back-fills, which is the
 right design — but the dependency is real).
 
@@ -186,7 +189,12 @@ way: revert the gate change and watch the new regression go red.
 
 ## Open for Andrew
 
-1. S5 is the interesting one but it is a design fork (level-as-capability-readout vs level-as-track-record).
-   Worth its own conversation before anyone builds it.
-2. Whether RELIABILITY (S2) belongs on the always-visible surfaces or only in the dossier — it is a number
-   that can look bad, and the station's tone rules apply.
+1. ~~S5 is a design fork (level-as-capability-readout vs level-as-track-record).~~ **Decided in the build:**
+   level was left alone and the capability readout shipped beside it as PRACTICE. Rewriting the ladder would
+   have changed levels the Commander already earned. The fork's other half — should a LEVEL ever be recomputed
+   from capability — is deliberately still unbuilt, and still Andrew's call.
+2. ~~Whether RELIABILITY (S2) belongs on the always-visible surfaces or only in the dossier.~~ **Decided:**
+   dossier-only. It is a number that can look bad, and the always-visible chrome is not where an honest bad
+   number belongs. PRACTICE (S5) sits in the same place for the same reason.
+3. **Still open:** finding 5 — stats are folded in the browser, so a Telegram-only Commander levels nothing
+   until they open the app. The return ritual back-fills, which is the right design; the dependency is real.
