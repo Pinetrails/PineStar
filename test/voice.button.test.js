@@ -80,10 +80,11 @@ function boot(opts) {
     SpeechRecognition: opts.recorder ? undefined : MockSR,
     MediaRecorder: opts.recorder ? MockMR : undefined,
     AudioContext: MockAC,
+    Audio: opts.Audio,
     requestAnimationFrame: cb => st(() => cb(Date.now()), 16), cancelAnimationFrame: clearTimeout,
     setTimeout: st, clearTimeout, setInterval, clearInterval,
     console: { log() {}, warn() {}, error() {} },
-    URL: { createObjectURL: () => 'blob:x', revokeObjectURL() {} },
+    URL: { createObjectURL: () => 'blob:x', revokeObjectURL: url => { if (opts.onRevoke) opts.onRevoke(url); } },
     AbortController,   // neural-TTS synth uses one per request to allow barge-in cancel
     Blob: class { constructor(parts, o) { this.size = (parts && parts.length) ? 1 : 0; this.type = (o && o.type) || ''; } },
     fetch: opts.fetch || (() => Promise.resolve({ ok: true, headers: { get: () => 'application/json' }, json: () => Promise.resolve({ text: 'words' }), blob: () => Promise.resolve({ size: 1 }) })),
@@ -229,6 +230,39 @@ const tick = (n = 12) => new Promise(r => setTimeout(r, n));
     t.Voice.setSpeakReplies(true);
     t.Voice.speak('third line after re-toggle', 'agent'); await tick(40);
     A.ok(state.tts > afterFirst, 'no-key: a speaker toggle clears the cold-off → the next speak fetches again (NOT permanently disabled)');
+  }
+
+  // --- media decode failure AFTER playback starts clears speaking + the live output meter -------
+  // This is the dangerous ordering: `onplay` turns speaking on, then the media element fails. The
+  // queue may advance, but the shared live panel must not remain pinned to the agent forever.
+  {
+    class FailingAudio {
+      constructor() { this.volume = 1; this.playbackRate = 1; this.onplay = this.onended = this.onerror = null; }
+      play() {
+        if (this.onplay) this.onplay();
+        setTimeout(() => { if (this.onerror) this.onerror(new Error('decode failed')); }, 25);
+        return Promise.resolve();
+      }
+      pause() {}
+    }
+    let revoked = 0;
+    const audioFetch = () => Promise.resolve({
+      ok: true,
+      status: 200,
+      headers: { get: () => 'audio/wav' },
+      blob: () => Promise.resolve({ size: 128 })
+    });
+    const t = boot({ ttsKey: true, fetch: audioFetch, Audio: FailingAudio, onRevoke: () => { revoked++; } });
+    const states = [], levels = [];
+    t.Voice.attachCoordinator({ onState: state => states.push(state), onOutputLevel: level => levels.push(level) });
+    t.Voice.setSpeakReplies(true);
+    t.Voice.speak('this chunk begins and then fails to decode', 'agent');
+    await tick(70);
+    A.ok(states.includes('speaking'), 'post-play failure: speaking state was genuinely entered');
+    A.ok(t.Voice.isSpeaking() === false, 'post-play failure: speaking state is cleared (no stuck agent turn)');
+    A.ok(states.includes('ready'), 'post-play failure: coordinator returns to ready');
+    A.ok(levels.some(level => level === 0), 'post-play failure: live output meter receives its terminal zero');
+    A.ok(revoked === 1, 'post-play failure: playback blob URL is revoked exactly once');
   }
 
   // --- a FAILED neural chunk NEVER invokes speechSynthesis.speak (robotic path deleted) ---------

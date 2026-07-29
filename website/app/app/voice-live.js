@@ -7,7 +7,7 @@ const VoiceLive = (() => {
   let stream = null, context = null, source = null, processor = null, sink = null;
   let calibratedUntil = 0, noiseFloor = 0.006, speechFrames = 0, silenceMs = 0;
   let recording = false, utterance = [], utteranceSamples = 0, preRoll = [], transcriptionPending = false, queuedAudio = null;
-  let utteranceSeq = 0, partialPending = false, partialAbort = null, lastPartialAt = 0;
+  let utteranceSeq = 0, partialPending = false, partialAbort = null, lastPartialAt = 0, partialText = '';
   let finalAbort = null;
   let reconnectTimer = null, reconnectAttempt = 0, transientErrorTimer = null;
   let warmupNotice = false;
@@ -23,7 +23,14 @@ const VoiceLive = (() => {
   const WAVE_BARS = 17;
   const RAMP = '▁▂▃▄▅▆▇█';
   const glyphFor = level => RAMP[Math.min(RAMP.length - 1, Math.round(level * (RAMP.length - 1)))];
-  let waveBars = null, waveHistory = new Array(WAVE_BARS).fill(0);
+  // TWO VOICES, ONE METER (a phone call shows you both sides): every column remembers WHOSE level it
+  // is, so the strip changes colour as the turn changes hands instead of needing a second widget.
+  // `agentLevel` is the newest RMS of the agent's own playback, pushed in by Voice's output tap.
+  const SELF = 'self', AGENT = 'agent';
+  const AGENT_GAIN = 6;    // playback RMS is normalized and hotter than a room mic — matched by ear, see below
+  let waveBars = null;
+  let waveHistory = new Array(WAVE_BARS).fill(null).map(() => ({ v: 0, src: SELF }));
+  let agentLevel = 0;
 
   function clampPanel(panel) {
     if (!panel || panel.hidden || !panel.style.left) return;
@@ -98,7 +105,7 @@ const VoiceLive = (() => {
       '<header class="lv-head">',
         '<span class="lv-brand">LOCAL LIVE</span>',
         '<span class="lv-pip" aria-hidden="true"></span>',
-        '<span id="lv-state" class="lv-state">CONNECTING</span>',
+        '<span id="lv-state" class="lv-state" aria-live="polite">CONNECTING</span>',
         '<button id="lv-close" class="x-btn lv-x" type="button" aria-label="End live voice" title="End live voice">✕</button>',
       '</header>',
       // The LEVEL IS THE CONTROL. There is no icon: an orb, a mic glyph, a lamp — anything sitting
@@ -123,6 +130,7 @@ const VoiceLive = (() => {
     for (let i = 0; i < WAVE_BARS; i++) {
       const col = document.createElement('i');
       col.textContent = RAMP[0];   // a silent room is a flat line, never an empty row
+      col.dataset.src = SELF;
       wave.appendChild(col);
     }
     document.body.appendChild(panel);
@@ -137,29 +145,54 @@ const VoiceLive = (() => {
   // Amplitude drives the meter AND the module's own bloom, so the whole light level of the thing is
   // the real mic level — one signal, never a decorative loop pretending to be one.
   //
-  function pushLevel(value) {
+  function pushLevel(value, source) {
     const level = Math.max(0, Math.min(1, value));
-    waveHistory.push(level);
+    const src = source === AGENT ? AGENT : SELF;
+    waveHistory.push({ v: level, src: src });
     waveHistory.shift();
     if (waveBars) for (let i = 0; i < waveBars.length; i++) {
-      const glyph = glyphFor(waveHistory[i]);
-      if (waveBars[i].textContent !== glyph) waveBars[i].textContent = glyph;
+      const cell = waveHistory[i], bar = waveBars[i];
+      const glyph = glyphFor(cell.v);
+      if (bar.textContent !== glyph) bar.textContent = glyph;
+      if (bar.dataset.src !== cell.src) bar.dataset.src = cell.src;   // CSS colours the column by whose voice it is
     }
     const panel = $('live-voice-panel');
-    if (panel) panel.style.setProperty('--lv-amp', level.toFixed(3));
+    if (panel) {
+      panel.style.setProperty('--lv-amp', level.toFixed(3));
+      // the bloom belongs to whoever is talking, so the module's own light changes hands too
+      if (panel.dataset.talker !== src) panel.dataset.talker = src;
+    }
   }
 
   function resetLevel() {
-    waveHistory = new Array(WAVE_BARS).fill(0);
-    if (waveBars) waveBars.forEach(bar => { bar.textContent = RAMP[0]; });
+    waveHistory = new Array(WAVE_BARS).fill(null).map(() => ({ v: 0, src: SELF }));
+    agentLevel = 0;
+    if (waveBars) waveBars.forEach(bar => { bar.textContent = RAMP[0]; bar.dataset.src = SELF; });
     const panel = $('live-voice-panel');
-    if (panel) panel.style.setProperty('--lv-amp', '0');
+    if (panel) { panel.style.setProperty('--lv-amp', '0'); panel.dataset.talker = SELF; }
   }
 
   function setState(value) {
     const normalized = String(value || 'ready').toLowerCase();
     if ($('lv-state')) $('lv-state').textContent = normalized.toUpperCase();
-    if ($('live-voice-panel')) $('live-voice-panel').dataset.state = normalized;
+    const panel = $('live-voice-panel');
+    const meter = $('lv-barge');
+    const working = /^(?:connecting|warming|thinking|transcribing|reconnecting)$/.test(normalized);
+    if (panel) {
+      panel.dataset.state = normalized;
+      panel.setAttribute('aria-busy', working ? 'true' : 'false');
+    }
+    if (meter) {
+      const label = normalized === 'speaking'
+        ? 'Agent speaking — press to interrupt and speak'
+        : normalized === 'hearing'
+          ? 'Listening to you — press to interrupt'
+          : working
+            ? `${normalized} — press to interrupt and speak`
+            : 'Voice is listening — press to interrupt and speak';
+      meter.setAttribute('aria-label', label);
+      meter.title = label;
+    }
   }
   function setError(message) {
     const el = $('lv-error');
@@ -377,6 +410,9 @@ const VoiceLive = (() => {
     part = part || {};
     caption('agent', part.text || '', !part.opening);
   }
+  // the agent's live output RMS, straight off the tap on its playback chain. Stored, not drawn: the mic
+  // frame is the only thing that scrolls the strip (see processFrame), so this just supplies the value.
+  function onOutputLevel(rms) { agentLevel = Math.max(0, +rms || 0); }
   function onState(state) {
     if (!active || state === 'ended') return;
     setState(state === 'ready' ? 'listening' : state);
@@ -424,6 +460,7 @@ const VoiceLive = (() => {
     partialAbort = ac;
     postPcm(pcm, ac.signal).then(text => {
       if (!active || id !== utteranceSeq || !recording || !text) return;
+      partialText = text;
       if ($('lv-heard')) $('lv-heard').textContent = text;
     }).catch(error => {
       if (!error || error.name !== 'AbortError') console.warn('[voice-live] partial transcription:', error && error.message || error);
@@ -431,6 +468,19 @@ const VoiceLive = (() => {
       if (partialAbort === ac) partialAbort = null;
       partialPending = false;
     });
+  }
+
+  function endpointSilenceMs(durationMs, text) {
+    // Human turns contain thinking pauses. The old 560–850ms endpoint was excellent for commands
+    // and poor for conversation: it routinely submitted while someone was deciding how to finish
+    // a sentence. Keep short turns the most patient, and never make a long reflective turn faster
+    // than 950ms. If the partial transcript visibly trails off, grant another half beat.
+    let wait = durationMs < 1200 ? 1350 : durationMs < 3200 ? 1150 : 950;
+    const partial = String(text || '').trim().toLowerCase();
+    const continues = /[,;:—-]\s*$/.test(partial)
+      || /\b(?:and|but|or|so|because|then|like|well|actually|basically|uh|um|hmm|i|i'm|we|to|the|a|an|my|your|that|which|if|when|while|with|for|of)\s*[.!?]?$/.test(partial);
+    if (continues) wait = Math.min(1750, wait + 450);
+    return wait;
   }
 
   async function transcribe(frames, seq = sessionSeq) {
@@ -468,7 +518,13 @@ const VoiceLive = (() => {
     let energy = 0;
     for (let i = 0; i < frame.length; i++) energy += frame[i] * frame[i];
     const rms = Math.sqrt(energy / frame.length);
-    pushLevel(rms * 14);
+    const agentTalking = typeof Voice !== 'undefined' && Voice.isSpeaking && Voice.isSpeaking();
+    // ONE CLOCK for the strip. The mic frame is what scrolls it — always, even while the agent holds the
+    // turn — so the meter keeps a single steady rate instead of speeding up when a second source (the
+    // agent's ~60fps output tap) starts pushing. Whoever holds the turn supplies the VALUE and the colour;
+    // the mic keeps feeding the VAD below either way, so barge-in detection is untouched.
+    if (agentTalking) pushLevel(agentLevel * AGENT_GAIN, AGENT);
+    else pushLevel(rms * 14, SELF);
     const frameMs = frame.length / context.sampleRate * 1000;
     if (performance.now() < calibratedUntil) {
       noiseFloor = noiseFloor * 0.92 + rms * 0.08;
@@ -476,7 +532,6 @@ const VoiceLive = (() => {
       if (preRoll.length > 8) preRoll.shift();
       return;
     }
-    const agentTalking = typeof Voice !== 'undefined' && Voice.isSpeaking && Voice.isSpeaking();
     const threshold = Math.max(0.012, noiseFloor * (agentTalking ? 5.5 : 2.8));
     const voiced = rms > threshold;
     if (!recording) {
@@ -487,6 +542,7 @@ const VoiceLive = (() => {
       if (speechFrames >= 3) {
         recording = true;
         utteranceSeq++;
+        partialText = '';
         utterance = preRoll.slice();
         utteranceSamples = utterance.reduce((sum, item) => sum + item.length, 0);
         lastPartialAt = performance.now();
@@ -502,7 +558,7 @@ const VoiceLive = (() => {
     silenceMs = voiced ? 0 : silenceMs + frameMs;
     const durationMs = utteranceSamples / context.sampleRate * 1000;
     if (durationMs >= 1000) requestPartial(utterance, utteranceSeq);
-    const endSilenceMs = durationMs < 900 ? 850 : durationMs < 2200 ? 700 : 560;
+    const endSilenceMs = endpointSilenceMs(durationMs, partialText);
     if (silenceMs >= endSilenceMs || durationMs >= 20000) {
       const captured = utterance;
       recording = false;
@@ -555,6 +611,7 @@ const VoiceLive = (() => {
     recording = false;
     utterance = [];
     utteranceSamples = 0;
+    partialText = '';
     preRoll = [];
     resetLevel();
   }
@@ -590,6 +647,16 @@ const VoiceLive = (() => {
     caption('user', 'Listening…');
   }
 
+  function reflectButton(on) {
+    const button = $('voice-live');
+    if (!button) return;
+    button.setAttribute('aria-pressed', on ? 'true' : 'false');
+    button.setAttribute('aria-label', on ? 'Stop Local Live hands-free voice' : 'Start Local Live hands-free voice');
+    button.title = on
+      ? 'Stop Local Live hands-free voice'
+      : 'Local Live hands-free voice — local speech with your active Starnet agent';
+  }
+
   async function start(retry) {
     ensurePanel();
     if (active && !retry) { $('live-voice-panel').hidden = false; return; }
@@ -605,11 +672,13 @@ const VoiceLive = (() => {
     active = true;
     ending = false;
     failed = false;
-    const button = $('voice-live');
-    if (button) button.setAttribute('aria-pressed', 'true');
+    reflectButton(true);
     if (typeof Voice !== 'undefined') {
+      // Local Live is now Starnet's one hands-free surface. A legacy loop can still exist through
+      // older saved state or API callers; close it before attaching this persistent microphone.
+      if (Voice.inVoiceMode && Voice.inVoiceMode() && Voice.stopConvo) Voice.stopConvo();
       if (Voice.setLocalTts) Voice.setLocalTts(true);
-      if (Voice.attachCoordinator) Voice.attachCoordinator({ onState, onAssistant });
+      if (Voice.attachCoordinator) Voice.attachCoordinator({ onState, onAssistant, onOutputLevel });
     }
     try {
       const opened = await openMicrophone(seq);
@@ -637,8 +706,7 @@ const VoiceLive = (() => {
         ? 'Microphone access is blocked. Allow it for this local page, then try again.'
         : String(error && error.message || error));
       closeMicrophone();
-      const button = $('voice-live');
-      if (button) button.setAttribute('aria-pressed', 'false');
+      reflectButton(false);
       if (typeof Voice !== 'undefined') {
         if (Voice.detachCoordinator) Voice.detachCoordinator();
         if (Voice.setLocalTts) Voice.setLocalTts(false);
@@ -664,8 +732,7 @@ const VoiceLive = (() => {
       if (Voice.setLocalTts) Voice.setLocalTts(false);
     }
     if ($('live-voice-panel')) $('live-voice-panel').hidden = true;
-    const button = $('voice-live');
-    if (button) button.setAttribute('aria-pressed', 'false');
+    reflectButton(false);
     ending = false;
   }
   function end() { finish(true); }

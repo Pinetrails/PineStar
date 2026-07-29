@@ -102,8 +102,53 @@ const Voice = (() => {
      OUTPUT — the agent's voice (TTS)
      ====================================================================== */
 
-  function onSpeakStart() { speaking = true; setSpeaking(true); duckSfx(true); coordinatorEvent('onState', 'speaking'); }
-  function onSpeakEnd() { if (!speaking) return; speaking = false; setSpeaking(false); coordinatorEvent('onState', busyNow() ? 'thinking' : 'ready'); }
+  function onSpeakStart() { speaking = true; setSpeaking(true); duckSfx(true); coordinatorEvent('onState', 'speaking'); startOutputMeter(); }
+  function onSpeakEnd() {
+    // Meter teardown is deliberately unconditional. A failed media element can fire after another
+    // path already cleared `speaking`; leaving the rAF alive in that race would pin the live panel
+    // to the agent side forever.
+    stopOutputMeter();
+    outAnalyser = null;
+    if (!speaking) return;
+    speaking = false;
+    setSpeaking(false);
+    coordinatorEvent('onState', busyNow() ? 'thinking' : 'ready');
+  }
+
+  /* ---- THE AGENT'S SIDE OF THE METER ------------------------------------------------------------
+     A phone call shows you both voices: your own level, and the other party's in its own colour. The
+     agent's half is read off `outAnalyser` — a tap on whichever chain (transmission / machine shell)
+     the CURRENT playback is routed through, i.e. the exact signal leaving for the speakers.
+     It is NOT a timer and NOT an envelope guessed from the text: when playback is dry (WebAudio routing
+     failed) there is no tap, so this reports 0 and the agent's half of the meter stays flat rather than
+     inventing motion the speakers aren't making. Only runs while a live panel is attached. */
+  let outAnalyser = null, outRaf = 0, outBuf = null;
+  function outputLevelTick() {
+    outRaf = 0;
+    if (!speaking || !coordinator) return;
+    let rms = 0;
+    const an = outAnalyser;
+    if (an) {
+      try {
+        if (!outBuf || outBuf.length !== an.fftSize) outBuf = new Float32Array(an.fftSize);
+        an.getFloatTimeDomainData(outBuf);
+        let e = 0;
+        for (let i = 0; i < outBuf.length; i++) e += outBuf[i] * outBuf[i];
+        rms = Math.sqrt(e / outBuf.length);
+      } catch (_) { rms = 0; }
+    }
+    coordinatorEvent('onOutputLevel', rms);
+    if (typeof requestAnimationFrame === 'function') outRaf = requestAnimationFrame(outputLevelTick);
+  }
+  function startOutputMeter() {
+    if (!coordinator || outRaf || typeof requestAnimationFrame !== 'function') return;
+    outRaf = requestAnimationFrame(outputLevelTick);
+  }
+  function stopOutputMeter() {
+    if (outRaf && typeof cancelAnimationFrame === 'function') { try { cancelAnimationFrame(outRaf); } catch (_) {} }
+    outRaf = 0;
+    coordinatorEvent('onOutputLevel', 0);   // the agent stopped talking: say so, don't leave the last frame lit
+  }
 
   /* ---- neural TTS — the agent's ONLY voice -----------------------------------------------------
      Hits the sidecar /api/tts and plays the returned audio. The sidecar owns the whole tier ladder
@@ -278,8 +323,18 @@ const Voice = (() => {
     return out;
   }
 
-  let currentAudio = null;
-  function stopAudio() { if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; } }
+  let currentAudio = null, currentAudioCleanup = null;
+  function stopAudio() {
+    if (currentAudio) { try { currentAudio.pause(); } catch (_) {} currentAudio = null; }
+    // pause() does not fire `ended`, so revoke the blob URL here as well as on a natural finish.
+    // This path is used by barge-in and replacement playback and must not leak one URL per turn.
+    if (currentAudioCleanup) {
+      const cleanup = currentAudioCleanup;
+      currentAudioCleanup = null;
+      try { cleanup(); } catch (_) {}
+    }
+    onSpeakEnd();
+  }
 
   /* ---- "transmission" color on neural playback -------------------------------------------------
      A subtle atmosphere pass so the crew sounds like a voice coming over the station's comms, not a
@@ -290,6 +345,9 @@ const Voice = (() => {
      WebAudio, a browser that won't route a blob through MediaElementSource) falls back to plain <audio>. */
   const TRANSMISSION_FX = true;   // module toggle — set false to ship the neural voice dry
   let fxCtx = null, fxIn = null, fxReady = false, fxBroken = false;
+  // A TAP on the chain's output, so the live panel can meter the agent's voice from the SAME signal the
+  // speakers get. Its own try/catch: an engine without createAnalyser must lose the meter, never the voice.
+  let fxAnalyser = null;
   // a mild tanh-ish curve → gentle harmonic warmth, NOT distortion. `k` small = barely-there.
   function makeSaturationCurve(k) {
     const n = 1024, curve = new Float32Array(n);
@@ -316,6 +374,8 @@ const Voice = (() => {
       drive.connect(out);                 // dry (processed) path
       drive.connect(delay); delay.connect(echo); echo.connect(out);   // slapback path
       out.connect(fxCtx.destination);
+      // parallel tap — an AnalyserNode reads whatever reaches it and needs no output of its own
+      try { fxAnalyser = fxCtx.createAnalyser(); fxAnalyser.fftSize = 1024; out.connect(fxAnalyser); } catch (_) { fxAnalyser = null; }
       fxReady = true;
       return true;
     } catch (_) { fxBroken = true; try { if (fxCtx) fxCtx.close(); } catch (__) {} fxCtx = null; fxIn = null; return false; }
@@ -343,6 +403,7 @@ const Voice = (() => {
      and digitize rise but never below 0.15 (the human stays underneath). Its own AudioContext; a shell persona
      BYPASSES routeThroughFx. Fully guarded: any failure → the caller's transmission/dry fallback. */
   let shCtx = null, shIn = null, shN = null, shBroken = false;
+  let shAnalyser = null;    // the shell chain's own output tap (see fxAnalyser)
   function makeQuantCurve(bits) {
     const n = 4096, c = new Float32Array(n), L = Math.pow(2, bits);
     for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.round(x * L) / L; }
@@ -390,6 +451,7 @@ const Voice = (() => {
       peak.connect(quant); quant.connect(qMix); qMix.connect(out);
       peak.connect(conv); conv.connect(revMix); revMix.connect(out);
       out.connect(shCtx.destination);
+      try { shAnalyser = shCtx.createAnalyser(); shAnalyser.fftSize = 1024; out.connect(shAnalyser); } catch (_) { shAnalyser = null; }
       shN = { comb: { fb, mix }, comb2: { fb: fb2, mix: mix2 }, rmMix, quant, qMix, revMix, peak, dry };
       return true;
     } catch (_) { shBroken = true; try { if (shCtx) shCtx.close(); } catch (__) {} shCtx = null; shIn = null; return false; }
@@ -422,12 +484,26 @@ const Voice = (() => {
   // voice register (persona ttsDeep). Vendor-prefixed setters for older engines; all guarded.
   function playBlob(blob, onEnd, volume, onFail, rate, deep, shell) {
     let url = null, a = null, done = false;
-    const cleanup = () => { if (url) { try { URL.revokeObjectURL(url); } catch (_) {} } if (currentAudio === a) currentAudio = null; };
+    const cleanup = () => {
+      if (url) { try { URL.revokeObjectURL(url); } catch (_) {} url = null; }
+      if (currentAudio === a) currentAudio = null;
+      if (currentAudioCleanup === cleanup) currentAudioCleanup = null;
+    };
     const endOk = () => { if (done) return; done = true; cleanup(); onSpeakEnd(); onEnd && onEnd(); };
+    const endFailed = () => {
+      if (done) return;
+      done = true;
+      cleanup();
+      // A decode error may arrive after `onplay`; always leave speaking + metering before advancing.
+      onSpeakEnd();
+      if (onFail) onFail();
+      else if (onEnd) onEnd();
+    };
     try {
       stopAudio();
       url = URL.createObjectURL(blob);
       a = new Audio(url); currentAudio = a;
+      currentAudioCleanup = cleanup;
       a.volume = (volume == null ? 1 : volume);
       if (rate && rate > 0) a.playbackRate = Math.max(0.5, Math.min(2, rate));
       if (deep) { try { a.preservesPitch = false; } catch (_) {} try { a.webkitPreservesPitch = false; } catch (_) {} try { a.mozPreservesPitch = false; } catch (_) {} }
@@ -437,20 +513,23 @@ const Voice = (() => {
       // own output goes silent, so ONLY route when the graph actually wires up.
       // A persona with a machine shell (Ultron) routes through the shell and SKIPS the transmission color; if
       // the shell graph can't wire, fall back to transmission (best-effort) rather than nothing.
-      if (!(shell && routeThroughShell(a, shell))) routeThroughFx(a);
+      // remember WHICH chain took this element — that chain's tap is what the live meter reads.
+      if (shell && routeThroughShell(a, shell)) outAnalyser = shAnalyser;
+      else if (routeThroughFx(a)) outAnalyser = fxAnalyser;
+      else outAnalyser = null;              // dry playback: no tap, so the meter reports nothing rather than lying
       a.onplay = () => onSpeakStart();
       a.onended = endOk;
       // a decode/format error on the neural blob is exactly the "try the browser voice" case — route
       // it to onFail (fallback) rather than treating it as a clean finish (which would go SILENT).
-      a.onerror = () => { if (done) return; done = true; cleanup(); onFail ? onFail() : (onSpeakEnd(), onEnd && onEnd()); };
+      a.onerror = endFailed;
       const p = a.play();
       if (p && p.catch) p.catch(err => {
-        if (done) return; done = true; cleanup();
+        if (done) return;
         // browser still blocking audio (no gesture yet) → tell the user instead of going silently quiet
         if (err && err.name === 'NotAllowedError') setStatus('🔇 tap anywhere to turn on the agent\'s voice');
-        onFail ? onFail() : endOk();
+        endFailed();
       });
-    } catch (_) { cleanup(); onFail ? onFail() : (onSpeakEnd(), onEnd && onEnd()); }
+    } catch (_) { endFailed(); }
   }
 
   /* Browsers block programmatic <audio> playback until the page has had a user gesture — so right after a
@@ -1121,7 +1200,11 @@ const Voice = (() => {
   // The downloaded local speech surface owns its persistent microphone/VAD loop, but still needs the mature
   // reply-stream hooks (captions, speaking state, barge-in) from this module.
   function attachCoordinator(hooks) { coordinator = hooks || {}; return true; }
-  function detachCoordinator() { coordinator = null; }
+  function detachCoordinator() {
+    // End the meter while its listener still exists so the panel receives the final zero sample.
+    stopOutputMeter();
+    coordinator = null;
+  }
 
   /* ======================================================================
      UI wiring
