@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "3459235ea71cdc1d52b7c989cc84731126ece3af",
+    "sourceCommit": "61bdb7d43d0251e85904e89d8965e14fec5bd98b",
     "pathSetSha256": "258d113d3e434af883b43a51ac7b6abd65c84ba618fad05e0b46d54162b96cc3",
     "files": [
       {
@@ -723,8 +723,8 @@
       },
       {
         "path": "frontend/app/voice-live.js",
-        "bytes": 32459,
-        "sha256": "3890c0de2fbc69d3ac4ba7a67f71ff5ea58ae6de54830841c0909a590dc99a6d"
+        "bytes": 31943,
+        "sha256": "eefc45f74c046e4402117dd320dd159d30cdc4e10676a55babfeb8c324e6d3b6"
       },
       {
         "path": "frontend/app/voice.js",
@@ -843,8 +843,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 234736,
-        "sha256": "d0a54a0eecccc63bf1109cfea40a0ca1a522331c758d8c269b085f972387d50e"
+        "bytes": 227026,
+        "sha256": "1c876475023738cfd83e15a503fd04f843941ee2f195741bc7b0e16e8f51b890"
       },
       {
         "path": "frontend/css/asciifx.css",
