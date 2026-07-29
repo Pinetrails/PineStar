@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "f4d03511992a1e8a294437704a144ad0c6f60a2b",
+    "sourceCommit": "b315063ba51593a375568f1adcd0f2d2e5fbdce4",
     "pathSetSha256": "af9ad09edfc5cfca11ef337473fa52a4231aac027fa96bc0d00026a69427c890",
     "files": [
       {
@@ -243,8 +243,8 @@
       },
       {
         "path": "frontend/app/friendlyerror.js",
-        "bytes": 29887,
-        "sha256": "b7e382e4f7ccafa591b0c68b90bcbfd78632d15a546859986c0f13e86f2f2e77"
+        "bytes": 30707,
+        "sha256": "811947c9ce01ef1660de164f62a49109edf860ab82d0bf27d9a8893f30bd9d13"
       },
       {
         "path": "frontend/app/fullscreen.js",
@@ -638,8 +638,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 432616,
-        "sha256": "244810d2de83f963c97fe9833e1562970273ff73a774ab80a8dd17ef23be03b9"
+        "bytes": 433931,
+        "sha256": "721b1fe5e634c622825c44f73a5c588f632c886adc35f0e99bf52019e7ed27d7"
       },
       {
         "path": "frontend/app/study.js",
