@@ -76,8 +76,15 @@ const {
   providerUsesDeviceOAuth: registryProviderUsesDeviceOAuth,
   defaultReasoningEffortForProvider: registryDefaultReasoningEffort,
   providerRequiresKey,
-  providerRequiresBaseUrl
+  providerRequiresBaseUrl,
+  attachRateLimits
 } = require('./providers/factory.js');
+/* PROACTIVE QUOTA. One tracker for the whole process, attached to the factory so every provider adapter's
+   injected fetch is instrumented at a single seam (see providers/ratelimits.js). Quota used to be learned only
+   by hitting a 429; now the *-remaining headers of ordinary successful calls are kept, so the station can say
+   "this meter is nearly spent" BEFORE the wall instead of after it. */
+const rateLimits = require('./providers/ratelimits.js').makeRateLimits({ clock: { now: () => Date.now() } });
+attachRateLimits(rateLimits);
 const { DEFAULT_MODEL: CODEX_DEFAULT_MODEL } = require('./providers/codex.js');
 const codexAuth = require('./providers/codex-auth.js');
 const codexTokenStore = require('./providers/codex-token-store.js');
@@ -12157,6 +12164,9 @@ function handleDiagnostics(req, res) {
       uptimeMs: Date.now() - PROCESS_START,
       workspacePresent: workspacePresent,
       lastRun: recent ? { runId: recent.runId, status: recent.reason, ts: recent.ts } : null,
+      // observed provider quota. Empty until a call has actually been made — an empty array means NO DATA and
+      // must never be rendered as "plenty left" (see ratelimits.advise).
+      rateLimits: (() => { try { return rateLimits.snapshot(); } catch (_) { return []; } })(),
       errors: DIAG_ERR_RING.slice()   // already redacted on write; the assembler redacts again as a backstop
     };
     out = diagnostics.assemble(snapshot);

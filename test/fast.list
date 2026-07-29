@@ -40,6 +40,7 @@ test/provider.toolschema.test.js
 test/provider.prices.test.js
 test/provider.timeouts.test.js
 test/provider.registry.test.js
+test/ratelimits.test.js
 test/provider.codex-auth.test.js
 test/provider.oauth-device.test.js
 test/codex-auth-state.test.js
