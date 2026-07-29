@@ -34,6 +34,7 @@ const Marketplace = (() => {
   // R3 launch/routine state: the live cron jobs (fetched once when the recipes dossier renders) so a recipe can
   // show a "● live — every morning" indicator, and whether the launch pane is in RUN-NOW or MAKE-ROUTINE mode.
   let cronJobs = null, cronArmed = false, launchMode = 'run', launchCadence = null;
+  let launchPreviewOpen = true;                  // "WHAT GETS SENT" — open by default: seeing the real directive before you commit IS the point
   let tab = 'agents';                            // 'agents' | 'recipes'
   let glassOpen = false;
   let summonConfigOpen = false;                  // the collapsible APPEARANCE+MODEL strip (summon mode) — collapsed by default
@@ -203,6 +204,7 @@ const Marketplace = (() => {
     importScan = null; importOrigin = null; importName = ''; importErr = '';
     laneFilter = 'all'; catFilter = 'all'; query = '';
     lastDecodedHero = null;   // a fresh bay open replays the hero decode beat once
+    recipeRuns = null;        // re-read the run log on every open: work done since the last visit shows up
     // SCOUT: re-read server truth on open (fresh drafts/interests land) and push the browser-only dedup context.
     try { if (typeof ProspectStore !== 'undefined' && ProspectStore.refresh) { ProspectStore.pushContext(); ProspectStore.refresh(); } } catch (_) {}
     tab = (ctx.mode !== 'pick' && ctx.tab === 'recipes' && hasRecipes()) ? 'recipes' : 'agents';
@@ -460,7 +462,7 @@ const Marketplace = (() => {
     paintDossierAccent();
     decodeHero();
     hydrateSkillRows();                          // fill real skill names once the catalog loads (agent + recipe dossiers)
-    if (tab === 'recipes') hydrateLiveRoutines();   // fill the "● live as a routine" indicator once /api/cron loads
+    if (tab === 'recipes') { hydrateLiveRoutines(); hydrateRecipeRuns(); }   // "● live as a routine" + the last-run line, once their reads land
     if (!root.contains(document.activeElement)) { const p = root.querySelector('.mkt'); if (p) p.focus(); }
   }
   function renderDossier() {
@@ -470,7 +472,7 @@ const Marketplace = (() => {
     paintDossierAccent();
     decodeHero();
     hydrateSkillRows();                          // fill real skill names once the catalog loads (agent + recipe dossiers)
-    if (tab === 'recipes') hydrateLiveRoutines();   // refresh the live-routine indicator for the focused recipe
+    if (tab === 'recipes') { hydrateLiveRoutines(); hydrateRecipeRuns(); }   // refresh the live-routine + last-run lines for the focused recipe
     const fid = tab === 'recipes' ? focusRecipe : focusAgent;
     root.querySelectorAll('.mkt-card').forEach(c => c.classList.toggle('sel', c.dataset.id === fid));
   }
@@ -521,6 +523,7 @@ const Marketplace = (() => {
       if (summon) html += summonConfigHTML();
       html += glassHTML();          // '' in pick mode; STATION FAMILIARITY glass box in deploy mode
       html += recShelfHTML();
+      html += interestGapShelfHTML();   // a warm topic nobody covers — renders only when both counters say so
       html += prospectShelfHTML();
       html += scoutLogHTML();   // the attempt ledger (both kinds) — clean top-level view only (filtering is false here)
     }
@@ -621,32 +624,65 @@ const Marketplace = (() => {
   // ONE section-header component (audit item 8): amber struck-metal plate for roster ranks. Shelves add their own
   // gold/phosphor modifier class on top of .mkt-sect-h; the config strip uses its own plain .mkt-cfg-ttl label.
   function sectH(label, extra) { return '<div class="mkt-sect-h' + (extra ? ' ' + extra : '') + '">' + label + '</div>'; }
+  /* THE RECIPES PANE — content first.
+     It used to open on three stacked meta panels (STATION FAMILIARITY, an empty CALIBRATING scout box, FOR YOU),
+     which pushed the ▮ RECIPE LIBRARY header to y=595 in a 516px-tall roster: a Commander opening the library saw
+     ZERO recipes without scrolling, and their OWN saved recipes sat below all fifty built-ins. The order now runs
+     usefulness-first — a short personalized rail, then the library (yours on top), then the discovery/telemetry
+     furniture — with two rules that keep it honest:
+       • CONSENT LEADS, BRIEFLY. A personalized shelf must never appear above the notice explaining what it
+         learned from — but the disclosure is one sentence, not a 193px console. Until it is acknowledged a slim
+         strip carries the notice + GOT IT above the shelves; the full panel (bars, PAUSE, FORGET) lives below
+         the library either way. Putting the whole console up top was the original sin: it, an empty CALIBRATING
+         box and the shelf together pushed the library off a first-time Commander's screen entirely.
+       • A SHELF WITH REAL CARDS OUTRANKS THE LIBRARY; a shelf that is only a status line does not. The SUGGESTED
+         shelf leads when the station actually drafted something, and drops below when it has nothing to say. */
   function recipesRosterHTML() {
     if (!hasRecipes()) return '<div class="mkt-empty">the recipe library isn’t available.</div>';
+    const filtering = !!query || catFilter !== 'all';   // searching/filtering: the results own the pane (agents-tab discipline)
+    const consentFirst = !acked();
+    const suggestedHasCards = !filtering && (suggestedMissions().length > 0 || scoutRecipeDrafts().length > 0);
     let html = '<div class="mkt-toolbar"><button class="bb sm mkt-recipe-saveas">＋ SAVE A RECIPE</button>' +
       '<span class="mkt-hint">pick a recipe, fill in the blanks, and ' + esc((ctx && ctx.agentName) || 'your agent') + ' runs it in a fresh workstream</span></div>';
-    html += glassHTML();
-    html += suggestedShelfHTML();
+    if (!filtering && consentFirst) html += consentStripHTML();
+    if (suggestedHasCards) html += suggestedShelfHTML();
     html += forYouShelfHTML();
-    if (catFilter === 'all' && !query) html += scoutLogHTML();   // the attempt ledger, in the clean top-level view only
+
     const builtins = filtRecipes(Recipes.builtins());
     const customs = filtRecipes(Recipes.customs());
+    const yours = (label, empty) => '<div class="mkt-sect-h">▮ YOUR RECIPES</div>' +
+      (customs.length ? '<div class="mkt-grid mkt-rows">' + customs.map(recipeCardHTML).join('') + '</div>'
+        : '<div class="mkt-empty">' + empty + '</div>');
     // MINE view: a single "YOUR RECIPES" section (the builtins are all filtered out anyway).
     if (catFilter === 'mine') {
-      html += '<div class="mkt-sect-h">▮ YOUR RECIPES</div>';
-      html += customs.length ? '<div class="mkt-grid mkt-rows">' + customs.map(recipeCardHTML).join('') + '</div>'
-        : '<div class="mkt-empty">' + (query ? 'none of your recipes match your search.'
-            : 'no saved recipes yet — hit “＋ save a recipe” above, TWEAK any recipe into your own, or ⇪ IMPORT one from a file.') + '</div>';
-      return html;
+      return html + yours('mine', query ? 'none of your recipes match your search.'
+        : 'no saved recipes yet — hit “＋ save a recipe” above, TWEAK any recipe into your own, or ⇪ IMPORT one from a file.');
     }
+    // YOUR RECIPES leads the library whenever you HAVE any — the Commander's own work is not an appendix to a
+    // 50-card catalog. With none saved, the invitation stays below the library where it reads as a next step.
+    if (customs.length) html += yours('top', '');
     const libLabel = catFilter === 'all' ? '▮ RECIPE LIBRARY' : ('▮ ' + (CAT_LABEL[catFilter] || catFilter) + ' RECIPES');
     html += '<div class="mkt-sect-h">' + libLabel + '</div>';
     html += builtins.length ? '<div class="mkt-grid mkt-rows">' + builtins.map(recipeCardHTML).join('') + '</div>'
       : '<div class="mkt-empty">no recipes match your ' + (query ? 'search' : 'filter') + '.</div>';
-    html += '<div class="mkt-sect-h">▮ YOUR RECIPES</div>';
-    html += customs.length ? '<div class="mkt-grid mkt-rows">' + customs.map(recipeCardHTML).join('') + '</div>'
-      : '<div class="mkt-empty">no saved recipes here yet — ＋ save one, TWEAK any recipe, or ⇪ IMPORT from a file.</div>';
+    if (!customs.length) html += yours('bottom', 'no saved recipes here yet — ＋ save one, TWEAK any recipe, or ⇪ IMPORT from a file.');
+
+    // the furniture, below the shelves: the scout's cold state (a status line, not content), the learning glass
+    // box once acknowledged, and the attempt ledger — all only in the clean top-level view.
+    if (!filtering) {
+      if (!suggestedHasCards) html += suggestedShelfHTML();
+      html += glassHTML();
+      html += scoutLogHTML();
+    }
     return html;
+  }
+  // the one-line learning disclosure that rides ABOVE the personalized shelf until it's acknowledged. Same words
+  // and the same GOT IT action as the full panel's consent block (which stays below) — this is the notice, not a
+  // second copy of the console. Hidden the moment it's acked; the panel below remains the place to pause or wipe.
+  function consentStripHTML() {
+    const ps = profileApi(); if (!ps || !ps.summary || !ps.summary()) return '';
+    return '<div class="mkt-consent-strip">◉ STARNET tailors these picks from what you work on — <b>locally, on this machine, 0 bytes sent.</b> ' +
+      'Pause or wipe it anytime in STATION FAMILIARITY below. <button class="bb sm mkt-fam-ack">GOT IT</button></div>';
   }
 
   // Keep the raw value visible so a 19-character paste can be explained, never silently clipped.
@@ -881,6 +917,62 @@ const Marketplace = (() => {
     });
   }
 
+  /* ---------- WHAT THIS RECIPE ACTUALLY DID (the dossier's history line) ----------
+     "↻ ran 3×" is a counter; it never says whether any of those runs produced anything. The durable run log does:
+     every recipe launch stamps meta.recipeId down the provenance spine into the run row, and that row carries the
+     run's end reason and its ARTIFACT ledger (what the run actually wrote). Reading it back turns the dossier from
+     a menu entry into somewhere you return to — "last run 2h ago · done · produced brief.md".
+     Read-only, best-effort, and strictly what the log says: no run rows = no line at all (never an invented one).
+     agent=* because a recipe may have been launched by any crew member, or fired unattended as a routine. */
+  let recipeRuns = null, recipeRunsPending = null;
+  function loadRecipeRuns(force) {
+    if (recipeRuns && !force) return Promise.resolve(recipeRuns);
+    if (recipeRunsPending) return recipeRunsPending;
+    recipeRunsPending = fetch('/api/runs?agent=*&limit=200', { cache: 'no-store' })
+      .then(r => r.ok ? r.json() : { runs: [] })
+      .then(d => {
+        const map = {};
+        // rows come newest-first; keep the FIRST row seen per recipe (its most recent run).
+        (Array.isArray(d && d.runs) ? d.runs : []).forEach(row => {
+          const id = row && row.recipeId;
+          if (!id || map[id]) return;
+          map[id] = { ts: Number(row.ts) || 0, reason: String(row.reason || ''), artifacts: Array.isArray(row.artifacts) ? row.artifacts : [] };
+        });
+        recipeRuns = map; recipeRunsPending = null; return recipeRuns;
+      })
+      .catch(() => { recipeRuns = recipeRuns || {}; recipeRunsPending = null; return recipeRuns; });
+    return recipeRunsPending;
+  }
+  function hydrateRecipeRuns() {
+    const had = recipeRuns != null;
+    loadRecipeRuns().then(() => {
+      if (!root || tab !== 'recipes') return;
+      if (!root.querySelector('#mkt-dossier')) return;
+      if (!had) renderDossier();
+    });
+  }
+  // the file/target name of the first artifact a run recorded — a display label, never a link we can't honor.
+  function artifactLabel(list) {
+    for (const a of (list || [])) {
+      const s = String((a && (a.path || a.target)) || '').trim();
+      if (s) return s.split(/[\\/]/).pop() || s;
+    }
+    return '';
+  }
+  const RUN_REASON_WORD = { done: 'done', max_iters: 'hit its turn limit', budget: 'hit its budget', cancelled: 'cancelled', error: 'errored', refusal: 'refused' };
+  function lastRunHTML(r) {
+    if (!recipeRuns) return '';                       // no read yet — assert nothing
+    const row = recipeRuns[r.id]; if (!row) return '';
+    const when = scoutRelTime(row.ts);
+    const why = RUN_REASON_WORD[row.reason] || row.reason || '';
+    const art = artifactLabel(row.artifacts);
+    const cls = (row.reason === 'error' || row.reason === 'refusal') ? ' bad' : '';
+    return '<div class="mkt-r-lastrun' + cls + '"><span class="mkt-r-lastrun-k" aria-hidden="true">◱</span> last run' +
+      (when ? ' ' + esc(when) : '') + (why ? ' · ' + esc(why) : '') +
+      (art ? ' · produced <b>' + esc(art) + '</b>' + (row.artifacts.length > 1 ? ' <span class="dim">+' + (row.artifacts.length - 1) + '</span>' : '')
+           : ' <span class="dim">· no files recorded</span>') + '</div>';
+  }
+
   function agentDossierHTML() {
     const s = (focusAgent && Specialties.get(focusAgent)) || Specialties.builtins()[0];
     if (!s) return '<div class="mkt-dos-empty">no class selected.</div>';
@@ -1014,8 +1106,10 @@ const Marketplace = (() => {
     if (!r) return '<div class="mkt-dos-empty">no recipe selected.</div>';
     const who = (ctx && ctx.agentName) || 'your agent';
     const n = (r.params || []).length;
+    // INPUTS names the KIND of each fill-in too, so the dossier tells you what the launch form will ask for
+    // (a file chooser, a pick-one, the live connector list) before you commit to opening it.
     const inputs = n ? '<div class="mkt-block"><div class="bh">INPUTS</div><ul class="mkt-starters">' +
-      r.params.map(p => '<li>' + esc(p.label) + (p.required ? '' : ' <i>(optional)</i>') + '</li>').join('') + '</ul></div>' : '';
+      r.params.map(p => '<li>' + esc(p.label) + paramKindHTML(p) + (p.required ? '' : ' <i>(optional)</i>') + '</li>').join('') + '</ul></div>' : '';
     // fork provenance: a forked custom names its parent (a live jump would be nice but the parent may be gone).
     const parent = (r.source === 'fork' && r.forkedFrom) ? Recipes.get(r.forkedFrom) : null;
     const forkLine = (r.source === 'fork')
@@ -1035,7 +1129,7 @@ const Marketplace = (() => {
         '<div class="mkt-dos-hi"><div class="mkt-dos-name">' + esc(r.name) + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div>' +
           '<div class="mkt-dos-tag">' + esc(r.tagline) + '</div>' +
           '<div class="mkt-meta"><span class="mkt-chip lane">' + esc(CAT_LABEL[railBucket(r)] || 'GENERAL') + '</span>' + recipeLifeChip(r) + '</div></div></div>' +
-      liveRoutineBadgeHTML(r) + forkLine + cadHint +
+      lastRunHTML(r) + liveRoutineBadgeHTML(r) + forkLine + cadHint +
       '<div class="mkt-block"><div class="bh">WHAT IT SENDS</div><pre>' + esc(r.task) + '</pre></div>' +
       inputs +
       recipeGearHTML(r) +
@@ -1118,22 +1212,42 @@ const Marketplace = (() => {
     for (const k in t) { const v = Number(t[k]); if (isFinite(v) && v > bv) { bv = v; best = k; } }
     return best;
   }
+  // the searchable corpus of a class, for the learned-topic match (same shape the archetype matcher reads).
+  function specCorpus(s) {
+    return ((s && s.name) || '') + ' ' + ((s && s.tagline) || '') + ' ' + ((s && s.blurb) || '') + ' ' +
+      ((s && s.purpose) || '') + ' ' + Object.keys((s && s.tags) || {}).join(' ');
+  }
+  // the class's LEARNED-TOPIC match, or null. Same engine, thresholds and cap as the FOR YOU row (TopicMatch),
+  // so "the station knows you keep doing X" means one identical thing across every shelf in the bay.
+  const SPEC_TOPIC_SCALE = 1.5, SPEC_TOPIC_CAP = 3;
+  function specTopicMatch(s, topics) {
+    if (typeof TopicMatch === 'undefined' || !TopicMatch || !TopicMatch.match || !s) return null;
+    try { return TopicMatch.match(topics, specCorpus(s)); } catch (_) { return null; }
+  }
   function rankSpecs(items, excludeId) {
     const ps = profileApi();
     const learningOn = !!(ps && (!ps.enabled || ps.enabled()));
     const scoreFn = (learningOn && ps && ps.score) ? (t => ps.score(t)) : null;
     const gt = goalText();
+    const topics = learningOn ? learnedTopics() : [];   // same glass-box gate as the affinity scorer (see forYouShelfHTML)
     const pool = (items || []).filter(s => s && s.id !== excludeId);
     let anySignal = false;
     const scored = pool.map((s, idx) => {
       const aff = scoreFn ? (Number(scoreFn(s.tags || {})) || 0) : 0;
       const goalHits = specGoalHits(s, gt);
       const goal = goalHits.length;
-      if (aff > 0 || goal > 0) anySignal = true;
-      // the honest per-pick WHY: profile affinity beats goal match when both fire (it's the stronger signal). When
-      // it's a goal match, NAME the matched keyword (from the persisted goals text) rather than ×3 boilerplate.
-      const why = (aff > 0 ? becauseText(s) : '') || (goal > 0 ? ('matches your goal: “' + goalHits[0] + '”') : '');
-      return { s, idx, v: aff * 4 + goal * 2, why };
+      // the LEARNED-TOPIC term: strictly additive and capped, and exactly 0 until a WARM topic covers the class —
+      // so a cold station ranks byte-identically to before, and this can only ever PROMOTE a class the Commander's
+      // real observed work points at. It can never shrink the shelf.
+      const tm = specTopicMatch(s, topics);
+      const topic = tm ? TopicMatch.term(tm, SPEC_TOPIC_SCALE, SPEC_TOPIC_CAP) : 0;
+      if (aff > 0 || goal > 0 || topic > 0) anySignal = true;
+      // the honest per-pick WHY, most-specific evidence first: a learned topic NAMES the actual subject and its
+      // observation count, so it outranks both priors; then profile affinity (the stronger of the two remaining);
+      // then a goal match, which NAMES the matched keyword rather than ×3 boilerplate.
+      const why = (topic > 0 ? TopicMatch.reason(tm) : '') ||
+        (aff > 0 ? becauseText(s) : '') || (goal > 0 ? ('matches your goal: “' + goalHits[0] + '”') : '');
+      return { s, idx, v: aff * 4 + goal * 2 + topic, why };
     });
     if (anySignal) {
       return { personalized: true, items: scored.filter(x => x.v > 0).sort((a, b) => (b.v - a.v) || (a.idx - b.idx)).slice(0, 3) };
@@ -1175,6 +1289,24 @@ const Marketplace = (() => {
       .filter(x => x.s && x.s.id !== excludeId);
     if (!cards.length) return '';
     return '<div class="mkt-sect-h mkt-rec-sect mkt-curated-sect">◆ CURATED FOR YOUR WORKFLOW — based on your recent runs · the next hire your real work points to</div>' +
+      '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
+  }
+  /* ---------- UNCOVERED: a warm learned topic NOBODY on the crew handles (2026-07-28) ----------
+     The curated shelf above can only ever rank classes whose kit the Commander's work ALREADY touches, so it can
+     never surface the recommendation that actually grows the station: "you keep asking about X and no one here
+     can do it." This shelf answers that from two real persisted counters — the topic's own observation count and
+     the crew's actual coverage — and renders ONLY when both say so. Empty (cold topics, or a crew that already
+     covers everything warm) → '' , so nothing that renders today can be displaced by it. */
+  function interestGapShelfHTML() {
+    if (typeof RecruiterStore === 'undefined' || !RecruiterStore.interestGaps) return '';
+    let res; try { res = RecruiterStore.interestGaps(); } catch (_) { return ''; }
+    if (!res || !res.items || !res.items.length) return '';
+    const excludeId = ctx && ctx.currentSpecialtyId;
+    const cards = res.items
+      .map(it => ({ s: Specialties.get(it.classId), why: it.why }))
+      .filter(x => x.s && x.s.id !== excludeId);
+    if (!cards.length) return '';
+    return '<div class="mkt-sect-h mkt-rec-sect mkt-gap-sect">◆ UNCOVERED — work you keep doing that nobody on the crew handles</div>' +
       '<div class="mkt-rec-rail">' + cards.map(x => recCardHTML(x.s, x.why)).join('') + '</div>';
   }
   /* ---------- PROSPECTS: bespoke DRAFTS the station authored from the Commander's real work (Slice 4) ----------
@@ -1224,17 +1356,45 @@ const Marketplace = (() => {
     const scoreFn = (ps && ps.score && !learningOff) ? (tags => ps.score(tags)) : null;
     // launches = the Commander's OWN real per-recipe launch counts (scout usage read) — engagement feeds the rank.
     let launches = null; try { launches = (typeof ProspectStore !== 'undefined' && ProspectStore.launches) ? ProspectStore.launches() : null; } catch (_) {}
-    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: goalText(), launches: launches, limit: 4 });
+    // topics ride the SAME glass-box switch as the affinity scorer: the learned histogram IS a model of the
+    // Commander, so learning OFF means it may not rank anything (consent), and — because a positive term flips
+    // `anySignal` — it also guarantees the row can never shrink: whenever topics are live the profile is live
+    // too, so the positive filter was already engaged and an additive term can only ever ADD survivors.
+    const topics = learningOff ? [] : learnedTopics();
+    const gt = goalText();
+    // THREE, not four: the rail wraps to a second row at four cards on a standard bay, and a shelf that spends
+    // two rows above the library is the thing that pushed the catalog off screen. Three also matches the
+    // specialists shelf next door, so both tabs speak the same visual language.
+    const items = Recipes.rankRecipes(Recipes.list(), { score: scoreFn, goalText: gt, launches: launches, topics: topics, limit: 3 });
     if (!items || !items.length) return '';
+    // the honest per-card WHY, recomputed from the SAME inputs that ranked the row (Recipes.forYouReason). This
+    // shelf blends four real signals and used to explain NONE of them — every other shelf in the bay names its
+    // reason, and truthful telemetry means the flagship row should too.
+    const reasonFor = (r) => {
+      let why = '';
+      try { why = Recipes.forYouReason ? (Recipes.forYouReason(r, { topics: topics, goalText: gt, launches: launches }) || '') : ''; } catch (_) { why = ''; }
+      return why || (scoreFn ? becauseText(r) : '');   // affinity copy lives in ONE place (BECAUSE) — fall back to it
+    };
     return '<div class="mkt-sect-h mkt-foryou-sect">◈ FOR YOU</div><div class="mkt-rec-rail">' +
-      items.map(forYouCardHTML).join('') + '</div>';
+      items.map(r => forYouCardHTML(r, reasonFor(r))).join('') + '</div>';
   }
-  function forYouCardHTML(r) {
+  // the station's LEARNED interest topics (server truth: GET /api/scout, cached in ProspectStore). Empty until a
+  // read lands or the histogram warms — and an empty list makes every topic term exactly 0, so the shelves rank
+  // precisely as they did before topics existed. The frontend never asserts topic state it hasn't been served.
+  function learnedTopics() {
+    try { return (typeof ProspectStore !== 'undefined' && ProspectStore.interests) ? (ProspectStore.interests() || []) : []; }
+    catch (_) { return []; }
+  }
+  // MERGE NOTE: this branch grew its own forYouWhy (goal keyword → affinity → launches). Recipes.forYouReason —
+  // which reasonFor above calls — is the same idea with the learned-topic term in front of it, so the local copy
+  // is dropped rather than kept as a second, quietly-diverging explanation of the same row.
+  function forYouCardHTML(r, why) {
     const cat = CAT_LABEL[railBucket(r)] || 'GENERAL';
     return '<button class="mkt-rec mkt-foryou" type="button" data-id="' + esc(r.id) + '" style="--accent:' + esc(r.accent) + '">' +
       '<div class="mkt-rec-top">' + sealHTML(r, false) +
         '<div class="mkt-rec-id"><div class="mkt-rec-name">' + esc(r.name) + '</div><div class="mkt-rec-tag">' + esc(r.tagline) + '</div></div></div>' +
-      '<div class="mkt-rec-why"><span class="mkt-rec-why-k">' + esc(cat) + '</span>' + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') + '</div></button>';
+      '<div class="mkt-rec-why"><span class="mkt-rec-why-k">' + esc(cat) + '</span>' + (r.custom ? ' <span class="mkt-badge">CUSTOM</span>' : '') +
+        (why ? ' <span class="mkt-foryou-why">' + esc(why) + '</span>' : '') + '</div></button>';
   }
   function recCardHTML(s, why) {
     // `why` comes from rankSpecs: the profile-affinity reason, a goal-match note, or the cold-start lane label
@@ -1428,21 +1588,24 @@ const Marketplace = (() => {
 
     const skinWrap = stage.querySelector('#mkt-skin-picker');
     if (skinWrap) {
+      // stage handle (assigned by the mount below): drive THIS stage, not the module-level shortcut — the
+      // agent dossier's CONFIG › SKIN stage can be open behind this modal and whichever mounted last owns it.
+      let skinStage = null;
       skinWrap.querySelectorAll('.skin-thumb').forEach(b => {
         b.addEventListener('click', () => {
           pickedSummonSkin = b.dataset.skin;
           skinWrap.querySelectorAll('.skin-thumb').forEach(x => x.classList.remove('sel'));
           b.classList.add('sel'); sfx('click');
-          if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSummonSkin);
+          if (skinStage) skinStage.show(pickedSummonSkin);
         });
         // hover scrubs the live stage so you can compare without committing; leaving snaps back to the pick
-        b.addEventListener('mouseenter', () => { if (typeof SkinStage !== 'undefined') SkinStage.show(b.dataset.skin); });
+        b.addEventListener('mouseenter', () => { if (skinStage) skinStage.show(b.dataset.skin); });
       });
-      skinWrap.addEventListener('mouseleave', () => { if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSummonSkin); });
-      // bind the live preview stage to the picked skin (the modal is the only stage visible while it's open)
+      skinWrap.addEventListener('mouseleave', () => { if (skinStage) skinStage.show(pickedSummonSkin); });
+      // bind the live preview stage to the picked skin
       const stageImg = stage.querySelector('#mkt-skin-stage-img');
       const stageName = stage.querySelector('#mkt-skin-stage-name');
-      if (stageImg && typeof SkinStage !== 'undefined') SkinStage.mount(stageImg, stageName, pickedSummonSkin);
+      if (stageImg && typeof SkinStage !== 'undefined') skinStage = SkinStage.mount(stageImg, stageName, pickedSummonSkin);
     }
 
     // SUMMON model picker: fill the catalog async, then track the choice ('' model → inherit the orchestrator's).
@@ -1697,8 +1860,10 @@ const Marketplace = (() => {
     const sc = scope || root;
     const famHead = sc.querySelector('.mkt-fam-head');
     if (famHead) famHead.addEventListener('click', () => { glassOpen = !glassOpen; sfx('click'); renderStage(); });
-    const famAck = sc.querySelector('.mkt-fam-ack');
-    if (famAck) famAck.addEventListener('click', e => { e.stopPropagation(); setAcked(); sfx('click'); renderStage(); });
+    // BOTH consent surfaces carry this button — the slim strip above the shelf and the full panel's block below.
+    // querySelectorAll, not querySelector: wiring only the first would leave one of the two GOT ITs inert.
+    sc.querySelectorAll('.mkt-fam-ack').forEach(b =>
+      b.addEventListener('click', e => { e.stopPropagation(); setAcked(); sfx('click'); renderStage(); }));
     const famPause = sc.querySelector('.mkt-fam-pause');
     if (famPause) famPause.addEventListener('click', () => {
       const ps = profileApi(); if (!ps || !ps.setEnabled) return;
@@ -2079,6 +2244,78 @@ const Marketplace = (() => {
     html += '<option value="custom"' + (launchCadence === 'custom' ? ' selected' : '') + '>custom…</option>';
     return html;
   }
+  /* ---------- TYPED FILL-IN CONTROLS (the launch form's inputs) ----------
+     One textarea for every kind of value made the form lie about what it wanted: "point me at a file" meant
+     "type an absolute path from memory", and a recipe with two sensible options gave no hint that there were
+     only two. Each param now renders the control its declared type deserves. Every control still carries the
+     SAME contract the collector reads — class `mkt-p-in`, a `data-key`, and a `.value` — so collectLaunchValues,
+     requiredMissing and fillTask are untouched and a typed recipe launches exactly like an untyped one.
+       text      textarea (unchanged)
+       choice    chip row (single-select) writing through a hidden input
+       file      path input + ⌸ BROWSE (native OS file chooser via POST /api/pickpath)
+       folder    path input + ⌸ BROWSE (the same chooser, directory mode)
+       connector one <select>, filled from the live /api/connectors list after mount (honest empty state when none) */
+  const PARAM_KIND_LABEL = { choice: 'pick one', file: 'a file', folder: 'a folder', connector: 'a connected service' };
+  function paramKindHTML(p) {
+    const lbl = PARAM_KIND_LABEL[p && p.type];
+    return lbl ? ' <span class="mkt-p-kind">' + esc(lbl) + '</span>' : '';
+  }
+  function paramControlHTML(p, val) {
+    const key = esc(p.key), ph = esc(p.placeholder || '');
+    if (p.type === 'choice' && (p.options || []).length >= 2) {
+      const chips = p.options.map(o =>
+        '<button type="button" class="mkt-p-chip' + (o === val ? ' sel' : '') + '" data-key="' + key + '" data-val="' + esc(o) + '">' + esc(o) + '</button>'
+      ).join('');
+      return '<span class="mkt-p-chips" data-key="' + key + '">' + chips + '</span>' +
+        '<input type="hidden" class="mkt-p-in" data-key="' + key + '" value="' + esc(val) + '">';
+    }
+    if (p.type === 'file' || p.type === 'folder') {
+      const what = p.type === 'file' ? 'file' : 'folder';
+      return '<span class="mkt-p-path">' +
+        '<input type="text" class="mkt-in mkt-p-in" data-key="' + key + '" spellcheck="false" placeholder="' + (ph || esc('the ' + what + ' path')) + '" value="' + esc(val) + '">' +
+        '<button type="button" class="bb sm mkt-p-browse" data-key="' + key + '" data-mode="' + esc(p.type) + '" title="choose a ' + what + ' on this machine">⌸ BROWSE</button>' +
+        '</span><span class="mkt-p-note" data-note="' + key + '">picking a ' + what + ' fills the box — nothing is read until you launch</span>';
+    }
+    if (p.type === 'connector') {
+      return '<select class="mkt-in mkt-p-in mkt-p-conn" data-key="' + key + '" data-want="' + esc(val) + '">' +
+        '<option value="">… loading your connected services</option></select>';
+    }
+    return '<textarea class="mkt-in mkt-p-in" data-key="' + key + '" rows="2" placeholder="' + ph + '">' + esc(val) + '</textarea>';
+  }
+  // fill every connector <select> from the LIVE list. Honest states: no sidecar / no connectors say so instead of
+  // rendering an empty dropdown, and the field stays typable-free (a blank value just leaves the token unfilled).
+  function hydrateConnectorSelects(stage, onDone) {
+    const sels = stage.querySelectorAll('.mkt-p-conn'); if (!sels.length) return;
+    const done = () => { if (typeof onDone === 'function') onDone(); };
+    const paint = (opts, note) => {
+      sels.forEach(sel => {
+        const want = sel.dataset.want || '';
+        sel.innerHTML = (note ? '<option value="">' + esc(note) + '</option>' : '<option value="">— pick a service —</option>') +
+          opts.map(c => '<option value="' + esc(c.id) + '"' + (c.id === want ? ' selected' : '') + '>' + esc(c.label || c.id) + '</option>').join('');
+      });
+      done();
+    };
+    if (typeof fetch === 'undefined') return paint([], 'no station — type the service name in the directive instead');
+    fetch('/api/connectors', { cache: 'no-store' }).then(r => r.ok ? r.json() : null).then(j => {
+      const list = (j && j.connectors) || [];
+      if (!list.length) return paint([], 'no connected services yet — add one in ⇄ TOOLSETS');
+      paint(list.map(c => ({ id: c.id, label: c.label || c.id })), '');
+    }).catch(() => paint([], 'could not reach the station'));
+  }
+  // the native chooser behind ⌸ BROWSE. Cancel is silent; a real failure explains itself and leaves the typed
+  // path alone (the honest fallback everywhere in this app is "type it yourself").
+  function browseForPath(mode, onPicked) {
+    if (typeof fetch === 'undefined') { note('no station — type the path instead', 'bad'); return; }
+    fetch('/api/pickpath', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ mode: mode }) })
+      .then(res => res.json().then(j => ({ ok: res.ok, j })).catch(() => ({ ok: false, j: null })))
+      .then(({ ok, j }) => {
+        if (ok && j && j.ok && j.path) { onPicked(String(j.path)); sfx('click'); return; }
+        if (ok && j && j.ok && j.cancelled) return;                       // a cancel is not an error
+        note((j && j.reason) || 'no picker available — type the path instead', 'bad');
+      })
+      .catch(() => note('could not reach the station', 'bad'));
+  }
+
   function launchFormHTML() {
     const r = launchId && hasRecipes() ? Recipes.get(launchId) : null;
     if (!r) { view = 'grid'; return '<div class="mkt-roster">' + rosterHTML() + '</div>'; }
@@ -2089,11 +2326,14 @@ const Marketplace = (() => {
     const lastVals = (typeof LaunchMemory !== 'undefined' && LaunchMemory.get) ? (LaunchMemory.get(r.id) || {}) : {};
     let prefilled = false;
     const fields = (r.params || []).map(p => {
-      const val = (typeof lastVals[p.key] === 'string' && lastVals[p.key].trim()) ? lastVals[p.key] : '';
-      if (val) prefilled = true;
-      return '<label class="mkt-lbl">' + esc(p.label) +
-        (p.required ? ' <span class="mkt-req" title="required">*</span>' : ' <span class="mkt-opt">(optional)</span>') +
-        '<textarea class="mkt-in mkt-p-in" data-key="' + esc(p.key) + '" rows="2" placeholder="' + esc(p.placeholder || '') + '">' + esc(val) + '</textarea></label>';
+      const val = (typeof lastVals[p.key] === 'string' && lastVals[p.key].trim()) ? lastVals[p.key] : (p.default || '');
+      if (val && lastVals[p.key]) prefilled = true;
+      // label text and its required/optional marker share ONE row: .mkt-lbl is a flex column, so an unwrapped
+      // marker becomes its own orphan line under the label ("Topic" / "*" stacked).
+      return '<label class="mkt-lbl mkt-p-lbl" data-type="' + esc(p.type || 'text') + '">' +
+        '<span class="mkt-p-lbl-t">' + esc(p.label) +
+          (p.required ? ' <span class="mkt-req" title="required">*</span>' : ' <span class="mkt-opt">(optional)</span>') +
+        '</span>' + paramControlHTML(p, val) + '</label>';
     }).join('');
     const prefillHint = prefilled ? '<p class="mkt-hint mkt-prefill-hint">↺ using your last inputs — edit anything before you run</p>' : '';
     // TASK BRIEF v2 intake: the recipe's declared material decisions as one-tap chip rows. The recommended
@@ -2134,12 +2374,26 @@ const Marketplace = (() => {
     const modeNote = (launchMode === 'routine')
       ? '◷ fills the blanks ONCE, then runs the same directive on your chosen cadence as <b>' + esc(who) + '</b> — it becomes a ROUTINE (manage or stop it any time in ⏱ ROUTINES).'
       : '▸ opens a fresh workstream and sets <b>' + esc(who) + '</b> to work on it — or put it on a schedule.';
+    /* WHAT GETS SENT — the filled directive, live. The dossier shows the raw template with its {tokens}; the last
+       thing the Commander saw before committing used to be a form full of blanks, so the actual instruction the
+       agent receives was never visible anywhere. This renders the REAL output of Recipes.fillTask against the
+       values in the form right now (including the intake decisions appended at the bottom), refreshed on every
+       keystroke and chip tap — the same primitive the launch itself calls, so it cannot drift from what runs. */
+    const preview = '<div class="mkt-r-pv-wrap' + (launchPreviewOpen ? ' open' : '') + '">' +
+      '<button type="button" class="mkt-r-pv-head" aria-expanded="' + (launchPreviewOpen ? 'true' : 'false') + '">' +
+        '<span class="mkt-r-pv-caret" aria-hidden="true">' + (launchPreviewOpen ? '▾' : '▸') + '</span>' +
+        '<span class="mkt-r-pv-ttl">WHAT GETS SENT</span>' +
+        '<span class="mkt-r-pv-sub">the exact directive ' + esc(who) + ' receives</span>' +
+      '</button>' +
+      (launchPreviewOpen ? '<pre class="mkt-r-pv-body" id="mkt-l-preview"></pre>' : '') +
+    '</div>';
     return '<div class="mkt-save mkt-launch-form">' +
       '<div class="mkt-save-h">' + esc((launchMode === 'routine' ? '◷ MAKE ROUTINE — ' : '▸ LAUNCH — ') + r.name) + '</div>' +
       '<p class="mkt-hint">' + esc(r.blurb || r.tagline) + '</p>' +
       (fields || '<p class="mkt-hint">this recipe needs no setup — just launch it.</p>') +
       intakeRows +
       prefillHint +
+      preview +
       routinePanel +
       '<p class="mkt-launch-note">' + modeNote + '</p>' +
       acts + '</div>';
@@ -2161,8 +2415,16 @@ const Marketplace = (() => {
     const missing = Recipes.requiredMissing(r, values);
     if (missing.length) {
       sfx('bad');
-      missing.forEach(k => { const f = stage.querySelector('.mkt-p-in[data-key="' + k + '"]'); if (f) f.classList.add('mkt-bad'); });
-      const f0 = stage.querySelector('.mkt-p-in[data-key="' + missing[0] + '"]'); if (f0) f0.focus();
+      // mark what the Commander can SEE: a choice row's carrier input is hidden, so redden its chip row instead
+      // (a red outline on a display:none input is an invisible error, and focusing it does nothing at all).
+      missing.forEach(k => {
+        const f = stage.querySelector('.mkt-p-in[data-key="' + k + '"]');
+        const chips = stage.querySelector('.mkt-p-chips[data-key="' + k + '"]');
+        if (chips) chips.classList.add('mkt-bad'); else if (f) f.classList.add('mkt-bad');
+      });
+      const focusable = stage.querySelector('textarea.mkt-p-in[data-key="' + missing[0] + '"], input[type="text"].mkt-p-in[data-key="' + missing[0] + '"], select.mkt-p-in[data-key="' + missing[0] + '"]') ||
+        stage.querySelector('.mkt-p-chips[data-key="' + missing[0] + '"] .mkt-p-chip');
+      if (focusable) focusable.focus();
       note('fill in: ' + missing.join(', '), 'bad'); return null;
     }
     return values;
@@ -2170,14 +2432,72 @@ const Marketplace = (() => {
   function wireLaunchForm(stage) {
     const back = stage.querySelector('.mkt-cancel');
     if (back) back.addEventListener('click', () => { sfx('click'); view = 'grid'; launchId = null; launchMode = 'run'; renderStage(); });
-    stage.querySelectorAll('.mkt-p-in').forEach(inp => inp.addEventListener('input', () => inp.classList.remove('mkt-bad')));
+
+    /* the live "WHAT GETS SENT" preview: recompose through the REAL launch primitive on every edit. Values are
+       read exactly the way collectLaunchValues reads them (minus its blank-field gate), so what is shown here is
+       literally what RUN NOW would send — an empty required field just leaves its {token} visible. */
+    const previewEl = () => stage.querySelector('#mkt-l-preview');
+    const paintPreview = () => {
+      const el = previewEl(); if (!el) return;
+      const r = launchId && hasRecipes() ? Recipes.get(launchId) : null; if (!r) return;
+      const values = {};
+      stage.querySelectorAll('.mkt-p-in').forEach(inp => { values[inp.dataset.key] = inp.value; });
+      const intake = {};
+      stage.querySelectorAll('.mkt-intake').forEach(rowEl => {
+        const sel = rowEl.querySelector('.mkt-intake-opt.sel');
+        const val = sel ? String(sel.dataset.val || '').trim() : '';
+        if (val && rowEl.dataset.dim) intake[rowEl.dataset.dim] = val;
+      });
+      if (Object.keys(intake).length) values.__intake = intake;
+      // an unfilled required blank shows as [Its Label], never as a closed-up sentence. fillTask deliberately
+      // swallows a gone token and tidies the gap — right for a launch, wrong for a preview, where it would read
+      // as a complete instruction that silently lost its subject ("Review adversarially — …" with no target).
+      // Same [Label] convention the recipe EDITOR's preview uses, so both previews speak one language.
+      const missing = Recipes.requiredMissing(r, values);
+      const shown = Object.assign({}, values);
+      (r.params || []).forEach(p => { if (missing.indexOf(p.key) >= 0) shown[p.key] = '[' + (p.label || p.key) + ']'; });
+      el.textContent = Recipes.fillTask(r, shown) || '';
+      el.classList.toggle('has-blanks', missing.length > 0);
+    };
+    const pvHead = stage.querySelector('.mkt-r-pv-head');
+    if (pvHead) pvHead.addEventListener('click', () => { launchPreviewOpen = !launchPreviewOpen; sfx('click'); renderStage(); });
+
+    stage.querySelectorAll('.mkt-p-in').forEach(inp => inp.addEventListener('input', () => { inp.classList.remove('mkt-bad'); paintPreview(); }));
+    stage.querySelectorAll('select.mkt-p-in').forEach(sel => sel.addEventListener('change', paintPreview));
+    // CHOICE chips: single-select per row, writing through the hidden input the collector reads.
+    stage.querySelectorAll('.mkt-p-chips').forEach(rowEl => {
+      rowEl.querySelectorAll('.mkt-p-chip').forEach(btn => btn.addEventListener('click', () => {
+        const hidden = stage.querySelector('input.mkt-p-in[data-key="' + btn.dataset.key + '"]');
+        const already = btn.classList.contains('sel');
+        rowEl.querySelectorAll('.mkt-p-chip').forEach(b => b.classList.remove('sel'));
+        if (!already) { btn.classList.add('sel'); if (hidden) hidden.value = btn.dataset.val || ''; }
+        else if (hidden) hidden.value = '';                   // tapping the selected chip clears it
+        rowEl.classList.remove('mkt-bad');
+        sfx('click'); paintPreview();
+      }));
+    });
+    // ⌸ BROWSE: the native OS chooser fills the path box (and nothing else happens until launch).
+    stage.querySelectorAll('.mkt-p-browse').forEach(btn => btn.addEventListener('click', () => {
+      const field = stage.querySelector('input.mkt-p-in[data-key="' + btn.dataset.key + '"]');
+      btn.disabled = true;
+      const done = () => { btn.disabled = false; };
+      browseForPath(btn.dataset.mode === 'file' ? 'file' : 'folder', (picked) => {
+        if (field) { field.value = picked; field.classList.remove('mkt-bad'); }
+        paintPreview();
+      });
+      // the dialog resolves on the user's clock; re-enable on the next tick either way (single-flight is server-side).
+      setTimeout(done, 400);
+    }));
+    hydrateConnectorSelects(stage, paintPreview);
+
     // TASK BRIEF v2 intake chips: single-select per decision row (tap toggles which chip holds .sel).
     stage.querySelectorAll('.mkt-intake').forEach(rowEl => {
       rowEl.querySelectorAll('.mkt-intake-opt').forEach(btn => btn.addEventListener('click', () => {
         rowEl.querySelectorAll('.mkt-intake-opt').forEach(b => b.classList.remove('sel'));
-        btn.classList.add('sel'); sfx('click');
+        btn.classList.add('sel'); sfx('click'); paintPreview();
       }));
     });
+    paintPreview();
 
     // RUN NOW (from run mode) — the existing path, unchanged.
     const go = stage.querySelector('.mkt-do-launch');
@@ -2245,7 +2565,11 @@ const Marketplace = (() => {
       makeRoutine(r, values, schedule);
     });
 
-    const first = stage.querySelector('.mkt-p-in'); if (first) first.focus();
+    // focus the first control the Commander can actually type in — a choice row's carrier input is hidden, so
+    // reaching for `.mkt-p-in` blindly would focus nothing and leave the form feeling dead on open.
+    const first = stage.querySelector('textarea.mkt-p-in, input[type="text"].mkt-p-in, select.mkt-p-in') ||
+      stage.querySelector('.mkt-p-chip');
+    if (first) first.focus();
   }
   // POST /api/cron for MAKE ROUTINE. The filled directive is the routine's prompt (params filled ONCE, now); the
   // meta.recipeId stamps provenance so the ROUTINES console + the recipe dossier can both show the link. The agentId
@@ -2297,7 +2621,10 @@ const Marketplace = (() => {
     // params: plain, editable copies ({key,label,placeholder,required}). A blank create starts with none — the
     // author writes {tokens} and the param rows are derived on save (paramsFromTemplate) if they leave them empty.
     editParams = (Array.isArray(seed.params) ? seed.params : []).map(p => ({
-      key: p.key || '', label: p.label || '', placeholder: p.placeholder || '', required: p.required !== false
+      key: p.key || '', label: p.label || '', placeholder: p.placeholder || '', required: p.required !== false,
+      // typed fill-ins carry through every editor entry (create / tweak / edit / bottle / scout draft). `options`
+      // lives as the raw comma line the author types; normParamOptions splits + cleans it on save.
+      type: p.type || 'text', options: (Array.isArray(p.options) ? p.options : []).join(', ')
     }));
     view = 'recipesave'; renderStage();
   }
@@ -2323,13 +2650,30 @@ const Marketplace = (() => {
     html += CADENCE_OPTS.map(c => '<option value="' + esc(c.id) + '"' + (editCadence === c.id ? ' selected' : '') + '>' + esc(c.label) + '</option>').join('');
     return html;
   }
-  // one editable param row: key + label + placeholder + required toggle + remove. Keys are the {tokens} in the
-  // directive; the live preview keys off them. An empty grid means "derive from the template on save".
+  // the KIND of control a fill-in gets at launch (recipes.js PARAM_TYPES). Authoring it here is what lets a
+  // recipe ask for a file with a real chooser instead of hoping the Commander types a path correctly.
+  const PARAM_TYPE_OPTS = [
+    { id: 'text', label: 'text' },
+    { id: 'choice', label: 'pick one' },
+    { id: 'file', label: 'a file' },
+    { id: 'folder', label: 'a folder' },
+    { id: 'connector', label: 'a service' }
+  ];
+  // one editable param row: key + label + hint/options + type + required toggle + remove. Keys are the {tokens}
+  // in the directive; the live preview keys off them. An empty grid means "derive from the template on save".
+  // A 'choice' row swaps its hint box for the OPTIONS line (comma-separated) — the two never both apply.
   function paramRowHTML(p, i) {
-    return '<div class="mkt-r-prow" data-i="' + i + '">' +
+    const type = p.type || 'text';
+    const isChoice = type === 'choice';
+    return '<div class="mkt-r-prow" data-i="' + i + '" data-type="' + esc(type) + '">' +
       '<input class="mkt-in mkt-r-pkey" data-i="' + i + '" maxlength="24" value="' + esc(p.key || '') + '" placeholder="key (e.g. topic)" aria-label="param key">' +
       '<input class="mkt-in mkt-r-plabel" data-i="' + i + '" maxlength="32" value="' + esc(p.label || '') + '" placeholder="label (optional)" aria-label="param label">' +
-      '<input class="mkt-in mkt-r-pph" data-i="' + i + '" maxlength="48" value="' + esc(p.placeholder || '') + '" placeholder="hint (optional)" aria-label="param placeholder">' +
+      (isChoice
+        ? '<input class="mkt-in mkt-r-popts" data-i="' + i + '" maxlength="180" value="' + esc(p.options || '') + '" placeholder="options, comma separated" aria-label="choice options">'
+        : '<input class="mkt-in mkt-r-pph" data-i="' + i + '" maxlength="48" value="' + esc(p.placeholder || '') + '" placeholder="hint (optional)" aria-label="param placeholder">') +
+      '<select class="mkt-in mkt-r-ptype" data-i="' + i + '" aria-label="what kind of value">' +
+        PARAM_TYPE_OPTS.map(t => '<option value="' + esc(t.id) + '"' + (type === t.id ? ' selected' : '') + '>' + esc(t.label) + '</option>').join('') +
+      '</select>' +
       '<label class="mkt-r-preq" title="required at launch"><input type="checkbox" class="mkt-r-preq-cb" data-i="' + i + '"' + (p.required ? ' checked' : '') + '> req</label>' +
       '<button type="button" class="bb xs danger mkt-r-prm" data-i="' + i + '" aria-label="remove param">✕</button>' +
       '</div>';
@@ -2395,16 +2739,24 @@ const Marketplace = (() => {
       stage.querySelectorAll('.mkt-r-prow').forEach(row => {
         const i = +row.dataset.i; if (!editParams[i]) return;
         const k = row.querySelector('.mkt-r-pkey'), l = row.querySelector('.mkt-r-plabel'), ph = row.querySelector('.mkt-r-pph'), rq = row.querySelector('.mkt-r-preq-cb');
+        const ty = row.querySelector('.mkt-r-ptype'), op = row.querySelector('.mkt-r-popts');
         if (k) editParams[i].key = (k.value || '').trim();
         if (l) editParams[i].label = (l.value || '').trim();
         if (ph) editParams[i].placeholder = (ph.value || '').trim();
+        if (op) editParams[i].options = (op.value || '').trim();     // the raw comma line; split on save
+        if (ty) editParams[i].type = ty.value || 'text';
         if (rq) editParams[i].required = !!rq.checked;
       });
     };
+    // one authored row -> the param descriptor shape recipes.js normalizes (options split from the comma line).
+    const paramOut = (p) => ({
+      key: p.key, label: p.label || p.key, placeholder: p.placeholder, required: p.required,
+      type: p.type || 'text', options: String(p.options || '').split(',').map(s => s.trim()).filter(Boolean)
+    });
     // build the effective recipe for previewing: explicit fill-in rows if any have a key, else derive from tokens.
     const effectiveParams = (task) => {
       const explicit = editParams.filter(p => p.key);
-      if (explicit.length) return explicit.map(p => ({ key: p.key, label: p.label || p.key, placeholder: p.placeholder, required: p.required }));
+      if (explicit.length) return explicit.map(paramOut);
       return Recipes.paramsFromTemplate(task);
     };
     const paintPreview = () => {
@@ -2434,12 +2786,14 @@ const Marketplace = (() => {
       grid.querySelectorAll('.mkt-r-prm').forEach(b => b.addEventListener('click', () => {
         syncParamsFromDOM(); editParams.splice(+b.dataset.i, 1); sfx('click'); rerenderGrid();
       }));
-      grid.querySelectorAll('.mkt-r-pkey, .mkt-r-plabel, .mkt-r-pph').forEach(inp => inp.addEventListener('input', () => { syncParamsFromDOM(); paintPreview(); }));
+      grid.querySelectorAll('.mkt-r-pkey, .mkt-r-plabel, .mkt-r-pph, .mkt-r-popts').forEach(inp => inp.addEventListener('input', () => { syncParamsFromDOM(); paintPreview(); }));
       grid.querySelectorAll('.mkt-r-preq-cb').forEach(cb => cb.addEventListener('change', () => { syncParamsFromDOM(); paintPreview(); }));
+      // switching a row to/from 'pick one' swaps its third box (hint <-> options), so the grid re-renders.
+      grid.querySelectorAll('.mkt-r-ptype').forEach(sel => sel.addEventListener('change', () => { syncParamsFromDOM(); sfx('click'); rerenderGrid(); }));
     };
     wireGridRows();
     const padd = stage.querySelector('.mkt-r-padd');
-    if (padd) padd.addEventListener('click', () => { syncParamsFromDOM(); editParams.push({ key: '', label: '', placeholder: '', required: true }); sfx('click'); rerenderGrid(); });
+    if (padd) padd.addEventListener('click', () => { syncParamsFromDOM(); editParams.push({ key: '', label: '', placeholder: '', required: true, type: 'text', options: '' }); sfx('click'); rerenderGrid(); });
 
     // gear chips (toggle in/out of editGear).
     stage.querySelectorAll('#mkt-r-gear .mkt-chip.pick').forEach(b => b.addEventListener('click', () => {
@@ -2463,7 +2817,7 @@ const Marketplace = (() => {
       if (!name) { sfx('bad'); note('give your recipe a name', 'bad'); stage.querySelector('#mkt-r-name').focus(); return; }
       if (!task) { sfx('bad'); note('write the directive your agent should run', 'bad'); stage.querySelector('#mkt-r-task').focus(); return; }
       syncParamsFromDOM();
-      const explicit = editParams.filter(p => p.key).map(p => ({ key: p.key, label: p.label || p.key, placeholder: p.placeholder, required: p.required }));
+      const explicit = editParams.filter(p => p.key).map(paramOut);
       const rec = {
         name, emoji: (stage.querySelector('#mkt-r-emoji').value || '✦').trim() || '✦',
         tagline: (stage.querySelector('#mkt-r-tag').value || '').trim(), task,

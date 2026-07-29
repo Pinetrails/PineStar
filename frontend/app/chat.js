@@ -125,8 +125,12 @@ const Chat = (() => {
     pill.setAttribute('aria-label', isNew ? 'Jump to newest messages' : 'Scroll to latest');
     positionNewPill(pill);
     pill.classList.add('show');
+    if (log) log.classList.add('pill-clear');   // reserve the pill's height at the foot of the scroll so it never covers the newest line
   }
-  function hideNewPill() { const p = el('comms-newpill'); if (p) { p.classList.remove('show'); p.classList.remove('hasnew'); } }
+  function hideNewPill() {
+    const p = el('comms-newpill'); if (p) { p.classList.remove('show'); p.classList.remove('hasnew'); }
+    if (log) log.classList.remove('pill-clear');
+  }
 
   /* COMMS PROCESSING TIMER — a live wall-clock readout in the header (▸ thinking · 3s) that counts how long
      the DISPLAYED stream's turn has been running. The start instant lives on the channel (Channels.startedAt),
@@ -244,6 +248,7 @@ const Chat = (() => {
   // resolve the live card into a compact one-line summary that STAYS in the transcript. opts: { error, raw,
   // stopped, endReason, steps, cost }. Truthful: steps/cost only appear when a real number is supplied.
   function resolvePresence(ws, opts) {
+    foldBriefCards();   // the run is over → any "my read" contract for it can no longer steer; retire + fold it (before the early-out, so the registry can't hold a stale card)
     if (!isActiveWs(ws)) { clearPresence(); return; }
     opts = opts || {};
     const started = (typeof Channels !== 'undefined') ? Channels.startedAtOf(ws.id) : 0;
@@ -852,6 +857,16 @@ const Chat = (() => {
       ? ModelDock.labels.short(model)
       : ((model.split('/').pop() || model).toUpperCase());
   }
+  // The COMMS header's model slot, de-duplicated against the composer's model-dock chip (see renderIdBar).
+  // Never invents a name: every branch reads the same real roster/localStorage state agentModelText does.
+  function pinReadout(a) {
+    const mine = agentModelText(a);
+    if (!a.model) return mine;                                    // unpinned — "follows station default", no bogus "pin:" prefix
+    const station = (typeof Harness !== 'undefined' && Harness.getModel) ? String(Harness.getModel() || '') : '';
+    const stationShort = (station && typeof ModelDock !== 'undefined' && ModelDock.labels && ModelDock.labels.short)
+      ? ModelDock.labels.short(station) : '';
+    return (stationShort && mine === stationShort) ? 'pinned' : ('pin: ' + mine);
+  }
   // P1.2 (UPDATE_STATE_SAFETY_AUDIT) — an honest one-line notice shown in the COMMS header's model slot when the
   // focused agent id is NOT in the live registry (roster out of sync). focusAgent sets it instead of silently
   // rebinding to the overseer; a subsequent focus onto a REAL agent clears it (''). No new window, no .reply beat —
@@ -886,8 +901,13 @@ const Chat = (() => {
       if (activeId != null) sel.value = activeId;
     }
     const cur = list.find(a => a.id === activeId) || null;
-    // "pin:" prefix so this per-agent PINNED model readout can't be misread as the dock's active-model chip
-    if (modelEl) modelEl.textContent = cur ? ('pin: ' + agentModelText(cur)) : '';
+    // "pin:" prefix so this per-agent PINNED model readout can't be misread as the dock's active-model chip.
+    // DEDUPE (2026-07-27): the composer's dock chip already names the active model a few rows below. When an
+    // agent's pin resolves to that SAME model, spelling the name twice in one panel adds nothing — collapse to
+    // the one fact the dock chip genuinely can't carry ("this agent is pinned, it won't follow the default").
+    // The full name stays whenever the two actually differ, which is the case worth reading. And an UNPINNED
+    // agent no longer prints the self-contradicting "pin: follows station default".
+    if (modelEl) modelEl.textContent = cur ? pinReadout(cur) : '';
     if (bar) bar.hidden = !list.length;   // no roster yet (pre-wake) → hide the row rather than show an empty selector
   }
   // wire the agent <select> once: a change hands off to App.selectAgent (switch/mint a stream bound to that
@@ -1157,7 +1177,11 @@ const Chat = (() => {
     const d = document.createElement('div'); d.className = 'cmsg ' + role + (renderingHistory ? ' no-anim' : '');
     // COMMS-PREMIUM: the speaker chip + a dim HH:MM stamp share one header row (a flex .cmsg-head).
     const who = document.createElement('span'); who.className = 'who';
-    who.textContent = role === 'user' ? 'COMMANDER' : role === 'system' ? 'SYSTEM' : name;
+    // opts.who NAMES THE ACTUAL SPEAKER. Every agent row used to be stamped with the FOCUSED agent's name,
+    // which was true while one agent owned every turn — a work line breaks that: stages 2..N are other agents
+    // and labelling their work with the entry dock's name is a fabricated attribution (the same law that
+    // stopped the hub writing a downstream stage's reply into the entry dock's transcript).
+    who.textContent = role === 'user' ? 'COMMANDER' : role === 'system' ? 'SYSTEM' : ((opts && opts.who) || name);
     const body = document.createElement('span'); body.className = 'body';
     // TIMESTAMP TRUTH (P0): opts.stamp is `true` for a row created LIVE (real wall-clock now), a number/Date for a
     // stored turn's REAL recorded time, or falsy for a legacy turn that carries no time — in which case we render
@@ -1788,7 +1812,7 @@ const Chat = (() => {
     if (/summon/.test(t)) return 'summon a new agent onto the crew' + (ev.argsSummary ? ' (' + ev.argsSummary + ')' : '');
     // NS-5 conversational path trust: a file was referenced OUTSIDE the agent's workspace — "Always" blesses
     // the whole project folder for future reads (revocable in Permissions); argsSummary is the proposed root.
-    if (t === 'path.trust') return 'work with files in ' + (ev.argsSummary || 'a project folder') + ' (reads; "Always" trusts it for later)';
+    if (t === 'path.trust') return 'work with files in ' + (ev.argsSummary || 'a project folder') + ' (reads; "Always" or "Full access" trusts it for later)';
     // ATTENDED BROWSER LOGIN: two-phase takeover. Phase 1 asks to open a visible Chrome window the COMMANDER
     // drives; phase 2 holds the run until they click Done. Password honesty is part of the card copy.
     if (t === 'browser.login') return 'open a browser window so YOU can log in to ' + (ev.argsSummary || 'a website') + ' (you type your password in that window — the agent never sees it)';
@@ -1811,12 +1835,12 @@ const Chat = (() => {
       // surface the decision on the bus (schema: permission.response) so listeners — e.g. the first-run tutorial —
       // can tell an approve from a deny and narrate the consent loop honestly. Additive; the run resumes via Harness.consent.
       try { if (typeof U !== 'undefined' && U.bus) U.bus.emit('permission.response', { promptId: p.promptId, decision: decision }); } catch (_) {}
-      // NS conversational anchor: "Always" on a path.trust card IS the project bless (a standing path grant +
-      // known-projects row land on the sidecar). Stamp the origin session's projectRoot with the SAME proposed
-      // root so the PROJECTS rail lists this session under its project — the identical anchor "Work here" stamps.
-      // Only "Always" (once/full grant nothing standing, so there is no project row to attach to), and never
-      // overwrite an anchor the session already has.
-      if (p.tool === 'path.trust' && decision === 'always' && ws && typeof Workstreams !== 'undefined' && Workstreams.setProjectRoot) {
+      // NS conversational anchor: "Always" — and now "Full access" — on a path.trust card IS the project bless
+      // (a standing path grant + known-projects row land on the sidecar). Stamp the origin session's projectRoot
+      // with the SAME proposed root so the PROJECTS rail lists this session under its project — the identical
+      // anchor "Work here" stamps. Both standing grades, never "once" (it grants nothing standing, so there is
+      // no project row to attach to), and never overwrite an anchor the session already has.
+      if (p.tool === 'path.trust' && (decision === 'always' || decision === 'full') && ws && typeof Workstreams !== 'undefined' && Workstreams.setProjectRoot) {
         try { if (p.argsSummary && !(Workstreams.get(ws.id) || {}).projectRoot) Workstreams.setProjectRoot(ws.id, p.argsSummary); } catch (_) {}
       }
       if (ws && typeof Channels !== 'undefined') Channels.clearPending(ws.id, Date.now());   // closes the paused span — approval wait never counts as run time
@@ -2979,6 +3003,19 @@ const Chat = (() => {
       briefReadCard(ws, p);
     });
   }
+  /* SPENT-BRIEF FOLD (2026-07-27). The "my read" card is a PRE-RUN contract: its meta rows, its assumption
+     chips and its steer box all exist so the Commander can argue with the read BEFORE the work happens. Once
+     the run it describes has resolved, none of that can act any more — but the card kept its full height
+     forever, so a finished run left ~40% of the visible transcript occupied by a control surface that no
+     longer controls anything (and whose chips still said "tap to correct", a promise only send() ever
+     retracted). At run end each live card retires its own affordances and folds to its headline, keeping the
+     same click-to-expand vocabulary as the resolved run line above it. Nothing is deleted — one click and the
+     whole read is back, so the transcript stays a complete record. */
+  let briefCards = [];
+  function foldBriefCards() {
+    const cards = briefCards; briefCards = [];
+    for (const close of cards) { try { close(); } catch (_) { /* a detached card must never break run teardown */ } }
+  }
   function briefReadCard(ws, p) {
     const r = row('agent'); r.d.classList.add('tool'); r.d.classList.add('tb-read');
     // The label is its own small caption, NOT a prefix on the objective: "▸ my read: " used to eat the front of
@@ -2986,6 +3023,9 @@ const Chat = (() => {
     // as the card's headline.
     const cap = document.createElement('div'); cap.className = 'tb-read-cap';
     cap.textContent = 'my read';
+    // the fold handle — inert (and invisible) until the run ends and closeCard() arms it
+    const chev = document.createElement('span'); chev.className = 'tb-read-chev'; chev.setAttribute('aria-hidden', 'true'); chev.textContent = '▸';
+    cap.appendChild(chev);
     r.body.appendChild(cap);
     const head = document.createElement('div'); head.className = 'tb-read-head';
     head.textContent = p.objective;
@@ -3049,6 +3089,28 @@ const Chat = (() => {
     input.addEventListener('keydown', e => { if (e.key === 'Enter') send(); });
     line.appendChild(input);
     r.body.appendChild(line);
+    // Run over → retire what can no longer act, then fold to the headline. The steer box is replaced only when
+    // it's still the live input: a send() that already landed owns `line` and its ✔/✕ receipt must survive.
+    const closeCard = () => {
+      retire();
+      if (input.isConnected) {
+        line.textContent = '';
+        const t = document.createElement('span'); t.className = 'tb-read-ack closed';
+        t.textContent = 'this read is closed — say it in chat instead';
+        line.appendChild(t);
+      }
+      r.d.classList.add('tb-read-spent', 'folded');
+      cap.setAttribute('role', 'button'); cap.tabIndex = 0; cap.setAttribute('aria-expanded', 'false');
+      cap.title = 'show the full read';
+      const toggle = () => {
+        const open = !r.d.classList.toggle('folded');
+        cap.setAttribute('aria-expanded', open ? 'true' : 'false');
+        cap.title = open ? 'fold this read away' : 'show the full read';
+      };
+      cap.addEventListener('click', toggle);
+      cap.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); toggle(); } });
+    };
+    briefCards.push(closeCard);
     autoscroll();
   }
 
@@ -4001,7 +4063,10 @@ const Chat = (() => {
       if (m && m.sys) { if ((m.content || '').trim()) toolLine(m.content, !!m.error); continue; }
       if (m.role !== 'assistant') continue;   // only dialogue turns render (a stray system marker never shows as an agent reply)
       if (!(m.content || '').trim()) { if (m.stopped) lastReal = m; continue; }   // zero-token stop: durable recovery truth, never a blank speech row
-      const r = row('agent', { stamp: stamp });   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
+      // a turn produced by a WORK LINE stage carries its own agentId — replay names that agent, not the focused
+      // one, or a reload would silently re-attribute two other agents' work to whoever owns the stream now.
+      const spoke = (m && m.agentId && typeof App !== 'undefined' && App.agentName) ? App.agentName(m.agentId) : null;
+      const r = row('agent', { stamp: stamp, who: spoke });   // past turns render as plain GROUPED messages; only the LIVE reply is the lit headline
       if (m.error) r.d.classList.add('err');
       renderProse(r.body, m.content);   // same linkify path as live tokens, so replayed history matches
       lastReal = m;
@@ -4048,11 +4113,13 @@ const Chat = (() => {
   // caret; when an action happens (tool call/result, deliverable, approval) the caller breaks the current
   // paragraph so the action row lands BELOW it, and the next tokens open a fresh paragraph under the action —
   // so a turn reads top-to-bottom as "said this → did that → said this", classic-harness style.
-  function streamingAgent() {
+  // whoName (optional) = the speaker to stamp on every row this controller opens. Passed by a WORK LINE stage so
+  // the transcript names the agent that actually produced the text; omitted everywhere else = the focused agent.
+  function streamingAgent(whoName) {
     let seg = null, caret = null, raw = '';   // seg: the currently-open agent row; raw: its accumulated prose (so URLs can be linkified as they complete)
     function open() {
       endToolRail();   // a fresh prose paragraph opening below a rail closes it, so the next tool call starts a NEW rail under this prose (keeps chronological "said → did → said → did")
-      seg = row('agent', { stamp: true }); raw = '';
+      seg = row('agent', { stamp: true, who: whoName || null }); raw = '';
       caret = document.createElement('span'); caret.className = 'caret'; caret.textContent = '▮';
       seg.d.appendChild(caret);   // caret is a sibling of .body, so re-rendering .body's content never disturbs it
     }
@@ -5047,7 +5114,10 @@ const Chat = (() => {
     try {
       const key = slashCatalogKey();
       const r = await fetch('/api/skills?placed=' + encodeURIComponent(key), { cache: 'no-store' });
-      const j = r.ok ? await r.json() : null;
+      // ⛔ AN ERRORED ENDPOINT IS NOT AN EMPTY ONE. A non-2xx used to collapse to `[]` and print the confirmed
+      // "No skill recipes are installed." — a station that could not be asked, reported as a station with none.
+      if (!r.ok) return localLine('Could not load skills from the sidecar (HTTP ' + r.status + ') — this is not a claim that you have none.');
+      const j = await r.json();
       const skills = (j && Array.isArray(j.skills)) ? j.skills : [];
       if (!skills.length) return localLine('No skill recipes are installed.');
       const active = skills.filter(s => s.enabled && s.available).map(s => s.slug);
@@ -5077,15 +5147,18 @@ const Chat = (() => {
     let skillCount = 0, activeSkills = [];
     try {
       const r = await fetch('/api/skills?placed=' + encodeURIComponent(slashCatalogKey()), { cache: 'no-store' });
-      const j = r.ok ? await r.json() : null;
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const j = await r.json();
       const skills = (j && Array.isArray(j.skills)) ? j.skills : [];
       skillCount = skills.length;
       activeSkills = skills.filter(s => s.enabled && s.available).map(s => s.slug);
-    } catch (_) {}
+    } catch (_) { skillCount = null; }   // null = COULD NOT ASK, never "you have zero" (see skillsCommand)
     localLine('Bundles: ' + recipes.length + ' recipe blueprint' + (recipes.length === 1 ? '' : 's')
       + (recipes.length ? ' (' + recipes.slice(0, 6).map(r => r.id).join(', ') + ')' : '')
-      + '; ' + skillCount + ' skill recipe' + (skillCount === 1 ? '' : 's')
-      + (activeSkills.length ? ', active: ' + activeSkills.slice(0, 6).join(', ') : '') + '.');
+      + (skillCount == null
+        ? '; skill recipes could not be read from the sidecar'
+        : '; ' + skillCount + ' skill recipe' + (skillCount === 1 ? '' : 's')
+          + (activeSkills.length ? ', active: ' + activeSkills.slice(0, 6).join(', ') : '')) + '.');
   }
   function recipeByRef(raw) {
     const q = String(raw || '').trim().toLowerCase();
@@ -5146,7 +5219,9 @@ const Chat = (() => {
         return localLine(r.ok && j ? ('Routines scheduler ' + (j.enabled ? 'enabled' : 'disabled') + '.') : 'Could not update the routines scheduler.');
       }
       const r = await fetch('/api/cron', { cache: 'no-store' });
-      const j = r.ok ? await r.json() : null;
+      // an errored read is NOT "scheduler off, 0 jobs" — that reassuring line is exactly the lie to avoid.
+      if (!r.ok) return localLine('Could not read the routines scheduler (HTTP ' + r.status + ') — its real state is unknown.');
+      const j = await r.json();
       const jobs = (j && Array.isArray(j.jobs)) ? j.jobs : [];
       const bits = jobs.slice(0, 5).map((job, i) => (i + 1) + '. ' + (job.name || job.id || 'routine') + (job.enabled === false ? ' [paused]' : ''));
       localLine('Routines: scheduler ' + (j && j.enabled ? 'on' : 'off') + ', ' + jobs.length + ' job' + (jobs.length === 1 ? '' : 's')
@@ -5157,7 +5232,9 @@ const Chat = (() => {
     const target = String(args || '').trim();
     try {
       const r = await fetch('/api/connectors', { cache: 'no-store' });
-      const j = r.ok ? await r.json() : null;
+      // an errored read is NOT "no connectors are configured" — say which one it is.
+      if (!r.ok) return localLine('Could not read your MCP connectors (HTTP ' + r.status + ') — this is not a claim that you have none.');
+      const j = await r.json();
       let conns = (j && Array.isArray(j.connectors)) ? j.connectors : [];
       if (target) conns = conns.filter(c => String(c.id || '').toLowerCase() === target.toLowerCase());
       if (!conns.length) return localLine(target ? ('No MCP connector matched "' + target + '".') : 'No MCP connectors are configured.');
@@ -5548,6 +5625,95 @@ const Chat = (() => {
     try { item.run(args); } catch (_) {}
   }
 
+  /* ═══════════════ WORK LINES IN COMMS (agentic graphs) ═══════════════════════════════════════════════
+     A directive typed here lands at ONE dock. If the Commander drew belts PAST that dock, those stages are
+     the work — and until this existed they were scenery on this surface while channel and cron work ran the
+     whole line. The sidecar advances its own lines because it owns those turns; a COMMS turn streams through
+     /api/run to the BROWSER, which owns it, so the browser asks the SAME router the same question
+     (/api/routing/chain) and runs the same hops with the SAME shared handoff prompt. One floor, one answer,
+     whoever started it.
+
+     Every stage renders as its OWN agent turn under its own name. That is not decoration: the line really is
+     three agents doing three pieces of work, and collapsing it to one reply would hide who wrote what. The
+     LAST stage's text is the answer (returned to the caller, which re-points voice/title at it).
+
+     Bounded exactly like the sidecar executor: LINE_MAX_HOPS, an agent never runs twice, and a stop / stream
+     switch / empty stage ends the line keeping the last good text. */
+  const LINE_MAX_HOPS = 6;   // mirrors MAX_HOPS in sidecar/routing/chain.js — these two must not drift
+
+  function lineTag(t) { return (typeof Classify !== 'undefined' && Classify.getTag) ? Classify.getTag(t) : 'general'; }
+
+  // WHERE DOES THIS DOCK'S OUTPUT GO? Asked of the router, never re-derived here — the browser holds a plan for
+  // drawing, but the SIDECAR's plan is the one that authorizes spend, so it is the one that decides.
+  async function nextStageOf(agentId, tag) {
+    try {
+      const h = {}, tok = (typeof window !== 'undefined' && window.__STARNET_API_TOKEN__) || '';
+      if (tok) h['X-StarNet-Token'] = String(tok);
+      const r = await fetch('/api/routing/chain?agentId=' + encodeURIComponent(agentId) + '&tag=' + encodeURIComponent(tag || ''), { cache: 'no-store', headers: h });
+      if (!r || !r.ok) return null;
+      const j = await r.json();
+      return (j && j.next) ? String(j.next) : null;
+    } catch (_) { return null; }   // no floor, no sidecar, no line — the single-stage reply already stands
+  }
+
+  /* Run every stage downstream of `fromAgentId`. Returns { text, agentId, hops } — text is the LINE's answer
+     (the seed text unchanged when no stage ran). Never throws: a work line is an enhancement to a reply the
+     caller already has, exactly like the sidecar's. */
+  async function runWorkLine(ws, seed) {
+    const out = { text: seed.text, agentId: seed.fromAgentId, hops: 0 };
+    if (!seed.fromAgentId || !String(seed.text || '').trim()) return out;
+    const visited = {}; visited[seed.fromAgentId] = true;
+    let cur = seed.fromAgentId;
+    for (let hop = 1; hop <= LINE_MAX_HOPS; hop++) {
+      if (seed.signal && seed.signal.aborted) return out;
+      if (interrupted.has(ws.id)) return out;                       // the Commander pressed Stop — the line stops
+      const nx = await nextStageOf(cur, lineTag(out.text));
+      if (!nx || visited[nx]) return out;                           // terminal stage, or a loop the plan let through
+      const sys = (typeof App !== 'undefined' && App.systemFor) ? App.systemFor(nx) : null;
+      if (!sys) return out;                                         // a dock bound to an agent this roster doesn't have
+      visited[nx] = true;
+
+      const who = (typeof App !== 'undefined' && App.agentName && App.agentName(nx)) || nx;
+      const wiHop = (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : ('wi-' + Date.now() + '-' + (++wiSeq));
+      const hopStart = Date.now();
+      // the floor draws the handoff exactly like a channel line's: a crate leaves this dock for the next
+      wiEmit('workitem.placed', { workitemId: wiHop, queueId: nx, agentId: nx, kind: 'chain', preview: String(out.text).replace(/\s+/g, ' ').slice(0, 40), ts: hopStart });
+      if (isActiveWs(ws)) { breakLive(); toolLine('▸ ' + who + ' — stage ' + (hop + 1) + ' of the work line'); }
+
+      const prompt = (typeof Pipeline !== 'undefined' && Pipeline.handoffPrompt)
+        ? Pipeline.handoffPrompt(seed.originalText, cur, out.text, hop) : out.text;
+      const hopRow = isActiveWs(ws) ? streamingAgent(who) : null;
+      if (hopRow) activeLiveRow = hopRow;
+      let hopAcc = '';
+      let res = null;
+      try {
+        res = await Harness.chat({
+          system: sys, messages: [{ role: 'user', content: prompt }], agentId: nx, isTask: true,
+          signal: seed.signal, streamId: ws.id,
+          placed: (typeof World !== 'undefined' && World.heroCaps) ? World.heroCaps(nx) : [],
+          stationPlaced: (typeof World !== 'undefined' && World.stationCaps) ? World.stationCaps() : [],
+          onToken: d => { hopAcc += d; if (hopRow) hopRow.append(d); App.refreshUsage(); },
+          onToolCall: ev => { if (isActiveWs(ws)) { if (hopRow && hopRow.breakSeg) hopRow.breakSeg(); toolChip(ev); } }
+        });
+      } catch (e) { res = { error: e }; }
+      if (hopRow) hopRow.done();
+      const hopText = String((res && res.text) || hopAcc || '').trim();
+
+      // A STAGE THAT FAILED OR SAID NOTHING ENDS THE LINE WITH THE LAST GOOD ANSWER — the belt is never a gate.
+      if (!hopText || (res && res.error)) {
+        wiEmit('workitem.superseded', { workitemId: wiHop, agentId: nx, ts: Date.now() });
+        if (isActiveWs(ws)) toolLine('⚠ the work line stopped at ' + who + ' — showing ' + ((typeof App !== 'undefined' && App.agentName && App.agentName(cur)) || cur) + '’s answer above', true);
+        return out;
+      }
+      wiEmit('workitem.delivered', { workitemId: wiHop, finalQueueId: nx, agentId: nx, box: '', ms: Date.now() - hopStart, ts: Date.now() });
+      ws.history.push({ role: 'assistant', content: hopText, agentId: nx, ts: Date.now() });   // agentId = the ACTUAL speaker (renderHistory names it)
+      capHistory(ws);
+      out.text = hopText; out.agentId = nx; out.hops++;
+      cur = nx;
+    }
+    return out;
+  }
+
   async function send(text, opts) {
     const retry = !!(opts && opts.retry);   // RETRY re-runs the last user message (already in the thread) — don't echo it again
     // ATTACHMENTS: photos/files staged in the composer, snapshotted by the Enter handler into opts.attachments as
@@ -5781,7 +5947,9 @@ const Chat = (() => {
         onSummon: ev => {
           const rid = Channels.runIdOf(ws.id);
           Promise.resolve((typeof App !== 'undefined' && App.summonForRequest) ? App.summonForRequest(ev) : null)
-            .then(newId => Harness.summonAck(rid, ev.requestId, newId))
+            // summonForRequest resolves { agentId, desk } — desk = where the new worker's seeded workstation
+            // landed (blank if none). A legacy plain-id resolution still acks correctly.
+            .then(r => { const o = (r && typeof r === 'object') ? r : { agentId: r || null, desk: '' }; return Harness.summonAck(rid, ev.requestId, o.agentId, o.desk); })
             .catch(() => Harness.summonAck(rid, ev.requestId, null));
         }
       });
@@ -5838,10 +6006,15 @@ const Chat = (() => {
         if (!taskQuestion && (!endReason || endReason === 'done') && !cutShort && replyText.trim() && typeof GoalLoop !== 'undefined' && goalOf(ws)) goalJudgeReply = replyText;
         // the stop-reason is part of the WORK log → close the live paragraph, then drop it in chronologically.
         if (endReason && endReason !== 'done' && endReason !== 'clarifying' && !taskQuestion) {
-          if (isActiveWs(ws)) breakLive(), toolLine('⏹ ' + (endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
+          // NO ECHO OF THE HEADLINE (2026-07-27): resolvePresence already prints "■ RUN STOPPED" for every one
+          // of these reasons, so a work-log line that only says "stopped" restated the card verbatim one row
+          // below it. Emit this line only when it carries something the card can't: what to do next (step limit,
+          // budget door) or a reason the label doesn't name. Your own interrupt → the card alone tells the truth.
+          const stopLine = endReason === 'max_iters' ? 'reached the step limit — say "continue" to keep going'
             : endReason === 'budget' ? budgetStopLine(budgetScope, budgetCapUsd)
-            : endReason === 'cancelled' ? (interrupted.has(ws.id) ? 'stopped' : 'run cancelled')
-            : 'stopped (' + endReason + ')'));
+            : endReason === 'cancelled' ? (interrupted.has(ws.id) ? '' : 'run cancelled')
+            : 'stopped (' + endReason + ')';
+          if (isActiveWs(ws)) { breakLive(); if (stopLine) toolLine('⏹ ' + stopLine); }
           markStoppedTurn(ws, replyText);
           // a budget stop's honest door is the BUDGET settings section, not a doomed retry (the same cap fires
           // again immediately); every other stop keeps the plain retry chip.
@@ -5866,6 +6039,17 @@ const Chat = (() => {
         if (isActiveWs(ws) && replyText && typeof Fork !== 'undefined' && Fork.parse) {
           const fk = Fork.parse(replyText);
           if (fk) { offerFork(fk); if (!voiceQuestion && fk.question) voiceQuestion = fk.question; }
+        }
+        /* THE WORK LINE. This dock has answered; if the Commander drew stages past it, run them now — still
+           INSIDE the run's try, so the stream stays busy and Stop/E-STOP reach the whole line rather than a
+           transcript that goes quiet while three more agents keep spending. Gated on a real TASK directive
+           (the belt is work-only — "hello" never rides), on a clean finish, and never on a run that ended by
+           ASKING something: a question is the turn's answer, and handing it downstream would answer it on the
+           Commander's behalf. finalReply is re-pointed at the line's last stage so voice speaks, and the
+           session titles from, the answer that actually leaves. */
+        if (isTask && !taskQuestion && !cutShort && (!endReason || endReason === 'done') && replyText.trim()) {
+          const line = await runWorkLine(ws, { fromAgentId: turnAgentId, text: replyText, originalText: text, signal: ac.signal });
+          if (line.hops) { finalReply = line.text; replyText = line.text; titleOk = !!line.text.trim(); }
         }
         // a talk reply shows as a room bubble; the spoken reply itself is STREAMED sentence-by-sentence as
         // it arrives (onToken → pushSpeech) and flushed in the finally.
@@ -5904,7 +6088,8 @@ const Chat = (() => {
       const stopped = interrupted.has(ws.id);   // the Commander pressed Stop on THIS stream — a graceful interrupt, not a fault
       if (stopped) {
         // keep whatever already streamed, mark it stopped, and log NO error (the stop was intentional).
-        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.done(); toolLine('⏹ stopped'); resolvePresence(ws, { stopped: true, steps: runToolsOk }); }
+        // No toolLine (2026-07-27): resolvePresence already prints "■ RUN STOPPED · …" — `⏹ stopped` echoed it.
+        if (isActiveWs(ws)) { if (activeLiveRow) activeLiveRow.done(); resolvePresence(ws, { stopped: true, steps: runToolsOk }); }
         markStoppedTurn(ws, acc);
         if (isActiveWs(ws)) offerTryAgain();
         if (!isTask && isActiveWs(ws) && acc.trim()) World.say(acc);
@@ -6089,7 +6274,7 @@ const Chat = (() => {
   function endInterview() {
     interview = null;
     clearChoices();
-    if (input) input.placeholder = 'speak to your agent… ( / for commands )';
+    if (input) input.placeholder = 'speak to your agent · / commands';   // must stay byte-identical to index.html's attribute (see PLACEHOLDER WIDTH LAW there)
     status('online');
     // a memory deck that arrived MID-interview queued behind the focused flow — drain it now that the
     // question is answered (short hold so the interview's closing line lands first, not under the deck).

@@ -10,10 +10,19 @@
 (function () {
   if (!/[?&]crtlab\b/.test(location.search)) return;
 
-  const CRT_DEFAULTS = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.09, dust: 0.5, aberr: 0.35, grain: 0.24 };
-  const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2 };
-  const WALL_DEFAULTS = { up: 9, corUp: 0, skirt: 32, side: 12 };
+  const CRT_DEFAULTS = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.09, vig: 0.30, over: 1.20, dust: 0.5, aberr: 0.35, grain: 0.24 };
+  const LIGHT_DEFAULTS = { ambient: 0.77, pool: 1, room: 0.6, corridor: 0.42, door: 0.5, floor: 0.2, crown: 0.45 };
+  /* MUST MIRROR StationBake.WALL EXACTLY — these are not just the readout's key list, RESET writes
+     them back over the live object. They had drifted (up 9, side 12) behind the shipped 14/7, so
+     RESET restored a state that never shipped and side 12 pushed the wall band past the hull
+     silhouette it is pinned to. Add a WALL knob, add it here. */
+  const WALL_DEFAULTS = { up: 14, corUp: 0, skirt: 32, side: 7, capH: 3, sideCap: 5 };
   const DEPTH_DEFAULTS = { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1 };
+  // TUBE APERTURE — the CSS glass vignette over the feed (app.css :root --tube-*). NOT the barrel warp:
+  // `curve` bows the picture, these dim its outer band, and they move independently. Seeded from the live
+  // custom properties at build time so opening the lab can never itself change the shipped look.
+  const TUBE_DEFAULTS = { clear: 68, mid: 88, midA: 0.26, edgeA: 0.70, inset: 40 };
+  const TUBE_CSSVAR = { clear: ['--tube-clear', '%'], mid: ['--tube-mid', '%'], midA: ['--tube-mid-a', ''], edgeA: ['--tube-edge-a', ''], inset: ['--tube-inset', 'px'] };
 
   const PRESETS = {
     'Clean (off)':     { crt: { scan: 0, fade: 0, dust: 0, aberr: 0, grain: 0 } },
@@ -24,10 +33,16 @@
     'Bright room':     { light: { ambient: 0.52, pool: 0.9, floor: 0.2 } },
     'Balanced':        { light: { ambient: 0.66, pool: 0.95, floor: 0.22 } },
     'Dark + pools':    { light: { ambient: 0.82, pool: 1.0, floor: 0.26 } },
+    // side is pinned at `pad` (7) — past it the wall band juts out of the station's own silhouette
     'Flat (old)':      { wall: { up: 0, corUp: 0, skirt: 12, side: 4 }, depth: { wallShadow: 0, sheen: 0, cornerAO: 0, dither: 0, floorWear: 0, floorDetail: 0, deckSeam: 0, wallDetail: 0 } },
-    'Tall halls':      { wall: { up: 10, corUp: 0, skirt: 32, side: 12 } },
-    'Towering':        { wall: { up: 32, corUp: 15, skirt: 38, side: 9 } },
+    'Tall halls':      { wall: { up: 10, corUp: 0, skirt: 32, side: 7 } },
+    'Towering':        { wall: { up: 32, corUp: 15, skirt: 38, side: 7 } },
     'Depth+':          { crt: { dust: 0.5, aberr: 0.35, grain: 0.24 }, depth: { wallShadow: 0.5, sheen: 0.14, cornerAO: 0.55, dither: 0.15, floorWear: 0.55, floorDetail: 1, deckSeam: 0.38, wallDetail: 1 } },
+    // A/B the WHOLE aperture — in-canvas vignette + overscan + the CSS glass together. `curve` is 0.09 in
+    // every one of them: these change how much of the panel the picture gets, never how hard it bows.
+    'Ap: old (tight)': { crt: { vig: 0.55, over: 1 },    tube: { clear: 50, mid: 82, midA: 0.34, edgeA: 0.82, inset: 60 } },
+    'Ap: current':     { crt: { vig: 0.30, over: 1.20 }, tube: { clear: 68, mid: 88, midA: 0.26, edgeA: 0.70, inset: 40 } },
+    'Ap: wide open':   { crt: { vig: 0.16, over: 1.24 }, tube: { clear: 80, mid: 93, midA: 0.16, edgeA: 0.48, inset: 24 } },
   };
 
   // World/StationBake are top-level `const`s (global lexical bindings, NOT window props), so
@@ -38,6 +53,24 @@
   const light = () => (SB() && SB().LIGHT) || {};
   const wall = () => (SB() && SB().WALL) || {};
   const depth = () => (SB() && SB().DEPTH) || {};
+
+  // The tube dials have no engine object behind them (they ARE the CSS), so the lab owns the state: read the
+  // shipped custom properties once, then push every edit straight back onto :root.
+  const tubeState = {};
+  function tube() {
+    if (tubeState.clear == null) {
+      const cs = getComputedStyle(document.documentElement);
+      for (const k of Object.keys(TUBE_DEFAULTS)) {
+        const n = parseFloat(cs.getPropertyValue(TUBE_CSSVAR[k][0]));
+        tubeState[k] = Number.isFinite(n) ? n : TUBE_DEFAULTS[k];
+      }
+    }
+    return tubeState;
+  }
+  function applyTube() {
+    const t = tube(), s = document.documentElement.style;
+    for (const k of Object.keys(TUBE_CSSVAR)) s.setProperty(TUBE_CSSVAR[k][0], t[k] + TUBE_CSSVAR[k][1]);
+  }
 
   let rebakeT = 0;
   function scheduleRebake() {
@@ -92,13 +125,14 @@
   let sliders = [];
   let readout;
   function syncReadout() {
-    if (readout) readout.value = JSON.stringify({ crt: pick(crt(), Object.keys(CRT_DEFAULTS)), light: pick(light(), Object.keys(LIGHT_DEFAULTS)), wall: pick(wall(), Object.keys(WALL_DEFAULTS)), depth: pick(depth(), Object.keys(DEPTH_DEFAULTS)) }, null, 0);
+    if (readout) readout.value = JSON.stringify({ crt: pick(crt(), Object.keys(CRT_DEFAULTS)), tube: pick(tube(), Object.keys(TUBE_DEFAULTS)), light: pick(light(), Object.keys(LIGHT_DEFAULTS)), wall: pick(wall(), Object.keys(WALL_DEFAULTS)), depth: pick(depth(), Object.keys(DEPTH_DEFAULTS)) }, null, 0);
   }
   function pick(o, keys) { const r = {}; for (const k of keys) if (o[k] != null) r[k] = +(+o[k]).toFixed(3); return r; }
   function syncAll() { sliders.forEach(s => s._sync && s._sync()); syncReadout(); }
 
   function applyPreset(p) {
     if (p.crt) Object.assign(crt(), p.crt);
+    if (p.tube) { Object.assign(tube(), p.tube); applyTube(); }
     if (p.light) { Object.assign(light(), p.light); scheduleRebake(); }
     if (p.wall) { Object.assign(wall(), p.wall); scheduleRebake(); }
     if (p.depth) { Object.assign(depth(), p.depth); scheduleRebake(); }
@@ -140,9 +174,21 @@
     sliders.push(buildSlider(body, crt, 'fade', 0, 3, 0.05));
     sliders.push(buildSlider(body, crt, 'glow', 0, 0.4, 0.01));
     sliders.push(buildSlider(body, crt, 'curve', 0, 0.4, 0.01));   // barrel-curve the whole feed (0 = flat)
+    // THE TWO THAT ACTUALLY SIZE THE PICTURE (both leave `curve` alone):
+    sliders.push(buildSlider(body, crt, 'vig', 0, 0.8, 0.01));     // in-canvas vignette 1−vig·r² — the dominant edge darkener (0.55 crushed corners to black)
+    sliders.push(buildSlider(body, crt, 'over', 1, 1.4, 0.01));    // output overscan — ≥1.11 pulls the corners back inside the warp's domain so they stop filling black
     sliders.push(buildSlider(body, crt, 'dust', 0, 1, 0.05));      // dust motes drifting in the light pools
     sliders.push(buildSlider(body, crt, 'aberr', 0, 1, 0.05));     // chromatic aberration at the bowed edges (GPU path)
     sliders.push(buildSlider(body, crt, 'grain', 0, 0.25, 0.01));  // film grain over the warped feed
+
+    // The glass aperture — how much of the panel the picture actually gets to use. Independent of `curve`
+    // above: raising `clear` gives back real estate without touching the bulge at all.
+    section(body, 'TUBE APERTURE (css glass)');
+    sliders.push(buildSlider(body, tube, 'clear', 30, 95, 1, applyTube));    // % out to which the glass stays fully clear
+    sliders.push(buildSlider(body, tube, 'mid', 55, 99, 1, applyTube));      // % of the falloff's mid stop
+    sliders.push(buildSlider(body, tube, 'midA', 0, 0.6, 0.01, applyTube));  // darkness at the mid stop
+    sliders.push(buildSlider(body, tube, 'edgeA', 0, 1, 0.01, applyTube));   // darkness at the very corner
+    sliders.push(buildSlider(body, tube, 'inset', 0, 90, 2, applyTube));     // px of inner edge shadow on the panel
 
     section(body, 'DEPTH FX (re-bakes)');
     sliders.push(buildSlider(body, depth, 'wallShadow', 0, 0.5, 0.01, scheduleRebake)); // wall-cast floor shadow
@@ -159,12 +205,14 @@
     sliders.push(buildSlider(body, light, 'pool', 0.5, 1, 0.01, scheduleRebake));
     sliders.push(buildSlider(body, light, 'floor', 0, 0.5, 0.01, scheduleRebake));
     sliders.push(buildSlider(body, light, 'room', 0.2, 0.8, 0.02, scheduleRebake));
+    sliders.push(buildSlider(body, light, 'crown', 0, 0.8, 0.01, scheduleRebake));   // how far ambient gives way over a wall's lit top surface — 0 puts the crown back under the hull skirt
 
     section(body, 'WALL HEIGHT (re-bakes)');
     sliders.push(buildSlider(body, wall, 'up', 0, 36, 1, scheduleRebake));      // room north face rise
     sliders.push(buildSlider(body, wall, 'corUp', 0, 24, 1, scheduleRebake));   // corridor north face rise
     sliders.push(buildSlider(body, wall, 'skirt', 6, 44, 1, scheduleRebake));   // hull drop below the station
-    sliders.push(buildSlider(body, wall, 'side', 4, 12, 1, scheduleRebake));    // e/w wall-top band width
+    sliders.push(buildSlider(body, wall, 'side', 4, 7, 1, scheduleRebake));     // e/w wall band width — 7 is the hull's own reach (`pad`); past it the wall juts out of the station silhouette
+    sliders.push(buildSlider(body, wall, 'sideCap', 2, 6, 1, scheduleRebake));  // lit top surface of the e/w/s walls — the crown ring's width
 
     section(body, 'PRESETS');
     const presetWrap = document.createElement('div');
@@ -185,7 +233,7 @@
       navigator.clipboard && navigator.clipboard.writeText(txt).then(
         () => flash('copied ✓'), () => { readout.select(); flash('select+copy'); });
     }, true);
-    btn(actions, 'RESET', () => { Object.assign(crt(), CRT_DEFAULTS); Object.assign(light(), LIGHT_DEFAULTS); Object.assign(wall(), WALL_DEFAULTS); Object.assign(depth(), DEPTH_DEFAULTS); scheduleRebake(); syncAll(); });
+    btn(actions, 'RESET', () => { Object.assign(crt(), CRT_DEFAULTS); Object.assign(tube(), TUBE_DEFAULTS); applyTube(); Object.assign(light(), LIGHT_DEFAULTS); Object.assign(wall(), WALL_DEFAULTS); Object.assign(depth(), DEPTH_DEFAULTS); scheduleRebake(); syncAll(); });
     body.appendChild(actions);
 
     const note = document.createElement('div');

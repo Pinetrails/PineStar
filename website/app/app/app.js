@@ -129,8 +129,52 @@ const App = (() => {
     const a = anchor.getBoundingClientRect(), b = bar.getBoundingClientRect();
     logo.style.left = (a.left / z) + 'px';
     logo.style.top = (b.top / z + (b.height / z - logo.offsetHeight) / 2) + 'px';
+    queueLogoOcclusion();   // the mark moved — its clip is stale
+  }
+
+  /* ---------- the brand mark yields to windows (2026-07-29 layering report) ----------
+     The z960 hoist that keeps the wordmark crisp above the CRT glass also parks it above every
+     floating window: #terms lives INSIDE #screen-game, a z-index:10 stacking context, so a .term
+     can never out-stack a <body> child no matter how high zTop() climbs. Drag a panel into the
+     top-left and the amber art bleeds straight through it. No z-index fixes this — the glass has
+     to stay over the windows, and anything over the glass is over the windows too — so the mark
+     is CLIPPED under them instead. app/logoclip.js owns the geometry (and its unit test). */
+  function syncLogoOcclusion() {
+    const logo = el('logo'), host = el('terms');
+    if (!logo || typeof LogoClip === 'undefined') return;
+    const box = logo.getBoundingClientRect();
+    // uiZoom law: rects are VISUAL px, clip-path coordinates are the element's own LAYOUT px.
+    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+    const rects = host ? Array.prototype.map.call(host.querySelectorAll('.term'), w => w.getBoundingClientRect()) : [];
+    logo.style.clipPath = LogoClip.clipFor(box, rects, z);
+  }
+  let occlusionQueued = false;
+  function queueLogoOcclusion() {
+    if (occlusionQueued) return;
+    occlusionQueued = true;
+    const run = () => { if (!occlusionQueued) return; occlusionQueued = false; syncLogoOcclusion(); };
+    // rAF reads layout right before paint (the cheap place to force one); the timer is the backstop
+    // for when rAF is FROZEN — a hidden/minimized window, and the dev preview pane.
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+    if (typeof setTimeout === 'function') setTimeout(run, 120);
   }
   if (typeof window !== 'undefined') window.addEventListener('resize', positionLogo);
+  // One watcher covers the whole window lifecycle: childList = open/close, style = drag + resize
+  // + placeTerm, class = minimize/restore. animationend catches the power-on scale settling, which
+  // moves no attribute and so fires no mutation of its own.
+  if (typeof document !== 'undefined' && typeof MutationObserver === 'function') {
+    const host = el('terms');
+    if (host) {
+      new MutationObserver(recs => {
+        for (const r of recs) {
+          if (r.type === 'childList' && r.target === host) { queueLogoOcclusion(); return; }
+          const t = r.target;
+          if (t && t.nodeType === 1 && t.classList && t.classList.contains('term')) { queueLogoOcclusion(); return; }
+        }
+      }).observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+      host.addEventListener('animationend', queueLogoOcclusion);
+    }
+  }
   // boot-settle re-seats: positionLogo's first run happens before VT323 lands and before the logo
   // image has dimensions — both move the topbar/logo geometry with NO resize event, which left the
   // mark visibly off-seat until the first manual resize (part of the 2026-07-20 misalignment report).
@@ -905,6 +949,18 @@ const App = (() => {
     a.systemPrompt = composeSystemPrompt(a);
     agents.set(id, a);
     registerAgent(id, a.color);                                // sprite tint shim
+    // ITS DESK COMES WITH IT (opts.desk): a specialist created because the Commander ASKED for one has
+    // nowhere to sit, so it stands where work is delivered instead of walking to a workstation — the
+    // "you also have to go build it a desk" step nobody asked for. When the summon is the answer to a
+    // direct request (the overseer's team.summon), seed the ONE per-agent prop the same way the hero's
+    // starter desk is seeded (ensureWorkstation: idempotent, spawn room first, real placed prop). This is
+    // NOT a general "the agent can place props" power — only this one desk, only on this one path, and
+    // only for the agent being created. Deliberately BEFORE World.spawnAgent so the desk exists as the
+    // body arrives (containBody re-homes the body next tick in the rare case the two pick the same tile).
+    const desk = (opts.desk === true && station && typeof station.ensureWorkstation === 'function')
+      ? station.ensureWorkstation(id) : null;
+    const deskRoom = (desk && desk.ok && desk.roomId && station.roomById) ? (station.roomById(desk.roomId) || {}).name : null;
+    if (opts.desk === true && !(desk && desk.ok)) console.warn('[summon] no desk seeded for', id, desk && desk.error);
     const _spawned = (typeof World !== 'undefined' && !!World.spawnAgent);
     if (_spawned) World.spawnAgent(a);                          // Phase C: a real floor body
     else console.warn('[summon] World.spawnAgent missing — no floor body for', id);
@@ -934,7 +990,9 @@ const App = (() => {
       // desk placement teed up. FINALE (Lane D): the toast is ONE line now — the desk requirement + its door move
       // into the diegetic line + chip below (the standing record no longer duplicates the whole instruction).
       _notify(a.name + ' summoned — type to task it now.', 'good');
-      if (typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())
+      // …unless its desk already came with it (opts.desk): the "nowhere to sit" line would then be a lie, and
+      // the chip would open REFIT to place a SECOND desk the agent can't own (one workstation per agent).
+      if (!(desk && desk.ok) && typeof Chat !== 'undefined' && Chat.localLine && Chat.choices && (typeof Chat.isBusy !== 'function' || !Chat.isBusy())
           && (typeof Chat.beatBusy !== 'function' || !Chat.beatBusy())) {   // a pending question/beat owns the COMMS moment — its chips must survive; the desk line stays available via REFIT
         Chat.localLine(a.name + ' is here — but it has nowhere to sit yet. it needs a desk of its own before it can take floor work. want to place one?');
         Chat.choices([{ label: '▤ PLACE ITS DESK', value: 'desk' }, { label: 'later', value: 'later', skip: true }], item => {
@@ -946,7 +1004,12 @@ const App = (() => {
       // RECRUIT dock button). Guarded on visibility so a closed COMMS panel is a no-op.
       setTimeout(() => { const ci = el('chat-input'); if (ci && ci.offsetParent !== null) { try { ci.focus(); } catch (_) {} } }, 0);
     } else {
-      _notify(a.name + ' summoned — switch to its stream to task it, or let the overseer delegate.', 'good');
+      // say WHERE its desk landed when one was seeded — the Commander needs to be able to go look at it (and
+      // move it in REFIT). Only claimed when the placement actually returned ok; a failed seed says nothing.
+      // "took the free desk" vs "desk placed": ensureWorkstation may ADOPT an unbound workstation instead of
+      // building one, and saying "placed" for a desk that was already there is a small lie about the floor.
+      const deskLine = (desk && desk.ok) ? ((desk.adopted ? 'took the free desk' : 'desk placed') + (deskRoom ? ' in ' + deskRoom : '') + '. ') : '';
+      _notify(a.name + ' summoned — ' + deskLine + 'switch to its stream to task it, or let the overseer delegate.', 'good');
     }
     // ONE loadout beat: state plainly what the class summon actually applied — the skills enabled, the effort
     // applied, and the STATION GEAR the class draws on (honest present/missing under the overseer, NOT per-agent
@@ -1222,11 +1285,24 @@ const App = (() => {
       persona: ev.persona || (base && base.persona) || undefined,
       purpose: ev.purpose || (base && base.purpose) || undefined
     });
+    // desk:true — this summon IS the answer to "create me an agent", so the worker arrives with the one
+    // per-agent prop it needs to sit and work. See summonAgent: the seed is that agent's desk and nothing
+    // else; the Commander can move or reclaim it in REFIT like any placed prop.
     let a = null;
-    try { a = summonAgent(spec, { activate: false }); } catch (_) { a = null; }
+    try { a = summonAgent(spec, { activate: false, desk: true }); } catch (_) { a = null; }
     if (!a) return null;
     try { await lastRosterPush; } catch (_) {}   // the worker is now in the backend roster → safe to delegate
-    return a.id;
+    // READ BACK what actually landed, so the ack can tell the lead where the desk is. Deliberately a PURE
+    // read (propsByAgent), never a second ensureWorkstation call: re-running the seeder here could place a
+    // desk AFTER summonAgent's persist() — a floor change that would not be saved until the next write.
+    // Blank when nothing was placed, and the tool then says nothing about a desk.
+    let deskWhere = '';
+    try {
+      const mine = (station && station.propsByAgent) ? station.propsByAgent(a.id) : [];
+      const seat = mine.find(p => station.capForProp && station.capForProp(p.t) === 'computer');
+      if (seat) { const rm = station.roomById ? station.roomById(station.roomAt(seat.x, seat.y)) : null; deskWhere = (rm && rm.name) ? String(rm.name) : 'the station'; }
+    } catch (_) { deskWhere = ''; }
+    return { agentId: a.id, desk: deskWhere };
   }
 
   function persist() {
@@ -1754,9 +1830,10 @@ const App = (() => {
       onCode: c => {
         codeEl.textContent = c.user_code; codeEl.classList.remove('hidden');
         openBtn.classList.remove('hidden');
-        openBtn.onclick = () => openExternalUrl(c.verification_uri);
+        // DISPLAY the bare address, OPEN the code-carrying one (open_uri) — see codexsignin.js.
+        openBtn.onclick = () => openExternalUrl(c.open_uri || c.verification_uri);
         statusEl.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
-        openExternalUrl(c.verification_uri);
+        openExternalUrl(c.open_uri || c.verification_uri);
       },
       onTimeout: () => { statusEl.textContent = 'sign-in timed out — start again'; statusEl.className = 'codex-status bad'; },
       onConnected: () => { codeEl.classList.add('hidden'); openBtn.classList.add('hidden'); SFX.open(); refreshCodexStatus(); loadCodexModels(); }
@@ -1873,9 +1950,10 @@ const App = (() => {
       onCode: cc => {
         codeEl.textContent = cc.user_code; codeEl.classList.remove('hidden');
         openBtn.classList.remove('hidden');
-        openBtn.onclick = () => openExternalUrl(cc.verification_uri);
+        // DISPLAY the bare address, OPEN the code-carrying one (open_uri) — kimi's page REQUIRES ?user_code=.
+        openBtn.onclick = () => openExternalUrl(cc.open_uri || cc.verification_uri);
         statusEl.innerHTML = 'enter this code at <b>' + esc(cc.verification_uri) + '</b> (opening it now)…';
-        openExternalUrl(cc.verification_uri);
+        openExternalUrl(cc.open_uri || cc.verification_uri);
       },
       onTimeout: () => { statusEl.textContent = 'sign-in timed out — start again'; statusEl.className = 'codex-status bad'; },
       onConnected: () => { codeEl.classList.add('hidden'); openBtn.classList.add('hidden'); SFX.open(); refreshOAuthGenesisStatus(pid); loadOAuthModels(pid); }
@@ -1905,6 +1983,9 @@ const App = (() => {
     const inFamily = id => id === def || id.indexOf(def + '_') === 0;
     const ids = Object.keys(DATA.SKINS);
     const ordered = [def, ...ids.filter(id => id !== def && inFamily(id)), ...ids.filter(id => !inFamily(id))].filter(id => DATA.SKINS[id]);
+    // stage handle (assigned by the mount below): drive THIS stage, not the module-level shortcut, which
+    // belongs to whichever picker mounted last once more than one is on screen.
+    let stage = null;
     ordered.forEach(id => {
       const sk = DATA.SKINS[id];
       const b = document.createElement('button');
@@ -1918,15 +1999,15 @@ const App = (() => {
       b.onclick = () => {
         pickedSkin = id;
         [...wrap.children].forEach(x => { const on = x === b; x.classList.toggle('sel', on); x.setAttribute('aria-pressed', String(on)); });
-        if (typeof SkinStage !== 'undefined') SkinStage.show(id);
+        if (stage) stage.show(id);
         SFX.click();
       };
       // hover scrubs the stage so you can compare without committing; leaving snaps back to the pick
-      b.onmouseenter = () => { if (typeof SkinStage !== 'undefined') SkinStage.show(id); };
+      b.onmouseenter = () => { if (stage) stage.show(id); };
       wrap.appendChild(b);
     });
-    wrap.onmouseleave = () => { if (typeof SkinStage !== 'undefined') SkinStage.show(pickedSkin); };
-    if (typeof SkinStage !== 'undefined') SkinStage.mount(el('skin-stage-img'), el('skin-stage-name'), pickedSkin);
+    wrap.onmouseleave = () => { if (stage) stage.show(pickedSkin); };
+    if (typeof SkinStage !== 'undefined') stage = SkinStage.mount(el('skin-stage-img'), el('skin-stage-name'), pickedSkin);
   }
 
   /* ---------- VOICE & MANNER (the create-screen personality system) ----------
@@ -2664,9 +2745,9 @@ const App = (() => {
         try { if (typeof TrustStore !== 'undefined' && TrustStore.onManualInitiative && typeof AutonomyStore !== 'undefined' && AutonomyStore.get) TrustStore.onManualInitiative((AutonomyStore.get() || {}).initiative); } catch (_) {}
       },
       api: {
-        load: () => fetch('/api/permissions', { cache: 'no-store' }).then(r => r.ok ? r.json() : { grants: [], grantable: [] }).catch(() => ({ grants: [], grantable: [] })),
-        grant: (key) => fetch('/api/permissions/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.ok ? r.json() : { ok: false }).catch(() => ({ ok: false })),
-        revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.ok ? r.json() : { ok: false }).catch(() => ({ ok: false }))
+        load: () => fetch('/api/permissions', { cache: 'no-store' }).then(r => r.ok ? r.json() : { ok: false, reason: 'permissions service unavailable' }).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
+        grant: (key) => fetch('/api/permissions/grant', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission grant failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' })),
+        revoke: (key) => fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: key }) }).then(r => r.json().catch(() => ({})).then(j => r.ok ? j : Object.assign({}, j, { ok: false, reason: j.reason || 'permission revoke failed' }))).catch(() => ({ ok: false, reason: 'permissions service unavailable' }))
       }
     });
     // GROWTH Tier 3 — EARNED AUTONOMY (track record → trust): folds the SAME run outcomes xpstore folds into a
@@ -3269,9 +3350,13 @@ const App = (() => {
   // the entered-project scope (null = overview). Persisted like the reference harness's projectScope, so a reload lands back
   // inside the project you were organizing — pure view state, deliberately outside the world save.
   let projScope = null;
+  // A remembered project root is not necessarily still trusted. Default false on reload/entry and only
+  // enable scoped session creation after GET /api/projects proves the current row is still blessed.
+  let projScopeBlessed = false;
   try { projScope = localStorage.getItem('starnet.projscope') || null; } catch (_) {}
-  function setProjScope(root) {
+  function setProjScope(root, blessed) {
     projScope = root || null;
+    projScopeBlessed = !!(projScope && blessed === true);
     try { if (root) localStorage.setItem('starnet.projscope', root); else localStorage.removeItem('starnet.projscope'); } catch (_) {}
     updateProjHeadAction();
   }
@@ -3279,8 +3364,15 @@ const App = (() => {
   // a session in it (+ NEW) — one slot, two labelled truths, same as the reference harness's scoped "+".
   function updateProjHeadAction() {
     const b = el('ws-addproject'); if (!b) return;
-    if (projScope) { b.textContent = '+ NEW'; b.title = 'start a new session in this project'; }
-    else { b.textContent = '+ ADD'; b.title = 'bless a folder as a trusted project'; }
+    if (projScope) {
+      b.textContent = '+ NEW';
+      b.disabled = !projScopeBlessed;
+      b.title = projScopeBlessed ? 'start a new session in this project' : 're-add this project before starting new work';
+    } else {
+      b.textContent = '+ ADD';
+      b.disabled = false;
+      b.title = 'bless a folder as a trusted project';
+    }
   }
   function setRailView(view) {
     view = (view === 'projects') ? 'projects' : 'sessions';
@@ -3301,8 +3393,8 @@ const App = (() => {
     if (view === 'projects') { updateProjHeadAction(); renderProjects(); }
     else { updateArchivedToggle(); }   // sessions view: ARCHIVED button re-asserts its own "≥1 archived" gate
   }
-  function enterProject(root) { setProjScope(root); SFX.click(); renderProjects(); }
-  function exitProjectScope() { setProjScope(null); SFX.click(); renderProjects(); }
+  function enterProject(root, blessed) { setProjScope(root, blessed); SFX.click(); renderProjects(); }
+  function exitProjectScope() { setProjScope(null, false); SFX.click(); renderProjects(); }
   // the live dot class + git badge for one project row (pure read of the shaped row)
   function projDot(r) { return 'ws-dot ' + (!r.blessed ? 'proj-plain' : (r.isGitRepo ? 'proj-git' : 'proj-plain')); }
   function renderProjects() {
@@ -3318,6 +3410,8 @@ const App = (() => {
           // honestly instead of rendering a ghost.
           const row = rows.filter(r => Projects.sameRoot && Projects.sameRoot(r.root, projScope))[0] || null;
           if (!row) { setProjScope(null); return renderProjectsOverview(ul, rows); }
+          projScopeBlessed = row.blessed === true;
+          updateProjHeadAction();
           return renderProjectEntered(ul, row);
         }
         renderProjectsOverview(ul, rows);
@@ -3373,12 +3467,13 @@ const App = (() => {
           if (id !== Workstreams.activeId()) switchWorkstream(id);
           SFX.open();
         }
-        enterProject(li.dataset.root);
+        const row = rows.find(x => Projects.sameRoot && Projects.sameRoot(x.root, li.dataset.root));
+        enterProject(li.dataset.root, !!(row && row.blessed));
       };
     });
     ul.querySelectorAll('.proj-row').forEach(li => {
       const row = rows.find(x => x.root === li.dataset.root);
-      li.onclick = () => enterProject(row.root);
+      li.onclick = () => enterProject(row.root, row.blessed);
       li.oncontextmenu = (e) => { e.preventDefault(); openProjectMenu(row, e.clientX, e.clientY); };
       const keb = li.querySelector('.ws-kebab');
       if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const b = keb.getBoundingClientRect(); openProjectMenu(row, b.left, b.bottom + 2); };
@@ -3406,7 +3501,9 @@ const App = (() => {
         '</span>' +
       '</li>';
     if (!sess.length) {
-      html += '<li class="proj-empty">No sessions in this project yet — <b>+ NEW</b> starts one working in this folder.</li>';
+      html += row.blessed
+        ? '<li class="proj-empty">No sessions in this project yet — <b>+ NEW</b> starts one working in this folder.</li>'
+        : '<li class="proj-empty">Access revoked — re-add this project before starting new work. Existing sessions remain browseable.</li>';
     } else {
       html += sess.map(s => {
         const w = byId[s.id];
@@ -3439,7 +3536,7 @@ const App = (() => {
   // + NEW inside an entered project: a fresh untitled session ANCHORED to the project (projectRoot rides every
   // run as the working folder; the title auto-mints from the first message, same as the sessions rail's + NEW).
   function newSessionInProject(root) {
-    if (!root) return;
+    if (!root || !projScopeBlessed) return;
     const ws = Workstreams.startSession({ activate: false, projectRoot: root });
     if (!ws) return;
     switchWorkstream(ws.id);
@@ -3492,9 +3589,9 @@ const App = (() => {
           setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.classList.remove('armed'); btn.innerHTML = '<span class="ws-menu-glyph" aria-hidden="true">✕</span>' + (r.blessed ? 'Remove (revoke trust)' : 'Forget (already revoked)'); } }, 4000);
         });
       } else if (act === 'newsess') {
-        btn.addEventListener('click', () => { closeProjectMenu(); setProjScope(r.root); newSessionInProject(r.root); });
+        btn.addEventListener('click', () => { closeProjectMenu(); setProjScope(r.root, r.blessed); newSessionInProject(r.root); });
       } else {
-        btn.addEventListener('click', () => { closeProjectMenu(); enterProject(r.root); });
+        btn.addEventListener('click', () => { closeProjectMenu(); enterProject(r.root, r.blessed); });
       }
     });
     document.addEventListener('pointerdown', onProjMenuOutside, true);
@@ -3503,16 +3600,23 @@ const App = (() => {
     window.addEventListener('resize', closeProjectMenu);
     SFX.click();
   }
-  // REMOVE = revoke the standing path:<root> grant through the EXISTING permissions surface (truthful: the list
-  // then mirrors the grant store — after a revoke the row reports blessed:false on the next render, so a second
-  // "Forget" removes nothing new; the metadata row stays until the store's own forget path lands). No parallel store.
+  // REMOVE has two explicit stages: a blessed row revokes its standing path:<root> grant, while a row whose trust
+  // is already revoked hard-forgets only its projects-store metadata. The server refuses to forget a still-blessed
+  // row, so neither endpoint silently does both jobs and every success message describes the state actually changed.
   function removeProject(r) {
     if (!r) return;
-    fetch('/api/permissions/revoke', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ key: 'path:' + r.root }) })
+    const isForget = !r.blessed;
+    const endpoint = isForget ? '/api/projects/forget' : '/api/permissions/revoke';
+    const body = isForget ? { root: r.root } : { key: 'path:' + r.root };
+    fetch(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
       .then(res => res.ok ? res.json() : { ok: false })
       .then(j => {
         SFX.bad();
-        if (typeof StationUI !== 'undefined' && StationUI.notify) StationUI.notify((j && j.ok ? 'removed “' : 'could not remove “') + r.name + '”', j && j.ok ? 'warn' : 'bad');
+        if (typeof StationUI !== 'undefined' && StationUI.notify) {
+          const success = isForget ? 'forgot “' : 'trust revoked for “';
+          const failure = isForget ? 'could not forget “' : 'could not revoke trust for “';
+          StationUI.notify((j && j.ok ? success : failure) + r.name + '”', j && j.ok ? 'warn' : 'bad');
+        }
         renderProjects();
       })
       .catch(() => { renderProjects(); });
@@ -3709,8 +3813,18 @@ const App = (() => {
           if (msg) msg.textContent = 'checking for an update…';
           try {
             const snap = await Updates.check(true, 'future-save-gate');
-            if (snap && snap.phase === 'available') { try { await Updates.install(); } catch (_) {} }
-            else if (msg) msg.textContent = 'no newer build is published yet — check back shortly.';
+            const phase = (snap && snap.phase) || '';
+            // ⛔ ONLY `current` MEANS "NOTHING NEWER IS PUBLISHED". Everything that is not 'available' used to
+            // collapse into that one reassuring line — including 'error' (the check FAILED and we told the
+            // Commander all was well), 'unsupported' (this build has no updater at all), and 'checking' (a
+            // re-click while a check is in flight returns the busy snapshot immediately). This gate is a HARD
+            // STOP on a save this build cannot read: a false "check back shortly" strands the user with no
+            // idea that the one action on the screen didn't work. Name each state for what it is.
+            if (phase === 'available') { try { await Updates.install(); } catch (e) { if (msg) msg.textContent = 'update found, but the install failed — open the Update Center and retry.'; } }
+            else if (phase === 'current') { if (msg) msg.textContent = 'no newer build is published yet — check back shortly.'; }
+            else if (phase === 'error') { if (msg) msg.textContent = 'the update check failed' + (snap && snap.error ? ' — ' + snap.error : '') + '. Check your connection and try again.'; }
+            else if (phase === 'checking' || phase === 'downloading' || phase === 'installing' || phase === 'restarting') { if (msg) msg.textContent = 'an update check is already running — one moment…'; }
+            else if (msg) msg.textContent = 'this build cannot check for updates — download the latest StarNet from starnetos.com, then reopen.';
           } catch (_) { if (msg) msg.textContent = 'update check failed — try again in a moment.'; }
         } else if (msg) {
           msg.textContent = 'Update StarNet to the latest version (in the desktop app: Update Center), then reopen.';
@@ -3785,6 +3899,28 @@ const App = (() => {
     if (Harness.init) await Harness.init();   // desktop: load the keychain "configured?" flag first
     if (typeof StationUI !== 'undefined') StationUI.init();   // applies saved theme/CRT settings, wires the bottom bar
     if (typeof Updates !== 'undefined' && typeof StationUI !== 'undefined') Updates.init({ notify: StationUI.notify, rerender: StationUI.rerender });
+
+    /* EXTENSIONS AWAITING APPROVAL. Hooks and plugins are opt-in by design: an unapproved one is silently
+       inert. That is the correct security posture and the worst possible UX if it is never surfaced — the
+       Commander writes a hook, nothing happens, and there is nothing on screen that says why. So the gate
+       announces itself through the SAME channel an agent's approval prompt uses (category 'needsApproval', so
+       the existing mute honors it), and clicking lands directly on the tab that resolves it. Fire-and-forget:
+       a station with no extensions is the common case and must stay completely silent. */
+    (async () => {
+      try {
+        const [h, p] = await Promise.all([
+          fetch('/api/hooks').then(r => r.ok ? r.json() : null).catch(() => null),
+          fetch('/api/plugins').then(r => r.ok ? r.json() : null).catch(() => null)
+        ]);
+        const waiting = ((h && h.pending) || []).length + (((p && p.plugins) || []).filter(x => x && x.pending).length);
+        if (!waiting || typeof StationUI === 'undefined' || !StationUI.notify) return;
+        StationUI.notify(
+          waiting + ' extension' + (waiting === 1 ? '' : 's') + ' awaiting your approval — click to review',
+          'warn', 'needsApproval',
+          { onClick: () => { try { StationUI.openTerm('connectors', 'extensions'); } catch (_) {} } }
+        );
+      } catch (_) { /* a station that cannot answer is a station with nothing to approve yet */ }
+    })();
     // (the title screen — RESUME / NEW STATION / the destructive NEW AGENT wipe — is gone; boot auto-resumes,
     //  see the three-way at the foot of init(). Re-entry is handled by reentry()/startCreation().)
 
@@ -3804,7 +3940,9 @@ const App = (() => {
       const f = fileImport.files && fileImport.files[0];
       if (!f) return;
       const r = await Backup.importFile(f);
-      if (!r.ok) { dataStatus('import failed — ' + r.error); SFX.error && SFX.error(); return; }
+      // bad(), not a bespoke error() — that cue never existed, so the `&&` guard silently swallowed
+      // the only audible signal a restore had failed. bad() is the station's negative-outcome voice.
+      if (!r.ok) { dataStatus('import failed — ' + r.error); SFX.bad(); return; }
       SFX.boot();
       const mem = (typeof r.memoriesRestored === 'number') ? r.memoriesRestored
         : (r.memories ? r.memories + ' in file' : 0);
@@ -3893,6 +4031,9 @@ const App = (() => {
   // and per-agent config (/agents, /model, /personality, …).
   return { show, refreshUsage, persist, pushRoster, refreshRail: renderRail, openWorkstream, summonAgent, summonForRequest, crewCount: () => agents.size,
     agentName: id => { const a = agents.get(id); return a ? (a.name || a.id) : null; },
+    // WORK LINES: a downstream stage runs as ANOTHER agent, so the chat host needs THAT agent's composed
+    // prompt — never the focused one's. Read-only; null for an id that is not on the live roster.
+    systemFor: id => { const a = agents.get(id); return a ? (a.systemPrompt || '') : null; },
     heroId: () => (agent ? agent.id : 'agent'),
     currentAgent: () => agent,
     agents: () => liveAgents().map(serializeAgentLite),

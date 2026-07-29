@@ -168,6 +168,24 @@
 .widget-rail:hover .wg-add, .wg-add:focus-visible { color: var(--ph-dim); border-color: var(--ph-faint); }
 .wg-add:hover { color: var(--ph); border-color: var(--ph-dim); box-shadow: 0 0 8px var(--ph-glow2); }
 
+/* ---- EMPTY RAIL (2026-07-27) ----
+   render() already stamps data-empty on each rail, but nothing consumed it: an empty rail was a ＋ sitting
+   at --ph-faint behind a transparent border, i.e. invisible. So the whole bottom rail read as dead chrome in
+   the middle of the bar and never got discovered. When a rail holds NOTHING the affordance earns a resting
+   presence — a dashed slot with a legible glyph and a label saying what the space is for. A rail that already
+   carries instruments keeps the quiet-until-hover ＋ (nothing left to discover there; don't clutter the bar). */
+.widget-rail[data-empty="1"] .wg-add {
+  width: auto; height: 22px; padding: 0 9px; gap: 6px;
+  color: var(--ph-dim); border-color: var(--ph-faint); border-style: dashed;
+}
+.widget-rail[data-empty="1"] .wg-add::after {
+  content: 'PIN A WIDGET';
+  font-size: 9.5px; letter-spacing: .14em; white-space: nowrap;
+}
+.widget-rail[data-empty="1"] .wg-add:hover, .widget-rail[data-empty="1"] .wg-add:focus-visible {
+  color: var(--ph); border-color: var(--ph-dim); border-style: solid; box-shadow: 0 0 8px var(--ph-glow2);
+}
+
 /* ---- the add-widget popover (fixed; positioned by widgets.js above/below its rail) ---- */
 .wg-pop {
   position: fixed; z-index: 995; min-width: 224px; padding: 6px;

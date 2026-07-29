@@ -74,6 +74,8 @@
     const d = deps || {};
     const getJobs = d.getJobs, setJobs = d.setJobs, runOnce = d.runOnce;
     const emit = typeof d.emit === 'function' ? d.emit : function () {};
+    // a place to say something went wrong without changing behaviour (injectable so tests stay quiet)
+    const warn = typeof d.warn === 'function' ? d.warn : function (m) { try { console.warn(m); } catch (_) {} };
     const newId = d.newId, newAbort = d.newAbort, now = d.now;
     const getKey = typeof d.getKey === 'function' ? d.getKey : function () { return ''; };
     const providerForJob = typeof d.providerForJob === 'function' ? d.providerForJob : function () { return 'openrouter'; };
@@ -116,6 +118,12 @@
     // injected host tz (G4.1): a tz-LESS cron schedule is planned on this LOCAL wall-clock; a schedule's
     // own tz always wins. A string dep — the pure cron-math owns the Intl formatting, so this stays clean.
     const defaultTz = d.defaultTz != null ? d.defaultTz : null;
+    /* THE WORK LINE, for scheduled work. A routine fires at ONE dock; if the Commander drew stages past that
+       dock, those stages are the routine — "every morning research it, then write it up" is the shape people
+       actually want from a floor. Optional: absent, a fire is a single run exactly as before. Called AFTER the
+       job's own run settles but BEFORE finishFire, so the routine's recorded outcome and its session transcript
+       carry the LINE's answer, not stage one's raw material. */
+    const advanceChain = typeof d.advanceChain === 'function' ? d.advanceChain : null;
     if (typeof getJobs !== 'function' || typeof setJobs !== 'function') throw new Error('cron-driver: getJobs/setJobs are required');
     if (typeof runOnce !== 'function') throw new Error('cron-driver: runOnce is required');
     if (typeof newId !== 'function' || typeof newAbort !== 'function' || typeof now !== 'function') throw new Error('cron-driver: newId/newAbort/now are required');
@@ -276,6 +284,9 @@
           // reconstructs a stream when messages<=1), so cron behavior is byte-identical — the frontend
           // autosessions module reads GET /api/transcript?stream=cron-<runId> to surface the output as a session.
           runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider,
+          // a scheduled run does real work; what it learns is durable memory, not scratch. Bounded downstream by
+          // the aux budget + per-agent reflection cooldown, and stamped origin:'schedule' (see index.js /api/run).
+          reflect: true,
           // UNATTENDED CAPABILITY GRANT (2026-07-25): the terminal/verify approval the Commander recorded on THIS
           // routine, read straight off the durable job record. Empty on every routine that was not granted, so an
           // ungranted fire is byte-identical to the pre-grant behavior. Never sourced from the prompt.
@@ -289,7 +300,23 @@
         });
       } catch (e) { p = Promise.reject(e); }
       Promise.resolve(p).then(
-        function () { finishFire(job.id, runId, state, null); },
+        function () {
+          if (!advanceChain || state.errMsg || !String(state.buf || '').trim()) { finishFire(job.id, runId, state, null); return; }
+          // hops ride the ROUTINE'S OWN stream so its session reads as one multi-stage job, and each hop renews
+          // the lease — a line that outran the heartbeat would be declared a zombie and re-fired mid-work.
+          Promise.resolve(advanceChain({
+            agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''),
+            signal: ac.signal, streamId: 'cron-' + runId, key: key, model: model, provider: provider,
+            onHop: function () { renewLease(job.id, runId); }
+          })).then(
+            function (line) { if (line && String(line.text || '').trim()) state.buf = line.text; finishFire(job.id, runId, state, null); },
+            // A CHAIN FAILURE NEVER CHANGES THE ROUTINE'S OUTCOME: stage one really did run and really did
+            // produce work. Same law the channel path holds — the line is never a gate on the answer.
+            // It is still SAID OUT LOUD: a silently swallowed chain error is indistinguishable from a floor
+            // with no downstream stage, and that is exactly how this shipped broken once already.
+            function (e) { warn('[cron] work line failed after ' + job.agentId + ': ' + ((e && e.message) || e)); finishFire(job.id, runId, state, null); }
+          );
+        },
         function (e) { finishFire(job.id, runId, state, e || new Error('run rejected')); }
       );
       return true;

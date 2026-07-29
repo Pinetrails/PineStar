@@ -74,6 +74,8 @@
       '- If a loaded skill was wrong, missing a step, or stale, patch it now.',
       '- If two skills overlap, prefer widening one umbrella and archiving the narrow sibling.',
       '- Use skill.list, skill.view, and skill.manage. Do not answer the user; only maintain skills.',
+      '- Before you patch, edit, add a file to, or archive an existing skill you MUST skill.view it in this pass. This is enforced: a blind rewrite is refused. The listed summary is not the skill.',
+      '- Pinned skills refuse every content change, and an archive must name the live skill that absorbed the content (absorbedInto).',
       '',
       'Loaded skills this run, patch these first when relevant:',
       loadedLines,

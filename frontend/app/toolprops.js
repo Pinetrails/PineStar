@@ -6,6 +6,7 @@
 
      fs.*                                        -> 'cabinet'   (files)
      web_search / web_fetch / public browser.*   -> 'dish'      (web)
+     channel.*                                   -> 'dish'      (outbound comms — the dish transmits too)
      notebook.* / skill.* / recall_conversation
        / todo                                    -> 'notebook'  (memory)
      image_*                                     -> 'studio'    (media)
@@ -28,6 +29,11 @@ const ToolProps = (() => {
     web_search: 'dish',
     web_fetch: 'dish',
     web_request: 'dish',   // calling a third-party API is a WEB reach — the dish is the prop that projects it
+    // connectors.list reads which integrations the station HAS and which it could add. It rides the same dish
+    // grant as web_request, so it lights the same antenna: the agent is looking outward, at reach, even though
+    // this particular read never leaves the machine.
+    'connectors.list': 'dish',
+    voice_generate: 'studio',   // the studio makes audio as well as images — same prop, same pulse
     todo: 'notebook',
     recall_conversation: 'notebook',
     'widget.set': 'notebook'   // WIDGET RAILS Phase 2: agent-fed rail readout — a notebook-object (memory) grant
@@ -39,6 +45,10 @@ const ToolProps = (() => {
   const PREFIX = [
     ['fs.', 'cabinet'],
     ['browser.', 'dish'],
+    // channel.targets / channel.send — the 'comms' capId rides the placed DISH, so an agent messaging a chat
+    // pulses the same antenna a web fetch does. It genuinely IS the dish transmitting; leaving it null would
+    // make the one outward-facing message in the tool surface invisible on the floor.
+    ['channel.', 'dish'],
     ['notebook.', 'notebook'],
     ['skill.', 'notebook'],
     ['image_', 'studio'],

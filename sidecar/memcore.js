@@ -66,6 +66,27 @@
     return null;
   }
 
+  // ---- ORIGIN: which surface a memory was formed on ----
+  // Memory used to form ONLY on the watched browser run, so every record was self-evidently the Commander's own
+  // conversation. Now that unattended runs reflect too, a belief can be learned from a scheduled routine, a
+  // night-shift shift, or a messaging channel — and the Commander must be able to SEE that, because "the agent
+  // believes this about me" and "someone in a group chat said this" are different claims. Channel DMs are
+  // owner-gated upstream (channels/adapter.js ownerOk), so the real exposure is a whitelisted group chat; either
+  // way the honest answer is to record where the belief came from rather than to flatten it.
+  // PURE + total: an unknown/absent run context is 'commander' (the historical meaning of an untagged record).
+  const ORIGIN_MAX = 24;
+  function originOf(run) {
+    run = run || {};
+    const src = String(run.taskSource == null ? '' : run.taskSource).toLowerCase().replace(/[^a-z0-9_-]/g, '');
+    const trigger = String(run.trigger == null ? '' : run.trigger).toLowerCase();
+    if (src === 'interactive') return 'commander';   // the browser COMMS run — the Commander in person
+    if (src === 'api') return 'api';                 // the local OpenAI-compatible endpoint
+    if (src) return 'channel:' + src.slice(0, ORIGIN_MAX);   // telegram / discord / … — the channel names itself
+    if (trigger === 'nightshift') return 'nightshift';
+    if (trigger === 'schedule') return 'schedule';   // cron fire, Run Now, and the away-workshop shift
+    return 'commander';
+  }
+
   // collision-proof record id: one past the HIGHEST existing note_N — NOT positional ('note_'+list.length),
   // which reuses a freed slot after a forget and produces a DUPLICATE id (then every id-keyed op corrupts or
   // deletes the wrong record). Pure + deterministic; shared by both writers (the turn-in keep + notebook.write).
@@ -146,6 +167,9 @@
       title: String(r.title || ''), body: String(text || ''),
       scope: r.scope || 'global', streamId: r.streamId || null,
       sourceRunId: r.sourceRunId || null,
+      // an untagged legacy record predates unattended memory, so it can only have come from the Commander's own
+      // COMMS run — 'commander' is the honest default, not a guess.
+      origin: r.origin || 'commander',
       createdAt: r.createdAt || r.ts || 0, lastUsedAt: r.lastUsedAt || null,
       lastFeedbackAt: r.lastFeedbackAt || null,
       useCount: r.useCount || 0, trust: trust, pinned: !!r.pinned
@@ -154,5 +178,5 @@
     return out;
   }
 
-  return { TRUST_STEP, TRUST_HALFLIFE_MS, clamp01, nextTrust, decayTrust, tokenJaccard, findSimilar, nextNoteId, reduceStats, applyPin, applyEdit, applyForget, projectRecord };
+  return { TRUST_STEP, TRUST_HALFLIFE_MS, clamp01, nextTrust, decayTrust, tokenJaccard, findSimilar, nextNoteId, originOf, reduceStats, applyPin, applyEdit, applyForget, projectRecord };
 });

@@ -70,13 +70,13 @@ function fakeDriver() {
   const B = makeBrowserTools({ driver, vision: async ({ question }) => 'vision answer: ' + question });
   const names = B.tools.map(t => t.name).sort();
   A.eq(names, [
-    'browser.back', 'browser.click', 'browser.console', 'browser.dialog', 'browser.drag',
-    'browser.eval', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect',
+    'browser.attach', 'browser.back', 'browser.click', 'browser.console', 'browser.detach', 'browser.dialog', 'browser.drag',
+    'browser.eval', 'browser.find', 'browser.forward', 'browser.get_text', 'browser.hover', 'browser.inspect',
     'browser.login', 'browser.navigate', 'browser.network',
     'browser.press', 'browser.screenshot', 'browser.scroll', 'browser.select', 'browser.snapshot',
     'browser.tab_close', 'browser.tab_select', 'browser.tabs',
     'browser.test_input', 'browser.test_navigate', 'browser.test_snapshot', 'browser.test_state',
-    'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision'
+    'browser.type', 'browser.upload', 'browser.viewport', 'browser.vision', 'browser.wait'
   ], 'browser action surface is complete');
   A.eq(B.tools.find(t => t.name === 'browser.click').requiresConsent, true, 'click is consent-gated');
   A.eq(B.tools.find(t => t.name === 'browser.snapshot').requiresConsent, false, 'snapshot is read-only');
@@ -115,7 +115,15 @@ function fakeDriver() {
     const click = await B.tools.find(t => t.name === 'browser.click').run({ ref: searchRef }, {});
     A.ok(/clicked Search/.test(click.content), 'click uses a snapshot ref');
     await B.session.snapshot();
-    await rejects(B.session.click(searchRef), /stale browser ref/, 'old refs expire after a new snapshot');
+    /* STALE-REF RECOVERY - a DELIBERATE contract change. This used to reject. A second snapshot renumbers
+       refs, which killed every ref the agent was holding, mid-task, over a page that had not changed at
+       all. Recovery re-resolves the ref by role+text against a FRESH snapshot - never against the old
+       coordinates, so the "silently mis-aimed" hazard the old contract guarded is eliminated rather than
+       tolerated - and the answer SAYS it recovered, because acting on a re-found node is a different claim
+       from acting on the ref the agent named. The guards that keep this honest are asserted below. */
+    const again = await B.session.click(searchRef);
+    A.ok(/clicked Search/.test(again), 'a stale ref is RECOVERED by re-finding the same element');
+    A.ok(/had gone stale/.test(again), 'and the recovery is DISCLOSED, never silent');
   }
 
   // type/press/scroll/back/console/dialog/get_text/vision all route through the driver
@@ -512,8 +520,12 @@ function fakeDriver() {
     const vp = await tool('browser.viewport').run({ width: 375, height: 812, mobile: true }, {});
     A.eq(d.log.viewports, [[375, 812, true]], 'viewport passes width/height/mobile to the driver');
     A.ok(/fresh browser\.snapshot/.test(vp.content), 'resizing tells the agent its refs are now stale');
-    // A resize relays the page, so every earlier ref must be dead rather than silently mis-aimed.
-    await rejects(X.session.click(btn.ref), /stale browser ref/, 'refs from before a resize are invalidated');
+    /* A resize RELAYS the page, so the old coordinates are dead. Recovery never reuses them — it takes a
+       fresh snapshot and re-finds the element — so the click lands on the REFLOWED position instead of
+       being refused outright. Being told to re-snapshot (asserted above) is still the honest advice; this
+       is the safety net for the agent that acts on a ref it was already holding. */
+    const afterResize = await X.session.click(btn.ref);
+    A.ok(/had gone stale/.test(afterResize), 'a ref from before a resize is recovered against the reflowed page');
 
     const fwd = await tool('browser.forward').run({}, {});
     A.ok(/example\.com\/fwd/.test(fwd.content), 'forward completes the history pair with back');

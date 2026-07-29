@@ -1078,7 +1078,6 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const ul = $('#crew'); if (!ul) return;
     if (!present.length) {
       ul.innerHTML = '<li class="crew-empty"><div class="empty-state"><span class="es-glyph">▯</span><b>NO AGENTS ON STATION</b><span>Commission one from RECRUITMENT to begin.</span></div></li>';
-      $('#crew-n').textContent = '';
       $('#crew-sum').innerHTML = '';
       return;
     }
@@ -1094,7 +1093,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // The shimmer (.bar-active) reads as live activity; it's an indeterminate sweep, not a % readout.
       '<div class="crew-prog bar-active" id="cp-' + esc(a.id) + '" aria-hidden="true"><div></div></div>' +
       '</div></li>').join('');
-    $('#crew-n').textContent = present.length + (present.length === 1 ? ' AGENT' : ' AGENTS');
+    // (the head's roster count moved out — #crew-sum below the list already totals the same crew)
     ul.querySelectorAll('.crew-row').forEach(li =>
       li.addEventListener('click', () => { sfx('click'); openAgent(+li.dataset.i); }));
     crewTick();
@@ -1270,7 +1269,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const cur = (a && a.skin && skins[a.skin]) ? a.skin : (typeof DATA !== 'undefined' ? DATA.DEFAULT_SKIN : '');
     const thumbs = Object.keys(skins).map(id => {
       const sk = skins[id];
-      return '<button type="button" class="skin-thumb ag-skin-thumb' + (id === cur ? ' sel' : '') + '" data-skin="' + esc(id) + '" title="' + esc(sk.name || id) + '" aria-label="' + esc(sk.name || id) + '">' +
+      return '<button type="button" class="skin-thumb ag-skin-thumb' + (id === cur ? ' sel' : '') + '" data-skin="' + esc(id) + '" title="' + esc(sk.name || id) + '" aria-label="' + esc(sk.name || id) + '" aria-pressed="' + (id === cur ? 'true' : 'false') + '">' +
         '<img src="assets/sprites/' + esc(sk.set) + '/rot_south.png" alt="' + esc(sk.name || id) + '" draggable="false"></button>';
     }).join('');
     // DELETE gating: the hero (orchestrator / id 'agent') is undeletable; so is the last agent on station.
@@ -1284,10 +1283,21 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         '<span class="ag-del-why">' + esc(disabledReason) + '</span>'
       : '<button class="bb sm ag-del" id="ag-del-btn" title="archive this agent and remove it from the station">✕ DELETE AGENT</button>' +
         '<span class="ag-del-why">work is archived, not erased</span>';
+    // a 44px still of a chunky sprite is unidentifiable, so the picker sits beside a LIVE stage (shared
+    // SkinStage) that plays the picked — or merely hovered — skin's real walk cycle big enough to judge.
+    // Same vocabulary as the Recruitment Bay's SUMMON stage; wired (mount + hover scrub) in wireCommand.
+    const stage =
+      '<figure class="ag-skin-stage">' +
+        '<div class="ag-skin-stage-frame"><img id="ag-skin-stage-img" alt="" draggable="false"></div>' +
+        '<figcaption class="ag-skin-stage-name"><span class="ag-stage-lbl">LIVE PREVIEW —</span> <span id="ag-skin-stage-name"></span></figcaption>' +
+      '</figure>';
     return '<div class="ag-command">' +
       '<div class="ag-cmd-sec"><div class="ag-cmd-lbl">SKIN</div>' +
-        // role=group, not listbox: the thumbs are <button>s (a picker), not selectable listbox options.
-        '<div class="ag-skin-row skin-picker" role="group" aria-label="Agent skin">' + thumbs + '</div></div>' +
+        '<div class="ag-skin-section">' +
+          // role=group, not listbox: the thumbs are <button>s (a picker), not selectable listbox options.
+          '<div class="ag-skin-row skin-picker" role="group" aria-label="Agent skin">' + thumbs + '</div>' +
+          stage +
+        '</div></div>' +
       '<div class="ag-cmd-sec ag-cmd-danger"><div class="ag-cmd-lbl">DANGER</div>' +
         '<div class="ag-del-row">' + delBtn + '</div></div>' +
       '</div>';
@@ -1421,6 +1431,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<label class="set-row"><input type="checkbox" id="mc-reflect-on"> REFLECTION ON <span class="dim">— propose memories after a completed task</span></label>' +
       '<div class="set-row"><label for="mc-cooldown">COOLDOWN (MINUTES)</label><input id="mc-cooldown" class="key-input" type="number" min="0" max="60" step="1" style="max-width:90px" title="minimum gap between turn-in beats per agent"></div>' +
       '<div class="mc-acts"><button class="bb sm" id="mc-reflect-save">SAVE</button><span class="msg" id="mc-reflect-msg"></span></div>' +
+      // AWAITING A VERDICT — the durable high-stakes deck. Runs that finish while nobody is watching (a routine, a
+      // night shift, a channel message) can raise a credential/PII/standing-instruction belief; it is neither kept
+      // nor dropped until the Commander rules on it, and it waits HERE across restarts. Hidden until non-empty.
+      '<div class="gx-sec" id="mc-pending-sec" style="display:none;"><span class="gx-ref gold">?</span><span class="gx-title">Awaiting your decision</span><span class="gx-tag" id="mc-pending-count"></span></div>' +
+      '<div class="mc-note" id="mc-pending-note" style="display:none;">Sensitive beliefs raised while you were away — <b>nothing here is remembered yet</b>. <b>Keep</b> to save one &middot; <b>Discard</b> to reject it for good.</div>' +
+      '<div id="mc-pending-list" class="mc-list"></div>' +
       '<div class="gx-sec"><span class="gx-ref gold">M</span><span class="gx-title">Stored beliefs</span><span class="gx-tag" id="mc-count">&hellip;</span></div>' +
       '<div class="mc-note">Each belief traces to the run that earned it. <b>Pin</b> to lock it to the top of recall &middot; <b>Edit</b> to refine it &middot; <b>Forget</b> to remove it.</div>' +
       '<div id="mc-list" class="mc-list"><span class="loading pulse">reading memory core&hellip;</span></div>' +
@@ -1440,7 +1456,68 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const cnt = $('#mc-count'); if (cnt) cnt.textContent = records.length + (records.length === 1 ? ' belief' : ' beliefs');
     }).catch(() => { const cur = $('#mc-list'); if (cur) cur.textContent = 'Could not read the Memory Core.'; });
     loadDeclined(a);   // the reject-list renders alongside (its own fetch; absent/empty → the section stays hidden)
+    loadPending(a);    // …as does the un-answered high-stakes deck (same pattern, same hidden-when-empty rule)
     loadReflectionConfig();   // P1-10 reflection on/off + cooldown (station-wide)
+  }
+
+  // The durable high-stakes deck: proposals raised by runs that finished while nobody was watching. Each row is
+  // resolved through the SAME POST /api/memory/turnin the live COMMS deck uses, so there is exactly one verdict
+  // path — Keep commits a real record, Discard denylists it forever (and shows up in Declined below, restorable).
+  function loadPending(a) {
+    const host = $('#mc-pending-list'); if (!host || !(typeof Harness === 'object' && Harness.memoryPending)) return;
+    Harness.memoryPending(a.id).then(list => {
+      const h = $('#mc-pending-list'); if (!h) return;   // dossier may have closed/retabbed mid-fetch
+      const sec = $('#mc-pending-sec'), note = $('#mc-pending-note'), cnt = $('#mc-pending-count');
+      h.innerHTML = '';
+      const show = list.length > 0;
+      if (sec) sec.style.display = show ? '' : 'none';
+      if (note) note.style.display = show ? '' : 'none';
+      if (cnt) cnt.textContent = String(list.length);
+      list.forEach((p, i) => { const c = pendingCard(p, a); c.style.setProperty('--ci', String(i)); h.appendChild(c); });
+    }).catch(() => {});
+  }
+
+  function pendingCard(p, a) {
+    const card = mkEl('div', 'mc-rec');
+    const head = mkEl('div', 'mc-head');
+    const tag = mkEl('span', 'turnin-kind'); tag.textContent = MEM_KIND[p.kind] || 'NOTE'; head.appendChild(tag);
+    const org = originChip(p.origin); if (org) head.appendChild(org);
+    card.appendChild(head);
+    const bodyEl = mkEl('div', 'mc-body'); bodyEl.textContent = p.content || '(empty)'; card.appendChild(bodyEl);   // textContent — never interpreted
+    const meta = mkEl('div', 'mc-meta');
+    const prov = mkEl('span', 'mc-prov');
+    const when = p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—';
+    prov.textContent = '◉ raised ' + when + (p.runId ? ' · run ' + String(p.runId).slice(0, 8) : '');
+    prov.title = p.runId ? ('proposed in run ' + p.runId) : 'origin run unknown';
+    meta.appendChild(prov);
+    card.appendChild(meta);
+    const btns = mkEl('div', 'consent-btns mc-acts'); card.appendChild(btns);
+    let busy = false;
+    const decide = async (verdict) => {
+      if (busy) return; busy = true;
+      const r = await Harness.memoryTurnin({ agentId: a.id, runId: p.runId, id: p.id, verdict: verdict });
+      if (r && r.ok) { sfx('click'); loadMemoryCore(a); } else busy = false;   // a failed verdict must stay clickable
+    };
+    const keep = mkEl('button', 'consent-btn'); keep.textContent = 'Keep'; keep.title = 'remember this'; keep.onclick = () => decide('keep');
+    btns.appendChild(keep);
+    const drop = mkEl('button', 'consent-btn deny'); drop.textContent = 'Discard'; drop.title = 'reject it — never propose this again'; drop.onclick = () => decide('discard');
+    btns.appendChild(drop);
+    return card;
+  }
+
+  /* WHERE a belief came from. Memory used to form only on the watched browser run, so every record was
+     self-evidently the Commander's own conversation and needed no label. Unattended runs reflect now, so a belief
+     can arrive from a routine, a night shift, or a messaging channel — and "the agent believes this about me" and
+     "someone said this in a group chat" are different claims. 'commander' renders NO chip: the ordinary case must
+     stay quiet, or the label becomes noise nobody reads. */
+  const ORIGIN_LABEL = { schedule: '⏱ routine', nightshift: '☾ night shift', api: '⇄ external app' };
+  function originChip(origin) {
+    const o = String(origin || 'commander');
+    if (o === 'commander') return null;
+    const label = ORIGIN_LABEL[o] || (o.indexOf('channel:') === 0 ? '✆ ' + o.slice(8) : o);
+    const el = mkEl('span', 'mc-scope'); el.textContent = label;
+    el.title = 'learned on a run you were not watching (' + o + ')';
+    return el;
   }
 
   // P1-10: hydrate the reflection controls from /api/memory/config + wire SAVE (persist + live-apply server-side).
@@ -1527,6 +1604,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const wsT = (typeof Workstreams !== 'undefined' && Workstreams.get) ? ((Workstreams.get(rec.streamId) || {}).title || null) : null;
       const sc = mkEl('span', 'mc-scope'); sc.textContent = '⊂ ' + (wsT || 'workstream'); sc.title = 'working memory — scoped to this workstream (still cross-stream searchable)'; head.appendChild(sc);
     }
+    const org = originChip(rec.origin); if (org) head.appendChild(org);   // only when it was NOT the Commander's own run
     if (rec.pinned) { const p = mkEl('span', 'mc-pinflag'); p.textContent = '★ pinned'; head.appendChild(p); }
     card.appendChild(head);
 
@@ -1900,7 +1978,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         : (j.granted ? 'shift not scheduled yet' : 'shifts are off (grant above)');
       h += '<div class="ws-bl-foot">' +
         '<span class="dim" style="font-size:11px;">' + esc(next) + (j.shiftEvery ? ' · repeats ' + esc(String(j.shiftEvery).replace(/^every /, 'every ')) : '') + '</span>' +
-        (j.granted && items.some(it => it.state === 'queued') ? '<button id="ag-ws-now">⚒ build now</button>' : '') +
+        (j.granted && items.some(it => it.state === 'queued') ? '<button class="bb sm" id="ag-ws-now">⚒ build now</button>' : '') +
         '</div>';
       const ls = lastShiftLine(j.lastShift);
       if (ls) h += '<div class="ws-bl-last' + (/^⚠/.test(ls) ? ' warn' : '') + '">' + ls + '</div>';
@@ -1988,16 +2066,39 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
   // last agent) is left inert. Guarded so a section without the block (or a missing access hook) is a safe no-op.
   function wireCommand(body, a) {
     if (!a) return;
+    // the LIVE preview stage: hold mount()'s own handle rather than the module-level SkinStage.show — the
+    // Recruitment Bay's stage can be on screen at the same time (its modal opens over an open dossier) and
+    // whichever mounted last owns the shared shortcut.
+    const stageImg = body.querySelector('#ag-skin-stage-img');
+    const cur = (a.skin && typeof DATA !== 'undefined' && DATA.SKINS && DATA.SKINS[a.skin])
+      ? a.skin : (typeof DATA !== 'undefined' ? DATA.DEFAULT_SKIN : '');
+    const stage = (stageImg && typeof SkinStage !== 'undefined')
+      ? SkinStage.mount(stageImg, body.querySelector('#ag-skin-stage-name'), cur) : null;
+    const skinRow = body.querySelector('.ag-skin-row');
+    // hover scrubs the stage so skins can be compared without committing; leaving snaps back to the worn one
+    if (skinRow && stage) skinRow.addEventListener('mouseleave', () => stage.show(cur));
     body.querySelectorAll('.ag-skin-thumb').forEach(btn => {
+      if (stage) btn.addEventListener('mouseenter', () => stage.show(btn.dataset.skin));
       btn.addEventListener('click', () => {
         const skin = btn.dataset.skin;
         if (!skin || skin === a.skin) return;
         if (!(access.config && access.config.setSkin)) { notify('skin change unavailable', 'bad'); return; }
+        // Every rebuild of the dossier body hands back a FRESH scroll container parked at 0 — so picking a
+        // skin threw the Commander to the top of CONFIG and they never saw the one they just chose. Carry
+        // the offset across. Capture it FIRST: setSkin repaints the portrait via StationUI.setRoster, which
+        // detaches this pane before we ever reach the rerender below. `body` IS the console host (.con-pane),
+        // so closest() — not querySelector(); the enclosing .term-body is what a rebuild writes INTO, so it
+        // is the one node that survives and can hand back the new pane.
+        const host = body.closest('.con-pane');
+        const shell = body.closest('.term-body');
+        const keep = host ? host.scrollTop : 0;
         const ok = access.config.setSkin(a.id, skin);
         if (ok === false) { notify('could not change skin', 'bad'); sfx('bad'); return; }
         const nm = ((typeof DATA !== 'undefined' && DATA.SKINS && DATA.SKINS[skin] && DATA.SKINS[skin].name) || skin);
         notify('skin → ' + String(nm).toUpperCase(), 'good');
         sfx('click'); rerender('agents');
+        const next = shell && shell.querySelector('.con-pane');
+        if (next && keep) next.scrollTop = keep;   // clamped by the browser if the pane got shorter
       });
     });
     const del = body.querySelector('#ag-del-btn');
@@ -2440,21 +2541,41 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       const state = s.state === 'archived' ? 'off' : (s.state === 'stale' ? 'want' : 'on');
       const when = s.updatedAt ? new Date(s.updatedAt).toLocaleDateString() : 'unknown';
       const files = (s.files || []).length ? '<div class="sk-attr">Support files: ' + esc((s.files || []).map(f => f.path).join(', ')) + '</div>' : '';
+      /* WITHHELD IS THE ONE THING THIS CARD MUST NOT HIDE. The skill guard can keep a saved skill
+         out of the agent's prompt entirely; a card that looks identical either way would have the
+         Commander believe their agent is using a procedure it was never given. So: a badge, the
+         reason, the finding categories, and — when the verdict is 'ask' — the button that clears
+         it. A 'block' verdict shows no button, because no click can bless it (the sidecar refuses
+         it too); the honest instruction is to edit out the flagged content. */
+      const held = !!s.withheld;
+      const cats = (s.guardCategories || []).length ? ' (' + esc((s.guardCategories || []).join(', ')) + ')' : '';
+      const heldBlock = held
+        ? '<div class="sk-attr sk-held">WITHHELD FROM THE AGENT: ' + esc(s.withheldReason || 'held by the skill guard') + cats +
+            '. This skill is saved, but its steps are not given to ' + esc(agentId) + '.</div>'
+        : (s.guardDecision === 'ask' ? '<div class="sk-attr">Approved by you for this exact content — an edit will ask again.</div>' : '');
+      const heldBtn = held && s.guardApprovable
+        ? '<button class="consent-btn" data-ag-act="allow" title="Give this skill to the agent — the approval covers this exact content">Approve</button>'
+        : (!held && s.guardDecision === 'ask'
+          ? '<button class="consent-btn" data-ag-act="revoke" title="Withhold this skill from the agent again">Revoke</button>'
+          : '');
+      const absorbed = s.absorbedInto ? '<div class="sk-attr">Merged into: ' + esc(s.absorbedInto) + '</div>' : '';
       html +=
-        '<div class="sk-card ' + state + '" data-agent-skill="' + esc(s.id) + '">' +
+        '<div class="sk-card ' + state + (held ? ' held' : '') + '" data-agent-skill="' + esc(s.id) + '">' +
           '<div class="sk-card-head">' +
             '<button class="sk-toggle" data-ag-act="pin" title="' + (s.pinned ? 'Unpin' : 'Pin') + ' this skill">' + (s.pinned ? '*' : '+') + '</button>' +
             '<div class="sk-card-main">' +
               '<div class="sk-name-row"><span class="sk-name">' + esc(s.name) + '</span>' +
                 (s.category ? '<span class="sk-badge cat">' + esc(String(s.category).toUpperCase()) + '</span>' : '') +
+                (held ? '<span class="sk-badge want">WITHHELD</span>' : '') +
                 '<span class="sk-badge free">' + esc((s.state || 'active').toUpperCase()) + '</span></div>' +
               '<div class="sk-desc">' + esc(s.summary || '') + '</div>' +
               '<div class="sk-stat ' + state + '">used ' + (s.useCount || 0) + 'x - viewed ' + (s.viewCount || 0) + 'x - patched ' + (s.patchCount || 0) + 'x - updated ' + esc(when) + '</div>' +
             '</div>' +
             '<button class="sk-expand" data-ag-act="expand" title="Read the skill">&gt;</button>' +
           '</div>' +
-          '<div class="sk-body"><pre>' + esc(s.body || '') + '</pre>' + files +
+          '<div class="sk-body">' + heldBlock + '<pre>' + esc(s.body || '') + '</pre>' + files + absorbed +
             '<div class="consent-btns mc-acts">' +
+              heldBtn +
               '<button class="consent-btn" data-ag-act="edit">Edit</button>' +
               '<button class="consent-btn" data-ag-act="archive">' + (s.state === 'archived' ? 'Restore' : 'Archive') + '</button>' +
             '</div>' +
@@ -2470,9 +2591,26 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const opened = card.classList.toggle('open'); btn.textContent = opened ? 'v' : '>'; sfx('click'); return;
       }
       if (act === 'edit') { editAgentSkill(card, skill, agentId); return; }
+      if (act === 'allow' || act === 'revoke') {
+        btn.classList.add('busy');
+        const r = await Harness.agentSkillAllow({ agentId, id: skill.id, allow: act === 'allow' });
+        if (r && r.ok) { sfx('click'); loadAgentSkills(agentId); }
+        else {
+          // Say what the station said. A silently dead button on a security decision is worse
+          // than no button, and the usual reason is a 'block' verdict that cannot be approved.
+          btn.classList.remove('busy');
+          const note = card.querySelector('.sk-held') || card.querySelector('.sk-body');
+          if (note) { const w = mkEl('div', 'sk-attr sk-held'); w.textContent = (r && r.error) || 'that decision was refused'; note.appendChild(w); }
+        }
+        return;
+      }
       btn.classList.add('busy');
       const action = act === 'pin' ? (skill.pinned ? 'unpin' : 'pin') : (skill.state === 'archived' ? 'restore' : 'archive');
-      const r = await Harness.agentSkillManage({ agentId, action, target: skill.id });
+      /* force: the pin exists to stop MODELS (a review pass, a curator pass) from rewriting or
+         filing away the Commander's own procedure. A Commander clicking their own card is the
+         author, so the panel passes the override the sidecar requires — without it the button
+         would simply fail on a pinned skill, which is a worse lie than no button. */
+      const r = await Harness.agentSkillManage({ agentId, action, target: skill.id, force: true });
       if (r && r.ok) { sfx('click'); loadAgentSkills(agentId); } else btn.classList.remove('busy');
     }));
   }
@@ -2490,7 +2628,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const save = mkEl('button', 'consent-btn'); save.textContent = 'Save'; actions.appendChild(save);
     const cancel = mkEl('button', 'consent-btn'); cancel.textContent = 'Cancel'; actions.appendChild(cancel);
     save.onclick = async () => {
-      const r = await Harness.agentSkillManage({ agentId, action: 'edit', target: skill.id, summary: skill.summary || '', body: ta.value, category: skill.category || 'General' });
+      const r = await Harness.agentSkillManage({ agentId, action: 'edit', target: skill.id, summary: skill.summary || '', body: ta.value, category: skill.category || 'General', force: true });   // the human author may edit their own pinned skill (see force note above)
       if (r && r.ok) { sfx('click'); loadAgentSkills(agentId); }
     };
     cancel.onclick = () => loadAgentSkills(agentId);
@@ -3099,9 +3237,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit RE-SIGN-IN to start again'; },
             onCode: c => {
               if (code) { code.textContent = c.user_code; code.hidden = false; }
+              // DISPLAY the bare address, OPEN the code-carrying one (open_uri) — see codexsignin.js.
               if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
-              if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.verification_uri); }; }
-              openExternal(c.verification_uri);
+              if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.open_uri || c.verification_uri); }; }
+              openExternal(c.open_uri || c.verification_uri);
             },
             onConnected: () => {
               // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
@@ -3149,9 +3288,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
               onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit RE-SIGN-IN to start again'; },
               onCode: c => {
                 if (code) { code.textContent = c.user_code; code.hidden = false; }
+                // DISPLAY the bare address, OPEN the code-carrying one — kimi's page REQUIRES ?user_code=.
                 if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
-                if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.verification_uri); }; }
-                openExternal(c.verification_uri);
+                if (open) { open.hidden = false; open.onclick = () => { sfx('click'); openExternal(c.open_uri || c.verification_uri); }; }
+                openExternal(c.open_uri || c.verification_uri);
               },
               onConnected: () => {
                 // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
@@ -3354,9 +3494,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
           onTimeout: () => { if (st) st.textContent = 'sign-in timed out — hit ⏼ SIGN IN to start again'; },
           onCode: c => {
             if (code) { code.textContent = c.user_code; code.hidden = false; }
+            // DISPLAY the bare address, OPEN the code-carrying one — kimi's page REQUIRES ?user_code=.
             if (st) st.innerHTML = 'enter this code at <b>' + esc(c.verification_uri) + '</b> (opening it now)…';
-            if (open) { open.hidden = false; open.onclick = e2 => { e2.stopPropagation(); sfx('click'); openExternal(c.verification_uri); }; }
-            openExternal(c.verification_uri);
+            if (open) { open.hidden = false; open.onclick = e2 => { e2.stopPropagation(); sfx('click'); openExternal(c.open_uri || c.verification_uri); }; }
+            openExternal(c.open_uri || c.verification_uri);
           },
           onConnected: () => {
             // the sidecar just exchanged + persisted fresh tokens — that POLL answer is backend truth.
@@ -4021,6 +4162,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       // grant list shows + revokes every standing capability. #perm-desc spells out the COMBINED truth, live.
       '<h4 class="ms-h">PERMISSIONS <span class="dim">— what it’s actually allowed to do on its own</span></h4>' +
       '<p class="set-about" id="perm-desc"></p>' +
+      '<p class="set-about" id="perm-status" aria-live="polite">checking standing approvals…</p>' +
       // ONE ladder, one vocabulary (UX sweep 2026-07-15): these four rungs ARE the AUTONOMY dial's rungs
       // (Permissions.PLANS maps 1:1 onto the dial presets) — so they carry the SAME primary words the dial uses.
       // Stored data-level values are unchanged; only the labels unify. FULLY AUTONOMOUS stays in the label
@@ -4714,7 +4856,8 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     // (permissionsstore). Grants live server-side, so paint from cache now, refresh from the sidecar, repaint. A
     // level click sets BOTH posture + the write grant (so it repaints the dial); the dial syncs back via syncPerm.
     if (typeof PermissionsStore !== 'undefined' && PermissionsStore.snapshot) {
-      const levelWrap = host.querySelector('#perm-level'), grantsWrap = host.querySelector('#perm-grants'), permDesc = host.querySelector('#perm-desc');
+      const levelWrap = host.querySelector('#perm-level'), grantsWrap = host.querySelector('#perm-grants'),
+            permDesc = host.querySelector('#perm-desc'), permStatus = host.querySelector('#perm-status');
       const pdesc = (lvl) => (typeof Permissions !== 'undefined' && Permissions.describeLevel) ? Permissions.describeLevel(lvl) : '';
       const plabel = (k) => (typeof Permissions !== 'undefined' && Permissions.catalogLabel) ? Permissions.catalogLabel(k) : k;
       const pcurated = () => (typeof Permissions !== 'undefined' && Permissions.grantableKeys) ? Permissions.grantableKeys() : [];
@@ -4795,7 +4938,14 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         const snap = PermissionsStore.snapshot();
         if (permDesc) permDesc.textContent = pdesc(snap.level);
         if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(x => x.classList.toggle('sel', x.dataset.level === snap.level));
-        if (grantsWrap) { grantsWrap.innerHTML = renderGrants(snap); wireGrants(); }
+        if (permStatus) {
+          if (snap.error) permStatus.textContent = '⚠ ' + snap.error + (snap.loaded ? ' — showing the last confirmed approvals; changes were not applied.' : ' — standing approvals could not be verified; no changes are available.');
+          else permStatus.textContent = snap.loaded ? '' : 'checking standing approvals…';
+        }
+        if (grantsWrap) {
+          grantsWrap.innerHTML = snap.loaded ? renderGrants(snap) : '<p class="set-about">Standing approvals are unavailable until the local permission service confirms them.</p>';
+          if (snap.loaded) wireGrants();
+        }
       };
       syncPerm = repaintPerm;
       if (levelWrap) levelWrap.querySelectorAll('[data-level]').forEach(b => b.addEventListener('click', () => { Promise.resolve(PermissionsStore.setLevel(b.dataset.level)).then(() => { repaintPerm(); repaintDial(); }); sfx('click'); }));

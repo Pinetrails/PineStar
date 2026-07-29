@@ -132,7 +132,9 @@ const rpc = (id, result) => JSON.stringify({ jsonrpc: '2.0', id, result });
     A.eq(defs.map(d => d.name).sort(), ['mcp__gh__create_issue', 'mcp__gh__list_issues'], 'projected tool defs are namespaced');
     const create = defs.find(d => d.name === 'mcp__gh__create_issue');
     A.eq(create.requiresConsent, true, 'mutating connector tool requires consent');
-    A.eq(defs.find(d => d.name === 'mcp__gh__list_issues').requiresConsent, false, 'readOnly connector tool needs no consent');
+    // The consent gate is on for EVERY connector tool, read-only hint or not — the broker asks once and then
+    // honors the recorded grade. A remote server's own annotation cannot exempt itself from being asked.
+    A.eq(defs.find(d => d.name === 'mcp__gh__list_issues').requiresConsent, true, 'a readOnly connector tool is still consent-gated');
     const out = await create.run({ title: 'hi' }, {});
     A.ok(out.content.indexOf('ran create_issue') >= 0, 'tool run routed through the manager to the client');
     const called = await mgr.call('gh', 'create_issue', { title: 'x' });

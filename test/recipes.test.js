@@ -454,4 +454,90 @@ const sinkSome = R.rankRecipes(items, { launches: { 'summarize': { n: 2, rated: 
 A.ok(!sinkSome.some(r => r.id === 'summarize'), 'a miss-heavy recipe still sinks OUT while a positive one survives');
 A.eq(sinkSome[0].id, 'fix-bug', 'the surviving positive recipe still leads the row');
 
+/* ================= TYPED FILL-INS =================
+   A param declares the KIND of value it wants so the launch form can offer the right control (a file chooser,
+   a chip row, the live connector list) instead of one textarea for everything. Every type still resolves to a
+   plain string through fillTask, and a type NEVER gates a launch — these locks are about the form never lying:
+   no picker with nothing to pick, no preselected option the Commander was never shown. */
+const typed = R.saveCustom({
+  name: 'Typed Fill-ins', task: 'Review {target} with a {depth} pass, filed under {folder}, posted to {channel}.',
+  params: [
+    { key: 'target', type: 'file' },
+    { key: 'depth', type: 'choice', options: ['quick', 'thorough', 'quick', '  thorough  '], default: 'thorough' },
+    { key: 'folder', type: 'folder' },
+    { key: 'channel', type: 'connector' }
+  ]
+});
+const byKey = {}; typed.params.forEach(p => { byKey[p.key] = p; });
+A.eq(byKey.target.type, 'file', 'a file param keeps its type');
+A.eq(byKey.folder.type, 'folder', 'a folder param keeps its type');
+A.eq(byKey.channel.type, 'connector', 'a connector param keeps its type');
+A.eq(byKey.depth.type, 'choice', 'a choice param keeps its type');
+A.eq(byKey.depth.options.join(','), 'quick,thorough', 'choice options are trimmed + de-duped case-insensitively');
+A.eq(byKey.depth.default, 'thorough', 'a choice default that IS an option survives');
+A.eq(byKey.target.options.length, 0, 'a non-choice param carries no options');
+A.eq(R.get(typed.id).params[0].type, 'file', 'the saved record round-trips its param types');
+// every typed value is still just a string in the directive — the launch primitive is untouched.
+A.eq(R.fillTask(typed, { target: 'C:\\repo\\a.js', depth: 'quick', folder: 'C:\\repo', channel: 'slack' }),
+  'Review C:\\repo\\a.js with a quick pass, filed under C:\\repo, posted to slack.',
+  'typed params substitute exactly like text params');
+
+// degradations: the form may never show a control that cannot be used honestly.
+const degraded = R.saveCustom({
+  name: 'Degraded Types', task: 'Do {a} then {b} then {c}.',
+  params: [
+    { key: 'a', type: 'dropdown' },                                          // unknown type
+    { key: 'b', type: 'choice', options: ['only-one'] },                     // a picker with nothing to pick
+    { key: 'c', type: 'choice', options: ['x', 'y'], default: 'z' }          // a default that is not an option
+  ]
+});
+const dKey = {}; degraded.params.forEach(p => { dKey[p.key] = p; });
+A.eq(dKey.a.type, 'text', 'an unknown param type falls back to text');
+A.eq(dKey.b.type, 'text', 'a choice with fewer than 2 options degrades to a text box');
+A.eq(dKey.b.options.length, 0, 'the degraded choice drops its lone option');
+A.eq(dKey.c.default, '', 'a choice default that is not one of its options is dropped, never preselected');
+A.ok(R.PARAM_TYPES.indexOf('choice') >= 0 && R.PARAM_TYPES.indexOf('file') >= 0, 'the param-type vocabulary is exported');
+A.throws(() => { R.get(typed.id).params[1].options.push('sneaky'); }, 'a saved param options array is frozen against mutation');
+// a template-derived param (author wrote only {tokens}) is plain text — no invented control.
+A.ok(R.paramsFromTemplate('Ping {who} about {what}').every(p => !p.type || p.type === 'text'), 'template-derived params are text');
+
+// export / import carry the types through the portable format, and re-validate on the way in.
+const tExp = R.exportRecipe(typed.id);
+A.eq(tExp.params.find(p => p.key === 'depth').type, 'choice', 'export carries the param type');
+A.eq(tExp.params.find(p => p.key === 'depth').options.join(','), 'quick,thorough', 'export carries the choice options');
+const tImp = R.importRecipe(tExp);
+A.ok(tImp.ok, 'a typed recipe imports');
+A.eq(tImp.recipe.params.find(p => p.key === 'target').type, 'file', 'import preserves a file param');
+const evilImport = R.importRecipe({ name: 'Evil', task: 'Do {x}.', params: [{ key: 'x', type: 'choice', options: ['solo'] }] });
+A.eq(evilImport.recipe.params[0].type, 'text', 'an imported one-option choice degrades to text (no empty picker from a file)');
+R.removeCustom(typed.id); R.removeCustom(degraded.id); R.removeCustom(tImp.recipe.id); R.removeCustom(evilImport.recipe.id);
+
+/* ================= GOAL MATCHING IS WORD-WISE, NOT SUBSTRING =================
+   The FOR-YOU row's goal term is the ONLY live signal on a cold station, so a sloppy match decides the whole
+   shelf. `hay.indexOf(word)` made "for" match perFORmance and "the" match oTHEr; a real goals belief scored 42
+   of 50 catalog recipes above zero and filled the row with unrelated cards. Word-wise matching + a stoplist +
+   dropping the internal tag keys from the haystack is what keeps the row explainable. */
+const gr = { name: 'Performance Pass', tagline: 'Find where the time and memory go', blurb: 'Profiles the hot path.', tags: { code: 1 } };
+A.eq(R.goalKeywordScore(gr, 'for'), 0, '"for" does not match inside "performance" (no substring hits)');
+A.eq(R.goalKeywordScore(gr, 'the'), 0, '"the" does not match inside "other" (stopword AND not a substring)');
+A.eq(R.goalKeywordScore(gr, 'memory'), 1, 'a real word in the tagline still scores');
+A.eq(R.goalKeywordScore(gr, 'profile'), 1, 'a word matches through an ordinary suffix ("profile" -> "profiles")');
+A.eq(R.goalKeywordScore(gr, 'perform'), 0, 'a mere prefix with no known suffix is not a hit');
+A.eq(R.goalKeywordScore({ name: 'X', tagline: '', blurb: '', tags: { general: 1 } }, 'general'), 0,
+  'the internal lane vocabulary is not part of the haystack (a goal saying "general" cannot light up every general recipe)');
+A.eq(R.goalKeywordHits(gr, 'memory and time').join(','), 'memory,time', 'the matched keywords are reported in goal order');
+A.eq(R.goalKeywordHits(gr, 'MEMORY').join(','), 'memory', 'matching is case-insensitive');
+// the whole-catalog effect: a vague, real-world goals belief must not light up most of the library.
+const vague = 'Be the always-ready dev test agent for StarNet — a fully-onboarded general assistant a developer can talk to the instant the station boots.';
+const lit = R.builtins().filter(r => R.goalKeywordScore(r, vague) > 0).length;
+A.ok(lit <= 10, 'a vague goal lights up at most a handful of the catalog, not most of it: got ' + lit + '/' + R.builtins().length);
+
+/* a thin (but real) signal must still fill the row — topped up from the honest category spread, and NEVER by
+   readmitting a recipe the Commander rated down (that one carries a negative score and stays sunk). */
+const thin = R.rankRecipes(items, { goalText: 'summarize', launches: { 'fix-bug': { n: 1, rated: { miss: 3 } } }, score: () => 0, limit: 4 });
+A.eq(thin.length, 4, 'a one-hit goal still fills the FOR-YOU row (topped up from the category spread)');
+A.eq(thin[0].id, 'summarize', 'the genuinely matched recipe still leads the row');
+A.ok(!thin.some(r => r.id === 'fix-bug'), 'the top-up never readmits a recipe the Commander rated down');
+const thinIds = {}; thin.forEach(r => { A.ok(!thinIds[r.id], 'the topped-up row has no duplicates'); thinIds[r.id] = true; });
+
 A.report('recipes');

@@ -42,6 +42,9 @@
     const fs = deps.fs, P = deps.pathMod, file = deps.file;
     const now = (deps.clock && typeof deps.clock.now === 'function') ? deps.clock.now : function () { return 0; };
     const emit = typeof deps.emit === 'function' ? deps.emit : function () {};
+    // OPTIONAL hook spine (sidecar/hooks.js) — fires subagent_stop when a delegated worker settles. Absent =
+    // byte-identical to before, which is every test and every caller that does not wire it.
+    const hooks = (deps.hooks && typeof deps.hooks.invoke === 'function') ? deps.hooks : null;
     const keep = deps.keep || 200;
     let seq = 0;
     const newId = typeof deps.newId === 'function' ? deps.newId : function () { return 'sub_' + (++seq); };
@@ -159,6 +162,27 @@
         appendEvent(rec.id, name, payload);
         try { emit(name, payload); } catch (_) {}
       };
+      /* HOOKS — subagent_stop. Fired on BOTH settle paths below, because "a delegated worker finished" is
+         true whether it succeeded or died, and a hook that only hears about successes is a hook that cannot
+         page you. Fire-and-forget: a worker's result is already recorded and published by the time this runs,
+         so a slow or broken hook can delay nothing and lose nothing. */
+      const fireSubagentStop = function (r, status, reason, result, usd) {
+        if (!hooks || typeof hooks.invoke !== 'function') return;
+        try {
+          hooks.invoke('subagent_stop', {
+            session_id: (r && r.runId) || '',
+            extra: {
+              // Every key here is a REAL field on the record (see the rec shape above) — a payload full of
+              // undefined would make a hook's own logging useless in exactly the situation it was written for.
+              child_session_id: (r && r.runId) || '', subagent_id: (r && r.id) || '',
+              child_agent_id: (r && r.agentId) || '', child_status: status, child_reason: reason,
+              prompt: String((r && r.prompt) || '').slice(0, 500),
+              child_summary: String(result || '').slice(0, 2000), usd: usd || 0,
+              parent_agent_id: (r && r.leadId) || ''
+            }
+          });
+        } catch (_) {}
+      };
       Promise.resolve().then(function () {
         return runner({ id: rec.id, runId: rec.runId, signal: ac.signal, emit: runEmit, record: view(rec) });
       }).then(function (result) {
@@ -176,12 +200,16 @@
         };
         const done = patch(rec.id, fields);
         publishTask(done || rec, status === 'done' ? 'done' : 'failed');
+        fireSubagentStop(done || rec, fields.status, fields.reason, fields.result, fields.usd);
       }, function (e) {
         controllers.delete(rec.id);
         const cur = get(rec.id);
         if (cur && cur.status === 'interrupted') return;
-        const done = patch(rec.id, { status: 'error', reason: 'error', result: 'worker run failed: ' + ((e && e.message) || e), completedAt: now(), canResume: true });
+        const msg = 'worker run failed: ' + ((e && e.message) || e);
+        const done = patch(rec.id, { status: 'error', reason: 'error', result: msg, completedAt: now(), canResume: true });
         publishTask(done || rec, 'failed');
+        // A worker that DIED is exactly the case a "tell me when delegation finishes" hook exists for.
+        fireSubagentStop(done || rec, 'error', 'error', msg, 0);
       });
       return view(rec);
     }

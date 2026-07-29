@@ -23,7 +23,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function (schema, toolMod) {
   'use strict';
 
-  /* CENTRAL TOOL-OUTPUT CAP (Hermes parity: tool_output_limits). Every builtin clamps its own output today,
+  /* CENTRAL TOOL-OUTPUT CAP (ref-parity: the reference harness's tool_output_limits). Every builtin clamps its own output today,
      which means the protection is a CONVENTION — a new tool, or an MCP server behind a new connector,
      inherits none of it, and one unbounded result is enough to blow the context window and end a run.
      This is the backstop at the single point every result already passes through, so it cannot be forgotten.
@@ -41,20 +41,46 @@
       return (Number.isFinite(n) && n > 0) ? Math.floor(n) : 80000;
     } catch (_) { return 80000; }
   })();
-  function clampOutput(content) {
+  /* PARKING (2026-07-27): the middle of an over-cap result used to be DESTROYED. The note told the model to
+     "narrow it", which is sound advice for a search but useless for output that was already the answer — a
+     600k-line log, a full test run, a big query result. The work was done and paid for, and the part that
+     mattered could be exactly the part thrown away, with no way to get it back except re-running the call.
+     When the host wires a parker (ctx.parkOutput), the FULL output is written to the agent's workspace first
+     and the note points at the file, so nothing is lost and the model can page it back at its own pace.
+     No parker wired = the old behavior verbatim (tests, the /api/file helper, any bare registry). */
+  function clampOutput(content, parkedPath) {
     if (typeof content !== 'string' || content.length <= OUTPUT_MAX) return content;
     const head = Math.floor(OUTPUT_MAX * 0.7), tail = OUTPUT_MAX - head;
     const dropped = content.length - head - tail;
     // The note names a NEXT ACTION. "truncated" alone invites the model to run the identical call again.
-    return content.slice(0, head)
-      + '\n\n[... ' + dropped + ' characters removed by the host output cap. Do not repeat this call as-is — '
-      + 'narrow it: filter, page, request a smaller range, or write the full output to a file and read it back '
-      + 'in parts. The end of the output follows ...]\n\n'
-      + content.slice(content.length - tail);
+    const note = parkedPath
+      ? '\n\n[... ' + dropped + ' characters elided here by the host output cap. THE FULL OUTPUT WAS SAVED to '
+        + parkedPath + ' — read that file (in ranges if it is large) to see the part that is missing, or search '
+        + 'it. Do NOT repeat this call to recover it. The end of the output follows ...]\n\n'
+      : '\n\n[... ' + dropped + ' characters removed by the host output cap. Do not repeat this call as-is — '
+        + 'narrow it: filter, page, request a smaller range, or write the full output to a file and read it back '
+        + 'in parts. The end of the output follows ...]\n\n';
+    return content.slice(0, head) + note + content.slice(content.length - tail);
   }
 
-  const okResult = (content, summary, control) => ({ ok: true, isError: false, content: clampOutput(content), summary: summary || 'ok', control: control || null });
-  const errResult = (content, summary) => ({ ok: false, isError: true, content: clampOutput(content), summary: summary || 'error' });
+  // `images` rides ALONGSIDE content, never inside it: a tool result is a string on every wire we speak, so
+  // pixels have to travel as their own field and be rendered by the loop (see loop.js SCREENSHOTS AS PIXELS).
+  /* parkedPath is RETURNED, not just baked into the note text, because the loop's per-turn budget may clamp
+     this same content again — and a second head+tail cut can eat the note that says where the full output
+     went. The re-clamp has to be able to rewrite that pointer itself. */
+  const okResult = (content, summary, control, parkedPath, images) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null, images: Array.isArray(images) && images.length ? images : null, parkedPath: parkedPath || null });
+  const errResult = (content, summary, parkedPath) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error', parkedPath: parkedPath || null });
+
+  // Ask the host to keep the full output. Never throws and never blocks a result: a parker that fails just
+  // means we fall back to the plain clamp — losing the tail must never also lose the answer.
+  async function parkIfOver(content, call, ctx) {
+    if (typeof content !== 'string' || content.length <= OUTPUT_MAX) return null;
+    if (!ctx || typeof ctx.parkOutput !== 'function') return null;
+    try {
+      const r = await ctx.parkOutput(content, { tool: (call && call.name) || 'tool' });
+      return (r && r.path) ? String(r.path) : null;
+    } catch (_) { return null; }
+  }
 
   // Race a promise against a timeout. onTimeout (if given) fires BEFORE the reject so the caller can abort the
   // underlying work — otherwise a timed-out tool keeps running and SPENDING (worst case: a team.dispatch fan-out
@@ -143,19 +169,64 @@
         if (!c || !c.allow) return errResult('consent denied for ' + call.name + (c && c.reason ? ': ' + c.reason : ''), 'denied');
       }
 
+      /* HOOKS — pre_tool_call. Placed HERE, and the position is the whole security argument: it is the last
+         thing before the tool runs and it is AFTER the user-control authority, the capability gate, schema
+         validation and the consent broker. A hook therefore reaches only calls the station had already
+         decided to allow, and the only thing it can do is take that permission away. It cannot approve what
+         a gate refused, because a refusal returned above this line and never got here.
+         Unwired (`ctx.hooks` absent) = every existing caller and test, byte-identical. */
+      const hooks = (ctx.hooks && typeof ctx.hooks.invoke === 'function') ? ctx.hooks : null;
+      const hookPayload = {
+        tool_name: call.name, tool_input: call.args,
+        session_id: String(ctx.runId || ''), cwd: String(ctx.cwd || ''),
+        extra: { agent_id: String(ctx.agentId || ''), tool_call_id: String(call.id || ''), capability: String(tool.capability || ''), scope: String(tool.scope || '') }
+      };
+      if (hooks) {
+        let pre = null;
+        try { pre = await hooks.invoke('pre_tool_call', hookPayload); } catch (_) { pre = null; }
+        if (pre && pre.blocked) {
+          // Named, because "blocked" with no author is the most frustrating message a harness can print: the
+          // Commander needs to know WHICH of their scripts stopped this, and the model needs to know it was
+          // policy rather than a broken tool so it stops retrying.
+          return errResult('blocked by your hook' + (pre.by ? ' `' + pre.by + '`' : '') + ': ' + pre.reason, 'hook-blocked');
+        }
+      }
+
+      // post_tool_call is OBSERVE-ONLY (hooks.js refuses to let it block): by this point the result exists and
+      // the agent is entitled to it. Its verdict is deliberately discarded — a hook that could retract a
+      // finished result would be rewriting history the model may already have acted on.
+      const notifyPost = async (res, ms) => {
+        if (!hooks) return res;
+        try {
+          await hooks.invoke('post_tool_call', Object.assign({}, hookPayload, {
+            extra: Object.assign({}, hookPayload.extra, {
+              status: res.isError ? 'error' : 'ok',
+              result: typeof res.content === 'string' ? res.content : '',
+              duration_ms: ms
+            })
+          }));
+        } catch (_) { /* an observer must never change the outcome it observed */ }
+        return res;
+      };
+
       // run once, bounded by the per-tool timeout; any throw becomes an isError result. A per-call AbortController
       // (chained to the run's parent signal) is threaded in as ctx.signal so that on TIMEOUT we abort() the work
       // before rejecting — a timed-out tool no longer keeps running/spending in the background.
       const timeoutMs = tool.timeoutMs || ctx.timeoutMs || 0;
       const ac = childAbort(ctx.signal);
       const runCtx = ac !== ctx.signal ? Object.assign({}, ctx, { signal: ac.signal }) : ctx;
+      const startedAt = (ctx.clock && typeof ctx.clock.now === 'function') ? ctx.clock.now() : 0;
+      const elapsed = () => ((ctx.clock && typeof ctx.clock.now === 'function') ? ctx.clock.now() - startedAt : 0);
       try {
         const out = await withTimeout(tool.run(call.args, runCtx), timeoutMs, () => { try { ac.abort(new Error('tool timeout')); } catch (_) { try { ac.abort(); } catch (_) {} } });
-        if (out && typeof out === 'object' && 'content' in out) return okResult(out.content, out.summary, out.control);
-        return okResult(out == null ? '' : out);
+        const shaped = (out && typeof out === 'object' && 'content' in out);
+        const raw = shaped ? out.content : (out == null ? '' : out);
+        // Park BEFORE clamping — the clamp is what destroys the middle, so the full text has to be on disk first.
+        const parked = await parkIfOver(raw, call, ctx);
+        return await notifyPost(okResult(raw, shaped ? out.summary : undefined, shaped ? out.control : undefined, parked, shaped ? out.images : undefined), elapsed());
       } catch (e) {
-        if (e && e.__timeout) return errResult('tool ' + call.name + ' timed out after ' + timeoutMs + 'ms', 'timeout');
-        return errResult('tool ' + call.name + ' failed: ' + (e && e.message ? e.message : String(e)));
+        if (e && e.__timeout) return await notifyPost(errResult('tool ' + call.name + ' timed out after ' + timeoutMs + 'ms', 'timeout'), elapsed());
+        return await notifyPost(errResult('tool ' + call.name + ' failed: ' + (e && e.message ? e.message : String(e))), elapsed());
       }
     }
 

@@ -44,6 +44,10 @@
     // Wired only for the run registry (index.js). UNWIRED (the /api/file jail helper, tests) means the
     // historic behavior — every absolute path is illegal — so those surfaces stay locked to the jail.
     const pathTrust = typeof deps.pathTrust === 'function' ? deps.pathTrust : null;
+    // OPTIONAL document-to-text for fs.read (.docx / .xlsx / .ipynb). Unwired = the historic behavior, where
+    // those files decode as UTF-8 noise. index.js wires it with zlib.inflateRawSync.
+    const docExtract = (deps.docExtract && typeof deps.docExtract.sniff === 'function') ? deps.docExtract : null;
+    const imageWire = (deps.imageWire && typeof deps.imageWire.sniff === 'function') ? deps.imageWire : null;
 
     async function workspaceRoot(agentId) {
       if (environment && typeof environment.ensureWorkspace === 'function') return environment.ensureWorkspace(safeAgentId(agentId || 'agent'));
@@ -96,6 +100,40 @@
       return { base, abs };
     }
 
+    /* STALE-WRITE GUARD (2026-07-27). A delegated worker, a second agent, or the Commander's own editor can
+       change a file between the moment this agent READ it and the moment it writes back. Nothing here noticed,
+       so the write silently reverted the other change — the classic lost update, and the harder kind to spot
+       because both sides believe they succeeded.
+
+       SCOPED TO fs.write ON PURPOSE, after tracing what each writer actually does:
+         · fs.append reads the file and appends to what it FINDS, so a concurrent change survives.
+         · fs.edit reads fresh and replaces an exact `find`; a drifted file either still matches (the edit
+           lands on the NEW text, which is right) or misses and errors honestly.
+         · fs.patch validates every hunk's context against current content before writing anything.
+       All three are read-modify-write inside ONE call and cannot clobber. fs.write is the only writer that
+       replaces a whole file with content composed from a read that may now be old — so it is the only one
+       that needs a stamp, and guarding the others would only manufacture false refusals.
+
+       A file this agent never read has no stamp and is never refused: writing a file you did not read is
+       "create it", not "clobber it". One refusal per drift — the stamp is dropped so the required re-read
+       re-arms it, and the agent can never be stuck in a loop it has no way to satisfy. */
+    const readStamps = new Map();   // agentId \0 abs -> the mtime this agent last SAW
+    const stampKey = (aid, abs) => String(aid) + '\0' + (P.sep === '\\' ? String(abs).toLowerCase() : String(abs));
+    async function mtimeOf(abs) { try { const st = await fsp.stat(abs); return Number(st.mtimeMs || 0) || 0; } catch (_) { return 0; } }
+    async function stampSeen(aid, abs) {
+      const m = await mtimeOf(abs);
+      if (m) readStamps.set(stampKey(aid, abs), m); else readStamps.delete(stampKey(aid, abs));
+    }
+    async function assertFresh(aid, abs, rel) {
+      const key = stampKey(aid, abs);
+      const seen = readStamps.get(key);
+      if (!seen) return;                          // never read here -> nothing to be stale against
+      const now = await mtimeOf(abs);
+      if (!now || now <= seen) return;            // deleted since, or untouched since we looked
+      readStamps.delete(key);                     // one refusal per drift; the re-read below re-arms it
+      throw new Error('stale write refused: ' + rel + ' changed on disk after you read it — someone else (another agent, or the Commander) edited it. Read it again and re-apply your change on top of the current content, or use fs.edit/fs.patch so your change merges instead of replacing the file.');
+    }
+
     const writeTool = {
       name: 'fs.write', capability: 'cabinet', scope: 'write', requiresConsent: true, timeoutMs: 10000,
       description: 'Write a UTF-8 text file into your workspace. This is where your deliverables (reports, notes, code) are saved.',
@@ -105,8 +143,10 @@
         const { abs } = await resolveInside(aid, args.path, { scope: 'write', ctx });
         const data = Buffer.from(String(args.content), 'utf8');
         if (data.length > WRITE_BYTES) throw new Error('file too large (' + data.length + ' > ' + WRITE_BYTES + ' bytes)');
+        await assertFresh(aid, abs, args.path);   // refuse to overwrite a file that moved under us
         await fsp.mkdir(P.dirname(abs), { recursive: true });
         await fsp.writeFile(abs, data);
+        await stampSeen(aid, abs);                // our own write is the new baseline, so a rewrite never self-trips
         emitDeliverable(ctx, aid, args.path);
         return { content: 'Wrote ' + args.path + ' (' + data.length + ' bytes).', summary: 'wrote ' + args.path + ' (' + kb(data.length) + ')' };
       }
@@ -114,13 +154,48 @@
 
     const readTool = {
       name: 'fs.read', capability: 'cabinet', scope: 'read', requiresConsent: false, timeoutMs: 10000,
-      description: 'Read a UTF-8 text file from your workspace.',
+      description: 'Read a file from your workspace. Text files come back as text; Word (.docx), Excel (.xlsx) and Jupyter (.ipynb) files are extracted to readable text automatically; PNG/JPEG/GIF/WEBP images are shown to you as actual pixels so you can look at them directly.',
       schema: { type: 'object', required: ['path'], properties: { path: { type: 'string' } } },
       run: async (args, ctx) => {
-        const { abs } = await resolveInside((ctx && ctx.agentId) || 'agent', args.path, { scope: 'read', ctx });
-        let txt;
-        try { txt = await fsp.readFile(abs, 'utf8'); }
+        const aid = (ctx && ctx.agentId) || 'agent';
+        const { abs } = await resolveInside(aid, args.path, { scope: 'read', ctx });
+        let raw;
+        try { raw = await fsp.readFile(abs); }
         catch (e) { if (e && e.code === 'ENOENT') throw new Error('no such file: ' + args.path); throw e; }
+        await stampSeen(aid, abs);   // what this agent believes the file says, as of now (see the stale-write guard)
+
+        /* DOCUMENTS. Decoding a .docx as UTF-8 produced binary noise: the agent could see the file existed and
+           had no way to read it, on exactly the formats a Commander keeps real work in. A malformed or
+           mislabelled document falls THROUGH to the plain text path rather than failing the read — a file
+           someone named .docx that is really text must still be readable. */
+        const kind = docExtract ? docExtract.sniff(args.path, raw) : null;
+        if (kind) {
+          try {
+            const text = docExtract.extract(raw, kind, { maxChars: READ_RETURN });
+            if (text) return { content: text, summary: kind + ' → ' + kb(Buffer.byteLength(text)) + ' of text' };
+          } catch (_) { /* fall through to the plain read below */ }
+        }
+
+        /* IMAGES. Same shape as documents, same reason: the bytes are unreadable as UTF-8, so without
+           this the agent could see a screenshot existed and had no way to look at it — including the
+           output of its OWN image_generate call. image_analyze routes the picture to a SEPARATE vision
+           model and returns prose, which steers the driving model off a description of the pixels
+           instead of the pixels. Here they ride the `images` channel into the conversation itself.
+           Sniffed by magic bytes, so a mislabelled file falls through to the plain read below. */
+        if (imageWire) {
+          const img = imageWire.sniff(args.path, raw);
+          if (img) {
+            const wire = imageWire.toWire(raw, img);
+            const desc = imageWire.describe(img, args.path);
+            return {
+              content: desc + (wire.note ? '\n' + wire.note : (wire.images ? '' : '')),
+              summary: img.ext + ' ' + (img.width && img.height ? img.width + '×' + img.height : kb(img.bytes)),
+              images: wire.images
+            };
+          }
+        }
+
+        const txt = raw.toString('utf8');
         const out = txt.length > READ_RETURN ? txt.slice(0, READ_RETURN) + '\n…[truncated]' : txt;
         return { content: out, summary: kb(Buffer.byteLength(txt)) + ' read' };
       }

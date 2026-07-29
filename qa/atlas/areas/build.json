@@ -8275,8 +8275,8 @@
       "kind": "ui",
       "area": "build",
       "name": "drag to paint deck tiles · click a room to fill it  (3)",
-      "purpose": "PAINT mode (3): paint deck tiles or fill a room with the selected floor style.",
-      "promise": "With PAINT selected, dragging paints deck tiles and a click fills the whole room with the chosen swatch.",
+      "purpose": "SURFACE mode (3): set what a room is made of — deck or wall material and colour; drag paints single deck tiles.",
+      "promise": "With SURFACE selected, a click lays the chosen material and colour over the whole room and dragging paints single deck tiles.",
       "wiring": {
         "files": [
           "frontend/app/build.js",
@@ -8301,7 +8301,7 @@
       "missing": false,
       "selector": "button",
       "state": "build-station",
-      "notes": "Live: PAINT tool (key 3) present, hint drag to paint deck tiles / click a room to fill it. setFloor/paintTiles machine-covered in worldmodel.test.js (pass at HEAD). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
+      "notes": "Live: SURFACE tool (key 3, internal id paint) present, hint drag to paint deck tiles / click a room to fill it. setFloor/paintTiles machine-covered in worldmodel.test.js (pass at HEAD). [live-proof this session @ HEAD c06bdef7 (port 8966/CDP 9366)]"
     },
     {
       "id": "ui/build/txt-button-refit-tools-prop-6-1",

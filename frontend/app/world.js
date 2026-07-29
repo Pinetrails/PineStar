@@ -37,10 +37,23 @@ const World = (() => {
   // live-tunable CRT knobs — drawCRT/drawGlows read these every frame so the dev CRT LAB
   // (crtlab.js, dev-gated) can tune them live. These ARE the shipped defaults: bold scanlines,
   // fade off, faint lamp shimmer — the look dialed in and signed off via the lab (2026-06-30).
-  const CRT = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.09, dust: 0.5, aberr: 0.35, grain: 0.24 };
+  /* APERTURE (2026-07-27) — `vig` and `over` govern how much of the panel the picture actually gets, and are
+     independent of `curve` (which only decides how hard it bows).
+       vig  — strength of the in-canvas radial vignette, 1 − vig·r². This is the DOMINANT darkener of the feed:
+              r=1 at the edge midpoints and √2 at the corners, so the shipped 0.55 cut the edges to 45% and
+              clamped the corners to literal ZERO, long before any CSS glass was composited on top. Lowering it
+              is what actually gives the border back.
+       over — output overscan. The warp's inverse ro = rs·(1 − k·rs²) has a maximum reach of (2/3)/√(3k) = 1.283
+              at k=0.09, but a rect's corner sits at √2 = 1.414 — so those pixels had NO source to sample and
+              both paths hard-filled them black. That is the rounded-oval crop, not a soft vignette. Dividing
+              the output radius by ≥ √2/1.283 = 1.103 brings the corners back inside the domain; 1.12 leaves
+              margin. The cost is ~11% of edge content, never any change to the curvature.
+     Both feed the GL path and the CPU LUT path IDENTICALLY — drawCurveGL's probe compares the two and defects
+     to CPU on divergence, so they must never drift apart. */
+  const CRT = { scan: 0.43, pitch: 1, fade: 0.25, glow: 0.07, curve: 0.09, vig: 0.30, over: 1.20, dust: 0.5, aberr: 0.35, grain: 0.24 };
   let _warpCv = null, _warpCtx = null;   // the barrel-warp snapshot buffer — see drawCurve()
   let _lut = null, _lutKey = '', _outImg = null;   // CPU per-pixel barrel-warp inverse-map LUT + output buffer — see buildLUT()/drawCurveCPU()
-  let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glAberrLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
+  let _gl = null, _glc = null, _glProg = null, _glTex = null, _glKLoc = null, _glAberrLoc = null, _glVigLoc = null, _glOverLoc = null, _glReady = false, _glFailed = false;   // GPU barrel-warp (WebGL) — see initGL()/drawCurveGL()
   let _glProbeOk = false, _glProbeTries = 0, _glProbeSkip = 0, _glProbeClean = 0, _glProbeCv = null;   // one-time GL output sanity probe — see drawCurveGL()
   // whole-frame per-channel means via a 16×16 GPU downscale (~1KB readback) — the probe's sampler
   function probeMeans(src) {
@@ -3661,18 +3674,25 @@ const World = (() => {
 
   // ---- BARREL CURVE — bows the whole feed like a CRT tube --------------------------------------
   // Same signed-off warp (f = 1 - curve·r²): the picture is pulled toward center as r² grows so the rooms
-  // bow and the corners fall away into dark, plus the edge vignette (1 - 0.55·r²). Rendered as an EXACT
+  // bow and the corners fall away into dark, plus the edge vignette (1 - CRT.vig·r²). Rendered as an EXACT
   // PER-PIXEL remap — each output pixel reads its source through a precomputed inverse-map LUT. NOT a
   // triangle mesh: a mesh draws the picture as thousands of triangles whose seams line up into the diagonal
   // stripes; a per-pixel remap has no triangles, so there are no seams and no diagonal lines. Curve is identical.
+  // the two aperture knobs, clamped to sane ranges — read by BOTH warp paths so they can never disagree
+  function vigAmt() { const v = +CRT.vig; return Number.isFinite(v) ? (v < 0 ? 0 : v > 1 ? 1 : v) : 0.30; }
+  function overAmt() { const o = +CRT.over; return Number.isFinite(o) && o >= 1 ? (o > 1.6 ? 1.6 : o) : 1; }
+
   function buildLUT(k, W, H) {
-    const key = k.toFixed(4) + '|' + W + 'x' + H;
+    const over = overAmt();
+    // overscan is part of the mapping, so it MUST key the cache — otherwise dragging it in crtlab would
+    // silently keep serving the previous LUT and the CPU path would stop matching the GPU one.
+    const key = k.toFixed(4) + '|' + over.toFixed(4) + '|' + W + 'x' + H;
     if (_lutKey === key && _lut) return;
     const hw = W / 2, hh = H / 2, lut = new Int32Array(W * H);
     for (let oy = 0; oy < H; oy++) {
-      const ny = (oy + 0.5 - hh) / hh;
+      const ny = (oy + 0.5 - hh) / hh / over;
       for (let ox = 0; ox < W; ox++) {
-        const nx = (ox + 0.5 - hw) / hw, ro = Math.sqrt(nx * nx + ny * ny);
+        const nx = (ox + 0.5 - hw) / hw / over, ro = Math.sqrt(nx * nx + ny * ny);
         let scale = 1;
         if (ro > 1e-6) {                    // invert ro = rs·(1 - k·rs²) for rs (Newton); source dir = output dir
           let rs = ro;
@@ -3707,9 +3727,11 @@ const World = (() => {
       if (!_gl) throw new Error('no webgl');
       const gl = _gl;
       const vs = 'attribute vec2 aPos; varying vec2 vUv; void main(){ vUv = aPos*0.5+0.5; gl_Position = vec4(aPos,0.0,1.0); }';
-      const fs = 'precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform float uK; uniform float uAberr;\n' +
+      const fs = 'precision highp float; varying vec2 vUv; uniform sampler2D uTex; uniform float uK; uniform float uAberr; uniform float uVig; uniform float uOver;\n' +
         'void main(){\n' +
-        '  vec2 n = (vUv-0.5)*2.0; float ro = length(n); float rs = ro;\n' +
+        // uOver shrinks the output radius BEFORE the inverse, so the corner lands inside the warp's reach
+        // instead of falling out of domain and being filled black. uOver = 1.0 is the old behaviour exactly.
+        '  vec2 n = (vUv-0.5)*2.0/uOver; float ro = length(n); float rs = ro;\n' +
         '  for(int i=0;i<6;i++){ float g = rs*(1.0-uK*rs*rs)-ro; float dg = 1.0-3.0*uK*rs*rs; rs = rs - g/dg; }\n' +
         '  float scale = ro>1e-5 ? rs/ro : 1.0; vec2 sUv = n*scale*0.5+0.5;\n' +
         '  if(sUv.x<0.0||sUv.x>1.0||sUv.y<0.0||sUv.y>1.0){ gl_FragColor = vec4(0.0,0.0,0.0,1.0); return; }\n' +
@@ -3725,7 +3747,7 @@ const World = (() => {
         '    float b = texture2D(uTex, sUv - offs).b;\n' +
         '    col = vec3(r, gg, b);\n' +
         '  } else { col = texture2D(uTex, sUv).rgb; }\n' +
-        '  float vig = clamp(1.0-0.55*ro*ro, 0.0, 1.0);\n' +
+        '  float vig = clamp(1.0-uVig*ro*ro, 0.0, 1.0);\n' +
         '  gl_FragColor = vec4(col*vig, 1.0);\n' +
         '}';
       const mk = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
@@ -3745,7 +3767,9 @@ const World = (() => {
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);   // canvas row 0 is top; flip so texcoords line up right-side-up
       gl.uniform1i(gl.getUniformLocation(prog, 'uTex'), 0);
-      _glKLoc = gl.getUniformLocation(prog, 'uK'); _glAberrLoc = gl.getUniformLocation(prog, 'uAberr'); _glProg = prog; _glReady = true;
+      _glKLoc = gl.getUniformLocation(prog, 'uK'); _glAberrLoc = gl.getUniformLocation(prog, 'uAberr');
+      _glVigLoc = gl.getUniformLocation(prog, 'uVig'); _glOverLoc = gl.getUniformLocation(prog, 'uOver');
+      _glProg = prog; _glReady = true;
       return true;
     } catch (e) { console.warn('[crt] WebGL curve unavailable, using CPU fallback:', e && e.message); _glFailed = true; _gl = null; return false; }
   }
@@ -3769,6 +3793,8 @@ const World = (() => {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, cv);   // upload the composited frame
       gl.uniform1f(_glKLoc, k);
       if (_glAberrLoc) gl.uniform1f(_glAberrLoc, Math.max(0, CRT.aberr || 0));
+      if (_glVigLoc) gl.uniform1f(_glVigLoc, vigAmt());
+      if (_glOverLoc) gl.uniform1f(_glOverLoc, overAmt());
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalCompositeOperation = 'source-over';
       ctx.clearRect(0, 0, W, H); ctx.drawImage(_glc, 0, 0);   // blit the warped result back onto the visible feed
@@ -3818,13 +3844,17 @@ const World = (() => {
     const d32 = new Uint32Array(_outImg.data.buffer), lut = _lut, BLACK = 0xFF000000;
     for (let i = 0; i < d32.length; i++) { const s = lut[i]; d32[i] = s < 0 ? BLACK : s32[s]; }
     ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.putImageData(_outImg, 0, 0);
-    // edge vignette (matches the dot-matrix's 1 - 0.55·r²): darken toward the bowed corners
+    // Edge vignette — the exact darkening complement of the shader's `1 - uVig·ro²`, so the CPU fallback
+    // stays pixel-equivalent to the GPU path (drawCurveGL's probe compares them). A stop at gradient
+    // fraction t sits at panel radius t·√2, which the shader sees as ro = t·√2/over, hence alpha = vig·ro².
     ctx.save(); ctx.globalCompositeOperation = 'source-over'; ctx.translate(hw, hh); ctx.scale(hw, hh);
+    const vAmt = vigAmt(), o2 = overAmt() * overAmt();
+    const vAlpha = t => Math.max(0, Math.min(1, vAmt * 2 * t * t / o2)).toFixed(4);
     const vg = ctx.createRadialGradient(0, 0, 0, 0, 0, Math.SQRT2);
     vg.addColorStop(0, 'rgba(0,0,0,0)');
-    vg.addColorStop(0.5, 'rgba(0,0,0,0.275)');     // r²≈0.5
-    vg.addColorStop(0.707, 'rgba(0,0,0,0.55)');    // r²≈1 (edge midpoints)
-    vg.addColorStop(1, 'rgba(0,0,0,1)');           // r²≈2 (corners) → black
+    vg.addColorStop(0.5, 'rgba(0,0,0,' + vAlpha(0.5) + ')');       // r²≈0.5
+    vg.addColorStop(0.707, 'rgba(0,0,0,' + vAlpha(0.707) + ')');   // r²≈1 (edge midpoints)
+    vg.addColorStop(1, 'rgba(0,0,0,' + vAlpha(1) + ')');           // r²≈2 (corners)
     ctx.fillStyle = vg; ctx.fillRect(-Math.SQRT2, -Math.SQRT2, 2 * Math.SQRT2, 2 * Math.SQRT2);
     ctx.restore();
   }
@@ -4085,7 +4115,10 @@ const World = (() => {
     const step = a.state === 'walk' ? (Math.floor(now / 140) % 2) : 0;
     const bob = (a.state !== 'walk' && !a.sitting)
       ? Math.round(a.speaking ? Math.sin(now / 170 + a.phase) * 1.1 : Math.sin(now / 600 + a.phase) * 0.7) : 0;
-    ctx.globalAlpha = 0.3; ctx.fillStyle = '#000'; ctx.fillRect(x - 4, y - 1, 8, 2); ctx.globalAlpha = 1;
+    // same pooled contact shadow the sprite bodies get (SPRITES.groundShadow needs no loaded
+    // assets, so the fallback — which runs precisely when they FAILED to load — still gets it).
+    if (typeof SPRITES !== 'undefined' && SPRITES.groundShadow) SPRITES.groundShadow(ctx, x, y, 5, { lift: -bob });
+    else { ctx.globalAlpha = 0.3; ctx.fillStyle = '#000'; ctx.fillRect(x - 4, y - 1, 8, 2); ctx.globalAlpha = 1; }
     const top = y - h + bob;
     ctx.fillStyle = a.color; ctx.fillRect(x - 3, top + 3, 6, h - 6);
     ctx.fillStyle = '#f0e6c0'; ctx.fillRect(x - 2, top, 5, 4);
@@ -4453,7 +4486,7 @@ const World = (() => {
   const NAG_LABEL = {
     UNBOUND_BAY: 'NO AGENT — CLICK', ORPHAN_BAY: 'NOT ON THE LINE', ORPHAN_SOURCE: 'NO BELT OUT',
     BAY_NOT_FED: 'NOT CONNECTED — FIX IN REFIT', CYCLE: 'LOOP!', FILTER_NO_DEFAULT: 'NO DEFAULT LANE', DUP_AGENT: 'DUP AGENT',
-    SPLIT_ONE_LANE: 'SPLITTER — ONE LANE'
+    SPLIT_ONE_LANE: 'SPLITTER — ONE LANE', CHAIN_CYCLE: 'WORK LINE LOOPS'
   };
   // project the compiled plan's error list onto floor rectangles once per recompile (zero per-frame walk)
   function buildRoutingNags() {
@@ -5076,6 +5109,18 @@ const World = (() => {
     //    (Pipeline.sourceFor — each room's INBOX feeds its own network, never another room's outbox);
     //  • unaddressed work takes the first INBOX (unchanged);
     //  • no reaching line → the work lands directly at the agent's BAY dock (a lone bay is a complete build).
+    /* A HANDOFF DOES NOT ENTER THROUGH THE FRONT DOOR. A `chain` work-item is stage N of a work line: it was
+       produced at the UPSTREAM dock and rides that dock's lane to this one. Spawning it at an INTAKE would
+       draw a lie — the station never received anything, one of its own agents did. The upstream dock is
+       derived from the compiled plan (the dock whose chain names this agent), so no event field is invented
+       for it; the crate is PRODUCT, not ore, because that is exactly what it is. */
+    if (p.kind === 'chain' && routingPlan && routingPlan.chains) {
+      p.box = 'product';
+      const ups = Object.keys(routingPlan.chains).filter(a => (routingPlan.chains[a].next || []).indexOf(p.agentId) >= 0).sort();
+      const from = ups.length ? routingPlan.chains[ups[0]] : null;
+      if (from && from.tile) { convey.enqueueAt(from.tile.x, from.tile.y, p); return; }
+      dockArrival(p); return;                                       // no drawn lane between them — land it at the dock
+    }
     let t = null;
     if (p.kind !== 'directive') {
       t = (p.agentId && routingPlan && typeof Pipeline !== 'undefined' && Pipeline.sourceFor)
@@ -5180,6 +5225,12 @@ const World = (() => {
   }
   function shipProductCrate(p) {
     if (!convey) return;
+    // A NON-TERMINAL STAGE SHIPS NOTHING OUT. If this dock's output hands off to another dock, its product IS
+    // the handoff crate (drawn when the sidecar places the next stage's work-item) — also spawning a ship-out
+    // crate here would draw the same work leaving twice, once toward a door it never went through.
+    const cAid = (p && p.agentId) || '';
+    const ch = (cAid && routingPlan && routingPlan.chains) ? routingPlan.chains[cAid] : null;
+    if (ch && ch.next && ch.next.length) return;
     const rid = (p && p.runId) || '';
     if (rid) { if (shippedRunIds.has(rid)) return; shippedRunIds.add(rid); if (shippedRunIds.size > 400) shippedRunIds.clear(); }
     const t = outboundBeltTile(p && p.agentId);

@@ -132,7 +132,10 @@
     { command: 'away', description: 'Queue work to build on the away shift', usage: '/away [<what to build>|list|on|off]', slash: true },
     { command: 'approvals', description: 'Approve/deny buttons for this chat (on or off)', usage: '/approvals [on|off]' },
     { command: 'whoami', description: 'Show which agent this chat is talking to' },
-    { command: 'help', description: 'List these commands', menu: false }
+    { command: 'help', description: 'List these commands', menu: false },
+    // Telegram sends this when a fresh chat's START button is pressed. menu:false — the client offers it on an
+    // empty chat by itself, and it would be noise in the "/" list for everyone else.
+    { command: 'start', description: 'What this bot is and how to talk to it', menu: false }
   ];
   const SLASH_CMDS = COMMANDS.reduce((m, c) => { if (c.slash) m[c.command] = 1; return m; }, {});
   const KNOWN_CMDS = COMMANDS.reduce((m, c) => { m[c.command] = 1; return m; }, {});
@@ -217,6 +220,11 @@
     const resolveAgent = typeof o.resolveAgent === 'function' ? o.resolveAgent : null;   // Phase B: the placed floor's routing plan
     const getTag = typeof o.getTag === 'function' ? o.getTag : null;                     // FILTER content-routing key (B3 classifier)
     const resolveStation = typeof o.resolveStation === 'function' ? o.resolveStation : null;   // B5: per-bay capability station
+    // AGENTIC GRAPHS: the dock resolveAgent picked is stage ONE; the belts drawn PAST it say where its output
+    // goes. `chain` is the injected executor (sidecar/routing/chain.js) already bound to the floor's edge
+    // function — the hub hands it a way to run one hop and stays require-free. Absent -> a single-stage run,
+    // byte-identical to the behaviour before work lines existed.
+    const chain = (o.chain && typeof o.chain.advance === 'function') ? o.chain : null;
     // ONE-RESOLVER LAW: any telemetry that attributes an inbound message to an agent (workitem crates, queue
     // HUD) must come from THIS hub's resolution, never a parallel guess. onResolved fires once per real message
     // (never for /commands) with the exact agentId the run will execute as, in onInbound's first synchronous
@@ -482,6 +490,22 @@
 
       if (cmd === 'help') {
         await deliver(chatId, helpText(), '', 'command');
+        return;
+      }
+
+      /* /start — the FIRST thing every Telegram user ever sends: the client shows a START button on a fresh
+         chat and sends this literal text when it is pressed. It was in no command table, so it fell through
+         parseCommand as an ordinary message, SPENT A PAID MODEL RUN, and the member's first ever exchange with
+         the station was an agent puzzling over the word "/start". Answered here, for free, with the one thing
+         a newcomer actually needs: who they are talking to and what they can say. */
+      if (cmd === 'start') {
+        const me = (roster || []).find(x => String(x.agentId) === String(boundId));
+        const who = me ? (me.name || me.agentId) : boundId;
+        await deliver(chatId,
+          'STARNET online — you are talking to ' + who + '.\n\n'
+          + 'Just say what you need in plain language and I will get on it. I can search and read the web, '
+          + 'work with your files, remember things for you, and run scheduled work.\n\n'
+          + helpText(), '', 'command');
         return;
       }
 
@@ -815,6 +839,8 @@
       let lastRunId = '';        // the runId actually delivered under (the last attempt's)
       let reply;
       let choiceEntry = null;    // the registered choice keyboard for a TASK_QUESTION reply (null = plain text)
+      let finalAgentId = agentId;   // WHO produced the delivered reply — the LAST stage of the work line, not the first
+      let firstStageText = null;    // what the ENTRY dock itself said, when a work line went on to replace it
       try {
 
       // MEDIA: download + store what the user actually sent (photos/videos/voice/files) BEFORE the turn is built,
@@ -910,8 +936,18 @@
             key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort, system, messages, agentId, isTask,
             emit: sink, signal: ac.signal, runId, trigger: 'event',
             surface: wantApprovals ? 'interactive' : 'autonomous',
+            // ...but ONLY for who answers a consent prompt. A phone has no floor to place props on, so this run
+            // composes the headless office either way. Without this, /approvals on silently cut the agent from
+            // the full autonomous office to compute-only (2 tools) — THE MOAT is floor-real placement, and there
+            // is no floor here to be real about. See runOnce's `floorless` note (2026-07-28).
+            floorless: true,
             prompt: consentPrompt,
             broadcast: true,   // P1: mirror this routed run's lifecycle to the station floor over SSE — it has no browser-local stream
+            // A channel task is real work the agent should learn from, exactly like a COMMS task. Admission is
+            // already owner-gated upstream (adapter.js ownerOk: a non-owner DM never reaches this host, a group
+            // must be whitelisted), and each record is stamped with its origin (channel:<name>) so the Commander
+            // can see in Memory Core which surface formed a belief.
+            reflect: true,
             station: bayStation || undefined,
             taskKey: 'channel:' + channel + ':' + chatId,
             taskSource: channel
@@ -937,6 +973,57 @@
         }
         break;
       }
+
+      /* ---- THE WORK LINE: run every stage the Commander drew downstream of this dock -------------------
+         resolveAgent picked WHICH dock; the belts past it say what happens to its output. Deliberately INSIDE
+         the inflight try: myRec stays registered for the whole line, so E-STOP (halt.js reads this record) and
+         a superseding message reach the downstream stages too — a chain that outlived its own abort handle
+         would be an unstoppable spend. The reply that finally leaves is the LAST stage's. */
+      if (chain && !state.errMsg && !myRec.superseded && String(state.buf || '').trim()) {
+        const line = await chain.advance({
+          agentId: agentId, text: state.buf, originalText: msg.text,
+          signal: myRec.abort ? myRec.abort.signal : null,
+          runAgent: async function (h) {
+            // a hop is a plain autonomous run of ANOTHER agent: its OWN composed persona (never this channel's
+            // configured system prompt — that belongs to the agent the connection names), its OWN bay station,
+            // its OWN durable transcript. No consent keyboard: a downstream stage is machine-to-machine.
+            const hopRunId = newId();
+            myRec.runId = hopRunId; myRec.agentId = h.agentId; myRec.startedAt = now ? now() : null;
+            const hs = { buf: '', errMsg: null, usd: 0 };
+            const hopSink = (name, payload) => {
+              let p; try { p = redact(payload); } catch (_) { p = payload; }
+              if (name === 'agent.token') hs.buf += (p.delta || '');
+              else if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
+              else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
+              else if (name === 'agent.run.end') { if (typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd; }
+            };
+            let hist = [];
+            try { hist = store.loadHistory(h.agentId); } catch (_) {}
+            try { store.appendTurn(h.agentId, 'user', h.text); } catch (_) {}
+            try {
+              await runOnce({
+                key: usingCodex ? '' : sec.key, model: sec.model, provider, baseUrl: sec.baseUrl || sec.base_url || '', reasoningEffort,
+                system: personaFor(h.agentId, rec), messages: hist.map(m => ({ role: m.role, content: m.content })).concat([{ role: 'user', content: h.text }]),
+                agentId: h.agentId, isTask: true, emit: hopSink, signal: h.signal, runId: hopRunId, trigger: 'event',
+                surface: 'autonomous', broadcast: true, reflect: true,
+                station: (resolveStation ? resolveStation(h.agentId) : null) || undefined,
+                taskKey: 'chain:' + channel + ':' + chatId + ':' + h.agentId, taskSource: channel
+              });
+            } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
+            if (hs.buf.trim() && !hs.errMsg) { try { store.appendTurn(h.agentId, 'assistant', hs.buf); } catch (_) {} }
+            return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
+          }
+        });
+        if (!myRec.superseded && line.hops.length) {
+          // the line's answer replaces the first stage's — and the floor/channel agree on who produced it
+          firstStageText = state.buf;
+          state.buf = line.text + chain.stopNote(line);
+          finalAgentId = line.agentId;
+        } else if (!myRec.superseded && line.stopped && line.stopped !== 'stopped') {
+          state.buf = state.buf + chain.stopNote(line);   // stage one answered but the line never got going — say so
+        }
+      }
+      if (myRec.superseded) return;
       } finally {
         // release the (single) inflight record exactly once — but only if a NEWER message hasn't already replaced it
         // (the supersede path installs its own record under this chatId; clobbering it would drop the live run).
@@ -991,12 +1078,18 @@
                              : '\nReply with a choice, or say "use your judgment."');
           }
         }
-        if (reply) { try { store.appendTurn(agentId, 'assistant', reply); } catch (_) {} }
+        /* AN AGENT'S TRANSCRIPT RECORDS WHAT THAT AGENT SAID. When a work line ran, `reply` is the LAST
+           stage's text — writing it under the ENTRY dock would fabricate a turn: stage one never said it, and
+           on the next message it would replay its own history as if it had. Each hop already persists its own
+           output under its own id (and the delivering stage's transcript holds the delivered text), so the
+           entry dock gets back what IT actually produced. */
+        const ownReply = (firstStageText != null) ? firstStageText : reply;
+        if (ownReply) { try { store.appendTurn(agentId, 'assistant', ownReply); } catch (_) {} }
         if (state.reason && state.reason !== 'done') reply += endNote(state.reason, state);
       }
 
       } finally { stopTyping(); }   // cease refreshes BEFORE deliver — the bubble must die with the reply, not after
-      const dr = await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), agentId,
+      const dr = await deliver(chatId, reply, lastRunId, state.errMsg ? 'error' : (state.reason || 'done'), finalAgentId,
         choiceEntry ? { reply_markup: keyboardFor(choiceEntry) } : undefined);
       // Stitch the delivered message onto the keyboard's registry entry so a tap can edit THAT message in place.
       // A send that failed retires the token immediately: leaving it would let a phantom keyboard (buttons the

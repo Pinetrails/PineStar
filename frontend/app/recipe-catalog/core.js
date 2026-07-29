@@ -55,7 +55,8 @@
       tags: { research: 1 }, gear: ['dish', 'notebook'], cadence: 'morning', category: 'research',
       params: [
         { key: 'topic', label: 'Topic', placeholder: 'e.g. AI agent tooling' },
-        { key: 'window', label: 'Look-back', placeholder: 'the last 24 hours', required: false, default: 'the last 24 hours' }
+        { key: 'window', label: 'Look-back', required: false, type: 'choice', default: 'the last 24 hours',
+          options: ['the last 24 hours', 'the last 3 days', 'the last week', 'since your previous brief'] }
       ],
       task: 'Brief me on {topic}: sweep the live web for what meaningfully changed in {window}, cross-check anything surprising before repeating it, and compare against your notes from the previous brief so you only report what is genuinely NEW. Lead with the bottom line, then the supporting detail with sources, then one line on what I should do about it, if anything. Save the key findings to your memory for tomorrow\'s comparison. If nothing material moved, say so in two sentences and stop — a quiet day is a valid report.'
     },
@@ -96,7 +97,7 @@
       ],
       blurb: 'Tries to break the change before a user does — edge cases, error paths, a verdict you can act on.',
       tags: { code: 0.8, general: 0.2 }, gear: ['cabinet'], cadence: null, category: 'code',
-      params: [{ key: 'target', label: 'What to review', placeholder: 'a file, a diff, or a plan' }],
+      params: [{ key: 'target', label: 'What to review', type: 'file', placeholder: 'a file — or type a diff / module / plan' }],
       task: 'Review {target} adversarially — your job is to break it before a user does. Read the code and trace the data flow end to end, hunt the edge cases (empty, huge, concurrent, malformed, unauthorized), walk the error paths, and check whether the tests actually cover the risky parts. Rank findings by severity with a concrete fix for each, separate real defects from style nits, and end with a clear verdict: safe to ship, ship after fixes, or do not ship.'
     },
     {
@@ -108,7 +109,7 @@
       tags: { code: 1 }, gear: ['cabinet', 'workbench'], cadence: null, category: 'code',
       params: [
         { key: 'feature', label: 'Feature', placeholder: 'what to build' },
-        { key: 'where', label: 'Where', placeholder: 'file / module / area', required: false, default: 'the right place in the codebase' }
+        { key: 'where', label: 'Where', type: 'folder', placeholder: 'the project folder — or type a module / area', required: false, default: 'the right place in the codebase' }
       ],
       task: 'Add {feature} to {where}. Before writing anything, read the surrounding code and how the codebase already solves its nearest neighbor, then match that pattern — style, naming, error handling. Build the smallest COMPLETE version: wired end to end, no dead UI, no stubbed endings. Then verify it the way a user would actually hit it, not just that it compiles. Report what changed, how you verified it, and what you deliberately left out for a later pass.'
     },
@@ -118,7 +119,8 @@
       tags: { general: 1 }, gear: [], cadence: null, category: 'writing',
       params: [
         { key: 'message', label: 'The message', placeholder: 'paste what you’re replying to' },
-        { key: 'tone', label: 'Tone', placeholder: 'warm & concise', required: false, default: 'warm and concise' }
+        { key: 'tone', label: 'Tone', required: false, type: 'choice', default: 'warm and concise',
+          options: ['warm and concise', 'friendly', 'formal', 'direct', 'apologetic'] }
       ],
       task: 'Draft a reply to this message in a {tone} tone:\n\n{message}\n\nRead what the sender actually needs — the question under the question — and answer that first. Match how I write, keep it as short as a real answer allows, and never invent facts or commitments I did not give you. Give me one clean ready-to-send draft, then a one-line note on anything in their message you think I might be missing. Do not send anything — the draft is mine to review.'
     },

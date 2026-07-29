@@ -12,7 +12,23 @@ const Harness = (() => {
   const OR = 'https://openrouter.ai/api/v1';
 
   let totals = { tokens: 0, cost: 0, calls: 0 };
-  let modelMap = {};   // id -> { id, name, pricing, context_length, supportsTools }
+  // Model catalogs are keyed BY PROVIDER. A single shared map was a real defect: ModelDock warms all
+  // ~17 providers in parallel (modeldock.js fetchModels) and every listModels(p) miss reset the one
+  // map, so whichever provider resolved LAST — usually an unconfigured one with an empty list — wiped
+  // the ACTIVE provider's catalog. contextLimitOf()/priceOf() then returned 0 for the live model, and
+  // the bottom-bar context gauge sat at unknown/"—" forever even after a real measured turn.
+  let modelsByProv = Object.create(null);   // provider -> { id -> { id, name, pricing, context_length, supportsTools } }
+
+  // Resolve a model id against the warmed catalogs, preferring the ACTIVE provider's (the same id can
+  // exist under two providers with different windows/prices, e.g. a direct slug vs an OpenRouter one).
+  function catalogModel(id) {
+    if (!id) return null;
+    const p = normalizeProviderId(getProv());
+    const own = modelsByProv[p];
+    if (own && own[id]) return own[id];
+    for (const k in modelsByProv) { const m = modelsByProv[k] && modelsByProv[k][id]; if (m) return m; }
+    return null;
+  }
   // Per-agent context-window occupancy = the latest real prompt_tokens for that same agent/model.
   // Distinct from totals.tokens (lifetime in+out), and not persisted across resumes.
   let contextByAgent = {};   // agentId -> { used, model, runId }
@@ -294,7 +310,7 @@ const Harness = (() => {
 
   /* per-million pricing for a model id, if known from the catalog */
   function priceOf(id) {
-    const m = modelMap[id];
+    const m = catalogModel(id);
     if (!m || !m.pricing) return null;
     const inP = parseFloat(m.pricing.prompt) * 1e6;
     const outP = parseFloat(m.pricing.completion) * 1e6;
@@ -306,7 +322,7 @@ const Harness = (() => {
      The sidecar's model endpoint carries OpenRouter context_length through to the browser; if
      that endpoint is unavailable we fall back to the public OpenRouter catalog. */
   function contextLimitOf(id) {
-    const m = modelMap[id];
+    const m = catalogModel(id);
     return (m && m.context_length) || 0;
   }
 
@@ -366,8 +382,11 @@ const Harness = (() => {
         else list = [];
       }
       list.sort((a, b) => a.id.localeCompare(b.id));
-      modelMap = {};
-      for (const m of list) modelMap[m.id] = m;
+      // scope the catalog to the provider it was fetched FOR — never to a shared map another
+      // provider's warm can overwrite (see modelsByProv above).
+      const map = Object.create(null);
+      for (const m of list) map[m.id] = m;
+      modelsByProv[p] = map;
       return list;
     } catch (e) {
       console.warn('[harness] model list unavailable:', e.message);
@@ -597,9 +616,13 @@ const Harness = (() => {
   // answer a live crew.summon.request: report the new agentId we summoned (or null if we couldn't), which resolves
   // the run's awaiting team.summon tool. Separate request from the open /api/run stream — no deadlock. The summon
   // tool has its own browser-ack timeout, so a dropped ack settles cleanly to "not completed" rather than hanging.
-  async function summonAck(runId, requestId, agentId) {
+  // `desk` (optional) is the room the new agent's seeded workstation actually landed in — the ONLY reason the
+  // tool result may mention a desk at all, so the lead can never announce furniture the floor doesn't have.
+  async function summonAck(runId, requestId, agentId, desk) {
     if (!runId || !requestId) return;
-    try { await fetch('/api/summon/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ runId, requestId, agentId: agentId || null }) }); } catch (_) {}
+    const body = { runId, requestId, agentId: agentId || null };
+    if (desk) body.desk = String(desk).slice(0, 60);
+    try { await fetch('/api/summon/ack', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }); } catch (_) {}
   }
 
   // Cortex (M-mem.5b): after a run, reflection may PROPOSE durable memories (announced via the memory.proposed
@@ -692,6 +715,18 @@ const Harness = (() => {
       return r.ok ? (await r.json().catch(() => ({ ok: true }))) : { ok: false };
     } catch (e) { return { ok: false }; }
   }
+  /* The Commander's review decision on a skill the guard WITHHELD from the model. The approval is
+     recorded against the content digest the sidecar just read, so any later edit re-asks. Carries
+     the sidecar's refusal text through on failure — a 'block' verdict can never be approved and the
+     panel must say why rather than silently fail. */
+  async function agentSkillAllow(o) {
+    try {
+      const r = await fetch('/api/agent-skills/allow', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(o || {}) });
+      const j = await r.json().catch(() => null);
+      if (r.ok) return j || { ok: true };
+      return { ok: false, error: (j && j.error) || 'could not record that decision' };
+    } catch (e) { return { ok: false, error: 'the station did not answer' }; }
+  }
 
   async function memoryRecords(agentId) {
     try {
@@ -719,6 +754,17 @@ const Harness = (() => {
     } catch (e) { return []; }
   }
   const memoryRestore = o => memoryMutate('declined/restore', o);   // undo a discard — remove one entry from the reject-list
+  // High-stakes proposals still awaiting a verdict, across ALL runs (the durable queue). Unattended runs reflect
+  // now, so a credential/PII/standing-instruction belief can be raised by a routine at 3am with nobody watching —
+  // this is how it stays answerable instead of quietly evaporating. [] on any failure (never a fabricated deck).
+  async function memoryPending(agentId) {
+    try {
+      const r = await fetch('/api/memory/pending?agent=' + encodeURIComponent(agentId || 'agent'), { cache: 'no-store' });
+      if (!r.ok) return [];
+      const j = await r.json();
+      return Array.isArray(j.pending) ? j.pending : [];
+    } catch (e) { return []; }
+  }
 
   /* Minimal JSON client for the sidecar's /api surface (the launch-token rides via the hardened
      window.fetch above). Two shapes, matching the two call-site idioms this codebase already uses:
@@ -745,10 +791,10 @@ const Harness = (() => {
     isDesktop: () => DESKTOP,   // lets the UI tell a desktop keychain-store failure (token saved locally) from a browser no-op
     getKey, setKey, storeChannelToken, getModel, setModel, getProv, setProv, getBaseUrl, setBaseUrl, getReasoningEffort, setReasoningEffort, normalizeReasoningEffort, init, configured, hasStoredCredential, setDesktopConfigured,
     listModels, probeProvider, priceOf, contextLimitOf, contextState, chat, cancel, haltAll, consent, consentAck, summonAck, notebook,
-    memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPin, memoryEdit, memoryForget,
+    memoryProposals, memoryTurnin, memoryVeto, memoryReset, memoryRecords, memoryDeclined, memoryRestore, memoryPending, memoryPin, memoryEdit, memoryForget,
     studyProposals,
     threadProposals, threadTurnin,
-    agentSkills, agentSkillManage,
+    agentSkills, agentSkillManage, agentSkillAllow,
     api,
     apiToken: ensureApiToken,
     apiFetch: (u, init) => ensureApiToken().then(t => fetch(u, withApiToken(init, t))),

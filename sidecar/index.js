@@ -29,13 +29,24 @@ const { makeWebTools } = require('./tools/builtin/web.js');
 const { makeBrowserTools } = require('./tools/builtin/browser.js');
 const { makeComputerTools } = require('./tools/builtin/computer.js');
 const { makeDesktopTools } = require('./tools/builtin/desktop.js');
+const { makeHooks } = require('./hooks.js');                 // the hook spine: pre/post tool + llm, session, compress
+const { makeShellHooks } = require('./shellhooks.js');       // the Commander's shell scripts, on that spine
+const { makePluginLoader } = require('./plugins.js');        // packaged JS extensions, on that same spine
 const { makeFsTools } = require('./tools/builtin/fs.js');
+// fs.read extracts .docx / .xlsx / .ipynb to readable text. inflateRawSync is injected so the extractor stays
+// pure + headless-testable, and so the OOXML path needs no dependency beyond what Node already ships.
+const docExtract = require('./tools/builtin/docextract.js').makeDocExtract({ inflateRaw: require('node:zlib').inflateRawSync });
+// ...and the same idea for pixels: ONE sniffer shared by every producer that can hand the driving model an
+// image, so the `images` channel has more than a single caller (a channel with one caller is a special case).
+const imageWire = require('./tools/builtin/imagewire.js').makeImageWire({});
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
 const { makeToolSearchTool } = require('./tools/builtin/toolsearch.js');   // tool.search: reach a granted-but-unadvertised (deferred) tool
 const { makeSkillTools } = require('./tools/builtin/skills.js');    // H4: the agent's reusable skill library tools
 const Todo = require('./tools/builtin/todo.js');
 const { makeImageTools } = require('./tools/builtin/image.js');           // STUDIO: image_generate / image_analyze (OpenRouter multimodal)
+const { makeConnectorTools } = require('./tools/builtin/connectors.js');  // WEB: connectors.list — what the station HAS wired, and what it could (read-only, no secrets)
+const { makeVoiceTools } = require('./tools/builtin/voice.js');           // STUDIO: voice_generate — speech saved into the workspace as a playable clip
 const { makeSpotifyTools } = require('./tools/builtin/spotify.js');       // JUKEBOX: control/query the user's Spotify
 const { makeSpotifyStore } = require('./spotify/store.js');               // Spotify OAuth (PKCE) token store + auto-refresh
 const spotifyPkce = require('./spotify/pkce.js');                          // pure PKCE helpers (verifier/challenge/urls)
@@ -66,8 +77,15 @@ const {
   providerUsesDeviceOAuth: registryProviderUsesDeviceOAuth,
   defaultReasoningEffortForProvider: registryDefaultReasoningEffort,
   providerRequiresKey,
-  providerRequiresBaseUrl
+  providerRequiresBaseUrl,
+  attachRateLimits
 } = require('./providers/factory.js');
+/* PROACTIVE QUOTA. One tracker for the whole process, attached to the factory so every provider adapter's
+   injected fetch is instrumented at a single seam (see providers/ratelimits.js). Quota used to be learned only
+   by hitting a 429; now the *-remaining headers of ordinary successful calls are kept, so the station can say
+   "this meter is nearly spent" BEFORE the wall instead of after it. */
+const rateLimits = require('./providers/ratelimits.js').makeRateLimits({ clock: { now: () => Date.now() } });
+attachRateLimits(rateLimits);
 const { DEFAULT_MODEL: CODEX_DEFAULT_MODEL } = require('./providers/codex.js');
 const codexAuth = require('./providers/codex-auth.js');
 const codexTokenStore = require('./providers/codex-token-store.js');
@@ -93,7 +111,10 @@ const { makeConsentBroker } = require('./permissions.js');
 const { makeGrantManager } = require('./permgrants.js');
 const { makeProjectsStore } = require('./projects-store.js');   // NS-5: known-projects (blessed roots) durable store
 const { makePathTrust } = require('./pathtrust.js');            // NS-5: conversational path-trust guard
-const { makeProjectBless, projectScopeLine } = require('./projectbless.js');      // NS-5c: ADD-a-project bless core (second doorway, same grant machinery) + project-scoped run context line
+// Tool-result images (browser.screenshot / browser.vision -> real pixels in the prompt). ON by default; set
+// SKYNET_TOOL_IMAGES=0 for a text-only endpoint that rejects image content parts.
+const TOOL_IMAGES_ON = String(process.env.SKYNET_TOOL_IMAGES == null ? '' : process.env.SKYNET_TOOL_IMAGES).trim() !== '0';
+const { makeProjectBless, projectScopeLine, makeProjectInstructions } = require('./projectbless.js');      // NS-5c: ADD-a-project bless core (second doorway, same grant machinery) + project-scoped run context line + the project's own AGENTS.md/CLAUDE.md house rules
 const { makeFolderPick } = require('./folderpick.js');          // Projects rail "browse": native OS folder chooser (convenience only — bless stays the consent)
 const { makeTelegramAdapter } = require('./channels/telegram.js');
 const { makeTelegramTransport } = require('./channels/telegram.transport.js');   // multi-bot connect: getMe token probe
@@ -107,6 +128,7 @@ const channelSecretsMod = require('./channels/secrets.js');                     
 const { makeConnectGateway } = require('./channels/discord.gateway.js');           // P2-E: the real Discord gateway WS client (inbound)
 const { makeSseHub, runTeeView } = require('./channels/sse.js');
 const { makeRouter } = require('./routing/router.js');
+const { makeChainRunner } = require('./routing/chain.js');
 const { makeConnectorManager } = require('./mcp/manager.js');
 const { makeHttpTransport } = require('./mcp/transport.http.js');
 const { makeStdioTransport } = require('./mcp/transport.stdio.js');
@@ -118,6 +140,11 @@ const cron = require('./cron.js');                         // pure schedule math
 const cronStore = require('./cron-store.js');              // pure CronJob lifecycle reducer
 const mintLedger = require('./mint-ledger.js');            // W6: pure dedup gate + per-agent mint ledger (never re-create what exists)
 const { makeCronDriver } = require('./cron-driver.js');    // the autonomous tick driver (ambient deps injected here)
+const loopjob = require('./loopjob.js');                   // LOOPS: pure gate + ledger digest for standing objectives
+const loopjobStore = require('./loopjob-store.js');        // LOOPS: pure LoopJob lifecycle reducer (iterations, verdicts)
+const { makeLoopDriver } = require('./loopjob-driver.js'); // LOOPS: the verdict-triggered tick driver
+const loopcheck = require('./loopjob-check.js');           // LOOPS: pure host-check verdict + tamper guard
+const loopgit = require('./loopgit.js');                   // LOOPS: pure git harvest decision (branch, pathspec, undo plan)
 const nightshift = require('./nightshift.js');            // NS-1: pure planner for the server-owned night-shift driver
 const { makeNightshiftDriver } = require('./nightshift-driver.js'); // NS-1: the restart-safe idle-autonomy tick driver
 const contextpack = require('./contextpack.js');          // NS-2: pure recency-weighted context pack for the propose step
@@ -137,7 +164,8 @@ const harnessImport = require('./harness-import.js'); // IMPORT-AN-AGENT: read-o
 const { writeFileDurable } = require('./durable-write.js'); // G4.2: crash-safe atomic+durable single-file replace (fsync-before-rename)
 const { makeKeyedMutex, readJsonResilient, writeJsonResilient, makeDurableJsonStore, saveJsonVerified } = require('./durable-store.js'); // P1/P2: per-key serialized + last-known-good-recoverable single-file JSON stores
 const { makeWidgetTools } = require('./tools/builtin/widgets.js'); // WIDGET RAILS Phase 2: widget.set — agent-fed readouts for the chrome rails (polled via GET /api/widgets)
-const { makeMemoryStore, resetAgentMemory, restoreDeclined } = require('./memory-store.js'); // durable notebook:/todo:/declined: sibling stores
+const MemoryStore = require('./memory-store.js');                                            // durable notebook:/todo:/declined:/minted:/pending: sibling stores
+const { makeMemoryStore, resetAgentMemory, restoreDeclined } = MemoryStore;
 const { makeWorkshopStore } = require('./workshop-store.js'); // durable per-agent away-workshop grant + backlog + discard denylist
 const { makeDeliverableStore } = require('./deliverable-store.js'); // durable kept/discarded/failed Workshop lifecycle index
 const { makeQuestStore } = require('./quest-store.js'); // QUEST V2 §A: station-wide harness-owned quest ledger (contract-enforced)
@@ -162,6 +190,7 @@ const { makeSkillPrefs } = require('./skills/prefs.js');   // persisted enable/d
 const runtimeSkills = require('./skills/runtime.js');       // runtime-created skill index (metadata only)
 const skillPackages = require('./skills/package.js');       // package-backed SKILL.md mirror for runtime skills
 const skillGuard = require('./skills/guard.js');            // guard scanner for runtime/external skill packages
+const { makeSkillGate, digestOf: skillDigestOf } = require('./skills/gate.js');   // the CONSUMER of that verdict: may the model read this skill?
 const skillReview = require('./skillreview.js');            // background skill maintenance trigger/prompt
 const skillCurator = require('./skillcurator.js');          // skill lifecycle/consolidation maintenance
 const slash = require('./slash.js');                       // slash-command catalog + dispatch descriptors
@@ -169,7 +198,7 @@ const { makeUserCommands } = require('./usercommands.js');  // Commander-defined
 const slashActionsMod = require('./slash-actions.js');     // server-side execution for dispatch:'server' commands
 const Recipes = require('../frontend/app/recipes.js');     // built-in mission recipes, also exposed as slash commands
 const { makeCheckpointStore } = require('./checkpoint-store.js');   // the shadow-git rollback net (ambient edge)
-const { makeShellTool, runCommand: shellRunCommand } = require('./tools/builtin/shell.js');   // the workbench capability + the shared spawn primitive
+const { makeShellTool, runCommand: shellRunCommand } = require('./tools/builtin/shell.js');   // the workbench capability: shell.exec (+ the shared spawn primitive the LOOP host-check reuses verbatim)
 const { makeShellBg } = require('./shellbg.js');                    // H2.2: singleton background-process manager
 const { makeProcLedger } = require('./procledger.js');              // persistent child-PID ledger — boot sweep reaps force-kill orphans
 const { makeInputGuard } = require('./inputguard.js');              // stuck cursor-confinement (ClipCursor) release — 2026-07-12 incident
@@ -179,6 +208,7 @@ const { foldInsights } = require('./insights.js');                  // H3.3: usa
 const { makeVerifyTool } = require('./tools/builtin/verify.js');    // the workbench verify.run check-runner
 const { makeOrchestrationTools } = require('./tools/builtin/orchestration.js');   // Stage 2: team.dispatch (lead->worker delegation)
 const { makeRoutineTools } = require('./tools/builtin/routines.js'); // ROUTINES: agent-created StarNet cron jobs
+const { makeCommsTools } = require('./tools/builtin/comms.js');      // COMMS: outbound reach — an agent messages a connected chat
 const cronGuard = require('./cron-guard.js');                        // routine prompt-injection tripwire (pure, see file header)
 const { execFile, spawn: childSpawn } = require('node:child_process');   // shadow-git runner + shell subprocess — ambient, here only
 const loopbackListenerProbe = makeLoopbackListenerProbe({ execFile, platform: process.platform, env: process.env });
@@ -789,7 +819,23 @@ const skillsIo = {
 };
 const SKILL_PACKAGES_DIR = path.join(WORKSPACES, 'skill-packages');
 const skillPackageStore = skillPackages.makePackageStore({ fs, pathMod: path, root: SKILL_PACKAGES_DIR });
-const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact, packageStore: skillPackageStore, guard: skillGuard });
+const skillStore = makeSkillStore({ io: skillsIo, clock: { now: () => Date.now() }, redact, packageStore: skillPackageStore, guard: skillGuard, digest: skillDigestOf });
+/* SKILL GUARD APPROVALS — the Commander's per-skill "I read this and it's fine", keyed to a digest
+   of the exact content that was reviewed, exactly as plugins-allowed.json keys a plugin to its code
+   hash: edit the skill and it asks again. Held in memory (this file is small, read once at boot) and
+   written through synchronously — one sidecar owns the save dir, so there is no cross-process race.
+   `block` verdicts are absent from this file by design: nothing in it can bless one. */
+const SKILLS_ALLOW_FILE = path.join(WORKSPACES, 'skills-allowed.json');
+let skillApprovals = {};
+try { skillApprovals = JSON.parse(fs.readFileSync(SKILLS_ALLOW_FILE, 'utf8')) || {}; } catch (_) { skillApprovals = {}; }
+function persistSkillApprovals() {
+  try { fs.writeFileSync(SKILLS_ALLOW_FILE, JSON.stringify(skillApprovals, null, 2), 'utf8'); return true; }
+  catch (e) { console.warn('[skills] approval write failed:', (e && e.message) || e); return false; }
+}
+const skillGate = makeSkillGate({
+  guard: skillGuard,
+  approvals: { get: (agentId, id) => skillApprovals[String(agentId) + '\x00' + String(id)] || null }
+});
 // BOOT COMPACTION: when skills.jsonl has grown past a threshold, rewrite it to one line per (agentId,name) so
 // view-bump churn + repeated edits can't grow it without bound. Runs AFTER the store loaded `latest`, so the
 // rewrite is exactly the current newest-per-skill set. Safe + idempotent; fail-open.
@@ -1515,6 +1561,30 @@ function stashProposals(agentId, runId, proposals) {
   latestProposalRun.set(agentId, runId);
   while (proposalsByRun.size > PROPOSALS_CAP) { const k = proposalsByRun.keys().next().value; proposalsByRun.delete(k); }
 }
+
+/* ---- the DURABLE pending queue (pending:<agent>) ----
+
+   proposalsByRun above is an in-memory Map: it dies on restart, is capped, and is reachable only by the exact
+   runId or the single newest-per-agent fallback. That was survivable while ONLY the watched browser run reflected
+   — a high-stakes confirm deck appeared in front of the Commander seconds after the run that raised it. Now that
+   unattended runs reflect (a routine at 3am, a night shift, a channel message), a deck can be raised with nobody
+   watching, and an un-answered proposal that evaporates on the next restart is a memory the Commander was never
+   given the chance to approve. The reference harness answers this with a staged-write queue reviewable later
+   (`/memory pending`); this is the same guarantee.
+
+   Only HIGH-STAKES (un-saved) proposals are queued — auto-saved ones are already durable records in the notebook.
+   The queue mechanics are pure over the injected store (memory-store.js, unit-tested); these are the ambient
+   wrappers that bind them to notebookStore + the wall clock and swallow a store hiccup. */
+async function queuePending(agentId, runId, items) {
+  try { await MemoryStore.appendPending(notebookStore, agentId, runId, items, Date.now()); }
+  catch (e) { console.warn('[cortex] pending queue write failed:', (e && e.message) || e); }
+}
+async function takePending(agentId, runId, id) {
+  try { return await MemoryStore.takePending(notebookStore, agentId, runId, id); } catch (_) { return null; }
+}
+function listPending(agentId) {
+  try { return MemoryStore.listPending(notebookStore, agentId); } catch (_) { return []; }
+}
 /* FLAGSHIP CROSS-WIRE (NS-8 lite): assemble the read-side SHARED DECLINED INDEX from every engine's EXPLICIT-decline
    store, so an idea the Commander declined ANYWHERE is suppressed at propose-time EVERYWHERE. Per-agent stores
    (notebook declined:, studyDeclined) + station-wide stores (declined thread titles, quest deniedTitles, declined
@@ -1535,6 +1605,7 @@ function buildDeclinedIndex(agentId) {
 async function runReflection(o) {
   const { agentId, runId, messages, provider, model, cost } = o;
   const unmetered = !!(o && o.unmetered);
+  const origin = String((o && o.origin) || 'commander');   // which surface formed these beliefs (memcore.originOf)
   const ac = new AbortController();
   const timer = setTimeout(() => { try { ac.abort(); } catch (_) {} }, REFLECT_TIMEOUT_MS);
   let usd = 0, tokens = 0;
@@ -1582,17 +1653,20 @@ async function runReflection(o) {
       const saved = [];
       for (const p of normalProps) {
         try {
-          const w = await writeMemoryRecord(agentId, p, { runId, trustDelta: 0, source: 'reflection' });
-          if (w.ok) saved.push({ id: w.id, kind: w.kind, content: p.content, scope: p.scope || 'global', saved: true });
+          const w = await writeMemoryRecord(agentId, p, { runId, trustDelta: 0, source: 'reflection', origin: origin });
+          if (w.ok) saved.push({ id: w.id, kind: w.kind, content: p.content, scope: p.scope || 'global', origin: origin, saved: true });
         } catch (_) {}   // one failed write never sinks the batch
       }
       // stash ONE batch (mixed: saved receipts carry saved:true + a real record id; high-stakes carry the pending
       // prop_N id). The frontend fetches it via /api/memory/proposals — renders a passive receipt for saved:true
       // items and the Keep/Edit/Discard confirm deck for the rest. A single stash per runId (a second stashProposals
       // for the same runId would OVERWRITE the first — so merge here).
-      const pending = highStakesProps.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global' }));
+      const pending = highStakesProps.map(p => ({ id: p.id, kind: p.kind, content: p.content, scope: p.scope || 'global', origin: origin }));
       const combined = saved.concat(pending);
       if (combined.length) stashProposals(agentId, runId, combined);
+      // ...and queue the high-stakes half DURABLY. The in-memory stash serves the live receipt/deck render; this
+      // is what makes a deck raised by an unattended run answerable minutes or a restart later.
+      if (pending.length) await queuePending(agentId, runId, pending);
       // memory.write already emitted per-record inside writeMemoryRecord — that is the receipt TRIGGER. Auto-saved
       // items get NO memory.proposed (they must NOT claim the one-beat slot — study/arc/trust stay free). Only the
       // high-stakes ones emit memory.proposed so the confirm deck fires for just those (and claims the slot).
@@ -1770,7 +1844,11 @@ async function runBackgroundSkillReview(o) {
     // but every skillbase MUTATION fires the EXISTING `deliverable` event + one auditable log line via this
     // observer — that is what surfaces the new skill in the SKILLS panel and the one COMMS aside.
     const reviewObserver = skillReview.makeReviewObserver({ emit: chanEmit, log: (s) => console.log(s), now: () => Date.now(), source: 'skill-review' });
-    makeSkillTools({ store: skillStore, onManage: (skill, ctx, action) => reviewObserver.onManage(skill, action) }).register(registry);
+    // readBeforeWrite: this fork is autonomous, so it must READ a skill (skill.view) before it may
+    // rewrite or archive it — the ledger lives in this per-pass tool instance. gate: the fork is a
+    // model too; a withheld skill is withheld from IT as well, or the review pass becomes the way
+    // an unreviewed body reaches a prompt.
+    makeSkillTools({ store: skillStore, gate: skillGate, readBeforeWrite: true, onManage: (skill, ctx, action) => reviewObserver.onManage(skill, action) }).register(registry);
     const allowed = ['skill.write', 'skill.manage', 'skill.list', 'skill.view'];
     const resolved = {
       agentId, room: 'skill-review', hasCompute: true, tools: allowed.slice(),
@@ -1853,7 +1931,7 @@ async function runSkillCurator(o) {
     const registry = makeRegistry();
     // A2: same un-silencing for the curator — merges/archives now surface a deliverable + audit line once each.
     const curatorObserver = skillReview.makeReviewObserver({ emit: chanEmit, log: (s) => console.log(s), now: () => Date.now(), source: 'skill-curator' });
-    makeSkillTools({ store: skillStore, onManage: (skill, ctx, action) => curatorObserver.onManage(skill, action) }).register(registry);
+    makeSkillTools({ store: skillStore, gate: skillGate, readBeforeWrite: true, onManage: (skill, ctx, action) => curatorObserver.onManage(skill, action) }).register(registry);   // same two guards as the review fork: read before you rewrite, and the guard's verdict binds here too
     const allowed = ['skill.write', 'skill.manage', 'skill.list', 'skill.view'];
     const resolved = { agentId, room: 'skill-curator', hasCompute: true, tools: allowed.slice(), approvalRules: {}, networkCaps: {} };
     const toolDefs = registry.wireFormat(registry.list(new Set(allowed)));
@@ -2030,6 +2108,9 @@ const projectScan = makeProjectScan({
   }),
   fsp, pathMod: path, isBlessed: isBlessedRoot
 });
+// The blessed project's OWN house rules (AGENTS.md / CLAUDE.md / .cursorrules). Same trust gate as the folder
+// line below it: nothing is read for a root that is not a standing blessed grant.
+const projectInstructions = makeProjectInstructions({ fsp, pathMod: path, redact });
 
 const grantsSession = new Map();           // runId -> Set(dangerKey); cleared when the run ends
 // full-access ("YOLO") blanket grants the user clicks mid-run: per-AGENT (not per-run), in-memory only, so a
@@ -2157,6 +2238,51 @@ function voiceFetchOpts(base, timeoutMs) {
   return voiceDispatcher ? Object.assign({ dispatcher: voiceDispatcher }, base) : base;
 }
 const CHANNELS_DIR = path.join(WORKSPACES, 'channels');
+
+/* HOOKS — the Commander's own code in the agent's path (sidecar/hooks.js + sidecar/shellhooks.js).
+   ONE spine for the whole station, built at boot and shared by every run: a hook that only fired on the
+   browser surface would be a rule the Commander thinks is enforced and isn't. The shell bridge is installed
+   once here; every (event, command) pair stays pending until explicitly allowed, so a hooks.json that arrived
+   by repo checkout or a restored backup does nothing until the Commander says so. */
+const HOOKS_FILE = path.join(WORKSPACES, 'hooks.json');
+const HOOKS_ALLOW_FILE = path.join(WORKSPACES, 'hooks-allowed.json');
+const hookSpine = makeHooks({ onError: (e) => console.warn('[hooks] ' + (e && e.hook) + ' on ' + (e && e.event) + ': ' + (e && e.error)) });
+const shellHooks = makeShellHooks({
+  spawn: childSpawn, fsp, pathMod: path, hooksFile: HOOKS_FILE, allowFile: HOOKS_ALLOW_FILE,
+  cwd: WORKSPACES, clock: { now: () => Date.now() },
+  onError: (e) => console.warn('[hooks] ' + (e && e.hook) + ': ' + (e && e.error))
+});
+/* PLUGINS — the packaged form of the same idea (sidecar/plugins.js). Scoped SURFACE: the only thing a plugin
+   is handed is `on(event, handler)` against this same spine. Inert until explicitly allowed, keyed to a hash
+   of the code itself so a silent edit re-asks. */
+const PLUGINS_DIR = path.join(WORKSPACES, 'plugins');
+const PLUGINS_ALLOW_FILE = path.join(WORKSPACES, 'plugins-allowed.json');
+const pluginLoader = makePluginLoader({
+  fsp, pathMod: path, dir: PLUGINS_DIR, allowFile: PLUGINS_ALLOW_FILE,
+  requireModule: (p) => require(p), hash: (s) => crypto.createHash('sha256').update(String(s)).digest('hex'),
+  guard: skillGuard, clock: { now: () => Date.now() },
+  onError: (e) => console.warn('[plugins] ' + (e && e.plugin) + ': ' + (e && e.error))
+});
+let pluginsLoaded = { loaded: [], pending: [], errors: [] };
+let hooksInstalled = { installed: [], pending: [], errors: [] };
+async function installShellHooks() {
+  /* ORDER IS LOAD-BEARING: plugins register BEFORE shell hooks, mirroring the reference harness. The spine
+     reports the FIRST block's reason, so on a blocking event this decides who gets to explain the refusal —
+     and an in-process plugin is the more specific authority. */
+  try {
+    pluginsLoaded = await pluginLoader.load(hookSpine);
+    for (const err of pluginsLoaded.errors) console.warn('[plugins] ' + err);
+    if (pluginsLoaded.loaded.length) console.log('  · ' + pluginsLoaded.loaded.length + ' plugin(s) active');
+    if (pluginsLoaded.pending.length) console.log('  · ' + pluginsLoaded.pending.length + ' plugin(s) awaiting approval (POST /api/plugins/allow)');
+  } catch (e) { console.warn('[plugins] load failed: ' + ((e && e.message) || e)); }
+  try { hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { console.warn('[hooks] install failed: ' + ((e && e.message) || e)); return; }
+  for (const err of hooksInstalled.errors) console.warn('[hooks] ' + err);
+  if (hooksInstalled.installed.length) console.log('  · ' + hooksInstalled.installed.length + ' shell hook(s) active');
+  // Pending is NOT a failure — it is the consent gate doing its job, and it has to be visible or the
+  // Commander will think a hook they wrote is running when it is not.
+  if (hooksInstalled.pending.length) console.log('  · ' + hooksInstalled.pending.length + ' hook(s) awaiting approval (POST /api/hooks/allow)');
+}
 const CHANNEL_SECRETS_FILE = path.join(CHANNELS_DIR, 'secrets.json');
 // ---- channel bot tokens: keychain-backed on desktop, plaintext-file fallback in the bare sidecar ----
 // Runtime token layer, mirroring runtimeKeys for provider API keys. On the desktop build the token source of
@@ -2559,9 +2685,12 @@ if (require.main === module) {
 const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
 // serviceEnv: the KEYS-tab vars a shell child must receive. Lazy + per call — sanitizeChildEnv strips every
 // *_API_KEY from the inherited env, so without this the pasted key never reaches curl (see servicekeys.runEnv).
-const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: () => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV }) });
+// `surface` is the RUN's surface, forwarded by the backend from the shell/verify call: an unattended run only
+// receives the keys whose unattended grant is flipped ON, the SAME rule resolveForRequest enforces on
+// web_request. Host authority — it comes from the run, never from tool args.
+const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: (surface) => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV, surface: surface }) });
 try { console.log('[exec-env]', JSON.stringify(executionEnvironment.describe())); } catch (_) {}
-const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200 });
+const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200, hooks: hookSpine });
 
 // per-agent inbound work-item depth (backpressure): bumped when a message is admitted, dropped when its
 // run finishes. Drives queue.status -> the queue-depth HUD. Keyed by the SAME agentId the hub routes to.
@@ -2575,6 +2704,18 @@ function bumpQueue(agentId, d) { const n = Math.max(0, (queueDepth.get(agentId) 
 // the placed floor's RoutingPlan (posted by the app on every geo change). resolveTarget answers "which agent
 // runs this work-item?"; a non-deployable plan (cycle/orphan/dead-bay) is refused so routing can't loop.
 const router = makeRouter();
+/* THE WORK LINE (agentic graphs, 2026-07-27). resolveTarget names the dock that runs a message; `chainRunner`
+   runs everything the Commander drew DOWNSTREAM of that dock — bay -> bay, until the line ships out. One
+   instance, bound to the floor's edge function; each caller hands it its own way to execute a hop. Emits its
+   per-hop crates through the SAME validated chanEmit the channel telemetry uses, so a handoff is a real crate
+   on the floor and not a claim. */
+const chainRunner = makeChainRunner({
+  nextAgent: (agentId, ctx) => router.chainNext(agentId, ctx),
+  emit: (name, payload) => { try { chanEmit(name, payload); } catch (_) {} },
+  newId: () => 'wi_' + crypto.randomUUID().slice(0, 8),
+  now: () => Date.now(),
+  getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined)   // the SAME classifier a FILTER routes by
+});
 /* RESTART TRUTH (2026-07-06 audit): the router used to hold the posted plan ONLY in memory — after a sidecar
    restart, cron/channel work fired UNROUTED (fallback agent, default-office caps, no per-bay isolation) until
    a browser happened to open and re-post. The last ACCEPTED plan persists beside the other protected state
@@ -2952,13 +3093,32 @@ const cronEmit = (name, payload) => { try { return cronEmitValidated(name, redac
 // opt-in is a single global flag (channelSecrets.notifyAutonomous, default off) — chatsFor returns [] when off, so
 // the notifier engine stays opt-in-agnostic. send/chatsFor read telegram/discord/channelSecrets LIVE (closures), so
 // they resolve correctly even though the channel adapters connect after this point in boot.
+/* liveChannelFor(channel) -> { adapter, hub } | null — the ONE resolver from a channel NAME to the live wired
+   channel. Fans out over the two bespoke slots, a per-instance telegram bot ('telegram:<botId>', so a ping
+   arrives FROM the agent's own contact), else the generic map (slack/matrix/signal). Reads the module-level
+   handles LIVE, so it resolves correctly even though adapters connect long after boot reaches this line.
+   Shared by the autonomous notifier and the agent's channel.send tool: a second copy of this fan-out would
+   eventually disagree about which adapter serves a channel, and the failure mode is a message going to the
+   wrong platform or silently nowhere. */
+function liveChannelFor(channel) {
+  /* The DEV channel is a REAL channel — it has a hub and a working send (it captures replies for
+     GET/POST /api/dev/inbound) — it just has no bot server behind it, so it never appears in genericChannels.
+     Exposing it here is what makes outbound reach live-provable without a platform token, and it mirrors the
+     MCP bridge's existing rule: messages_send drives the station over its local DEV channel, DEV mode only.
+     Gated on DEV_MODE so a packaged build has no dev target at all (it is never set in a shipping build). */
+  if (channel === 'dev') {
+    if (!DEV_MODE) return null;
+    const hub = getDevHub();
+    return { hub: hub, adapter: { send: (chatId, text) => devCaptureReply(chatId, text) } };
+  }
+  if (channel === 'discord') return discord;
+  if (typeof channel === 'string' && channel.indexOf('telegram:') === 0) return telegramBots.get(channel.slice('telegram:'.length)) || null;
+  if (!channel || channel === 'telegram') return telegram;
+  return genericChannels[channel] || null;
+}
 const autoNotifier = makeAutoNotifier({
   send: (chatId, text, channel) => {
-    // fan out by channel name: the two bespoke slots, a per-instance telegram bot ('telegram:<botId>' — the ping
-    // arrives FROM the agent's own contact), else the generic map (slack/matrix/signal).
-    const ch = (channel === 'discord') ? discord
-      : (typeof channel === 'string' && channel.indexOf('telegram:') === 0) ? telegramBots.get(channel.slice('telegram:'.length))
-      : (!channel || channel === 'telegram') ? telegram : genericChannels[channel];
+    const ch = liveChannelFor(channel);
     const p = (ch && ch.adapter) ? ch.adapter.send(chatId, redact(text)) : Promise.resolve({ ok: false, error: 'channel not connected' });
     // DELIVERY HONESTY (2026-07-15 audit): transports NEVER throw — a failure is a resolved { ok:false,
     // error } SendResult. Normalize that to a rejection so the notifier's per-send outcome reporting
@@ -3101,7 +3261,35 @@ const cronDriver = makeCronDriver({
   placeWorkitem: placeCronWorkitem,
   // persona is a GETTER so each fire folds in the LIVE Commander dossier (it changes as the user edits it);
   // withDossier is a no-op when the dossier is empty, so this is byte-identical to CRON_PERSONA until one exists.
-  persona: (agentId) => cronSystemFor(agentId)
+  persona: (agentId) => cronSystemFor(agentId),
+  /* THE WORK LINE for a scheduled fire: run the stages drawn downstream of the routine's dock. Same executor,
+     same caps, same per-hop crates as a channel message — only the way a hop is executed differs (a routine has
+     no chat transcript; its hops ride the routine's own stream so the session shows the whole line). */
+  advanceChain: (o) => chainRunner.advance({
+    agentId: o.agentId, text: o.text, originalText: o.originalText, signal: o.signal,
+    runAgent: async (h) => {
+      if (o.onHop) { try { o.onHop(); } catch (_) {} }
+      const hs = { buf: '', errMsg: null, usd: 0 };
+      const sink = (name, payload) => {
+        const p = payload || {};
+        if (name === 'agent.token') { hs.buf += (p.delta || ''); return; }
+        if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
+        else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
+        else if (name === 'agent.run.end' && typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd;
+        try { const view = runTeeView(name, p); if (view) cronEmitNotify(name, view); } catch (_) {}
+      };
+      try {
+        await runOnce({
+          key: o.key, model: o.model, provider: o.provider, system: cronSystemFor(h.agentId),
+          messages: [{ role: 'user', content: h.text }], agentId: h.agentId, isTask: true,
+          emit: sink, signal: h.signal, runId: crypto.randomUUID(), streamId: o.streamId,
+          surface: 'autonomous', trigger: 'schedule', reflect: true,
+          station: router.stationFor(h.agentId) || undefined
+        });
+      } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
+      return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
+    }
+  })
 });
 let cronTimer = null;
 // TICKER HEALTH (2026-07-15 reliability audit): "armed" only proves a timer EXISTS — not that ticks are
@@ -3188,7 +3376,13 @@ function nightFocusInputs() {
   // Pass the ADOPTED slot, NOT effectiveNorthStar (which would surface the pending proposal).
   let northStar = null;
   try { northStar = nightfocus.northStarEvidence(QuestRefresh.normalize(questRefreshState).northStar, goal); } catch (_) { northStar = null; }
-  return { projects, threads, goal, quests, northStar, now };
+  // LEARNED TOPICS (2026-07-28): the interest histogram the scout lane already maintains, handed to the resolver as
+  // a CAPPED tie-break (nightfocus.TOPIC_BOOST_MAX) so a night lands on the subject the Commander keeps working on
+  // when two candidates are otherwise close on recency. Only WARM topics can move anything (TopicMatch's anchor
+  // rule), so a cold histogram leaves the resolution byte-identical. Bounded + fail-open like every field above.
+  let topics = [];
+  try { topics = Interests.summary(interestsState, { now: now, limit: 8 }); } catch (_) { topics = []; }
+  return { projects, threads, goal, quests, northStar, topics, now };
 }
 
 // ensure a day-keyed focus for the current night; persist iff it changed; return the focus (or null → improv). When
@@ -3997,6 +4191,7 @@ async function runNightshiftActShift(opts) {
       messages: [{ role: 'user', content: prompt }],
       agentId, isTask: true, emit: (typeof opts.emit === 'function' ? opts.emit : function () {}), signal: sig,
       runId, streamId: 'nightshift-act-' + runId, surface: 'autonomous', trigger: 'nightshift', broadcast: !!opts.broadcast,
+      reflect: true,   // a night shift does real work; what it learns is durable memory, not scratch (see the reflect note on /api/run)
       station: router.stationFor(agentId) || undefined
     });
   } catch (e) { threw = e; }
@@ -4109,6 +4304,913 @@ function disarmCron() {
   cronTimer = null;
   console.log('  · cron tick DISARMED — no routine will fire until re-enabled');
   return true;
+}
+
+/* ==== LOOPS — standing objectives (S1). The ambient half of the loopjob subsystem. ========================
+
+   A LOOP is the Commander's standing objective, iterated server-side, with each iteration parked for review;
+   the NEXT iteration is triggered by the Commander's VERDICT, not by a clock. That is what distinguishes it
+   from a routine (WHEN) and from the night shift (IDLE). The pure halves are loopjob.js (the gate + the
+   ledger digest) and loopjob-store.js (the record lifecycle); loopjob-driver.js owns the tick orchestration.
+   Everything ambient — this file, the timer, Date.now, crypto.randomUUID, the fs — lives ONLY here.
+
+   NO ARM CEREMONY. Unlike cron (which is inert behind SKYNET_CRON_ENABLED because a routine is a background
+   surprise), CREATING a loop IS the arming action: the Commander explicitly said "keep doing this". Gating it
+   behind a second switch would be exactly the permission wall the product forbids. The timer therefore arms
+   itself whenever a live loop exists and stands itself down when none does — so a station with no loops pays
+   no timer, and there is no state where a loop exists but silently never runs.
+
+   The E-STOP still owns it: `loopsHalted` is a DURABLE stand-down (survives restart) engaged by POST /api/halt
+   alongside the cron/night-shift halts, and lifted only by an explicit POST /api/loops/resume. ============= */
+const LOOPS_FILE = path.join(WORKSPACES, 'loops.json');
+const LOOPS_HALT_FILE = path.join(WORKSPACES, 'loops.halt.json');
+// 20s, not cron's 60s: after the Commander rules on a candidate the next iteration should start while they are
+// still looking at the screen. A loop with nothing to do costs one gate evaluation per tick — no model call.
+// ENV() already prefixes STARNET_/SKYNET_ — pass the bare suffix, never the prefixed name.
+const LOOP_TICK_MS = Math.max(5000, parseInt(ENV('LOOP_TICK_MS') || '20000', 10) || 20000);
+const LOOP_MAX_PARALLEL = Math.max(1, parseInt(ENV('LOOP_MAX_PARALLEL') || '2', 10) || 2);
+const LOOP_MAX_RUN_MS = Math.max(60000, parseInt(ENV('LOOP_MAX_RUN_MS') || '1800000', 10) || 1800000);
+
+function loadLoops() {
+  try { return loopjobStore.loadEnvelope(loadResilient(LOOPS_FILE, 'loops')).loops; }
+  catch (e) { console.warn('[loops] load failed:', (e && e.message) || e); return []; }
+}
+let loopJobs = loadLoops();
+function saveLoops() { saveResilient(LOOPS_FILE, loopjobStore.toEnvelope(loopJobs)); }   // throws; CRUD routes surface it
+function loadLoopsHalted() {
+  try { const raw = loadResilient(LOOPS_HALT_FILE, 'loops-halt'); return !!(raw && raw.halted); } catch (_) { return false; }
+}
+let loopsHalted = loadLoopsHalted();
+function saveLoopsHalted(v) { try { saveResilient(LOOPS_HALT_FILE, { halted: !!v }); } catch (e) { console.warn('[loops] halt persist failed:', (e && e.message) || e); } }
+
+/* loopPrecheck — the PURELY-LOCAL readiness gate, evaluated BEFORE any spend (the night shift's NS-2
+   cold-leash discipline: a stand-down no model call could have avoided must cost neither money nor an
+   iteration slot).
+
+   It is a NAMED function, not an inline dep, because BOTH the driver and GET /api/loops must run it. Live
+   proof caught why: with no credential the driver correctly refused to spend, but the UI projection still
+   reported binding:null / wouldFire:true — so the LOOPS window would have shown a loop as "ready" while the
+   autonomy ledger recorded a stand-down every single tick. Anything that stops a loop from firing has to be
+   visible to the same gate the UI renders from, or the panel is asserting state the harness contradicts. */
+function loopPrecheck(loop) {
+  try {
+    if (!loop || !loop.objective || !String(loop.objective).trim()) return { ok: false, reason: 'this loop has no objective' };
+    if (loop.workdir && !fs.existsSync(loop.workdir)) return { ok: false, reason: 'the project folder is gone: ' + loop.workdir };
+    /* THE APPROVAL MUST HOLD BEFORE WE SPEND. A dogfood run burned three passes and $0.33 against a folder
+       whose grant did not match, because the loop fired first and discovered the problem inside the model
+       call. Nothing a model does can fix a missing folder approval, so it belongs here — where standing down
+       costs nothing and states the real reason. */
+    if (loop.workdir && !isBlessedRoot(loop.workdir)) {
+      return { ok: false, reason: 'the project folder is not approved for this station — re-approve "' + loop.workdir + '" and resume' };
+    }
+    /* ONE LOOP AT A TIME PER PROJECT FOLDER (S3). Loops run up to LOOP_MAX_PARALLEL at once, and before the
+       harvest existed two loops sharing a folder merely interleaved their edits. Now that each one commits
+       onto its OWN branch, sharing a folder means they would fight over which branch is checked out and
+       commit each other's half-finished work. This is a soft, self-clearing stand-down — it names the other
+       loop and re-evaluates every tick, so the second loop simply takes its turn. */
+    if (loop.workdir) {
+      const busy = (loopJobs || []).find(other => other && other.id !== loop.id && other.workdir === loop.workdir
+        && (other.state === 'running' || other.fireClaim != null));
+      if (busy) return { ok: false, reason: 'waiting for "' + (busy.name || busy.id) + '" to finish its pass — one loop at a time per project folder' };
+    }
+    const provider = cronProviderFor(loop);
+    if (!cronHasCredential(provider, cronKeyFor(provider))) {
+      return { ok: false, reason: 'no credential for ' + (provider || 'the selected provider') + ' — add a key in the KEYS tab' };
+    }
+    return { ok: true };
+  } catch (e) { return { ok: false, reason: 'precheck error: ' + ((e && e.message) || e) }; }
+}
+
+/* ---- THE HOST-RUN CHECK (S2). This is the only place in the product that executes a NON-git command at a
+   blessed project root, and the trust story is what makes that defensible:
+
+     · the command is authored by the HUMAN when they create the loop (POST /api/loops `checkCmd`);
+     · it is never placed in the iteration prompt, never exposed as a tool, and no model can read or edit it;
+     · it only ever runs at a root that `isBlessedRoot` still approves, re-checked every single iteration;
+     · the agent's own `verify.run` tool stays jailed exactly as it was — this is a separate, host-side gate.
+
+   The agent's job is to make the check pass. It has no say in what the check IS. Everything about whether a
+   pass can be BELIEVED lives in the pure loopcheck.js. ---- */
+const LOOP_CHECK_MAX_BYTES = 64000;
+
+/* captureLoopDiff — the real unified diff for the files a pass touched, captured AT SETTLE TIME.
+
+   WHY AT SETTLE, AND WHY BOUNDED TO THIS PASS'S FILES. A loop does not commit between passes, so `git diff`
+   later shows the CUMULATIVE working-tree change, not what any one pass did. Capturing when the pass ends,
+   restricted to the paths that pass introduced, is the most faithful attribution available without snapshotting
+   file contents — and it is what makes a review card show the change rather than the agent's description of it.
+
+   HONESTY: the label the UI shows says "against your last commit", because that is literally what this is. If
+   an earlier un-approved pass also touched one of these files, its lines are in here too — the panel says so.
+   A non-git project yields '' and the card offers the file list alone rather than inventing a diff. */
+const LOOP_DIFF_MAX = 12000;
+async function captureLoopDiff(root, files) {
+  if (!root || !files || !files.length) return '';
+  try {
+    // `--` then explicit pathspecs: never a whole-tree dump, and a path that looks like a flag cannot be one.
+    const r = await runGit(root, ['diff', '--unified=3', '--no-color', '--'].concat(files.slice(0, 40)), 15000);
+    if (!r.ok && !r.stdout) return '';
+    let out = String(r.stdout || '');
+    if (out.length > LOOP_DIFF_MAX) out = out.slice(0, LOOP_DIFF_MAX) + '\n… (diff truncated — open the folder to read the rest)';
+    return out;
+  } catch (_) { return ''; }
+}
+
+/* detectCheckCommand — what "run this project's tests" actually MEANS for this folder. Without it every
+   project is offered `npm test`, which is wrong the moment someone points a loop at a python or rust repo —
+   and it is wrong on their very first try, on the hero template. Reads real files only; never guesses a
+   command for a toolchain whose manifest is not present. */
+function detectCheckCommand(root) {
+  const has = (f) => { try { return fs.existsSync(path.join(root, f)); } catch (_) { return false; } };
+  try {
+    if (has('package.json')) {
+      let scripts = {};
+      try { scripts = (JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8')) || {}).scripts || {}; } catch (_) {}
+      if (scripts.test) return { cmd: 'npm test', why: 'package.json defines a "test" script' };
+      if (scripts.check) return { cmd: 'npm run check', why: 'package.json defines a "check" script' };
+      return { cmd: 'npm test', why: 'this is an npm project (no "test" script found — check it runs)' };
+    }
+    if (has('pyproject.toml') || has('pytest.ini') || has('tox.ini') || has('conftest.py')) return { cmd: 'pytest', why: 'a pytest layout was found' };
+    if (has('Cargo.toml')) return { cmd: 'cargo test', why: 'Cargo.toml was found' };
+    if (has('go.mod')) return { cmd: 'go test ./...', why: 'go.mod was found' };
+    if (has('Makefile') || has('makefile')) return { cmd: 'make test', why: 'a Makefile was found' };
+    if (has('Gemfile')) return { cmd: 'bundle exec rspec', why: 'a Gemfile was found' };
+  } catch (_) {}
+  return { cmd: '', why: 'no familiar test setup here — type the command you run yourself' };
+}
+
+/* loopProjectFiles — a bounded, absolute-path listing of what is actually in the project. Deliberately NOT
+   projectScan's job: that answers "what changed lately", this answers "what IS there", and a loop pointed at
+   a clean repo needs the second one to orient at all. Skips the usual noise, caps breadth and depth so a huge
+   monorepo cannot flood the prompt, and never throws. */
+function loopProjectFiles(root, cap) {
+  const SKIP = new Set(['.git', 'node_modules', 'dist', 'build', 'out', 'target', '.next', 'vendor', '__pycache__', '.venv', 'coverage']);
+  const MAX = cap || 60, MAX_DEPTH = 4;
+  const out = [];
+  let truncated = false;
+  (function walk(dir, depth) {
+    if (out.length >= MAX || depth > MAX_DEPTH) { if (out.length >= MAX) truncated = true; return; }
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (_) { return; }
+    for (const e of entries) {
+      if (out.length >= MAX) { truncated = true; return; }
+      if (e.name.startsWith('.') && e.name !== '.env.example') continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) { if (!SKIP.has(e.name)) walk(full, depth + 1); }
+      else out.push(full);
+    }
+  })(root, 0);
+  out.truncated = truncated;
+  return out;
+}
+
+// the changed-file list at a blessed root, and whether we could establish it at all. `gitProven:false` is not
+// an error — it is the honest "we cannot enumerate what changed here", which loopcheck treats as unsafe.
+async function loopChangedFiles(root) {
+  try {
+    const r = await runGit(root, ['status', '--porcelain'], 15000);
+    if (!r.ok) return { gitProven: false, files: [] };
+    return { gitProven: true, files: loopcheck.parseChangedFiles(r.stdout) };
+  } catch (_) { return { gitProven: false, files: [] }; }
+}
+
+/* loopTrustSurface — EVERY file this loop has touched since it started, which is what the tamper guard has to
+   reason about once the harvest exists.
+
+   The S2 law was "TRUST IS THE FULL UNCOMMITTED STATE": ask whether the check files are in a state git has not
+   recorded, never who changed them. The harvest broke that question's premise — the loop now COMMITS each
+   pass, so a test file the agent weakened is recorded by git within seconds and the working tree goes clean.
+   Left alone, tampering would only have to survive one settlement to become invisible: exactly the hole S2
+   was written to close, re-opened from the other side.
+
+   So the baseline moves from "the index" to "where this loop started". The trust set is the union of what is
+   uncommitted NOW and everything the loop's own branch has changed since baseCommit. A loop that has not
+   branched yet has no baseCommit and behaves precisely as it did before. */
+async function loopTrustSurface(loop, live) {
+  if (!loop || !loop.baseCommit || !loop.branch) return live;
+  const r = await runGit(loop.workdir, ['diff', '--name-only', loop.baseCommit, 'HEAD'], 15000);
+  // an unreadable range must not silently shrink the trust set — say we could not prove it instead.
+  if (!r.ok) return { gitProven: false, files: live.files };
+  const committed = String(r.stdout || '').split('\n').map(s => s.trim()).filter(Boolean);
+  if (!committed.length) return live;
+  const all = new Set(live.files);
+  for (const f of committed) all.add(f);
+  return { gitProven: live.gitProven, files: Array.from(all) };
+}
+
+/* runLoopCheck — run the loop's human-authored check at its blessed root and judge the result.
+   `before` is the pre-iteration changed-file snapshot, so the paths attributed to THIS iteration are the ones
+   that appeared during it — not every uncommitted edit left by earlier iterations. */
+async function runLoopCheck(loop, before) {
+  if (!loop || !loop.workdir) return loopcheck.verdict({ result: null });
+  /* NO CHECK COMMAND still means we can say WHAT CHANGED. A sweep or research loop runs no check, but its
+     candidates are just as unreviewable without a file list — "Deliverable = OPEN, not read" applies to every
+     shape, not only the one with a test suite. So compute the changed files and return a verdict that ran
+     nothing (ran:false keeps it out of the check state machine) but still carries them. */
+  if (!loop.checkCmd) {
+    const v0 = loopcheck.verdict({ result: null });
+    try {
+      const after = await loopChangedFiles(loop.workdir);
+      const beforeSet0 = new Set((before && before.files) || []);
+      v0.changedFiles = after.files.filter(f => !beforeSet0.has(f)).slice(0, 40);
+      v0.diff = await captureLoopDiff(loop.workdir, v0.changedFiles);
+    } catch (_) { v0.changedFiles = []; }
+    return v0;
+  }
+  // RE-CHECK THE BLESSING EVERY ITERATION. A root blessed yesterday may have been revoked since, and a loop
+  // grinding unattended is exactly the case where a stale grant would go unnoticed.
+  if (!isBlessedRoot(loop.workdir)) {
+    // Say it in the SUMMARY, not only the note — the summary is what the panel and the ledger render, and a
+    // refusal that reads as "check failed (exit 1)" sends everyone hunting for a code defect that isn't there.
+    const why = 'the check did NOT run — "' + loop.workdir + '" is not an approved project folder';
+    return Object.assign(loopcheck.verdict({ result: { exitCode: 1, out: why } }), {
+      mustReview: true, summary: why, note: why + ' (approve it from a watched session, then resume this loop)'
+    });
+  }
+  const res = await shellRunCommand({
+    spawn: childSpawn, cmd: loop.checkCmd, cwd: loop.workdir,
+    timeoutMs: loop.checkTimeoutMs || 120000, maxBytes: LOOP_CHECK_MAX_BYTES,
+    clock: { now: () => Date.now() }, isWin: process.platform === 'win32'
+  });
+  const after = await loopChangedFiles(loop.workdir);
+  /* TRUST IS THE FULL UNCOMMITTED STATE, NOT THIS ITERATION'S DELTA.
+
+     The first version of this diffed after-minus-before, so it only flagged check files THIS iteration
+     touched. A live walk caught the hole: anything modified between iterations (or already dirty when the
+     loop started) was attributed to "pre-existing" and never flagged again — so a tampered test file only had
+     to survive one settlement to become invisible, and a loop started on an already-weakened tree would trust
+     every green it ever saw.
+
+     The question that decides trust is not "who changed the tests" but "are the tests currently in a state
+     git has not recorded". So the verdict reads the WHOLE dirty set. `before` is kept only to say whether
+     this iteration introduced it, which is a message detail, never the trust decision. */
+  const beforeSet = new Set((before && before.files) || []);
+  const introduced = after.files.filter(f => !beforeSet.has(f));
+  /* TWO DIFFERENT QUESTIONS, TWO DIFFERENT SETS — do not collapse them.
+       `introduced` (working tree, after-minus-before) answers "what did THIS pass touch" for the review card.
+       `trust`      (working tree UNION everything committed since baseCommit) answers "can this green be
+                    believed", and it must span the harvest's own commits or the guard goes blind. */
+  const trust = await loopTrustSurface(loop, after);
+  const v = loopcheck.verdict({
+    result: res,
+    changed: trust.files,
+    gitProven: trust.gitProven,
+    extraPaths: loop.checkPaths
+  });
+  // the files this pass actually touched, so the review card can show WHAT CHANGED rather than only the
+  // agent's prose about it. "Deliverable = OPEN, not read" — you cannot judge work you cannot see.
+  v.changedFiles = introduced.slice(0, 40);
+  v.diff = await captureLoopDiff(loop.workdir, v.changedFiles);
+  if (v.tampered) {
+    const fresh = v.tamperedPaths.filter(p => introduced.indexOf(p) >= 0);
+    v.note = v.note + (fresh.length
+      ? ' (this iteration changed ' + fresh.length + ' of them)'
+      : ' (already modified before this iteration — commit or revert them so the loop can vouch for a pass)');
+  }
+  return v;
+}
+
+/* the LOOP tick driver — pure orchestration, every ambient dep injected here. Deliberately reuses the cron
+   credential/identity/station resolvers: a loop iteration is the same kind of unattended run a routine fires,
+   so it must resolve provider, key and station identically or the two paths would drift. */
+/* ==== THE HARVEST — what makes APPROVE and REJECT real (S3) ==============================================
+
+   Before this, loopjob-driver's defaultHarvest returned `commit: null`, nothing injected a `harvest` dep, and
+   POST /api/loops/verdict ran no git at all. An iteration's edits therefore piled up UNCOMMITTED in the
+   Commander's project: approve promoted nothing, reject undid nothing, and a rejected row sat next to code
+   still sitting in the working tree. That is the product asserting a state git never had.
+
+   Two ambient functions close it, with loopgit.js owning every safety decision:
+     loopHarvest   — commit THIS pass's paths onto the loop's own branch, and return the sha.
+     loopUndoWork  — revert the rejected iteration and the stack the STACKING LAW discards, before the verdict
+                     is recorded (loopjob-store: "the HOST performs the actual git ... BEFORE calling this").
+
+   The identity is passed with -c so a machine with no global git identity can still run a loop. Nothing here
+   ever pushes. ====================================================================================== */
+
+const LOOP_GIT_ID = ['-c', 'user.name=StarNet Loop', '-c', 'user.email=loop@starnet.local'];
+
+async function loopIsRepo(root) {
+  const r = await runGit(root, ['rev-parse', '--is-inside-work-tree'], 15000);
+  return r.ok && /true/.test(r.stdout);
+}
+
+/* loopHarvest — THE COMMIT. `ctx.before` is the pre-iteration dirty snapshot the driver already computes for
+   the check, and it is what keeps this honest: the pathspec is after-MINUS-before, so a pass commits only the
+   files that appeared while it ran. `git add -A` would sweep in the Commander's own uncommitted work and put
+   it inside a commit that a later rejection reverts.
+
+   THE ONE THING after-minus-before CANNOT SEPARATE is an edit the Commander makes to their own project WHILE
+   a pass is running — it appeared during the pass, so it is attributed to the pass and rides its commit. This
+   is the same attribution runLoopCheck's tamper guard has always used, and there is no signal that would
+   distinguish the two; it is committed rather than lost, and the review card lists the file. Worth knowing
+   because it is exactly what makes test/loops-check.e2e's own `git commit` occasionally find nothing to do.
+
+   A non-git project is NOT an error — a research loop against a folder of notes is a legitimate shape. It
+   simply harvests no commit, exactly as before. But a project we KNOW we should have committed to and could
+   not (blessing revoked mid-pass, a record naming a protected branch) THROWS, because the driver turns a
+   thrown harvest into a failed iteration rather than a review candidate — a candidate whose work did not
+   actually land is the worst possible thing to put in front of a reviewer. */
+async function loopHarvest(loop, res, iterN, ctx) {
+  // the honest text-only baseline, byte-identical to what the driver would have produced on its own.
+  const text = String((res && res.text) || '');
+  const first = text.split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
+  const base = {
+    text: text,
+    title: first.replace(/^[#>*\-\s]+/, '').split(/\s+/).slice(0, 12).join(' ') || null,
+    summary: text.slice(0, 1200) || null,
+    commit: null,
+    files: [],
+    usd: (res && typeof res.usd === 'number' && isFinite(res.usd)) ? res.usd : 0
+  };
+  if (!loop || !loop.workdir) return base;
+
+  const root = loop.workdir;
+  const isRepo = await loopIsRepo(root);
+  // RE-CHECK THE BLESSING EVERY ITERATION, like runLoopCheck does — a grant can be revoked under a running loop.
+  const blessed = isBlessedRoot(root);
+  const target = loopgit.harvestTarget(loop, {
+    blessed: blessed, isRepo: isRepo,
+    dateStr: new Date().toISOString().slice(0, 10),
+    headBranch: null
+  });
+  if (!target.ok) {
+    if (!isRepo) return base;                      // a folder that is not a repo simply has no commits. Honest.
+    throw new Error(target.reason || 'the loop cannot commit here');
+  }
+
+  // the exact paths THIS pass introduced. Uncapped by the review card's 40 — a file we decline to commit is a
+  // file a rejection cannot undo, so the commit set must be the whole delta, not the readable slice of it.
+  const after = await loopChangedFiles(root);
+  if (!after.gitProven) throw new Error('git could not report what changed in ' + root);
+  const beforeSet = new Set(((ctx && ctx.before && ctx.before.files) || []));
+  const paths = loopgit.commitPaths(after.files.filter(f => !beforeSet.has(f)));
+  if (!paths.length) return base;                  // the pass changed no file — a real outcome, not a failure.
+
+  if (target.create) {
+    // WHERE HEAD WAS BEFORE WE BRANCHED. This is the trust baseline the tamper guard needs once the harvest
+    // starts committing — capture it BEFORE the checkout, because after it there is no way back to it.
+    const baseR = await runGit(root, ['rev-parse', 'HEAD'], 15000);
+    const base = (baseR.stdout || '').trim();
+    const co = await runGit(root, ['checkout', '-b', target.branch], 20000);
+    if (!co.ok) throw new Error('could not create the loop branch ' + target.branch + ': ' + String(co.stderr || '').slice(0, 200));
+    // persist the branch the moment it exists, so a crash between here and the commit cannot orphan it and
+    // start a SECOND branch on the next pass (which would split one loop's work across two undo domains).
+    try {
+      loopJobs = loopjobStore.updateLoop(loopJobs, loop.id, {
+        branch: target.branch, baseCommit: loopgit.isSha(base) ? base : null
+      }, { now: Date.now() });
+      saveLoops();
+    } catch (e) { console.warn('[loops] could not persist the loop branch:', (e && e.message) || e); }
+  } else {
+    const cur = await runGit(root, ['rev-parse', '--abbrev-ref', 'HEAD'], 15000);
+    if ((cur.stdout || '').trim() !== target.branch) {
+      const co = await runGit(root, ['checkout', target.branch], 20000);
+      if (!co.ok) throw new Error('the project is not on ' + target.branch + ' and could not switch to it: ' + String(co.stderr || '').slice(0, 200));
+    }
+  }
+
+  // add THEN commit, both restricted to the pathspec: `add` is what picks up files the pass newly created,
+  // and the `--` on commit is what guarantees nothing else already sitting in the index rides along.
+  const add = await runGit(root, ['add', '--'].concat(paths), 30000);
+  if (!add.ok) throw new Error('could not stage this iteration: ' + String(add.stderr || '').slice(0, 200));
+  const subject = loopgit.commitSubject(loop, iterN, base.title);
+  const body = 'objective: ' + String(loop.objective || '').slice(0, 400);
+  const commit = await runGit(root, LOOP_GIT_ID.concat(['commit', '-m', subject, '-m', body, '--']).concat(paths), 30000);
+  if (!commit.ok) throw new Error('could not commit this iteration: ' + String(commit.stderr || commit.stdout || '').slice(0, 200));
+  const head = await runGit(root, ['rev-parse', '--short', 'HEAD'], 15000);
+  const sha = (head.stdout || '').trim();
+  if (!loopgit.isSha(sha)) throw new Error('committed, but git did not return a usable commit id');
+
+  return Object.assign(base, { commit: sha, files: paths.map(p => ({ path: p })) });
+}
+
+/* loopFilesInCommit — the paths one commit touched. The undo's blast radius is the union of these, and
+   scoping to it is what lets a Commander keep unrelated scratch files dirty without being locked out of the
+   REJECT button. */
+async function loopFilesInCommit(root, sha) {
+  const r = await runGit(root, ['show', '--pretty=format:', '--name-only', sha], 20000);
+  if (!r.ok) return null;
+  return String(r.stdout || '').split('\n').map(s => s.trim()).filter(Boolean);
+}
+
+/* loopUndoWork — THE REVERT, run BEFORE the rejection is recorded. Rejecting #3 undoes #5, #4 and #3 (newest
+   first — see loopgit.js), because the STACKING LAW already discards the ones above.
+
+   REVERT, NEVER RESET: every iteration stays in history, so a mis-click is recoverable.
+
+   THE DIRTY-TREE RULE IS SCOPED, NOT GLOBAL. Refusing on ANY uncommitted file reads as safe and is actually
+   useless: one scratch file the Commander keeps around would permanently disable rejection on a real repo.
+   So the precondition is only that nothing we are about to revert is currently dirty — that is the state
+   that would make git clobber unsaved edits, and it is also what makes the failure path safe, since the
+   recovery only ever restores those same paths.
+
+   Returns { ok, ... } and NEVER throws; the route refuses the verdict on ok:false rather than filing a
+   rejection over code that is still in the tree. */
+async function loopUndoWork(loop, n) {
+  const plan = loopgit.undoPlan(loop, n);
+  if (plan.mode === 'blocked') return { ok: false, error: plan.reason || 'this iteration cannot be undone' };
+  // 'unrevertable' still lets the verdict through — refusing would strand a candidate nobody can ever rule
+  // on — but the reason rides back so the panel states plainly that the files were left in place.
+  if (plan.mode === 'unrevertable') return { ok: true, reverted: [], commit: null, note: plan.reason };
+  if (plan.mode === 'none' || !plan.commits.length) return { ok: true, reverted: [], commit: null, note: null };
+
+  const root = loop.workdir;
+  if (!isBlessedRoot(root)) return { ok: false, error: '"' + root + '" is not an approved project folder any more, so its work cannot be undone from here' };
+  if (!(await loopIsRepo(root))) return { ok: false, error: 'the project folder is no longer a git repo' };
+
+  const status = await runGit(root, ['status', '--porcelain'], 15000);
+  if (!status.ok) return { ok: false, error: 'git could not read the project state' };
+  const dirty = new Set(loopcheck.parseChangedFiles(status.stdout));
+
+  // the union of every path the doomed commits touched — the undo's blast radius.
+  const scope = new Set();
+  for (const c of plan.commits) {
+    const files = await loopFilesInCommit(root, c.sha);
+    if (files == null) return { ok: false, error: 'git could not read what iteration #' + c.n + ' changed, so it cannot be undone safely' };
+    for (const f of files) scope.add(f);
+  }
+  const clash = Array.from(scope).filter(f => dirty.has(f));
+  if (clash.length) {
+    return {
+      ok: false,
+      error: 'you have uncommitted edits to ' + clash.slice(0, 5).join(', ') + (clash.length > 5 ? ' and ' + (clash.length - 5) + ' more' : '')
+        + ' — undoing this iteration would overwrite them. Commit or stash those files, then reject again.'
+    };
+  }
+
+  const cur = await runGit(root, ['rev-parse', '--abbrev-ref', 'HEAD'], 15000);
+  if ((cur.stdout || '').trim() !== String(loop.branch || '')) {
+    const co = await runGit(root, ['checkout', String(loop.branch)], 20000);
+    if (!co.ok) return { ok: false, error: 'could not switch to ' + loop.branch + ' to undo the work: ' + String(co.stderr || '').slice(0, 200) };
+  }
+
+  // accumulate every revert into the index, then land ONE commit — so the undo is a single reviewable entry
+  // rather than N of them, and so a mid-sequence failure has nothing committed to unpick. The recovery is
+  // scoped to `scope` for the same reason the precondition was: never touch a file this undo did not own.
+  const scoped = Array.from(scope);
+  for (const c of plan.commits) {
+    const r = await runGit(root, ['revert', '--no-commit', c.sha], 30000);
+    if (!r.ok) {
+      await runGit(root, ['revert', '--quit'], 15000);                                     // clear the sequencer state
+      if (scoped.length) {
+        await runGit(root, ['reset', '-q', '--'].concat(scoped), 20000);                   // unstage the partial revert
+        await runGit(root, ['checkout', '-q', 'HEAD', '--'].concat(scoped), 20000);        // and restore those paths only
+      }
+      return { ok: false, error: 'could not undo iteration #' + c.n + ' — ' + String(r.stderr || '').slice(0, 200) + ' (nothing was changed; the commits are all still there)' };
+    }
+  }
+  const others = plan.commits.length - 1;
+  const subject = 'loop: undo rejected #' + n + (others > 0 ? ' (and ' + others + ' built on it)' : '');
+  const done = await runGit(root, LOOP_GIT_ID.concat(['commit', '-m', subject, '--']).concat(scoped), 30000);
+  if (!done.ok) {
+    if (scoped.length) {
+      await runGit(root, ['reset', '-q', '--'].concat(scoped), 20000);
+      await runGit(root, ['checkout', '-q', 'HEAD', '--'].concat(scoped), 20000);
+    }
+    return { ok: false, error: 'the undo could not be committed: ' + String(done.stderr || '').slice(0, 200) + ' (nothing was changed)' };
+  }
+  const head = await runGit(root, ['rev-parse', '--short', 'HEAD'], 15000);
+  return {
+    ok: true,
+    reverted: plan.commits.map(c => c.n),
+    commit: (head.stdout || '').trim() || null,
+    note: plan.commitless.length ? (plan.commitless.length + ' of the discarded passes had committed nothing') : null
+  };
+}
+
+const loopDriver = makeLoopDriver({
+  getLoops: () => loopJobs,
+  // TRANSACTIONAL DISPATCH: an honest false receipt means the durable write did NOT land, and the driver then
+  // launches nothing (firing over an unpersisted fire-claim is the crash-restart double-spend window). On
+  // failure we roll the RAM mirror back to disk so the loop stays eligible and retries, rather than living as
+  // a RAM-only advance a restart would forget. Same shape as the cron setJobs receipt.
+  setLoops: (next) => {
+    try { loopJobs = next; saveLoops(); return true; }
+    catch (e) {
+      console.warn('[loops] persist failed:', (e && e.message) || e);
+      try { loopJobs = loadLoops(); } catch (_) { /* disk unreadable too — keep the RAM mirror */ }
+      return false;
+    }
+  },
+  runOnce: (opts) => runOnce(opts),
+  newId: () => crypto.randomUUID(), newAbort: () => new AbortController(), now: () => Date.now(),
+  isHalted: () => loopsHalted,
+  // the same-agent run mutex. A loop must never elbow past an interactive run the Commander is watching.
+  concurrencyFree: (agentId) => { try { return concurrencyGate.inFlight(agentId) === 0; } catch (_) { return true; } },
+  // DELETED-AGENT GUARD, mirroring cron's: fail-OPEN on an empty roster (a boot before the first push must
+  // never reap a legitimate loop on missing data); the hero 'agent' is undeletable and always passes.
+  agentExists: (agentId) => { const id = String(agentId || ''); return !id || id === 'agent' || agentRoster.size === 0 || agentRoster.has(id); },
+  // PURELY-LOCAL readiness, evaluated BEFORE any spend (the night shift's NS-2 cold-leash fix): a stand-down
+  // that no model call could have avoided must not cost money or an iteration slot.
+  precheck: ({ loop }) => loopPrecheck(loop),
+  getKey: (provider) => cronKeyFor(provider),
+  providerForLoop: (loop) => cronProviderFor(loop),
+  hasCredential: (provider, key) => cronHasCredential(provider, key),
+  identityForAgent: (agentId) => cronIdentityFor(agentId),
+  stationFor: (agentId) => router.stationFor(agentId),
+  persona: () => cronSystemFor('agent'),
+  defaultModel: CRON_DEFAULT_MODEL,
+  maxParallel: LOOP_MAX_PARALLEL,
+  maxRunMs: LOOP_MAX_RUN_MS,
+  // the pre-iteration changed-file snapshot, so the check attributes files to THIS iteration only.
+  // Tell the agent WHERE the project is. Reuses the interactive path's own helper AND its live blessing
+  // check, so a revoked grant injects nothing rather than asserting folder access we cannot prove.
+  // A loop pass is a REAL run and must appear in the run registry like every other one: the reconnect
+  // snapshot is built from it, and the world darkens any agent missing from that snapshot.
+  trackRun: (runId, agentId, ac) => {
+    try { runs.set(runId, ac); runsMeta.set(runId, { agentId: agentId, startedAt: Date.now(), source: 'loop' }); } catch (_) {}
+  },
+  untrackRun: (runId) => { try { runs.delete(runId); runsMeta.delete(runId); } catch (_) {} },
+  projectLine: (loop) => (loop && loop.workdir && isBlessedRoot(loop.workdir)) ? projectScopeLine(loop.workdir, true) : '',
+  /* THE PROJECT SNAPSHOT. Reuses sidecar/projectscan.js (already used by the night shift) to put the real
+     absolute root and what is actually in it in front of the agent. It does two jobs at once:
+       · ANCHOR — the agent stops guessing at relative paths inside its own jail;
+       · PROOF — a scan that returns nothing means the pass would run BLIND, and `reachable:false` stops the
+         iteration before a model call. Without this a soft loop could report "0 findings" having looked only
+         at its empty jail, and the loop would count that as CONVERGENCE — the system asserting "nothing left
+         to do" about a project it never opened. */
+  context: async (loop) => {
+    if (!loop || !loop.workdir) return { text: '', reachable: true };
+    try {
+      // THE FILE LISTING IS THE LOAD-BEARING PART. projectScan reports git status / recent commits / TODO
+      // markers, which on a CLEAN repo is almost nothing — a dogfood sweep read that, ran a jailed fs_list,
+      // saw its own empty workspace and concluded "nothing to sweep". The agent must be shown the actual
+      // files, with absolute paths, or it has no way to know the project is even there.
+      const files = loopProjectFiles(loop.workdir);
+      if (!files.length) return { text: '', reachable: false, why: 'no readable files were found in ' + loop.workdir };
+      let scanText = '';
+      try { const r = await projectScan.scan(loop.workdir, {}); if (r && r.ok) scanText = String(r.text || '').trim(); } catch (_) {}
+      const lines = ['<project_snapshot root="' + loop.workdir + '">',
+        'These files really exist right now. Read and edit them at these ABSOLUTE paths — a bare relative path',
+        'resolves inside your own scratch workspace, NOT this project.', ''];
+      for (const f of files) lines.push('  ' + f);
+      if (files.truncated) lines.push('  … (listing truncated)');
+      if (scanText) lines.push('', scanText);
+      lines.push('</project_snapshot>');
+      return { text: lines.join('\n'), reachable: true };
+    } catch (e) { return { text: '', reachable: false, why: 'project scan failed: ' + ((e && e.message) || e) }; }
+  },
+  snapshot: (loop) => (loop && loop.workdir) ? loopChangedFiles(loop.workdir) : Promise.resolve(null),
+  check: (loop, ctx) => runLoopCheck(loop, ctx && ctx.before),
+  /* THE HARVEST. Without this dep the driver falls back to defaultHarvest, which reports `commit: null` — and
+     a loop whose iterations are never committed is a loop whose REJECT button cannot undo anything. */
+  harvest: (loop, res, iterN, ctx) => loopHarvest(loop, res, iterN, ctx),
+  /* A LOOP THAT NEEDS YOU SAYS SO — on the channel you already use. The dock badge and toast only exist while
+     the app is open, which is exactly the case that does NOT matter for a loop that runs while you are away.
+     Reuses the SAME opt-in gate and chat map as cron notifications (channelSecrets.notifyAutonomous, default
+     OFF — the anti-spam law), so nobody is messaged who did not ask to be. Fire-and-forget: a dead ping must
+     never touch the loop pipeline, and it is edge-triggered in the driver so it cannot repeat.
+  */
+  onStopped: (loop, prevState) => {
+    try {
+      if (!(channelSecrets && channelSecrets.notifyAutonomous)) return;
+      const map = channelStore.loadChatMap();
+      const chats = Object.keys((map && map.chats) || {})
+        .filter(cid => map.chats[cid] && map.chats[cid].agentId === loop.agentId)
+        .map(cid => ({ chatId: (map.chats[cid] && map.chats[cid].chatId) || cid, channel: (map.chats[cid] && map.chats[cid].channel) || 'telegram' }));
+      if (!chats.length) return;
+      const name = loop.name || 'a loop';
+      const pend = loopjob.pendingReviews(loop).length;
+      // say the TRUE reason it stopped; never imply work is waiting when the loop simply finished or converged.
+      const line = loop.state === 'waiting' ? (name + ' has ' + pend + ' result' + (pend === 1 ? '' : 's') + ' waiting for your review.')
+        : loop.state === 'done' ? (name + ' finished — ' + (loop.stopReason || 'objective met') + '.')
+        : loop.state === 'dormant' ? (name + ' stopped — ' + (loop.stopReason || 'nothing left to do') + '.')
+        : (name + ' paused — ' + (loop.stopReason || 'needs your attention') + '.');
+      for (const c of chats) {
+        const ch = (c.channel === 'discord') ? discord
+          : (typeof c.channel === 'string' && c.channel.indexOf('telegram:') === 0) ? telegramBots.get(c.channel.slice('telegram:'.length))
+          : (!c.channel || c.channel === 'telegram') ? telegram : genericChannels[c.channel];
+        if (!(ch && ch.adapter)) continue;
+        Promise.resolve(ch.adapter.send(c.chatId, redact(line)))
+          .then(r => { if (r && r.ok === false) console.warn('[loops] notify failed:', r.error); })
+          .catch(e => console.warn('[loops] notify failed:', (e && e.message) || e));
+      }
+    } catch (e) { console.warn('[loops] notify error:', (e && e.message) || e); }
+  },
+  ledger: (entry) => { try { autonomyLedger.record(entry); } catch (_) {} },
+  // VISIBILITY: forward each iteration's run events to the floor through the SAME redacted egress the routed
+  // and scheduled lanes use (runTeeView: tool_call name-only, tool_result outcome-only, metadata whole,
+  // everything else dropped). A loop iteration is unattended work, so it must be observable live in the one
+  // shape the station already speaks — and these are existing agent.* contract events, not new ones.
+  tee: (name, payload) => {
+    try { const view = require('./channels/sse.js').runTeeView(name, payload); if (view) cronEmit(name, view); } catch (_) {}
+  },
+  // NOTE: no bus emit. shared/events.js is the FROZEN, OWNED contract and carries no loop.* family, so S1 adds
+  // none — the LOOPS window polls GET /api/loops exactly as the ROUTINES window polls /api/cron. A loop.*
+  // event family is a later ADDITIVE request to the contract owner, not something this lane invents.
+  // (no bus emit — see the "NO loop.* BUS EVENTS" note in loopjob-driver.js)
+});
+
+let loopTimer = null;
+// a loop is "live" if it could ever fire again; a stopped/dormant/paused one cannot, so it must not hold a timer.
+function anyLiveLoop() { return (loopJobs || []).some(l => l && l.enabled !== false && l.state !== 'stopped' && l.state !== 'dormant'); }
+function loopTick() {
+  try { loopDriver.applyTick(Date.now()); } catch (e) { console.warn('[loops] tick error:', (e && e.message) || e); }
+  // stand the timer down once nothing can fire — a station with no live loops pays nothing.
+  if (!anyLiveLoop() && loopDriver.leases.size === 0) disarmLoops();
+}
+function armLoops(quiet) {
+  if (loopTimer) return false;                       // idempotent — a second arm must not stack two timers
+  if (loopsHalted) return false;                     // durable E-STOP: nothing arms until explicitly resumed
+  if (!anyLiveLoop()) return false;
+  if (!quiet) console.log('  · loops armed — ' + loopJobs.filter(l => l && l.enabled !== false).length + ' standing objective(s), ' + Math.round(LOOP_TICK_MS / 1000) + 's tick');
+  loopTimer = setInterval(loopTick, LOOP_TICK_MS);
+  if (loopTimer.unref) loopTimer.unref();            // the http server keeps the process alive; the ticker alone shouldn't
+  return true;
+}
+function disarmLoops() {
+  if (!loopTimer) return false;
+  try { clearInterval(loopTimer); } catch (_) {}
+  loopTimer = null;
+  return true;
+}
+
+/* ---- LOOPS API. The pure reducers own the record math; these handlers are the ambient glue (mint an id,
+   stamp the clock, persist through the throwing saveLoops so a failed write surfaces as a 500, re-arm the
+   timer whenever a mutation could have made a loop live again).
+
+   Every mutating route ends by calling armLoops(true): creating a loop, resuming one, or ruling on a
+   candidate can all make a previously-quiet loop eligible, and the VERDICT case is the whole product —
+   the Commander's click is what starts the next iteration. ---- */
+const loopJson = (res) => (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+
+// GET /api/loops — the LOOPS window's poll. Every field is a durable record value or a pure derivation of
+// one (loopjob.summarize), including the BINDING that names why a quiet loop is quiet.
+function handleLoopsList(req, res) {
+  const json = loopJson(res);
+  const now = Date.now();
+  const rows = (loopJobs || []).map(l => loopjob.summarize(l, {
+    now: now,
+    staleMs: LOOP_MAX_RUN_MS,
+    // the SAME inputs the driver's gate sees, so the panel can never claim a loop is ready when the driver is
+    // standing it down (see loopPrecheck).
+    inp: {
+      halted: loopsHalted,
+      inFlight: loopDriver.leases.has(l.id),
+      agentBusy: (() => { try { return concurrencyGate.inFlight(l.agentId) !== 0; } catch (_) { return false; } })(),
+      precheck: loopPrecheck(l)
+    }
+  }));
+  json(200, {
+    loops: rows,
+    halted: loopsHalted,
+    // TRUTHFUL TELEMETRY: `armed` is whether a timer is genuinely running, not whether loops exist. The window
+    // must be able to say "this loop will not advance right now" when that is the truth.
+    armed: !!loopTimer,
+    tickMs: LOOP_TICK_MS,
+    inFlight: loopDriver.leases.size
+  });
+}
+
+// POST /api/loops — create a standing objective. body: { name, objective, agentId?, gate?, queueCap?,
+// maxIterations?, dryStopAfter?, workdir?, model?, provider?, perDayUsd?, perIterationUsd? }
+function handleLoopsCreate(req, res) {
+  const json = loopJson(res);
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const objective = String(body.objective || '').trim();
+    if (!objective) return json(400, { error: 'a loop needs an objective — what should it keep doing?' });
+    let agentId; try { agentId = parseCronAgentIdOr400(body.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    let provider; try { provider = parseCronProviderOr400(body.provider); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    // A workdir must EXIST at create time. Accepting a path that is not there would let the loop claim a
+    // project it cannot touch, and the first iteration would fail for a reason the Commander never saw.
+    /* CANONICALIZE THE PATH. isBlessedRoot does an exact (case-insensitive on win32) string match against the
+       stored grant, and blessing stores a resolved OS-native path. A workdir posted with forward slashes on
+       Windows therefore matched NOTHING — and the failure was silent and total: the agent was never told where
+       the project was, and the check refused to run, surfacing only as a generic "check failed (exit 1)".
+       Caught by a real dogfood run; a user typing a path by hand would hit it every time. */
+    const workdir = body.workdir != null ? path.resolve(String(body.workdir)) : null;
+    if (workdir) { try { if (!fs.statSync(workdir).isDirectory()) return json(400, { error: 'not a folder: ' + workdir }); } catch (e) { return json(400, { error: 'that folder does not exist: ' + workdir }); } }
+    // A check needs somewhere to run. Accepting a checkCmd with no workdir would create a loop whose stated
+    // exit condition could never be evaluated — a promise the harness cannot keep.
+    if (body.checkCmd && !workdir) return json(400, { error: 'a check command needs a project folder — set workdir' });
+    const id = crypto.randomUUID();
+    try {
+      loopJobs = loopjobStore.createLoop(loopJobs, {
+        id: id, name: body.name || objective.slice(0, 60), objective: objective,
+        agentId: agentId, model: body.model, provider: provider,
+        gate: body.gate, queueCap: body.queueCap, maxIterations: body.maxIterations,
+        dryStopAfter: body.dryStopAfter, workdir: workdir,
+        // S2 — the human-authored host-run check. This is the ONLY moment `checkCmd` is ever accepted from
+        // outside: it arrives on an interactive, token-guarded create, is frozen onto the record, and from
+        // then on nothing the model does can reach it.
+        checkCmd: body.checkCmd, checkTimeoutMs: body.checkTimeoutMs, checkPaths: body.checkPaths,
+        exitOn: body.exitOn, redStopAfter: body.redStopAfter,
+        perDayUsd: body.perDayUsd, perIterationUsd: body.perIterationUsd, meta: body.meta
+      }, { id: id, now: Date.now() });
+      saveLoops();
+    } catch (e) { return json(500, { error: 'could not save the loop: ' + ((e && e.message) || e) }); }
+    armLoops(true);
+    json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() }) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/loops/update — edit a loop. body: { id, patch }
+function handleLoopsUpdate(req, res) {
+  const json = loopJson(res);
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
+    const patch = Object.assign({}, body.patch || {});
+    if (Object.prototype.hasOwnProperty.call(patch, 'agentId')) {
+      try { patch.agentId = parseCronAgentIdOr400(patch.agentId); } catch (e) { return json(e.code || 400, { error: e.message }); }
+    }
+    if (Object.prototype.hasOwnProperty.call(patch, 'workdir') && patch.workdir) patch.workdir = path.resolve(String(patch.workdir));
+    try { loopJobs = loopjobStore.updateLoop(loopJobs, id, patch, { now: Date.now() }); saveLoops(); }
+    catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    armLoops(true);
+    json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() }) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+/* POST /api/loops/verdict — THE REVIEW GATE, and the loop's actual trigger. body: { id, n, verdict, note }
+
+   Rejection CASCADES to every un-approved candidate stacked above n (THE STACKING LAW — see the
+   loopjob-store header): iteration n+1 was built on a tree containing un-approved n, so it cannot survive n's
+   rejection. The response reports `cascaded` so the UI can confirm what the click actually cost; the UI is
+   expected to have WARNED with the same number (loopjob.stackedAbove) BEFORE the click. */
+function handleLoopsVerdict(req, res) {
+  const json = loopJson(res);
+  readBody(req, 1 << 16).then(async raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    const loop = loopjobStore.getLoop(loopJobs, id);
+    if (!loop) return json(404, { error: 'no such loop' });
+    const n = parseInt(body.n, 10);
+    const verdict = body.verdict === 'approved' ? 'approved' : (body.verdict === 'rejected' ? 'rejected' : null);
+    if (!verdict) return json(400, { error: 'verdict must be "approved" or "rejected"' });
+    const target = (loop.iterations || []).find(it => it && it.n === n);
+    if (!target) return json(404, { error: 'no iteration #' + body.n + ' on this loop' });
+    if (target.outcome !== 'candidate') return json(409, { error: 'iteration #' + n + ' produced nothing to review (' + target.outcome + ')' });
+    if (target.verdict) return json(409, { error: 'iteration #' + n + ' was already ' + target.verdict });
+
+    const willCascade = verdict === 'rejected' ? loopjob.stackedAbove(loop, n).map(it => it.n) : [];
+
+    /* THE UNDO HAPPENS FIRST, AND A FAILED UNDO REFUSES THE VERDICT.
+
+       loopjob-store's contract is explicit: the host performs the git BEFORE calling recordVerdict, because
+       the store "never claims an apply it did not witness". Recording 'rejected' over code still sitting in
+       the Commander's working tree would be precisely that lie — the row says gone, the file says otherwise.
+       So a rejection that cannot be undone returns 409 with git's own reason and changes nothing; the
+       candidate stays reviewable and they can fix the blocker (usually a dirty tree) and click again.
+
+       An APPROVAL needs no git: the iteration was already committed onto the loop's branch when it was
+       harvested. Approve means "keep it", and it is kept. */
+    let undone = null;
+    if (verdict === 'rejected') {
+      try { undone = await loopUndoWork(loop, n); }
+      catch (e) { undone = { ok: false, error: 'the undo failed: ' + ((e && e.message) || e) }; }
+      if (!undone.ok) {
+        return json(409, {
+          error: undone.error || 'this iteration could not be undone, so it was not marked rejected',
+          undone: false, cascaded: willCascade
+        });
+      }
+    }
+
+    try {
+      loopJobs = loopjobStore.recordVerdict(loopJobs, id, n, verdict, { now: Date.now(), note: body.note });
+      saveLoops();
+    } catch (e) { return json(500, { error: 'could not save the verdict: ' + ((e && e.message) || e) }); }
+    try {
+      autonomyLedger.record({
+        source: 'loop', kind: verdict === 'approved' ? 'earn' : 'decline', jobId: id, agentId: loop.agentId,
+        reason: 'verdict-' + verdict, binding: 'commander',
+        detail: { iteration: n, cascaded: willCascade.length, noted: !!(body.note && String(body.note).trim()) }
+      });
+    } catch (_) {}
+    // a freed queue slot means the loop may fire again NOW — this is the verdict-as-trigger, made real.
+    armLoops(true);
+    json(200, {
+      ok: true, cascaded: willCascade,
+      // WHAT ACTUALLY HAPPENED TO THE CODE, not just to the row. `reverted` is the iteration numbers whose
+      // commits were undone and `undoCommit` is the commit that undid them, so the panel can state the real
+      // outcome instead of implying a tree change that may not have happened.
+      undone: undone ? undone.reverted : [],
+      undoCommit: undone ? undone.commit : null,
+      undoNote: undone ? undone.note : null,
+      branch: loop.branch || null,
+      loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: Date.now() })
+    });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/loops/control — pause / resume / stop one loop, or lift the durable E-STOP for all of them.
+// body: { id?, action:'pause'|'resume'|'stop'|'unhalt' }
+function handleLoopsControl(req, res) {
+  const json = loopJson(res);
+  readBody(req, 1 << 16).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const action = String(body.action || '');
+    if (action === 'unhalt') {
+      if (loopsHalted) { loopsHalted = false; saveLoopsHalted(false); }
+      armLoops(true);
+      return json(200, { ok: true, halted: loopsHalted, armed: !!loopTimer });
+    }
+    const id = String(body.id || '');
+    if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
+    const now = Date.now();
+    try {
+      if (action === 'pause') loopJobs = loopjobStore.pauseLoop(loopJobs, id, body.reason || 'paused by the Commander', { now: now });
+      else if (action === 'resume') loopJobs = loopjobStore.resumeLoop(loopJobs, id, { now: now });
+      else if (action === 'stop') loopJobs = loopjobStore.stopLoop(loopJobs, id, body.reason, { now: now });
+      else return json(400, { error: 'action must be pause, resume, stop or unhalt' });
+      saveLoops();
+    } catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    // stopping/pausing must also kill an iteration already in flight — otherwise the Commander clicks STOP and
+    // the run keeps spending until it finishes, which the button plainly implies it will not.
+    if (action !== 'resume') {
+      const lease = loopDriver.leases.get(id);
+      try { if (lease && lease.abort && typeof lease.abort.abort === 'function') lease.abort.abort(); } catch (_) {}
+    }
+    armLoops(true);
+    json(200, { ok: true, loop: loopjob.summarize(loopjobStore.getLoop(loopJobs, id), { now: now }) });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+/* POST /api/loops/testcheck — run the Commander's check ONCE, now, and report what really happened.
+   body: { path, cmd } -> { ok, passed, summary, alreadyGreen }
+
+   WHY THIS EXISTS. The check command is the scariest field in the form and the only one with no feedback, so
+   people either guess or paste something that does not do what they think. Three failures it turns from
+   expensive into instant:
+     · a command that cannot run (typo, wrong folder, missing dep) — otherwise ~10 red passes before the
+       redStopAfter ceiling parks the loop;
+     · a command that ALREADY PASSES — otherwise the loop spends one pass, gets a trusted green and declares
+       "objective met" having done nothing. That is the app claiming a success that never happened, which
+       matters more than the wasted dollar;
+     · a command that always passes regardless (`echo ok`) — the same false victory, now visible up front.
+
+   Same trust boundary as the loop's own check: a blessed root only, human-typed command, host-executed. */
+function handleLoopsTestCheck(req, res) {
+  const json = loopJson(res);
+  readBody(req, 4096).then(async raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const root = body.path != null ? path.resolve(String(body.path)) : '';
+    const cmd = String(body.cmd || '').trim();
+    if (!root || !cmd) return json(400, { error: 'a folder and a command are both required' });
+    try { if (!fs.statSync(root).isDirectory()) return json(400, { error: 'not a folder: ' + root }); }
+    catch (e) { return json(400, { error: 'that folder does not exist: ' + root }); }
+    // the host only ever executes at a root the Commander has approved — the same law the loop check obeys.
+    if (!isBlessedRoot(root)) return json(403, { error: 'that folder is not approved yet — pick it again to approve it' });
+    try {
+      const r = await shellRunCommand({
+        spawn: childSpawn, cmd: cmd, cwd: root, timeoutMs: 120000, maxBytes: LOOP_CHECK_MAX_BYTES,
+        clock: { now: () => Date.now() }, isWin: process.platform === 'win32'
+      });
+      // loopjob-check wraps verify.interpret and is already required here; we only read passed/summary, so the
+      // trust fields (which need a git changed-file list) are irrelevant to a pre-flight.
+      const v = loopcheck.verdict({ result: r });
+      /* THREE OUTCOMES, NOT TWO. A non-zero exit from genuinely failing tests and a non-zero exit from a
+         command that could not run are the same number but opposite meanings — the first is a good target,
+         the second is a typo. Reporting both as "it fails, great" sends someone off to start a loop against
+         a command that will never work. Detected from the shell's own vocabulary, and only ever used to
+         soften the wording: we never claim it IS broken, only that it looks like it. */
+      const out = String(r.out || '');
+      const couldNotRun = r.exitCode === 127 ||
+        /command not found|is not recognized|no such file or directory|Missing script|ENOENT/i.test(out);
+      json(200, {
+        ok: true, passed: v.passed, summary: v.summary,
+        exitCode: r.exitCode, timedOut: !!r.timedOut,
+        couldNotRun: !v.passed && couldNotRun,
+        // the loop would finish instantly on an already-green check — the most important case to surface.
+        alreadyGreen: v.passed
+      });
+    } catch (e) { json(200, { ok: false, error: 'could not run it — ' + ((e && e.message) || e) }); }
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/loops/detect — what check command suits this folder? body: { path } -> { cmd, why, files }
+// Read-only and path-guarded: it only ever reports on a folder that exists; it never blesses or runs anything.
+function handleLoopsDetect(req, res) {
+  const json = loopJson(res);
+  readBody(req, 4096).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const root = body.path != null ? path.resolve(String(body.path)) : '';
+    if (!root) return json(400, { error: 'a folder is required' });
+    try { if (!fs.statSync(root).isDirectory()) return json(400, { error: 'not a folder: ' + root }); }
+    catch (e) { return json(400, { error: 'that folder does not exist: ' + root }); }
+    const d = detectCheckCommand(root);
+    json(200, { ok: true, root: root, cmd: d.cmd, why: d.why, files: loopProjectFiles(root, 12).length });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
+}
+
+// POST /api/loops/remove — delete a loop and its ledger. body: { id }
+function handleLoopsRemove(req, res) {
+  const json = loopJson(res);
+  readBody(req, 4096).then(raw => {
+    let body; try { body = JSON.parse(raw) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+    const id = String(body.id || '');
+    if (!loopjobStore.getLoop(loopJobs, id)) return json(404, { error: 'no such loop' });
+    const lease = loopDriver.leases.get(id);
+    try { if (lease && lease.abort && typeof lease.abort.abort === 'function') lease.abort.abort(); } catch (_) {}
+    try { loopJobs = loopjobStore.removeLoop(loopJobs, id); saveLoops(); }
+    catch (e) { return json(500, { error: 'could not save: ' + ((e && e.message) || e) }); }
+    if (!anyLiveLoop()) disarmLoops();
+    json(200, { ok: true });
+  }).catch(() => { try { json(400, { error: 'bad request' }); } catch (_) {} });
 }
 
 /* ---- QUEST V3: the standing QUEST REFRESH engine (questrefresh.js owns the pure half; this is the ambient
@@ -4303,7 +5405,13 @@ const workspaceLease = makeWorkspaceLease(Object.assign(
   { now: () => Date.now() },
   (_leaseWaitMs >= 0 && isFinite(_leaseWaitMs)) ? { waitMs: Math.floor(_leaseWaitMs) } : {}
 ));
-function runGit(args, opts) {   // resolves (never rejects); a missing/failing git becomes a fail-open skip upstream
+// NAME IS LOAD-BEARING: a second module-scope `function runGit(root, args, timeoutMs)` (the night-shift /
+// loop-harvest one) is declared further down this file. Two function declarations in one CommonJS scope do not
+// error — the LAST one silently wins for the whole module, including for hoisted references ABOVE it. When this
+// was called `runGit`, the checkpoint store below was handed the night-shift signature, every snapshot() returned
+// null, and the shadow-git undo net was dead in the shipped app while its own tests (which inject a fake runGit)
+// stayed green. Keep these two names distinct.
+function runGitCheckpoint(args, opts) {   // resolves (never rejects); a missing/failing git becomes a fail-open skip upstream
   return new Promise((resolve) => {
     try {
       execFile('git', args, { cwd: (opts && opts.cwd) || WORKSPACES, timeout: 15000, windowsHide: true, maxBuffer: 8 << 20 },
@@ -4316,7 +5424,7 @@ function runGit(args, opts) {   // resolves (never rejects); a missing/failing g
 // without a code change; a non-positive/blank value falls through to the store default.
 const _ckptMaxBytes = Number(ENV('CHECKPOINT_MAX_BYTES'));
 const checkpointStore = makeCheckpointStore(Object.assign(
-  { fs, pathMod: path, root: WORKSPACES, runGit: runGit, clock: { now: () => Date.now() }, keep: 50 },
+  { fs, pathMod: path, root: WORKSPACES, runGit: runGitCheckpoint, clock: { now: () => Date.now() }, keep: 50 },
   (_ckptMaxBytes > 0 && isFinite(_ckptMaxBytes)) ? { maxRepoBytes: Math.floor(_ckptMaxBytes) } : {}
 ));
 // checkpoint.* telemetry to the war-room HUD (the manual restore route has no run stream of its own); validated+redacted.
@@ -4405,6 +5513,7 @@ function startTelegram(token, key, model, agentCfg) {
     // Phase B: the placed floor decides WHICH agent runs (resolveTarget); null -> the hub's own resolution
     // (configured agentId else tg_<chatId>), so a no-floor or mis-wired station never stalls real work.
     resolveAgent: (ctx) => router.resolveTarget(ctx),
+    chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),   // B3 supplies the real classifier
     resolveStation: (agentId) => router.stationFor(agentId),                    // B5: a bay's room objects = that agent's caps
     // In-messenger control surface (channel-agnostic): list agents / switch agent / change the bound agent's model.
@@ -4661,6 +5770,7 @@ function startDiscord(token, key, model, agentCfg) {
       persona: DISCORD_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
       newId: () => crypto.randomUUID(), now: () => Date.now(),
       resolveAgent: (ctx) => router.resolveTarget(ctx),
+      chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
       // In-messenger control surface — identical to Telegram because it lives in the shared hub (roster/setModel/
@@ -4734,6 +5844,17 @@ const DEV_PERSONA = 'You are the Commander\'s AI agent on a DEV test channel. Ke
 let devHub = null;            // lazy singleton — one hub, many injected messages
 let devResolved = null;       // one-shot resolution slot (same pattern as tgResolved)
 const devReplies = new Map(); // chatId -> [{ text, ts }] captured outbound replies (ring, last 20)
+/* the DEV channel's one send: capture the outbound text so POST /api/dev/inbound can return it. Shared by the
+   dev hub (an agent's reply to an injected message) and by liveChannelFor('dev') (an agent's channel.send to a
+   dev chat), so both paths land in the same ring and the dev channel behaves like a real transport. */
+function devCaptureReply(chatId, text) {
+  const k = String(chatId);
+  const arr = devReplies.get(k) || [];
+  arr.push({ text: String(text == null ? '' : text), ts: Date.now() });
+  if (arr.length > 20) arr.shift();
+  devReplies.set(k, arr);
+  return Promise.resolve({ ok: true });
+}
 function devHubSecrets() {
   const provider = 'openrouter';
   const key = providerRuntimeKey(provider, '');
@@ -4748,13 +5869,14 @@ function getDevHub() {
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     runOnce: runOnce, store: channelStore,
-    send: (chatId, text) => { const k = String(chatId); const arr = devReplies.get(k) || []; arr.push({ text: String(text == null ? '' : text), ts: Date.now() }); if (arr.length > 20) arr.shift(); devReplies.set(k, arr); return Promise.resolve({ ok: true }); },
+    send: (chatId, text) => devCaptureReply(chatId, text),
     secrets: devHubSecrets,
     persona: DEV_PERSONA, classify: Classify.isTaskDirective, redact: redact, emit: chanEmit, taskIntent: TaskIntent,
     briefFor: (key) => taskBriefStore.active(key),   // TASK BRIEF v2: same recommendation line on the dev channel
     groundedFor: (q) => taskBriefStore.groundedFor(q),   // provable history-backed suggestion outranks the model guess
     newId: () => crypto.randomUUID(), now: () => Date.now(),
     resolveAgent: (ctx) => router.resolveTarget(ctx),
+    chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
     getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
     resolveStation: (agentId) => router.stationFor(agentId),
     roster: () => [...agentRoster].map(([agentId, a]) => ({ agentId, name: a.name, model: a.model, provider: a.provider })),
@@ -4774,6 +5896,22 @@ function getDevHub() {
     expandAttachments: (messages, agentId) => attachments.expandUserAttachments(messages, agentId)
   });
   return devHub;
+}
+/* GET /api/dev/replies?chatId=... — read what this station has SENT to a dev chat, without disturbing it.
+
+   POST /api/dev/inbound clears the chat's reply ring before running the turn (so its response contains only
+   that turn's replies), which makes it unusable for observing an UNPROMPTED outbound message: probing for the
+   text destroys it. Now that an agent can message a chat on its own (channel.send), the dev channel needs a
+   read that does not mutate — otherwise the one channel we can drive without a platform token is the one
+   channel whose outbound traffic cannot be inspected. DEV_MODE only (404 otherwise, exactly like the inbound
+   route), behind the same launch-token + loopback gate as every other /api route. */
+function handleDevReplies(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  if (!DEV_MODE) return json(404, { error: 'not found' });
+  let chatId = '';
+  try { chatId = String(new URL(req.url, 'http://x').searchParams.get('chatId') || '').replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 32); } catch (_) { chatId = ''; }
+  if (!chatId) return json(400, { error: 'chatId required' });
+  return json(200, { ok: true, chatId, replies: (devReplies.get(chatId) || []).map(r => ({ text: r.text, ts: r.ts })) });
 }
 async function handleDevInbound(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
@@ -4900,6 +6038,7 @@ function startGenericChannel(id, token, key, model, agentCfg) {
       persona: channelPersona(desc.label), classify: Classify.isTaskDirective, redact: redact, emit: chanEmit,
       newId: () => crypto.randomUUID(), now: () => Date.now(), maxMessageLength: desc.maxMessageLength,
       resolveAgent: (ctx) => router.resolveTarget(ctx),
+      chain: chainRunner,                                                       // and the belts drawn PAST that dock run the rest of the line
       getTag: (text) => (Classify.getTag ? Classify.getTag(text) : undefined),
       resolveStation: (agentId) => router.stationFor(agentId),
       // In-messenger control surface — identical across channels because it lives in the shared hub.
@@ -5063,7 +6202,9 @@ const ROUTES = [
   { m: 'POST', exact: '/api/permissions/revoke', h: handlePermissionsRevoke },
   { m: 'GET', exact: '/api/projects', h: handleProjectsList },   // NS-5: the known blessed-project roots (autonomy surface)
   { m: 'POST', exact: '/api/projects/bless', h: handleProjectBless },   // NS-5c: ADD a project (interactive-only, blesses through the same path-grant machinery)
+  { m: 'POST', exact: '/api/projects/forget', h: handleProjectForget },   // Projects rail: hard-forget revoked metadata (never withdraws trust)
   { m: 'POST', exact: '/api/projects/pickfolder', h: handleProjectPickFolder },   // Projects rail "browse": native OS folder chooser (grants nothing)
+  { m: 'POST', exact: '/api/pickpath', h: handlePickPath },   // typed recipe fill-ins: native file OR folder chooser (grants nothing)
   { m: 'POST', exact: '/api/harness/detect', h: handleHarnessDetect },   // IMPORT-AN-AGENT: find on-disk OpenClaw/Hermes agent homes (read-only)
   { m: 'POST', exact: '/api/harness/scan', h: handleHarnessScan },       // IMPORT-AN-AGENT: read ONE agent home into a normalized preview (read-only)
   { m: 'POST', exact: '/api/autonomy/write', h: handleAutonomyWrite },
@@ -5102,6 +6243,9 @@ const ROUTES = [
   // DEV-ONLY (404s unless SKYNET_DEV): inject an inbound message through the real channel hub — floor
   // routing / classifier / crate telemetry testable without a live bot token. Own errorPolicy → always JSON.
   { m: 'POST', exact: '/api/dev/inbound', h: handleDevInbound, errorPolicy: devInboundFailPolicy },
+  // qsplit, not exact: this GET carries ?chatId=, and an `exact` match would never fire (same reason the SSE
+  // route uses qsplit) — it would fall through to the router's plain-text 404.
+  { m: 'GET', qsplit: '/api/dev/replies', h: handleDevReplies },   // DEV-only read of a dev chat's captured OUTBOUND text (never clears)
   { m: 'GET', exact: '/api/channels/telegram/status', h: handleChannelStatus },
   { m: 'GET', exact: '/api/channels/status', h: handleChannelsStatusAll },   // one bulk poll paints the whole CHANNELS panel
   { m: 'POST', rx: GENERIC_CHANNEL_RX.connect, h: (req, res, gm) => handleGenericChannelConnect(req, res, gm[1]) },
@@ -5110,6 +6254,7 @@ const ROUTES = [
   { m: 'GET', rx: GENERIC_CHANNEL_RX.status, h: (req, res, gm) => handleGenericChannelStatus(req, res, gm[1]) },
   { m: 'GET', qsplit: '/api/channels/events', h: handleChannelEvents },   // path match: the SSE url carries a ?token= query now
   { m: 'POST', exact: '/api/routing', h: handleRouting },
+  { m: 'GET', qsplit: '/api/routing/chain', h: handleRoutingChain },   // qsplit, not exact: `exact` compares the FULL url and this route always carries a query
   { m: 'GET', exact: '/api/budget/status', h: handleBudgetStatus },
   { m: 'GET', qsplit: '/api/credits', h: handleCredits },   // 404s (no surface) unless managed credits are configured
   { m: 'POST', exact: '/api/budget/caps', h: handleBudgetCaps },
@@ -5119,6 +6264,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/config/export', h: handleConfigExport },   // P1-7 station backup
   { m: 'POST', exact: '/api/config/import', h: handleConfigImport },
   { m: 'POST', exact: '/api/config/reset', h: handleConfigReset },
+  { m: 'GET', exact: '/api/runtime/agent', h: handleRuntimeAgent },   // what a LOCAL headless caller needs to drive /api/run (no secrets)
   { m: 'GET', exact: '/api/runtime/knobs', h: handleRuntimeKnobsGet },   // P1-9 advanced knobs
   { m: 'POST', exact: '/api/runtime/knobs', h: handleRuntimeKnobsSet },
   { m: 'POST', exact: '/api/auth/codex/start', h: handleCodexStart },
@@ -5162,6 +6308,7 @@ const ROUTES = [
   { m: 'POST', exact: '/api/slash/dispatch', h: handleSlashDispatch },
   { m: 'POST', exact: '/api/skills/toggle', h: handleSkillToggle },
   { m: 'POST', exact: '/api/agent-skills/manage', h: handleAgentSkillManage },
+  { m: 'POST', exact: '/api/agent-skills/allow', h: handleAgentSkillAllow },   // the Commander's review decision on a guard-withheld skill
   { m: 'GET', prefix: '/api/agent-skills', h: serveAgentSkills },
   { m: 'GET', prefix: '/api/skills', h: serveSkills },
   { m: 'POST', exact: '/api/spotify/auth/start', h: handleSpotifyStart },
@@ -5178,6 +6325,15 @@ const ROUTES = [
   { m: 'POST', exact: '/api/cron/preview', h: handleCronPreview },
   { m: 'POST', exact: '/api/cron/arm', h: handleCronArm },
   { m: 'POST', exact: '/api/cron/run', h: handleCronRun },
+  // ---- LOOPS (standing objectives): the review gate is /verdict, and it is also the loop's trigger ----
+  { m: 'GET', exact: '/api/loops', h: handleLoopsList },
+  { m: 'POST', exact: '/api/loops', h: handleLoopsCreate },
+  { m: 'POST', exact: '/api/loops/update', h: handleLoopsUpdate },
+  { m: 'POST', exact: '/api/loops/verdict', h: handleLoopsVerdict },
+  { m: 'POST', exact: '/api/loops/control', h: handleLoopsControl },
+  { m: 'POST', exact: '/api/loops/remove', h: handleLoopsRemove },
+  { m: 'POST', exact: '/api/loops/detect', h: handleLoopsDetect },
+  { m: 'POST', exact: '/api/loops/testcheck', h: handleLoopsTestCheck },
   // ---- away workshop (W1/W2): grant toggle, backlog queue, pending deliverables, decide, force-fire a shift ----
   { m: 'POST', exact: '/api/workshop/grant', h: handleWorkshopGrant },
   { m: 'POST', exact: '/api/workshop/queue', h: handleWorkshopQueue },
@@ -5211,6 +6367,16 @@ const ROUTES = [
   // card can validate the typed path inline instead of failing silently on Keep. Strictly less powerful than
   // the existing keep copy (which already writes to an arbitrary destPath) — this only reports exists/isDir.
   { m: 'GET', qsplit: '/api/fs/dirstat', h: handleDirStat },
+  { m: 'GET', exact: '/api/hooks', h: handleHooksList },
+  { m: 'POST', exact: '/api/hooks/allow', h: handleHooksAllow },
+  { m: 'POST', exact: '/api/hooks/revoke', h: handleHooksRevoke },
+  { m: 'POST', exact: '/api/hooks/create', h: handleHooksCreate },
+  { m: 'POST', exact: '/api/hooks/delete', h: handleHooksDelete },
+  { m: 'GET', exact: '/api/plugins', h: handlePluginsList },
+  { m: 'POST', exact: '/api/plugins/allow', h: handlePluginsAllow },
+  { m: 'POST', exact: '/api/plugins/revoke', h: handlePluginsRevoke },
+  { m: 'POST', exact: '/api/plugins/create', h: handlePluginsCreate },
+  { m: 'POST', exact: '/api/plugins/delete', h: handlePluginsDelete },
   { m: 'POST', exact: '/api/checkpoint/restore', h: handleCheckpointRestore },
   { m: 'GET', prefix: '/api/checkpoint', h: handleCheckpointList },
   { m: 'GET', exact: '/api/health', h: (req, res) => { res.writeHead(200); return res.end('ok'); } },
@@ -5241,6 +6407,7 @@ const ROUTES = [
   { m: 'GET', prefix: '/api/autonomy/ledger', h: serveAutonomyLedger },   // NS-0: recent autonomy decisions
   { m: 'GET', prefix: '/api/transcript', h: serveTranscript },
   { m: 'GET', prefix: '/api/memory/proposals', h: serveProposals },
+  { m: 'GET', prefix: '/api/memory/pending', h: servePending },   // un-answered high-stakes decks (durable, cross-run)
   { m: 'POST', exact: '/api/memory/turnin', h: handleMemoryTurnin },
   { m: 'GET', prefix: '/api/study/proposals', h: serveStudyProposals },   // GROWTH Tier 1: dossier belief-update proposals for a run
   { m: 'POST', exact: '/api/study/resolve', h: handleStudyResolve },   // GROWTH Tier 1: consume one decided study proposal + mirror the denylist
@@ -5303,6 +6470,9 @@ server.listen(PORT, '127.0.0.1', () => {
     ms => { if (ms && ms.length) console.log('  · model catalog warmed (' + ms.length + ' models)'); },
     () => {}
   );
+  // Install the Commander's shell hooks onto the station-wide spine. Awaited-but-guarded: a hooks file that
+  // is broken must delay nothing and break nothing at boot.
+  installShellHooks().catch(() => {});
   // auto-start a previously-connected Telegram bot (saved config), else an env-provided one (headless deploys).
   try {
     const t = (channelSecrets && channelSecrets.telegram) || {};
@@ -5371,6 +6541,13 @@ server.listen(PORT, '127.0.0.1', () => {
     if (cronArmed && cronHalted) console.log('  · cron is E-STOP halted — timer stays down until resumed (routines panel or autonomy dial)');
     if (cronArmed && !cronHalted) armCron();
   } catch (e) { console.warn('[cron] start failed:', (e && e.message) || e); }
+  // LOOPS: no env gate and no arm ceremony — CREATING a loop is the arming action, so a station that has live
+  // standing objectives resumes them here and a station with none pays no timer. The durable E-STOP halt
+  // (loops.halt.json) freezes them ACROSS restarts until an explicit unhalt, exactly like cron's.
+  try {
+    if (loopsHalted && anyLiveLoop()) console.log('  · loops are E-STOP halted — no iteration runs until resumed');
+    else armLoops();
+  } catch (e) { console.warn('[loops] start failed:', (e && e.message) || e); }
   // NIGHT SHIFT (OPT-IN, NS-1): arms iff SKYNET_NIGHTSHIFT_ENABLED OR the posture already permits acting at boot
   // (initiative ≥ 'leash'). Inert otherwise — no timer, no fire, byte-identical for a Commander who never dials up.
   // A live posture write that RAISES initiative to acting also arms it (POST /api/autonomy/posture), so it starts
@@ -5483,6 +6660,24 @@ function handleRouting(req, res) {
     res.writeHead(r.ok ? 200 : 422, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify(r));
   }).catch(() => { try { res.writeHead(400); res.end(); } catch (_) {} });
+}
+
+/* ---- GET /api/routing/chain?agentId=&tag= — WHERE DOES THIS DOCK'S OUTPUT GO?
+
+   The one seam the BROWSER needs to run a work line. Channel and cron runs advance their line inside the
+   sidecar, but an in-app COMMS turn streams through /api/run to the browser, which owns the turn — so the
+   browser asks the SAME router the same question and drives the same hops. `pick` advances the round-robin
+   exactly like every other caller, so a SPLIT downstream of a dock spreads across surfaces instead of each
+   one always taking lane 0. Read-only apart from that counter; { next: null } for a terminal stage, an
+   unknown agent, or no routing floor at all. ---- */
+function handleRoutingChain(req, res) {
+  const u = new URL(req.url, 'http://x');
+  const agentId = String(u.searchParams.get('agentId') || '').trim();
+  const tag = String(u.searchParams.get('tag') || '').trim() || undefined;
+  let next = null;
+  try { next = agentId ? router.chainNext(agentId, { tag: tag }) : null; } catch (_) { next = null; }
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({ next: next || null }));
 }
 
 /* ---- GET /api/budget/status — the live spend pools (day + global) vs their caps, plus session resume headroom.
@@ -5837,6 +7032,39 @@ function runtimeKnobsStatus() {
 function handleRuntimeKnobsGet(req, res) {
   res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
   res.end(JSON.stringify(runtimeKnobsStatus()));
+}
+/* GET /api/runtime/agent — the small read a LOCAL headless client needs before it can drive POST /api/run.
+
+   /api/run demands an explicit `model` and 400s without one, because the browser always knows which model the
+   Commander picked. An out-of-process local client (the ACP editor bridge, a CLI) never sees that page state, so
+   without this it would have to guess a model id or duplicate the sidecar's provider-resolution rules. This
+   reports the SAME resolution the server itself would use, plus the roster so a client can target one agent.
+
+   Holds NO secrets — never a key, never a base URL with credentials in it; `configured` is the honest boolean of
+   whether a run could actually start right now. Behind the same per-launch token + loopback pin as every /api
+   route, so this is not a new trust surface. */
+function handleRuntimeAgent(req, res) {
+  // Resolve exactly as the other HEADLESS host does (devHubSecrets): provider 'openrouter' + the runtime
+  // credential + STARNET_DEFAULT_MODEL. Deliberately not a new env knob — a second resolution rule would
+  // eventually disagree with the one the runs actually use, and then this route would lie.
+  const provider = 'openrouter';
+  const key = providerRuntimeKey(provider, '');
+  const baseUrl = providerRuntimeBaseUrl(provider, '');
+  const model = String(ENV('DEFAULT_MODEL') || '').trim();
+  res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
+  res.end(JSON.stringify({
+    ok: true,
+    provider: provider,
+    model: model,
+    // configured = a run can start: a credential for this provider AND a model to run it on. Both, because
+    // either one missing is a 400 from /api/run, and a client that is told "configured" and then 400s learns
+    // nothing about which half is wrong.
+    configured: !!(model && providerHasCredential(provider, key, baseUrl)),
+    version: (() => { try { return computeVersionSurface().harness || 'dev'; } catch (_) { return 'dev'; } })(),
+    agents: [...agentRoster].map(([agentId, a]) => ({
+      agentId, name: (a && a.name) || agentId, model: (a && a.model) || null, provider: (a && a.provider) || null
+    }))
+  }));
 }
 async function handleRuntimeKnobsSet(req, res) {
   const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
@@ -6798,6 +8026,7 @@ async function handleCronRun(req, res) {
       // identical cron.fire/cron.result events, can fetch the real output via /api/transcript?stream=cron-<runId>.
       // Per-run id keeps the seed empty (index.js reconstructs a stream only when messages<=1) — no behavior drift.
       runId: runId, streamId: 'cron-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: true,
+      reflect: true,   // Run Now must match the scheduled fire's posture exactly, memory included (see the reflect note on /api/run)
       // Run Now must exercise the REAL unattended posture, grant included — otherwise "test it now" would
       // prove a capability set the scheduled fire does not get (the whole point of this route).
       unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : []
@@ -6806,6 +8035,43 @@ async function handleCronRun(req, res) {
     state.errMsg = state.errMsg || ('sidecar failure: ' + ((e && e.message) || e));
     try { emit('agent.run.error', { agentId: job.agentId, runId: runId, message: state.errMsg, transient: false }); } catch (_) {}
   } finally {
+    /* RUN NOW MUST FIRE THE WHOLE LINE, exactly like the scheduled fire does. This route calls runOnce
+       DIRECTLY (it streams to the watching browser), so it does not pass through the cron driver's
+       advanceChain seam — without this the SAME routine would run four stages on schedule and one stage
+       from the button, which is the precise bug class the slash-command redirect above already exists to
+       prevent. Hops stream into the SAME response and the SAME per-run stream, so the session shows the
+       whole line. Runs BEFORE markRun/cron.result below so the recorded outcome is the LINE's, and a chain
+       failure never changes the routine's outcome (state.errMsg is untouched). */
+    if (!state.errMsg && String(state.buf || '').trim()) {
+      try {
+        const line = await chainRunner.advance({
+          agentId: job.agentId, text: state.buf, originalText: String(job.prompt || ''), signal: ac.signal,
+          runAgent: async (h) => {
+            const hs = { buf: '', errMsg: null, usd: 0 };
+            const hopSink = (name, payload) => {
+              try { emit(name, payload); } catch (_) {}
+              const p = payload || {};
+              if (name === 'agent.token') hs.buf += (p.delta || '');
+              else if (name === 'agent.run.error') hs.errMsg = p.message || 'run error';
+              else if (name === 'capdenied') hs.errMsg = hs.errMsg || ('no ' + (p.need || 'capability') + ' — ' + (p.reason || ''));
+              else if (name === 'agent.run.end' && typeof p.usd === 'number' && isFinite(p.usd)) hs.usd = p.usd;
+            };
+            try {
+              await runOnce({
+                key: key, model: model, provider: provider, system: cronSystemFor(h.agentId),
+                messages: [{ role: 'user', content: h.text }], agentId: h.agentId, isTask: true,
+                emit: hopSink, signal: h.signal, runId: crypto.randomUUID(), streamId: 'cron-' + runId,
+                surface: 'autonomous', trigger: 'schedule', broadcast: true, reflect: true,
+                station: router.stationFor(h.agentId) || undefined,
+                unattendedGrants: Array.isArray(job.unattendedGrants) ? job.unattendedGrants.slice() : []
+              });
+            } catch (e) { hs.errMsg = hs.errMsg || ('run failed: ' + ((e && e.message) || e)); }
+            return { text: hs.buf, usd: hs.usd, error: hs.errMsg };
+          }
+        });
+        if (line && String(line.text || '').trim()) state.buf = line.text;
+      } catch (e) { console.warn('[cron] run-now work line failed after ' + job.agentId + ': ' + ((e && e.message) || e)); }
+    }
     runs.delete(runId);
     runsMeta.delete(runId);
     dropSteer(runId, 'manual-run');      // drop any un-drained steering notes so they can't leak to a later run (mirror handleRun); logs a count if non-empty
@@ -6977,6 +8243,7 @@ async function runWorkshopShift(agentId, opts) {
       messages: [{ role: 'user', content: prompt }],
       agentId: id, isTask: true, emit: emit, signal: signal,
       runId: runId, streamId: 'workshop-' + runId, surface: 'autonomous', trigger: 'schedule', provider: provider, broadcast: !!o.broadcast,
+      reflect: true,   // a workshop shift builds real things; its lessons outlive the shift (see the reflect note on /api/run)
       // B5 parity (2026-07-06 audit): a bay-docked agent's workshop shift runs with ITS bay room's objects,
       // never the default office — the same station contract as routed channel messages and cron fires.
       station: router.stationFor(id) || undefined
@@ -7748,6 +9015,189 @@ async function handleWorkshopShiftNow(req, res) {
   try { res.end(); } catch (_) {}
 }
 
+/* THE AUTHORING ROUTES. Without these there was no way to make an extension except to find a folder and
+   hand-write JSON — which meant the whole feature was, in practice, unreachable. Creating through the station
+   AUTO-APPROVES: the Commander typed it here, on purpose, and asking them to then approve their own keystrokes
+   is theatre. The allowlist still governs everything that arrives by any other route. */
+async function handleHooksCreate(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const event = String((body && body.event) || '').trim();
+  if (hookSpine.events().indexOf(event) < 0) return json(400, { error: 'unknown event — pick one of: ' + hookSpine.events().join(', ') });
+  const r = await shellHooks.create({ event, command: (body && body.command) || '', name: (body && body.name) || '' });
+  if (!r.ok) return json(400, { error: r.error });
+  try { hookSpine.clear(); pluginsLoaded = await pluginLoader.load(hookSpine); hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { return json(500, { error: 'created, but could not start it: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length });
+}
+async function handleHooksDelete(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const event = String((body && body.event) || '').trim();
+  const command = String((body && body.command) || '').trim();
+  if (!event || !command) return json(400, { error: 'event and command are required' });
+  if (!(await shellHooks.remove(event, command))) return json(404, { error: 'no such hook' });
+  try { hookSpine.clear(); pluginsLoaded = await pluginLoader.load(hookSpine); hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { return json(500, { error: 'deleted, but reload failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length });
+}
+async function handlePluginsCreate(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const r = await pluginLoader.scaffold({ id: (body && body.id) || '', name: (body && body.name) || '', description: (body && body.description) || '' });
+  if (!r.ok) return json(400, { error: r.error });
+  try { hookSpine.clear(); pluginsLoaded = await pluginLoader.load(hookSpine); hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { return json(500, { error: 'created, but could not load it: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, id: r.id, active: pluginsLoaded.loaded.length });
+}
+async function handlePluginsDelete(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const id = String((body && body.id) || '').trim();
+  if (!id) return json(400, { error: 'id is required' });
+  if (!(await pluginLoader.destroy(id))) return json(404, { error: 'no such plugin' });
+  try { hookSpine.clear(); pluginsLoaded = await pluginLoader.load(hookSpine); hooksInstalled = await shellHooks.install(hookSpine); }
+  catch (e) { return json(500, { error: 'deleted, but reload failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: pluginsLoaded.loaded.length });
+}
+
+/* The two REVOKE routes. Written as their own handlers rather than a flag on allow, because "take this away"
+   must never be one mistyped field away from "grant this" — and because the honest answer to revoking
+   something that was never allowed is 404, not a cheerful ok:true. Both rebuild the spine in place, so the
+   revoked extension stops running immediately rather than at the next restart. */
+async function handleHooksRevoke(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const event = String((body && body.event) || '').trim();
+  const command = String((body && body.command) || '').trim();
+  if (!event || !command) return json(400, { error: 'event and command are required' });
+  if (!(await shellHooks.revoke(event, command))) return json(404, { error: 'that hook was not approved' });
+  try {
+    hookSpine.clear();
+    pluginsLoaded = await pluginLoader.load(hookSpine);
+    hooksInstalled = await shellHooks.install(hookSpine);
+  } catch (e) { return json(500, { error: 'revoked, but re-install failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length, pending: hooksInstalled.pending.length });
+}
+async function handlePluginsRevoke(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const id = String((body && body.id) || '').trim();
+  if (!id) return json(400, { error: 'id is required' });
+  if (!(await pluginLoader.revoke(id))) return json(404, { error: 'that plugin was not approved' });
+  try {
+    hookSpine.clear();
+    pluginsLoaded = await pluginLoader.load(hookSpine);
+    hooksInstalled = await shellHooks.install(hookSpine);
+  } catch (e) { return json(500, { error: 'revoked, but re-load failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: pluginsLoaded.loaded.length, pending: pluginsLoaded.pending.length });
+}
+
+/* GET /api/plugins — installed / active / pending, with each pending plugin's GUARD FINDINGS attached. The
+   findings are the point of showing them here: the Commander is about to approve third-party in-process code,
+   and an approval prompt that cannot say what the code appears to do is a rubber stamp. */
+async function handlePluginsList(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let found = { plugins: [], errors: [] };
+  try { found = await pluginLoader.discover(); } catch (_) {}
+  let pending = [];
+  try { pending = await pluginLoader.listPending(); } catch (_) {}
+  const live = new Set(pluginsLoaded.loaded.map(p => p.id));
+  const pend = new Set(pending.map(p => p.id));
+  return json(200, {
+    dir: PLUGINS_DIR,
+    plugins: found.plugins.map(p => ({
+      id: p.id, name: p.name, version: p.version, description: p.description,
+      active: live.has(p.id), pending: pend.has(p.id), digest: p.digest, findings: p.findings || null
+    })),
+    errors: (found.errors || []).concat(pluginsLoaded.errors || [])
+  });
+}
+/* POST /api/plugins/allow { id, digest } — approve THIS EXACT CODE and load it without a restart.
+   The digest is REQUIRED and must match what is on disk right now: approving by id alone would let a plugin
+   that changed between the moment the Commander read it and the moment they clicked be approved sight-unseen,
+   which is precisely the substitution the hash exists to prevent. */
+async function handlePluginsAllow(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const id = String((body && body.id) || '').trim();
+  const digest = String((body && body.digest) || '').trim();
+  if (!id || !digest) return json(400, { error: 'id and digest are required' });
+  let found;
+  try { found = await pluginLoader.discover(); } catch (_) { found = { plugins: [] }; }
+  const match = found.plugins.find(p => p.id === id);
+  if (!match) return json(404, { error: 'no such plugin installed: ' + id });
+  if (match.digest !== digest) return json(409, { error: 'this plugin changed since you read it — re-read /api/plugins and approve the current code', digest: match.digest });
+  if (!(await pluginLoader.allow(id, digest))) return json(500, { error: 'could not persist the approval' });
+  // Same in-place rebuild as the hooks route, and the same ordering: plugins first, then shell hooks.
+  try {
+    hookSpine.clear();
+    pluginsLoaded = await pluginLoader.load(hookSpine);
+    hooksInstalled = await shellHooks.install(hookSpine);
+  } catch (e) { return json(500, { error: 'approved, but re-load failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: pluginsLoaded.loaded.length, pending: pluginsLoaded.pending.length });
+}
+
+/* GET /api/hooks — what the Commander configured, what is LIVE, and what is waiting on them. The pending list
+   is the whole reason this route exists: a hook that silently never runs because it was never approved is the
+   worst outcome of the consent gate, so it has to be visible and actionable rather than buried in a boot log. */
+async function handleHooksList(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let cfg = { hooks: [], errors: [] };
+  try { cfg = await shellHooks.load(); } catch (_) {}
+  let pending = [];
+  try { pending = await shellHooks.listPending(); } catch (_) {}
+  const live = new Set(hooksInstalled.installed.map(h => h.event + ' ' + h.command));
+  return json(200, {
+    events: hookSpine.events(),
+    hooks: cfg.hooks.map(h => ({ event: h.event, command: h.command, name: h.name, active: live.has(h.event + ' ' + h.command) })),
+    pending: pending.map(h => ({ event: h.event, command: h.command, name: h.name })),
+    errors: (cfg.errors || []).concat(hooksInstalled.errors || []),
+    file: HOOKS_FILE
+  });
+}
+/* POST /api/hooks/allow { event, command } — approve one pair and install it WITHOUT a restart. Interactive
+   only, and deliberately so: approving a script that runs at station privilege on every tool call is exactly
+   the decision an unattended run must never be able to make for itself (the same unattended rule that governs
+   path blessing). The pair must already exist in hooks.json — this route approves, it never adds. */
+async function handleHooksAllow(req, res) {
+  const json = (code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body;
+  try { body = JSON.parse(await readBody(req, 1 << 16, res)); }
+  catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const event = String((body && body.event) || '').trim();
+  const command = String((body && body.command) || '').trim();
+  if (!event || !command) return json(400, { error: 'event and command are required' });
+  let cfg;
+  try { cfg = await shellHooks.load(); } catch (_) { cfg = { hooks: [] }; }
+  const match = cfg.hooks.find(h => h.event === event && h.command === command);
+  if (!match) return json(404, { error: 'no such hook in hooks.json — this route approves a configured hook, it never adds one' });
+  if (!(await shellHooks.allow(event, command))) return json(500, { error: 'could not persist the approval' });
+  // Re-install so the newly-approved hook is live immediately, with no restart. The spine is cleared IN PLACE
+  // rather than replaced: it was captured by reference at boot (by the dispatch ctx and by every in-flight
+  // run), so handing out a new object would leave those holding the old one and the reload would look like it
+  // did nothing. Clearing first is what stops the already-installed hooks being registered a second time.
+  try {
+    hookSpine.clear();
+    hooksInstalled = await shellHooks.install(hookSpine);
+  } catch (e) { return json(500, { error: 'approved, but re-install failed: ' + ((e && e.message) || e) }); }
+  return json(200, { ok: true, active: hooksInstalled.installed.length, pending: hooksInstalled.pending.length });
+}
+
 /* POST /api/checkpoint/restore { agentId, snapshotId } — the manual "rewind": hard-reset an agent's workspace to
    a recorded snapshot (and drop files created since). Only restores a snapshotId IN that agent's index (never an
    arbitrary git ref); 127.0.0.1-bound. The auto-snapshots that feed this come from the opt-in dispatch hook. */
@@ -8064,8 +9514,17 @@ const slashActions = slashActionsMod.makeSlashActions({
    which is what makes a Telegram answer byte-identical to the desktop one instead of a second implementation.
 
    The one honest difference is where `placed` comes from: a browser knows its live floor, a phone does not, so
-   the agent's room objects are read from the routing plan's bay. That keeps /tools answering for the room this
-   agent actually occupies. Returns { ok, text?, title?, lines? }; never throws. */
+   the objects are read from the SAME two sources the channel's own runs resolve against — a bay-docked agent's
+   bay (router.stationFor), else composeOffice's AUTONOMOUS office, which is what hub.js hands runOnce when
+   stationFor is null. Returns { ok, text?, title?, lines? }; never throws.
+
+   THE BUG THIS FIXES (2026-07-28). `placed` was read ONLY from stationFor, which returns null for every agent
+   that is not docked in a conveyor bay — i.e. essentially every main agent. So /tools over Telegram computed
+   placed=[] and answered "This agent has no tools yet", while the very same agent's Telegram RUNS were being
+   handed the full autonomous office (web, files, memory, studio, jukebox) all along. The readout was wrong, not
+   the grant. It is deliberately NOT the desktop floor: a headless surface keeps the default office by design
+   (see capability/office.js), so quoting heroCaps here would trade one lie for another — a placed WORKBENCH
+   still grants no terminal over Telegram, and only the LEAD (a browser-commanded run) gets TASK DELEGATION. */
 /* ---- COMMANDER-DEFINED COMMANDS (sidecar/usercommands.js) --------------------------------------------
    Loaded from WORKSPACES/usercommands.json — deliberately OUTSIDE any agent's fs jail, so an agent cannot
    author one. That is the whole safety argument for the exec type: these are the Commander's own snippets,
@@ -8146,7 +9605,11 @@ async function runSlashForChannel(input, ctx) {
   let placed = [];
   try {
     const st = router.stationFor(agentId);
-    placed = placedTypesFrom((st && st.rooms && st.rooms.bay && st.rooms.bay.objects) || []);
+    placed = st
+      ? placedTypesFrom((st.rooms && st.rooms.bay && st.rooms.bay.objects) || [])
+      // No bay -> the run composes the autonomous office (hub.js passes station:undefined). Compose the SAME
+      // one, with the SAME lead:false a channel run carries, so the readout and the grant are one fact.
+      : placedTypesFrom(composeOffice({ surface: 'autonomous', lead: false, connectorIds: connectors.ids() }));
   } catch (_) { placed = []; }
   let out;
   try { out = slash.dispatch(String(input || ''), slashOptions(placed)); }
@@ -8235,7 +9698,12 @@ function serveAgentSkills(req, res) {
     if (includeBody) {
       skills = skills.map(s => skillStore.view(agentId, s.id, { includeArchived: true, bump: false }) || s);
     }
-    json(200, { agentId, skills });
+    /* The panel is the HUMAN surface, so it still gets the body and the findings — the Commander is
+       the reviewer; they cannot approve what they cannot read. What it gains is the truth about what
+       the MODEL sees: withheld/approvable/digest, so a card can say "withheld, needs your approval"
+       instead of implying the agent is using a skill it was never given. */
+    skills = skillGate.annotate(skills).map(s => Object.assign({}, s, { guardDigest: skillGate.stampOf(s) }));
+    json(200, { agentId, skills, withheld: skills.filter(s => s.withheld).length });
   } catch (e) { json(200, { skills: [] }); }
 }
 
@@ -8249,6 +9717,35 @@ async function handleAgentSkillManage(req, res) {
   if (!r.ok) return json(400, { error: r.error || 'could not update skill' });
   chanEmit('deliverable', { id: r.skill.id, agentId, kind: 'skill', title: r.skill.name });
   json(200, { ok: true, action: r.action, skill: r.skill });
+}
+
+/* POST /api/agent-skills/allow { agentId, id, allow } — the Commander's review decision on a skill
+   the guard withheld ('ask'). Keyed to the CONTENT DIGEST that was just reviewed, so a later edit
+   re-asks (the plugins-allowed.json law: an approval blesses bytes, never a name).
+   A 'block' verdict is not approvable here — the route refuses it rather than pretending, because
+   the trust table's answer for that content is no, and a UI that offers an impossible click is a lie. */
+async function handleAgentSkillAllow(req, res) {
+  const json = (code, obj) => { if (res.headersSent) return; res.writeHead(code, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify(obj)); };
+  let body; try { body = JSON.parse(await readBody(req, 1 << 16, res)) || {}; } catch (e) { return json(400, { error: 'bad json' }); }
+  const agentId = String(body.agentId || 'agent');
+  if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(403, { error: 'forbidden' });
+  const id = String(body.id || body.target || '').trim();
+  if (!id) return json(400, { error: 'which skill?' });
+  const skill = skillStore.view(agentId, id, { includeArchived: true, bump: false });
+  if (!skill) return json(404, { error: 'no such skill' });
+  const key = agentId + '\x00' + skill.id;
+  if (body.allow === false) {
+    delete skillApprovals[key];
+    persistSkillApprovals();
+    return json(200, { ok: true, approved: false, skill: skillGate.annotate([skill])[0] });
+  }
+  const decision = skillGate.decide(skill);
+  if (decision.action === 'block') return json(400, { error: 'the skill guard blocked this skill outright - it cannot be approved. Edit the skill to remove the flagged content.', findings: decision.categories });
+  const digest = skillGate.stampOf(skill);
+  skillApprovals[key] = { digest, action: 'allow', at: Date.now(), name: skill.name };
+  persistSkillApprovals();
+  const after = skillGate.annotate([skillStore.view(agentId, skill.id, { includeArchived: true, bump: false }) || skill])[0];
+  json(200, { ok: true, approved: true, digest, skill: after });
 }
 
 /* ------------------------------- the run endpoint ------------------------------- */
@@ -8273,7 +9770,12 @@ async function handleRun(req, res) {
   // the scanner uses). An un-blessed/revoked/garbage root injects NOTHING: the run must never assert folder
   // access the grant layer can't prove. The line rides `system` so it reaches every provider identically.
   const projectRootRaw = (body && typeof body.projectRoot === 'string') ? body.projectRoot.trim().slice(0, 4096) : '';
-  const projectLine = projectScopeLine(projectRootRaw, !!(projectRootRaw && isBlessedRoot(projectRootRaw)));
+  const projectBlessed = !!(projectRootRaw && isBlessedRoot(projectRootRaw));
+  const projectLine = projectScopeLine(projectRootRaw, projectBlessed);
+  // ...and the project's OWN house rules, on the same grant. Read ONCE here, before the run, so the text is
+  // byte-stable for the whole run and never shifts the cached system prefix mid-stream (providers/anthropic.js).
+  let projectRules = '';
+  try { projectRules = (await projectInstructions.load(projectRootRaw, projectBlessed)).text || ''; } catch (_) { projectRules = ''; }
   // THE MOAT (FLOOR-REAL): the browser sends the agent's REAL placed capability objects (World.heroCaps) so this
   // interactive run grants exactly what's ON THE FLOOR — additive on top of the compute-only interactive office
   // (see runOnce). dish→web · cabinet→files · workbench→terminal · notebook→memory · studio→image · jukebox→spotify
@@ -8370,17 +9872,20 @@ async function handleRun(req, res) {
   // /api/summon/ack with the new agentId (handleSummonAck), which resolves this Promise. Fail-closed identically: a
   // disconnect (ac abort) or a CONSENT_TIMEOUT_MS stall settles to null (no agent created) so a forgotten request
   // can never hold a billable run open. Settles exactly once. The new id flows back to the lead for team.dispatch.
+  // Resolves { agentId, desk } on success (desk = the room the new worker's seeded workstation landed in, '' when
+  // none was placed) and null on decline/timeout/abort. team.summon reads .agentId and tolerates a bare id, so an
+  // older caller/stub resolving just the string still works.
   function summonRequest(spec) {
     return new Promise((resolve) => {
       const requestId = crypto.randomUUID();
       let settled = false, timer = null;
       function onAbort() { finish(null); }
-      function finish(newAgentId) {
+      function finish(newAgentId, desk) {
         if (settled) return; settled = true;
         pendingSummon.delete(requestId);
         if (timer) clearTimeout(timer);
         try { ac.signal.removeEventListener('abort', onAbort); } catch (_) {}
-        resolve(newAgentId || null);
+        resolve(newAgentId ? { agentId: newAgentId, desk: desk || '' } : null);
       }
       pendingSummon.set(requestId, finish);
       if (ac.signal.aborted) return finish(null);
@@ -8404,7 +9909,7 @@ async function handleRun(req, res) {
     // The browser is WATCHED, so an ungranted mutation asks live (interactive surface + promptConsent) instead
     // of default-denying. The SAME run host (runOnce) is reused by the messaging hub with surface:'autonomous'.
     await runOnce({
-      key, model, system: projectLine ? (String(system || '') + projectLine) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
+      key, model, system: (projectLine || projectRules) ? (String(system || '') + projectLine + projectRules) : system, messages: runMessages, agentId, isTask, provider: runProvider, baseUrl, reasoningEffort, fallbackModels, fallbackProviders,
       emit, signal: ac.signal, runId, trigger: 'directive', internal,
       surface: 'interactive', prompt: promptConsent, pathPrompt: promptPathTrust, summon: summonRequest,   // team.summon → live summonAgent() round-trip; pathPrompt → NS-5 "work in <root>?" bless
       loginPrompt: askHuman,   // attended browser login: browser.login's two consent asks ride the same fail-closed permission.prompt channel
@@ -8417,7 +9922,19 @@ async function handleRun(req, res) {
       preloadSkills,
       extraObjects,    // a placed WORKBENCH -> shell.exec + verify.run, additive on the default office
       stationObjects,  // Class Loadouts (shared-gear): station-wide gear for SKILL availability (tools stay room-scoped)
-      reflect: true,  // only the WATCHED browser run reflects -> a turn-in beat; the headless hub omits this
+      /* MEMORY FORMS ON EVERY REAL RUN. This flag used to be set HERE ALONE, with the rationale "only the WATCHED
+         browser run reflects -> a turn-in beat; the headless hub omits this". That was correct when reflection
+         always produced a BLOCKING Keep/Edit/Discard deck: raising one with nobody at the station was pointless.
+         The silent-save reversal removed that constraint — a normal proposal now auto-saves behind a passive
+         receipt, and only the rare high-stakes tier still asks. So the flag's real meaning was never "attended",
+         it was "this run did real work", and gating on the browser meant everything the agent learned on a
+         routine, a night shift, a workshop shift, or a messaging channel was computed and thrown away.
+         Now set at every REAL-WORK host; delegated workers deliberately stay OFF (their results come back as tool
+         results inside the PARENT's messages, so the parent's own reflection already covers them — turning it on
+         per worker would pay N aux calls for one task and race N batches into one deck). The spend is still
+         bounded exactly as before: AuxGovernor's per-run-end budget, the per-agent cooldown, and the salience gate
+         all sit downstream of this flag. */
+      reflect: true,
       recurring,      // salience signal: did the mint detector see this task shape before? (decision 3)
       lead: true      // Stage 2: ONLY the browser-commanded run is a lead — it alone gets the orchestrator object
                       // (delegate tool). A delegated worker runs via team.dispatch with lead falsy -> cannot re-delegate.
@@ -8437,6 +9954,33 @@ async function handleRun(req, res) {
     kaOff();
     try { res.end(); } catch (_) {}
   }
+}
+
+/* THE LATEST USER TURN — as TEXT, whatever shape it arrived in.
+
+   ⛔ AN ATTACHMENT TURN IS NOT A STRING (bug-sweep P0). The moment the Commander sends a photo or a file, that
+   user message's `content` is an ARRAY of provider content blocks (attachments.js expands the reference into
+   parts). Four separate scans here walked the messages backwards looking for `typeof content === 'string'`,
+   so on an attachment turn each one silently SKIPPED it and used the PREVIOUS user message instead — never an
+   empty result, always a plausible WRONG one: the run's title and its persisted transcript turn were the older
+   message, the task brief was prepared from the older text, memory recall ranked against the older query, and
+   the study pass studied the older directive. Flatten the parts instead (same rule attachments.textOf uses).
+   Returns '' only when the turn genuinely carries no text (an image-only send) — an honest empty, not a lie. */
+function latestUserText(list) {
+  const msgs = Array.isArray(list) ? list : [];
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (!m || m.role !== 'user') continue;
+    if (typeof m.content === 'string') return m.content;
+    if (!Array.isArray(m.content)) continue;      // an unknown shape is not a user turn we can read — keep walking
+    const parts = [];
+    for (const p of m.content) {
+      if (typeof p === 'string') parts.push(p);
+      else if (p && typeof p.text === 'string') parts.push(p.text);
+    }
+    return parts.join('');                        // '' for an image-only turn: honest, and it IS the latest turn
+  }
+  return '';
 }
 
 /* runOnce — the reusable RUN HOST. Assembles the proven seams (fresh tool registry + the office-workstation
@@ -8605,10 +10149,7 @@ async function runOnce(o) {
 
   if (isTask && o.taskKey) {
     try {
-      let latestUser = '';
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i] && messages[i].role === 'user' && typeof messages[i].content === 'string') { latestUser = messages[i].content; break; }
-      }
+      const latestUser = latestUserText(messages);   // flattens an attachment turn instead of skipping to an older one
       if (latestUser) taskBrief = await taskBriefStore.prepare({
         id: 'tb_' + runId, key: String(o.taskKey), streamId: streamId || '', agentId, runId,
         source: o.taskSource || (surface === 'interactive' ? 'interactive' : 'channel'), text: latestUser,
@@ -8656,6 +10197,16 @@ async function runOnce(o) {
       try { const r = serviceKeysMod.resolveForRequest(serviceKeys, 'JINA_API_KEY', surface); return r.ok ? r.value : ''; }
       catch (_) { return ''; }
     })()
+  }).register(registry);
+  // INTEGRATION SELF-KNOWLEDGE: the same `dish` grant as web_request. Every dep is the LIVE object the panels
+  // read (manager + KEYS list + both catalogs), so the readout can never drift from what ABILITIES shows. The
+  // serviceKeys dep is a THUNK, not the array: `serviceKeys` is reassigned on every KEYS edit, so capturing the
+  // value here would freeze the tool on the list as it stood when the run started.
+  makeConnectorTools({
+    connectors: connectors,
+    serviceKeys: () => serviceKeys,
+    connectorCatalog: connectorCatalog,
+    keysCatalog: serviceKeysCatalog
   }).register(registry);
   // STUDIO media tools, built up-front so browser.vision can borrow its multimodal analyze path
   // (one provider seam, no duplication). Registered below; here we only need its vision callback.
@@ -8724,12 +10275,13 @@ async function runOnce(o) {
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
   const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, { scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null, agentId: (o2 && o2.agentId) || agentId });
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
-  makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract, imageWire }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
+  makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
   widgetTools.register(registry);   // WIDGET RAILS Phase 2: widget.set — agent-fed rail readouts (memory capability: sandboxed local write, no consent, no network)
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
   makeSkillTools({
     store: skillStore,
+    gate: skillGate,   // guard verdict enforcement: a withheld skill lists as withheld and refuses to load its body
     onView: (skill) => {
       if (!skill || seenLoadedSkills.has(skill.id)) return;
       seenLoadedSkills.add(skill.id);
@@ -8745,6 +10297,10 @@ async function runOnce(o) {
   // STUDIO (media skills): image_generate / image_analyze use an OpenRouter key when one is available.
   // Gated by a 'studio' object (in the default office below) exactly like web/files; outputs save to the workspace.
   imageTools.register(registry);
+  // STUDIO, third skill: voice_generate — the agent MAKES a clip (voiceover, narration, audio message) into its
+  // workspace. It drives the SAME ladder /api/tts does (agentSpeechSynth below: the keyed neural chain, then the
+  // free keyless Edge floor), so it needs no voice-specific credential and a zero-key station can still record.
+  makeVoiceTools({ synth: agentSpeechSynth, fsp, pathMod: path, root: WORKSPACES }).register(registry);
   // JUKEBOX (Spotify): registered every run, EXPOSED via a 'jukebox' object; no-op (clear error) until the user
   // connects Spotify in TOOLSETS. The OAuth session + auto-refresh live in the station-wide spotifyStore above.
   makeSpotifyTools({ store: spotifyStore }).register(registry);
@@ -8756,7 +10312,7 @@ async function runOnce(o) {
   // computer.use remains registered behind an INERT driver as defense in depth against a
   // forged dispatch. It is removed from ordinary tool definitions below; no current run host
   // mints the separate one-shot attended-input lease required by computer.js.
-  makeComputerTools({ allowPhysicalInput: false }).register(registry);
+  makeComputerTools({ allowPhysicalInput: false, imageWire }).register(registry);
   // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
   // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
@@ -8829,6 +10385,55 @@ async function runOnce(o) {
     // W6: the "you already maintain: …" summary the tool folds into its create response so the model KNOWS what
     // exists (informational reinforcement of the hard gate). Pure read of the per-agent ledger.
     mintSummary: (agentId) => { try { return mintLedger.summary(mintLedgerFor(agentId)); } catch (_) { return ''; } },
+    /* ---- routine.manage's store verbs. Each one is the SAME locked read-modify-write the matching HTTP route
+       uses (withCronWrite), so the agent path and the ROUTINES panel can never disagree about a job's state or
+       clobber each other's concurrent advance. The tool owns arg policy; these own persistence only. ---- */
+    updateRoutine: async (id, patch) => {
+      const next = {};
+      // INJECTION TRIPWIRE — identical to POST /api/cron/update: an edit is the same surface as a create, so a
+      // routine authored clean can otherwise be patched into a standing payload.
+      if (Object.prototype.hasOwnProperty.call(patch, 'prompt')) {
+        const scan = cronGuard.scanRoutinePrompt(patch.prompt);
+        if (!scan.ok) throw new Error(scan.error);
+        next.prompt = patch.prompt;
+      }
+      if (Object.prototype.hasOwnProperty.call(patch, 'name')) next.name = patch.name;
+      if (Object.prototype.hasOwnProperty.call(patch, 'model')) next.model = patch.model;
+      if (Object.prototype.hasOwnProperty.call(patch, 'provider')) next.provider = parseCronProviderOr400(patch.provider);
+      if (Object.prototype.hasOwnProperty.call(patch, 'repeatTimes')) {
+        next.repeat = { times: patch.repeatTimes == null ? null : Math.max(1, parseInt(patch.repeatTimes, 10) || 1) };
+      }
+      // The schedule STRING is parsed through the one shared parser (never a second implementation — "when does
+      // this run" is exactly what a user trusts us on), carrying the optional tz the tool passed alongside it.
+      if (Object.prototype.hasOwnProperty.call(patch, 'schedule')) {
+        next.schedule = parseCronScheduleOr400(patch.schedule, Date.now(), patch.timezone);
+      }
+      await withCronWrite(jobs => cronStore.updateJob(jobs, id, next, { now: Date.now() }));
+      return cronStore.getJob(cronJobs, id);
+    },
+    removeRoutine: async (id) => {
+      // W6, matching POST /api/cron/remove: capture the job BEFORE removal so its name lands in the creating
+      // agent's mint ledger as DECLINED — a deleted routine must never be re-minted by the agent that made it.
+      const doomed = cronStore.getJob(cronJobs, id);
+      await withCronWrite(jobs => cronStore.removeJob(jobs, id));
+      if (doomed && doomed.name) markMintDeclined(doomed.agentId, doomed.name);
+      return doomed;
+    },
+    setRoutineEnabled: async (id, enabled) => {
+      await withCronWrite(jobs => enabled
+        ? cronStore.resumeJob(jobs, id, { now: Date.now() })
+        : cronStore.pauseJob(jobs, id));
+      return cronStore.getJob(cronJobs, id);
+    },
+    // TRIGGER = stamp the next fire at NOW so the scheduler picks the job up on its next tick. Deliberately NOT
+    // an inline run: POST /api/cron/run streams a real run to a watching human, and doing that from inside a tool
+    // call would nest runOnce in runOnce (a second spend path under no separate cap, streaming to nobody).
+    // cronStore.triggerJob, NOT resumeJob — resume RE-ANCHORS the schedule, which for `0 9 * * *` lands on 09:00
+    // TOMORROW and fires nothing now (caught by test/routine-manage.e2e.test.js, which read the time back).
+    triggerRoutine: async (id) => {
+      await withCronWrite(jobs => cronStore.triggerJob(jobs, id, { now: Date.now() }));
+      return cronStore.getJob(cronJobs, id);
+    },
     armScheduler: (enabled) => {
       const want = enabled === true;
       saveCronArmed(want);
@@ -8838,6 +10443,59 @@ async function runOnce(o) {
       if (want) armCron(); else disarmCron();
       return cronArmed;
     }
+  }).register(registry);
+  /* channel.targets / channel.send — OUTBOUND messaging reach (see tools/builtin/comms.js for the security
+     rationale on known-targets-only). Both hang off the placed DISH under their own 'comms' capId. */
+  makeCommsTools({
+    /* The reachable set is the station's CHAT MAP — chats a human actually opened with this station — joined
+       against LIVE transport state. It is not a list of platforms we support: an agent may only message
+       somewhere a person already reached us from, which is the whole containment story.
+
+       `target` is the map KEY, which is already the stable per-chat identity (multi-bot telegram namespaces it
+       as '<botId>|<chatId>' and carries the real chatId on the record — so the key is what stays unique while
+       the raw chatId does not). It is also what we hand back to sendTo, so nothing has to re-derive it. */
+    listTargets: () => {
+      try {
+        const map = channelStore.loadChatMap();
+        const chats = (map && map.chats) || {};
+        return Object.keys(chats).map((key) => {
+          const rec = chats[key] || {};
+          const channel = String(rec.channel || 'telegram');
+          const live = liveChannelFor(channel);
+          return {
+            target: key,
+            channel: channel,
+            chatId: String(rec.chatId || key),
+            agentId: String(rec.agentId || ''),
+            connected: !!(live && live.adapter)
+          };
+        });
+      } catch (_) { return []; }
+    },
+    // sendTo takes the TARGET KEY and resolves it back to its record, so the tool never has to know about the
+    // '<botId>|<chatId>' namespacing. An unknown key answers ok:false rather than throwing — the tool reports
+    // partial delivery honestly and transports never throw by contract.
+    sendTo: (target, text) => {
+      let rec = null;
+      try { rec = channelStore.getChatRecord(String(target)) || null; } catch (_) { rec = null; }
+      if (!rec) return Promise.resolve({ ok: false, error: 'unknown chat target' });
+      const channel = String(rec.channel || 'telegram');
+      const live = liveChannelFor(channel);
+      if (!(live && live.adapter)) return Promise.resolve({ ok: false, error: channel + ' is not connected' });
+      return Promise.resolve(live.adapter.send(String(rec.chatId || target), text))
+        .catch(e => ({ ok: false, error: (e && e.message) || 'send failed' }));
+    },
+    // the platform's real message ceiling, straight off the channel descriptor that already declares it (a
+    // second table would drift and Discord's 2000 is unforgiving); 'telegram:<botId>' resolves as telegram.
+    maxLenFor: (channel) => {
+      const base = String(channel || '').split(':')[0];
+      const desc = channelRegistry.get(base);
+      const n = desc && Number(desc.maxMessageLength);
+      // stay just under the true ceiling: the transport may add its own prefix/footer to a chunk.
+      return (isFinite(n) && n > 200) ? (n - 100) : 1900;
+    },
+    redact: redact,
+    emit: chanEmit
   }).register(registry);
   throttleSearch(registry);
 
@@ -8853,7 +10511,17 @@ async function runOnce(o) {
   // grants exactly what the Commander placed. AUTONOMOUS/headless runs keep the full default office (no floor UI in
   // the moment; stripping a scheduled/delegated run's web+files would regress shipped work). Connectors are
   // account-level (both surfaces); the LEAD alone gets the orchestrator object so a delegated worker can't re-delegate.
-  const defaultObjects = composeOffice({ surface, lead: o.lead, connectorIds: connectors.ids(), extraObjects: o.extraObjects });
+  /* THE MOAT IS A FLOOR FACT, NOT A CONSENT FACT (2026-07-28). `surface` was carrying two orthogonal meanings:
+     WHO ANSWERS an ungranted mutation (interactive = a live prompt channel; autonomous = default-deny), and
+     WHETHER THIS RUN HAS A REAL FLOOR to read placed props off. Those coincide on /api/run and on every headless
+     caller — except a channel chat that turned /approvals ON. That chat flips to surface:'interactive' purely to
+     get a prompt channel, and silently inherited the compute-ONLY office with it: no browser ever sent
+     extraObjects, so a Telegram agent dropped from 59 tools to 2 (quest.update, tool.search) the moment the
+     Commander asked to be consulted, while /tools still described the autonomous office it no longer had.
+     `floorless` states the second meaning on its own — a phone has no floor to place props on, whoever is
+     answering the prompts — so opting into approvals can never again cost a channel run its office. */
+  const officeSurface = o.floorless ? 'autonomous' : surface;
+  const defaultObjects = composeOffice({ surface: officeSurface, lead: o.lead, connectorIds: connectors.ids(), extraObjects: o.extraObjects });
   let station = o.station || { agents: { [agentId]: { id: agentId, room: 'office' } }, rooms: { office: { id: 'office', objects: defaultObjects } } };
   // UNATTENDED CAPABILITY GRANT (2026-07-25) — the OBJECT half. The authority gate below now lets a granted
   // unattended run keep shell.exec/verify.run, but a capability still needs its object to exist or resolveTools
@@ -8947,10 +10615,31 @@ async function runOnce(o) {
   });
   // B1 (Cortex seam): thread runId onto capCtx so a tool's dispatch can stamp provenance (sourceRunId)
   // on memory writes. makeCapCtx merges `extra` verbatim; the consumer arrives with M-mem.2.
+  let parkSeq = 0;   // distinguishes parked outputs within one run (see parkOutput below)
   const capCtx = makeCapCtx(resolved, Object.assign({
     emit, consent, summon, timeoutMs: CAPS.toolTimeoutMs, runId, streamId, signal: signal,
+    origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }),   // stamped onto notebook.write records: WHICH surface formed this belief
     authorize: userControlAuthority.authorize,
     userControl: userControlAuthority,
+    // HOOKS reach the tool boundary through the dispatch ctx. registry.js consults them AFTER the authority,
+    // capability, schema and consent gates — so a hook can only ever remove a permission, never add one.
+    hooks: hookSpine,
+    cwd: WORKSPACES,
+    // OUTPUT PARKING: the host half of the tool-output cap. Over-cap output is written WHOLE into the agent's
+    // own workspace before the clamp destroys its middle, and the result points the model at the file — the
+    // work was already done and paid for, so the part that did not fit is recoverable instead of gone. Lands
+    // in the same jail fs.read already serves, so reading it back needs no new capability. Best effort by
+    // design: a parker that fails degrades to the plain clamp rather than failing the tool call.
+    parkOutput: async (content, meta) => {
+      try {
+        const ws = await executionEnvironment.ensureWorkspace(fsJail.safeAgentId(agentId || 'agent'));
+        await fsp.mkdir(path.join(ws, '.output'), { recursive: true });
+        const safeTool = String((meta && meta.tool) || 'tool').replace(/[^A-Za-z0-9_.-]/g, '_').slice(0, 40);
+        const rel = '.output/' + safeTool + '-' + String(runId || 'run').replace(/[^A-Za-z0-9_-]/g, '') + '-' + (parkSeq++) + '.txt';
+        await fsp.writeFile(path.join(ws, rel), String(content), 'utf8');
+        return { path: rel };   // WORKSPACE-RELATIVE: the exact string fs.read takes, not a host absolute path
+      } catch (_) { return null; }
+    },
     // Explicitly false in all current runOnce flows. This makes the deny visible at the
     // tool boundary even if a future refactor accidentally re-adds computer.use to tools.
   }, runInputContext(surface, isTask)));
@@ -9137,6 +10826,24 @@ async function runOnce(o) {
   // calls a GRANTED tool by its real dotted name also misses fromWire, and must keep falling through to the
   // ordinary capability/consent path exactly as before.
   const grantedSet = new Set(resolved.tools || []);
+
+  /* PARALLEL-SAFE PREDICATE — the host half of loop.js's batch planner. The loop sees a name and args; only
+     here does the registry exist to say what a tool actually IS. A batch runs concurrently only when EVERY
+     member passes this, so it is written to be boring: read scope, no consent prompt (two prompts racing for
+     one Commander is not a UX), granted to this run, and outside every family whose "read" quietly mutates
+     shared session state. browser.* is the one that makes the rule necessary — a snapshot invalidates the
+     previous snapshot's element refs, so two concurrent browser reads genuinely race even though both are
+     read-scope. mcp:* is excluded because a third-party server's idea of read-only is not ours to assume. */
+  const PARALLEL_UNSAFE_FAMILY = /^(browser|computer|desktop|spotify|team|brief|shell|verify)\./;
+  const parallelSafe = (wireName) => {
+    const n = String(wireName || '');
+    const real = fromWire.has(n) ? fromWire.get(n) : (allWire.get(n) || n);
+    const t = registry.get(real);
+    if (!t || !grantedSet.has(real)) return false;
+    if (t.scope !== 'read' || t.requiresConsent) return false;
+    if (/^mcp:/.test(String(t.capability || ''))) return false;
+    return !PARALLEL_UNSAFE_FAMILY.test(real);
+  };
 
   const seen = new Map();
   let toolBytes = 0;   // running total of tool-output chars fed back into the model this run
@@ -9421,7 +11128,10 @@ async function runOnce(o) {
       const rs = runtimeSkills.composeIndex(skillStore.list(agentId), {
         budget: 6000,
         platform: process.platform,
-        canManage: resolved.tools.indexOf('skill.manage') >= 0
+        canManage: resolved.tools.indexOf('skill.manage') >= 0,
+        // The guard's verdict, enforced at the one seam where the index enters the system prompt.
+        // Metadata-only decision (no bodies here) — the strict re-digest happens in skill.view.
+        gate: (s) => skillGate.decide(s)
       });
       runtimeSkillBlock = rs.text || '';
       if (rs.ids && rs.ids.length && typeof skillStore.markUsed === 'function') skillStore.markUsed(agentId, rs.ids);
@@ -9429,15 +11139,28 @@ async function runOnce(o) {
   } catch (_) { /* runtime skill indexing must never break a run */ }
   try {
     if (resolved.tools.indexOf('skill.view') >= 0) {
-      const names = (Array.isArray(preloadSkills) ? preloadSkills : []).concat(runtimeSkills.extractInvocations(messages));
+      /* `o.preloadSkills`, NOT `preloadSkills`. The bare identifier is handleRun's local (line ~9668);
+         inside runOnce it resolves to nothing, so this line threw ReferenceError on EVERY run and the
+         catch below — "explicit skill preload must never break a run" — swallowed it. The whole
+         preload path was dead: `/skill Name` loaded nothing and body.preloadSkills was ignored, with
+         no error anywhere. Found by asserting on the bytes that reach the provider, which is the only
+         place a silently-skipped prompt block is visible. */
+      const requested = Array.isArray(o.preloadSkills) ? o.preloadSkills : [];
+      const names = requested.concat(runtimeSkills.extractInvocations(messages));
       const seenNames = new Set();
       const loaded = [];
+      const withheldPreloads = [];
       for (const name of names) {
         const key = String(name || '').toLowerCase();
         if (!key || seenNames.has(key)) continue;
         seenNames.add(key);
         const v = skillStore.view(agentId, name);
         if (!v) continue;
+        // A NAMED PRELOAD IS STILL GATED. This path injects the FULL body, so a withheld skill
+        // invoked by /skill must not slip in ahead of the index's check. verify() (not decide())
+        // because the body is in hand here: it re-digests the hydrated package.
+        const pd = skillGate.verify(v);
+        if (pd && pd.visible === false) { withheldPreloads.push({ name: v.name, reason: pd.reason || 'held by the skill guard' }); continue; }
         loaded.push(v);
         if (!seenLoadedSkills.has(v.id)) {
           seenLoadedSkills.add(v.id);
@@ -9445,6 +11168,15 @@ async function runOnce(o) {
         }
       }
       preloadedSkillBlock = runtimeSkills.composeLoaded(loaded);
+      /* A REQUESTED SKILL THAT WAS WITHHELD MUST BE SAID OUT LOUD. The Commander typed /skill and
+         is entitled to know the procedure never arrived — silently dropping it would have the agent
+         improvise while the user believes it is following a saved skill. */
+      if (withheldPreloads.length) {
+        preloadedSkillBlock += '\n\n## WITHHELD SKILLS\n'
+          + 'The Commander asked for these skills and the skill guard withheld them. You do NOT have their steps. '
+          + 'Say so plainly and ask them to review the skill in ABILITIES > SKILLS; never improvise a substitute and present it as the saved skill.\n'
+          + withheldPreloads.map(w => '- ' + w.name + ' -- ' + w.reason).join('\n');
+      }
     }
   } catch (_) { /* explicit skill preload must never break a run */ }
   // QUEST V2 §B (agent awareness) + §E (generative minting): fold THIS agent's OPEN quests (its own + station-wide)
@@ -9520,8 +11252,7 @@ async function runOnce(o) {
   if (!internal) try {
     const stored = notebookStore.get('notebook:' + agentId);
     const recs = Array.isArray(stored) ? stored : [];
-    let q = '';
-    for (let i = messages.length - 1; i >= 0; i--) { if (messages[i] && messages[i].role === 'user' && typeof messages[i].content === 'string') { q = messages[i].content; break; } }
+    const q = latestUserText(messages);   // an attachment turn must rank recall against ITS text, not the previous turn's
     const ranked = rank(recs, q, { now: Date.now(), streamId });   // M-mem.2b: boost the active workstream's working memory
     const recall = renderRecall(ranked, { limit: 1500 });
     if (recall.text) {
@@ -9575,11 +11306,24 @@ async function runOnce(o) {
     emit(name, payload);
   };
   try {
+    // HOOKS — on_session_start. Fired HERE rather than inside loop.js because a "session" is a run as the
+    // HOST defines it (agent, model, surface, trigger), and the loop deliberately knows nothing about the
+    // surface it was launched from. Observe-only: a hook cannot refuse a run the Commander started.
+    try { await hookSpine.invoke('on_session_start', { session_id: runId, cwd: WORKSPACES, extra: { agent_id: agentId, model, platform: surface, trigger: o.trigger || 'directive' } }); } catch (_) {}
     result = await runAgentLoop({
       messages: msgs, provider, emit: loopEmit, cost, tools: toolDefs, dispatch, capCtx,
       // Granted but unadvertised: held out of the request until tool.search reveals one (see loop.js).
       deferredTools: deferredToolDefs,
       hiddenTools: ['brief_ask', 'brief_proceed'],
+      // A turn that asks for four file reads waited four round trips for them; an all-read-only batch now
+      // overlaps. The predicate is above — the loop cannot judge tool scope on its own.
+      parallelSafe,
+      // SCREENSHOTS AS PIXELS: a browser/vision capture rides back to the model as an image, not a file path.
+      // Same wire shape the Commander's own attachments already take, so no adapter needed a change. Kill
+      // switch for a text-only endpoint that rejects image parts, resolved once at module load.
+      toolImages: TOOL_IMAGES_ON,
+      // The station-wide hook spine: pre/post_llm_call and on_pre_compress fire from inside the loop.
+      hooks: hookSpine,
       // Real backoff for the loop's bounded mid-stream retry: without an injected sleep the loop retries a
       // dropped/half-streamed generation with ZERO delay (a tight hammer against an upstream that just hiccupped).
       // A plain (non-unref) setTimeout so the backoff actually elapses before the retry fires.
@@ -9609,6 +11353,22 @@ async function runOnce(o) {
       // /models catalog warms, which (by design) disables the ratio so a bare 400 is never mislabelled.
       approxTokens: Math.ceil(JSON.stringify(msgs).length / 4), contextLimit: provider.contextLimit(model)
     });
+    // HOOKS — on_session_end. The run's real outcome, not an optimistic one: `reason` is whatever the loop
+    // actually ended on ('done' | 'empty' | 'max_iters' | 'budget' | 'cancelled' | 'error'), so a hook that
+    // pages on failure pages on the truth. This is the seam for "when a run finishes, notify me / run the
+    // formatter / archive the transcript".
+    try {
+      await hookSpine.invoke('on_session_end', {
+        session_id: runId, cwd: WORKSPACES,
+        extra: {
+          agent_id: agentId, model, platform: surface,
+          reason: (result && result.reason) || 'unknown',
+          completed: !!(result && result.reason === 'done'),
+          interrupted: !!(result && result.reason === 'cancelled'),
+          turns: (result && result.turns) || 0, usd: (result && result.usd) || 0
+        }
+      });
+    } catch (_) {}
     // Persist visible task context only — never hidden reasoning. A clarification is a clean model run but not
     // completed work, so it leaves the brief waiting across restart and suppresses task-learning sweeps below.
     if (taskBrief && taskBrief.inputAction !== 'cancel' && result && result.reason === 'done') {
@@ -9653,8 +11413,7 @@ async function runOnce(o) {
     if (billed) { try { credits.finishRun({ runId, agentId, usd: finalUsd, tokens: finalTokens, turns: finalTurns, reason: (result && result.reason) || 'done' }); } catch (_) {} }
     // record the run OUTCOME (durable history) — reason + a short title from the triggering user message. Fail-open.
     try {
-      let title = '';
-      for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
+      const title = latestUserText(msgs);   // an attachment turn titles/records ITSELF, never the message before it
       runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', recipeId: o.recipeId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent + recipe provenance
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
@@ -9755,12 +11514,11 @@ async function runOnce(o) {
   // so it re-qualifies next run.
   if (_auxSpend.has('reflection')) {
     reflectingNow.add(agentId);
-    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
+    runReflection({ agentId, runId, messages: result.messages.slice(), provider, model: _auxModel, cost, unmetered: providerUnmetered, origin: memcore.originOf({ trigger: o.trigger, taskSource: o.taskSource }) }).catch(() => {}).finally(() => { reflectingNow.delete(agentId); });
   }
   if (_auxSpend.has('study')) {
     studyingNow.add(agentId);
-    let studyDirective = '';
-    for (let i = result.messages.length - 1; i >= 0; i--) { const m = result.messages[i]; if (m && m.role === 'user' && typeof m.content === 'string') { studyDirective = m.content; break; } }
+    const studyDirective = latestUserText(result.messages);   // study the turn that actually ran, attachment or not
     runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
   }
   if (_auxSpend.has('threadmine')) {
@@ -9888,6 +11646,20 @@ async function handleProjectBless(req, res) {
   sendJson(r && r.ok ? 200 : 400, r || { ok: false, reason: 'bless failed' });
 }
 
+// POST /api/projects/forget { root } — delete ONLY the known-project metadata row after trust has already
+// been revoked. This endpoint deliberately refuses a still-blessed root: forgetting metadata must never become
+// a second, implicit permission-revoke path. projectsStore.remove is persist-before-commit, so a failed durable
+// write leaves the row visible and returns an honest failure instead of claiming it disappeared.
+async function handleProjectForget(req, res) {
+  const sendJson = (code, obj) => respondJson(res, code, obj);
+  let body; try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { if (res.headersSent) return; res.writeHead(400); return res.end('bad json'); }
+  const root = body && body.root;
+  if (typeof root !== 'string' || !root) return sendJson(400, { ok: false, reason: 'missing project root' });
+  if (grantsPermanent.has('path:' + root)) return sendJson(409, { ok: false, reason: 'revoke project trust before forgetting it' });
+  const r = projectsStore.remove(root);
+  sendJson(r && r.ok ? 200 : 500, r || { ok: false, reason: 'forget failed' });
+}
+
 // POST /api/projects/pickfolder — the Projects rail's "browse" button. Opens the native OS folder chooser on
 // this machine (local-first: the sidecar IS the user's machine) and returns { ok, path } / { ok, cancelled } /
 // { ok:false, reason }. GRANTS NOTHING — the picked path goes back to the UI, and only the user's explicit Add
@@ -9898,6 +11670,20 @@ async function handleProjectPickFolder(req, res) {
   let r; try { r = await folderPick.pick({ surface: 'interactive' }); }
   catch (e) { return sendJson(400, { ok: false, reason: 'folder picker failed: ' + (e && e.message || e) }); }
   sendJson(r && r.ok ? 200 : 400, r || { ok: false, reason: 'folder picker failed' });
+}
+
+// POST /api/pickpath { mode:'file'|'folder' } — the GENERIC native chooser behind a recipe launch form's typed
+// fill-in ("point me at a file" opens the OS dialog instead of asking the Commander to type a path from memory).
+// Same core, same guarantees as the Projects rail's browse button: interactive-only, single-flight, honest
+// degradation, cancel-is-not-an-error — and it GRANTS NOTHING. The chosen path is returned to the form; whether
+// the agent may actually read it is still decided by the existing path-grant machinery at run time.
+async function handlePickPath(req, res) {
+  const sendJson = (code, obj) => respondJson(res, code, obj);
+  let body = {}; try { body = JSON.parse(await readBody(req, 1 << 12)) || {}; } catch (_) { body = {}; }
+  const mode = body.mode === 'file' ? 'file' : 'folder';
+  let r; try { r = await folderPick.pick({ surface: 'interactive', mode: mode }); }
+  catch (e) { return sendJson(400, { ok: false, reason: mode + ' picker failed: ' + (e && e.message || e) }); }
+  sendJson(r && r.ok ? 200 : 400, r || { ok: false, reason: mode + ' picker failed' });
 }
 
 /* ---- IMPORT-AN-AGENT (read-only): read an existing OpenClaw / Hermes agent home off disk and return a normalized
@@ -10328,16 +12114,18 @@ function handleNightshiftDrafts(req, res) {
   }
 }
 
-// POST /api/summon/ack { runId, requestId, agentId } — the browser's answer to a live crew.summon.request: it ran
-// the REAL summonAgent() and reports the new agentId (or null if it couldn't). Resolves the run's awaiting
+// POST /api/summon/ack { runId, requestId, agentId, desk? } — the browser's answer to a live crew.summon.request:
+// it ran the REAL summonAgent() and reports the new agentId (or null if it couldn't). Resolves the run's awaiting
 // team.summon tool. A stale runId/requestId is a harmless no-op (the run ended or the request auto-settled to null).
+// `desk` is the room the new agent's seeded workstation landed in — the browser only sends it after the placement
+// actually returned ok, so the tool result can state it without the sidecar asserting anything it can't source.
 async function handleSummonAck(req, res) {
   let body;
   try { body = JSON.parse(await readBody(req, 4096)) || {}; } catch (e) { res.writeHead(400); return res.end('bad json'); }
   const pend = pendingSummonByRun.get(body.runId);
   const finish = pend && pend.get(body.requestId);
   const newId = (body.agentId != null && /^[A-Za-z0-9_-]{1,40}$/.test(String(body.agentId))) ? String(body.agentId) : null;
-  if (finish) finish(newId);
+  if (finish) finish(newId, newId ? String(body.desk == null ? '' : body.desk).replace(/[\r\n]+/g, ' ').trim().slice(0, 60) : '');
   res.writeHead(200); res.end('ok');
 }
 
@@ -10475,6 +12263,9 @@ function handleDiagnostics(req, res) {
       uptimeMs: Date.now() - PROCESS_START,
       workspacePresent: workspacePresent,
       lastRun: recent ? { runId: recent.runId, status: recent.reason, ts: recent.ts } : null,
+      // observed provider quota. Empty until a call has actually been made — an empty array means NO DATA and
+      // must never be rendered as "plenty left" (see ratelimits.advise).
+      rateLimits: (() => { try { return rateLimits.snapshot(); } catch (_) { return []; } })(),
       errors: DIAG_ERR_RING.slice()   // already redacted on write; the assembler redacts again as a backstop
     };
     out = diagnostics.assemble(snapshot);
@@ -10498,7 +12289,10 @@ function handleHalt(req, res) {
   });
   // multi-bot telegram: every agent-bound bot's hub runs die on E-STOP too, exactly like the station bot's.
   const tgBotInflights = [...telegramBots.values()].map((w) => (w && w.hub && w.hub._internals) ? w.hub._internals.inflight : null);
-  const halted = killAll(runs, tgInflight, dcInflight, ...genericInflights, ...tgBotInflights);   // browser runs + ALL channel hub runs, in one kill (see sidecar/halt.js)
+  // the DEV injector's hub too (SKYNET_DEV only, and null until something has used it). Its runs are REAL runs
+  // that really spend, so an E-STOP that skipped them would leave live work the panel says it stopped.
+  const devInflight = (devHub && devHub._internals) ? devHub._internals.inflight : null;
+  const halted = killAll(runs, tgInflight, dcInflight, ...genericInflights, ...tgBotInflights, devInflight);   // browser runs + ALL channel hub runs, in one kill (see sidecar/halt.js)
   let cronAborted = 0;
   try { cronAborted = cronDriver.abortAllLeases(); } catch (_) {}   // Phase 0: E-STOP also aborts in-flight cron runs (unattended spend)
   let beatAborted = 0;
@@ -10513,12 +12307,19 @@ function handleHalt(req, res) {
   // claiming "N routines armed" — so the tray held the process alive AFTER the user paused. The flag persists
   // (survives restart) and lifts only on an explicit resume (POST /api/cron/arm or an autonomy-dial re-write).
   try { if (cronArmed && !cronHalted) { cronHalted = true; saveCronHalted(true); disarmCron(); } } catch (_) {}
+  // LOOPS get the same durable stand-down. An in-flight iteration is aborted (it settles as 'cancelled', which
+  // costs neither the failure streak nor the convergence streak), the timer comes down, and the flag PERSISTS —
+  // so a loop the Commander E-STOPped does not quietly resume itself after a restart. It lifts only on an
+  // explicit POST /api/loops/control {action:'unhalt'}.
+  let loopAborted = 0;
+  try { loopAborted = loopDriver.abortAllLeases() || 0; } catch (_) {}
+  try { if (!loopsHalted) { loopsHalted = true; saveLoopsHalted(true); } disarmLoops(); } catch (_) {}
   try { executionEnvironment.killAllBackground(); } catch (_) {}   // H2.2/Phase 0: E-STOP also reaps backend-owned background processes
   try { inputGuard.observe('halt').catch(() => {}); } catch (_) {}   // diagnostic only: never release an unowned global clip
   try { subagents.interruptAll(); } catch (_) {}   // Phase 1: E-STOP aborts watchable background workers too
   try { cronLock.release(); } catch (_) {}  // G4.3: drop any cron lock this process holds so an E-STOP mid-tick never wedges the next tick (standalone halt-block addition; G2 will add connectors.close here)
   res.writeHead(200, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ halted, cronAborted, beatAborted }));   // honest counts: run-controllers aborted + cron leases aborted + driver-path beat aborted (additive field)
+  res.end(JSON.stringify({ halted, cronAborted, beatAborted, loopAborted }));   // honest counts: run-controllers aborted + cron leases aborted + driver-path beat aborted + loop iterations aborted (additive fields)
 }
 
 // POST /api/channels/telegram/connect { token, key?, model, provider? } — the Messaging tab hands over the
@@ -11324,6 +13125,44 @@ async function ttsSynthKeyed(ttsProvider, o) {
   // anything else (e.g. a 200 with a JSON error body) is NOT silently wrapped as WAV — that ships a corrupt blob.
   return { ok: false, reason: 'unexpected content-type: ' + ct };
 }
+/* agentSpeechSynth({ text, voice, style }) -> { ok, buf, ext, mime, provider } | { ok:false, reason }
+   ONE clip for the voice_generate TOOL (tools/builtin/voice.js). Same ladder POST /api/tts climbs — keyed
+   neural providers in TTS_KEY_PROVIDERS order, then the free keyless Edge floor — reusing ttsSynthKeyed
+   rather than re-implementing it, so the agent's voiceover and the station's own voice come from the same
+   credential and never drift apart. Deliberately NOT sharing the /api/tts disk cache: that cache is keyed
+   for short repeated station lines, and a voiceover is written to the workspace anyway.
+   A failure reports EVERY leg it tried — "no audio" with no reason is the kind of dead end that gets
+   diagnosed as "StarNet can't do voice" when the truth is one dead key. */
+async function agentSpeechSynth(o) {
+  const text = String((o && o.text) || '').replace(/\s+/g, ' ').trim();
+  if (!text) return { ok: false, reason: 'no text' };
+  const style = String((o && o.style) || '').replace(/\s+/g, ' ').trim().slice(0, 500);
+  const wantVoice = String((o && o.voice) || '').trim();
+  const input = style ? ('Say the following in ' + style + ': ' + text) : text;
+  const reasons = [];
+  for (const p of TTS_KEY_PROVIDERS) {
+    const key = providerRuntimeKey(p, '');
+    if (!key) continue;
+    let r;
+    try { r = await ttsSynthKeyed(p, { model: TTS_DEFAULT_MODEL, voice: wantVoice || 'Umbriel', input, text, style, key }); }
+    catch (e) { r = { ok: false, reason: (e && e.message) || String(e) }; }
+    if (r && r.ok && r.buf && r.buf.length) return { ok: true, buf: r.buf, ext: r.ext, mime: r.outType, provider: p };
+    reasons.push(p + ': ' + ((r && r.reason) || 'failed'));
+  }
+  if (edgetts.enabled()) {
+    // Edge names voices 'en-US-ChristopherNeural'. A voice the agent picked for a KEYED provider ('Umbriel')
+    // is meaningless here and would fail the whole synthesis, so it is dropped rather than forwarded — the
+    // floor speaks in its default voice instead of not speaking at all.
+    const edgeVoice = /^[a-z]{2}-[A-Za-z]{2,8}-\w+$/.test(wantVoice) ? wantVoice : '';
+    try {
+      const buf = await edgetts.synth(text, edgeVoice ? { nowMs: Date.now(), voice: edgeVoice } : { nowMs: Date.now() });
+      if (buf && buf.length) return { ok: true, buf: buf, ext: 'mp3', mime: 'audio/mpeg', provider: 'edge' };
+      reasons.push('edge: empty audio');
+    } catch (e) { reasons.push('edge: ' + ((e && e.message) || e)); }
+  } else reasons.push('edge: disabled');
+  return { ok: false, reason: reasons.join('; ') || 'this station holds no voice-capable credential' };
+}
+
 async function handleTts(req, res) {
   const fallback = (reason) => { console.error('[tts] fallback →', reason); res.writeHead(200, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }); res.end(JSON.stringify({ fallback: true, reason })); };
   let body;
@@ -12213,12 +14052,16 @@ async function writeMemoryRecord(agentId, prop, opts) {
   await notebookStore.update('notebook:' + agentId, (stored) => {
     const list = Array.isArray(stored) ? stored : [];
     writtenId = memcore.nextNoteId(list);   // collision-proof (positional length reuses a slot freed by forget)
-    rec = recordFromProposal(prop || {}, { now: Date.now(), runId: runId || (prop && prop.sourceRunId), id: writtenId, content });
+    rec = recordFromProposal(prop || {}, { now: Date.now(), runId: runId || (prop && prop.sourceRunId), id: writtenId, content, origin: opts.origin });
     if (trustDelta) rec.trust = memcore.nextTrust(rec.trust, trustDelta);   // M-mem.6: keep/edit seeds real trust; silent auto-save leaves it neutral
     list.push(rec);
     return list;
   });
   chanEmit('memory.write', { agentId, runId: runId || rec.sourceRunId || writtenId, id: writtenId, kind: rec.kind, scope: rec.scope });
+  // HOOKS — on_memory_write, at the OTHER path that commits a record (the silent auto-save + the Keep/Edit
+  // turn-in both land here, not in notebook.write). Both sites fire it or the event would be true only half
+  // the time, which is worse than not offering it.
+  try { hookSpine.invoke('on_memory_write', { session_id: runId || '', extra: { agent_id: agentId, id: writtenId, kind: rec.kind, scope: rec.scope, source: 'turn-in' } }); } catch (_) {}
   // QUEST V2 §A — the FACT-contract sweep, wired at the ONE server-side path that commits a memory record
   // (silent auto-save + Keep/Edit turn-in both land here): the durable record IS the proof the harness learned
   // it. A fact key matches when it is the record's id, equals the committed content, or appears verbatim inside
@@ -12285,15 +14128,22 @@ async function handleMemoryTurnin(req, res) {
   }
 
   const batch = proposalsByRun.get(runId);
-  const prop = batch && batch.agentId === agentId && batch.proposals.find(p => p.id === id);
-  if (!prop) return json(404, { error: 'no such proposal (it may have expired)' });
+  const live = batch && batch.agentId === agentId && batch.proposals.find(p => p.id === id);
   // AUTO-SAVED items ride the same stash (saved:true, carrying a REAL notebook/skill id) so the frontend can fetch
   // the receipt batch — but they are already written. A keep/edit here would mint a DUPLICATE record; a discard
   // would denylist the text while the record silently survives. Only veto (handled above) may target them.
-  if (prop.saved) return json(409, { error: 'already saved — use verdict veto to undo it' });
-  // resolved either way — drop it from the pending batch (and the batch entry when it empties)
-  batch.proposals = batch.proposals.filter(p => p.id !== id);
-  if (!batch.proposals.length) { proposalsByRun.delete(runId); if (latestProposalRun.get(agentId) === runId) latestProposalRun.delete(agentId); }
+  if (live && live.saved) return json(409, { error: 'already saved — use verdict veto to undo it' });
+  // Clear the DURABLE queue first, and fall back to it for the proposal body: a deck raised by an unattended run
+  // and answered after a restart has no in-memory batch left, and 404-ing there would silently discard a decision
+  // the Commander did make. takePending is idempotent, so the live path clears the queue on its way through.
+  const queued = await takePending(agentId, runId, id);
+  const prop = live || queued;
+  if (!prop) return json(404, { error: 'no such proposal (it may have expired)' });
+  // resolved either way — drop it from the in-memory batch too (and the batch entry when it empties)
+  if (batch && live) {
+    batch.proposals = batch.proposals.filter(p => p.id !== id);
+    if (!batch.proposals.length) { proposalsByRun.delete(runId); if (latestProposalRun.get(agentId) === runId) latestProposalRun.delete(agentId); }
+  }
 
   if (verdict === 'discard') {
     // §5.6 "discard = never again": no NOTEBOOK record is written, but the rejected text IS recorded to the
@@ -12306,7 +14156,7 @@ async function handleMemoryTurnin(req, res) {
   // verdict seeds real trust (fb.delta); a skill proposal becomes a saved skill instead of a note.
   const content = (verdict === 'edit' ? String(body.content != null ? body.content : prop.content) : prop.content).trim();
   const w = await writeMemoryRecord(agentId, prop, {
-    content, runId, trustDelta: fb.delta,
+    content, runId, trustDelta: fb.delta, origin: prop.origin,   // the surface that PROPOSED it, not the one approving it
     skillName: body.skillName || body.name, skillBody: body.skillBody || body.body, summary: body.summary
   });
   if (!w.ok) return json(400, { error: w.error || 'could not save that memory' });
@@ -12348,6 +14198,27 @@ function serveMemoryRecords(req, res) {
     const records = Array.isArray(raw) ? raw.map(r => redact(memcore.projectRecord(r, nowMs))) : [];
     json(200, { agentId: agent, records });
   } catch (e) { json(200, { records: [] }); }
+}
+
+/* GET /api/memory/pending?agent=<id> — high-stakes proposals still awaiting a Keep/Edit/Discard verdict, oldest
+   first, across ALL runs (the durable queue, not the per-run stash). This is the surface that makes unattended
+   reflection honest: a credential/PII/standing-instruction belief raised by a 3am routine is not silently kept and
+   not silently dropped — it waits here until the Commander decides. Each row carries its runId + id so the panel
+   can resolve it through the SAME POST /api/memory/turnin the live deck uses. Read-only; redacted on the way out
+   (defence-in-depth — the content already passed redact() at proposal time). */
+function servePending(req, res) {
+  const json = (code, obj) => respondJson(res, code, obj);
+  try {
+    const u = new URL(req.url, 'http://127.0.0.1');
+    const agent = u.searchParams.get('agent') || 'agent';
+    if (!isAgentId(agent)) return json(403, { error: 'forbidden' });
+    const rows = listPending(agent).map(p => redact({
+      runId: p.runId || '', id: p.id || '', kind: p.kind || 'note',
+      content: String(p.content || ''), scope: p.scope || 'global',
+      origin: p.origin || 'commander', createdAt: p.createdAt || 0
+    }));
+    json(200, { agentId: agent, pending: rows });
+  } catch (e) { json(200, { pending: [] }); }
 }
 
 // GET /api/memory/declined?agent=<id> — the permanent reject-list: beliefs the Commander Discarded, which

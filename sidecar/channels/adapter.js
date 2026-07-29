@@ -118,7 +118,19 @@
 
     function dispatch(raw) {
       let n;
-      try { n = normalize(raw); } catch (e) { return; }   // a malformed update is skipped, never crashes the loop
+      try { n = normalize(raw); }
+      catch (e) {
+        /* A malformed update must be SKIPPED — which means getting past it, not just declining to handle it.
+           Returning here without advancing left `offset` pinned to the bad update, and since getUpdates keeps
+           returning everything at-or-after `offset` until a higher one confirms it, the poll loop would re-fetch
+           and re-throw on the same update forever: a hot spin against the Bot API with the channel permanently
+           deaf to every message behind it. Advance past it from the RAW id (the only field we still trust) so
+           one unparseable update costs one dropped message instead of the whole channel. */
+        const bad = raw && raw.update_id;
+        if (Number.isFinite(bad)) offset = Math.max(offset, bad + 1);
+        try { console.error('[' + name + '] unparseable update ' + String(bad) + ' skipped:', (e && e.message) || e); } catch (_) {}
+        return;
+      }
       if (!n) return;                                       // non-text / uninteresting update
       if (Number.isFinite(n.offset)) offset = Math.max(offset, n.offset + 1);   // advance so each update is processed once
       if (n.message) {

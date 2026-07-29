@@ -399,7 +399,9 @@
   </header>
 
   <aside id="left">
-    <h3>▮ CREW<span class="crew-h3-right"><span class="h3-aux" id="crew-n"></span><button id="crew-hide" class="crew-hide" type="button" title="Hide the crew rail" aria-label="Hide the crew rail" aria-expanded="true">◂</button></span></h3>
+    <!-- The head carried an "N AGENTS" count that #crew-sum already implied one panel lower
+         ("0 WORKING / 2 IDLE" totals the same roster and says more). Dropped 2026-07-27 — one fact, one place. -->
+    <h3>▮ CREW<span class="crew-h3-right"><button id="crew-hide" class="crew-hide" type="button" title="Hide the crew rail" aria-label="Hide the crew rail" aria-expanded="true">◂</button></span></h3>
     <ul id="crew"></ul>
     <div id="crew-sum"></div>
     <div id="ws-wrap">
@@ -458,7 +460,12 @@
            On its OWN row so the message always spans the panel and a long message stays fully visible while typing. -->
       <div class="chat-editline">
         <span class="prompt">&gt;</span>
-        <textarea id="chat-input" rows="1" maxlength="4000" placeholder="speak to your agent… ( / for commands )" autocomplete="off" aria-label="Message your agent" aria-controls="chat-slash" aria-expanded="false" aria-autocomplete="list"></textarea>
+        <!-- PLACEHOLDER WIDTH LAW: the composer's inner text width at the DEFAULT 360px panel is ~217px
+             (VT323 16px). The old copy "speak to your agent… ( / for commands )" measured 250px and clipped
+             to "speak to your agent… ( / for" — cutting off the ONLY in-app hint that slash commands exist.
+             Any future edit must re-measure against that budget; SEND cannot give the space back (its label
+             is drawn by .chat-send ::before/::after brackets, so hiding it renders an empty "[ ]"). -->
+        <textarea id="chat-input" rows="1" maxlength="4000" placeholder="speak to your agent · / commands" autocomplete="off" aria-label="Message your agent" aria-controls="chat-slash" aria-expanded="false" aria-autocomplete="list"></textarea>
         <!-- SEND: an explicit send affordance beside Enter (Enter sends · Shift+Enter = newline). chat.js wires it to submitComposer(). -->
         <button id="chat-send" class="chat-send" type="button" title="Enter sends · Shift+Enter = newline" aria-label="Send message"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5V9.2l6-1.2-6-1.2V2.5L14 8z" fill="currentColor"/></svg><span class="cs-label">SEND</span></button>
       </div>
@@ -470,8 +477,13 @@
       <button id="chat-stop" class="chat-stop" type="button" title="Stop the running turn (Esc)" aria-label="Stop the running turn" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.1" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="5.4" y="5.4" width="5.2" height="5.2" rx="1" fill="currentColor"/></svg></button>
       <!-- ATTACH: open the file picker; also served by paste + drag-drop onto the composer (chat.js) -->
       <button id="chat-attach" class="chat-attach-btn" type="button" title="Attach a photo or file" aria-label="Attach a photo or file"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M11.6 5 6.9 9.7a1.5 1.5 0 0 0 2.1 2.1l4.9-4.8a2.9 2.9 0 0 0-4.1-4.1L4.9 7.8a4.3 4.3 0 0 0 6.1 6.1l4.2-4.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="miter"/></svg></button>
-      <button id="model-dock-toggle" class="model-dock-toggle" type="button" title="Model selector" aria-label="Model selector" aria-haspopup="dialog" aria-expanded="false">
-        <span class="model-dock-sigil" aria-hidden="true"><svg viewBox="0 0 16 16"><rect x="4.4" y="4.4" width="7.2" height="7.2" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="6.7" y="6.7" width="2.6" height="2.6" fill="currentColor"/><g stroke="currentColor" stroke-width="1.2"><path d="M6 4.4V2.2"/><path d="M10 4.4V2.2"/><path d="M6 13.8v-2.2"/><path d="M10 13.8v-2.2"/><path d="M4.4 6H2.2"/><path d="M4.4 10H2.2"/><path d="M13.8 6h-2.2"/><path d="M13.8 10h-2.2"/></g></svg></span><span id="model-dock-effort-chip" class="model-dock-effort-chip">MED</span>
+      <!-- data-no-tip + NO title: this owns the richer .model-dock-tip, so the station tooltip must not
+           double up, and a leftover title= would still let the OS paint its own bubble here. aria-label
+           carries the accessible name the title used to duplicate. -->
+      <button id="model-dock-toggle" class="model-dock-toggle" type="button" data-no-tip aria-label="Model selector" aria-haspopup="dialog" aria-expanded="false">
+        <!-- no sigil: the model NAME is the chip's identity. The name span is injected by modeldock.js
+             before this effort chip, so the resting chip reads MODEL · TIER. -->
+        <span id="model-dock-effort-chip" class="model-dock-effort-chip">MED</span>
       </button>
       <div id="model-dock" class="model-dock" role="dialog" aria-label="Model selector" hidden>
         <div class="model-dock-head">
@@ -520,11 +532,13 @@
       <div class="bb-menu" role="menu">
         <div class="bb-menu-h" aria-hidden="true">▤ WORK — what the crew is doing</div>
         <!-- WORK menu, one axis per entry (UX confusion audit 2026-07-15): RECIPES = WHAT to run,
-             ROUTINES = WHEN it runs, TASKS = WHERE live work sits, QUESTS = progress only. -->
+             ROUTINES = WHEN it runs, LOOPS = UNTIL it is done, TASKS = WHERE live work sits,
+             QUESTS = progress only. -->
         <button class="bb" data-term="tasks" data-hint="task"><span class="bb-i">☑</span><span class="bb-tx"><b>TASKS</b><small>where all work lives — queued, running &amp; done</small></span></button>
         <button class="bb" data-term="deliverables" data-hint="deliverable"><span class="bb-i">▣</span><span class="bb-tx"><b>DELIVERABLES</b><small>outputs, Workshop builds &amp; cleanup</small></span></button>
         <button class="bb" id="bb-missions" data-hint="recipe"><span class="bb-i">❒</span><span class="bb-tx"><b>RECIPES</b><small>ready-made jobs to launch — they land on TASKS</small></span></button>
         <button class="bb" data-term="routines" data-hint="routine"><span class="bb-i">⏱</span><span class="bb-tx"><b>ROUTINES</b><small>any job, put on a schedule</small></span></button>
+        <button class="bb" data-term="loops" data-hint="loop"><span class="bb-i">∞</span><span class="bb-tx"><b>LOOPS</b><small>any job, repeated until it’s done</small></span></button>
         <button class="bb" data-term="quests" data-hint="quest"><span class="bb-i">⚑</span><span class="bb-tx"><b>QUESTS</b><small>progress &amp; suggestions — not a second to-do list</small></span></button>
       </div>
     </div>
@@ -536,7 +550,7 @@
         <!-- direction-honest subtitles (audit finding 5): TOOLSETS = the agent's tools OUT (switches + MCP);
              CHANNELS = YOUR way in. SKILLS = the read-only "what can it do" view (switches live in TOOLSETS). -->
         <button class="bb" data-term="skills" data-hint="skill"><span class="bb-i">✦</span><span class="bb-tx"><b>SKILLS</b><small>what agents can do right now (switches: TOOLSETS)</small></span></button>
-        <button class="bb" data-term="connectors" data-hint="toolset"><span class="bb-i">⇄</span><span class="bb-tx"><b>TOOLSETS</b><small>the agent’s tools — switch families on/off, plug in services</small></span></button>
+        <button class="bb" data-term="connectors" data-hint="toolset"><span class="bb-i">⇄</span><span class="bb-tx"><b>ABILITIES</b><small>everything agents can do — toolsets, connectors, your own hooks &amp; plugins</small></span></button>
         <button class="bb" data-term="messaging" data-hint="channel"><span class="bb-i">✉</span><span class="bb-tx"><b>CHANNELS</b><small>your way in — talk to agents from Telegram, Slack, Discord</small></span></button>
       </div>
     </div>
@@ -612,6 +626,7 @@
 <script src="app/pride.js"></script><!-- pure lifetime-record engine (G3a): durable station pride counters (tasks/deliverables/routines/work-minutes/founded) -->
 <script src="app/profile.js"></script>
 <script src="app/worksignal.js"></script><!-- pure capability-usage histogram (adaptive recruitment): tool-lane EWMA read + per-lane task-tag volume -->
+<script src="app/topicmatch.js"></script><!-- pure learned-topic matcher (interests histogram → every ranked shelf): MUST load before recruiter.js/recipes.js, which bind it at load -->
 <script src="app/recruiter.js"></script><!-- pure adaptive-recruitment matcher: worksignal+profile+dossier+roster → which NEW class to recruit + honest why -->
 <script src="app/prospect.js"></script><!-- pure prospect generator: constrained draft directive + hard-validating parse (station authors bespoke new specs) -->
 <script src="app/dossier.js"></script>
@@ -650,6 +665,7 @@
 <script src="app/glossary.js"></script><!-- UX Wave-0: term -> one-sentence beginner map (data source for the hint layer) -->
 <script src="app/hint.js"></script><!-- UX Wave-0: shared data-hint tooltip layer (delegation → late-rendered windows work); loads after glossary.js -->
 <script src="app/armconfirm.js"></script><!-- UX Wave-0: reusable 2-step arm/confirm helper (opt-in; existing call sites unchanged) -->
+<script src="app/tooltip.js"></script><!-- station tooltip: adopts every [title] so the OS never paints its own bubble; self-starts, nothing to call -->
 <script src="app/agentid.js"></script>
 <script src="app/workstreams.js"></script>
 <script src="app/projects.js"></script>
@@ -671,6 +687,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/recipe-catalog/ops.js"></script>
 <script src="app/recipe-catalog/index.js"></script><!-- aggregates every recipe-catalog module into one array — MUST load before recipes.js, which consumes it -->
 <script src="app/recipes.js"></script>
+<script src="app/loop-templates.js"></script><!-- LOOP SHAPES — the build/test/verify, sweep and research templates windows/loops.js renders -->
 <script src="app/classicons.js"></script>
 <script src="app/modeldock.js"></script>
 <script src="app/modelpicker.js"></script>
@@ -688,6 +705,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/windows/logbook.js"></script><!-- LOGBOOK — per-agent run history (RUNS · SLAG · INSIGHTS console) -->
 <script src="app/windows/outbox.js"></script><!-- OUTBOX — FINISHED WORK: uncollected finished runs, readable + rateable accordion -->
 <script src="app/windows/routines.js"></script><!-- ROUTINES — scheduled autonomous runs (thin CRUD client over /api/cron) -->
+<script src="app/windows/loops.js"></script><!-- LOOPS — standing objectives (thin polling client over /api/loops); needs loop-templates.js above -->
 <script src="app/windows/connectors.js"></script><!-- TOOLSETS & CONNECTORS — toolset kill-switches, MCP manager, catalog + service keys (Spotify flow embedded) -->
 <script src="app/windows/messaging.js"></script><!-- CHANNELS — messaging platforms catalog (Telegram/Discord/Slack/Matrix/Signal cards) -->
 <script src="app/navdock.js"></script>
@@ -749,6 +767,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/confbeats.js"></script><!-- confidence narrative beats (G3a): fire-once calibration-complete + TRUSTED spoken moments (own key) -->
 <script src="app/bottlestore.js"></script><!-- R5 "bottle a run": post-run offer to save a 👍-rated interactive run as a custom recipe (own key, one beat slot, dismiss=stop-forever) -->
 <script src="app/resummonstore.js"></script><!-- P3.1 "run it again?": post-run offer to re-run a 👍-rated run's shape — pre-fills a fresh run (agent + directive), never auto-runs (own key, one beat slot, dismiss=stop-forever) -->
+<script src="app/logoclip.js"></script><!-- brand-mark occlusion geometry: subtracts the floating-window rects from the z960 #logo so a panel dragged into the top-left covers it instead of bleeding through (BEFORE app.js, which calls LogoClip.clipFor) -->
 <script src="app/app.js"></script>
 <script src="app/keycta.js"></script><!-- cold-start honesty: after a KEYLESS awakening, one standing world banner "agent is awake but has no key" → SETTINGS; pure projection of Harness.hasStoredCredential, vanishes the instant a key lands (after app.js so App/Harness/StationUI exist) -->
 <script src="app/topbar.js"></script><!-- topbar instrument cluster: read-only STATION-XP + live SPEND-TODAY wiring (after app.js so Harness/Xp/XpStore/U exist) -->

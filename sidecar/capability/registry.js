@@ -69,6 +69,12 @@
       // web_request calls a third-party API AS the Commander (it spends a stored key), so unlike the two
       // keyless readers above it always asks. Its unattended use is additionally gated per-key.
       { capId: 'web', tool: 'web_request', scope: 'execute', requiresConsent: true, network: true },
+      // The INTEGRATION readout that keeps web_request honest: which connectors/keys are live, and which vetted
+      // ones the Commander could add but has not. Rides `dish` because web_request is the route a key is actually
+      // spent through — a station with no dish has no reach to advertise. Local read, no network, no consent, no
+      // secret (names and env-var names only). NOT deferred: it is the cure for not knowing what exists, so it
+      // cannot itself be a tool the agent must already suspect exists to find. (see tools/builtin/connectors.js)
+      { capId: 'web', tool: 'connectors.list', scope: 'read', requiresConsent: false, network: false },
       // DEFERRED (`deferred: true`) — still GRANTED, just not advertised in every request. The browser family
       // alone is 29 tools / ~10.2KB of the 37.7KB of schemas re-sent on EVERY turn (measured at the wire), and
       // an agent needs about six of them to drive a page. A deferred tool stays fully dispatchable; the model
@@ -79,6 +85,17 @@
       { capId: 'web', tool: 'browser.navigate', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.snapshot', scope: 'read', requiresConsent: false, network: true },
       { capId: 'web', tool: 'browser.get_text', scope: 'read', requiresConsent: false, network: true },
+      /* NOT deferred, for the same measured reason browser.screenshot is not: a waiting tool the model
+         cannot see is a waiting tool it replaces with a guess, and the guess is the flake. It has to be
+         in the front row next to snapshot or it does not get used at the moment it is needed. */
+      { capId: 'web', tool: 'browser.wait', scope: 'read', requiresConsent: false, network: true },
+      { capId: 'web', tool: 'browser.find', scope: 'read', requiresConsent: false, network: true },
+      /* Deferred: browser.attach is a specialist door, not part of the ordinary browsing loop, and every
+         tool in the front row costs prompt weight on every single request. An agent that needs the
+         Commander's real signed-in browser will find it through tool.search when the task calls for it —
+         which is also the moment a human is around to answer its consent card. */
+      { capId: 'web', tool: 'browser.attach', scope: 'execute', requiresConsent: true, network: true, deferred: true },
+      { capId: 'web', tool: 'browser.detach', scope: 'execute', requiresConsent: false, network: true, deferred: true },
       { capId: 'web', tool: 'browser.console', scope: 'read', requiresConsent: false, network: true, deferred: true },
       // NOT deferred, and this was measured rather than reasoned. "Show me the page" is a headline request,
       // and a model that cannot see the tool does not always go looking: with browser.screenshot deferred,
@@ -116,6 +133,18 @@
       { capId: 'web', tool: 'browser.tab_close', scope: 'execute', requiresConsent: true, network: true, deferred: true },
       // Real-screen desktop.open is not an ordinary run capability. The implementation remains
       // registered inertly for a future separate attended host channel, never a placed dish.
+      // ---- COMMS: OUTBOUND messaging reach (see tools/builtin/comms.js) ----
+      // The dish is the station's antenna: it already means "this agent can reach OUT past the station walls".
+      // Fetching a page and transmitting a message are the same physical claim on that prop, so outbound
+      // messaging hangs here rather than on a new object type. It is its OWN capId — NOT 'web' — precisely so a
+      // Commander who wants search-and-browse without letting an agent message people can switch COMMS off
+      // alone in the TOOLSETS console (a shared capId would make that impossible; see toolsets.js).
+      { capId: 'comms', tool: 'channel.targets', scope: 'read', requiresConsent: false, network: false },
+      // channel.send carries content OUT to a third party under the Commander's own bot identity — the single
+      // most consequential outward action in the tool surface and the obvious prompt-injection exfiltration
+      // target. execute + consent, like web_request and the Spotify controls: it asks every time until the
+      // Commander grants it, and an autonomous run therefore cannot spend it off a cached grant.
+      { capId: 'comms', tool: 'channel.send', scope: 'execute', requiresConsent: true, network: true }
     ],
     // CONNECTORS: a 'connector' object is a DYNAMIC capability — its grants are the tools its configured MCP
     // server reports at runtime (tools/list), which can't be statically listed here. The connector manager
@@ -140,6 +169,10 @@
       { capId: 'workbench', tool: 'browser.test_input', scope: 'execute', requiresConsent: false, network: false, deferred: true },
       { capId: 'workbench', tool: 'browser.test_state', scope: 'read', requiresConsent: false, network: false, deferred: true },
       { capId: 'workbench', tool: 'shell.bg.status', scope: 'read', requiresConsent: false, network: false },   // H2.2: inspect your background processes
+      { capId: 'workbench', tool: 'shell.bg.read', scope: 'read', requiresConsent: false, network: false },     // H2.3: page/search its output past the short tail
+      // H2.3: stdin. CONSENT-GATED unlike its bg siblings — a line sent to a shell or REPL executes like a
+      // command, so it carries shell.exec's gate, not shell.bg.status's.
+      { capId: 'workbench', tool: 'shell.bg.write', scope: 'execute', requiresConsent: true, network: true },
       { capId: 'workbench', tool: 'shell.bg.kill', scope: 'write', requiresConsent: false, network: false }      // H2.2: stop a background process you started
     ],
     // ORCHESTRATOR (Stage 2): grants team.dispatch — the LEAD delegates subtasks to summoned worker agents,
@@ -162,14 +195,24 @@
       // ROUTINES panel), never through OS crontab / Windows Task Scheduler. Lead-only like the rest of
       // orchestration; creation is consent-gated because it persists autonomous future work.
       { capId: 'orchestrator', tool: 'routine.list', scope: 'read', requiresConsent: false, network: false },
-      { capId: 'orchestrator', tool: 'routine.create', scope: 'write', requiresConsent: true, network: false }
+      { capId: 'orchestrator', tool: 'routine.create', scope: 'write', requiresConsent: true, network: false },
+      // routine.manage — edit/pause/resume/delete/queue-a-fire on an EXISTING routine. Consent-gated for the
+      // same reason create is: an edit is the same surface as a create (a clean routine can be patched into a
+      // standing payload), and pausing or deleting changes what the station does unattended. One action-shaped
+      // tool rather than five verbs, because every schema here is re-sent on every turn (see the tool file).
+      { capId: 'orchestrator', tool: 'routine.manage', scope: 'write', requiresConsent: true, network: false }
     ],
     // STUDIO (media skills): text->image generation + image vision analysis, both on the SAME BYOK OpenRouter
     // key the agent already uses (no new provider). image_generate WRITES a file into the agent's workspace, so
     // it is consent-gated like fs.write; image_analyze only READS an image and returns text (consent-free).
     studio: [
       { capId: 'studio', tool: 'image_generate', scope: 'write', requiresConsent: true, network: true },
-      { capId: 'studio', tool: 'image_analyze', scope: 'read', requiresConsent: false, network: true }
+      { capId: 'studio', tool: 'image_analyze', scope: 'read', requiresConsent: false, network: true },
+      // voice_generate SPEAKS to a file — the studio's third skill. Consent-gated for the same reason
+      // image_generate is: it writes into the workspace. It rides the station's existing TTS ladder (the keyed
+      // neural chain, then the free keyless Edge floor), so it needs no studio-specific credential — but it
+      // does reach the network on the keyed legs. (see tools/builtin/voice.js)
+      { capId: 'studio', tool: 'voice_generate', scope: 'write', requiresConsent: true, network: true }
     ],
     // JUKEBOX (Spotify): querying playback/library is consent-free (read); CONTROLLING playback is an outward
     // action on the user's account/device, so it is execute + consent-gated. The OAuth session (PKCE, no secret)

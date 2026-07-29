@@ -3,7 +3,7 @@
    Toggled from the dock. Dims the live sim and drops the Commander into an in-fiction
    station-editor over the SAME procedural art: pan/zoom camera, phosphor build grid,
    a ghost preview that snaps to tiles and tints green/red via the model's validators,
-   and an in-fiction toolbar — PLACE ROOM · HALLWAY · PAINT · MOVE · RECLAIM · UNDO.
+   and an in-fiction toolbar — PLACE ROOM · HALLWAY · SURFACE · MOVE · RECLAIM · UNDO.
 
    It reads + mutates the canonical WorldModel station (the single source of truth) and
    re-bakes via StationBake on every change, then persists through the injected save hook.
@@ -14,7 +14,11 @@ const Build = (() => {
   const TOOLS = [
     { id: 'room', key: '1', label: '▦ ROOM', hint: 'drag on the grid to place a room', cursor: 'crosshair' },
     { id: 'hall', key: '2', label: '═ HALLWAY', hint: 'drag along an axis to run a corridor — any length', cursor: 'crosshair' },
-    { id: 'paint', key: '3', label: '▧ PAINT', hint: 'click a room to lay the selected deck · drag to paint single tiles in the colour', cursor: 'cell' },
+    // 'paint' stays the INTERNAL id (the drag mode, the model's paintTiles verb, the key map and every
+    // saved reference key off it) — only the display name changed. The tool stopped being "paint" the
+    // day it grew wall cladding and a material axis: it now sets what a room's surfaces are MADE OF,
+    // deck and walls, so it's SURFACE. Same law as the skynet.* keys: rename the label, never the key.
+    { id: 'paint', key: '3', label: '▧ SURFACE', hint: 'click a room to lay the selected deck · drag to paint single tiles in the colour', cursor: 'cell' },
     { id: 'move', key: '4', label: '✥ MOVE', hint: 'drag a room to relocate it', cursor: 'move' },
     { id: 'reclaim', key: '5', label: '⌫ RECLAIM', hint: 'click a room, prop, or belt to tear it down · drag across a belt to clear the whole run (UNDO restores it)', cursor: 'not-allowed' },
     { id: 'prop', key: '6', label: '⚇ PROP', hint: 'click to place furniture · agents walk around it', cursor: 'crosshair' },
@@ -36,7 +40,9 @@ const Build = (() => {
   const VAL_LABEL = {
     ORPHAN_SOURCE: 'NOT CONNECTED — BELT: CLICK IT, THEN A BAY', ORPHAN_BAY: 'NOT ON THE LINE', BAY_NOT_FED: 'NOT CONNECTED — BELT: CLICK IT, THEN A MACHINE',
     CYCLE: 'LOOP! — BREAK THE CIRCLE', FILTER_NO_DEFAULT: 'NO DEFAULT LANE — CLICK', DUP_AGENT: 'DUP AGENT — ONE BAY EACH',
-    UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 LANES'
+    UNBOUND_BAY: 'NO AGENT — CLICK', SPLIT_ONE_LANE: 'SPLITTER NEEDS 2 LANES',
+    // the docks feed each OTHER: no belt loop anywhere, but the work line would run forever, paying each lap
+    CHAIN_CYCLE: 'WORK LINE LOOPS — CUT ONE HANDOFF'
   };
   const esc = s => U.esc(s == null ? '' : s);   // one complete impl (escapes & < > " ' — value="…" attrs here stay injection-safe)
 
@@ -46,7 +52,7 @@ const Build = (() => {
 
   // interaction state
   let tool = 'room', kind = 'hab', style = 'cobalt', mat = 'plate', hallWidth = 2, propType = 'desk', propCat = 'workstation', propTier = 'functional';
-  // PAINT targets one surface at a time — the deck or the walls — so the palette stays two rows
+  // SURFACE targets one surface at a time — the deck or the walls — so the palette stays two rows
   // instead of four. 'follow' wall colour = inherit the room's floor hue (the default).
   let paintTarget = 'floor', wallMat = 'plating', wallStyle = 'follow';
   let drag = null, hoverRoomId = null, hoverPropId = null, hoverTile = null, lastClient = { x: 0, y: 0 }, spaceHeld = false;
@@ -125,7 +131,7 @@ const Build = (() => {
       <canvas class="refit-canvas"></canvas>
       <div class="refit-top">
         <span class="refit-title">▮ REFIT MODE</span>
-        <span class="refit-sub" id="refit-sub">DRAG TO PLACE ROOMS · RUN CORRIDORS · PAINT DECKS</span>
+        <span class="refit-sub" id="refit-sub">DRAG TO PLACE ROOMS · RUN CORRIDORS · SURFACE DECKS &amp; WALLS</span>
         <span class="refit-spacer"></span>
         <button class="bb sm" id="refit-help" title="how to build">? HELP</button>
         <button class="bb sm" id="refit-undo" title="undo (Ctrl+Z)">↶ UNDO</button>
@@ -288,21 +294,32 @@ const Build = (() => {
       pal.appendChild(grid);
       try { paintThumbs(performance.now()); } catch (e) {}   // first frame now, so the gallery isn't blank for a beat
     } else if (tool === 'paint') {
-      // TWO AXES, TWO ROWS: the MATERIAL (what the deck is made of) and the HUE (what colour it
-      // is). They compose — every material renders in whatever colour is selected — so the
-      // Commander picks a deck the same way you'd pick flooring: the stuff, then the shade.
+      /* SURFACE — TWO AXES, TWO SECTIONS: the MATERIAL (what the surface is made of) and the HUE
+         (what colour it is). They compose — every material renders in whatever colour is selected
+         — so the Commander picks a room's finish the way you'd pick flooring: the stuff, then the
+         shade. Both sections speak the SAME card language as the prop gallery (a dark inset chip
+         with a phosphor rim). They used to be bare <button>s with only a border declared, which
+         let the UA paint its own grey buttonface + Arial behind every material name — raw HTML
+         chrome sitting inside a CRT panel. Never ship a bare button here. */
       const walls = paintTarget === 'walls';
       paletteLabel = walls ? 'WALLS' : 'DECK';
-      const row = (caption) => {
-        const wrap = document.createElement('div'); wrap.className = 'refit-palrow refit-propcats';
-        const cap = document.createElement('div'); cap.className = 'refit-palcap'; cap.textContent = caption;
-        wrap.appendChild(cap);
+      const styles = station.FLOOR_STYLES || {};
+      const matCatalog = walls ? (station.WALL_MATERIALS || {}) : (station.FLOOR_MATERIALS || {});
+      const order = walls ? (station.WALL_ORDER || Object.keys(matCatalog)) : (station.MAT_ORDER || Object.keys(matCatalog));
+      const curMat = walls ? wallMat : mat, curHue = walls ? wallStyle : style;
+      // a section caption that NAMES the live selection, so the chosen recipe and tone are readable
+      // as WORDS and not only as a lit chip (21 hues can't each carry a label without a wall of text)
+      const cap = (caption, value) => {
+        const wrap = document.createElement('div'); wrap.className = 'refit-palcap';
+        const k = document.createElement('span'); k.className = 'refit-palcap-k'; k.textContent = caption;
+        wrap.appendChild(k);
+        if (value) { const v = document.createElement('span'); v.className = 'refit-palcap-v'; v.textContent = value; wrap.appendChild(v); }
         pal.appendChild(wrap);
-        return wrap;
       };
+
       // TARGET — deck or walls. Two surfaces, one palette; reuses the tier-toggle idiom.
       const tgt = document.createElement('div'); tgt.className = 'refit-tiers';
-      tgt.setAttribute('aria-label', 'Paint target');
+      tgt.setAttribute('aria-label', 'Surface target');
       [['floor', '▧ DECK'], ['walls', '▤ WALLS']].forEach(([id, label]) => {
         const b = document.createElement('button');
         b.type = 'button';
@@ -315,61 +332,73 @@ const Build = (() => {
       });
       pal.appendChild(tgt);
 
-      const matRow = row('MATERIAL');
-      const catalog = walls ? (station.WALL_MATERIALS || {}) : (station.FLOOR_MATERIALS || {});
-      const order = walls ? (station.WALL_ORDER || Object.keys(catalog)) : (station.MAT_ORDER || Object.keys(catalog));
+      cap('MATERIAL', (matCatalog[curMat] && matCatalog[curMat].label) || '');
+      const matGrid = document.createElement('div'); matGrid.className = 'refit-matgrid';
+      matGrid.setAttribute('aria-label', walls ? 'Wall materials' : 'Deck materials');
       order.forEach(mid => {
-        const def = catalog[mid];
+        const def = matCatalog[mid];
         if (!def) return;
-        const active = walls ? (mid === wallMat) : (mid === mat);
+        const active = mid === curMat;
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = 'refit-swatch refit-matswatch' + (active ? ' active' : '');
+        b.className = 'refit-mattile' + (active ? ' active' : '');
         b.dataset.mat = mid;
         b.dataset.surface = walls ? 'wall' : 'floor';
         b.setAttribute('aria-pressed', active ? 'true' : 'false');
-        b.appendChild(walls ? wallSwatchCanvas(mid, wallBaseFor(mid)) : matSwatchCanvas(mid, styleBaseFor(mid)));
+        // a MATERIAL patch big enough to READ: five tiles across by three down clears a full cell
+        // of every recipe in the catalog (SPINE's 4x3 bolted bay is the widest), so the bays, the
+        // grate holes and PLANK's 5x1 boards are told apart at a glance. Drawn 1:1 at the bake's
+        // own 12px tile — pixel art is never scaled, and ten patches must still fit without the
+        // dock growing into a full-height wall.
+        b.appendChild(walls ? wallSwatchCanvas(mid, wallBaseFor(mid), 5, 30) : matSwatchCanvas(mid, styleBaseFor(mid), 5, 3));
         const nm = document.createElement('span'); nm.className = 'refit-matname'; nm.textContent = def.label;
         b.appendChild(nm);
         b.title = def.label + (walls ? ' walls' : ' deck');
         // picking a material also moves the hue to the one it was drawn for (wood wants a wood
         // tone) — visibly, in the row below, so the Commander can still override it right after.
         b.onclick = () => {
-          if (walls) { wallMat = mid; if (def.suggest && station.FLOOR_STYLES[def.suggest]) wallStyle = def.suggest; }
-          else { mat = mid; if (def.suggest && station.FLOOR_STYLES[def.suggest]) style = def.suggest; }
+          if (walls) { wallMat = mid; if (def.suggest && styles[def.suggest]) wallStyle = def.suggest; }
+          else { mat = mid; if (def.suggest && styles[def.suggest]) style = def.suggest; }
           renderPalette(); setHint(); sfx('click');
         };
-        matRow.appendChild(b);
+        matGrid.appendChild(b);
       });
+      pal.appendChild(matGrid);
 
-      const hueRow = row('COLOUR');
+      cap('COLOUR', walls && wallStyle === 'follow' ? 'AUTO' : ((styles[curHue] && styles[curHue].label) || ''));
+      const hueGrid = document.createElement('div'); hueGrid.className = 'refit-huegrid';
+      hueGrid.setAttribute('aria-label', walls ? 'Wall colours' : 'Deck colours');
       if (walls) {
-        // AUTO — walls inherit the room's deck hue. This is the default and the one most people
-        // want, so it leads the row rather than hiding at the end.
+        // AUTO — walls inherit the room's deck hue. It's the default and the one most people want,
+        // so it leads. It is NOT a colour but a MODE ("whatever the floor is"), which is why it
+        // takes its own full-width row instead of standing in the grid as a 22nd chip.
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = 'refit-swatch refit-matswatch' + (wallStyle === 'follow' ? ' active' : '');
+        b.className = 'refit-hue refit-hue-auto' + (wallStyle === 'follow' ? ' active' : '');
         b.dataset.hue = 'follow';
         b.setAttribute('aria-pressed', wallStyle === 'follow' ? 'true' : 'false');
-        b.appendChild(wallSwatchCanvas(wallMat, null));
-        const nm = document.createElement('span'); nm.className = 'refit-matname'; nm.textContent = 'AUTO';
+        b.appendChild(wallSwatchCanvas(wallMat, null, 3, 24));
+        const nm = document.createElement('span'); nm.className = 'refit-matname'; nm.textContent = 'AUTO — MATCH THE DECK';
         b.appendChild(nm);
         b.title = 'match the room’s deck colour';
         b.onclick = () => { wallStyle = 'follow'; renderPalette(); sfx('click'); };
-        hueRow.appendChild(b);
+        hueGrid.appendChild(b);
       }
-      Object.keys(station.FLOOR_STYLES).forEach(sid => {
-        const cur = walls ? wallStyle : style;
+      // every hue chip previews the CURRENTLY SELECTED MATERIAL in that tone, painted by the real
+      // bake — so the row answers "what does PLANK look like in COBALT?" instead of showing a flat
+      // colour the station will never actually render.
+      Object.keys(styles).forEach(sid => {
         const b = document.createElement('button');
         b.type = 'button';
-        b.className = 'refit-swatch' + (sid === cur ? ' active' : '');
+        b.className = 'refit-hue' + (sid === curHue ? ' active' : '');
         b.dataset.hue = sid;
-        b.setAttribute('aria-pressed', sid === cur ? 'true' : 'false');
-        b.appendChild(swatchCanvas(station.FLOOR_STYLES[sid].base));
-        b.title = station.FLOOR_STYLES[sid].label;
+        b.setAttribute('aria-pressed', sid === curHue ? 'true' : 'false');
+        b.appendChild(walls ? wallSwatchCanvas(wallMat, styles[sid].base, 3, 24) : matSwatchCanvas(mat, styles[sid].base, 3, 2));
+        b.title = styles[sid].label;
         b.onclick = () => { if (walls) wallStyle = sid; else style = sid; renderPalette(); sfx('click'); };
-        hueRow.appendChild(b);
+        hueGrid.appendChild(b);
       });
+      pal.appendChild(hueGrid);
     }
     if (label) label.textContent = paletteLabel || 'OPTIONS';
     if (section) section.classList.toggle('is-empty', !pal.children.length);
@@ -443,52 +472,48 @@ const Build = (() => {
     }
   }
 
-  // a tiny textured deck sample (so the swatch reads like the baked floor, not a flat chip)
-  function swatchCanvas(base) {
-    const c = document.createElement('canvas'); c.width = 24; c.height = 20;
-    const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
-    x.fillStyle = base; x.fillRect(0, 0, 24, 20);
-    x.fillStyle = U.shade(base, -0.3);
-    for (let i = 0; i <= 24; i += 6) x.fillRect(i, 0, 1, 20);
-    for (let j = 0; j <= 20; j += 6) x.fillRect(0, j, 24, 1);
-    x.fillStyle = U.shade(base, 0.22); x.fillRect(1, 1, 1, 1); x.fillRect(7, 7, 1, 1); x.fillRect(13, 13, 1, 1);
-    return c;
-  }
+  const SWATCH_TILE = 12;   // the bake's own tile size — samples are drawn 1:1, never scaled
 
-  // the hue a material's swatch previews in: its own suggested tone if it has one (wood in a wood
-  // colour), otherwise whatever hue is currently selected — so the chip shows what you'd get.
+  /* the hue a DECK material's chip previews in. The SELECTED material previews in the hue that is
+     actually selected: anything else lets a chip promise a look the deck won't deliver once you
+     override its suggested tone (pick PLANK, then COBALT, and a walnut chip is now a lie). An
+     UNSELECTED material previews in its own suggested tone, which stays honest because clicking it
+     MOVES the hue there — the chip is showing you what that click produces. */
   function styleBaseFor(mid) {
     const def = station.FLOOR_MATERIALS && station.FLOOR_MATERIALS[mid];
-    const sid = (def && def.suggest && station.FLOOR_STYLES[def.suggest]) ? def.suggest : style;
+    const sid = (mid !== mat && def && def.suggest && station.FLOOR_STYLES[def.suggest]) ? def.suggest : style;
     return (station.FLOOR_STYLES[sid] || station.FLOOR_STYLES.hull).base;
   }
   /* the material chip is rendered by the REAL bake (StationBake.sampleMaterial paints through the
      same per-tile painters the station uses), so a deck preview can never promise a look the
      station won't deliver. Falls back to the flat colour chip if the bake module isn't loaded. */
-  function matSwatchCanvas(mid, base) {
-    const c = document.createElement('canvas'); c.width = 40; c.height = 24;
+  function matSwatchCanvas(mid, base, cols, rows) {
+    const w = (cols || 4) * SWATCH_TILE, h = (rows || 2) * SWATCH_TILE;
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
     const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
-    x.fillStyle = base; x.fillRect(0, 0, 40, 24);
-    try { if (typeof StationBake !== 'undefined' && StationBake.sampleMaterial) StationBake.sampleMaterial(x, mid, base, 4, 2, 12); }
+    x.fillStyle = base; x.fillRect(0, 0, w, h);
+    try { if (typeof StationBake !== 'undefined' && StationBake.sampleMaterial) StationBake.sampleMaterial(x, mid, base, cols || 4, rows || 2, SWATCH_TILE); }
     catch (e) { /* a swatch must never break the palette */ }
     return c;
   }
 
-  // the hue a WALL swatch previews in. AUTO has no hue of its own, so it borrows the currently
-  // selected deck colour — which is exactly what "match the deck" will produce.
+  // the hue a WALL chip previews in — same honesty rule as styleBaseFor. AUTO has no hue of its
+  // own, so it borrows the currently selected deck colour, which is exactly what "match the deck"
+  // will produce.
   function wallBaseFor(mid) {
     const def = station.WALL_MATERIALS && station.WALL_MATERIALS[mid];
     if (wallStyle !== 'follow' && station.FLOOR_STYLES[wallStyle]) return station.FLOOR_STYLES[wallStyle].base;
-    const sid = (def && def.suggest && station.FLOOR_STYLES[def.suggest]) ? def.suggest : style;
+    const sid = (mid !== wallMat && def && def.suggest && station.FLOOR_STYLES[def.suggest]) ? def.suggest : style;
     return (station.FLOOR_STYLES[sid] || station.FLOOR_STYLES.hull).base;
   }
   // same contract as matSwatchCanvas: painted by the REAL wall recipes, never a hand-drawn mock
-  function wallSwatchCanvas(mid, base) {
-    const c = document.createElement('canvas'); c.width = 40; c.height = 26;
+  function wallSwatchCanvas(mid, base, cols, height) {
+    const w = (cols || 4) * SWATCH_TILE, h = height || 26;
+    const c = document.createElement('canvas'); c.width = w; c.height = h;
     const x = c.getContext('2d'); x.imageSmoothingEnabled = false;
     const b = base || wallBaseFor(mid);
-    x.fillStyle = b; x.fillRect(0, 0, 40, 26);
-    try { if (typeof StationBake !== 'undefined' && StationBake.sampleWall) StationBake.sampleWall(x, mid, b, 4, 26, 12); }
+    x.fillStyle = b; x.fillRect(0, 0, w, h);
+    try { if (typeof StationBake !== 'undefined' && StationBake.sampleWall) StationBake.sampleWall(x, mid, b, cols || 4, h, SWATCH_TILE); }
     catch (e) { /* a swatch must never break the palette */ }
     return c;
   }
@@ -506,7 +531,7 @@ const Build = (() => {
   function setHint(msg) {
     if (!hintEl) return;
     const t = TOOLS.find(x => x.id === tool);
-    // PAINT means two different gestures depending on which surface is targeted — say which
+    // SURFACE means two different gestures depending on which surface is targeted — say which
     let base = t ? t.hint : '';
     if (tool === 'paint') base = paintTarget === 'walls'
       ? 'click a room to clad its walls'

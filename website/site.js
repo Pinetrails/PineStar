@@ -2,7 +2,7 @@
 (function(){
   'use strict';
 
-  var FALLBACK_VERSION = '0.6.6';
+  var FALLBACK_VERSION = '0.6.8';
 
   // Community links — paste real URLs here and the DISCORD / X links appear
   // everywhere automatically. Empty string keeps them hidden (no dead links).

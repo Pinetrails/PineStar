@@ -105,7 +105,7 @@ const WorldModel = (() => {
      CRT phosphor + warm room-light pools read on top — their variety comes from spreading the HUE
      across the wheel, not from brightness. bone + onyx are the deliberate exceptions: the bright
      and near-black ends of the value range, for decks that want stark contrast. This catalog is the
-     sole source: add a colour here and it appears in the DECK PAINT palette AND as a room floor
+     sole source: add a colour here and it appears in the SURFACE palette's COLOUR row AND as a room floor
      style automatically. */
   const FLOOR_STYLES = {
     hull:     { base: '#33302a', label: 'HULL' },
@@ -145,9 +145,9 @@ const WorldModel = (() => {
      grate holes, wood grain, grass blades...). Both compose: every material derives its marks
      from the tile's own base via U.shade, so a TURF deck painted COBALT is blue grass — odd,
      but coherent and the user's call. `pitch` is the plate/plank cell in tiles; `suggest` is the
-     hue the PAINT palette pre-selects when you pick that material (a UI convenience only — the
+     hue the SURFACE palette pre-selects when you pick that material (a UI convenience only — the
      model never forces a colour). This catalog is the sole source: add a material here, give it
-     a recipe in stationbake, and it appears in the DECK MATERIAL palette automatically. */
+     a recipe in stationbake, and it appears in the SURFACE palette's MATERIAL row automatically. */
   const FLOOR_MATERIALS = {
     // the hab default since 2026-07-25 — see the note above deckSpine in stationbake.js
     spine: { label: 'SPINE',  pitch: [4, 3], suggest: null },
@@ -453,7 +453,7 @@ const WorldModel = (() => {
       return { ok: true };
     }
 
-    /* lay a whole deck — hue AND material — in ONE undo slot. This is what the REFIT PAINT tool
+    /* lay a whole deck — hue AND material — in ONE undo slot. This is what the REFIT SURFACE tool
        commits on a room click, so "undo" reverses the deck the Commander saw laid, not half of it.
        Either field may be omitted to leave that axis alone. */
     function setDeck(id, opts) {
@@ -1136,10 +1136,54 @@ const WorldModel = (() => {
        already owns any seat-type workstation. Falls back to the nearest valid spawn-room tile if the
        canonical spot is occupied; callers may still synthesize when even that fails (crowded floor). */
     const SEAT_WORKSTATIONS = { desk: 1, desk2: 1, console: 1, consoleL: 1, pixelrig: 1, bench: 1 };
+    // Is there anywhere to put the CHAIR? world.js seats a body on the tile row directly SOUTH of a
+    // workstation (PropAnchor's 'south' approach), so a desk whose whole south row is wall or blocking
+    // prop is a desk nobody can sit at. Pure geometry — the model still knows nothing about chairs.
+    function deskSeatFree(x, y, w) {
+      const sy = y + 1;
+      for (let sx = x; sx < x + w; sx++) {
+        if (!roomAt(sx, sy)) continue;
+        const pid = propAt(sx, sy);
+        if (pid) { const p = propById(pid); if (p && p.block !== false) continue; }
+        return true;
+      }
+      return false;
+    }
+    // Scan one room rect for a 2x1 desk spot, preferring one with a free seat row below it. Returns the
+    // seat-approachable spot when there is one, else the first merely-valid spot, else null. Rows are walked
+    // from y1+1 — the hero's own desk row — so a bank of seeded crew desks lines up WITH the starter desk
+    // instead of tucking under the north wall face the tall-walls bake raises along y1. y1 stays as a last
+    // resort (it is legal deck the Commander can build on) rather than being ruled out.
+    function deskSpotIn(r) {
+      let any = null;
+      const rows = [];
+      for (let y = r.y1 + 1; y <= r.y2; y++) rows.push(y);
+      rows.push(r.y1);
+      for (const y of rows)
+        for (let x = r.x1; x <= r.x2; x++) {
+          if (!canPlaceProp('desk', x, y, 2, 1).ok) continue;
+          if (deskSeatFree(x, y, 2)) return { x, y };
+          if (!any) any = { x, y };
+        }
+      return any;
+    }
     function ensureWorkstation(agentId) {
       const aid = String(agentId || '').trim();
       if (!aid || !AID_RE.test(aid)) return fail('BAD_AGENT');
-      if (doc.props.some(p => SEAT_WORKSTATIONS[p.t] && p.agentId === aid)) return { ok: true, existing: true };
+      const own = doc.props.find(p => SEAT_WORKSTATIONS[p.t] && p.agentId === aid);
+      if (own) return { ok: true, existing: true, id: own.id, agentId: aid, x: own.x, y: own.y, roomId: roomAt(own.x, own.y) };
+      // ADOPT BEFORE BUILDING. An UNBOUND workstation is dead furniture — no agent may walk to an unassigned
+      // capability prop (world.js mayTouchProp), so it grants nobody a seat. Two ways one appears: the Commander
+      // built a desk and never bound it, and deleteAgent unbinds (never demolishes) the props of a removed
+      // specialist. Without this, a summon → delete → summon cycle silently litters the spawn room with
+      // abandoned desks and eventually pushes the seeder into other rooms. Deliberately SPAWN-ROOM ONLY: a
+      // free desk the Commander built in some far lab is theirs to assign, and adopting it would land a
+      // newly-summoned specialist (and its whole zone/leash) somewhere they never asked for.
+      const adopt = doc.props.find(p => SEAT_WORKSTATIONS[p.t] && !p.agentId && roomAt(p.x, p.y) === doc.meta.spawnRoomId);
+      if (adopt) {
+        const bound = assignPropAgent(adopt.id, aid);
+        return bound.ok ? Object.assign({}, bound, { adopted: true, x: adopt.x, y: adopt.y, roomId: roomAt(adopt.x, adopt.y) }) : bound;
+      }
       const rm = doc.meta.spawnRoomId && doc.rooms[doc.meta.spawnRoomId];
       const r = rm && rm.rects && rm.rects[0];
       if (!r) return fail('NO_SPAWN_ROOM');
@@ -1147,16 +1191,23 @@ const WorldModel = (() => {
       let dtx = r.x1 + Math.max(1, Math.floor((r.x2 - r.x1) / 2));
       if (dtx + 1 > r.x2) dtx = Math.max(r.x1, r.x2 - 1);
       const dty = Math.min(r.y1 + 1, r.y2 - 1);
-      let spot = canPlaceProp('desk', dtx, dty, 2, 1).ok ? { x: dtx, y: dty } : null;
+      let spot = (canPlaceProp('desk', dtx, dty, 2, 1).ok && deskSeatFree(dtx, dty, 2)) ? { x: dtx, y: dty } : null;
+      if (!spot) spot = deskSpotIn(r);
+      // CREW SEEDING: the spawn room fills up once several summoned specialists each own a desk. A crowded
+      // spawn room must not strand the next one deskless while the rest of the station stands empty, so
+      // fall through to every OTHER room (spawn room stays first — the hero's seed never moves).
       if (!spot) {
-        for (let y = r.y1; y <= r.y2 && !spot; y++)
-          for (let x = r.x1; x <= r.x2 && !spot; x++)
-            if (canPlaceProp('desk', x, y, 2, 1).ok) spot = { x, y };
+        for (const id of doc.order) {
+          if (id === doc.meta.spawnRoomId) continue;
+          for (const rect of (doc.rooms[id] && doc.rooms[id].rects) || []) { spot = deskSpotIn(rect); if (spot) break; }
+          if (spot) break;
+        }
       }
       if (!spot) return fail('NO_ROOM_FOR_DESK');
       const res = addProp({ t: 'desk', x: spot.x, y: spot.y, w: 2, h: 1, block: true });
       if (!res.ok) return res;
-      return assignPropAgent(res.id, aid);
+      const bound = assignPropAgent(res.id, aid);
+      return bound.ok ? Object.assign({}, bound, { x: spot.x, y: spot.y, roomId: roomAt(spot.x, spot.y) }) : bound;
     }
 
     /* ---------- serialize / subscribe ---------- */

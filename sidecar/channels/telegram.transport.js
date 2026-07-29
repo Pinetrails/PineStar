@@ -14,10 +14,12 @@
    network under test and stays the lone ambient-I/O edge of the channel. Deterministic: no clock/rng/Date. */
 'use strict';
 (function (root, factory) {
-  const api = factory();
-  if (typeof module !== 'undefined' && module.exports) module.exports = api;
-  else { root.SK = root.SK || {}; root.SK.channels = root.SK.channels || {}; root.SK.channels.telegramTransport = api; }
-})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  if (typeof module !== 'undefined' && module.exports) module.exports = factory(require('./telegram.format.js'));
+  else {
+    root.SK = root.SK || {}; root.SK.channels = root.SK.channels || {};
+    root.SK.channels.telegramTransport = factory(root.SK.channels.telegramFormat);
+  }
+})(typeof globalThis !== 'undefined' ? globalThis : this, function (fmt) {
   'use strict';
 
   const ALLOWED_UPDATES = ['message', 'callback_query'];   // ignore edited/channel/poll/etc. updates server-side
@@ -158,10 +160,27 @@
       // as-is; callers treat any failure as cosmetic (the decision is already recorded server-side).
       async editMessage(chatId, messageId, text, editOpts) {
         const o2 = editOpts || {};
-        const payload = { chat_id: chatId, message_id: messageId, text: text };
+        const raw = text == null ? '' : String(text);
+        const payload = { chat_id: chatId, message_id: messageId, text: raw };
         for (const k in o2) if (k !== 'signal' && Object.prototype.hasOwnProperty.call(o2, k)) payload[k] = o2[k];
+        // Same markdown->HTML treatment as send(). Without it a consent card that was DELIVERED formatted would
+        // be rewritten into raw `**syntax**` the instant its button was tapped — the exact leak send() fixes,
+        // showing up at the one moment the member is looking straight at the message.
+        let formatted = false;
+        if (!payload.parse_mode && raw) {
+          try {
+            const f = fmt.toTelegramHtml(raw);
+            if (f && f.converted) { payload.text = f.html; payload.parse_mode = 'HTML'; formatted = true; }
+          } catch (_) { /* never cost the stamp over formatting */ }
+        }
         try {
-          const { data, res } = await call('editMessageText', payload, o2.signal);
+          let { data, res } = await call('editMessageText', payload, o2.signal);
+          if (!(data && data.ok) && formatted && fmt.isParseError(data && data.description)) {
+            const plain = { chat_id: chatId, message_id: messageId, text: fmt.toPlainText(raw) };
+            for (const k in o2) if (k !== 'signal' && Object.prototype.hasOwnProperty.call(o2, k)) plain[k] = o2[k];
+            delete plain.parse_mode;
+            ({ data, res } = await call('editMessageText', plain, o2.signal));
+          }
           if (data && data.ok) return { ok: true };
           const code = (data && data.error_code) || (res && res.status) || 0;
           return { ok: false, error: (data && data.description) || ('http ' + code) };
@@ -189,13 +208,38 @@
         }
       },
 
-      // never throws: a network/abort/HTTP error becomes a SendResult so the adapter's bounded resend can run.
+      /* never throws: a network/abort/HTTP error becomes a SendResult so the adapter's bounded resend can run.
+
+         MARKDOWN -> HTML (2026-07-28). Replies used to go out as plain text with no `parse_mode`, so an LLM's
+         ordinary markdown landed on the phone as raw syntax — literal `**bold**`, backticks, `## headings`.
+         channels/telegram.format.js converts the balanced subset it can prove is safe. A caller that sets its
+         OWN parse_mode is left completely alone.
+
+         THE FALLBACK IS THE POINT. A malformed entity string is a 400 and the message is LOST, which would be
+         a far worse bug than the raw syntax we started with. So a parse rejection resends ONCE without
+         parse_mode, stripped of the markdown punctuation — the floor is exactly the old behaviour, minus the
+         syntax noise. Only entity errors are retried: a 403 (blocked) or "chat not found" fails identically
+         the second time and must not be sent twice. */
       async send(chatId, text, sendOpts) {
         const o2 = sendOpts || {};
-        const payload = { chat_id: chatId, text: text };
+        const raw = text == null ? '' : String(text);
+        const payload = { chat_id: chatId, text: raw };
         for (const k in o2) if (k !== 'signal' && Object.prototype.hasOwnProperty.call(o2, k)) payload[k] = o2[k];
+        let formatted = false;
+        if (!payload.parse_mode && raw) {
+          try {
+            const f = fmt.toTelegramHtml(raw);
+            if (f && f.converted) { payload.text = f.html; payload.parse_mode = 'HTML'; formatted = true; }
+          } catch (_) { /* a formatter fault must never cost the message — send it as-is */ }
+        }
         try {
-          const { data, res } = await call('sendMessage', payload, o2.signal);
+          let { data, res } = await call('sendMessage', payload, o2.signal);
+          if (!(data && data.ok) && formatted && fmt.isParseError(data && data.description)) {
+            const plain = { chat_id: chatId, text: fmt.toPlainText(raw) };
+            for (const k in o2) if (k !== 'signal' && Object.prototype.hasOwnProperty.call(o2, k)) plain[k] = o2[k];
+            delete plain.parse_mode;
+            ({ data, res } = await call('sendMessage', plain, o2.signal));
+          }
           if (data && data.ok) return { ok: true, messageId: String((data.result && data.result.message_id) != null ? data.result.message_id : '') };
           const code = (data && data.error_code) || (res && res.status) || 0;
           const retryAfter = data && data.parameters && data.parameters.retry_after;

@@ -79,5 +79,33 @@ function fakeChild() {
   const b2 = await broken.pick({ surface: 'interactive' });
   A.eq(b2.code, 'unavailable', 'lock is released after a spawn throw (not stuck busy)');
 
+  /* FILE MODE (recipe launch forms: a {target} that wants a file opens the real chooser). Same process contract
+     as folder mode — path on stdout, empty on cancel — so only the command line differs. The default (no mode)
+     must stay FOLDER: every pre-existing caller passes no mode at all. */
+  const winFile = FP.buildCommand('win32', 'file');
+  A.ok(/OpenFileDialog/.test(winFile.args.join(' ')), 'win32 file mode uses OpenFileDialog');
+  A.ok(!/OpenFileDialog/.test(FP.buildCommand('win32').args.join(' ')), 'win32 default (no mode) is still the folder browser');
+  A.ok(!/FolderBrowserDialog/.test(winFile.args.join(' ')), 'win32 file mode does not open the folder browser');
+  A.ok(/choose file/.test(FP.buildCommand('darwin', 'file').args.join(' ')), 'darwin file mode asks osascript to choose a file');
+  A.ok(/choose folder/.test(FP.buildCommand('darwin', 'folder').args.join(' ')), 'darwin folder mode is unchanged');
+  A.ok(FP.buildCommand('linux', 'file').args.indexOf('--directory') < 0, 'linux file mode drops zenity --directory');
+  A.ok(FP.buildCommand('linux').args.indexOf('--directory') >= 0, 'linux default still passes zenity --directory');
+  A.eq(FP.buildCommand('sunos', 'file'), null, 'an unknown platform has no file picker either (honest unavailable)');
+
+  // the unattended rule and the honest-unavailable reason both name the right thing in file mode.
+  const fileFp = FP.makeFolderPick({ platform: 'win32', spawn: () => { throw new Error('nope'); } });
+  const auto = await fileFp.pick({ surface: 'autonomous', mode: 'file' });
+  A.eq(auto.code, 'autonomous', 'file mode obeys the unattended rule');
+  A.ok(/file picker/.test(auto.reason), 'the autonomous refusal names the FILE picker: ' + auto.reason);
+  const nowhere = FP.makeFolderPick({ platform: 'sunos', spawn: () => { throw new Error('nope'); } });
+  // a real dialog failure must name the control the Commander actually asked for.
+  A.ok(/^file picker failed/.test(FP.interpret('win32', { code: -1, stdout: '', stderr: '' }, 'file').reason),
+    'a failed FILE dialog says "file picker failed"');
+  A.ok(/^folder picker failed/.test(FP.interpret('win32', { code: -1, stdout: '', stderr: '' }).reason),
+    'a failed dialog with no mode still says "folder picker failed"');
+  const unFile = await nowhere.pick({ surface: 'interactive', mode: 'file' });
+  A.eq(unFile.code, 'unavailable', 'no platform picker -> unavailable in file mode too');
+  A.ok(/type the file path/.test(unFile.reason), 'the unavailable reason tells the user to type a FILE path: ' + unFile.reason);
+
   A.report('folderpick.test');
 })();

@@ -343,7 +343,29 @@ const tick = () => new Promise(resolve => setImmediate(resolve));
   A.eq(gotSpec.purpose, 'find things', 'a custom purpose is forwarded');
   const parsed = JSON.parse(out.content);
   A.eq(parsed.agentId, 'researcher-2', 'the new agentId comes back for the lead to delegate to');
+  A.ok(!('workstation' in parsed), 'a bare-id ack claims NO desk (the station never said it placed one)');
+  A.ok(!/desk/i.test(out.summary), 'and the summary stays silent about furniture it cannot source');
   A.ok(/team\.dispatch/.test(out.summary), 'the summary nudges the lead to delegate to the new worker');
+}
+
+// ---- THE DESK RIDES ALONG: the station acks { agentId, desk } and the tool reports WHERE it landed ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  const ctx = { agentId: 'agent', summon: async () => ({ agentId: 'scout-2', desk: 'BRIDGE' }) };
+  const out = await summonTool.run({ name: 'Scout', specId: 'scout' }, ctx);
+  const parsed = JSON.parse(out.content);
+  A.eq(parsed.agentId, 'scout-2', 'the object ack still yields the new agentId');
+  A.eq(parsed.workstation, 'BRIDGE', 'the seeded workstation room reaches the lead');
+  A.ok(/workstation in BRIDGE/.test(out.summary), 'the summary states where the workstation is (true whether it was built or adopted)');
+  A.ok(summonTool.description.indexOf('workstation with it') > 0, 'the tool tells the lead never to ask the Commander to build the desk');
+}
+
+// ---- an object ack with NO desk (placement failed / no room) must not claim one ----
+{
+  const { summonTool } = makeOrchestrationTools({ runOnce: fakeRunOnce(), roster: () => new Map(), key: 'k', model: 'm', newId: counter() });
+  const out = await summonTool.run({ name: 'Scout' }, { agentId: 'agent', summon: async () => ({ agentId: 'scout-3', desk: '' }) });
+  A.eq(JSON.parse(out.content).agentId, 'scout-3', 'the agent is still reported as created');
+  A.ok(!/desk/i.test(out.summary), 'a failed desk seed is never dressed up as a placed one');
 }
 
 // ---- declined / no browser: ctx.summon resolves null -> a clean "not completed", no crash ----

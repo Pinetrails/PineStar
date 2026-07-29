@@ -9,6 +9,9 @@
      initialize() -> Promise<{ protocolVersion, capabilities, serverInfo }>,
      listTools()  -> Promise<tool[]>,             // follows tools/list nextCursor pagination
      callTool(name, args) -> Promise<{ content, isError }>,
+     listResources() / listResourceTemplates() / readResource(uri),   // the RESOURCES primitive
+     listPrompts() / getPrompt(name, args),                            // the PROMPTS primitive
+     supports('resources'|'prompts'|'tools') -> bool,                  // from the server's initialize response
      request(method, params) -> Promise<result>,  // low-level JSON-RPC request (id-correlated)
      notify(method, params)  -> Promise<void>,     // fire-and-forget notification (no id)
      onNotification(method, cb) -> unsubscribe,
@@ -115,28 +118,59 @@
       return function unsubscribe() { const cur = notifHandlers.get(method) || []; const i = cur.indexOf(cb); if (i >= 0) cur.splice(i, 1); };
     }
 
+    let serverCaps = {};
     async function initialize() {
       const result = await request('initialize', { protocolVersion: protocolVersion, capabilities: capabilities, clientInfo: clientInfo });
       if (result && result.protocolVersion) protocolVersion = result.protocolVersion;
+      // REMEMBER WHAT THE SERVER SAID IT CAN DO. Without this the host has to probe blind and treat a
+      // "method not found" as the answer — which is indistinguishable from a server that is simply broken,
+      // and it costs a round trip per capability on every connect.
+      serverCaps = (result && result.capabilities && typeof result.capabilities === 'object') ? result.capabilities : {};
       await notify('notifications/initialized');
       return result || {};
     }
+    // Declared support, per the server's own initialize response. A server that never declared a capability
+    // must not be asked for it: the request would be a protocol error, not a graceful empty list.
+    const supports = (what) => !!(serverCaps && serverCaps[what]);
 
-    async function listTools() {
+    /* Every MCP list endpoint is the same cursor-paginated shape, so it is written once. MAX_PAGES is the
+       guard against a server that always hands back a cursor. */
+    async function listPaged(method, key) {
       const out = [];
       let cursor;
       for (let page = 0; page < MAX_PAGES; page++) {
-        const res = await request('tools/list', cursor ? { cursor } : {});
-        const tools = (res && Array.isArray(res.tools)) ? res.tools : [];
-        for (const t of tools) out.push(t);
+        const res = await request(method, cursor ? { cursor } : {});
+        const items = (res && Array.isArray(res[key])) ? res[key] : [];
+        for (const t of items) out.push(t);
         cursor = res && res.nextCursor;
         if (!cursor) break;
       }
       return out;
     }
 
+    const listTools = () => listPaged('tools/list', 'tools');
     function callTool(name, args) {
       return request('tools/call', { name: name, arguments: args || {} });
+    }
+
+    /* RESOURCES AND PROMPTS (2026-07-27). This client spoke `tools/list` and `tools/call` and nothing else,
+       which meant StarNet saw only a THIRD of what a connected MCP server actually offers. A server whose
+       whole point is exposing documents (resources) or reusable prompt templates (prompts) connected fine,
+       reported zero tools, and looked broken. These are not extras — they are two of the protocol's three
+       primitives, and the reference harness has spoken all three for a long time.
+
+       `resources/templates/list` is included with the plain list because a server that publishes only
+       parameterised URIs (`db://{table}/rows`) would otherwise read as having no resources at all. */
+    const listResources = () => listPaged('resources/list', 'resources');
+    const listResourceTemplates = () => listPaged('resources/templates/list', 'resourceTemplates');
+    const readResource = (uri) => request('resources/read', { uri: String(uri) });
+    const listPrompts = () => listPaged('prompts/list', 'prompts');
+    // `arguments` is omitted entirely when empty: a server that declares no arguments can reject an
+    // unexpected empty object, and the spec treats the field as optional.
+    function getPrompt(name, args) {
+      const p = { name: String(name) };
+      if (args && typeof args === 'object' && Object.keys(args).length) p.arguments = args;
+      return request('prompts/get', p);
     }
 
     function close(reason) {
@@ -149,9 +183,12 @@
     }
 
     return {
-      initialize, listTools, callTool, request, notify, onNotification, receive, close,
+      initialize, listTools, callTool,
+      listResources, listResourceTemplates, readResource, listPrompts, getPrompt, supports,
+      request, notify, onNotification, receive, close,
       isClosed: function () { return closed; },
-      get protocolVersion() { return protocolVersion; }
+      get protocolVersion() { return protocolVersion; },
+      get serverCapabilities() { return serverCaps; }
     };
   }
 

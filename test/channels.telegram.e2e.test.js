@@ -18,6 +18,16 @@ const INDEX = path.resolve(__dirname, '..', 'sidecar', 'index.js');
 
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
+/* The Telegram transport sends parse_mode:'HTML' (channels/telegram.format.js), so the WIRE text carries tags
+   and entities while the phone renders plain prose. Every assertion about what the member READS must therefore
+   run on the rendered form — otherwise "WEB & BROWSER" fails against the perfectly correct "WEB &amp; BROWSER".
+   Decoding &amp; LAST is deliberate: doing it first would turn "&amp;lt;" into "<". */
+function rendered(wireText) {
+  return String(wireText == null ? '' : wireText)
+    .replace(/<[^>]+>/g, '')
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&amp;/g, '&');
+}
+
 function readJsonBody(req) {
   return new Promise(resolve => {
     let body = '';
@@ -274,6 +284,88 @@ async function waitUntil(fn, ms, label) {
     const turns = (tr && tr.turns) || [];
     A.ok(turns.some(t => t.role === 'user' && String(t.content || '').indexOf('research AI trend now') >= 0), 'transcript captured Telegram user turn');
     A.ok(turns.some(t => t.role === 'assistant' && String(t.content || '').indexOf('Telegram answer') >= 0), 'transcript captured Telegram assistant reply');
+
+    // ---- /tools must describe the office this channel's runs ACTUALLY get -------------------------------
+    // THE BUG (2026-07-28, reported off a v0.6.8 install): runSlashForChannel read `placed` ONLY from
+    // router.stationFor(agentId), which is null for every agent NOT docked in a conveyor bay — i.e. essentially
+    // every main agent. So /tools computed placed=[] and answered "This agent has no tools yet", while the very
+    // same agent's Telegram RUNS were handed the full autonomous office all along. The readout lied about a
+    // grant that was working. No routing plan is posted in this test, so stationFor is null here exactly as it
+    // is on a real station — which is what makes this a true reproduction rather than a mocked one.
+    const llmCallsBeforeTools = llm.requests.length;
+    tg.pushText(7777, 99, '/tools');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '7777'), 8000, '/tools reply to chat 7777');
+    const toolsReply = rendered((tg.sends.find(s => String(s.chat_id) === '7777') || {}).text);
+    A.ok(!/no tools yet/.test(toolsReply), '/tools over Telegram does NOT claim the agent has no tools');
+    A.ok(/Tools for this agent/.test(toolsReply), '/tools returns the card, not the empty-state sentence');
+    // the autonomous office (capability/office.js fullOffice) — the objects hub.js's runs resolve against.
+    A.ok(/WEB & BROWSER/.test(toolsReply), '/tools lists WEB & BROWSER (dish is in the autonomous office)');
+    A.ok(/FILE CABINET/.test(toolsReply), '/tools lists FILE CABINET (cabinet is in the autonomous office)');
+    A.ok(/MEMORY NOTEBOOK/.test(toolsReply), '/tools lists MEMORY NOTEBOOK (notebook is in the autonomous office)');
+    // ...and stays HONEST about what this surface does NOT grant: fullOffice carries no WORKBENCH, and the
+    // orchestrator object is LEAD-only, so neither may be reported as active however the desktop floor looks.
+    const activeLines = toolsReply.split('\n').filter(l => l.indexOf('✓') === 0);
+    A.ok(!activeLines.some(l => /WORKBENCH/.test(l)), '/tools does not claim terminal on a channel (no workbench off-browser)');
+    A.ok(!activeLines.some(l => /TASK DELEGATION/.test(l)), '/tools does not claim delegation on a channel (orchestrator is LEAD-only)');
+    // a slash command must not spend a model turn — it is answered by the registry, not the provider.
+    A.eq(llm.requests.length, llmCallsBeforeTools, '/tools was answered by the registry without calling the provider');
+
+    /* ---- "/start" is answered for FREE, not by the model ---------------------------------------------------
+       Telegram shows a START button on every fresh chat and sends this literal text when it is pressed — the
+       first thing a new member ever transmits. It was in no command table, so it fell through parseCommand as
+       an ordinary message and SPENT A PAID MODEL RUN on an agent puzzling over the word "/start". Asserted
+       through the real ingress, and the provider-call count is what proves it never reached the model. */
+    const llmBeforeStart = llm.requests.length;
+    tg.pushText(7778, 99, '/start');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === '7778'), 8000, '/start reply');
+    const startReply = rendered((tg.sends.find(s => String(s.chat_id) === '7778') || {}).text);
+    A.eq(llm.requests.length, llmBeforeStart, '/start is answered by the hub without spending a model turn');
+    A.ok(/STARNET online/.test(startReply), '/start greets the newcomer instead of answering "/start" as a question');
+    A.ok(/\/help/.test(startReply), '/start tells a first-time member what they can actually say');
+
+    /* ---- /approvals ON must not COST the agent its office --------------------------------------------------
+       THE BUG (2026-07-28, reported by a user off the v0.7.0 install that shipped the /tools fix above): the hub
+       runs `surface: wantApprovals ? 'interactive' : 'autonomous'`, and runOnce fed that same word to
+       composeOffice. `interactive` means THE MOAT — the floor is real, so the office starts COMPUTE-ONLY and the
+       browser appends the agent's actually-placed props via extraObjects. A phone never sends extraObjects and
+       has no floor at all, so turning on approve/deny buttons silently cut the chat from the 59-tool autonomous
+       office to TWO tools (quest.update, tool.search) — while /tools, fixed just above to quote the autonomous
+       office, went on describing the 59 the run no longer had. That is exactly the "/tools work and they don't"
+       the user saw: the agent truthfully reported no web capability (its tool.search even answered "every tool
+       you have been granted is already listed", which is only reachable with an EMPTY deferred set), and the
+       readout truthfully described the grant the chat was supposed to have. Both halves honest, one of them fed
+       by the wrong surface.
+       ASSERTED AT THE WIRE. The tool list that reaches the PROVIDER is the only thing that proves what the model
+       could actually call; a readout is what lied here in the first place. */
+    const approvalsChat = 6161;
+    tg.pushText(approvalsChat, 99, '/approvals on');
+    await waitUntil(() => tg.sends.some(s => String(s.chat_id) === String(approvalsChat)), 8000, '/approvals on reply');
+    const approvalsReply = String((tg.sends.find(s => String(s.chat_id) === String(approvalsChat)) || {}).text || '');
+    A.ok(/buttons are ON/.test(approvalsReply), '/approvals on took effect for this chat (' + approvalsReply.slice(0, 80) + ')');
+
+    const llmCallsBeforeApproved = llm.requests.length;
+    tg.pushText(approvalsChat, 99, 'find me something on the web');
+    await waitUntil(() => llm.requests.length > llmCallsBeforeApproved, 8000, 'approvals-ON run reached the provider');
+    const approvedReq = llm.requests[llmCallsBeforeApproved];
+    const advertised = ((approvedReq && approvedReq.tools) || [])
+      .map(t => String((t && t.function && t.function.name) || (t && t.name) || ''));
+    // NOTE: the wire spells a dotted tool with an underscore (fs.read -> fs_read), so these are the PROVIDER's
+    // names, not the registry's. Asserting the registry spelling here would pass vacuously forever.
+    const wire = advertised.join(' ');
+    A.ok(advertised.indexOf('web_search') >= 0, 'an approvals-ON channel run still gets web_search (dish is in the headless office) — wire was: ' + wire);
+    A.ok(advertised.indexOf('browser_navigate') >= 0, 'an approvals-ON channel run still gets the browser — the exact capability the user was told it lacked');
+    A.ok(advertised.indexOf('fs_read') >= 0, 'an approvals-ON channel run still gets fs_read (cabinet is in the headless office)');
+    A.ok(advertised.indexOf('notebook_write') >= 0, 'an approvals-ON channel run still gets notebook_write (notebook is in the headless office)');
+    // ...and the moat still holds where it IS a floor fact: no terminal, no delegation, however approvals are set.
+    A.ok(advertised.indexOf('shell_exec') < 0, 'approvals ON does not conjure a terminal (no workbench off-browser)');
+    A.ok(advertised.indexOf('team_dispatch') < 0, 'approvals ON does not conjure delegation (orchestrator is LEAD-only)');
+
+    // and the readout AGREES with that wire, which is the whole point of the pair of fixes.
+    tg.pushText(approvalsChat, 99, '/tools');
+    await waitUntil(() => tg.sends.filter(s => String(s.chat_id) === String(approvalsChat)).length >= 3, 8000, '/tools reply in the approvals-ON chat');
+    const approvedTools = rendered((tg.sends.filter(s => String(s.chat_id) === String(approvalsChat)).pop() || {}).text);
+    A.ok(/WEB & BROWSER/.test(approvedTools), '/tools in an approvals-ON chat lists the same WEB & BROWSER the run was handed');
+    A.ok(!/no tools yet/.test(approvedTools), '/tools in an approvals-ON chat does not claim the agent has no tools');
 
     // ---- P1 1.2: a live channel run must appear in GET /api/state/snapshot so an SSE reconnect keeps its agent's
     // floor/HUD state (reconcileFromSnapshot clears any agent NOT listed). Drive a SECOND message on a fresh chat,
