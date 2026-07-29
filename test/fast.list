@@ -378,6 +378,7 @@ test/routing.b5.test.js
 test/chain.test.js
 test/propanchor.test.js
 test/prop-mount.test.js
+test/prop-render-smoke.test.js
 test/waitanchor.test.js
 test/harness.integration.test.js
 test/toolsearch.test.js

@@ -78,6 +78,35 @@ compared them against WORLD-tile tables, so on any station whose origin wasn't (
 never lifted anything at all. A mounted prop also sorts **+0.5** after its host (same tiles = equal sort
 keys, so array order would otherwise decide). Locked by `test/prop-mount.test.js`.
 
+## Leisure — `use` makes a prop a DESTINATION
+
+A catalog row may carry `use: {kind, sit, approach}`. That is what makes an idle agent walk to a prop
+and dwell there (`world.js planProp` → `PropAnchor.deriveAnchor` → `goal:'use'`). Without it a prop is
+scenery an agent will never touch, which is what 102 of the 108 props were until 2026-07-29 — the
+station was full of pool tables and vending machines nobody used.
+
+- `kind` is a free string. Only three values are special-cased anywhere: `couch`/`tv` (paired by
+  `tryLounge` into the sit-and-watch beat) and `arcade` (the clickable minigame hit-test). **Every
+  other kind needs no engine change at all** — `planProp` handles any of them generically, so adding a
+  leisure prop is a catalog edit. `world.js USE_LINE` optionally maps a kind to a flavour thought; a
+  kind with no entry simply says nothing.
+- `sit: true` seats the body; `approach` biases which edge it walks to (`'auto'` tries all four).
+- **`kind: 'bed'` is also the power-down target.** `planBedSleep` claims the mattress through the same
+  `occupiedSeats` + `pendSeat` machinery a couch cushion uses (one sleeper per bed) and `sleep()` falls
+  back to going dormant standing when no bed is reachable in-zone. Anything that wakes a sleeper must
+  `releaseSeat()`/`seizeFromIdle()` or the bed is blocked for the session — there are four such sites.
+
+## Drawing a new prop — the two things that bite
+
+1. **`w` and `h` arrive in PIXELS**, not tiles: `draw()` multiplies the footprint by `TILE` before
+   calling. Writing `w * TILE` inside a draw function puts the body hundreds of pixels off-canvas, and
+   every other check still passes (the row exists, `has(id)` is true, the module parses). Three props
+   shipped invisible this way. `test/prop-render-smoke.test.js` walks the whole catalog through a
+   recording context stub and fails on both "painted nothing" and "painted off its own footprint".
+2. **Scale.** A tile is 12px and an agent is ~35px, so a tabletop object that fills its tile is the
+   size of a torso. Author smalls 5–9px wide with margin around them — the margin is what reads as
+   "small object", and it is what lets several sit along one LONG TABLE without merging into a mass.
+
 ## Blocking vs decor
 
 `CATALOG[].blocks` decides whether a prop occupies its tiles for pathfinding. Solid furniture
