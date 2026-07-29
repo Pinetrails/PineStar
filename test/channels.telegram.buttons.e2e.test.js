@@ -243,12 +243,19 @@ const lastUserTurn = (req) => {
     A.ok(tg.sends[tg.sends.length - 1].text.indexOf('Deploying now.') >= 0, 'the follow-up answer is delivered');
 
     // ---- 4. a stale second tap is acknowledged but starts nothing ----
-    const runsAfter = llm.requests.length;
+    // Count the runs that carry THIS OPTION'S text, not every request the station makes. A raw total is moved
+    // by anything the previous run still has in flight (an aux reflect/study pass, a late turn), which under
+    // full-gate load lands inside the 400ms window below and turned the gate red for a dedupe that worked
+    // perfectly (the stale tap was correctly acked 'no longer open' right above). The invariant under test is
+    // "the tap did not re-enter the run" — measure exactly that: a genuine second run WOULD carry the
+    // option text again and still fails here.
+    const optionRuns = () => llm.requests.filter(r => lastUserTurn(r) === 'the production cluster').length;
+    const runsAfter = optionRuns();
     tg.pushCallback(4242, 99, kb[1][0].callback_data, questionMsgId);
     await waitUntil(() => tg.acks.length >= 2, 8000, 'second ack');
     A.ok(/no longer open/i.test(String(tg.acks[1].text || '')), 'the stale tap is honestly reported as closed');
     await sleep(400);
-    A.eq(llm.requests.length, runsAfter, 'a double-tap never starts a second run');
+    A.eq(optionRuns(), runsAfter, 'a double-tap never starts a second run');
 
     // ---- 5. owner-only: a stranger's tap never reaches the hub ----
     const acksBefore = tg.acks.length;
