@@ -196,19 +196,47 @@
     return s;
   }
 
-  // ---- milestones — declarative; each fires ONCE when its predicate first holds ----
-  // each carries a display label + the unlock HINT shown on its locked badge (drives the trophy case).
+  /* ---- milestones — declarative; each fires ONCE when its predicate first holds ----
+     each carries a display label + the unlock HINT shown on its locked badge (drives the trophy case).
+
+     S4 — THE MID-GAME. The original nine had four badges that all fire in session one and then a cliff to
+     25 tasks / Lv 10, so the entire middle of an agent's life lit nothing. The five added here sit in that
+     gap, and every one of them is predicated on a counter the HARNESS PROVES — no participation badges,
+     nothing minted by opening a panel:
+       • the shipped-task ladder is now 1 → 5 → 25 → 100, the SAME rungs credential() publishes as tiers, so
+         a trophy lighting and the agent's dispatch briefing gaining a line are one event, not two systems.
+       • HANDS ON is the first badge in the whole catalogue to read `toolsOk` — real successful tool calls,
+         the most-proven counter the station keeps, and previously worth no recognition at all.
+       • DEPENDABLE is the harness-observed twin of TRUSTED (what the Commander SAID vs what the station SAW).
+         It asks reliability() for the band rather than re-deriving the 85% threshold, so the badge can never
+         drift from the dossier's B2 gauge, and it adds a VOLUME floor on top: the band alone goes DEPENDABLE
+         at MIN_RUNS (3), which would have made this a sixth session-one badge — the exact cliff S4 exists to
+         fix. Ten owned runs is a real body of work, and the hint says so rather than implying the gauge lies.
+     Earning any of them still unlocks NOTHING (the sandbox law) — a trophy is recognition, never a key. */
   const MILESTONES = [
     { id: 'first_light', label: 'FIRST LIGHT', hint: 'ship 1 task',       when: (c) => (c.tasksDone || 0) >= 1 },     // first task shipped
+    { id: 'still_here',  label: 'STILL HERE',  hint: '5 tasks',           when: (c) => (c.tasksDone || 0) >= 5 },     // S4: the first real rung — and the tier credential() first publishes
     { id: 'approved',    label: 'APPROVED',    hint: 'earn positive feedback', when: (c) => (c.positiveFeedback || 0) >= 1 }, // first user approval
     { id: 'pack_rat',    label: 'PACK RAT',    hint: 'reuse a memory',    when: (c) => (c.memReused || 0) >= 1 },     // first memory reused
+    { id: 'long_memory', label: 'LONG MEMORY', hint: 'reuse 10 memories', when: (c) => (c.memReused || 0) >= 10 },    // S4: memory reuse became a habit (one credit per run, never per chunk)
     { id: 'archivist',   label: 'ARCHIVIST',   hint: '10 memories saved', when: (c) => (c.memWrites || 0) >= 10 },    // built a real memory bank
+    { id: 'hands_on',    label: 'HANDS ON',    hint: '25 tool calls',     when: (c) => (c.toolsOk || 0) >= 25 },      // S4: 25 tools that really ran and really succeeded
     { id: 'workhorse',   label: 'WORKHORSE',   hint: '25 tasks',          when: (c) => (c.tasksDone || 0) >= 25 },    // 25 tasks shipped
     { id: 'centurion',   label: 'CENTURION',   hint: '100 tasks',         when: (c) => (c.tasksDone || 0) >= 100 },   // 100 tasks shipped
     { id: 'night_shift', label: 'NIGHT SHIFT', hint: '1 delivery',        when: (c) => (c.delivered || 0) >= 1 },     // delivered work via an external channel
     { id: 'trusted',     label: 'TRUSTED',     hint: 'satisfaction 85%',  when: (c, s) => s.samples >= MIN_SAMPLES && s.confidence >= 85 },   // satisfaction -> TRUSTED
+    { id: 'dependable',  label: 'DEPENDABLE',  hint: '85% of 10+ runs',   when: (c, s) => (c.runsOwned || 0) >= 10 && reliability(s).band === 'dependable' },   // S4: the harness's own read, SUSTAINED
+    { id: 'seasoned',    label: 'SEASONED',    hint: 'reach Lv 5',        when: (c, s) => s.level >= 5 },             // S4: the one rung on an otherwise empty Lv1 -> Lv10 ladder
     { id: 'veteran',     label: 'VETERAN',     hint: 'reach Lv 10',       when: (c, s) => s.level >= 10 },            // reached level 10
   ];
+  // the ONE milestone loop — shared by applyEvent (fire on a real event) and reconcile (light what is already
+  // true). Mutates s.milestones, appends the newly-earned ids to `into`, and returns it.
+  function fireMilestones(s, into) {
+    for (const m of MILESTONES) {
+      if (s.milestones.indexOf(m.id) === -1 && m.when(s.counters, s)) { s.milestones.push(m.id); into.push(m.id); }
+    }
+    return into;
+  }
   function bump(c, k) { c[k] = (c[k] || 0) + 1; }
 
   // ---- the one transform: fold a real event into a stats object (pure: returns a NEW object) ----
@@ -307,10 +335,25 @@
     }
 
     // MILESTONES — fire once
-    for (const m of MILESTONES) {
-      if (s.milestones.indexOf(m.id) === -1 && m.when(s.counters, s)) { s.milestones.push(m.id); awards.milestones.push(m.id); }
-    }
+    fireMilestones(s, awards.milestones);
     return { stats: s, awards };
+  }
+
+  /* S4 — RECONCILE: light every badge this save has ALREADY earned, without an event.
+     Milestones only ever fired inside applyEvent, so a save written before a badge EXISTED carries the record
+     that satisfies it and none of the credit: the trophy case would show `STILL HERE ▸ 5 tasks` LOCKED while
+     the dossier two sections above read "8 tasks shipped" — the app contradicting its own state, which is the
+     one thing this product must never do. The alternative (wait for the next event) is worse: the whole
+     backlog then detonates as a burst of gold TROPHY EARNED broadcasts for work done weeks ago.
+     So the caller reconciles at boot and does NOT announce: these are historical facts being recognized, not
+     moments happening now. Pure, idempotent (a second call earns nothing), and it can only ADD — it never
+     revokes a badge whose predicate has since stopped holding, because a trophy records that you REACHED it.
+     Returns { stats, earned } so a caller that DOES want to say something knows exactly what changed. */
+  function reconcile(stats) {
+    const s = sanitize(clone(stats));
+    if (!s.counters) s.counters = {};
+    if (!s.milestones) s.milestones = [];
+    return { stats: s, earned: fireMilestones(s, []) };
   }
 
   // ---- render-state for the gauges (pure transform → render-agnostic, mirrors CtxGauge.compute) ----
@@ -414,5 +457,5 @@
     return MILESTONES.map(m => ({ id: m.id, label: m.label, hint: m.hint, earned: earned.indexOf(m.id) !== -1 }));
   }
 
-  return { fresh, clone, applyEvent, compute, reliability, credential, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES, MIN_RUNS, workSize, crewSplit };
+  return { fresh, clone, applyEvent, reconcile, compute, reliability, credential, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES, MIN_RUNS, workSize, crewSplit };
 });

@@ -247,6 +247,94 @@ A.eq(Xp.levelForXp(Infinity), 1, 'levelForXp(Infinity) -> 1, never Infinity');
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(Infinity, 'bad')).awards.xp, 0, 'non-finite feedback delta -> 0 xp');
 A.eq(Xp.applyEvent(Xp.fresh(), feedback(1000, 'kept')).awards.xp, 50, 'huge finite kept-feedback delta remains capped at +50 xp');
 
+/* ---- S4: THE MID-GAME RUNGS. The catalogue used to fire four badges in session one and then light nothing
+        until 25 tasks / Lv 10. These five sit in that gap, and each one must be earned by a counter the
+        HARNESS wrote — never by a user tap, and never before the evidence exists. ---- */
+// (a) the shipped-task ladder now has a rung at 5 — and it is the SAME rung credential() publishes as a tier,
+//     so the trophy and the agent's dispatch briefing gaining a line are one event.
+const four = run([done(0, 'r1'), done(0, 'r2'), done(0, 'r3'), done(0, 'r4')]);
+A.eq(four.stats.milestones.indexOf('still_here'), -1, 'STILL HERE stays locked at 4 shipped tasks');
+A.eq(Xp.credential(four.stats).tier, null, '…and the credential publishes no tier yet either');
+const five = run([done(0, 'r5')], four.stats);
+A.ok(five.awards[0].milestones.indexOf('still_here') !== -1, 'STILL HERE lights on the 5th shipped task');
+A.eq(Xp.credential(five.stats).tier, 5, 'the badge and the credential tier cross on the SAME task — one ladder, not two');
+A.eq(five.stats.xp, 0, 'the mid-game rungs mint no XP (they are recognition, never a currency)');
+
+// (b) HANDS ON — the first badge in the catalogue to read toolsOk. Real successful tool calls only.
+let hands = Xp.fresh();
+for (let i = 0; i < 24; i++) hands = Xp.applyEvent(hands, toolOk('r')).stats;
+A.eq(hands.counters.toolsOk, 24, '24 successful tool calls counted');
+A.eq(hands.milestones.indexOf('hands_on'), -1, 'HANDS ON stays locked at 24 tool calls');
+const hands25 = Xp.applyEvent(hands, toolOk('r'));
+A.ok(hands25.awards.milestones.indexOf('hands_on') !== -1, 'HANDS ON lights on the 25th successful tool call');
+// a FAILED tool call is not a tool call: toolsOk only counts ok && !isError, so it cannot buy the badge.
+let failing = Xp.fresh();
+for (let i = 0; i < 30; i++) failing = Xp.applyEvent(failing, { name: 'agent.tool_result', payload: { agentId: 'a', runId: 'r', callId: 'c', ok: false, isError: true } }).stats;
+A.eq(failing.milestones.indexOf('hands_on'), -1, '30 FAILED tool calls earn nothing — the badge reads successes only');
+
+// (c) LONG MEMORY — 10 reuse EVENTS, and reuse is credited once per completed run (never once per recalled
+//     chunk), so a single 10-chunk recall must not buy it.
+const bigOne = run([memUsed('m1'), memUsed('m2'), memUsed('m3'), memUsed('m4'), memUsed('m5'), memUsed('m6'), memUsed('m7'), memUsed('m8'), memUsed('m9'), memUsed('m10'), done()]);
+A.eq(bigOne.stats.counters.memReused, 1, 'one run recalling 10 chunks is ONE reuse event');
+A.eq(bigOne.stats.milestones.indexOf('long_memory'), -1, 'LONG MEMORY is not bought by a single fat recall');
+let habit = Xp.fresh();
+for (let i = 1; i <= 10; i++) habit = run([memUsed('m' + i, 'run' + i), done(0, 'run' + i)], habit).stats;
+A.eq(habit.counters.memReused, 10, '10 separate recalling runs = 10 reuse events');
+A.ok(habit.milestones.indexOf('long_memory') !== -1, 'LONG MEMORY lights after 10 real reuses');
+
+// (d) DEPENDABLE — the harness-observed twin of TRUSTED. It defers to reliability() for the 85% threshold so it
+//     can never disagree with the dossier's B2 gauge, and adds a VOLUME floor so it is a mid-game badge and not
+//     a sixth session-one one (the band alone reaches 'dependable' at MIN_RUNS = 3).
+const threeClean = run([done(0, 'a1'), done(0, 'a2'), done(0, 'a3')]);
+A.eq(Xp.reliability(threeClean.stats).band, 'dependable', 'the B2 gauge reads DEPENDABLE after 3 clean runs…');
+A.eq(threeClean.stats.milestones.indexOf('dependable'), -1, '…but the BADGE waits for a real body of work');
+let sustained = Xp.fresh();
+for (let i = 1; i <= 10; i++) sustained = Xp.applyEvent(sustained, done(0, 'd' + i)).stats;
+A.ok(sustained.milestones.indexOf('dependable') !== -1, 'DEPENDABLE lights at 10 owned runs held above 85%');
+// a shaky agent with the volume but not the finish rate earns nothing…
+let shaky = Xp.fresh();
+for (let i = 1; i <= 6; i++) shaky = Xp.applyEvent(shaky, done(0, 's' + i)).stats;
+for (let i = 1; i <= 6; i++) shaky = Xp.applyEvent(shaky, ended('max_iters', 'x' + i)).stats;
+A.eq(Xp.reliability(shaky).pct, 50, 'a 6-of-12 agent reads 50%');
+A.eq(shaky.milestones.indexOf('dependable'), -1, 'DEPENDABLE stays locked for a 50% finish rate at 12 runs');
+// …and PROVIDER faults never count against it: excluded runs move neither the ratio nor the volume floor.
+let faulted = Xp.fresh();
+for (let i = 1; i <= 10; i++) faulted = Xp.applyEvent(faulted, done(0, 'f' + i)).stats;
+for (let i = 1; i <= 20; i++) faulted = Xp.applyEvent(faulted, errd('e' + i)).stats;
+A.ok(faulted.milestones.indexOf('dependable') !== -1, '20 provider failures never revoke or block DEPENDABLE — they were never this agent’s fault');
+
+// (e) SEASONED — the one rung on an otherwise empty Lv1 -> Lv10 ladder. XP-gated, so still user-approval-only.
+const nearFive = { xp: 499, level: 4, lifetimeXp: 499, confidence: 50, samples: 0, counters: {}, milestones: [] };
+A.eq(Xp.applyEvent(nearFive, done()).stats.milestones.indexOf('seasoned'), -1, 'a run completion cannot buy SEASONED at 499 xp');
+const sz = Xp.applyEvent(nearFive, keep());
+A.eq(sz.stats.level, 5, 'positive feedback crossing 500 xp -> level 5');
+A.ok(sz.awards.milestones.indexOf('seasoned') !== -1, 'SEASONED lights at level 5');
+
+// (f) the catalogue is still internally consistent: unique ids, and every badge carries label + hint + predicate.
+const ids = Xp.MILESTONES.map(m => m.id);
+A.eq(new Set(ids).size, ids.length, 'every milestone id is unique');
+A.ok(Xp.MILESTONES.every(m => m.label && m.hint && typeof m.when === 'function'), 'every milestone has a label, an unlock hint, and a predicate');
+
+/* ---- S4: RECONCILE — light what a save has ALREADY earned, with no event.
+        Milestones only ever fired inside applyEvent, so a save written before a badge existed carries the
+        record that earns it and none of the credit: the trophy case would show a LOCKED badge whose hint the
+        dossier above it has visibly already met. ---- */
+const preS4 = { xp: 0, level: 1, lifetimeXp: 0, confidence: 50, samples: 0, counters: { tasksDone: 8, runs: 9, toolsOk: 30 }, milestones: [] };
+A.eq(Xp.milestones(preS4).filter(m => m.earned).length, 0, 'the pre-S4 save reads as having earned nothing');
+const rec = Xp.reconcile(preS4);
+A.eq(rec.earned, ['first_light', 'still_here', 'hands_on'], 'reconcile lights exactly the badges the record already earned');
+A.eq(preS4.milestones, [], 'reconcile is PURE — the caller’s save object is not mutated');
+A.eq(Xp.reconcile(rec.stats).earned, [], 'reconcile is idempotent — a second boot earns nothing');
+A.eq(rec.stats.counters.tasksDone, 8, 'reconcile carries the counters through untouched');
+A.eq(rec.stats.xp, 0, 'reconcile mints no XP');
+// it can only ADD: a trophy records that you REACHED a bar, so a since-fallen band never revokes one.
+const fell = Xp.reconcile({ xp: 0, level: 1, lifetimeXp: 0, confidence: 20, samples: 9, counters: {}, milestones: ['trusted'] });
+A.ok(fell.stats.milestones.indexOf('trusted') !== -1, 'a badge already earned survives a reconcile after the meter fell');
+A.eq(Xp.reconcile(null).earned, [], 'reconcile(null) is safe and earns nothing');
+const corrupt = Xp.reconcile({ xp: Infinity, level: NaN, lifetimeXp: NaN, confidence: Infinity, samples: NaN, counters: { tasksDone: 5 }, milestones: [] });
+A.ok(Number.isFinite(corrupt.stats.level) && Number.isFinite(corrupt.stats.xp), 'reconcile sanitizes a corrupted save like applyEvent does');
+A.ok(corrupt.stats.milestones.indexOf('still_here') !== -1, '…and still awards what the intact counters prove');
+
 // ---- milestone CATALOGUE (render-state for the trophy case): every badge, with earned flags + unlock hints ----
 const catFresh = Xp.milestones(Xp.fresh());
 A.eq(catFresh.length, Xp.MILESTONES.length, 'catalogue lists every milestone');

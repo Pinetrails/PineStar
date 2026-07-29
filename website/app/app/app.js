@@ -2510,7 +2510,8 @@ const App = (() => {
     // the station rollup, pushes the live numbers to the world HUD, and fires level-up celebrations.
     // S3: onCredential fires only on a coarse track-record change (tier crossing / band flip), and re-pushes
     // the roster so the lead's next dispatch briefing describes its crew truthfully. Rare by construction.
-    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, station: pendingStationStats, persist: persist, onCredential: () => pushRoster() }); pendingStationStats = null; }
+    // S4: `agents` lets the boot-time trophy reconcile reach every specialist's case, not just the hero's.
+    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, agents: () => Array.from(agents.values()), station: pendingStationStats, persist: persist, onCredential: () => pushRoster() }); pendingStationStats = null; }
     // PERSONALIZATION: the local user-affinity profile — folds the interest tag of each task + shipped work
     // into a tiny histogram (profile.js engine). Resume the saved slice, else start fresh + seed cold-start
     // from the agent's deployed specialty domain so day-one suggestions aren't blank.
