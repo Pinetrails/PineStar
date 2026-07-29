@@ -273,6 +273,60 @@ mention/bot gates.
 6. **`disable_notification`.** Small, but it needs a product decision (quiet hours? per-chat toggle?
    autonomous pings only?) rather than a default someone has to discover.
 
+## 4.6 THIRD SWEEP — the COMPLETE gap inventory (2026-07-29)
+
+§1's scorecard was an admitted major-feature diff. This sweep is mechanical and exhaustive on the
+axes that can be enumerated: every one of Hermes' **236 `def`s**, its **28 `config.extra` keys**, its
+**39 `TELEGRAM_*` env knobs** and its **49 test files**, each grepped against trunk. Everything below
+was proven by reading our code, not by trusting §1 or §4.5.
+
+**§4.5 CORRECTION — one row there is stale.** "typing 429 cooldown" is **NOT missing**: `hub.js`
+`startTyping` already waits out `retryAfter` (capped 30s) and stops the loop entirely on a
+non-retryable error. What we lack is only Hermes' *persistent per-chat* cooldown
+(`_record_typing_cooldown` / `_typing_in_cooldown`), which survives across runs; ours resets each run.
+That is a nuance, not a gap.
+
+### NEW — found by this sweep, absent from every earlier list
+
+| # | Gap | Why it bites | Size |
+|---|---|---|---|
+| N1 | **Outbound never carries `message_thread_id`.** `normalize` reads it only to suppress the forum-root reply trap; it is on no inbound event and no send. | In a **forum supergroup our answer lands in General, not the topic the member asked in**. Not polish — a wrong-destination bug. | S–M |
+| N2 | **Outbound never carries `reply_to_message_id`.** Hermes has `reply_to_mode` + `_should_thread_reply`. | In a busy group our reply floats detached from the question. | S |
+| N3 | **The P3 gates are unreachable.** `requireMention` / `ignoreBots` / `allowedUsers` are read in `adapter.js` but **`index.js` passes none of them** — they are hardcoded defaults with no command, no route and no UI. | P3 shipped a behaviour change (groups now answer only when addressed) with **no escape hatch**: a member who wants free response in their group cannot get it. | S |
+| N4 | **No `mention_patterns`.** We match `@username` entities and `/cmd@bot` only. | "StarNet, summarise that" does not wake the bot — the most natural way to address it by name. | S |
+| N5 | **No `observe_unmentioned`.** An unmentioned group message is dropped whole, not kept as context. | When finally mentioned the agent has **no idea what the room was discussing** — the mention gate bought spend safety and paid in amnesia. | M |
+| N6 | **`edited_message` never arrives** (`ALLOWED_UPDATES` excludes it). | Fixing a typo in your question does nothing; the bot answers the typo. | S |
+| N7 | **`channel_post` never arrives.** Hermes subscribes `Update.ALL_TYPES` and routes via `effective_message`. | The bot is **completely deaf** when added to a broadcast channel. | S |
+| N8 | **No reactions.** Hermes acks with `setMessageReaction` (`on_processing_start` / `on_processing_complete`, `_set_reaction` / `_clear_reactions`). | The cheapest possible "I heard you" — one API call, no message, no chunking. | S |
+| N9 | **No status indicator.** Hermes writes `setMyShortDescription` on connect/disconnect (`_set_status_indicator`, `status_online` / `status_offline`). | The bot's profile card never says whether the station is up. | S |
+| N10 | **No link-preview control** (`disable_link_previews` / `_link_preview_kwargs`). | Any URL in a reply drags a full unfurl card. | XS |
+| N11 | **No `deleteMessage`.** Hermes deletes its own transient progress/status messages. | Prerequisite for P4 streaming cleanup. | XS |
+| N12 | **No `getChat` / `username → chat_id`.** | A member can only be reached by numeric id. | S |
+| N13 | **No proxy and no DNS fallback.** `telegram_network.py` is a whole module: DoH discovery, `fallback_ips`, IP-rewritten requests, connect/pool-timeout classification and drain. | Ours is bare `fetch`. On a network that blocks `api.telegram.org` by DNS we simply never connect. | M |
+| N14 | **Per-photo / per-text batching.** We debounce only a true `media_group_id` album; Hermes also batches loose rapid photos (`_photo_batch_key`) and text (`_text_batch_key`). | Three photos pasted one-by-one = three supersedes. | M |
+| N15 | **No `send_path_health`.** Delivery events + durable outbox exist; nothing summarises "this chat's send path is degraded". | | M |
+| N16 | **No `clarify_buttons` / `slash_confirm`.** We have consent + model-picker keyboards; the agent cannot ask a bounded multiple-choice question. | | M |
+| N17 | **`TELEGRAM_API_BASE` is half a local-Bot-API-server story.** `apiBase` reaches both the method URL and `getFile`, so a local server would work — but it is env-only, undocumented, and there is no `base_file_url` / `local_mode` split, so the 2GB local-mode upload ceiling is unreachable (we still refuse at 50MB). | | S |
+
+### Deliberate non-goals (do not build)
+
+- **DM topics / home channel** (`_create_dm_topic`, `ensure_dm_topic`, `rename_dm_topic`, `_setup_dm_topics`,
+  `create_handoff_thread`, `TELEGRAM_HOME_CHANNEL`) — Hermes mirrors every DM into a topic of one operator
+  supergroup. That is a *fleet-operator* shape; StarNet's member owns their own station. Refuse on product
+  grounds, not capability.
+- **`sendRichMessage` / `sendRichMessageDraft`** — §3 already says probe-and-degrade, never a dependency.
+- **Free-form outbound addressing** — known-targets-only stays law whatever Hermes does.
+- **HTTP pool/closewait tuning** (`TELEGRAM_HTTP_*`, `test_telegram_closewait_limits`) — an httpx/PTB
+  artefact; `fetch` + one long-poll has no pool to exhaust.
+- **`_handle_gmail_triage_callback`** — an app feature of theirs, not a Telegram capability.
+
+### The ranked queue after this sweep
+
+**N1+N2 (thread + reply plumbing) → N3 (make the P3 gates reachable) → N6+N7 (the deaf update kinds)
+→ N8 (reaction ack) → P4 streaming → N5 (observe-unmentioned) → N4 → the rest.**
+N1 leads because it is the only remaining item that sends a message to the **wrong place**; everything
+else above is a missing capability, not a wrong one.
+
 ## 5. Honest sizing
 
 P1–P3 are the ones a member would notice tomorrow, and they are mostly wiring over engines we

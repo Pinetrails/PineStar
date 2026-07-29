@@ -209,6 +209,10 @@
         // media: the platform's normalize decides whether this message quotes an earlier one, the hub decides
         // how to render it. A platform that never sets it is byte-identical to before.
         if (m.replyTo && typeof m.replyTo === 'object') im.replyTo = m.replyTo;
+        // threadId names the sub-conversation this arrived in (a Telegram forum topic today; a Discord thread
+        // later). Neutral and additive: the hub remembers it per chat and hands it straight back on every send,
+        // and a platform whose normalize never sets it behaves exactly as before.
+        if (m.threadId != null && m.threadId !== '') im.threadId = String(m.threadId);
         if (Array.isArray(m.mentions) && m.mentions.length) im.mentions = m.mentions.slice();
         onInbound(im);
       } else if (n.callback && onCallback) {
@@ -349,9 +353,11 @@
       // Fire one "typing…" chat-action (transport-optional, like getFile): { ok, error?, retryable?, retryAfter? },
       // never throws. A transport without sendChatAction answers ok:false NON-retryable, so the hub's keep-alive
       // loop stops after one probe instead of hammering a channel that can't show typing at all.
-      chatAction(chatId) {
+      // actionOpts (optional) carries the same neutral route as send() — a typing bubble raised in the wrong
+      // forum topic is visible to the room, so it must follow the question exactly like the answer does.
+      chatAction(chatId, actionOpts) {
         if (typeof transport.sendChatAction !== 'function') return Promise.resolve({ ok: false, error: 'typing not supported on this channel', retryable: false });
-        try { return Promise.resolve(transport.sendChatAction(String(chatId))); }
+        try { return Promise.resolve(transport.sendChatAction(String(chatId), undefined, actionOpts || undefined)); }
         catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'sendChatAction threw', retryable: false }); }
       },
 

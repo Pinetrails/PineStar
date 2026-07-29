@@ -430,6 +430,45 @@
       return agentPrefix + (tail || '0');
     }
 
+    /* ---- ROUTE: answer WHERE the question was asked -------------------------------------------------------
+       Two facts arrive with an inbound message and were both thrown away: which sub-conversation it came from
+       (`threadId` — a Telegram forum topic today), and which message it was (`messageId`). Without the first,
+       every answer in a forum supergroup lands in **General instead of the topic the member is sitting in** —
+       the last remaining case of this channel delivering to the wrong place rather than merely doing less. Without
+       the second, a reply in a busy group floats loose from its question.
+
+       Ambient per chat rather than threaded through ~40 deliver() call-sites: the route is a property of the
+       CONVERSATION, so /status, a consent card and the run's answer should all land in the same topic without
+       each having to know it. Bounded (MAX_ROUTES, oldest evicted) because chatIds are unbounded.
+
+       The quote is CONSUMED on first use; the thread is not. A quote answers one specific message, so a routine
+       firing six hours later must not reach back and reply to it — but it should still land in the right topic.
+       Fields are neutral ({ threadId, replyTo }); only telegram.transport.js knows the Bot API's names, and the
+       other four transports ignore opts they do not recognise, so their behaviour is byte-identical. */
+    const MAX_ROUTES = 500;
+    const routes = new Map();   // chatId -> { threadId, replyTo }
+    function noteRoute(msg) {
+      const chatId = String(msg.chatId);
+      const threadId = (msg.threadId == null || msg.threadId === '') ? '' : String(msg.threadId);
+      // Quoting in a DM is noise — there is only one other person and nothing to disambiguate. Groups only,
+      // which is also where a detached answer actually costs the reader something.
+      const replyTo = (msg.chatType === 'group' && msg.messageId != null && msg.messageId !== '') ? String(msg.messageId) : '';
+      routes.delete(chatId);                        // re-insert so Map iteration order is least-recently-used first
+      if (!threadId && !replyTo) return;            // a plain DM keeps no route at all
+      routes.set(chatId, { threadId: threadId, replyTo: replyTo });
+      while (routes.size > MAX_ROUTES) { const k = routes.keys().next().value; routes.delete(k); }
+    }
+    // first=true asks for the quote as well (and spends it). Returns null when this chat has no route, so the
+    // send call is byte-identical to before on every platform that never sets one.
+    function routeOpts(chatId, first) {
+      const r = routes.get(String(chatId));
+      if (!r) return null;
+      const out = {};
+      if (r.threadId) out.threadId = r.threadId;
+      if (first && r.replyTo) { out.replyTo = r.replyTo; r.replyTo = ''; }
+      return (out.threadId || out.replyTo) ? out : null;
+    }
+
     // ---- typing keep-alive: refresh the platform's "typing…" bubble while a run is in flight ---------------
     // Returns a stop() closure. The loop is detached (fire-and-forget) and PURELY cosmetic: any failure degrades
     // to no bubble, never touches the reply path. Backoff mirrors send(): a 429's retry_after (capped 30s) is
@@ -443,7 +482,7 @@
       (async () => {
         while (!stopped) {
           let r;
-          try { r = await chatAction(chatId); } catch (e) { r = { ok: false, retryable: true }; }
+          try { r = await chatAction(chatId, routeOpts(chatId, false)); } catch (e) { r = { ok: false, retryable: true }; }
           if (stopped) break;
           if (r && r.ok === false && !r.retryable) break;
           const waitMs = (r && r.ok === false && Number(r.retryAfter) > 0)
@@ -466,8 +505,14 @@
       let ok = true, failedAt = -1, messageId = '';
       for (let i = 0; i < chunks.length; i++) {
         const last = i === chunks.length - 1;
+        // The route rides EVERY chunk (all of a split reply belongs in one topic) while the quote and the
+        // keyboard each ride exactly one: the quote the first chunk, the keyboard the last. A fresh object every
+        // time — the caller's sendOpts is theirs and must not grow a stale reply id.
+        const rt = routeOpts(chatId, i === 0);
+        const terminal = (last && sendOpts) ? sendOpts : null;
+        const opts = (rt || terminal) ? Object.assign({}, terminal || {}, rt || {}) : undefined;
         let r;
-        try { r = await send(chatId, chunks[i], (last && sendOpts) ? sendOpts : undefined); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
+        try { r = await send(chatId, chunks[i], opts); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
         if (!r || r.ok === false) { ok = false; failedAt = i; break; }
         if (last && r.messageId) messageId = String(r.messageId);
       }
@@ -512,7 +557,9 @@
           let ok = true;
           for (const c of chunks) {
             let r;
-            try { r = await send(it.chatId, c); } catch (e) { r = { ok: false }; }
+            // Thread only, never the quote: a delayed reply still belongs in its topic, but the message it was
+            // answering is hours old and quoting it now would read as a bot talking to the past.
+            try { r = await send(it.chatId, c, routeOpts(it.chatId, false) || undefined); } catch (e) { r = { ok: false }; }
             if (!r || r.ok === false) { ok = false; break; }
           }
           if (ok) {
@@ -833,6 +880,9 @@
       const hasMedia = !!(msg && Array.isArray(msg.media) && msg.media.length);
       if (!msg || (!msg.text && !hasMedia)) return;   // empty update; media-only messages ARE admitted
       const chatId = String(msg.chatId);
+      // Remember where this came from BEFORE anything can reply — the very first deliver() below (a command
+      // answer, a config error) must already land in the right topic, not just the run's final reply.
+      noteRoute(msg);
 
       // Runtime config (live each message): { key?, model, provider?, agentId?, system? }. When the app supplies the
       // REAL agentId + composed system prompt at connect, Telegram runs as the SAME agent as in the app —
@@ -1306,7 +1356,7 @@
 
     return {
       onInbound, onCallback, onStatus,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA }
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES }
     };
   }
 

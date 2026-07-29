@@ -69,6 +69,38 @@
     // every error string leaving this module goes through here — never `e.message` raw.
     const errOf = (e, fallback) => redact((e && e.message) || fallback || 'error');
 
+    /* ---- ROUTE: answering WHERE the question was asked ------------------------------------------------------
+       The hub speaks a NEUTRAL route — { threadId, replyTo } — because it drives five platforms and may not know
+       Telegram's field names. This file is the only place that does, so the translation lives here and nowhere
+       else. Two Bot API fields:
+
+         message_thread_id     — the forum topic. Without it every answer in a forum supergroup lands in General
+                                 instead of the topic the member asked in: not missing polish, a message
+                                 delivered to the WRONG PLACE.
+         reply_to_message_id   — quotes the message we are answering, so a reply in a busy group is attached to
+                                 its question instead of floating loose.
+
+       allow_sending_without_reply rides with the quote ON PURPOSE. If the quoted message is deleted between the
+       question and the answer, Telegram answers 400 "message to be replied not found" and THE REPLY IS LOST.
+       The floor is delivery: never trade the answer for the decoration. */
+    const ROUTE_KEYS = { threadId: 1, replyTo: 1 };
+    function applyRoute(payload, o2) {
+      const t = Number((o2 && o2.threadId) || 0);
+      if (Number.isFinite(t) && t > 0) payload.message_thread_id = t;
+      const r = Number((o2 && o2.replyTo) || 0);
+      if (Number.isFinite(r) && r > 0) {
+        payload.reply_to_message_id = r;
+        payload.allow_sending_without_reply = true;
+      }
+      return payload;
+    }
+    // A topic can be closed, deleted, or simply never have existed on this chat (a stale binding). Telegram says
+    // so in prose, not in a code, so match the prose — and the caller then RESENDS to the chat root. General is
+    // the wrong room; silence is worse.
+    function isThreadError(desc) {
+      return /message thread not found|thread not found|topic_closed|topic_deleted|topic is closed|topic was deleted/i.test(String(desc || ''));
+    }
+
     // one Bot API call -> { res, data }. data.ok distinguishes success ({result}) from error ({error_code,description}).
     async function call(method, payload, signal) {
       const res = await fetchImpl(BASE + '/' + method, {
@@ -208,9 +240,12 @@
       // keep-alive loop refreshes it while a run is in flight. NEVER throws — always { ok, error?, retryable?,
       // retryAfter? } (same normalized shape as send) so the hub's loop can back off on 429 or stop on a hard
       // error. Purely cosmetic: a failure here must never affect the real reply path.
-      async sendChatAction(chatId, action) {
+      async sendChatAction(chatId, action, actionOpts) {
         try {
-          const { data, res } = await call('sendChatAction', { chat_id: chatId, action: action || 'typing' });
+          // Route the bubble too: in a forum a "typing…" raised on the chat root is visible in General while the
+          // member waits in their topic. Only the thread matters here — a chat action cannot quote a message.
+          const payload = applyRoute({ chat_id: chatId, action: action || 'typing' }, { threadId: actionOpts && actionOpts.threadId });
+          const { data, res } = await call('sendChatAction', payload);
           if (data && data.ok) return { ok: true };
           const code = (data && data.error_code) || (res && res.status) || 0;
           const retryAfter = data && data.parameters && data.parameters.retry_after;
@@ -317,7 +352,8 @@
         }
         const spec = MEDIA_METHODS[String(it.kind || '').toLowerCase()] || MEDIA_METHODS.document;
         const fields = { chat_id: chatId };
-        for (const k in o2) if (k !== 'signal' && Object.prototype.hasOwnProperty.call(o2, k)) fields[k] = o2[k];
+        for (const k in o2) if (k !== 'signal' && !ROUTE_KEYS[k] && Object.prototype.hasOwnProperty.call(o2, k)) fields[k] = o2[k];
+        applyRoute(fields, o2);   // a file answers in the topic that asked for it, same as the words do
         // The caption rides the SAME markdown->HTML converter as send(), with the same plain-text floor: a
         // caption is the one piece of prose on a media send and would otherwise show raw `**bold**`.
         let formatted = false;
@@ -369,7 +405,8 @@
           files.push({ field: field, filename: String(it.filename || field), contentType: String(it.mime || '') || 'application/octet-stream', buffer: it.buffer });
         });
         const fields = { chat_id: chatId, media: media };
-        for (const k in o2) if (k !== 'signal' && Object.prototype.hasOwnProperty.call(o2, k)) fields[k] = o2[k];
+        for (const k in o2) if (k !== 'signal' && !ROUTE_KEYS[k] && Object.prototype.hasOwnProperty.call(o2, k)) fields[k] = o2[k];
+        applyRoute(fields, o2);
         try {
           const { data, res } = await callMultipart('sendMediaGroup', fields, files, o2.signal);
           if (data && data.ok) {
@@ -401,7 +438,8 @@
         const o2 = sendOpts || {};
         const raw = text == null ? '' : String(text);
         const payload = { chat_id: chatId, text: raw };
-        for (const k in o2) if (k !== 'signal' && Object.prototype.hasOwnProperty.call(o2, k)) payload[k] = o2[k];
+        for (const k in o2) if (k !== 'signal' && !ROUTE_KEYS[k] && Object.prototype.hasOwnProperty.call(o2, k)) payload[k] = o2[k];
+        applyRoute(payload, o2);
         let formatted = false;
         if (!payload.parse_mode && raw) {
           try {
@@ -410,12 +448,23 @@
           } catch (_) { /* a formatter fault must never cost the message — send it as-is */ }
         }
         try {
-          let { data, res } = await call('sendMessage', payload, o2.signal);
+          let sent = payload;                                   // the payload that produced the CURRENT result
+          let { data, res } = await call('sendMessage', sent, o2.signal);
           if (!(data && data.ok) && formatted && fmt.isParseError(data && data.description)) {
             const plain = { chat_id: chatId, text: fmt.toPlainText(raw) };
-            for (const k in o2) if (k !== 'signal' && Object.prototype.hasOwnProperty.call(o2, k)) plain[k] = o2[k];
+            for (const k in o2) if (k !== 'signal' && !ROUTE_KEYS[k] && Object.prototype.hasOwnProperty.call(o2, k)) plain[k] = o2[k];
             delete plain.parse_mode;
-            ({ data, res } = await call('sendMessage', plain, o2.signal));
+            applyRoute(plain, o2);
+            sent = plain;
+            ({ data, res } = await call('sendMessage', sent, o2.signal));
+          }
+          // The topic we were told to answer in is gone (closed/deleted/never existed). Resend to the chat root
+          // rather than lose the reply. Runs AFTER the entity fallback and rebuilds from `sent`, so a message that
+          // already fell back to plain text does not silently get its markdown syntax back on the way to General.
+          if (!(data && data.ok) && sent.message_thread_id != null && isThreadError(data && data.description)) {
+            const rootward = Object.assign({}, sent);
+            delete rootward.message_thread_id;
+            ({ data, res } = await call('sendMessage', rootward, o2.signal));
           }
           if (data && data.ok) return { ok: true, messageId: String((data.result && data.result.message_id) != null ? data.result.message_id : '') };
           const code = (data && data.error_code) || (res && res.status) || 0;

@@ -213,6 +213,12 @@
         messageId: m.message_id
       };
       if (from.is_bot) msg.fromBot = true;                       // another BOT is talking — the adapter drops these
+      /* WHICH FORUM TOPIC this arrived in, so the answer can go back to it. Read ONLY for a real topic message:
+         in a plain supergroup Telegram also sets message_thread_id on a reply chain, and echoing that back as a
+         thread would aim the reply at a "topic" the chat does not have. Everything downstream is neutral — the
+         hub stores it per chat and hands it back as `threadId`; only telegram.transport.js knows the Bot API
+         name. Absent here (a DM, a non-forum group) the outbound path is byte-identical to before. */
+      if (m.is_topic_message && m.message_thread_id != null) msg.threadId = String(m.message_thread_id);
       const mentions = mentionsOf(m);
       if (mentions.length) msg.mentions = mentions;              // who this message addresses (adapter decides)
       const replyTo = replyOf(m);

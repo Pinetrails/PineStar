@@ -5472,7 +5472,7 @@ function startTelegram(token, key, model, agentCfg) {
     userCommandNames: () => userCommandEntries().map(c => c.name),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
     // typing indicator: the hub's keep-alive loop refreshes Telegram's "typing…" bubble while a run is in flight
-    chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    chatAction: (chatId, actionOpts) => adapterRef ? adapterRef.chatAction(chatId, actionOpts) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     // INLINE KEYBOARDS (C6): multiple-choice answers and — for chats that ran /approvals on — approve/deny.
     // The registry is per-BOT (its tokens address this bot's messages only). askConsent/resolveConsent keep the
     // pause/resolve in the host; the hub only renders the keyboard and routes the tap back.
@@ -5670,7 +5670,7 @@ function startTelegramBot(botId) {
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
-    chatAction: (chatId) => adapterRef ? adapterRef.chatAction(chatId) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
+    chatAction: (chatId, actionOpts) => adapterRef ? adapterRef.chatAction(chatId, actionOpts) : Promise.resolve({ ok: false, error: 'no adapter', retryable: false }),
     // live per-message read (same contract as the station bot). THE BOT IS ITS AGENT: identity (system prompt),
     // model and provider come from the LIVE roster entry first — a dossier edit or model switch applies to the
     // bot's next message with no reconnect, and two bots bound to different agents stay genuinely different
