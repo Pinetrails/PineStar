@@ -38,8 +38,8 @@
       try { addRoot(opts.defaultWorkspaces()); } catch (_) {}
     }
     for (const root of (Array.isArray(opts.legacyWorkspaces) ? opts.legacyWorkspaces : [])) addRoot(root);
-    const appBase = env.LOCALAPPDATA || env.APPDATA || env.XDG_DATA_HOME || '';
-    if (appBase) {
+    for (const appBase of [env.LOCALAPPDATA, env.APPDATA, env.XDG_DATA_HOME]) {
+      if (!appBase) continue;
       addRoot(pathMod.join(appBase, 'StarNet', 'workspaces'));
       addRoot(pathMod.join(appBase, 'Skynet', 'workspaces'));
       addRoot(pathMod.join(appBase, 'ai.skynet.harness', 'workspaces'));
@@ -59,20 +59,11 @@
      os.tmpdir(), and a "clean-room" boot silently INHERITED their real ChatGPT sign-in, so a fresh-install
      test was never actually fresh. So: migrate only INTO a root that is one of the app's own known homes.
      The desktop app passes its real workspace root explicitly, so the shipped path is unchanged. */
-  const APP_HOME_DIR_NAMES = ['starnet', 'skynet', 'ai.skynet.harness'];
   function isRecognizedWorkspaceRoot(root, opts) {
     const pathMod = (opts && opts.pathMod) || require('node:path');
     const key = pathKey(pathMod, root);
     if (!key) return false;
-    if (knownWorkspaceRoots(opts).some(r => pathKey(pathMod, r) === key)) return true;
-    // SHAPE rule, so a home the env of THIS boot doesn't name is still recognised (the Roaming ->
-    // LocalAppData move: only one of APPDATA/LOCALAPPDATA is consulted for the base list above).
-    // `<...>/<StarNet|Skynet|ai.skynet.harness>/workspaces` is an app home; a temp dir never is.
-    try {
-      const resolved = pathMod.resolve(String(root || ''));
-      if (pathMod.basename(resolved).toLowerCase() !== 'workspaces') return false;
-      return APP_HOME_DIR_NAMES.indexOf(pathMod.basename(pathMod.dirname(resolved)).toLowerCase()) >= 0;
-    } catch (_) { return false; }
+    return knownWorkspaceRoots(opts).some(r => pathKey(pathMod, r) === key);
   }
 
   function candidateCodexTokenFiles(opts) {
