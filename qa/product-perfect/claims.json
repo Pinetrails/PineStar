@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "93c141b0a6523535a2cd4e0e4061af10fc5c26c7",
+    "sourceCommit": "ee1be9aeaff60c835a3a1c9babd0b796f1a6490f",
     "pathSetSha256": "af9ad09edfc5cfca11ef337473fa52a4231aac027fa96bc0d00026a69427c890",
     "files": [
       {
@@ -338,8 +338,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 195499,
-        "sha256": "1606a56e128aa7469c98556da312956fe22026dca204e6a1869f1e6d5e869c25"
+        "bytes": 216576,
+        "sha256": "b47659cf756ce784c9925533d0bc20df608e109e8cc8d5d4dabdd0ae69bdf6d1"
       },
       {
         "path": "frontend/app/mint.js",
@@ -498,8 +498,8 @@
       },
       {
         "path": "frontend/app/recipe-catalog/core.js",
-        "bytes": 15975,
-        "sha256": "4f69846f2b881712a87da85abf168650175bfecf6fffb6e6dc437081480b427b"
+        "bytes": 16208,
+        "sha256": "11c3d4b622ad9e42d87befa2ed9d70d5f5c2f4c12be1617d345b4312e1e7a1fe"
       },
       {
         "path": "frontend/app/recipe-catalog/creator.js",
@@ -508,8 +508,8 @@
       },
       {
         "path": "frontend/app/recipe-catalog/dev.js",
-        "bytes": 13283,
-        "sha256": "2c89771425548ff7da59047c78e67195185967b06bd202fecc7dc6e1bcdf3bfe"
+        "bytes": 13326,
+        "sha256": "9ebe130bd9802b6b1eed6f9006229158e5227034feb77dbeec8cdb67bcff0a15"
       },
       {
         "path": "frontend/app/recipe-catalog/index.js",
@@ -528,8 +528,8 @@
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 50165,
-        "sha256": "96f7fd9867a7225a88f7b6ca43e26d33e4246035c777b6ee6e8e296f95322d93"
+        "bytes": 56350,
+        "sha256": "f880744f160c7c7ea617f1c4579d3e70578d189af3416b244f2345d62dd188a0"
       },
       {
         "path": "frontend/app/recruiter.js",
@@ -873,8 +873,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 62328,
-        "sha256": "b8cc96fef539224b3d729e76b38465e8760bef33c13b9765e6469852d338d23f"
+        "bytes": 66178,
+        "sha256": "6c5c4f45a85274fdae3d67f99c74b23ac5b27a41072e5b9533c90ce0473a3ea8"
       },
       {
         "path": "frontend/css/motion.css",
