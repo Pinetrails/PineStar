@@ -7217,6 +7217,320 @@ const PropSprites = (() => {
     if (on) bloom(cx - 1, y, 2, 1, lc, jam ? 0.42 : sealed ? 0.22 : 0.28);
   };
 
+  /* ============ TABLETOP SET (2026-07-29) ============
+     Small objects that live ON a table (`stack: true`), authored after the mount axis gained its third
+     state. Every one of these is drawn in the ordinary footprint frame with its contact on the footprint
+     BOTTOM — draw() lifts the whole origin by SURFACE_RISE when a table is under it, so none of them
+     bakes a mount height and all of them are equally correct standing on bare deck.
+
+     THE SCALE RULE THAT MAKES THEM READ: a tile is 12px and an agent is ~35px, so a mug that fills its
+     tile is a mug the size of a torso. These are authored 5-9px wide, centred, sitting in the LOWER
+     half of the tile — the empty margin is what says "small object", and it is also the gap that lets
+     several of them sit along one LONG TABLE without merging into a single mass. They keep the v3
+     projection (visible top surface, short front face) and the v4 material kit; identity is in the
+     ACCENT, never in a recoloured casing. */
+
+  F.mug = (x, y, w, h, f) => {   // enamel mug — ONE bold cylinder + a C handle; the OPEN RIM is the read
+    const ph = (f && f.x) || 0;
+    const EN = '#dfe6e2', EN_LIT = '#ffffff', EN_DK = '#8b9a9c', BREW = '#3a2317';
+    ctx.globalAlpha = 0.24; px(x + 2, y + 11, 8, 1, '#000'); ctx.globalAlpha = 1;
+    // HANDLE first so the body's outline overlaps it — a handle drawn after reads as a sticker
+    px(x + 8, y + 5, 3, 1, LINE); px(x + 10, y + 6, 1, 2, LINE); px(x + 8, y + 8, 3, 1, LINE);
+    px(x + 9, y + 6, 1, 2, EN); px(x + 9, y + 5, 1, 1, EN_LIT);
+    // BODY: a fat cylinder filling most of the tile. Small was the mistake in v1 — at 12px a mug that
+    // only 5px wide reads as a pebble; the width is what names it, the rim is what tilts the camera.
+    px(x + 1, y + 3, 8, 8, LINE);
+    px(x + 2, y + 4, 6, 6, EN);
+    px(x + 2, y + 4, 1, 6, EN_LIT);                                // west highlight column
+    px(x + 7, y + 4, 1, 6, EN_DK); rimEdge(x + 7, y + 4, 1, 6, 0.18);
+    px(x + 2, y + 9, 6, 1, U.shade(EN_DK, -0.2));                  // base shade
+    // RIM — the top surface, looked down into. This ellipse-ish band is the whole projection cue.
+    px(x + 1, y + 2, 8, 2, LINE);
+    px(x + 2, y + 3, 6, 1, U.shade(EN, 0.18));
+    px(x + 3, y + 2, 4, 1, EN_LIT); keyEdge(x + 3, y + 2, 3, 1, 0.30);
+    px(x + 3, y + 3, 4, 1, BREW);                                  // the coffee, seen from above
+    px(x + 4, y + 3, 2, 1, U.shade(BREW, 0.22));                   // one catchlight on the surface
+    px(x + 2, y + 6, 6, 1, '#8a3f2a');                             // chipped enamel band — the only colour
+    px(x + 2, y + 7, 6, 1, U.shade('#8a3f2a', -0.34));
+    if (blink(3000, ph + x)) { ctx.globalAlpha = 0.13; px(x + 4, y, 1, 3, '#dfe8ea'); px(x + 5, y - 1, 1, 2, '#dfe8ea'); ctx.globalAlpha = 1; }   // one thin curl, never a cloud
+  };
+
+  F.bookstack = (x, y, w, h, f) => {   // three hardbacks, offset — the STEP is the whole silhouette
+    ctx.globalAlpha = 0.22; px(x + 1, y + 11, 10, 1, '#000'); ctx.globalAlpha = 1;
+    // bottom -> top, each shorter and offset, so the stack reads as separate objects not one block
+    const vol = (bx, by, bw, c, pages) => {
+      px(bx - 1, by - 1, bw + 2, 4, LINE);
+      px(bx, by, bw, 1, U.shade(c, 0.26));                         // the COVER's top face — what the camera sees
+      px(bx, by + 1, bw, 2, c);
+      px(bx, by + 2, bw, 1, U.shade(c, -0.34));
+      px(bx, by + 1, 1, 2, U.shade(c, 0.14));
+      px(bx + bw - 1, by + 1, 1, 2, pages);                        // page block on the fore edge
+      px(bx + bw - 1, by, 1, 1, U.shade(pages, 0.2));
+      keyEdge(bx, by, Math.max(2, bw - 3), 1, 0.18);
+    };
+    vol(x + 1, y + 7, 10, '#5b3a52', '#d9d2bd');                   // plum
+    vol(x + 2, y + 4, 8, '#2f5a56', '#cfc8b3');                    // teal, offset east
+    vol(x + 1, y + 1, 7, '#7a4a2e', '#d9d2bd');                    // tan, offset west — the overhang breaks the column
+    px(x + 3, y + 2, 3, 1, U.shade('#c9a24a', 0.1));               // one gilt title bar, the only bright mark
+  };
+
+  F.desklamp = (x, y, w, h, f) => {   // task lamp — an OFF-AXIS "7": base east, arm over, cone hanging west
+    const r = RAMP.gun, WARM = '#ffd9a0';
+    ctx.globalAlpha = 0.24; px(x + 4, y + 11, 8, 1, '#000'); ctx.globalAlpha = 1;
+    // The silhouette is the whole prop. v2 stacked base, upright and shade on ONE centre line, and at
+    // 12px a vertical grey column with a warm pixel is a bollard, not a lamp. Pushing the base EAST and
+    // the cone WEST puts real negative space under the arm — that gap is what names it from across the
+    // room, and it is the same trick the crane-armed props use.
+    px(x + 5, y + 9, 7, 3, LINE);                                  // weighted base, EAST
+    px(x + 6, y + 9, 5, 1, U.shade(r.top, 0.22)); keyEdge(x + 6, y + 9, 3, 1, 0.26);
+    px(x + 6, y + 10, 5, 1, r.face); px(x + 6, y + 11, 5, 1, r.ao);
+    px(x + 7, y + 4, 2, 6, LINE); px(x + 7, y + 4, 1, 6, r.lit); px(x + 8, y + 5, 1, 5, r.dk);   // upright
+    px(x + 2, y + 3, 6, 2, LINE);                                  // forearm reaching WEST, over open air
+    px(x + 2, y + 3, 6, 1, r.lit); px(x + 3, y + 4, 5, 1, r.dk);
+    px(x + 7, y + 3, 1, 1, r.sheen);                               // the elbow takes the key
+    // CONE: hangs off the west end of the arm, opening DOWN — small, hard-edged, one hot mouth.
+    px(x + 0, y + 5, 6, 1, LINE);
+    px(x + 0, y + 6, 6, 1, LINE);
+    px(x + 1, y + 5, 4, 1, r.face); px(x + 1, y + 5, 2, 1, r.sheen);
+    px(x + 1, y + 6, 4, 1, U.shade(r.face, -0.34));                // shaded underside of the shade
+    px(x + 1, y + 7, 4, 1, WARM);                                  // the mouth
+    bloom(x + 1, y + 7, 4, 1, WARM, 0.62);
+    spill(x + 1, y + 8, 4, WARM, 0.18, 3);                         // a hint of pool, never a wash
+    cable(x + 11, y + 9, x + 9, y + 11, 1.2, '#0b1114');
+  };
+
+  F.radio = (x, y, w, h, f) => {   // valve set — a warm dial in a dark case; the only prop here with a needle
+    const r = RAMP.fabric, ph = (f && f.x) || 0;
+    ctx.globalAlpha = 0.22; px(x + 1, y + 11, 10, 1, '#000'); ctx.globalAlpha = 1;
+    chamf(x + 1, y + 3, 10, 9, LINE, 2);
+    px(x + 2, y + 4, 8, 1, U.shade('#4a352b', 0.30));              // the CASE TOP — walnut, lit
+    keyEdge(x + 2, y + 4, 5, 1, 0.26);
+    px(x + 2, y + 5, 8, 5, '#4a352b');
+    px(x + 2, y + 5, 1, 5, U.shade('#4a352b', 0.18)); px(x + 9, y + 5, 1, 5, U.shade('#4a352b', -0.30));
+    rimEdge(x + 9, y + 5, 1, 5, 0.20);
+    px(x + 2, y + 10, 8, 1, r.ao);
+    // grille cloth, west 2/3 — horizontal weave, dark
+    inset(x + 3, y + 6, 4, 3, '#2b2119');
+    for (let j = 0; j < 3; j += 1) px(x + 3, y + 6 + j, 4, 1, j % 2 ? '#332619' : '#241b13');
+    // the DIAL: lit amber scale + a needle that drifts, which is the whole animation
+    px(x + 7, y + 6, 3, 3, LINE); px(x + 7, y + 6, 3, 3, '#c98a2a');
+    bloom(x + 7, y + 6, 3, 3, '#ffc45a', 0.30);
+    const nx = 7 + ((Math.floor(now / 900) + ph) % 3);
+    px(x + nx, y + 6, 1, 3, '#3a2410');
+    if (blink(1400, ph + x)) px(x + 9, y + 10, 1, 1, ACC.flow);    // power lamp
+  };
+
+  F.toolbox = (x, y, w, h, f) => {   // open cantilever tray — you look DOWN into the compartments
+    const r = RAMP.steel;
+    ctx.globalAlpha = 0.22; px(x + 1, y + 11, 10, 1, '#000'); ctx.globalAlpha = 1;
+    px(x + 0, y + 6, 12, 5, LINE);                                 // body
+    px(x + 1, y + 7, 10, 3, r.face);
+    px(x + 1, y + 7, 10, 1, r.top); keyEdge(x + 1, y + 7, 6, 1, 0.24);
+    px(x + 1, y + 9, 10, 1, r.ao);
+    px(x + 1, y + 8, 1, 1, r.lit); px(x + 10, y + 8, 1, 1, r.dk);
+    // the OPEN tray above, cantilevered west — the overhang is the silhouette
+    px(x + 0, y + 3, 9, 3, LINE);
+    px(x + 1, y + 4, 7, 2, U.shade(r.face, -0.18));
+    px(x + 1, y + 4, 7, 1, '#141c20');                             // looking into the tray
+    px(x + 1, y + 4, 2, 1, ACC.flow);                              // a brass fitting
+    px(x + 4, y + 4, 1, 1, '#b8452f'); px(x + 6, y + 4, 2, 1, '#7f8f97');   // a red grip + a steel shank
+    px(x + 3, y + 5, 5, 1, U.shade(r.face, -0.34));
+    // handle arching over the top — the one curved line in a boxy prop
+    px(x + 2, y + 1, 5, 1, LINE); px(x + 1, y + 2, 1, 1, LINE); px(x + 7, y + 2, 1, 1, LINE);
+    px(x + 3, y + 1, 3, 1, r.sheen);
+    px(x + 9, y + 7, 2, 2, U.shade('#8a7434', 0.05));              // hazard tick on the flank
+  };
+
+  F.figurine = (x, y, w, h, f) => {   // a carved BUST on a plinth — three shapes, no limbs
+    const r = RAMP.gun, ph = (f && f.x) || 0;
+    const ST = '#6d6459', ST_LIT = '#8e8478', ST_DK = '#443e37';
+    ctx.globalAlpha = 0.24; px(x + 2, y + 11, 8, 1, '#000'); ctx.globalAlpha = 1;
+    // PLINTH — wide and squat, so the thing standing on it reads as small and precious
+    px(x + 1, y + 8, 10, 4, LINE);
+    px(x + 2, y + 8, 8, 1, U.shade(r.top, 0.20)); keyEdge(x + 2, y + 8, 4, 1, 0.26);
+    px(x + 2, y + 9, 8, 2, r.face); px(x + 2, y + 10, 8, 1, U.shade(r.face, -0.24));
+    px(x + 3, y + 10, 6, 1, U.shade('#c9a24a', -0.05));            // brass name plate
+    // BUST — v1 tried a whole mech (legs, feet, pauldrons, head) inside 8px and resolved to mush.
+    // A bust is THREE masses: a flared base, a tapering body, a domed head. That survives 12px.
+    px(x + 3, y + 6, 6, 2, LINE); px(x + 4, y + 6, 4, 1, ST); px(x + 4, y + 7, 4, 1, ST_DK);   // shoulders, flared
+    px(x + 4, y + 3, 4, 4, LINE);                                  // the body block
+    px(x + 5, y + 4, 2, 3, ST); px(x + 5, y + 4, 1, 3, ST_LIT); px(x + 6, y + 5, 1, 2, ST_DK);
+    px(x + 4, y + 1, 4, 3, LINE);                                  // head
+    px(x + 5, y + 2, 2, 2, ST); px(x + 5, y + 2, 1, 1, ST_LIT); rimEdge(x + 6, y + 2, 1, 2, 0.20);
+    px(x + 5, y + 3, 2, 1, blink(2400, ph + x) ? ACC.alert : U.shade(ACC.alert, -0.62));   // the eye band, waking
+  };
+
+  F.deskterminal = (x, y, w, h, f) => {   // a little CRT on a swivel — the one lit face in the set
+    const r = RAMP.steel, ph = (f && f.x) || 0, on = !!(f && f.work);
+    ctx.globalAlpha = 0.22; px(x + 2, y + 11, 8, 1, '#000'); ctx.globalAlpha = 1;
+    px(x + 2, y + 9, 8, 3, LINE);                                  // weighted foot, wide enough to read
+    px(x + 3, y + 9, 6, 1, U.shade(r.top, 0.18)); keyEdge(x + 3, y + 9, 3, 1, 0.24);
+    px(x + 3, y + 10, 6, 2, r.face);
+    px(x + 5, y + 7, 2, 2, LINE); px(x + 5, y + 7, 1, 2, r.lit);   // stalk
+    // the tube: chamfered, bulging — never a plain rectangle
+    chamf(x + 0, y + 0, 12, 8, LINE, 2);
+    chamf(x + 1, y + 1, 10, 6, r.face, 1);
+    px(x + 1, y + 1, 10, 1, r.top); keyEdge(x + 1, y + 1, 6, 1, 0.28);
+    px(x + 10, y + 2, 1, 4, r.dk); rimEdge(x + 10, y + 2, 1, 4, 0.20);
+    px(x + 1, y + 6, 10, 1, r.ao);                                 // under-bezel shade
+    inset(x + 2, y + 2, 8, 4, '#08120e');
+    const g = on ? scr(ph) : U.shade(scr(ph), -0.45);
+    codeRow(x + 3, y + 2, 7, 1 + ph, g, '#d9ffe8');
+    codeRow(x + 3, y + 3, 7, 3 + ph, U.shade(g, -0.18), '#d9ffe8');
+    codeRow(x + 3, y + 4, 7, 5 + ph, U.shade(g, -0.34), '#d9ffe8');
+    if (blink(520, ph)) px(x + 3, y + 5, 2, 1, g);                 // cursor
+    scanl(x + 2, y + 2, 8, 4, 0.22);
+    bloom(x + 2, y + 2, 8, 4, g, on ? 0.30 : 0.13);
+    cable(x + 8, y + 8, x + 11, y + 10, 1.0, '#0b1114');
+  };
+
+  F.modelship = (x, y, w, h, f) => {   // a starship on a rod — 2x1 so the HULL can be long enough to read
+    // NB: w/h arrive in PIXELS (draw() multiplies the footprint by TILE before calling), so a prop
+    // function never scales them again. Doing so put this whole set off-canvas until it was caught.
+    const r = RAMP.steel, ph = (f && f.x) || 0, cw = w;
+    const cx = x + (cw >> 1);
+    ctx.globalAlpha = 0.24; px(cx - 5, y + 11, 10, 1, '#000'); ctx.globalAlpha = 1;
+    px(cx - 4, y + 9, 9, 3, LINE);                                 // display base
+    px(cx - 3, y + 9, 7, 1, U.shade(r.top, 0.18)); keyEdge(cx - 3, y + 9, 4, 1, 0.24);
+    px(cx - 3, y + 10, 7, 2, r.face);
+    px(cx - 2, y + 11, 5, 1, U.shade('#c9a24a', -0.1));            // brass plate, like the figurine's
+    px(cx, y + 7, 2, 2, LINE); px(cx, y + 7, 1, 2, r.dk);          // support rod
+    // HULL — a LONG lens in plan, nose EAST, spanning nearly the whole 2-tile width. v2 built a compact
+    // delta centred on cx, which on a 24px footprint is a small grey clump with room to spare either
+    // side; a model ship reads by being LONG. Rows are [x0, width] relative to x.
+    const rows = [[8, 9], [5, 15], [3, 18], [5, 15], [8, 9]];
+    rows.forEach((s, j) => px(x + s[0] - 1, y + 2 + j, s[1] + 2, 1, LINE));
+    rows.forEach((s, j) => {
+      const bx = x + s[0], mid = j === 2;
+      px(bx, y + 2 + j, s[1], 1, j < 2 ? r.top : mid ? r.face : U.shade(r.face, -0.26));
+      px(bx, y + 2 + j, 1, 1, r.dk);                               // blunt tail, west
+      px(bx + s[1] - 1, y + 2 + j, 1, 1, r.lit);                   // the nose edge, east, takes the key
+    });
+    px(x + 6, y + 2, 8, 1, r.sheen); keyEdge(x + 6, y + 2, 6, 1, 0.28);      // lit spine along the top
+    px(x + 5, y + 4, 15, 1, U.shade(r.top, 0.12));                 // centreline
+    px(x + 17, y + 3, 4, 3, LINE);                                 // the drawn-out nose
+    px(x + 17, y + 4, 4, 1, U.shade(r.top, 0.24));
+    px(x + 6, y + 1, 6, 1, LINE); px(x + 7, y + 1, 4, 1, U.shade(r.top, -0.10));   // dorsal fin, aft
+    px(x + 4, y + 7, 6, 1, LINE); px(x + 4, y + 7, 6, 1, r.dk);    // swept wing slung under, west
+    const lit = blink(2200, ph + x);
+    px(x + 3, y + 3, 2, 3, lit ? ACC.data : U.shade(ACC.data, -0.62));       // engine block, aft
+    if (lit) bloom(x + 2, y + 3, 2, 3, ACC.data, 0.34);
+    for (let i = 0; i < 5; i++) px(x + 7 + i * 2, y + 4, 1, 1, U.shade(ACC.flow, -0.15));   // porthole row
+  };
+
+  /* ============ FREESTANDING LOUNGE SET (2026-07-29) ============
+     Floor pieces, not table-tops. Each one an idle agent can actually WALK TO — they carry `use`
+     descriptors, which is the point of the batch: the catalog had plenty of lounge furniture and
+     almost none of it was a destination. */
+
+  F.bookshelf = (x, y, w, h, f) => {   // 2x1 low shelf — a WALL of spines, which no other prop has
+    const r = RAMP.gun, cw = w, ph = (f && f.x) || 0;   // w/h are PIXELS here, never tiles
+    shadow2(x + 1, y + h - 1, cw - 2);
+    const top = y + h - 12;
+    topFace(x + 1, top, cw - 2, 3, r);                             // the case's top surface, looked down on
+    frontFace(x + 1, top + 3, cw - 2, 8, r);
+    // TWO shelves of spines. Colour varies per slot off a stable hash, so a row of shelves never repeats.
+    const SP = ['#5b3a52', '#2f5a56', '#7a4a2e', '#3d4a6b', '#6b3a3a', '#4a5a2e', '#5a4a6b'];
+    for (let row = 0; row < 2; row++) {
+      const sy = top + 4 + row * 4;
+      px(x + 2, sy + 3, cw - 4, 1, U.shade(r.face, -0.42));        // shelf board + its shadow
+      let bx = x + 2;
+      while (bx < x + cw - 3) {
+        const k = U.hash('bk' + x + ',' + row + ',' + bx);
+        const bw = 1 + (k % 2), lean = (k >>> 6) % 7 === 0;
+        const c = SP[(k >>> 3) % SP.length];
+        if (lean) { px(bx, sy + 1, bw, 2, U.shade(c, -0.1)); px(bx, sy + 1, bw, 1, U.shade(c, 0.2)); }
+        else {
+          px(bx, sy, bw, 3, c);
+          px(bx, sy, bw, 1, U.shade(c, 0.30));                     // top edge of the spine catches the key
+          px(bx, sy + 2, bw, 1, U.shade(c, -0.36));
+          if ((k >>> 9) % 4 === 0) px(bx, sy + 1, bw, 1, U.shade('#c9a24a', 0.05));   // a gilt band
+        }
+        bx += bw + 1;
+      }
+    }
+    px(x + 1, top + 3, cw - 2, 1, U.shade(r.top, -0.30));          // under-lip AO
+    if (blink(3400, ph + x)) px(x + cw - 3, top + 1, 1, 1, U.shade(ACC.mem, -0.2));   // a reading lamp pip
+  };
+
+  F.beanbag = (x, y, w, h, f) => {   // a slumped sack — the ONLY prop with no straight lines
+    const ph = (f && f.x) || 0;
+    ctx.globalAlpha = 0.24; px(x + 1, y + 10, 10, 2, '#000'); ctx.globalAlpha = 1;
+    const c = '#6b4a5e', lit = U.shade(c, 0.26), dk = U.shade(c, -0.34);
+    // built as stacked runs of decreasing width — a genuine slump, wider at the base
+    const rows = [[2, 8], [1, 10], [0, 12], [0, 12], [1, 10], [2, 8], [3, 6]];
+    rows.forEach((s, j) => px(x + s[0] - 1, y + 4 + j, s[1] + 2, 1, LINE));
+    rows.forEach((s, j) => px(x + s[0], y + 4 + j, s[1], 1, j < 2 ? lit : j > 4 ? dk : c));
+    px(x + 3, y + 3, 6, 1, LINE); px(x + 3, y + 4, 6, 1, U.shade(lit, 0.18));   // the crown, where someone sat
+    keyEdge(x + 3, y + 4, 4, 1, 0.20);
+    px(x + 2, y + 7, 8, 1, U.shade(c, -0.12));                     // the seam that runs round the middle
+    for (let i = 0; i < 5; i++) { const k = U.hash('bb' + x + i); px(x + 2 + (k % 8), y + 5 + ((k >>> 5) % 5), 1, 1, U.shade(c, 0.12)); }   // fabric nap
+    if (blink(4200, ph + x)) px(x + 8, y + 6, 1, 1, U.shade(lit, 0.2));
+  };
+
+  F.pinball = (x, y, w, h, f) => {   // 1x2 cabinet — TALL 3/4 like the arcades, but the PLAYFIELD is the read
+    const r = RAMP.steel, ph = (f && f.x) || 0, base = y + h;   // h is PIXELS here, never tiles
+    shadow2(x + 1, base - 1, 10);
+    // legs + the raked body: a pinball table is a wedge, which is what tells it from an arcade cabinet
+    px(x + 1, base - 6, 2, 5, LINE); px(x + 9, base - 6, 2, 5, LINE);
+    px(x + 1, base - 6, 1, 5, r.lit); px(x + 10, base - 6, 1, 5, r.dk);
+    underAO(x + 3, base - 5, 6, 3);
+    chamf(x + 0, base - 12, 12, 7, LINE, 2);
+    chamf(x + 1, base - 11, 10, 5, r.face, 1);
+    // PLAYFIELD, raked toward the viewer — dark glass with bumpers under it
+    px(x + 2, base - 11, 8, 4, '#0d1a18');
+    px(x + 2, base - 11, 8, 1, U.shade('#0d1a18', 0.5));           // glass catching the room
+    const bump = (bx, by, c) => { px(bx, by, 2, 1, c); px(bx, by, 1, 1, U.shade(c, 0.4)); };
+    bump(x + 3, base - 10, blink(430, ph) ? ACC.alert : U.shade(ACC.alert, -0.6));
+    bump(x + 6, base - 10, blink(610, ph + 1) ? ACC.flow : U.shade(ACC.flow, -0.6));
+    bump(x + 4, base - 8, blink(790, ph + 2) ? ACC.data : U.shade(ACC.data, -0.6));
+    px(x + 3, base - 7, 1, 1, '#9fb0b2'); px(x + 8, base - 7, 1, 1, '#9fb0b2');   // flippers
+    const ball = 3 + ((Math.floor(now / 260) + ph) % 6);
+    px(x + ball, base - 9, 1, 1, '#e8f2f4');                       // the ball, actually moving
+    // BACKGLASS: the tall lit head, the silhouette's whole personality
+    px(x + 1, base - 21, 10, 9, LINE);
+    px(x + 2, base - 20, 8, 7, '#161d24');
+    px(x + 2, base - 20, 8, 1, U.shade('#161d24', 0.5));
+    const hot = blink(900, ph);
+    px(x + 3, base - 19, 6, 2, hot ? U.shade(ACC.lounge, 0.1) : U.shade(ACC.lounge, -0.45));
+    bloom(x + 3, base - 19, 6, 2, ACC.lounge, hot ? 0.42 : 0.18);
+    for (let i = 0; i < 4; i++) px(x + 3 + i * 2, base - 16, 1, 1, U.shade(ACC.flow, blink(700, ph + i) ? 0.1 : -0.6));
+    px(x + 3, base - 14, 6, 1, U.shade(ACC.data, -0.1));           // the score reel
+    scanl(x + 2, base - 20, 8, 7, 0.16);
+  };
+
+  F.steamvent = (x, y, w, h, f) => {   // FLUSH deck grate (walk-over) — all the presence is the plume above it
+    const ph = (f && f.x) || 0;
+    // inlaid, no rise: agents cross this tile, so nothing may stand proud of the deck. The grate fills
+    // the tile — v1 drew a small dim panel that read as a smudge on the floor.
+    px(x + 0, y + 3, 12, 9, '#070b0d');
+    px(x + 1, y + 4, 10, 7, '#1b242a');
+    px(x + 1, y + 4, 10, 1, '#33424b'); keyEdge(x + 1, y + 4, 5, 1, 0.20);
+    px(x + 1, y + 10, 10, 1, '#060a0c');
+    for (let i = 0; i < 5; i++) {                                            // deep bars, with a lit west lip each
+      px(x + 2 + i * 2, y + 5, 1, 5, '#0a1013');
+      px(x + 3 + i * 2, y + 5, 1, 5, '#25313a');
+    }
+    px(x + 1, y + 4, 1, 7, '#3b4a52'); px(x + 10, y + 4, 1, 7, '#111a1e');   // frame
+    px(x + 1, y + 4, 1, 1, '#556770'); px(x + 10, y + 10, 1, 1, '#0a0f12');  // bolt heads
+    // PLUME: a 3.4s cycle that is VENTING most of it — v1 idled dark two thirds of the time, so the
+    // prop read as a dead grille whenever you looked. Still gapped, so a room of them never fogs over.
+    const t = ((now / 3400) + ph * 0.37) % 1;
+    if (t < 0.78) {
+      const k = t / 0.78, rise = Math.round(k * 11), spreadN = 1 + Math.round(k * 3);
+      const a = (k < 0.18 ? k / 0.18 : (1 - k) / 0.82) * 0.42;
+      ctx.globalAlpha = a * 0.7; px(x + 4, y + 2, 4, 3, '#e8f2f4'); ctx.globalAlpha = 1;   // the throat, brightest
+      for (let i = 0; i < 5; i++) {
+        const yy = y + 3 - rise + i * 2;
+        if (yy < y - 9) break;
+        const wob = Math.round(Math.sin(now / 520 + i + ph) * 1.6);
+        ctx.globalAlpha = Math.max(0, a * (1 - i * 0.19));
+        px(x + 5 - spreadN + wob, yy, spreadN * 2 + 2, 2, '#cfe0e4');
+        ctx.globalAlpha = 1;
+      }
+    }
+  };
+
   /* ============ CATALOG — every placeable prop ============
      id        — F key (the draw fn) AND the model's prop.t
      label     — palette button text
@@ -7237,7 +7551,19 @@ const PropSprites = (() => {
        functional — SYSTEMS: props that DO something (place · assign · wire into real workflows)
        cosmetic   — DECOR: looks only (decoration, atmosphere, leisure)
      `tier` + `cat` drive the palette grouping; `seat:true` marks an agent-assignable workstation;
-     `desc` is the hover-card blurb. None of this is read by the routing/capability backend (it keys on prop.t). */
+     `desc` is the hover-card blurb. None of this is read by the routing/capability backend (it keys on prop.t).
+
+     THE MOUNT AXIS (three states — worldmodel.js checkProp enforces them):
+       surface: true    this prop IS a table; other props may stand on it.
+       mount:'surface'  this prop REQUIRES a table (it has no business on bare deck).
+       stack: true      this prop MAY stand on a table, and is equally at home on the deck.
+     stack was added 2026-07-29 because only the two mount:'surface' props could ever be placed on a
+     table — a mug, a plant or a stack of printouts hit OVERLAP — so tables read as unusable. What
+     earns the flag is what the ART DRAWS, never the name: an object whose contact is its own base
+     (mug, pot, papers, tote, speaker cab) stacks; anything that draws legs, a stand or a deckPlate
+     is floor furniture and does not (arc_microfiche is a reader DESK, comms_inbox is bolted down,
+     tank/monstera are explicitly floor pieces). Every prop function anchors to its footprint bottom,
+     so a stacked prop needs no art change — draw() lifts the whole origin by SURFACE_RISE. */
   const CATALOG = [
     /* ===================== FUNCTIONAL ===================== */
     // WORKSTATIONS — the agent's seat. Assign ONE agent; it walks here and sits to work when tasked.
@@ -7310,7 +7636,7 @@ const PropSprites = (() => {
     { id: "research_corelens", label: "CORE LENS", cat: "lab", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "research_trendpillar", label: "TREND PILLAR", cat: "lab", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "research_samplecart", label: "SAMPLE CART", cat: "lab", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
-    { id: "research_papers", label: "PAPERS", cat: "lab", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
+    { id: "research_papers", label: "PAPERS", cat: "lab", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false, stack: true },
     { id: "etsy_threadrack", label: "THREAD RACK", cat: "lab", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     { id: "etsy_dyevat", label: "DYE VAT", cat: "lab", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true },
     { id: "etsy_kiln", label: "KILN", cat: "lab", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true },
@@ -7318,39 +7644,41 @@ const PropSprites = (() => {
     // STORAGE — crates, bins & vaults (decorative).
     { id: "rackV", label: "RACK V", cat: "storage", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "crate", label: "CRATE", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
-    { id: "boxes", label: "BOXES", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
+    { id: "boxes", label: "BOXES", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true, stack: true },
     { id: "goldcrate", label: "GOLD CRATE", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     { id: "parcels", label: "PARCELS", cat: "storage", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
-    { id: "gigs_partsbin", label: "PARTS BIN", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
+    { id: "gigs_partsbin", label: "PARTS BIN", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true, stack: true },
     { id: "treasury_coinsorter", label: "COIN SORTER", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     { id: "treasury_token_furnace", label: "TOKEN FURNACE", cat: "storage", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     // COMMS — antennas & mail dressing.
     { id: "commswall", label: "COMMS WALL", cat: "comms", tier: "cosmetic", w: 6, h: 1, animated: true, blocks: false },
     { id: "comms_inbox", label: "INBOX", cat: "comms", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     { id: "gigs_thumbwall", label: "THUMB WALL", cat: "comms", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
-    { id: "gigs_amp", label: "AMP", cat: "comms", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "gigs_amp", label: "AMP", cat: "comms", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, stack: true },
     { id: "pub_publishpress", label: "PUBLISH PRESS", cat: "comms", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true },
     { id: "pub_outboundchute", label: "OUTBOUND CHUTE", cat: "comms", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "pub_mailpod", label: "MAIL POD", cat: "comms", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     { id: "arc_indexwall", label: "INDEX WALL", cat: "comms", tier: "cosmetic", w: 4, h: 1, animated: true, blocks: false },
     { id: "arc_microfiche", label: "MICROFICHE", cat: "comms", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     // LOUNGE — morale & downtime (idle agents drift here).
-    { id: "djbooth", label: "DJ BOOTH", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true },
-    { id: "speaker", label: "SPEAKER", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "djbooth", label: "DJ BOOTH", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true, use: { kind: 'dj', sit: false, approach: 'south' } },
+    { id: "speaker", label: "SPEAKER", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, stack: true },
     { id: "bar", label: "BAR", cat: "lounge", tier: "cosmetic", w: 4, h: 1, animated: true, blocks: true, use: { kind: 'bar', sit: false, approach: 'south' } },
     { id: "tv", label: "TV", cat: "lounge", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: true, use: { kind: 'tv', sit: false, approach: 'south' } },
     { id: "couch", label: "COUCH", cat: "lounge", tier: "cosmetic", w: 5, h: 1, animated: true, blocks: true, use: { kind: 'couch', sit: true, approach: 'south' } },
     { id: "arcade", label: "ARCADE", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'arcade', sit: false, approach: 'south' } },
     { id: "arcade2", label: "ARCADE II", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'arcade', sit: false, approach: 'south' } },
     { id: "jukebox", label: "JUKEBOX", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'juke', sit: false, approach: 'south' } },
-    { id: "bunk", label: "BED", cat: "lounge", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true },
-    { id: "quarters_pooltable", label: "POOL TABLE", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true },
-    { id: "quarters_vending", label: "VENDING", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
-    { id: "quarters_lockerbank", label: "LOCKERS", cat: "lounge", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: true },
-    { id: "quarters_minifridge", label: "MINIFRIDGE", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    // BED — `sit` is the pose; world.js planBedSleep is what actually walks a dormant agent here and
+    // lies it ON the mattress (the couch seat machinery), so this row is also the sleep target.
+    { id: "bunk", label: "BED", cat: "lounge", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true, use: { kind: 'bed', sit: true, approach: 'south' } },
+    { id: "quarters_pooltable", label: "POOL TABLE", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true, use: { kind: 'pool', sit: false, approach: 'south' } },
+    { id: "quarters_vending", label: "VENDING", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'vend', sit: false, approach: 'south' } },
+    { id: "quarters_lockerbank", label: "LOCKERS", cat: "lounge", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: true, use: { kind: 'locker', sit: false, approach: 'south' } },
+    { id: "quarters_minifridge", label: "MINIFRIDGE", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'fridge', sit: false, approach: 'auto' } },
     // DECOR — small dressing & plain seating.
-    { id: "coffee", label: "COFFEE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "plant", label: "PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "coffee", label: "COFFEE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, stack: true, use: { kind: 'coffee', sit: false, approach: 'auto' } },
+    { id: "plant", label: "PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, stack: true },
     { id: "rug", label: "RUG", cat: "decor", tier: "cosmetic", w: 4, h: 3, animated: true, blocks: false },
     { id: "treasury_pnl_holo", label: "PNL HOLO", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_floorlight", label: "FLOOR LIGHT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
@@ -7358,29 +7686,58 @@ const PropSprites = (() => {
     { id: "stool", label: "STOOL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     { id: "chair", label: "CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     // TABLES (2026-07-26) — the catalog had hero surfaces and nothing in between, so every small object
-    // had to be parked on the deck. `surface: true` is what a mount:"surface" prop may be placed ON.
+    // had to be parked on the deck. `surface: true` is what a mount:"surface" / stack:true prop may be
+    // placed ON. See the MOUNT AXIS note above the catalog for what those two flags mean.
     { id: "sidetable", label: "SIDE TABLE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, surface: true },
     { id: "loungetable", label: "LOUNGE TABLE", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, surface: true },
     { id: "longtable", label: "LONG TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, surface: true },
     // DECOR EXPANSION (2026-07-15) — theming set. Flat paint/looms walk-over; solid bodies block.
     { id: "lavalamp", label: "LAVA LAMP", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "surface" },
-    { id: "crt_pile", label: "CRT PILE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "crt_pile", label: "CRT PILE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, stack: true },
     { id: "cablerun", label: "CABLE RUN", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
     { id: "hazardpad", label: "HAZARD PAD", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
     { id: "tallplant", label: "TALL PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
-    { id: "terrarium", label: "TERRARIUM", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "terrarium", label: "TERRARIUM", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'terra', sit: false, approach: 'auto' } },
     // DECOR EXPANSION wave 2 (2026-07-15, recurated) — fun/glow set. Flat holo/paint walk-over; cabinets block.
-    { id: "holopet", label: "HOLO PET", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "holopet", label: "HOLO PET", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, use: { kind: 'pet', sit: false, approach: 'auto' } },
     { id: "plasmaglobe", label: "PLASMA GLOBE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "surface" },
-    { id: "gachapon", label: "GACHAPON", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "gachapon", label: "GACHAPON", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'gacha', sit: false, approach: 'auto' } },
     // DECOR EXPANSION wave 3 (2026-07-15) — greenery + lounge picks.
     { id: "monstera", label: "MONSTERA", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "fishtank", label: "FISH TANK", cat: "lounge", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
-    { id: "pokertable", label: "POKER TABLE", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true },
+    // TABLETOP SET (2026-07-29) — small objects for the three tables. All stack:true (a table OR the
+    // deck), all h:1 and w<=3 so they fit a real table, all walkable: a mug is not an obstacle.
+    { id: "mug", label: "MUG", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, stack: true },
+    { id: "bookstack", label: "BOOKS", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: false, stack: true },
+    { id: "desklamp", label: "DESK LAMP", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, stack: true },
+    { id: "radio", label: "RADIO", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, stack: true },
+    { id: "toolbox", label: "TOOLBOX", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: false, stack: true },
+    { id: "figurine", label: "FIGURINE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, stack: true },
+    { id: "deskterminal", label: "TERMINAL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, stack: true },
+    { id: "modelship", label: "MODEL SHIP", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false, stack: true },
+    { id: "steamvent", label: "STEAM VENT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "fishtank", label: "FISH TANK", cat: "lounge", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true, use: { kind: 'fish', sit: false, approach: 'south' } },
+    { id: "pokertable", label: "POKER TABLE", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true, use: { kind: 'poker', sit: false, approach: 'south' } },
+    // FREESTANDING LOUNGE SET (2026-07-29) — floor pieces that are DESTINATIONS, not scenery.
+    { id: "bookshelf", label: "BOOKSHELF", cat: "lounge", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true, use: { kind: 'bookshelf', sit: false, approach: 'south' } },
+    { id: "beanbag", label: "BEANBAG", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, use: { kind: 'beanbag', sit: true, approach: 'auto' } },
+    { id: "pinball", label: "PINBALL", cat: "lounge", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true, use: { kind: 'pinball', sit: false, approach: 'south' } },
   ];
   const BY_ID = {};
   for (const c of CATALOG) BY_ID[c.id] = c;
   const CATS = CATALOG.reduce((o, c) => { (o[c.cat] = o[c.cat] || []).push(c); return o; }, {});
+
+  /* The display names for the two TIERS and every CATEGORY. These live HERE, with the catalog they
+     describe, because more than one consumer needs them: build.js paints them on the palette tabs and
+     propsearch.js matches against them (typing "systems" or "workstations" must find what the tab says).
+     They used to be private to build.js and hand-copied into the test, which is a drift waiting to
+     happen — a renamed tab would leave the test asserting a label no user can see. One map, one truth.
+     A category with no entry is not an error: callers fall back to the id, uppercased. */
+  const TIER_LABEL = { functional: '⚙ SYSTEMS', cosmetic: '✦ DECOR' };
+  const CAT_LABEL = {
+    workstation: 'WORKSTATIONS', workflow: 'WORKFLOW', capability: 'CAPABILITY', isolation: 'ISOLATION',
+    command: 'COMMAND',   // G1b: mission surfaces — functional-but-not-capability (MISSION BOARD)
+    screens: 'SCREENS', lab: 'LAB', storage: 'STORAGE', comms: 'COMMS', lounge: 'LOUNGE', decor: 'DECOR',
+  };
 
   const spec = id => BY_ID[id] || null;
   const has = id => !!F[id];
@@ -7539,6 +7896,8 @@ const PropSprites = (() => {
     setMissionPins,
     // G3b TROPHY CASE earned-trophy count (the world layer feeds this from the live trophy projection)
     setTrophyCount,
+    // tab/tier display names — shared with build.js (palette tabs) and propsearch.js (matching)
+    TIER_LABEL, CAT_LABEL,
     // exposed for tests / reuse
     _F: F,
   };
