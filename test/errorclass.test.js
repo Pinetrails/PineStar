@@ -267,6 +267,7 @@ const F = (err, status) => friendlyError(err, status);
   A.eq(B(new Error('Failed to fetch')).kind, 'network', 'browser: Failed to fetch -> network');
   A.eq(B(new Error('sidecar HTTP 429')).kind, 'rate_limit', 'browser: 429 -> rate_limit');
   A.eq(B(new Error('sidecar HTTP 401')).kind, 'auth', 'browser: 401 -> auth');
+  A.eq(B(new Error('sidecar HTTP 400 — missing key/model')).kind, 'auth', 'browser: /api/run missing credentials -> auth, not unknown retry');
   A.eq(B(new Error('sidecar HTTP 403')).kind, 'stale_session', 'browser: sidecar 403 -> stale_session (reload, not the key door)');
   A.eq(B(new Error('forbidden token'), 403).kind, 'stale_session', 'browser: 403 + "forbidden token" body -> stale_session');
   A.eq(B(new Error('invalid api key')).kind, 'auth', 'browser: invalid api key -> auth');

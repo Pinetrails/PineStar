@@ -172,7 +172,7 @@
     // Harness pre-flight guards ("no API key set" / "no model selected"): a misconfig, not a fault — point at
     // Settings instead of offering a doomed retry. (Match before capdenied, which the em-dash-less strings miss.)
     if (/chatgpt.*sign-?in|sign-?in.*chatgpt|not signed in to chatgpt|codex_not_connected|codex auth|codex_auth|chatgpt subscription.*connect/.test(low)) return 'oauth';
-    if (/no api key set|no model selected/.test(low)) return 'auth';
+    if (/no api key set|no model selected|missing key\/model/.test(low)) return 'auth';
     // a forwarded capability denial ("no web — …" / "capdenied")
     if (/\bcapdenied\b/.test(low) || /^no\s+\w+\s+—/.test(low) || /needs a capability|capability.*(off|denied)/.test(low)) return 'capdenied';
     // the sidecar is unreachable (fetch threw — Harness throws "cannot reach the STARNET sidecar…")
@@ -240,7 +240,7 @@
     // — the old `sign-?in` missed the space and the consumed-token escape fell through to a generic door.
     if (/chatgpt.*sign[- ]?in|sign[- ]?in.*chatgpt|not signed in to chatgpt|codex_not_connected|codex auth|codex_auth|codex (token )?refresh|refresh_token_reused|chatgpt subscription.*connect/.test(raw.toLowerCase())) {
       kind = 'oauth';
-    } else if (/no api key set|no model selected/.test(raw.toLowerCase())) {
+    } else if (/no api key set|no model selected|missing key\/model/.test(raw.toLowerCase())) {
       kind = 'auth';
     } else if (/spotify is not connected|spotify.*not connected|connect (it in settings|it in toolsets|spotify)|spotify session expired|spotify auth failed/.test(raw.toLowerCase())) {
       // the JUKEBOX is placed but Spotify's OAuth isn't linked (or its session died) — every flavor gets the
