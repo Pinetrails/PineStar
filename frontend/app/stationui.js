@@ -2844,6 +2844,25 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     const tail = k.length > head.length + 4 ? k.slice(-4) : '';
     return head + '••••••••' + tail;
   }
+  /* ⛔ A FULL PANE REBUILD IS NOT A CHEAP REPAINT. Every SETTINGS rebuild re-fires the pane's whole
+     fan-out — credits, budget, fallback chain, knobs, scout, night shift, subagents, permissions AND two
+     model-catalog fetches, which the sidecar may proxy to a LIVE upstream. The async status/probe callbacks
+     below each land separately (3 OAuth statuses + one probe per configured provider) and each forced its own
+     rebuild, so the rebuilds re-fired the very fetches whose callbacks caused them. MEASURED on a seeded
+     station: ONE open of SETTINGS = 86 requests, with `/api/models/openrouter` fetched 12 TIMES.
+     Coalesce instead: any number of triggers in the same turn collapse into ONE repaint. Deliberately NOT
+     applied to the click handlers — those repaint synchronously so the DOM they then read is current. */
+  // 120ms, not 0: the triggers are independent network round-trips that land MILLISECONDS apart, not in one
+  // turn, so a microtask-sized window merges almost nothing. It is far below the threshold at which an
+  // asynchronously-arriving status feels laggy, and each merged trigger saves a whole pane fan-out.
+  const SETTINGS_REPAINT_COALESCE_MS = 120;
+  let settingsRepaintQueued = false;
+  function scheduleSettingsRepaint() {
+    if (settingsRepaintQueued || !open.settings) return;
+    settingsRepaintQueued = true;
+    setTimeout(() => { settingsRepaintQueued = false; if (open.settings) rerender('settings'); }, SETTINGS_REPAINT_COALESCE_MS);
+  }
+
   // the REAL connected providers: OpenRouter from the BYOK store, Codex from sidecar OAuth status.
   // They are additive, so signing into ChatGPT must not occupy the OpenRouter key slot.
   function refreshCodexConnectionStatus() {
@@ -2855,9 +2874,12 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // carry the WHOLE truth shape: `connected` alone can't distinguish "never signed in" from the
         // consumed-refresh-token death (`expired` + `reason`) — the row must render those differently.
         const next = { connected: !!(j && j.connected), expired: !!(j && j.expired), reason: (j && j.reason) || '' };
-        const prev = codexStatusKnown;
+        // Compare the RENDERED truth, not the raw cache: before the first answer these read through a fallback
+        // (getProv()==='codex'), so `prev === null` is not by itself a change — it used to force a rebuild on
+        // every cold open even when the row ended up drawing exactly the same thing.
+        const wasConnected = codexConnected(), wasExpired = codexExpired();
         codexStatusKnown = next;
-        if (!prev || prev.connected !== next.connected || prev.expired !== next.expired) rerender('settings');
+        if (codexConnected() !== wasConnected || codexExpired() !== wasExpired) scheduleSettingsRepaint();
       })
       .catch(() => {})
       .finally(() => { codexConnectionChecking = false; });
@@ -2890,9 +2912,11 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
         // carry the WHOLE truth shape (connected + expired + reason), exactly like codex — a lone bool can't
         // distinguish "never signed in" from the dead-refresh-token death the row must render differently.
         const next = { connected: !!(j && j.connected), expired: !!(j && j.expired), reason: (j && j.reason) || '' };
-        const prev = oauthStatus[pid];
+        // Same rule as codex above: compare what the row will actually DRAW, so a cold "not connected" answer
+        // that matches the fallback does not force a full pane rebuild (and its fan-out) for nothing.
+        const wasConnected = oauthProvConnected(pid), wasExpired = oauthProvExpired(pid);
         oauthStatus[pid] = next;
-        if (!prev || prev.connected !== next.connected || prev.expired !== next.expired) rerender('settings');
+        if (oauthProvConnected(pid) !== wasConnected || oauthProvExpired(pid) !== wasExpired) scheduleSettingsRepaint();
       })
       .catch(() => {})
       .finally(() => { oauthChecking[pid] = false; });
@@ -2944,8 +2968,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       .catch(() => { providerHealth[provider] = null; })
       .finally(() => {
         delete providerProbePending[provider];
-        // Repaint only while Settings is still open. The cache prevents this repaint from starting a probe loop.
-        if (open.settings) rerender('settings');
+        // Repaint only while Settings is still open. The cache prevents this repaint from starting a probe loop,
+        // and the coalescer folds several providers' probes finishing together into a single rebuild.
+        scheduleSettingsRepaint();
       });
   }
   function queueProviderHealthRefresh() {
@@ -3742,6 +3767,24 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
 
   // MODELS panel (P0-3) — the ordered FALLBACK CHAIN the loop walks when the primary model fails mid-run.
   // Server-persisted (/api/fallback/chain) + applied live; env SKYNET_FALLBACK_MODELS stays the default until
+  /* ONE catalog fetch, shared. The fallback-chain picker and the class-tier picker both want the same
+     OpenRouter model list, and each used to GET /api/models/openrouter itself on EVERY settings build — so a
+     pane that rebuilt three times fetched the catalog six times, and the sidecar may proxy that to a LIVE
+     upstream call. Memoize the in-flight/last promise for a short window; a picker list going a few minutes
+     stale is invisible, a burst of duplicate catalog fetches is not. Failures are not cached (the next open
+     retries), so an offline sidecar never poisons the picker for the session. */
+  const MODEL_CATALOG_TTL_MS = 5 * 60 * 1000;
+  let modelCatalogAt = 0, modelCatalogPromise = null;
+  function openRouterCatalog() {
+    const now = Date.now();
+    if (modelCatalogPromise && (now - modelCatalogAt) < MODEL_CATALOG_TTL_MS) return modelCatalogPromise;
+    modelCatalogAt = now;
+    modelCatalogPromise = Harness.api.get('/api/models/openrouter')
+      .then(j => (j && Array.isArray(j.models)) ? j.models : [])
+      .catch(e => { modelCatalogPromise = null; throw e; });   // never cache a failure
+    return modelCatalogPromise;
+  }
+
   // saved. Editing is local (add from catalog / remove / reorder) until SAVE posts the whole ordered list.
   function wireFallbackChain(body) {
     const form = body.querySelector('#fbc-form');
@@ -3793,10 +3836,10 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       .catch(() => { if (listEl) listEl.innerHTML = '<div class="fbc-row dim">chain unavailable — sidecar unreachable</div>'; });   // never paint an error body as an empty chain
     // catalog for the ADD picker — the same warmed OpenRouter catalog the model dock uses. Best-effort: an empty
     // catalog just leaves the picker with its placeholder (the chain itself still paints + saves fine).
-    Harness.api.get('/api/models/openrouter').then(j => {
-      if (!addSel || !j || !Array.isArray(j.models)) return;
+    openRouterCatalog().then(models => {
+      if (!addSel || !Array.isArray(models)) return;
       const frag = document.createDocumentFragment();
-      j.models.slice().sort((a, b) => String(a.id).localeCompare(String(b.id))).forEach(m => {
+      models.slice().sort((a, b) => String(a.id).localeCompare(String(b.id))).forEach(m => {
         if (!m || !m.id) return;
         const o = document.createElement('option');
         o.value = m.id; o.textContent = (m.name && m.name !== m.id) ? (m.name + '  ·  ' + m.id) : m.id;
@@ -3855,9 +3898,9 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     });
     paint();
     // fill the model catalog into all three selects (same warmed catalog the fallback picker uses).
-    Harness.api.get('/api/models/openrouter').then(j => {
-      if (!j || !Array.isArray(j.models)) return;
-      const opts = j.models.slice().filter(m => m && m.id).sort((a, b) => String(a.id).localeCompare(String(b.id)));
+    openRouterCatalog().then(models => {
+      if (!Array.isArray(models)) return;
+      const opts = models.slice().filter(m => m && m.id).sort((a, b) => String(a.id).localeCompare(String(b.id)));
       TM_TIERS.forEach(tier => {
         const sel = selOf(tier); if (!sel) return;
         const frag = document.createDocumentFragment();

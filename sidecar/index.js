@@ -10265,6 +10265,9 @@ async function runOnce(o) {
     listJobs: () => cronJobs,
     schedulerState: () => cronArmed,
     normalizeProvider: normalizeProviderId,
+    // the LIVE provider set drives the tool schema's `provider` enum — a hardcoded pair meant an agent on a
+    // Kimi/Grok/Ollama/custom station was schema-refused when it pinned the provider the station actually runs.
+    providerIds: () => listProviderProfiles({ includeInactive: true, public: false }).map(p => p.id),
     createRoutine: (spec) => {
       spec = spec || {};
       // INJECTION TRIPWIRE — the agent-authored path, and the one that matters most: an agent that just read a

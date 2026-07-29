@@ -207,6 +207,19 @@
       if (!p) return null;
       return p === 'codex' || p === 'openai-codex' ? 'codex' : (p === 'openrouter' ? 'openrouter' : '');
     };
+    /* ⛔ AN ALLOWLIST IS A DENYLIST FOR EVERY CLASS ADDED LATER. `provider` was hardcoded
+       enum:['openrouter','codex'] in BOTH tool schemas while the station shipped 17 providers. A Commander
+       running on Kimi, Grok, Ollama or a custom endpoint had an agent that could not pin a routine to the very
+       provider the station runs on: shared/schema.js enforces `enum`, so the call died with
+       '"kimi" not in enum' before run() was ever reached. Read the live registry instead (injected, so this
+       module stays node-testable), and fall back to the historical pair only when the host wires nothing. */
+    const providerIds = typeof deps.providerIds === 'function' ? deps.providerIds : function () { return ['openrouter', 'codex']; };
+    const providerEnum = (function () {
+      let ids = [];
+      try { ids = providerIds() || []; } catch (_) { ids = []; }
+      ids = ids.map(x => lower(x).trim()).filter(Boolean);
+      return ids.length ? Array.from(new Set(ids)) : ['openrouter', 'codex'];
+    })();
 
     const listTool = {
       name: 'routine.list', capability: 'orchestrator', scope: 'read', requiresConsent: false,
@@ -239,7 +252,7 @@
           agentId: { type: 'string', description: 'Optional exact station agent id. Omit to auto-route by specialty.' },
           agentHint: { type: 'string', description: 'Optional specialty hint such as research, engineer, scribe, operator, designer.' },
           timezone: { type: 'string', description: 'Optional IANA timezone for cron expressions, e.g. America/New_York.' },
-          provider: { type: 'string', enum: ['openrouter', 'codex'] },
+          provider: { type: 'string', enum: providerEnum },
           model: { type: 'string' },
           enabled: { type: 'boolean' },
           arm: { type: 'boolean', description: 'Default true. When true, also enables the scheduler so routines will fire.' },
@@ -344,7 +357,7 @@
           prompt: { type: 'string', description: 'update: replace the instruction the routine runs.' },
           schedule: { type: 'string', description: 'update: a new schedule, e.g. every 30m, 0 9 * * *, in 2h.' },
           timezone: { type: 'string', description: 'update: IANA timezone for a cron schedule.' },
-          provider: { type: 'string', enum: ['openrouter', 'codex'] },
+          provider: { type: 'string', enum: providerEnum },
           model: { type: 'string' },
           repeatTimes: { type: ['integer', 'null'], description: 'update: null for recurring forever.' }
         }
