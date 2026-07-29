@@ -14244,7 +14244,10 @@ async function serveStatic(req, res) {
       let boot = '<script>window.__STARNET_API_TOKEN__=' + JSON.stringify(API_TOKEN) + ';';
       // DEV fast-path: hand the page a model + provider hint so a fresh origin auto-resumes the seeded
       // save with no setup. No secret crosses here — the key stays server-side in runtimeKey.
-      if (DEV_MODE) boot += 'window.__STARNET_DEV__=' + JSON.stringify({ model: CRON_DEFAULT_MODEL || '', prov: (!runtimeKey && codexTokens && codexTokens.access_token) ? 'codex' : 'openrouter' }) + ';';
+      // `hasKey` is the honest half: the page's credential badge assumed a DEV boot meant the host HELD a
+      // runtime key for `prov`, so a seeded station with no key at all still rendered "● KEY SAVED". Say
+      // whether one actually exists — still no secret crosses, only the boolean.
+      if (DEV_MODE) boot += 'window.__STARNET_DEV__=' + JSON.stringify({ model: CRON_DEFAULT_MODEL || '', prov: (!runtimeKey && codexTokens && codexTokens.access_token) ? 'codex' : 'openrouter', hasKey: !!runtimeKey }) + ';';
       boot += '</script>';
       data = Buffer.from(String(data).replace(/<\/head>/i, boot + '\n</head>'), 'utf8');
     }
