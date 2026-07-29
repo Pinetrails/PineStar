@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "3d3bcd5927a1d9a24ef210e80534fce75161a880",
-    "pathSetSha256": "ba2d0a007dbdf1fb304e041a440e8a10a26ef8a87b3fb2ad6f73c69661dabaee",
+    "sourceCommit": "93c141b0a6523535a2cd4e0e4061af10fc5c26c7",
+    "pathSetSha256": "af9ad09edfc5cfca11ef337473fa52a4231aac027fa96bc0d00026a69427c890",
     "files": [
       {
         "path": "INSTALL.md",
@@ -338,8 +338,8 @@
       },
       {
         "path": "frontend/app/marketplace.js",
-        "bytes": 190691,
-        "sha256": "91046ded0c41d7317363a44c4b0d4b98aa2a9569cd5a8b69f4cefc6dae844f37"
+        "bytes": 195499,
+        "sha256": "1606a56e128aa7469c98556da312956fe22026dca204e6a1869f1e6d5e869c25"
       },
       {
         "path": "frontend/app/mint.js",
@@ -528,18 +528,18 @@
       },
       {
         "path": "frontend/app/recipes.js",
-        "bytes": 43878,
-        "sha256": "803a0f01c39b2fec515812251e77c9262b8caff5617bef3321aa9bcf4b14f5f2"
+        "bytes": 50165,
+        "sha256": "96f7fd9867a7225a88f7b6ca43e26d33e4246035c777b6ee6e8e296f95322d93"
       },
       {
         "path": "frontend/app/recruiter.js",
-        "bytes": 10048,
-        "sha256": "724e87bec1525588547c540c1ca685d8a45d7b624790184e94855f93a696fe4e"
+        "bytes": 15067,
+        "sha256": "0999e9f999271784a2321cfa0cedf0962a158b59d99c760884f8165961844b92"
       },
       {
         "path": "frontend/app/recruiterstore.js",
-        "bytes": 4076,
-        "sha256": "497ab2c243e8c137973a283c330262580a9b8e90a833aa3202e15416a4da2fa9"
+        "bytes": 6232,
+        "sha256": "7db4664a70a4532fc4d1d1c1098a5d4e5854ec339ce7a0c7c0851ec9c906f594"
       },
       {
         "path": "frontend/app/resummonstore.js",
@@ -690,6 +690,11 @@
         "path": "frontend/app/topbar.js",
         "bytes": 5995,
         "sha256": "fd7cc485ef01eb62c403db9bbee0cf5925c3efec65f734d813b5b2ff4ba43130"
+      },
+      {
+        "path": "frontend/app/topicmatch.js",
+        "bytes": 8585,
+        "sha256": "6f9195d6bf031a8d820050ddc6f0b551a69fcb529ff007d0ff4561a7eb0e7cc2"
       },
       {
         "path": "frontend/app/trophies.js",
@@ -868,8 +873,8 @@
       },
       {
         "path": "frontend/css/marketplace.css",
-        "bytes": 61220,
-        "sha256": "eedfddad17b1174d1f24c4a50414d139da795a10b4be0f2f6f3646043d55cd62"
+        "bytes": 62328,
+        "sha256": "b8cc96fef539224b3d729e76b38465e8760bef33c13b9765e6469852d338d23f"
       },
       {
         "path": "frontend/css/motion.css",
@@ -918,8 +923,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 66477,
-        "sha256": "edc4cca4a91afe172d763e684f6ffec6bc2a7e27a5df77635ed02681e6ee772a"
+        "bytes": 66664,
+        "sha256": "17540bc826830c620d7130cbe5be206cf6de9cf7d175f4b10f2c66aaf45fa26d"
       },
       {
         "path": "frontend/js/arcade.js",
