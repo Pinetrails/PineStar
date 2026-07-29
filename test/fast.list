@@ -184,6 +184,7 @@ test/fs.jail.test.js
 test/fs.patch.test.js
 test/fs.stale-write.test.js
 test/docextract.test.js
+test/imagewire.test.js
 test/web.ssrf.test.js
 test/web.search.test.js
 test/web.fence.test.js
