@@ -19,10 +19,65 @@
     catch (_) { return String(file || '').toLowerCase(); }
   }
 
-  function candidateCodexTokenFiles(opts) {
+  /* THE KNOWN StarNet WORKSPACE ROOTS on this machine — the app's own homes across versions and renames.
+     A migration only ever crosses BETWEEN these; see isRecognizedWorkspaceRoot. */
+  function knownWorkspaceRoots(opts) {
     opts = opts || {};
     const pathMod = opts.pathMod || require('node:path');
     const env = opts.env || {};
+    const roots = [];
+    const seen = new Set();
+    function addRoot(root) {
+      if (!root) return;
+      const key = pathKey(pathMod, root);
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      roots.push(String(root));
+    }
+    if (typeof opts.defaultWorkspaces === 'function') {
+      try { addRoot(opts.defaultWorkspaces()); } catch (_) {}
+    }
+    for (const root of (Array.isArray(opts.legacyWorkspaces) ? opts.legacyWorkspaces : [])) addRoot(root);
+    const appBase = env.LOCALAPPDATA || env.APPDATA || env.XDG_DATA_HOME || '';
+    if (appBase) {
+      addRoot(pathMod.join(appBase, 'StarNet', 'workspaces'));
+      addRoot(pathMod.join(appBase, 'Skynet', 'workspaces'));
+      addRoot(pathMod.join(appBase, 'ai.skynet.harness', 'workspaces'));
+    }
+    if (opts.sidecarDir) {
+      addRoot(pathMod.join(opts.sidecarDir, 'workspaces'));
+      addRoot(pathMod.join(pathMod.dirname(opts.sidecarDir), 'workspaces'));
+    }
+    return roots;
+  }
+
+  /* ⛔ A CREDENTIAL MUST NOT CROSS AN ISOLATION BOUNDARY. This migration exists so the Commander keeps their
+     ChatGPT sign-in when the app's OWN workspace root moves between versions ("StarNet" <- "Skynet" <-
+     "ai.skynet.harness"). It is NOT a licence to copy a live OAuth refresh token into whatever directory
+     SKYNET_WORKSPACES happens to point at — and every test boot, dev seed and QA journey points it at a fresh
+     temp dir. Two things went wrong at once there: the Commander's real credential was written into
+     os.tmpdir(), and a "clean-room" boot silently INHERITED their real ChatGPT sign-in, so a fresh-install
+     test was never actually fresh. So: migrate only INTO a root that is one of the app's own known homes.
+     The desktop app passes its real workspace root explicitly, so the shipped path is unchanged. */
+  const APP_HOME_DIR_NAMES = ['starnet', 'skynet', 'ai.skynet.harness'];
+  function isRecognizedWorkspaceRoot(root, opts) {
+    const pathMod = (opts && opts.pathMod) || require('node:path');
+    const key = pathKey(pathMod, root);
+    if (!key) return false;
+    if (knownWorkspaceRoots(opts).some(r => pathKey(pathMod, r) === key)) return true;
+    // SHAPE rule, so a home the env of THIS boot doesn't name is still recognised (the Roaming ->
+    // LocalAppData move: only one of APPDATA/LOCALAPPDATA is consulted for the base list above).
+    // `<...>/<StarNet|Skynet|ai.skynet.harness>/workspaces` is an app home; a temp dir never is.
+    try {
+      const resolved = pathMod.resolve(String(root || ''));
+      if (pathMod.basename(resolved).toLowerCase() !== 'workspaces') return false;
+      return APP_HOME_DIR_NAMES.indexOf(pathMod.basename(pathMod.dirname(resolved)).toLowerCase()) >= 0;
+    } catch (_) { return false; }
+  }
+
+  function candidateCodexTokenFiles(opts) {
+    opts = opts || {};
+    const pathMod = opts.pathMod || require('node:path');
     const files = [];
     const seen = new Set();
 
@@ -39,23 +94,10 @@
     }
 
     addRoot(opts.currentWorkspaces);
-    if (typeof opts.defaultWorkspaces === 'function') {
-      try { addRoot(opts.defaultWorkspaces()); } catch (_) {}
-    }
-    for (const root of (Array.isArray(opts.legacyWorkspaces) ? opts.legacyWorkspaces : [])) addRoot(root);
-
-    const appBase = env.LOCALAPPDATA || env.APPDATA || env.XDG_DATA_HOME || '';
-    if (appBase) {
-      addRoot(pathMod.join(appBase, 'StarNet', 'workspaces'));
-      addRoot(pathMod.join(appBase, 'Skynet', 'workspaces'));
-      addRoot(pathMod.join(appBase, 'ai.skynet.harness', 'workspaces'));
-    }
-
-    if (opts.sidecarDir) {
-      addRoot(pathMod.join(opts.sidecarDir, 'workspaces'));
-      addRoot(pathMod.join(pathMod.dirname(opts.sidecarDir), 'workspaces'));
-    }
-
+    // A workspace root that is not one of the app's own homes is a deliberate isolation boundary (a test, a dev
+    // seed, a second station): its OWN codex/tokens.json is still read, but nothing is pulled ACROSS into it.
+    if (!isRecognizedWorkspaceRoot(opts.currentWorkspaces, opts)) return files;
+    for (const root of knownWorkspaceRoots(opts)) addRoot(root);
     return files;
   }
 
@@ -123,5 +165,5 @@
     return { ok: false, attempts: 2, verified: false, error: lastErr };
   }
 
-  return { validCodexTokens, candidateCodexTokenFiles, loadCodexTokensWithMigration, persistCodexTokensVerified };
+  return { validCodexTokens, knownWorkspaceRoots, isRecognizedWorkspaceRoot, candidateCodexTokenFiles, loadCodexTokensWithMigration, persistCodexTokensVerified };
 });
