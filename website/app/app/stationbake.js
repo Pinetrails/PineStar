@@ -55,7 +55,11 @@ const StationBake = (() => {
      edges, down-screen below the hull, sideways past e/w edges), so no walkable tile is ever
      covered and nothing y-sorted against agents changes.
        up     = how far a room's north wall face rises above the floor seam (px)
-       corUp  = same for corridors (lower → corridors read as tunnels, rooms as halls)
+       corUp  = same for corridors (lower → corridors read as tunnels, rooms as halls). It must
+                stay LOWER than `up` — that difference IS the tunnel read — but it may not be 0:
+                at 0 the north face falls to the legacy short-wall branch, which paints no lit
+                crown at all, so a hallway with an exposed north end had the one surface that
+                defines a wall's height simply missing (2026-07-28).
        skirt  = hull extrusion depth below the station silhouette (the south wall seen outside)
        side   = width of the e/w wall-top band beyond the floor edge. PINNED TO `pad`: the hull
                 plate, its rounded corners and its riveted rim all stop exactly `pad` out, so a
@@ -68,7 +72,7 @@ const StationBake = (() => {
                 each footprint plus exactly `pad`, so a crown wider than that hangs OUTSIDE the
                 mask and renders at its raw baked tone against the starfield — a blazing line
                 down the sides while the north crown sits under 0.77 ambient. */
-  const WALL = { up: 14, corUp: 0, skirt: 32, side: 7, capH: 3, sideCap: 5 };   // up 9→14 (2026-07-24): the wall materials need surface to live on
+  const WALL = { up: 14, corUp: 8, skirt: 32, side: 7, capH: 3, sideCap: 5 };   // up 9→14 (2026-07-24): the wall materials need surface to live on · corUp 0→8 (2026-07-28): a hallway stands too, just lower than a hall
   /* VIEWPORT holes punched by the wall pass this bake. buildLightMap cuts the ambient mask over
      them — without that the sky behind a window renders at the interior's 23% and reads as a
      black pane. Reset per bake alongside the wall palette cache. */
@@ -156,7 +160,12 @@ const StationBake = (() => {
 
   /* per-bake state (a bake runs synchronously start→finish, so module locals are safe) */
   const CHUNK_PX = 384;
-  const dirtyPadPx = () => pad + Math.max(WALL.skirt, WALL.up + WALL.capH + 8) + 48;   // walls reach outside the footprint — invalidate that far too
+  // walls reach outside the footprint — invalidate that far too. Takes the MAX of both rises: it
+  // read WALL.up only, which was safe purely because corUp happened to be smaller. That is a
+  // coincidence, not an invariant, and a crtlab preset can invert it in one slider drag (the
+  // shipped 'Towering' preset sets corUp 15) — a corUp above up would then under-invalidate on a
+  // chunk bake and leave a stale strip of wall behind.
+  const dirtyPadPx = () => pad + Math.max(WALL.skirt, Math.max(WALL.up, WALL.corUp) + WALL.capH + 8) + 48;
   let G, T, HR, W, H, VX, VY, CW, CH, lampPos, edges, chamferAt, extN;
   const h2 = (x, y, s) => U.hash(x + ',' + y + ',' + (s || ''));
 
@@ -795,7 +804,9 @@ const StationBake = (() => {
 
     // up === 0 → the EXACT legacy short wall (verbatim from the pre-tall-wall bake): a dark
     // hull cap band above the seam, the plain face + rib, the floor-contact line, the seam
-    // hairline. Corridors at corUp:0 hit this path and read as they did before tall walls.
+    // hairline. NOTHING SHIPPED TAKES THIS PATH ANY MORE — it is reachable only from the crtlab
+    // 'Flat (old)' preset. Corridors used to live here at corUp:0, which is why they had no lit
+    // crown: this branch paints none, and a wall with no crown does not read as a wall at all.
     if (up === 0) {
       const cap = room ? 4 : 2;                                        // legacy NCAP (rooms) / 2 (corridors)
       b.fillStyle = wallDk; b.fillRect(X, Y - cap, T, cap);
@@ -1134,8 +1145,20 @@ const StationBake = (() => {
 
   /* how wide the LIT TOP SURFACE is on a wall that is not extruded up-screen. Hard-clamped to
      pad-1 — past that the crown falls outside the ambient plate and burns against the starfield
-     (see the WALL.sideCap note). Corridors get a narrower one, the same way corUp < up. */
-  const sideCapW = room => Math.max(2, Math.min(pad - 1, Math.round(room ? WALL.sideCap : WALL.sideCap * 0.6)));
+     (see the WALL.sideCap note).
+
+     ONE RING, ONE WIDTH — CORRIDORS INCLUDED (2026-07-28, Andrew on a vertical hallway between two
+     rooms: "can we add walls properly to the hallways?"). This used to shrink to 0.6 for corridors
+     "the same way corUp < up", and the two are NOT the same knob. `corUp` is how far a wall is
+     STOOD UP, a real style choice: a lower corridor reads as a tunnel, a taller room as a hall.
+     `sideCap` is how WIDE that wall's top surface is — i.e. how thick the bulkhead is — and a
+     hallway's bulkhead is the same slab of station as the room's it connects. Shrinking it bought
+     no tunnel read at all; it just made the one surface that DEFINES a wall from directly above
+     three pixels of near-nothing, so a hallway read as a dark slot you look through while the rooms
+     either side had obvious standing walls. Worse, the ring visibly STEPPED 5→3 at every junction,
+     which is the same "the crown stops here" failure the corners had. A wall's height may differ
+     between space types; its top surface may not. */
+  const sideCapW = () => Math.max(2, Math.min(pad - 1, Math.round(WALL.sideCap)));
 
   /* WHERE A CORNER ARC'S CENTRE SITS. Bottom corners: the chamfer's own centre — the outline is
      the plain quarter circle and this is a no-op. Top corners: moved UP so the arc's topmost point
@@ -1143,8 +1166,9 @@ const StationBake = (() => {
      and derived at BOTH ends at once — the arc's leftmost point is then at `ax - HR = X - pad`,
      which is exactly the e/w wall's outer edge. Circle tangents there are vertical and at the top
      horizontal, so the arc leaves one straight wall and meets the other with no kink at either end,
-     for any WALL.up. Clamped at `ay`: a wall with no rise (corridors at corUp 0) keeps the plain
-     flat corner rather than inventing a lift below it. */
+     for any WALL.up. Clamped at `ay`: a wall with no rise keeps the plain flat corner rather than
+     inventing a lift below it (reachable via the crtlab 'Flat (old)' preset; corridors sat here
+     while corUp was 0, though they carry no chamfers of their own either way). */
   const cornerArcCy = (kind, ay, Y, HR, room) => {
     if (kind !== 'tl' && kind !== 'tr') return ay;
     const up = Math.round(room ? WALL.up : WALL.corUp);
@@ -1319,7 +1343,7 @@ const StationBake = (() => {
          divider column, 2026-07-24) is avoided because the crown is a WIDE band with its highlight
          on the outer edge, where the hull is, not stranded in the middle of the wall. */
       const crownLit = U.shade(pal.cap, 0.30), crownSeam = U.shade(pal.cap, -0.45);
-      const cw = sideCapW(e.room);
+      const cw = sideCapW();
       // walls only extrude OUTSIDE the tile when the neighbour is void. Interior boundaries
       // (a non-door seam to another zone) draw the face only, so the wall never smears onto
       // an adjacent room/corridor floor (v7 render.js parity).
@@ -1350,7 +1374,7 @@ const StationBake = (() => {
         b.fillStyle = wallFace; b.fillRect(X, Y, fw, T);
         b.fillStyle = rib; b.fillRect(X, Y + 5, fw, 1);
         if (e.exterior) {
-          const side = Math.max(out, cw + 2, Math.round(e.room ? WALL.side : WALL.side * 0.6));
+          const side = Math.max(out, cw + 2, Math.round(WALL.side));   // the hull band under the crown — one width, corridors included (see sideCapW)
           b.fillStyle = wallDk; b.fillRect(X - side, Y, side, T);          // outer hull band — the shell, global tone
           b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X - side, Y, 1, T);
           crown(b, X - 1 - cw, Y, cw, T, pal.cap);                         // the wall's LIT TOP SURFACE
@@ -1362,7 +1386,7 @@ const StationBake = (() => {
         b.fillStyle = wallFace; b.fillRect(X + T - fw, Y, fw, T);
         b.fillStyle = rib; b.fillRect(X + T - fw, Y + 5, fw, 1);
         if (e.exterior) {
-          const side = Math.max(out, cw + 2, Math.round(e.room ? WALL.side : WALL.side * 0.6));
+          const side = Math.max(out, cw + 2, Math.round(WALL.side));   // the hull band under the crown — one width, corridors included (see sideCapW)
           b.fillStyle = wallDk; b.fillRect(X + T, Y, side, T);
           b.fillStyle = 'rgba(0,0,0,0.35)'; b.fillRect(X + T + side - 1, Y, 1, T);
           crown(b, X + T + 1, Y, cw, T, pal.cap);
@@ -1826,7 +1850,7 @@ const StationBake = (() => {
       /* THE CROWN RING carries the wall's lit top surface around the arc, so the bright line that
          defines a wall does not die at the corners — and on a TOP corner the SAME circle, centred
          higher, is also what stands the wall up. One profile, one radius, no ease on the outline. */
-      const cCapW = sideCapW(cRoom);
+      const cCapW = sideCapW();
       let reach = null;
       if (kind === 'tl' || kind === 'tr') crownReach.set(ccx + ',' + ccy, reach = new Map());
       bakeCornerCrown(b, cPal, kind, X, Y, ax, ay, Rc, HR, cCapW,

@@ -36,6 +36,11 @@ const PROBE = `(() => {
     st.placeHallway({ rects: [{ x1: 8,  y1: 11, x2: 10, y2: 13 }] });
     st.placeHallway({ rects: [{ x1: 18, y1: 4,  x2: 20, y2: 6  }] });
     st.placeHallway({ rects: [{ x1: 16, y1: 19, x2: 19, y2: 21 }] });
+    /* THE SHAPE ANDREW REPORTED (2026-07-28): a VERTICAL hallway running between a room above
+       and a room below, void to its east and west. Its long e/w runs are the only walls it has —
+       both ends butt into a room — so this is the one corridor whose side walls carry the whole
+       read, and the only seed shape that can prove a hallway "has walls". */
+    st.placeHallway({ rects: [{ x1: 24, y1: 10, x2: 26, y2: 14 }] });
   }
   const geo = st.projectGeometry();
   const bk = StationBake.bake(geo);
@@ -145,8 +150,51 @@ const PROBE = `(() => {
   for (let y = y2 + 6; y < Math.min(H, y2 + 44); y++)
     for (let x = x1 + 60; x < x2 - 60; x++) { const v = at(x, y); if (v != null && v > skirtMax) skirtMax = v; }
 
+  /* ---------- CORRIDOR COVERAGE ----------
+     Everything above measures geo.allRects[0] — the first ROOM. A hallway could have no wall at all
+     and every number would still read green, which is exactly how corridors missed the crown-ring
+     fix. These point the same instruments at the VERTICAL hallway, and the comparison that matters
+     is corridor-vs-room on the SAME instrument: the report is not "the corridor is dark", it is
+     "the corridor has no wall where the room beside it plainly does". */
+  const corrRects = geo.allRects.filter(r => geo.isCorridor(r.z));
+  const vert = corrRects.find(r => (r.y2 - r.y1) > (r.x2 - r.x1)) || corrRects[0] || null;
+  const corrCrops = {};
+  let corridor = null;
+  if (vert) {
+    const cx1 = vert.x1 * T, cy1 = vert.y1 * T, cx2 = (vert.x2 + 1) * T, cy2 = (vert.y2 + 1) * T;
+    const cMidY = ((cy1 + cy2) / 2) | 0;
+    const cw = bestAlong(cy1 + 6, cy2 - 7, sBand, (y, d) => at(cx1 - d, y));
+    const ce = bestAlong(cy1 + 6, cy2 - 7, sBand, (y, d) => at(cx2 + d - 1, y));
+    corridor = {
+      rect: [cx1, cy1, cx2, cy2],
+      // straight across the hallway at its waist: void · west wall · deck · east wall · void
+      acrossScan: scanH(cMidY, cx1 - 20, cx2 + 20),
+      ring: { west: stat(cw), east: stat(ce) }
+    };
+    corrCrops.corr = crop(cx1 - 26, cy1 - 8, (cx2 - cx1) + 52, (cy2 - cy1) + 16, 9);
+    corrCrops.corrBare = cropBare(cx1 - 26, cy1 - 8, (cx2 - cx1) + 52, (cy2 - cy1) + 16, 9);
+  }
+  /* the corridor whose NORTH end is EXTERIOR — the only place a hallway's north face is drawn at
+     all, and the branch that took bakeTallNorthFace's legacy up===0 path (which paints no crown).
+     Picked by asking the zone grid, not by index: a corridor whose north neighbour is another zone
+     draws an interior seam and proves nothing about the wall. */
+  const voidAbove = r => {
+    for (let tx = r.x1; tx <= r.x2; tx++) if (geo.zoneGrid[geo.idx(tx, r.y1 - 1)]) return false;
+    return true;
+  };
+  const stub = corrRects.find(r => r !== vert && voidAbove(r)) || corrRects.find(voidAbove) || null;
+  let corrNorth = null;
+  if (stub) {
+    const sx1 = stub.x1 * T, sy1 = stub.y1 * T, sx2 = (stub.x2 + 1) * T;
+    corrNorth = { rect: [sx1, sy1, sx2], scan: scanV(((sx1 + sx2) / 2) | 0, sy1 - 24, sy1 + 14) };
+    corrCrops.corrN = crop(sx1 - 22, sy1 - 28, (sx2 - sx1) + 44, 56, 9);
+  }
+  // every corridor and whether its north end is exposed — so a null/blind reading is visible as
+  // "no corridor qualifies", never as a silent pass.
+  const corrAll = corrRects.map(r => ({ t: [r.x1, r.y1, r.x2, r.y2], nVoid: voidAbove(r) }));
+
   return JSON.stringify({
-    W, H, T, room: [x1, y1, x2, y2], leak, skirtMax, litRow,
+    W, H, T, room: [x1, y1, x2, y2], leak, skirtMax, litRow, corridor, corrNorth, corrAll,
     westScan: scanH(midY, x1 - 20, x1 + 12),
     eastScan: scanH(midY, x2 - 12, x2 + 20),
     northScan: scanV(midX, y1 - 24, y1 + 14),
@@ -159,7 +207,8 @@ const PROBE = `(() => {
       br: crop(x2 - 30, y2 - 20, 46, 46, 11),
       blBare: cropBare(x1 - 12, y2 - 22, 38, 38, 14),
       tlBare: cropBare(x1 - 12, y1 - 26, 38, 38, 14),
-      whole: crop(0, 0, W, H, 3)
+      whole: crop(0, 0, W, H, 3),
+      ...corrCrops
     }
   });
 })()`;
@@ -174,7 +223,15 @@ const cdp = await connectCDP(CDP_PORT);
 await cdp.send('Page.enable');
 await cdp.send('Runtime.enable');
 await cdp.send('Page.navigate', { url: URL });
-await waitDevReady(cdp, evalJS, { url: URL });
+/* waitDevReady RETURNS false ON TIMEOUT — it does not throw. Ignoring it is how this probe
+   "crashed" with `ReferenceError: WorldModel is not defined`: the page simply had not finished
+   loading and the eval ran against a bare document. Fail loudly instead of blaming scoping. */
+if (!(await waitDevReady(cdp, evalJS, { url: URL }))) {
+  console.error('wallprobe: dev harness never became ready (WorldModel/StationBake not on the page) — re-run.');
+  try { proc.kill(); } catch {}
+  try { side.kill(); } catch {}
+  process.exit(2);
+}
 const out = await evalJS(cdp, PROBE);
 const data = JSON.parse(typeof out === 'string' ? out : JSON.stringify(out));
 const dir = process.env.SKYNET_PROBE_DIR || join(process.cwd(), '.wallprobe');
