@@ -18,7 +18,7 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "9f92df7af87b3b5f5103037b6d29ebb92fb55eef",
+    "sourceCommit": "490fc504706c62f032a91f851848021b6e646767",
     "pathSetSha256": "a07f8025bfdf1ecddd570fce98f4fc3a8d14298f0e938d60b679af43d42072b5",
     "files": [
       {
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 298465,
-        "sha256": "3a02ff34ec23675b278c0c75f525907390a50afb0693b2f5d9683e9020efa871"
+        "bytes": 300675,
+        "sha256": "0d81e81629336734d69bf26fa8cf80d23cdb65badaae87b98aaea799571c674a"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -133,8 +133,8 @@
       },
       {
         "path": "frontend/app/chat.js",
-        "bytes": 461392,
-        "sha256": "45cefea68607d8d29e195397312fb7ef8f44cd7127389400362af297acc128a5"
+        "bytes": 463313,
+        "sha256": "4e16f545a15cc243ed275d29d4bfe23aee4c6d885a402d240e8e20def59173d1"
       },
       {
         "path": "frontend/app/chatresize.js",
@@ -273,8 +273,8 @@
       },
       {
         "path": "frontend/app/harness.js",
-        "bytes": 50997,
-        "sha256": "674798d0708ac2b6879e47bd49fe262a369e082100f37b3b38b6094d66d7e465"
+        "bytes": 51638,
+        "sha256": "534d5c6701a7d5bd9d584160cff2c89c58cf3caacbf51e8a1336b3e463bb4d22"
       },
       {
         "path": "frontend/app/hint.js",
@@ -643,8 +643,8 @@
       },
       {
         "path": "frontend/app/stationui.js",
-        "bytes": 428614,
-        "sha256": "d49246d9458b6e4d3f085df97b2701112f122d3c0a340572e6f4e393b3b0e6ac"
+        "bytes": 435488,
+        "sha256": "09a25fb85c74bba6fc8be1f4f9baca5a9f14203e29f3138f791cc36ffb9053fb"
       },
       {
         "path": "frontend/app/study.js",
@@ -848,13 +848,13 @@
       },
       {
         "path": "frontend/app/xp.js",
-        "bytes": 20762,
-        "sha256": "0617ccbad98cdffc1d03e901c3d2a4f71058e17dc17c1e87e8f8ae853316d272"
+        "bytes": 36057,
+        "sha256": "bc6cb303471a799685d120a81bfdd7187d0ea7895478a36f6fff00c9cf49d569"
       },
       {
         "path": "frontend/app/xpstore.js",
-        "bytes": 7504,
-        "sha256": "cf4e50ff9eba8de03a98c03ac937972fb87b438e35445fc4693578a01d313de3"
+        "bytes": 11062,
+        "sha256": "9ec84a081816bff0684d1a9caf2393a3ac2a566e51a300e53b736b294ea75bea"
       },
       {
         "path": "frontend/app/zones.js",
