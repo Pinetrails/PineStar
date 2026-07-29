@@ -62,4 +62,17 @@ D.upsert(dossier, belief.dim, { text: belief.text, source: belief.source }, 1);
 A.eq(dossier.dims.goals[0].text, 'Ship the Commander Dossier', 'an interview answer upserts into its dossier dimension');
 A.eq(dossier.dims.goals[0].source, 'interview', 'the dossier records the interview provenance');
 
+/* ---------- a TYPED skip is a skip, never a belief (bug-sweep P0) ----------
+   The interview's opening line invites it ("answer or tap, “skip” anything") and the chip is labelled
+   `skip`, so the typed word is the vocabulary the copy teaches. It used to land as the Commander's own
+   words at weight 'stated' — the strongest belief the station holds. */
+A.eq(I.beliefFromAnswer(q0, 'skip'), null, 'a typed "skip" yields no belief');
+A.eq(I.beliefFromAnswer(q0, 'Skip.'), null, 'punctuation + case do not smuggle a skip past the check');
+A.eq(I.beliefFromAnswer(q0, 'idk'), null, 'a typed "idk" yields no belief');
+A.eq(I.beliefFromAnswer(q0, 'none'), null, 'a typed "none" yields no belief');
+A.ok(I.isSkipAnswer('  N/A  '), 'isSkipAnswer normalizes whitespace and punctuation');
+// WHOLE-ANSWER MATCH ONLY — a real answer that merely contains a skip word must still land.
+A.eq(I.beliefFromAnswer(q0, 'skip the standup prep').weight, 'stated', 'a real answer CONTAINING "skip" still lands');
+A.ok(!I.isSkipAnswer('none of the dashboards refresh'), 'a substring is not a skip');
+
 A.report('interview.test');

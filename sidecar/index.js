@@ -36,6 +36,9 @@ const { makeFsTools } = require('./tools/builtin/fs.js');
 // fs.read extracts .docx / .xlsx / .ipynb to readable text. inflateRawSync is injected so the extractor stays
 // pure + headless-testable, and so the OOXML path needs no dependency beyond what Node already ships.
 const docExtract = require('./tools/builtin/docextract.js').makeDocExtract({ inflateRaw: require('node:zlib').inflateRawSync });
+// ...and the same idea for pixels: ONE sniffer shared by every producer that can hand the driving model an
+// image, so the `images` channel has more than a single caller (a channel with one caller is a special case).
+const imageWire = require('./tools/builtin/imagewire.js').makeImageWire({});
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
 const { makeToolSearchTool } = require('./tools/builtin/toolsearch.js');   // tool.search: reach a granted-but-unadvertised (deferred) tool
@@ -73,8 +76,15 @@ const {
   providerUsesDeviceOAuth: registryProviderUsesDeviceOAuth,
   defaultReasoningEffortForProvider: registryDefaultReasoningEffort,
   providerRequiresKey,
-  providerRequiresBaseUrl
+  providerRequiresBaseUrl,
+  attachRateLimits
 } = require('./providers/factory.js');
+/* PROACTIVE QUOTA. One tracker for the whole process, attached to the factory so every provider adapter's
+   injected fetch is instrumented at a single seam (see providers/ratelimits.js). Quota used to be learned only
+   by hitting a 429; now the *-remaining headers of ordinary successful calls are kept, so the station can say
+   "this meter is nearly spent" BEFORE the wall instead of after it. */
+const rateLimits = require('./providers/ratelimits.js').makeRateLimits({ clock: { now: () => Date.now() } });
+attachRateLimits(rateLimits);
 const { DEFAULT_MODEL: CODEX_DEFAULT_MODEL } = require('./providers/codex.js');
 const codexAuth = require('./providers/codex-auth.js');
 const codexTokenStore = require('./providers/codex-token-store.js');
@@ -2665,7 +2675,10 @@ if (require.main === module) {
 const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
 // serviceEnv: the KEYS-tab vars a shell child must receive. Lazy + per call — sanitizeChildEnv strips every
 // *_API_KEY from the inherited env, so without this the pasted key never reaches curl (see servicekeys.runEnv).
-const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: () => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV }) });
+// `surface` is the RUN's surface, forwarded by the backend from the shell/verify call: an unattended run only
+// receives the keys whose unattended grant is flipped ON, the SAME rule resolveForRequest enforces on
+// web_request. Host authority — it comes from the run, never from tool args.
+const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: (surface) => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV, surface: surface }) });
 try { console.log('[exec-env]', JSON.stringify(executionEnvironment.describe())); } catch (_) {}
 const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200, hooks: hookSpine });
 
@@ -9868,6 +9881,33 @@ async function handleRun(req, res) {
   }
 }
 
+/* THE LATEST USER TURN — as TEXT, whatever shape it arrived in.
+
+   ⛔ AN ATTACHMENT TURN IS NOT A STRING (bug-sweep P0). The moment the Commander sends a photo or a file, that
+   user message's `content` is an ARRAY of provider content blocks (attachments.js expands the reference into
+   parts). Four separate scans here walked the messages backwards looking for `typeof content === 'string'`,
+   so on an attachment turn each one silently SKIPPED it and used the PREVIOUS user message instead — never an
+   empty result, always a plausible WRONG one: the run's title and its persisted transcript turn were the older
+   message, the task brief was prepared from the older text, memory recall ranked against the older query, and
+   the study pass studied the older directive. Flatten the parts instead (same rule attachments.textOf uses).
+   Returns '' only when the turn genuinely carries no text (an image-only send) — an honest empty, not a lie. */
+function latestUserText(list) {
+  const msgs = Array.isArray(list) ? list : [];
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (!m || m.role !== 'user') continue;
+    if (typeof m.content === 'string') return m.content;
+    if (!Array.isArray(m.content)) continue;      // an unknown shape is not a user turn we can read — keep walking
+    const parts = [];
+    for (const p of m.content) {
+      if (typeof p === 'string') parts.push(p);
+      else if (p && typeof p.text === 'string') parts.push(p.text);
+    }
+    return parts.join('');                        // '' for an image-only turn: honest, and it IS the latest turn
+  }
+  return '';
+}
+
 /* runOnce — the reusable RUN HOST. Assembles the proven seams (fresh tool registry + the office-workstation
    capability projection + the consent broker + the OpenRouter provider + cost engine), does the tool-capable
    pre-check, injects the Cortex memory-recall fence, and drives the unchanged agentic loop. Extracted verbatim
@@ -10034,10 +10074,7 @@ async function runOnce(o) {
 
   if (isTask && o.taskKey) {
     try {
-      let latestUser = '';
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i] && messages[i].role === 'user' && typeof messages[i].content === 'string') { latestUser = messages[i].content; break; }
-      }
+      const latestUser = latestUserText(messages);   // flattens an attachment turn instead of skipping to an older one
       if (latestUser) taskBrief = await taskBriefStore.prepare({
         id: 'tb_' + runId, key: String(o.taskKey), streamId: streamId || '', agentId, runId,
         source: o.taskSource || (surface === 'interactive' ? 'interactive' : 'channel'), text: latestUser,
@@ -10163,7 +10200,7 @@ async function runOnce(o) {
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
   const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, { scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null, agentId: (o2 && o2.agentId) || agentId });
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract, imageWire }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
   widgetTools.register(registry);   // WIDGET RAILS Phase 2: widget.set — agent-fed rail readouts (memory capability: sandboxed local write, no consent, no network)
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
@@ -10200,7 +10237,7 @@ async function runOnce(o) {
   // computer.use remains registered behind an INERT driver as defense in depth against a
   // forged dispatch. It is removed from ordinary tool definitions below; no current run host
   // mints the separate one-shot attended-input lease required by computer.js.
-  makeComputerTools({ allowPhysicalInput: false }).register(registry);
+  makeComputerTools({ allowPhysicalInput: false, imageWire }).register(registry);
   // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
   // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
@@ -11140,8 +11177,7 @@ async function runOnce(o) {
   if (!internal) try {
     const stored = notebookStore.get('notebook:' + agentId);
     const recs = Array.isArray(stored) ? stored : [];
-    let q = '';
-    for (let i = messages.length - 1; i >= 0; i--) { if (messages[i] && messages[i].role === 'user' && typeof messages[i].content === 'string') { q = messages[i].content; break; } }
+    const q = latestUserText(messages);   // an attachment turn must rank recall against ITS text, not the previous turn's
     const ranked = rank(recs, q, { now: Date.now(), streamId });   // M-mem.2b: boost the active workstream's working memory
     const recall = renderRecall(ranked, { limit: 1500 });
     if (recall.text) {
@@ -11302,8 +11338,7 @@ async function runOnce(o) {
     if (billed) { try { credits.finishRun({ runId, agentId, usd: finalUsd, tokens: finalTokens, turns: finalTurns, reason: (result && result.reason) || 'done' }); } catch (_) {} }
     // record the run OUTCOME (durable history) — reason + a short title from the triggering user message. Fail-open.
     try {
-      let title = '';
-      for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
+      const title = latestUserText(msgs);   // an attachment turn titles/records ITSELF, never the message before it
       runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', recipeId: o.recipeId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent + recipe provenance
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
@@ -11408,8 +11443,7 @@ async function runOnce(o) {
   }
   if (_auxSpend.has('study')) {
     studyingNow.add(agentId);
-    let studyDirective = '';
-    for (let i = result.messages.length - 1; i >= 0; i--) { const m = result.messages[i]; if (m && m.role === 'user' && typeof m.content === 'string') { studyDirective = m.content; break; } }
+    const studyDirective = latestUserText(result.messages);   // study the turn that actually ran, attachment or not
     runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
   }
   if (_auxSpend.has('threadmine')) {
@@ -12154,6 +12188,9 @@ function handleDiagnostics(req, res) {
       uptimeMs: Date.now() - PROCESS_START,
       workspacePresent: workspacePresent,
       lastRun: recent ? { runId: recent.runId, status: recent.reason, ts: recent.ts } : null,
+      // observed provider quota. Empty until a call has actually been made — an empty array means NO DATA and
+      // must never be rendered as "plenty left" (see ratelimits.advise).
+      rateLimits: (() => { try { return rateLimits.snapshot(); } catch (_) { return []; } })(),
       errors: DIAG_ERR_RING.slice()   // already redacted on write; the assembler redacts again as a backstop
     };
     out = diagnostics.assemble(snapshot);

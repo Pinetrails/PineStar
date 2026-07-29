@@ -9,7 +9,8 @@
 
    makeEnvironmentManager({ spawn, fs, pathMod, root, bg?, clock?, env?, config? })
      -> { backendId, describe, ensureWorkspace, workspaceRoot, getCwd,
-          rememberCwd, execute, startBackground, statusBackground, killBackground }
+          rememberCwd, execute, startBackground, statusBackground, readBackground,
+          writeBackground, closeBackgroundStdin, killBackground }
 */
 'use strict';
 (function (root, factory) {
@@ -211,10 +212,12 @@
     const childEnv = sanitizeChildEnv(deps.env || (typeof process !== 'undefined' ? process.env : {}));
     // Resolved PER CALL, never snapshotted: a key pasted after boot must be live on the very next run,
     // and a disabled one gone on the very next run. Fail-open — a broken provider never breaks a shell.
+    // The RUN's surface rides along: servicekeys.runEnv withholds any key without an unattended grant on a
+    // non-interactive surface, so the hook must know which kind of run is asking. Undefined = un-wired caller.
     const serviceEnvFn = typeof deps.serviceEnv === 'function' ? deps.serviceEnv : null;
-    function spawnEnv() {
+    function spawnEnv(surface) {
       if (!serviceEnvFn) return childEnv;
-      try { return mergeServiceEnv(childEnv, serviceEnvFn()); } catch (_) { return childEnv; }
+      try { return mergeServiceEnv(childEnv, serviceEnvFn(surface)); } catch (_) { return childEnv; }
     }
     const sessions = new Map();
 
@@ -262,7 +265,7 @@
           spawn: spawn,
           file: String(opts.cmd || ''),
           args: null,
-          spawnOptions: { cwd: opts.cwd || getCwd(aid), shell: true, windowsHide: true, env: spawnEnv() },
+          spawnOptions: { cwd: opts.cwd || getCwd(aid), shell: true, windowsHide: true, env: spawnEnv(opts.surface) },
           timeoutMs: opts.timeoutMs,
           maxTimeoutMs: opts.maxTimeoutMs,
           maxBytes: opts.maxBytes,
@@ -274,10 +277,19 @@
       startBackground: function (opts) {
         if (!bg || typeof bg.start !== 'function') return { ok: false, error: 'background processes are not available for the local backend' };
         const aid = safeAgentId((opts && opts.agentId) || 'agent');
-        return bg.start({ agentId: aid, cmd: opts.cmd, cwd: opts.cwd || getCwd(aid), isWin: isWin, env: spawnEnv() });
+        return bg.start({ agentId: aid, cmd: opts.cmd, cwd: opts.cwd || getCwd(aid), isWin: isWin, env: spawnEnv(opts.surface) });
       },
       statusBackground: function (agentId, bgId) {
         return bg && typeof bg.status === 'function' ? bg.status(safeAgentId(agentId || 'agent'), bgId) : (bgId ? null : []);
+      },
+      readBackground: function (agentId, bgId, opts) {
+        return bg && typeof bg.read === 'function' ? bg.read(safeAgentId(agentId || 'agent'), bgId, opts) : { ok: false, error: 'background processes are not available for the local backend' };
+      },
+      writeBackground: function (agentId, bgId, opts) {
+        return bg && typeof bg.write === 'function' ? bg.write(safeAgentId(agentId || 'agent'), bgId, opts) : { ok: false, error: 'background processes are not available for the local backend' };
+      },
+      closeBackgroundStdin: function (agentId, bgId) {
+        return bg && typeof bg.closeStdin === 'function' ? bg.closeStdin(safeAgentId(agentId || 'agent'), bgId) : { ok: false, error: 'background processes are not available for the local backend' };
       },
       killBackground: function (agentId, bgId) {
         return bg && typeof bg.kill === 'function' ? bg.kill(safeAgentId(agentId || 'agent'), bgId) : { ok: false, error: 'background processes are not available for the local backend' };
@@ -296,10 +308,10 @@
     const containerRoot = String(cfg.dockerWorkspace || '/workspace').replace(/\/+$/, '') || '/workspace';
     // Same contract as the local backend: resolved PER CALL, fail-open, never a boot-time snapshot.
     const serviceEnvFn = typeof deps.serviceEnv === 'function' ? deps.serviceEnv : null;
-    function serviceEnvFor() {
+    function serviceEnvFor(surface) {
       if (!serviceEnvFn) return {};
       try {
-        const raw = serviceEnvFn() || {};
+        const raw = serviceEnvFn(surface) || {};
         const out = {};
         for (const k of Object.keys(raw)) {
           // a container env name must never be a host safety pin or an execution hook, and must be a legal
@@ -376,7 +388,7 @@
         const cwd = opts.cwd || getCwd(aid);
         // Names go on the argv (`-e NAME`), values go in the DOCKER CLIENT's env — so the secret is never
         // in a command line, and a container only ever receives keys the Commander connected.
-        const svc = serviceEnvFor();
+        const svc = serviceEnvFor(opts.surface);
         const names = Object.keys(svc);
         return runProcess({
           spawn: spawn,
@@ -397,6 +409,9 @@
         return { ok: false, error: 'background processes are not available for the docker backend yet; run a foreground command or switch STARNET_EXEC_BACKEND=local' };
       },
       statusBackground: function () { return []; },
+      readBackground: function () { return { ok: false, error: 'background processes are not available for the docker backend yet' }; },
+      writeBackground: function () { return { ok: false, error: 'background processes are not available for the docker backend yet' }; },
+      closeBackgroundStdin: function () { return { ok: false, error: 'background processes are not available for the docker backend yet' }; },
       killBackground: function () { return { ok: false, error: 'background processes are not available for the docker backend yet' }; },
       killAllBackground: function () { return 0; },
       _internals: { dockerArgs: dockerArgs, posixInside: posixInside }
@@ -424,6 +439,9 @@
       execute: backend.execute,
       startBackground: backend.startBackground,
       statusBackground: backend.statusBackground,
+      readBackground: backend.readBackground,
+      writeBackground: backend.writeBackground,
+      closeBackgroundStdin: backend.closeBackgroundStdin,
       killBackground: backend.killBackground,
       killAllBackground: backend.killAllBackground,
       _backend: backend,

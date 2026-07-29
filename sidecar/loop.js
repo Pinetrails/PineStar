@@ -135,6 +135,61 @@
     return true;
   }
 
+  /* PER-TURN AGGREGATE OUTPUT BUDGET.
+     tools/registry.js caps each result on its own (80k). That was enough while calls ran strictly one at a
+     time — the model saw a big result and could choose to narrow the next call. Parallel batches removed that
+     feedback: N tools land TOGETHER, so N x 80k arrives in a single turn with no decision point in between,
+     and three wide greps can blow the context window the loop was supposed to be reasoning inside.
+
+     Shrinking is WATER-FILLED, not proportional. An equal split would punish a 900-character result to make
+     room for a 300k one; instead every result is offered an equal share, anything smaller than its share keeps
+     its full text and hands the surplus back to the ones that are actually large. In practice the small results
+     — which are usually the answers — pass through untouched and only the genuinely huge ones give ground. */
+  function squeeze(content, budget, parkedPath) {
+    if (typeof content !== 'string' || content.length <= budget) return content;
+    const note = parkedPath
+      ? '\n\n[... elided by the per-TURN output cap: the tool calls in this turn returned more text together '
+        + 'than one turn may carry. THE FULL OUTPUT OF THIS CALL WAS SAVED to ' + parkedPath + ' — read that file '
+        + 'to see what is missing. Do NOT repeat this call. Making fewer or narrower calls per turn leaves more '
+        + 'room for each. The end of the output follows ...]\n\n'
+      : '\n\n[... elided by the per-TURN output cap: the tool calls in this turn returned more text together '
+        + 'than one turn may carry. Do not repeat this call as-is — narrow it, or make fewer calls per turn so '
+        + 'each one keeps more of its output. The end of the output follows ...]\n\n';
+    // A budget too small to hold the note leaves head-only: the note is the one part that must survive, since
+    // it is what tells the model this is not the whole answer.
+    const room = budget - note.length;
+    if (room < 200) return content.slice(0, Math.max(0, budget - note.length > 0 ? budget - note.length : 0)) + note;
+    const head = Math.floor(room * 0.7), tail = room - head;
+    return content.slice(0, head) + note + content.slice(content.length - tail);
+  }
+
+  function applyTurnBudget(results, max) {
+    if (!max || max <= 0) return results;
+    const idx = [];
+    let total = 0;
+    for (let i = 0; i < results.length; i++) {
+      const c = results[i] && results[i].content;
+      if (typeof c === 'string') { total += c.length; idx.push(i); }
+    }
+    if (total <= max || !idx.length) return results;
+
+    const order = idx.slice().sort((a, b) => results[a].content.length - results[b].content.length);
+    const allow = new Map();
+    let remaining = max, left = order.length;
+    for (const i of order) {
+      const share = Math.floor(remaining / left);
+      const give = Math.min(results[i].content.length, share);
+      allow.set(i, give); remaining -= give; left--;
+    }
+    for (const i of idx) {
+      const len = results[i].content.length;
+      const give = allow.get(i);
+      if (give >= len) continue;                       // fit inside its share — untouched
+      results[i] = Object.assign({}, results[i], { content: squeeze(results[i].content, give, results[i].parkedPath), turnClamped: true });
+    }
+    return results;
+  }
+
   // Every call gets exactly one result (success / error / timeout / denial) — never thrown.
   async function executeCalls(calls, dispatch, capCtx, emit, meta) {
     const results = [];
@@ -159,14 +214,14 @@
         return { c, r, ms: Math.max(0, (meta.clock ? meta.clock.now() : 0) - t0) };
       }));
       for (const s of settled) {
-        results.push({ callId: s.c.id, isError: !!s.r.isError, ok: !!s.r.ok, content: s.r.content, control: s.r.control || null, images: s.r.images || null });
+        results.push({ callId: s.c.id, isError: !!s.r.isError, ok: !!s.r.ok, content: s.r.content, control: s.r.control || null, images: s.r.images || null, parkedPath: s.r.parkedPath || null });
         if (meta.hiddenTools && meta.hiddenTools.has(s.c.name)) continue;
         emit('agent.tool_result', {
           agentId: meta.agentId, runId: meta.runId, callId: s.c.id, ok: !!s.r.ok,
           ms: s.ms, summary: s.r.summary || (s.r.isError ? 'error' : 'ok'), isError: !!s.r.isError
         });
       }
-      return results;
+      return applyTurnBudget(results, meta.turnOutputMax);
     }
 
     for (const c of calls) {
@@ -182,14 +237,14 @@
       catch (e) { r = { ok: false, isError: true, content: 'tool dispatch threw: ' + (e && e.message), summary: 'error' }; }
       r = r || { ok: false, isError: true, content: 'tool returned nothing', summary: 'error' };
       const t1 = meta.clock ? meta.clock.now() : 0;
-      results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content, control: r.control || null, images: r.images || null });
+      results.push({ callId: c.id, isError: !!r.isError, ok: !!r.ok, content: r.content, control: r.control || null, images: r.images || null, parkedPath: r.parkedPath || null });
       if (r.control && r.control.final) finalControl = r.control;
       if (!hidden) emit('agent.tool_result', {
         agentId: meta.agentId, runId: meta.runId, callId: c.id, ok: !!r.ok,
         ms: Math.max(0, t1 - t0), summary: r.summary || (r.isError ? 'error' : 'ok'), isError: !!r.isError
       });
     }
-    return results;
+    return applyTurnBudget(results, meta.turnOutputMax);
   }
 
   // Pure heuristic for the continuation guard: does a final, tool-free text ANNOUNCE work the model never did?
@@ -367,6 +422,9 @@
     // internal/aux loop and every existing test is byte-identical; index.js turns it on for real runs.
     const toolImages = (o.toolImages === true);
     const TOOL_IMAGE_MAX = (limits.toolImageMax != null) ? limits.toolImageMax : 2;
+    /* Per-turn aggregate tool output (see applyTurnBudget). 200k characters is ~2.5 full-size single results,
+       so an ordinary turn never notices it and only a wide parallel fan-out gets trimmed. 0 disables. */
+    const TURN_OUTPUT_MAX = (limits.turnOutputMax != null) ? limits.turnOutputMax : 200000;
     const _vos = limits.verifyOnStop;
     const VOS_MAX = (_vos === false) ? 0 : (_vos && _vos.max != null ? _vos.max : 1);
     const vosUnverified = new Set();
@@ -768,7 +826,7 @@
       }
       let results;
       try {
-        results = await executeCalls(calls, dispatch, capCtx, emit, { agentId, runId, clock, hiddenTools: new Set(o.hiddenTools || []), parallelSafe: (typeof o.parallelSafe === 'function') ? o.parallelSafe : null });
+        results = await executeCalls(calls, dispatch, capCtx, emit, { agentId, runId, clock, hiddenTools: new Set(o.hiddenTools || []), parallelSafe: (typeof o.parallelSafe === 'function') ? o.parallelSafe : null, turnOutputMax: TURN_OUTPUT_MAX });
         assertPaired(calls, results); // (7) HARD INVARIANT
       } catch (e) {
         emit('agent.run.error', { agentId, runId, message: String((e && e.message) || e), transient: false });
@@ -878,5 +936,5 @@
     }
   }
 
-  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, parallelizable } };
+  return { runAgentLoop, _internals: { parseCall, repairCalls, assistantTurn, toolResultMsg, assertPaired, executeCalls, announcesIntent, scrubTextToolCallMarkup, vosIsCodePath, vosIsCheckCommand, vosKey, parallelizable, applyTurnBudget, squeeze } };
 });

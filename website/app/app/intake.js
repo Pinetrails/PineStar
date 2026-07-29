@@ -78,7 +78,10 @@ const Intake = (() => {
     if (!accepting || !running) return;
     const q = questions[idx]; if (!q) return;
     const text = (commit == null ? '' : String(commit)).trim();
-    const isSkip = explicitSkip || text === '';
+    // A TYPED skip counts too — the opening line invites exactly that ("answer or tap, 'skip' anything"), and the
+    // word is the chip's own label. Whole-answer match only (Interview.isSkipAnswer), so a real answer that
+    // merely CONTAINS one of those words still lands. Falls back to the old rule if the engine isn't loaded.
+    const isSkip = explicitSkip || (typeof Interview !== 'undefined' && Interview.isSkipAnswer ? Interview.isSkipAnswer(text) : text === '');
     accepting = false;
     if (Chat.echoUser) Chat.echoUser(isSkip ? '(skip)' : (display != null ? String(display) : text));
     if (!isSkip && onCommit && typeof Interview !== 'undefined') {
