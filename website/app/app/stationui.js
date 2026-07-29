@@ -1343,6 +1343,32 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
       '<div class="gx-well' + (g.bonus ? ' gold' : '') + '"><span class="gx-lbl">Feedback bonus</span><span class="v">' + (g.bonus ? '+' + g.bonus + '%' : '—') + '</span></div>' +
       '</div>';
 
+    /* S2 RELIABILITY — the harness's OWN read, sitting under Satisfaction so the pair reads as what it is:
+       B is what the Commander SAID, B2 is what the station OBSERVED. Deliberately not merged into one score
+       (a well-liked agent that keeps hitting its ceiling must be able to show both truths at once), and
+       deliberately dossier-only — it is a number that can look bad, and the always-visible chrome is not where
+       an honest bad number belongs. Excluded runs are NAMED, not silently dropped from the denominator. */
+    const rl = Xp.reliability ? Xp.reliability(a.stats) : null;
+    const excludedNote = rl && rl.excluded
+      ? '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">' + rl.excluded + ' run' + (rl.excluded === 1 ? '' : 's') + ' set aside — ' +
+        (rl.faulted ? rl.faulted + ' the provider failed' : '') + (rl.faulted && rl.neutral ? ', ' : '') +
+        (rl.neutral ? rl.neutral + ' you stopped or it asked a question' : '') + ' — never charged to this agent</div>'
+      : '';
+    const reliabilityBlk = !rl ? '' :
+      // spans both columns of the existing .gx-2 grid (no CSS change; still correct under the 1-col media query)
+      '<div style="grid-column:1/-1;">' +
+      '<div class="gx-sec"><span class="gx-ref">B2</span><span class="gx-title">Reliability</span><span class="gx-tag">' +
+        (rl.known ? 'runs it finished, of the runs it owned (' + Xp.MIN_RUNS + '+ runs)' : 'calibrating &middot; ' + rl.attempted + ' of ' + Xp.MIN_RUNS + ' attributable runs so far') + '</span></div>' +
+      '<div style="display:flex;align-items:baseline;gap:10px;margin-bottom:9px;">' +
+        '<span class="gx-confnum' + (rl.known ? '' : ' cal') + '">' + (rl.known ? rl.pct + '<span style="font-size:18px;color:var(--ph-dim);">%</span>' : '—') + '</span>' +
+        '<span class="gx-band' + (rl.known ? '' : ' cal') + '">' + (rl.known ? rl.band.toUpperCase() : 'CALIBRATING') + '</span></div>' +
+      '<div class="gx-trk" style="margin-bottom:5px;"><div class="gx-fill" style="width:' + (rl.known ? rl.pct : 0) + '%;"></div></div>' +
+      '<div class="gx-well"><span class="gx-lbl">Finished / owned</span><span class="v">' + rl.completed + ' <span class="gx-dim">/</span> ' + rl.attempted + '</span></div>' +
+      // the honest distinction from Satisfaction — these two meters measure different things and may disagree.
+      '<div class="gx-row gx-dim" style="font-size:11px;margin-top:4px;">what the station observed — Satisfaction above is what you said</div>' +
+      excludedNote +
+      '</div>';
+
     const tros = cat.map(m =>
       '<div class="gx-tro ' + (m.earned ? 'on' : 'off') + '">' +
       '<div style="display:flex;align-items:center;gap:6px;"><span class="gl">' + (m.earned ? '&#9733;' : '&#9675;') + '</span><span class="nm">' + m.label + '</span></div>' +
@@ -1372,7 +1398,7 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
     return '<div class="gx">' +
       '<div class="gx-head"><div><div class="gx-kicker">AGENT DOSSIER // GROWTH READOUT</div><div class="gx-name">' + esc(a.name) + '</div></div>' +
       '<div style="text-align:right;"><div class="gx-kicker" style="margin-bottom:6px;">CLEARANCE</div><span class="gx-clear"><span class="k">LEVEL</span><span class="v">' + pad2(g.level) + '</span></span></div></div>' +
-      '<div class="gx-2">' + progression + confidence + '</div>' +
+      '<div class="gx-2">' + progression + confidence + reliabilityBlk + '</div>' +
       trophies + station +
       '</div>';
   }

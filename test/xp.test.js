@@ -270,4 +270,78 @@ A.eq(cg.positiveFeedback, 1, 'compute surfaces positive feedback count');
 A.eq(cg.negativeFeedback, 1, 'compute surfaces negative feedback count');
 A.eq(Xp.compute(Xp.fresh()).tasksDone, 0, 'fresh agent has 0 tasks done');
 
+/* ---- S2 RELIABILITY: the SECOND axis — what the HARNESS observed, not what the Commander said ----
+   The whole point is that it is provable without a single user tap, AND that it never becomes a second XP
+   faucet. Every assertion below pairs "the meter moved" with "the ladder did not". */
+
+// calibration honesty, exactly like confidence: no number before there is evidence for one
+const rFresh = Xp.reliability(Xp.fresh());
+A.eq(rFresh.known, false, 'a fresh agent reports reliability known:false (never a made-up %)');
+A.eq(rFresh.pct, null, 'an uncalibrated reliability has NO percentage');
+A.eq(rFresh.label, '—', 'an uncalibrated reliability renders as a dash');
+A.eq(rFresh.band, 'calibrating', 'an uncalibrated reliability bands as calibrating');
+A.eq(rFresh.toKnown, Xp.MIN_RUNS, 'a fresh agent needs MIN_RUNS attributable runs before a % is honest');
+A.eq(Xp.reliability(null).known, false, 'reliability(null) is safe and uncalibrated');
+
+// a clean track record
+const rAll = Xp.reliability(run([done(), done(), done()]).stats);
+A.eq(rAll.known, true, 'MIN_RUNS attributable runs calibrate the meter');
+A.eq(rAll.completed, 3, 'completed counts the done runs');
+A.eq(rAll.attempted, 3, 'attempted counts the runs the agent owned');
+A.eq(rAll.pct, 100, 'three clean runs read 100%');
+A.eq(rAll.band, 'dependable', '100% bands as dependable');
+
+// engaged-but-fell-short IS the agent's own outcome and DOES count against it
+const rShort = Xp.reliability(run([done(), done(), ended('max_iters')]).stats);
+A.eq(rShort.attempted, 3, 'a max_iters run is attributable (the agent engaged and fell short)');
+A.eq(rShort.completed, 2, 'a max_iters run is not a completion');
+A.eq(rShort.pct, 67, 'two of three reads 67%');
+A.eq(rShort.band, 'consistent', '67% bands as consistent');
+A.eq(Xp.reliability(run([done(), done(), ended('budget')]).stats).attempted, 3, 'a budget stop is attributable');
+A.eq(Xp.reliability(run([done(), done(), ended('refusal')]).stats).attempted, 3, 'a refusal is attributable');
+
+/* THE HONESTY LINE — a provider fault is NOT the agent's failure. This is the case that actually happens: a
+   dead model id, a 404, an out-of-credit key. Charging it to the agent would understate every agent on a
+   misconfigured station. Excluded runs are still COUNTED so the dossier can name them. */
+const rFault = Xp.reliability(run([done(), done(), done(), errd(), errd(), ended('empty')]).stats);
+A.eq(rFault.attempted, 3, 'provider faults (error/empty) are EXCLUDED from the denominator');
+A.eq(rFault.pct, 100, 'a provider outage cannot drag an agent\'s reliability down');
+A.eq(rFault.faulted, 3, 'faulted runs are still counted, so the dossier can name them');
+A.eq(rFault.excluded, 3, 'excluded = faulted + neutral');
+
+// a Commander cancel, and a neutral Task Brief question, are likewise not the agent's outcome
+const rNeutral = Xp.reliability(run([done(), done(), done(), ended('cancelled'), ended('clarifying')]).stats);
+A.eq(rNeutral.attempted, 3, 'cancelled + clarifying are EXCLUDED from the denominator');
+A.eq(rNeutral.neutral, 2, 'neutral runs are counted separately from provider faults');
+A.eq(rNeutral.pct, 100, 'stopping a run yourself never marks the agent down');
+
+// an unknown FUTURE terminal value falls through to neither bucket — the safe, non-lying default
+const rUnknown = run([done(), done(), done(), ended('some_future_reason')]).stats;
+A.eq(Xp.reliability(rUnknown).attempted, 3, 'an unrecognised terminal reason is never guessed into a bucket');
+A.eq(Xp.reliability(rUnknown).excluded, 0, 'an unrecognised terminal reason is not counted as excluded either');
+A.eq(rUnknown.counters.runs, 4, 'but every attempt still increments the raw run count (unchanged meaning)');
+
+/* THE XP LAW HOLDS: reliability reads real outcomes, and NONE of them mint XP, move the level, or touch the
+   satisfaction meter. If this ever goes red, the two axes have been blurred back into one. */
+const mixed = run([done(), done(), done(), ended('max_iters'), errd(), ended('cancelled')]).stats;
+A.eq(mixed.xp, 0, 'S2 outcomes mint NO XP — XP stays explicit-user-approval-only');
+A.eq(mixed.level, 1, 'S2 outcomes never move the level ladder');
+A.eq(mixed.samples, 0, 'S2 outcomes are not satisfaction samples');
+A.eq(Xp.compute(mixed).known, false, 'S2 outcomes never calibrate the CONFIDENCE meter');
+A.eq(Xp.reliability(mixed).known, true, '…while the reliability meter IS calibrated by those same runs');
+
+/* LEGACY SAVES: a save written before S2 has no buckets. We report calibrating rather than back-filling from
+   runs/tasksDone — `runs` counts provider errors and cancellations too, so a derived number would understate
+   every existing agent. Never ship a number you cannot stand behind. */
+const legacy = Xp.fresh(); legacy.counters = { runs: 40, tasksDone: 31, toolsOk: 90 };
+const rLegacy = Xp.reliability(legacy);
+A.eq(rLegacy.known, false, 'a pre-S2 save reads calibrating, not a number derived from the raw run count');
+A.eq(rLegacy.pct, null, 'a pre-S2 save shows no fabricated percentage');
+A.eq(rLegacy.attempted, 0, 'a pre-S2 save proves NOTHING about reliability — the S2 counters are the only source');
+A.eq(Xp.compute(legacy).tasksDone, 31, 'its older, differently-scoped counters are untouched and still surface elsewhere');
+// and it recalibrates from real evidence once it runs again, without inheriting the legacy history
+const rLegacyRan = Xp.reliability(run([done(), done(), done()], legacy).stats);
+A.eq(rLegacyRan.attempted, 3, 'a pre-S2 agent calibrates from its NEW runs only');
+A.eq(rLegacyRan.known, true, 'and becomes known after MIN_RUNS real, attributable runs');
+
 A.report('xp.test');

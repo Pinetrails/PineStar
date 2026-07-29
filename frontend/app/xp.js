@@ -1,13 +1,18 @@
 /* STARNET — xp.js : the AGENT-GROWTH model — XP, Level, and a Confidence (reliability) gauge.
    Pure + testable (UMD: an `Xp` global in the browser, module.exports under node).
 
-   Two HONEST meters, read off explicit user satisfaction — never fabricated, mirroring ctxgauge.js:
+   Three HONEST meters — never fabricated, mirroring ctxgauge.js. The first two read off explicit user
+   satisfaction; the third reads off what the harness itself observed:
      • XP / LEVEL  — cumulative, MONOTONIC user trust. You never lose a level.
                      Curve: cumulative XP to REACH level n = LEVEL_K * n * (n-1)
                      (L2=50, L3=150, L5=500, L10=2250, L28=18900).
      • CONFIDENCE  — a recency-weighted (EWMA) satisfaction %, moves BOTH ways. Reports
                      known:false ("calibrating") until MIN_SAMPLES user feedback samples exist, so a
                      fresh agent never shows a made-up number.
+     • RELIABILITY — (S2) completed ÷ attributable runs, off the frozen agent.run.end terminal reasons.
+                     What the HARNESS observed, not what the Commander said, so it can honestly disagree
+                     with CONFIDENCE. Mints NO XP; provider faults and Commander cancellations are excluded
+                     from the ratio, never charged to the agent. Same calibration honesty (MIN_RUNS).
 
    The design rule: these DESCRIBE the agent's user-approved growth/reliability — they never GATE it. No
    capability is ever locked behind a level. The station-wide rollup uses the SAME engine fed
@@ -27,6 +32,26 @@
   const MIN_SAMPLES = 3;    // user feedback samples needed before confidence is "known"
   const FEEDBACK_XP_PER_DELTA = 10; // explicit positive user turn-in feedback is the only XP mint
   const FEEDBACK_XP_CAP = 50;       // cap one feedback event so one huge delta cannot jump many levels
+  const MIN_RUNS = 3;               // attributable runs needed before RELIABILITY is "known" (cf. MIN_SAMPLES)
+
+  /* S2 — RELIABILITY: the SECOND axis, and deliberately NOT a second XP faucet.
+     CONFIDENCE answers "what did the Commander SAY about this agent"; RELIABILITY answers "what did the
+     HARNESS OBSERVE" — the one thing the meters never used to read, even though every fact was already on the
+     bus. It mints no XP and never touches the level ladder (scoreEvent is untouched): XP stays user-approval-only.
+
+     THE HONESTY LINE is WHICH TERMINAL REASON THE AGENT IS ACCOUNTABLE FOR. A run is only attributable when the
+     agent's own conduct decided the outcome:
+       • ATTRIBUTED — 'done' (completed) · 'max_iters' / 'budget' / 'refusal' (it engaged and fell short)
+       • EXCLUDED   — 'error' + 'empty' (the PROVIDER failed: a 404, a dead model id, an out-of-credit key, a
+                      degraded stream — charging that to the agent would be a lie, and it is the single most
+                      common terminal on a misconfigured station) · 'cancelled' (the COMMANDER stopped it) ·
+                      'clarifying' (a neutral Task Brief question — the frozen contract says every success-keyed
+                      consumer must treat it exactly like 'cancelled').
+     Excluded runs are still COUNTED, separately, so the dossier can say how many were set aside instead of
+     silently shrinking the denominator. Reasons are the frozen shared/events.js enum; an unknown future value
+     falls through to neither bucket (counted only in `runs`), which is the safe, non-lying default. */
+  const RELIABILITY_ATTRIBUTED = { done: 'done', max_iters: 'short', budget: 'short', refusal: 'short' };
+  const RELIABILITY_EXCLUDED = { error: 'faulted', empty: 'faulted', cancelled: 'neutral', clarifying: 'neutral' };
   // G2.4 task-size weighting (the locked leveling-redesign TODO): an optional payload.size hint
   // ('small'|'medium'|'large', derived from REAL tool count + spend — see workSize) SCALES the minted
   // XP, never invents it: no positive verdict, no XP, whatever the size; FEEDBACK_XP_CAP stays the
@@ -247,6 +272,19 @@
     if (name === 'agent.run.end') {
       bump(s.counters, 'runs');
       if (p.reason === 'done') bump(s.counters, 'tasksDone');
+      /* S2 RELIABILITY buckets — provable outcome facts, no XP consequence.
+         `runsOwned` is bumped for EVERY attributable run (including the completions), even though
+         `tasksDone` already counts the done ones. That duplication is deliberate and load-bearing: these
+         counters must be written ONLY by S2, so that their ABSENCE unambiguously means "this save predates
+         reliability" rather than "this agent never fell short". Deriving the denominator from the older
+         `runs`/`tasksDone` pair instead made every legacy save render a fabricated 100% — caught by
+         test/xp.test.js's pre-S2 save case, which is why that test exists. */
+      if (RELIABILITY_ATTRIBUTED[p.reason]) {
+        bump(s.counters, 'runsOwned');
+        if (RELIABILITY_ATTRIBUTED[p.reason] === 'done') bump(s.counters, 'runsWon');
+      }
+      else if (RELIABILITY_EXCLUDED[p.reason] === 'faulted') bump(s.counters, 'runsFaulted');
+      else if (RELIABILITY_EXCLUDED[p.reason] === 'neutral') bump(s.counters, 'runsNeutral');
       // COMMIT-OR-DISCARD this run's buffered memory reuse, then reset for the next run. A run that produced nothing
       // (error/empty) forfeits it — no PACK RAT for a recall that never fed a real turn.
       const sameRun = s.run && s.run.id === p.runId;
@@ -300,6 +338,40 @@
     };
   }
 
+  /* S2 — RELIABILITY as render-state (pure, mirrors compute()). The SECOND honest meter: what the harness
+     OBSERVED, versus compute()'s confidence which is what the Commander SAID. Never averaged into one score —
+     two meters that can disagree is the truthful shape (a well-liked agent that keeps hitting its iteration
+     ceiling should read exactly that way).
+
+     Calibration honesty matches confidence: under MIN_RUNS ATTRIBUTABLE runs it reports known:false and a '—'
+     label rather than a number derived from one or two samples.
+
+     LEGACY SAVES: every counter read here is written ONLY by S2, so all four are absent on a save written
+     before this shipped and an old agent reads 0/0 → calibrating until it runs again. That is deliberate, and
+     it is why the denominator is `runsOwned` rather than the older `runs`/`tasksDone` pair: those predate S2,
+     so dividing them would have rendered a confident, WRONG number for every existing agent (and `runs`
+     counts provider errors and cancellations besides). We do not ship a number we cannot stand behind — the
+     meter starts calibrating instead. */
+  function reliability(stats) {
+    const s = stats || fresh();
+    const c = (s && s.counters) || {};
+    const attributed = Math.max(0, Math.floor(num(c.runsOwned, 0)));
+    const completed = Math.min(attributed, Math.max(0, Math.floor(num(c.runsWon, 0))));
+    const short = attributed - completed;
+    const faulted = Math.max(0, Math.floor(num(c.runsFaulted, 0)));   // provider's fault — excluded from the ratio
+    const neutral = Math.max(0, Math.floor(num(c.runsNeutral, 0)));   // Commander-cancelled / a clarifying question
+    const attempted = attributed;
+    const known = attempted >= MIN_RUNS;
+    const pct = attempted > 0 ? Math.round((completed / attempted) * 100) : 0;
+    return {
+      known, completed, short, attempted, excluded: faulted + neutral, faulted, neutral,
+      pct: known ? pct : null,
+      label: known ? (pct + '%') : '—',
+      band: !known ? 'calibrating' : pct >= 85 ? 'dependable' : pct >= 65 ? 'consistent' : pct >= 45 ? 'uneven' : 'faltering',
+      toKnown: Math.max(0, MIN_RUNS - attempted),   // attributable runs still needed before a % is honest
+    };
+  }
+
   // the FULL milestone catalogue as render-state: every badge with its label, unlock hint, and earned flag —
   // earned ones lit, locked ones shown with what unlocks them. Pure → drives the trophy case in the dossier.
   function milestones(stats) {
@@ -307,5 +379,5 @@
     return MILESTONES.map(m => ({ id: m.id, label: m.label, hint: m.hint, earned: earned.indexOf(m.id) !== -1 }));
   }
 
-  return { fresh, clone, applyEvent, compute, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES, workSize, crewSplit };
+  return { fresh, clone, applyEvent, compute, reliability, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES, MIN_RUNS, workSize, crewSplit };
 });
