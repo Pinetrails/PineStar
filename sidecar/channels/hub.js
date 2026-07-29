@@ -65,6 +65,32 @@
     return !!transient && SUPERSEDE_REFUSAL_RE.test(String(message == null ? '' : message));
   }
 
+  /* Re-open a fenced code block that a chunk boundary cut in half.
+
+     A reply longer than the platform's limit is split into messages, and a ``` block straddling the cut left
+     chunk 2 with an UNPAIRED opening fence: the formatter (which only converts what it can prove is balanced
+     within its own string) correctly declines to make it code, so the second half of a script or a log lands as
+     raw prose with a stray ``` in it. Close the block at the end of the chunk that opened it and re-open at the
+     top of the next, so both halves render as code and neither carries a dangling marker.
+
+     Counting is by LINES beginning with ```, which is what a fence actually is — a ``` inside a line of prose
+     ("use ```js to fence it") is not a block delimiter and must not flip the state. The reserve below is why
+     the split is given less room: the two markers we add have to fit under the same limit. */
+  const FENCE_RESERVE = 8;   // '\n```' opening + '```\n' closing, with slack
+  function reopenFences(chunks) {
+    let open = false;
+    const out = [];
+    for (let i = 0; i < chunks.length; i++) {
+      let c = chunks[i];
+      if (open) c = '```\n' + c;                          // continue the block this chunk starts inside
+      const fences = (c.match(/^[ \t]{0,3}```/gm) || []).length;
+      if (fences % 2 === 1) { c = c.replace(/\s*$/, '') + '\n```'; open = true; }
+      else open = false;
+      out.push(c);
+    }
+    return out;
+  }
+
   // split text into <=max-length pieces, preferring to break at the last newline/space so words/lines stay whole.
   function chunkText(text, max) {
     const s = String(text == null ? '' : text);
@@ -73,21 +99,25 @@
     // one bad config away.
     max = (typeof max === 'number' && isFinite(max) && max > 0) ? Math.floor(max) : 4096;
     if (s.length <= max) return s.length ? [s] : [];
+    // Leave room for the fence markers reopenFences may add, but ONLY when there is a fence to worry about —
+    // an ordinary long reply keeps the exact old boundaries.
+    const fenced = /^[ \t]{0,3}```/m.test(s);
+    const room = fenced ? Math.max(1, max - FENCE_RESERVE) : max;
     const out = [];
     let i = 0;
     while (i < s.length) {
-      let end = Math.min(i + max, s.length);
+      let end = Math.min(i + room, s.length);
       if (end < s.length) {
         const slice = s.slice(i, end);
         const nl = slice.lastIndexOf('\n');
         const sp = slice.lastIndexOf(' ');
-        const cut = nl > max * 0.5 ? nl : (sp > max * 0.5 ? sp : -1);
+        const cut = nl > room * 0.5 ? nl : (sp > room * 0.5 ? sp : -1);
         if (cut > 0) end = i + cut + 1;
       }
       out.push(s.slice(i, end));
       i = end;
     }
-    return out;
+    return fenced ? reopenFences(out) : out;
   }
 
   /* Render an inbound message's `replyTo` as the preamble that goes ABOVE the member's own words in the turn.
@@ -287,6 +317,10 @@
     //   expandAttachments(messages, agentId) -> messages with refs expanded into provider content blocks (the
     //                                         SAME expandUserAttachments the interactive run host calls)
     const fetchMedia = typeof o.fetchMedia === 'function' ? o.fetchMedia : null;
+    // INJECTED STT (2026-07-29). transcribe(buffer, mime, name) -> { ok, text } | { ok:false, reason }. Absent,
+    // a voice note degrades to exactly the old behaviour (saved file + a note naming its path) — the feature is
+    // additive and a host that wires no engine is unchanged.
+    const transcribe = typeof o.transcribe === 'function' ? o.transcribe : null;
     const saveAttachmentFn = typeof o.saveAttachment === 'function' ? o.saveAttachment : null;
     const expandAttachments = typeof o.expandAttachments === 'function' ? o.expandAttachments : null;
     // TYPING INDICATOR (Hermes parity): chatAction(chatId) fires ONE platform "typing…" action (adapter.chatAction
@@ -699,7 +733,7 @@
     // crashed inbound. Videos/audio/documents get a note naming their saved workspace path so the agent can reach
     // the file with its tools; a photo needs no note (the model literally sees it as an image block).
     async function ingestMedia(agentId, media) {
-      const refs = [], notes = [];
+      const refs = [], notes = [], transcripts = [];
       const items = media.slice(0, MAX_MEDIA_PER_MESSAGE);
       if (media.length > items.length) notes.push('[' + (media.length - items.length) + ' additional file(s) in this message were not ingested — resend them separately]');
       for (const it of items) {
@@ -717,6 +751,23 @@
         refs.push({ id: saved.id, name: saved.name, path: saved.path, mediaType: saved.mediaType, kind: saved.kind, srcKind: kind });
         if (saved.kind !== 'image') notes.push('[' + kind + ' "' + name + '"' + from + ' received and saved to ' + saved.path + ' in your workspace]');
         else if (from) notes.push('[the image "' + name + '"' + from + ' is attached to this turn]');
+
+        /* VOICE NOTES WERE DEAD INPUT. We saved the .ogg and told the model "saved to <path>" — a path it
+           cannot hear — while the station has owned an STT engine the whole time. Transcribe here, where the
+           bytes already are, so a member can hold the button and talk to their agent from a phone.
+
+           Only a real voice note (it.voice, set by the platform's normalize) is transcribed: a forwarded music
+           file is audio too, and burning an STT call on it would be spend with no meaning. A failure is a NOTE,
+           never a lost turn — the file is already saved and referenced, so the run continues exactly as before
+           this feature existed. */
+        if (it.voice && transcribe) {
+          let tr;
+          try { tr = await transcribe(got.buffer, String(it.mime || 'audio/ogg'), name); }
+          catch (e) { tr = { ok: false, reason: (e && e.message) || 'transcribe threw' }; }
+          if (tr && tr.ok && String(tr.text || '').trim()) transcripts.push(String(tr.text).trim());
+          else if (tr && tr.ok) notes.push('[the voice message "' + name + '" contained no speech we could make out — ask them to resend it]');
+          else notes.push('[the voice message "' + name + '" could not be transcribed (' + ((tr && tr.reason) || 'no transcription engine configured') + ') — the audio file is saved at ' + saved.path + ', and you can ask them to type it instead]');
+        }
       }
       // truthful cross-reference: only claim a visible video still when BOTH the clip and its frame actually saved
       if (refs.some(r => r.srcKind === 'video') && refs.some(r => r.kind === 'image' && /preview-frame/.test(String(r.name)))) {
@@ -730,7 +781,22 @@
         notes.push('[the image(s) are attached inside this message — look at them directly; no vision tool or extra API key is needed]');
       }
       for (const r of refs) delete r.srcKind;   // keep the stored/history reference shape identical to browser uploads
-      return { attachments: refs, notes: notes };
+      return { attachments: refs, notes: notes, transcripts: transcripts };
+    }
+
+    /* One or more voice notes, rendered as the words the member actually said.
+
+       FENCED AND LABELLED, on purpose. A transcript is a MACHINE's reading of speech: it mishears names, it
+       drops negations, and an agent that quotes it back as verbatim user text will eventually put words in the
+       Commander's mouth. Naming it as a transcription is what lets the model hedge when the text reads oddly —
+       and it is the difference between "you said X" and "I heard X". */
+    function transcriptBlock(list) {
+      const arr = (Array.isArray(list) ? list : []).filter(t => String(t || '').trim());
+      if (!arr.length) return '';
+      const head = arr.length === 1
+        ? '[voice message, transcribed automatically — this is what they said, but transcription can mishear]'
+        : '[' + arr.length + ' voice messages, transcribed automatically — this is what they said, but transcription can mishear]';
+      return head + '\n' + arr.map(t => '"' + String(t).trim() + '"').join('\n');
     }
 
     // ---- ALBUM (media-group) BATCHING --------------------------------------------------------------------
@@ -854,7 +920,11 @@
       // isTask rides along: the BELT IS WORK-ONLY (Andrew's ruling 2026-07-05) — the host places a crate only
       // for a real task directive; "hello" gets a reply and NOTHING on the floor. Same classifier that gates
       // the desk walk + the task tool suffix below, so the body and the belt tell one story.
-      const isTask = !!classify(msg.text);
+      // `let`, because a VOICE note carries no text yet: its transcript only exists after media ingest below,
+      // and a spoken "research the competitors" must still earn the task suffix. Re-evaluated once the words
+      // exist. (The belt crate + onResolved fire here, before the audio is downloaded, so a spoken directive
+      // still visualizes as talk — visualization only; the RUN gets the right prompt.)
+      let isTask = !!classify(msg.text);
       if (onResolved) { try { onResolved({ chatId: chatId, agentId: agentId, text: msg.text, isTask: isTask }); } catch (_) {} }
 
       // one run per CONVERSATION: a new message in THIS chat ABORTS its in-flight run — keyed by chatId, NOT
@@ -902,7 +972,19 @@
       // It is built from msg.replyTo only, never from msg.text, so routing/classification/commands (which all ran
       // on the RAW text above) are untouched by it.
       const replyLead = replyPreamble(msg.replyTo);
-      const bodyText = String(msg.text || '');
+      // A voice note usually carries NO caption, so the transcript IS the message — it goes where the typed
+      // words would have gone, above the media notes, not buried among them.
+      const spoken = transcriptBlock(mediaIngest.transcripts);
+      const written = String(msg.text || '');
+      /* GROUP ATTRIBUTION. `userName` was captured on every inbound message and never reached the model, so in
+         a group the agent read a merged stream with no idea who said what — it would answer one person using
+         another person's context, and could not honour "ask Ana" because it never learned Ana was in the room.
+         DM is left alone: there is exactly one human there and a name prefix would just be noise in every turn. */
+      const speaker = (msg.chatType === 'group') ? String(msg.userName || '').trim() : '';
+      const attributed = speaker ? (speaker + ': ' + written) : written;
+      const bodyText = spoken ? (attributed ? attributed + '\n' + spoken : spoken) : attributed;
+      // The words only became available just now — classify them, or a spoken task runs without the task prompt.
+      if (spoken && !isTask) { try { isTask = !!classify(mediaIngest.transcripts.join(' ')); } catch (_) {} }
       const turnText = (replyLead ? replyLead + '\n\n' : '') + bodyText
         + (mediaIngest.notes.length ? ((bodyText ? '\n' : '') + mediaIngest.notes.join('\n')) : '');
 

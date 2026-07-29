@@ -79,7 +79,10 @@
       push('video', m.video_note, 'video-note.mp4', 'video/mp4');
       push('photo', thumbOf(m.video_note), 'video-note-preview-frame.jpg', 'image/jpeg');
     }
-    if (m.voice) push('audio', m.voice, 'voice-message.ogg', m.voice.mime_type || 'audio/ogg');
+    // A VOICE NOTE is marked explicitly rather than sniffed from the filename: the hub transcribes voice and
+    // must NOT burn an STT call on a music file the member happened to forward. `voice:true` is the flag; a
+    // plain audio upload below deliberately does not carry it.
+    if (m.voice) { push('audio', m.voice, 'voice-message.ogg', m.voice.mime_type || 'audio/ogg'); items[items.length - 1].voice = true; }
     if (m.audio) push('audio', m.audio, m.audio.file_name || 'audio.mp3', m.audio.mime_type || 'audio/mpeg');
     if (m.document) push('document', m.document, m.document.file_name || 'file', m.document.mime_type || '');
     if (m.sticker && !m.sticker.is_animated && !m.sticker.is_video) push('photo', m.sticker, 'sticker.webp', 'image/webp');
@@ -159,6 +162,37 @@
     return out;
   }
 
+  /* Who this message ADDRESSES, as raw platform facts — the policy decision lives in the generic adapter, which
+     is the piece that knows our own @username.
+
+     Returns lowercased usernames without the '@'. Two entity kinds count:
+       • 'mention'      — "@thebot look at this"; the username is a SLICE of the text, by UTF-16 offset/length,
+                          which is what Telegram's offsets are measured in and what JS String indexes natively.
+       • 'text_mention' — a mention of a user with no @username (a link entity carrying `user`); matched by id
+                          elsewhere, but its username is captured here when it has one.
+     A `/cmd@thebot` suffix is ALSO an addressing form and is captured, so a command aimed at another bot in the
+     same group can be told apart from one aimed at us. */
+  function mentionsOf(m) {
+    const out = [];
+    const text = typeof m.text === 'string' ? m.text : (typeof m.caption === 'string' ? m.caption : '');
+    const ents = (Array.isArray(m.entities) && m.entities.length) ? m.entities
+      : (Array.isArray(m.caption_entities) ? m.caption_entities : []);
+    for (const e of ents) {
+      if (!e) continue;
+      if (e.type === 'mention') {
+        const raw = text.slice(Number(e.offset) || 0, (Number(e.offset) || 0) + (Number(e.length) || 0));
+        const name = String(raw).replace(/^@/, '').trim().toLowerCase();
+        if (name) out.push(name);
+      } else if (e.type === 'text_mention' && e.user && e.user.username) {
+        out.push(String(e.user.username).trim().toLowerCase());
+      }
+    }
+    // '/status@thebot' — the command's own @suffix, which Telegram does NOT emit as a mention entity
+    const cmd = /^\/[A-Za-z0-9_]+@([A-Za-z0-9_]+)/.exec(String(text || ''));
+    if (cmd) out.push(String(cmd[1]).toLowerCase());
+    return out;
+  }
+
   function normalize(u) {
     if (!u || typeof u.update_id !== 'number') return null;   // not a real update -> skip without advancing
     const offset = u.update_id;
@@ -178,6 +212,9 @@
         text: written || describeOf(m) || '',
         messageId: m.message_id
       };
+      if (from.is_bot) msg.fromBot = true;                       // another BOT is talking — the adapter drops these
+      const mentions = mentionsOf(m);
+      if (mentions.length) msg.mentions = mentions;              // who this message addresses (adapter decides)
       const replyTo = replyOf(m);
       if (replyTo) msg.replyTo = replyTo;   // additive — a non-reply keeps the exact old shape
       if (media.length) msg.media = media;   // additive — text-only messages keep the exact old shape
@@ -218,9 +255,16 @@
       startOffset: o.startOffset,
       ownerUserId: o.ownerUserId,
       onOwnerClaim: o.onOwnerClaim,
+      // GROUP DISCIPLINE — see adapter.js. botUsername is what makes "was I addressed?" answerable at all; the
+      // composition root learns it from getMe() at connect. Without it the mention gate deliberately admits
+      // everything rather than silencing a room we cannot prove we were not addressed in.
+      botUsername: o.botUsername,
+      requireMention: o.requireMention,
+      ignoreBots: o.ignoreBots,
+      allowedUsers: o.allowedUsers,
       dropPendingOnConnect: o.dropPendingOnConnect !== false   // Telegram default: discard offline backlog on connect
     });
   }
 
-  return { makeTelegramAdapter, normalize, mediaOf, describeOf, replyOf, MAX_MESSAGE_LENGTH };
+  return { makeTelegramAdapter, normalize, mediaOf, describeOf, replyOf, mentionsOf, MAX_MESSAGE_LENGTH };
 });

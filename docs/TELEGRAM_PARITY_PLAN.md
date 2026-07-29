@@ -110,7 +110,49 @@ from the member's side and both are small.
 - Proof: `test/channels.telegram.context.test.js` (57 assertions, in `test/fast.list`), each
   half proven by reverting the fix and watching it go red.
 
-### P1 — Outbound media *(biggest functional hole)*
+### P1 — DONE (2026-07-29): outbound media
+The agent can now send a file back. `telegram.transport.js` grew a dependency-free **multipart encoder**
+(the real lift — the transport was JSON-only) plus `sendMedia` (photo/document/video/audio/voice/
+animation) and `sendMediaGroup` (2–10 album, `attach://` indirection, first caption only). `adapter.js`
+passes both through as transport-optional. `channel.send` gained `files` (workspace paths, max 4);
+**known-targets-only is unchanged** — a file may go exactly where words may already go. The jail proof
+(`fsJail.resolveInside`) and the mime table live in `index.js`, so `comms.js` stays pure.
+
+**The floor is delivery:** the text is sent FIRST and files are attempted after it. A failed upload
+degrades to a line *in the chat* naming the workspace path, and the tool result distinguishes "sent with
+2 files" from "sent, and the files did not go". Caption capped at the **media** limit (1024), not 4096.
+
+⚠ **Consent note, unchanged by this work:** `channel.send` is `requiresConsent: true` (it is the exfil
+surface). A default Telegram chat runs headless with approvals OFF, where a consent-gated tool is
+silently skipped — so pushing a file from a Telegram run needs that chat to have run `/approvals on`.
+Widening that is a security decision, not a media one, and was deliberately not taken here.
+
+### P2 — DONE (inbound half): voice notes are no longer dead input
+A voice note is transcribed through the **same** STT chain `/api/stt` uses (Groq whisper →
+OpenAI whisper → the chat-model fallback), extracted into `transcribeAudioBuffer` so there is one engine
+chain rather than two that drift. The transcript becomes the turn text, **fenced and labelled as a
+transcription** so the agent never quotes a machine's reading of speech as verbatim user text. Only a
+real voice note is transcribed (`voice:true` from `normalize`) — a forwarded music file is not. A spoken
+directive is re-classified once its words exist, so it still earns the task prompt.
+
+**Outbound TTS voice replies are NOT built, and the reason is technical:** Telegram's `sendVoice` requires
+OGG/Opus, and our TTS returns mp3. Sending it as `audio` works and gives a player row, but a real
+push-to-play voice bubble needs an opus encode we do not have. Do not "fix" this by calling `sendVoice`
+with mp3 — it fails.
+
+### P3 — DONE: group discipline
+Three gates in `adapter.js`, each independently disableable, all no-ops for a DM:
+`ignoreBots` (default ON — bot-to-bot is an unbounded spend loop with no human in it), `requireMention`
+(default ON — an @mention of us, a reply to one of OUR messages, or a bare/self-targeted slash command),
+and `allowedUsers` (opt-in; it NARROWS, never widens, and does not bypass the owner gate).
+`mentionsOf` reads Telegram's entity offsets as **UTF-16**, which is what they are — a byte-offset read
+slices the wrong window the moment an emoji precedes the mention.
+
+With no `botUsername` known the gate deliberately admits everything: we must never silence a room because
+we could not prove we were not addressed. The name is read through a **function**, not captured as a
+string, because `getMe()` resolves after the adapter is constructed.
+
+### P1 (superseded section — kept for the original reasoning)
 Today the agent can receive a file and **cannot send one back**. It generates an image or
 writes a report and can only describe it.
 
@@ -190,6 +232,32 @@ Hermes edits the message as the model streams (27 `edit_message_text` sites, plu
 3. Every enhancement degrades to a delivered plain-text reply when its API call fails.
 4. Discord/Slack/Matrix/Signal behaviour is byte-identical before and after every phase.
 5. `npm test` green on trunk after each phase, with its own merge digest in `qa/STATUS.md`.
+
+## 4.5 STATE OF PLAY — 2026-07-29
+
+**DONE:** P0 (approvals/tools/markdown/`/start`/poll-wedge) · P0.5 (reply context, silent drops) ·
+P1 (outbound media) · P2 inbound (voice→STT) · P3 (group discipline) · P6-redaction (bot-token leak) ·
+plus three of the six second-pass gaps: **group sender attribution**, **fenced-code chunking**, and the
+mention/bot gates.
+
+**STILL OPEN, in the order I would take them:**
+1. **P4 — live progress streaming.** The single biggest reason Hermes "feels" better. Placeholder message
+   → throttled `editMessageText` on token deltas → final send, with overflow continuation past 4096. Most
+   invasive; do it on its own.
+2. **`my_chat_member` is still invisible.** `ALLOWED_UPDATES` is `['message','callback_query']`, so being
+   blocked or kicked cannot be detected and the notifier keeps sending into a dead chat. **Deliberately not
+   half-built:** detecting it without a consumer that marks the chat unreachable would be a stamped field
+   with no reader, which is one of this project's named bug classes. Build the detection and the store
+   update together or not at all.
+3. **P5 — threads/forums.** `message_thread_id` end to end, `reply_quote`, reactions, `channel_post`.
+   `replyOf` already suppresses the forum-topic-root trap, so the parse side is half-ready.
+4. **Per-user / per-thread sessions.** `agentIdFor(chatId)` keys on chatId alone; Hermes has
+   `group_sessions_per_user` / `thread_sessions_per_user`. Now that groups are mention-gated this matters
+   less for spend and more for context bleed between people.
+5. **Rest of P6:** webhook mode + secret, typing 429 cooldown, `username → chat_id`, text batching to
+   replace supersede-on-rapid-messages, proxy.
+6. **`disable_notification`.** Small, but it needs a product decision (quiet hours? per-chat toggle?
+   autonomous pings only?) rather than a default someone has to discover.
 
 ## 5. Honest sizing
 

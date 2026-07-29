@@ -95,10 +95,54 @@
       return uid === owner;
     }
 
+    /* GROUP DISCIPLINE (2026-07-29). We used to answer EVERY message in a whitelisted group, and never checked
+       whether the sender was a bot. In a room with any traffic that is a model call per message — the member
+       pays for a conversation they are not in — and two StarNet bots in one group would answer each other
+       forever. Three gates, each independently disableable, all no-ops for a DM:
+
+         ignoreBots     (default ON)  — a message from another bot never runs. This one is not a preference:
+                                        bot-to-bot is an unbounded spend loop with no human in it.
+         requireMention (default ON)  — in a GROUP, run only when the message addresses us: an @mention of our
+                                        username, a reply to one of OUR messages, or a slash command that is
+                                        either bare or @-suffixed with our name. A group message that addresses
+                                        nobody is somebody else's conversation.
+         allowedUsers   (default off) — when set, only these user ids run, ON TOP of the existing owner gate for
+                                        DMs and the chat allowlist for groups. It NARROWS, it never widens.
+
+       A DM is untouched: it is already owner-only, and requiring the Commander to @-mention a bot in their own
+       private chat would be absurd. */
+    /* botUsername may be a STRING or a FUNCTION. The station bot learns its own @name from getMe() at connect,
+       which resolves AFTER the adapter is constructed — a string captured here would be '' forever and the
+       mention gate would sit permanently dormant (a flag with no reader, the exact bug class this project
+       keeps re-finding). Reading it lazily means the gate arms the moment the name is known. */
+    const botUsernameFn = (typeof o.botUsername === 'function') ? o.botUsername : () => o.botUsername;
+    const botUsernameNow = () => String(botUsernameFn() || '').replace(/^@/, '').trim().toLowerCase();
+    const requireMention = o.requireMention !== false;
+    const ignoreBots = o.ignoreBots !== false;
+    const allowedUsers = normalizeAllowed(o.allowedUsers);
+
+    // Does this group message address US? (Only meaningful when botUsername is known.)
+    function addressesUs(m) {
+      const botUsername = botUsernameNow();
+      if (!botUsername) return true;   // we don't know our own name — never silence the room over that
+      const mentions = Array.isArray(m.mentions) ? m.mentions : [];
+      if (mentions.indexOf(botUsername) !== -1) return true;
+      // a reply to one of OUR messages is an address, and it is how a thread of follow-ups stays natural
+      if (m.replyTo && String(m.replyTo.userName || '').trim().toLowerCase() === botUsername) return true;
+      // a slash command with NO @suffix is aimed at whatever bot is listening; with a suffix it is aimed by name
+      // (and that name landed in `mentions` above, so a command for a DIFFERENT bot has already failed the check)
+      const t = String(m.text == null ? '' : m.text);
+      if (/^\/[A-Za-z0-9_]+(\s|$)/.test(t)) return true;
+      return false;
+    }
+
     // DM-only first cut: a direct message is always admitted; a group/channel message only if whitelisted.
     function admitted(m) {
+      if (ignoreBots && m.fromBot) return false;                       // never answer another bot, in any chat
+      if (allowedUsers.size && !allowedUsers.has(String(m.userId == null ? '' : m.userId))) return false;
       if (m.chatType === 'dm') return true;
-      return allowed.has(String(m.chatId));
+      if (!allowed.has(String(m.chatId))) return false;
+      return requireMention ? addressesUs(m) : true;
     }
 
     let started = false, stopped = false, down = false, confirmed = false;
@@ -165,6 +209,7 @@
         // media: the platform's normalize decides whether this message quotes an earlier one, the hub decides
         // how to render it. A platform that never sets it is byte-identical to before.
         if (m.replyTo && typeof m.replyTo === 'object') im.replyTo = m.replyTo;
+        if (Array.isArray(m.mentions) && m.mentions.length) im.mentions = m.mentions.slice();
         onInbound(im);
       } else if (n.callback && onCallback) {
         /* Only the owner's taps act — and an UNCLAIMED owner is not a licence, it is the absence of one.
