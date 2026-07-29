@@ -11849,7 +11849,7 @@ async function handleActivityBeacon(req, res) {
   res.end(JSON.stringify({ ok: true, at: lastUserActivityAt }));
 }
 // GET /api/nightshift/status — truthful telemetry for a later UI lane. Every field is provable from server state:
-// active (timer armed), away + awaySince (the away clock), beatsUsedToday/leashPerDay (the enforced leash),
+// active (timer armed), away + awaySince/awayAt (the away clock: window opened, and when it flips),
 // lastBeatAt, nextEligibleAt (cooldown clears), and `binding` (the gate currently blocking a beat, or null when
 // one would fire this instant). Reads the pure planner's decision so status == what the tick would actually do.
 function handleNightshiftStatus(req, res) {
@@ -11861,12 +11861,21 @@ function handleNightshiftStatus(req, res) {
   const summary = commanderPosture.summary() || {};
   const rolled = nightshift.rollDay(nightshiftState, now);
   // presence truth mirrors the driver's lastActivity dep: a LIVE interactive run counts as activity-now.
-  const awaySince = (interactiveRunInFlight() ? now : lastUserActivityAt) + NIGHTSHIFT_AWAY_MS;   // the instant "away" becomes true
+  /* TWO DIFFERENT INSTANTS, AND THE OLD FIELD NAME CLAIMED THE WRONG ONE. `awaySince` used to carry
+     lastActivity + AWAY_MS — i.e. the instant away BECOMES true, a timestamp in the FUTURE while the Commander
+     is present. That value is correct and deliberate (test/nightshift-presence.e2e.test.js proves telemetry
+     agrees with the driver), but "since" names a PAST boundary, and frontend/app/nightreport.js documents its
+     own `awaySince` parameter as "ms epoch the away window OPENED" and filters `ts >= awaySince` with it. Same
+     word, opposite ends of the window: the first consumer to wire this route into the morning report would have
+     scoped every night-shift decision out of its own report and shown a blank morning.
+     So: `awayAt` carries the future instant under a name that says so, and `awaySince` now means what it says. */
+  const awayWindowOpenedAt = interactiveRunInFlight() ? now : lastUserActivityAt;
   const out = {
     active: !!nightshiftTimer,
     halted: (rolled.haltedAt || 0) > 0,   // NS E-STOP durable halt — true until the Commander re-writes the dial
     away: decision ? !!decision.away : false,
-    awaySince: awaySince,
+    awaySince: awayWindowOpenedAt,        // PAST: when the idle window opened — the boundary a report scopes from
+    awayAt: awayWindowOpenedAt + NIGHTSHIFT_AWAY_MS,   // FUTURE (while present): when `away` flips true
     // the REAL "away" rule, so the UI can say "no input for N min" instead of the ambiguous "while you're away"
     // (users read that as "app closed" — it isn't; the app stays open, away = idle). Provable: the exact knob used.
     awayAfterMs: NIGHTSHIFT_AWAY_MS,
