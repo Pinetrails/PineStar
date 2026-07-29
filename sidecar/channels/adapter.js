@@ -117,7 +117,17 @@
        keeps re-finding). Reading it lazily means the gate arms the moment the name is known. */
     const botUsernameFn = (typeof o.botUsername === 'function') ? o.botUsername : () => o.botUsername;
     const botUsernameNow = () => String(botUsernameFn() || '').replace(/^@/, '').trim().toLowerCase();
-    const requireMention = o.requireMention !== false;
+    /* requireMention takes the SAME string-or-function treatment, for a different reason: the member has to be
+       able to change their mind. It shipped as a hardcoded default with no command, no route and no UI, which
+       meant a room that wanted free response had no way back — a behaviour change with no escape hatch. As a
+       function of chatId it reads the chat's own saved setting on every message, so `/mention off` takes effect
+       on the next one. Anything other than an explicit `false` keeps the safe default (ON). */
+    const requireMentionFn = (typeof o.requireMention === 'function') ? o.requireMention : () => o.requireMention;
+    const requireMentionFor = (chatId) => {
+      let v;
+      try { v = requireMentionFn(String(chatId)); } catch (_) { v = undefined; }   // a store hiccup must not open the room
+      return v !== false;
+    };
     const ignoreBots = o.ignoreBots !== false;
     const allowedUsers = normalizeAllowed(o.allowedUsers);
 
@@ -142,7 +152,7 @@
       if (allowedUsers.size && !allowedUsers.has(String(m.userId == null ? '' : m.userId))) return false;
       if (m.chatType === 'dm') return true;
       if (!allowed.has(String(m.chatId))) return false;
-      return requireMention ? addressesUs(m) : true;
+      return requireMentionFor(m.chatId) ? addressesUs(m) : true;
     }
 
     let started = false, stopped = false, down = false, confirmed = false;

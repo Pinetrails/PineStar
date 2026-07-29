@@ -5530,6 +5530,13 @@ function startTelegram(token, key, model, agentCfg) {
     // GROUP DISCIPLINE (adapter.js): only run on a group message that ADDRESSES us, never answer another bot.
     // Read lazily — the username is resolved by getMe below, after this object is built.
     botUsername: () => stationBotUsername,
+    // …and the gate is the CHAT's to set: /mention off writes requireMention:false onto the chat record, and
+    // this reads it per message so the flip lands on the very next one. Anything but an explicit false keeps
+    // the safe default (answer only when addressed).
+    requireMention: (chatId) => {
+      try { const r = channelStore.getChatRecord(String(chatId)); return !(r && r.requireMention === false); }
+      catch (_) { return true; }
+    },
     ownerUserId: (channelSecrets.telegram && channelSecrets.telegram.ownerId) || '',
     onOwnerClaim: (uid) => { try { persistOwnerClaim('telegram', uid); } catch (_) {} },
     onInbound: (m) => {
@@ -5665,8 +5672,11 @@ function startTelegramBot(botId) {
   if (!token) throw new Error('bot ' + botId + ' has no saved token');
   let adapterRef = null;
   const entry = { adapter: null, hub: null, status: { connected: false, state: 'connecting', detail: '' } };
+  // hoisted: the adapter's mention gate reads the SAME per-bot store the hub's /mention writes to. Two separate
+  // instances would leave the command reporting success while the gate never changed.
+  const botStore = makeBotScopedStore(botId);
   const hub = makeChannelHub({
-    channel: 'telegram:' + botId, runOnce: runOnce, store: makeBotScopedStore(botId),
+    channel: 'telegram:' + botId, runOnce: runOnce, store: botStore,
     runSlash: (input, sctx) => runSlashForChannel(input, sctx),   // shared slash registry — identical answers to the desktop
     userCommandNames: () => userCommandEntries().map(c => c.name),
     send: (chatId, text, opts) => adapterRef ? adapterRef.send(chatId, text, opts) : Promise.resolve({ ok: false, error: 'no adapter' }),
@@ -5721,6 +5731,11 @@ function startTelegramBot(botId) {
     // connect flow) starts being recognised without a restart. `rec` is the connect-time snapshot and would
     // pin the old name forever.
     botUsername: () => String((recOf() || {}).username || ''),
+    // per-chat mention gate, same as the station bot — read live from this bot's own scoped store.
+    requireMention: (chatId) => {
+      try { const r = botStore.getChatRecord(String(chatId)); return !(r && r.requireMention === false); }
+      catch (_) { return true; }
+    },
     ownerUserId: rec.ownerId || '',
     onOwnerClaim: (uid) => {
       const ok = saveTelegramBotRecord(botId, { ownerId: String(uid) });

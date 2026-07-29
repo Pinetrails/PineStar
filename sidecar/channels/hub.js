@@ -196,6 +196,7 @@
     { command: 'routine', description: 'List, create or pause scheduled routines', usage: '/routine [list|add <schedule> | <task>|pause N|rm N]', slash: true },
     { command: 'away', description: 'Queue work to build on the away shift', usage: '/away [<what to build>|list|on|off]', slash: true },
     { command: 'approvals', description: 'Approve/deny buttons for this chat (on or off)', usage: '/approvals [on|off]' },
+    { command: 'mention', description: 'In a group: answer only when addressed, or answer everything', usage: '/mention [on|off]' },
     { command: 'whoami', description: 'Show which agent this chat is talking to' },
     { command: 'help', description: 'List these commands', menu: false },
     // Telegram sends this when a fresh chat's START button is pressed. menu:false — the client offers it on an
@@ -593,7 +594,9 @@
     // Handle a parsed control command. Every reply states what ACTUALLY happened (truthful telemetry): a rebind
     // only claims success after saveChatRecord returns; a model change only confirms after setModel reports ok.
     // boundRec is this chat's persisted record (or null) — /approvals reads its opt-in flag and writes it back.
-    async function handleCommand(chatId, parsed, boundAgentId, sec, boundRec) {
+    // chatType (optional, additive) — only /mention needs it, to say honestly that the setting is group-only
+    // rather than storing a value that can never apply in a DM.
+    async function handleCommand(chatId, parsed, boundAgentId, sec, boundRec, chatType) {
       const cmd = parsed.cmd, arg = parsed.arg;
       // rosterFn is an INJECTED callback (Discord/other wire-ups pass it straight through); a throwing roster must
       // degrade to a logged error + polite reply, never an unhandled rejection that swallows the whole inbound.
@@ -721,6 +724,35 @@
         await deliver(chatId, want
           ? 'Approve/deny buttons are ON. I\'ll ask here before any action that needs permission — if you don\'t answer, that action is denied and the run moves on.'
           : 'Approve/deny buttons are OFF. I\'ll silently skip actions that need permission and carry on.', '', 'command');
+        return;
+      }
+
+      /* GROUP MENTION GATE — the escape hatch for the discipline that shipped with P3.
+         "Answer only when addressed" is the right default (a room with traffic is otherwise a model call per
+         message the member is not part of), but it is still a POLICY, and shipping a policy with no way to
+         change it is how a helpful bot becomes a mute one with no explanation. The gate itself lives in
+         adapter.js and reads this record per message, so a flip takes effect on the very next one.
+         DM-only chats say so rather than silently storing a setting that can never apply — a control that
+         appears to work and does nothing is worse than one that is honest about being irrelevant. */
+      if (cmd === 'mention') {
+        const isGroup = String(chatType || '') === 'group';
+        const on = !(boundRec && boundRec.requireMention === false);
+        if (!arg) {
+          await deliver(chatId, isGroup
+            ? ('In this group I ' + (on ? 'answer only when addressed' : 'answer every message') + '.\n'
+               + (on ? 'Address me by @-mentioning me, replying to one of my messages, or using a slash command.\nSend /mention off to have me answer everything here.'
+                     : 'Every message in here starts a run, which costs a model call each time.\nSend /mention on to go back to answering only when addressed.'))
+            : 'This setting only applies to groups — in a direct chat I always answer you.', '', 'command');
+          return;
+        }
+        const want = /^(on|yes|enable|enabled|true|1)$/i.test(arg) ? true : (/^(off|no|disable|disabled|false|0)$/i.test(arg) ? false : null);
+        if (want === null) { await deliver(chatId, 'Usage: /mention on  ·  /mention off', '', 'command'); return; }
+        let saved = false;
+        try { if (typeof store.saveChatRecord === 'function') { store.saveChatRecord(chatId, { requireMention: want }); saved = true; } } catch (_) { saved = false; }
+        if (!saved) { await deliver(chatId, '⚠ Could not save that — I still ' + (on ? 'answer only when addressed' : 'answer everything') + ' here.', '', 'command'); return; }
+        await deliver(chatId, want
+          ? 'From now on I answer only when addressed here — @-mention me, reply to me, or use a slash command.'
+          : 'From now on I answer every message in this chat. Each one is a real run, so watch the spend.', '', 'command');
         return;
       }
 
@@ -911,7 +943,7 @@
       // through the SAME deliver() path so chunking/limits apply. Channel-agnostic: this lives in the hub, so
       // Telegram/Discord/any future adapter get identical behavior.
       const parsed = parseCommand(msg.text);
-      if (parsed) { await handleCommand(chatId, parsed, boundAgentId, sec, boundRec); return; }
+      if (parsed) { await handleCommand(chatId, parsed, boundAgentId, sec, boundRec, msg.chatType); return; }
 
       // COMMANDER-DEFINED commands are not in this hub's table (the sidecar owns them), so a "/standup" would
       // otherwise fall through and be answered by the MODEL — spending a turn to say it doesn't understand.

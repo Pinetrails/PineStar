@@ -213,6 +213,75 @@ async function run() {
     A.eq(chunkText('a ``` in a sentence is not a fence', 300), ['a ``` in a sentence is not a fence'], 'a mid-line ``` is not treated as a block delimiter');
   }
 
+  /* ---- F. THE ESCAPE HATCH: /mention on|off -------------------------------------------------------------
+     The mention gate above is the right default, but it shipped as a hardcoded constant with no command, no
+     route and no UI — a behaviour change with no way back. A room that wanted the bot to answer everything had
+     no way to say so, and the bot's silence is indistinguishable from the bot being broken. The gate now reads
+     the CHAT's own saved setting on every message. */
+  {
+    // the option takes a FUNCTION, and it is consulted per message — not captured once at construction
+    const asked = [];
+    const { ad, got } = mkAdapter({
+      botUsername: 'starnetbot',
+      allowedChats: ['-1001', '-1002'],
+      requireMention: (chatId) => { asked.push(String(chatId)); return String(chatId) !== '-1002'; }
+    });
+    ad._internals.dispatch(groupMsg({ text: 'nobody is addressed here' }));
+    A.eq(got.length, 0, 'the gate still holds in a chat that wants it');
+    ad._internals.dispatch({ offset: 2, message: { chatId: -1002, chatType: 'group', userId: '9', text: 'nobody is addressed here either', messageId: '2' } });
+    A.eq(got.length, 1, 'and lets everything through in a chat that turned it off');
+    A.eq(asked.length, 2, 'the setting is read PER MESSAGE — a flip takes effect on the very next one, not at the next restart');
+
+    // a store hiccup must not throw the room open
+    const b = mkAdapter({ botUsername: 'starnetbot', requireMention: () => { throw new Error('store down'); } });
+    b.ad._internals.dispatch(groupMsg({ text: 'unaddressed' }));
+    A.eq(b.got.length, 0, 'a throwing lookup keeps the gate ON — the failure mode is quiet, not expensive');
+
+    // and a plain boolean still works exactly as before
+    const c = mkAdapter({ botUsername: 'starnetbot', requireMention: false });
+    c.ad._internals.dispatch(groupMsg({ text: 'unaddressed' }));
+    A.eq(c.got.length, 1, 'a boolean option is unchanged (no caller had to be updated)');
+  }
+  {
+    // the command half: it writes the record the gate reads, and only claims success once the write returned
+    const sent = [];
+    const saves = [];
+    const store = fakeStore();
+    store.saveChatRecord = (chatId, patch) => { saves.push({ chatId, patch }); return patch; };
+    const hub = makeChannelHub({
+      runOnce: async () => {}, store,
+      send: (chatId, text) => { sent.push(text); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen()
+    });
+    const say = (text, chatType) => hub.onInbound({ channel: 'telegram', chatId: '-1001', chatType: chatType || 'group', userId: '9', text, messageId: '1', ts: 1 });
+
+    await say('/mention off');
+    A.eq(saves.length, 1, 'the setting is persisted');
+    A.eq(saves[0].patch.requireMention, false, 'as requireMention:false — the exact field the adapter reads');
+    A.ok(/answer every message/.test(sent[sent.length - 1]), 'and the reply says what changed');
+    A.ok(/spend/.test(sent[sent.length - 1]), 'including the cost of it — every message in the room is now a real run');
+
+    await say('/mention on');
+    A.eq(saves[1].patch.requireMention, true, 'and back on again');
+
+    sent.length = 0; saves.length = 0;
+    await say('/mention maybe');
+    A.eq(saves.length, 0, 'an unparseable argument changes nothing');
+    A.ok(/Usage: \/mention on/.test(sent[0]), 'and answers with the usage line');
+
+    sent.length = 0;
+    await say('/mention', 'dm');
+    A.eq(saves.length, 0, 'a DM stores nothing — the setting cannot apply there');
+    A.ok(/only applies to groups/.test(sent[0]), 'and says so honestly rather than pretending the control worked');
+
+    // truthful telemetry: a failed write must not report success
+    sent.length = 0;
+    store.saveChatRecord = () => { throw new Error('disk full'); };
+    await say('/mention off');
+    A.ok(/Could not save/.test(sent[0]), 'a failed write is reported as a failure');
+    A.ok(/still/.test(sent[0]), 'and states what the setting actually still is');
+  }
+
   A.report('channels.telegram.groups');
 }
 

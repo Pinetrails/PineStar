@@ -327,6 +327,31 @@ That is a nuance, not a gap.
 N1 leads because it is the only remaining item that sends a message to the **wrong place**; everything
 else above is a missing capability, not a wrong one.
 
+### DONE from this sweep (2026-07-29, same lane)
+
+- **N1 + N2 — thread and reply routing.** `normalize` reads `message_thread_id` (only for
+  `is_topic_message`; a plain supergroup sets it on a reply chain too, and echoing that back aims at a
+  topic the chat does not have). The hub keeps the route **ambient per chat** — bounded at 500 — rather
+  than threading it through ~40 `deliver()` call-sites, so a command reply, a consent card and the run's
+  answer all land in the same topic. The thread rides **every** chunk; the quote rides the first chunk
+  and is then **consumed**, so a routine firing hours later still lands in the right topic without
+  replying to a stale message. The typing bubble and outbound media follow the same route; the outbox
+  redelivers into the thread but never re-quotes.
+  Two floor-is-delivery guards: `allow_sending_without_reply` rides every quote (a deleted target is
+  otherwise a 400 and the reply is LOST), and a closed/deleted topic gets exactly one retry to the chat
+  root — rebuilt from the payload that actually failed, so a message that already fell back to plain text
+  does not get its markdown syntax back on the way to General.
+  `test/channels.telegram.threads.test.js`, 47 assertions, in `fast.list`.
+- **N3 — the P3 gates are reachable.** `/mention on|off` (the `/approvals` shape exactly), persisted on
+  the chat record, read by the adapter **per message** so a flip lands on the next one. `requireMention`
+  now takes a string **or a function**, the same late-binding treatment `botUsername` needed; a throwing
+  lookup keeps the gate ON, and a plain boolean still behaves identically. A DM says the setting is
+  group-only instead of storing a value that can never apply. 16 new assertions in
+  `channels.telegram.groups`.
+  Still open under N3: `ignoreBots` and `allowedUsers` remain construction-time only. `ignoreBots` is
+  arguably correct as a constant (bot-to-bot is an unbounded spend loop, not a preference); `allowedUsers`
+  wants a real UI, not a chat command, because it is a security control.
+
 ## 5. Honest sizing
 
 P1–P3 are the ones a member would notice tomorrow, and they are mostly wiring over engines we
