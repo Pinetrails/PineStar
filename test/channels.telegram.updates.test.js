@@ -296,6 +296,49 @@ async function run() {
     A.ok(!/\n/.test(String(r.error)), 'with a one-line reason the caller can log');
   }
 
+  /* ---- I. A DEAD TOPIC MUST BE FORGOTTEN, NOT JUST DUCKED AROUND ------------------------------------------
+     The transport already saves the message by resending to the chat root. If the hub keeps the dead thread id,
+     every later send repeats that failed call and its retry. */
+  {
+    const sent = [];
+    const hub = makeChannelHub({
+      runOnce: okRun({}), store: fakeStore(),
+      send: (chatId, text, opts) => {
+        sent.push(opts || {});
+        // first send: the transport had to drop the topic to deliver at all
+        return Promise.resolve(sent.length === 1 ? { ok: true, messageId: 'm1', threadGone: true } : { ok: true, messageId: 'm2' });
+      },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen()
+    });
+    await hub.onInbound({ channel: 'telegram', chatId: '-1001', chatType: 'group', userId: '9', text: 'hi', messageId: '5', ts: 1, threadId: '77' });
+    A.eq(sent[0].threadId, '77', 'the first send aimed at the topic the member wrote in');
+    await hub._internals.deliver('-1001', 'a later notification', '', 'command');
+    A.eq('threadId' in (sent[1] || {}), false, 'and once the topic is reported gone it is never aimed at again');
+
+    // a normal send must not clear anything
+    const keep = [];
+    const hub2 = makeChannelHub({
+      runOnce: okRun({}), store: fakeStore(),
+      send: (c2, t, opts) => { keep.push(opts || {}); return Promise.resolve({ ok: true, messageId: 'm' }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen()
+    });
+    await hub2.onInbound({ channel: 'telegram', chatId: '-1001', chatType: 'group', userId: '9', text: 'hi', messageId: '5', ts: 1, threadId: '77' });
+    await hub2._internals.deliver('-1001', 'a later notification', '', 'command');
+    A.eq(keep[keep.length - 1].threadId, '77', 'a healthy topic is remembered across sends, as before');
+  }
+
+  // ---- J. the status line: a bot has no presence dot, so this is the closest surface ----
+  {
+    const f = recFetch();
+    const t = makeTelegramTransport({ fetch: f, token: '1:a' });
+    await t.setShortDescription('online — the station is listening');
+    A.eq(f.calls[0].method, 'setMyShortDescription', 'it writes the profile short description');
+    A.eq(f.calls[0].body.short_description, 'online — the station is listening', 'with the given text');
+    const f2 = recFetch();
+    await makeTelegramTransport({ fetch: f2, token: '1:a' }).setShortDescription('x'.repeat(300));
+    A.eq(f2.calls[0].body.short_description.length, 120, 'capped at Telegram\'s 120 characters rather than 400ing');
+  }
+
   A.report('channels.telegram.updates');
 }
 

@@ -298,7 +298,7 @@ That is a nuance, not a gap.
 | N6 | ~~**`edited_message` never arrives**~~ **DONE** — see below. | Fixing a typo in your question does nothing; the bot answers the typo. | S |
 | N7 | ~~**`channel_post` never arrives**~~ **DONE** — see below. | The bot is **completely deaf** when added to a broadcast channel. | S |
 | N8 | ~~**No reactions**~~ **DONE** — see below. | The cheapest possible "I heard you" — one API call, no message, no chunking. | S |
-| N9 | **No status indicator.** Hermes writes `setMyShortDescription` on connect/disconnect (`_set_status_indicator`, `status_online` / `status_offline`). | The bot's profile card never says whether the station is up. | S |
+| N9 | ~~**No status indicator**~~ **DONE** — `setShortDescription` on the transport + adapter, written on connect/disconnect. Opt-in via `TELEGRAM_STATUS_INDICATOR` (with `TELEGRAM_STATUS_ONLINE` / `_OFFLINE`), **off by default exactly as in Hermes**, because it overwrites a public profile field the member may have written themselves. Capped at Telegram's 120 chars. | The bot's profile card never says whether the station is up. | S |
 | N10 | **No link-preview control** (`disable_link_previews` / `_link_preview_kwargs`). | Any URL in a reply drags a full unfurl card. | XS |
 | N11 | **No `deleteMessage`.** Hermes deletes its own transient progress/status messages. | Prerequisite for P4 streaming cleanup. | XS |
 | N12 | **No `getChat` / `username → chat_id`.** | A member can only be reached by numeric id. | S |
@@ -467,6 +467,29 @@ inbound admission end to end, **thread routing into a real forum topic** (the N1
 reaction acks on a real run, **live streaming edits**, voice-note STT, album batching, `edited_message`,
 `channel_post` and its echo guard, and `my_chat_member` on a real block. Full end-to-end also needs a
 provider key, i.e. real spend.
+
+## 4.8 N14 TEXT BATCHING — BUILT, THEN REVERTED ON PURPOSE
+
+Their `text_batching` is not "merge chatty messages": Telegram clients **split a long paste into several
+messages**, and our one-run-per-conversation rule then makes each part abort the previous part's run. A
+three-part paste is two wasted runs the member paid for. Real, and worth fixing.
+
+It was built (batch only while a run is already in flight, so an idle chat keeps answering instantly) and
+**reverted**, because it breaks an invariant `sidecar/index.js` states in a comment right where it matters:
+
+> "The hook fires in onInbound's first synchronous slice (before any await, so before the run starts) … If the
+> hub ever moves resolution behind an await, tgResolved stays null here and we honestly place NO crate."
+
+Batching puts exactly such an `await` in front of `processInbound`, so a batched message silently loses its
+**belt crate** and the prior crate never gets its `workitem.superseded`. `atlas-events.emit.e2e` caught it.
+Losing floor telemetry for every rapid message is a worse bug than the one batching fixes.
+
+**The fix this needs, when it is taken as its own lane:** move the crate placement in `index.js` out of the
+post-`onInbound` synchronous read and into the `onResolved` **callback** — where the agent id is genuinely
+known, whenever that happens. That is belt-telemetry surgery with its own e2e, not a tail-end change to a
+Telegram lane. Until then N14 stays open, and the cost is bounded: a split paste burns one extra aborted run
+per part, and no content is lost (each part is already persisted as its own user turn, and consecutive user
+turns are merged by the provider adapter).
 
 ## 5. Honest sizing
 

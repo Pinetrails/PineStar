@@ -475,6 +475,13 @@
       if (!r || !r.lastMessageId) return false;
       return String(msg.messageId || '') === r.lastMessageId;
     }
+    /* The topic this chat was bound to no longer exists — the transport already saved the message by resending
+       to the chat root, but the binding itself must go too, or every later send repeats that failed call and
+       its retry. Dropped rather than remembered as "dead": the next inbound message re-learns the real topic. */
+    function forgetThread(chatId) {
+      const r = routes.get(String(chatId));
+      if (r && r.threadId) r.threadId = '';
+    }
     // first=true asks for the quote as well (and spends it). Returns null when this chat has no route, so the
     // send call is byte-identical to before on every platform that never sets one.
     function routeOpts(chatId, first) {
@@ -668,6 +675,7 @@
         } else {
           try { r = await send(chatId, chunks[i], opts); } catch (e) { r = { ok: false, error: (e && e.message) || 'send threw' }; }
         }
+        if (r && r.threadGone) forgetThread(chatId);   // the topic is gone; stop aiming at it
         if (!r || r.ok === false) { ok = false; failedAt = i; break; }
         if (last && r.messageId) messageId = String(r.messageId);
       }
@@ -1101,7 +1109,11 @@
     async function onInbound(msg) {
       const gid = (msg && msg.mediaGroupId != null && String(msg.mediaGroupId))
         ? (String(msg.chatId) + '|' + String(msg.mediaGroupId)) : '';
-      if (!gid) return processInbound(msg);
+      if (gid) return albumInbound(msg, gid);
+      return processInbound(msg);
+    }
+
+    async function albumInbound(msg, gid) {
       let rec = albums.get(gid);
       if (!rec) {
         rec = { msg: Object.assign({}, msg, { media: Array.isArray(msg.media) ? msg.media.slice() : [] }), seq: 0, resolve: null, done: null };

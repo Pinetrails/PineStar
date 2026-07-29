@@ -2182,6 +2182,18 @@ const TELEGRAM_PERSONA = 'You are the Commander\'s AI agent aboard the STARNET s
 // Optional Bot API base override. Production defaults to Telegram; tests point this at a local fake server so the
 // real sidecar polling/send path can be validated without network or a live bot token.
 const TELEGRAM_API_BASE = String(ENV('TELEGRAM_API_BASE') || '').trim() || undefined;
+/* TELEGRAM_STATUS_INDICATOR — write "the station is up" into the bot's PROFILE short-description line (a bot
+   has no presence dot; this is the closest Bot API surface). OFF unless asked, matching the reference harness
+   and for the same reason: it overwrites a public profile field the member may have written themselves.
+   TELEGRAM_STATUS_ONLINE / _OFFLINE override the text. */
+const TELEGRAM_STATUS_INDICATOR = /^(1|true|on|yes)$/i.test(String(ENV('TELEGRAM_STATUS_INDICATOR') || '').trim());
+const TELEGRAM_STATUS_ONLINE = String(ENV('TELEGRAM_STATUS_ONLINE') || '').trim() || 'online — the station is listening';
+const TELEGRAM_STATUS_OFFLINE = String(ENV('TELEGRAM_STATUS_OFFLINE') || '').trim() || 'offline — the station is not running';
+// Best-effort, never awaited by a connect/disconnect path: a status line must not delay or fail either.
+function telegramStatusLine(ad, up) {
+  if (!TELEGRAM_STATUS_INDICATOR || !ad || typeof ad.setShortDescription !== 'function') return;
+  try { Promise.resolve(ad.setShortDescription(up ? TELEGRAM_STATUS_ONLINE : TELEGRAM_STATUS_OFFLINE)).catch(() => {}); } catch (_) {}
+}
 const VOICE_CACHE_DIR = path.join(WORKSPACES, 'voice-cache');
 try { fs.mkdirSync(VOICE_CACHE_DIR, { recursive: true }); } catch (e) {}
 let ttsMissCount = 0, evictingVoiceCache = false;   // opportunistic, throttled voice-cache eviction
@@ -5639,6 +5651,7 @@ function startTelegram(token, key, model, agentCfg) {
     .catch(() => {});
   adapter.connect();
   publishCommandMenu(adapter, 'telegram');
+  telegramStatusLine(adapter, true);
   console.log('  · telegram channel connecting…');
   return { secretsPersisted };
 }
@@ -5654,6 +5667,8 @@ function publishCommandMenu(adapter, label) {
     .catch(() => {});
 }
 function stopTelegram() {
+  // Say we are going BEFORE the transport is torn down — after disconnect there is nothing left to say it with.
+  if (telegram && telegram.adapter) telegramStatusLine(telegram.adapter, false);
   if (telegram && telegram.adapter) { try { telegram.adapter.disconnect(); } catch (_) {} }
   telegram = null;
   telegramStatus = { connected: false, state: 'down', detail: '' };

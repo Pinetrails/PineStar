@@ -124,6 +124,11 @@ async function run() {
     A.eq(f.calls.length, 2, 'exactly one retry — bounded, not a loop');
     A.eq(f.calls[0].body.message_thread_id, 77, 'the first attempt aimed at the topic');
     A.eq('message_thread_id' in f.calls[1].body, false, 'the retry drops the topic and lands on the chat root');
+    A.eq(r.threadGone, true,
+      'and the result SAYS the topic is gone — saving this one message is not enough; without the flag the hub keeps the dead binding and every later send repeats the failed call and its retry');
+    const fOk = recFetch();
+    A.eq('threadGone' in (await makeTelegramTransport({ fetch: fOk, token: '123:abc' }).send('-1001', 'x', { threadId: '77' })), false,
+      'a healthy send never claims the topic is gone');
 
     // a DIFFERENT 400 must not trigger the retry — resending a "chat not found" fails identically twice
     const f2 = recFetch([{ ok: false, error_code: 400, description: 'Bad Request: chat not found' }]);

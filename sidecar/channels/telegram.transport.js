@@ -351,6 +351,22 @@
         }
       },
 
+      /* setShortDescription — the line under the bot's name in its profile. A Telegram BOT has no presence dot
+         (that is a user-account feature), so this is the closest thing to "the station is up". Off by default,
+         exactly as in the reference harness, and for a good reason: it rewrites a PUBLIC profile field that the
+         member may have written themselves, so it is opt-in or nothing. Capped at Telegram's 120 characters.
+         NEVER throws — a status line is the least important thing this channel does. */
+      async setShortDescription(text) {
+        try {
+          const { data, res } = await call('setMyShortDescription', { short_description: String(text == null ? '' : text).slice(0, 120) });
+          if (data && data.ok) return { ok: true };
+          const code = (data && data.error_code) || (res && res.status) || 0;
+          return { ok: false, error: redact((data && data.description) || ('http ' + code)) };
+        } catch (e) {
+          return { ok: false, error: errOf(e, 'network error') };
+        }
+      },
+
       /* deleteMessage — remove a message WE sent. Exactly one caller: live streaming, when the partially-written
          reply can no longer be updated in place (the edit failed, or the run was superseded before it finished).
          Leaving a half-written answer above the real one is worse than any tidiness argument for keeping it.
@@ -520,12 +536,22 @@
           // The topic we were told to answer in is gone (closed/deleted/never existed). Resend to the chat root
           // rather than lose the reply. Runs AFTER the entity fallback and rebuilds from `sent`, so a message that
           // already fell back to plain text does not silently get its markdown syntax back on the way to General.
+          let threadGone = false;
           if (!(data && data.ok) && sent.message_thread_id != null && isThreadError(data && data.description)) {
             const rootward = Object.assign({}, sent);
             delete rootward.message_thread_id;
+            threadGone = true;
             ({ data, res } = await call('sendMessage', rootward, o2.signal));
           }
-          if (data && data.ok) return { ok: true, messageId: String((data.result && data.result.message_id) != null ? data.result.message_id : '') };
+          if (data && data.ok) {
+            const out = { ok: true, messageId: String((data.result && data.result.message_id) != null ? data.result.message_id : '') };
+            /* Tell the caller the topic is GONE, not merely that this one send had to duck around it. Without
+               this the hub keeps the dead thread id and every later send pays the same failed call plus retry —
+               the delivery is saved but the binding stays stale forever. Additive: a caller that ignores the
+               flag behaves exactly as before. */
+            if (threadGone) out.threadGone = true;
+            return out;
+          }
           const code = (data && data.error_code) || (res && res.status) || 0;
           const retryAfter = data && data.parameters && data.parameters.retry_after;
           return { ok: false, error: redact((data && data.description) || ('http ' + code)), retryable: code === 429 || code >= 500, retryAfter: retryAfter };

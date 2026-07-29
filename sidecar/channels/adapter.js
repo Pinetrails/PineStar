@@ -495,6 +495,13 @@
         catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'setCommands threw' }); }
       },
 
+      // The bot's profile status line. Transport-optional; opt-in at the composition root.
+      setShortDescription(text) {
+        if (typeof transport.setShortDescription !== 'function') return Promise.resolve({ ok: false, error: 'status lines are not supported on this channel' });
+        try { return Promise.resolve(transport.setShortDescription(text)); }
+        catch (e) { return Promise.resolve({ ok: false, error: (e && e.message) || 'setShortDescription threw' }); }
+      },
+
       // Remove a message we sent. Only the streaming path uses it, and only to clear a partial reply it can no
       // longer finish in place. Transport-optional like the rest.
       deleteMessage(chatId, messageId) {
