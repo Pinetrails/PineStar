@@ -132,8 +132,57 @@
     const ignoreBots = o.ignoreBots !== false;
     const allowedUsers = normalizeAllowed(o.allowedUsers);
 
+    /* WAKE WORDS. `@thebot` is how you address a bot; "StarNet, check the logs" is how you address a person, and
+       it is what people actually type. Without this the most natural way to call the agent by the name the member
+       gave it does nothing at all.
+
+       Deliberately LITERAL strings, not the reference harness's regexes: a regex arriving from a config field is
+       a ReDoS surface pointed at the poll loop, and a member who mistypes one gets a gate that silently matches
+       nothing. Matched case-insensitively at a WORD BOUNDARY (so "Ana" does not fire inside "banana"), and
+       anything under three characters is refused — a two-letter agent name would trigger on half the room.
+       Read through a function for the same reason botUsername is: the names are learned after construction.
+
+       Failure mode is deliberately the safe one: this only ever WIDENS what counts as being addressed, so a bad
+       pattern costs an extra run, never a silenced room. */
+    const MIN_WAKE_WORD = 3;
+    const mentionPatternsFn = (typeof o.mentionPatterns === 'function') ? o.mentionPatterns : () => o.mentionPatterns;
+    const isWordChar = (c) => !!c && /[\p{L}\p{N}_]/u.test(c);
+    function wakeWords() {
+      let raw;
+      try { raw = mentionPatternsFn(); } catch (_) { raw = null; }
+      const list = Array.isArray(raw) ? raw : (raw ? [raw] : []);
+      const out = [];
+      for (const p of list) {
+        const s = String(p == null ? '' : p).trim().toLowerCase();
+        if (s.length >= MIN_WAKE_WORD && out.indexOf(s) === -1) out.push(s);
+      }
+      return out;
+    }
+    function namedUs(text) {
+      const t = String(text == null ? '' : text).toLowerCase();
+      if (!t) return false;
+      for (const w of wakeWords()) {
+        for (let i = t.indexOf(w); i !== -1; i = t.indexOf(w, i + 1)) {
+          if (!isWordChar(i === 0 ? '' : t[i - 1]) && !isWordChar(t[i + w.length] || '')) return true;
+        }
+      }
+      return false;
+    }
+
+    /* OBSERVE-UNMENTIONED. The mention gate bought spend safety and paid for it in amnesia: an unmentioned group
+       message was dropped whole, so when the bot was finally addressed it had no idea what the room had been
+       discussing and could not honour "summarise that" or "what do you think of Ana's idea". Observing keeps the
+       chatter in the transcript while still dispatching only when addressed — zero model calls for the messages
+       it merely hears. Default OFF (as in the reference harness): storing every message a room sends is a real
+       decision about the member's data, not a default they should discover afterwards. */
+    const observeUnmentionedFn = (typeof o.observeUnmentioned === 'function') ? o.observeUnmentioned : () => o.observeUnmentioned;
+    const observeUnmentionedFor = (chatId) => {
+      try { return observeUnmentionedFn(String(chatId)) === true; } catch (_) { return false; }
+    };
+
     // Does this group message address US? (Only meaningful when botUsername is known.)
     function addressesUs(m) {
+      if (namedUs(m.text)) return true;   // called by name — works even before getMe answers
       const botUsername = botUsernameNow();
       if (!botUsername) return true;   // we don't know our own name — never silence the room over that
       const mentions = Array.isArray(m.mentions) ? m.mentions : [];
@@ -165,15 +214,22 @@
     const wasOurs = (chatId, messageId) =>
       messageId != null && messageId !== '' && sentIds.has(String(chatId) + '|' + String(messageId));
 
-    // DM-only first cut: a direct message is always admitted; a group/channel message only if whitelisted.
-    function admitted(m) {
-      if (wasOurs(m.chatId, m.messageId)) return false;                // our own post, echoed back to us
-      if (ignoreBots && m.fromBot) return false;                       // never answer another bot, in any chat
-      if (allowedUsers.size && !allowedUsers.has(String(m.userId == null ? '' : m.userId))) return false;
-      if (m.chatType === 'dm') return true;
-      if (!allowed.has(String(m.chatId))) return false;
-      return requireMentionFor(m.chatId) ? addressesUs(m) : true;
+    /* THREE verdicts, not two. 'drop' is silence, 'run' is a real turn, and 'observe' is the middle ground the
+       mention gate created a need for: heard and remembered, but never dispatched. Kept as one function so the
+       order of the gates can only be read one way — an echo, a bot and a non-allowlisted chat are refused before
+       anything is stored, so observing can never become a way around admission. */
+    function admission(m) {
+      if (wasOurs(m.chatId, m.messageId)) return 'drop';               // our own post, echoed back to us
+      if (ignoreBots && m.fromBot) return 'drop';                      // never answer another bot, in any chat
+      if (allowedUsers.size && !allowedUsers.has(String(m.userId == null ? '' : m.userId))) return 'drop';
+      if (m.chatType === 'dm') return 'run';
+      if (!allowed.has(String(m.chatId))) return 'drop';
+      if (!requireMentionFor(m.chatId)) return 'run';
+      if (addressesUs(m)) return 'run';
+      return observeUnmentionedFor(m.chatId) ? 'observe' : 'drop';
     }
+    // DM-only first cut: a direct message is always admitted; a group/channel message only if whitelisted.
+    function admitted(m) { return admission(m) === 'run'; }
 
     let started = false, stopped = false, down = false, confirmed = false;
     let offset = Number.isFinite(o.startOffset) ? o.startOffset : 0;   // next update id to fetch from
@@ -209,7 +265,8 @@
       if (Number.isFinite(n.offset)) offset = Math.max(offset, n.offset + 1);   // advance so each update is processed once
       if (n.message) {
         const m = n.message;
-        if (!admitted(m)) return;
+        const verdict = admission(m);
+        if (verdict === 'drop') return;
         if (m.chatType === 'dm' && !ownerOk(m.userId)) return;   // a non-owner DM never reaches the run host
         // This chat had backlog discarded while the owner was unclaimed, and has now PROVEN it is the owner by
         // getting admitted. Pay the deferred apology before its reply — otherwise the Commander's first
@@ -247,6 +304,9 @@
         // this a broadcast post rather than a person talking. A platform that sets neither behaves as before.
         if (m.edited) im.edited = true;
         if (m.channelPost) im.channelPost = true;
+        // OBSERVE-ONLY: heard, to be remembered, never dispatched. The hub files it in the transcript and returns
+        // before a single model call. Additive — a platform that never observes sends the exact old shape.
+        if (verdict === 'observe') im.observeOnly = true;
         if (Array.isArray(m.mentions) && m.mentions.length) im.mentions = m.mentions.slice();
         onInbound(im);
       } else if (n.callback && onCallback) {
@@ -479,7 +539,7 @@
         return { id: String(chatId), type: allowed.has(String(chatId)) ? 'group' : 'dm' };
       },
 
-      _internals: { admitted, ownerOk, normalizeAllowed, dispatch, isFatal, isAbort, DEFAULT_BACKOFF, rememberSent, wasOurs, sentIds, MAX_SENT_IDS, get offset() { return offset; }, get owner() { return owner; } }
+      _internals: { admitted, admission, ownerOk, normalizeAllowed, dispatch, isFatal, isAbort, DEFAULT_BACKOFF, rememberSent, wasOurs, sentIds, MAX_SENT_IDS, wakeWords, namedUs, MIN_WAKE_WORD, get offset() { return offset; }, get owner() { return owner; } }
     };
   }
 

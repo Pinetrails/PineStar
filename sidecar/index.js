@@ -5418,6 +5418,9 @@ let telegramStatus = { connected: false, state: 'down', detail: '' };
 // reads it LAZILY through a function, so it arms as soon as this is populated and never captures the empty
 // startup value. Empty = "we don't know our own name", which the gate treats as "do not silence the room".
 let stationBotUsername = '';
+// The bot's DISPLAY name, learned from the same getMe. It is the wake word: "@thebot check the logs" is how
+// you address a bot, "StarNet, check the logs" is how people actually type it.
+let stationBotName = '';
 let discord = null;                                     // H6.2: { adapter, hub } when connected, else null
 let discordStatus = { connected: false, state: 'down', detail: '' };
 const channelRegistry = makeChannelRegistry();          // H6.2: telegram + discord descriptors
@@ -5539,6 +5542,13 @@ function startTelegram(token, key, model, agentCfg) {
       try { const r = channelStore.getChatRecord(String(chatId)); return !(r && r.requireMention === false); }
       catch (_) { return true; }
     },
+    // Being called by NAME is being addressed. Read lazily: the name arrives with getMe, after this is built.
+    mentionPatterns: () => [stationBotName],
+    // /mention observe — follow the room without answering it. Off unless the chat asked for it.
+    observeUnmentioned: (chatId) => {
+      try { const r = channelStore.getChatRecord(String(chatId)); return !!(r && r.observeUnmentioned); }
+      catch (_) { return false; }
+    },
     ownerUserId: (channelSecrets.telegram && channelSecrets.telegram.ownerId) || '',
     onOwnerClaim: (uid) => { try { persistOwnerClaim('telegram', uid); } catch (_) {} },
     onInbound: (m) => {
@@ -5613,7 +5623,10 @@ function startTelegram(token, key, model, agentCfg) {
      non-blocking: the adapter reads this lazily, so the gate arms the moment getMe answers and until then
      admits everything (we must never silence a room because we could not prove we were not addressed). */
   Promise.resolve(makeTelegramTransport({ fetch: globalThis.fetch, token: token, apiBase: TELEGRAM_API_BASE }).getMe())
-    .then(me => { if (me && me.ok && me.username) stationBotUsername = String(me.username); })
+    .then(me => {
+      if (me && me.ok && me.username) stationBotUsername = String(me.username);
+      if (me && me.ok && me.name) stationBotName = String(me.name);
+    })
     .catch(() => {});
   adapter.connect();
   publishCommandMenu(adapter, 'telegram');
@@ -5742,6 +5755,14 @@ function startTelegramBot(botId) {
     requireMention: (chatId) => {
       try { const r = botStore.getChatRecord(String(chatId)); return !(r && r.requireMention === false); }
       catch (_) { return true; }
+    },
+    // An agent-bound bot answers to BOTH names people would use for it: the bot's own display name and the
+    // agent's. recOf() re-reads the live record, so a rename in BotFather or in the roster takes effect without
+    // a restart. Anything under three characters is refused inside the adapter.
+    mentionPatterns: () => { const r = recOf() || {}; return [r.botName, r.name]; },
+    observeUnmentioned: (chatId) => {
+      try { const r = botStore.getChatRecord(String(chatId)); return !!(r && r.observeUnmentioned); }
+      catch (_) { return false; }
     },
     ownerUserId: rec.ownerId || '',
     onOwnerClaim: (uid) => {

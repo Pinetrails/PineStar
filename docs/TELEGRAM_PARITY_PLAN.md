@@ -293,8 +293,8 @@ That is a nuance, not a gap.
 | N1 | **Outbound never carries `message_thread_id`.** `normalize` reads it only to suppress the forum-root reply trap; it is on no inbound event and no send. | In a **forum supergroup our answer lands in General, not the topic the member asked in**. Not polish — a wrong-destination bug. | S–M |
 | N2 | **Outbound never carries `reply_to_message_id`.** Hermes has `reply_to_mode` + `_should_thread_reply`. | In a busy group our reply floats detached from the question. | S |
 | N3 | **The P3 gates are unreachable.** `requireMention` / `ignoreBots` / `allowedUsers` are read in `adapter.js` but **`index.js` passes none of them** — they are hardcoded defaults with no command, no route and no UI. | P3 shipped a behaviour change (groups now answer only when addressed) with **no escape hatch**: a member who wants free response in their group cannot get it. | S |
-| N4 | **No `mention_patterns`.** We match `@username` entities and `/cmd@bot` only. | "StarNet, summarise that" does not wake the bot — the most natural way to address it by name. | S |
-| N5 | **No `observe_unmentioned`.** An unmentioned group message is dropped whole, not kept as context. | When finally mentioned the agent has **no idea what the room was discussing** — the mention gate bought spend safety and paid in amnesia. | M |
+| N4 | ~~**No `mention_patterns`**~~ **DONE** — see below. | "StarNet, summarise that" does not wake the bot — the most natural way to address it by name. | S |
+| N5 | ~~**No `observe_unmentioned`**~~ **DONE** — see below. | When finally mentioned the agent has **no idea what the room was discussing** — the mention gate bought spend safety and paid in amnesia. | M |
 | N6 | ~~**`edited_message` never arrives**~~ **DONE** — see below. | Fixing a typo in your question does nothing; the bot answers the typo. | S |
 | N7 | ~~**`channel_post` never arrives**~~ **DONE** — see below. | The bot is **completely deaf** when added to a broadcast channel. | S |
 | N8 | ~~**No reactions**~~ **DONE** — see below. | The cheapest possible "I heard you" — one API call, no message, no chunking. | S |
@@ -327,9 +327,12 @@ That is a nuance, not a gap.
 N1 leads because it is the only remaining item that sends a message to the **wrong place**; everything
 else above is a missing capability, not a wrong one.
 
-**The first four are done** (below). What is left, in order: **P4 live streaming** (the one that changes how
-the product feels, and the one with real engineering risk), then **N5 observe-unmentioned**, **N4
-mention_patterns**, **N14 loose-photo/text batching**, and the breadth items **N9–N13, N15–N17**.
+**N1, N2, N3, N4, N5, N6, N7, N8 and `my_chat_member` are all done** (below). What is left, in order:
+**P4 live streaming** — the one that changes how the product *feels* and the only remaining item with real
+engineering risk (edit rate limits, partial state, overflow past 4096) — then **N14** loose-photo/text
+batching, and the breadth items **N9–N13, N15–N17**. N10 (link previews) is worth noting precisely: the
+transport already passes `link_preview_options` straight through from send opts, so the capability is
+*reachable* today; what is missing is a product decision about the default, which is why no knob was added.
 
 ### DONE from this sweep (2026-07-29, same lane)
 
@@ -374,7 +377,21 @@ mention_patterns**, **N14 loose-photo/text batching**, and the breadth items **N
   and entirely cosmetic; the emoji is a **constant** because bots may only use Telegram's fixed reaction set.
   The clear **waits for its own set** — a clear that overtakes it leaves a 👀 stuck on an answered question,
   which is the app asserting state the harness can't prove.
-  `test/channels.telegram.updates.test.js`, 58 assertions, in `fast.list`.
+  `test/channels.telegram.updates.test.js`, 59 assertions, in `fast.list`.
+- **N4 — wake words.** Being called by NAME is being addressed. The bot's own display name (from `getMe`) and,
+  for an agent-bound bot, the agent's name, both read lazily. **Literal strings, not the reference harness's
+  regexes**: a regex from a config field is a ReDoS surface pointed at the poll loop and a footgun for anyone
+  who mistypes one. Word-boundary, case-insensitive, minimum three characters (a two-letter agent name would
+  trigger on half the room). It only ever WIDENS addressing, so a bad pattern costs an extra run, never silence.
+- **N5 — observe-unmentioned.** `admission()` now returns three verdicts, not two: `drop`, `run`, and
+  **`observe`** — heard and filed in the transcript, never dispatched. The hub's observe branch sits **above**
+  command parsing (an unmentioned `/deploy@someotherbot` must not be executed by us), above the belt crate,
+  above typing, above the reaction: zero model calls by construction, not by a check further down. Attributed
+  ("Ana: …") because knowing who said what is the entire value, and bounded for free by `appendTurn`'s trim.
+  **Default OFF**, as in Hermes — storing every message a room sends is the member's decision, and observing
+  can never bypass admission (echo, bot-sender and allowlist are all refused before anything is stored).
+  `/mention` is now three-state — `on` / `observe` / `off` — and writes both fields together, so a chat can
+  never end up answering everything *and* filing it twice. 28 new assertions in `channels.telegram.groups` (89).
 
   Still open under N3: `ignoreBots` and `allowedUsers` remain construction-time only. `ignoreBots` is
   arguably correct as a constant (bot-to-bot is an unbounded spend loop, not a preference); `allowedUsers`

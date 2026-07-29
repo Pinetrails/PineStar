@@ -196,7 +196,7 @@
     { command: 'routine', description: 'List, create or pause scheduled routines', usage: '/routine [list|add <schedule> | <task>|pause N|rm N]', slash: true },
     { command: 'away', description: 'Queue work to build on the away shift', usage: '/away [<what to build>|list|on|off]', slash: true },
     { command: 'approvals', description: 'Approve/deny buttons for this chat (on or off)', usage: '/approvals [on|off]' },
-    { command: 'mention', description: 'In a group: answer only when addressed, or answer everything', usage: '/mention [on|off]' },
+    { command: 'mention', description: 'In a group: when I answer, and whether I follow the rest', usage: '/mention [on|observe|off]' },
     { command: 'whoami', description: 'Show which agent this chat is talking to' },
     { command: 'help', description: 'List these commands', menu: false },
     // Telegram sends this when a fresh chat's START button is pressed. menu:false — the client offers it on an
@@ -798,22 +798,36 @@
       if (cmd === 'mention') {
         const isGroup = String(chatType || '') === 'group';
         const on = !(boundRec && boundRec.requireMention === false);
+        const observing = !!(boundRec && boundRec.observeUnmentioned);
+        const state = !on ? 'off' : (observing ? 'observe' : 'on');
+        const describe = { on: 'answer only when addressed, and forget everything else',
+                           observe: 'answer only when addressed, but follow the conversation',
+                           off: 'answer every message' };
         if (!arg) {
           await deliver(chatId, isGroup
-            ? ('In this group I ' + (on ? 'answer only when addressed' : 'answer every message') + '.\n'
-               + (on ? 'Address me by @-mentioning me, replying to one of my messages, or using a slash command.\nSend /mention off to have me answer everything here.'
-                     : 'Every message in here starts a run, which costs a model call each time.\nSend /mention on to go back to answering only when addressed.'))
+            ? ('In this group I ' + describe[state] + '.\n\n'
+               + '/mention on — only when addressed (@ me, reply to me, call me by name, or use a command)\n'
+               + '/mention observe — the same, but I read the rest so I know what you were talking about\n'
+               + '/mention off — answer everything here (a real run, and real spend, per message)')
             : 'This setting only applies to groups — in a direct chat I always answer you.', '', 'command');
           return;
         }
-        const want = /^(on|yes|enable|enabled|true|1)$/i.test(arg) ? true : (/^(off|no|disable|disabled|false|0)$/i.test(arg) ? false : null);
-        if (want === null) { await deliver(chatId, 'Usage: /mention on  ·  /mention off', '', 'command'); return; }
+        const want = /^(on|yes|enable|enabled|true|1)$/i.test(arg) ? 'on'
+          : (/^(off|no|disable|disabled|false|0)$/i.test(arg) ? 'off'
+          : (/^(observe|watch|listen|follow|context)$/i.test(arg) ? 'observe' : null));
+        if (want === null) { await deliver(chatId, 'Usage: /mention on  ·  /mention observe  ·  /mention off', '', 'command'); return; }
+        // requireMention and observeUnmentioned are written TOGETHER, always. Two independent toggles would let a
+        // chat end up "answer everything AND observe", which would file every message twice.
+        const patch = { requireMention: want !== 'off', observeUnmentioned: want === 'observe' };
         let saved = false;
-        try { if (typeof store.saveChatRecord === 'function') { store.saveChatRecord(chatId, { requireMention: want }); saved = true; } } catch (_) { saved = false; }
-        if (!saved) { await deliver(chatId, '⚠ Could not save that — I still ' + (on ? 'answer only when addressed' : 'answer everything') + ' here.', '', 'command'); return; }
-        await deliver(chatId, want
-          ? 'From now on I answer only when addressed here — @-mention me, reply to me, or use a slash command.'
-          : 'From now on I answer every message in this chat. Each one is a real run, so watch the spend.', '', 'command');
+        try { if (typeof store.saveChatRecord === 'function') { store.saveChatRecord(chatId, patch); saved = true; } } catch (_) { saved = false; }
+        if (!saved) { await deliver(chatId, '⚠ Could not save that — I still ' + describe[state] + ' here.', '', 'command'); return; }
+        const confirm = {
+          on: 'From now on I answer only when addressed here — @-mention me, reply to me, call me by name, or use a slash command. I will not keep any of the other messages.',
+          observe: 'From now on I still answer only when addressed, but I read the rest of the room so I know what you were talking about. Those messages cost nothing — no model call, just context.',
+          off: 'From now on I answer every message in this chat. Each one is a real run, so watch the spend.'
+        };
+        await deliver(chatId, confirm[want], '', 'command');
         return;
       }
 
@@ -939,6 +953,19 @@
       return head + '\n' + arr.map(t => '"' + String(t).trim() + '"').join('\n');
     }
 
+    /* File an overheard group message in the transcript the agent will replay next time it IS addressed.
+       Attributed exactly like a real group turn ("Ana: …"), because the whole value is knowing who said what.
+       Bounded for free: the store's appendTurn trims by turn count and characters, so a busy room cannot grow
+       the history without limit. A message with no words (a bare photo, a sticker) teaches the room nothing and
+       is skipped rather than filed as an empty turn. */
+    function observeTurn(chatId, msg, boundAgentId, sec) {
+      const body = String(msg.text || '').trim();
+      if (!body) return;
+      const who = String(msg.userName || '').trim();
+      const agentId = currentBoundAgent(chatId, boundAgentId, sec);
+      try { store.appendTurn(agentId, 'user', who ? (who + ': ' + body) : body); } catch (_) {}
+    }
+
     // ---- ALBUM (media-group) BATCHING --------------------------------------------------------------------
     // A Telegram album arrives as N SEPARATE messages sharing one media_group_id (caption usually on only one).
     // Without batching, our one-run-per-conversation rule makes each part ABORT the previous part's run — a
@@ -1011,6 +1038,16 @@
       let boundRec = null;
       try { if (typeof store.getChatRecord === 'function') boundRec = store.getChatRecord(chatId); } catch (_) {}
       const boundAgentId = (boundRec && boundRec.agentId && AID_RE.test(String(boundRec.agentId))) ? String(boundRec.agentId) : null;
+
+      /* OBSERVE-ONLY: heard, filed, never answered. The mention gate stopped the bot replying to a room it was
+         not addressed in, and in doing so gave it amnesia — asked later to "summarise that", it had never seen
+         "that". This puts the chatter in the transcript and returns, before ANY of the machinery below: no
+         command parsing, no belt crate, no typing bubble, no reaction, no model call. Zero spend by
+         construction, not by a check somewhere further down.
+
+         The command parse in particular must stay BELOW this line. An unmentioned "/deploy@someotherbot" is an
+         observe verdict, and letting it fall through would have us execute a command aimed at a different bot. */
+      if (msg.observeOnly) { observeTurn(chatId, msg, boundAgentId, sec); return; }
       // Per-chat opt-in for approve/deny buttons (/approvals; default OFF). Requires BOTH the user's opt-in AND a
       // channel that can actually render and resolve a keyboard — a chat that opted in but is now running over a
       // transport without buttons must fall back to the safe autonomous floor, never stall on a prompt that
@@ -1504,7 +1541,7 @@
 
     return {
       onInbound, onCallback, onStatus, onMembership,
-      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI }
+      _internals: { agentIdFor, chunkText, endNote, deliver, inflight, handleCommand, currentBoundAgent, isSupersedeRaceRefusal, flushOutbox, MAX_OUTBOX_TRIES, TASK_SUFFIX, DEFAULT_PERSONA, keyboardFor, btnLabel, sendConsentPrompt, buttonsOk, replyPreamble, MAX_REPLY_MEDIA, noteRoute, routeOpts, routes, MAX_ROUTES, editIsCurrent, startAck, ACK_EMOJI, observeTurn }
     };
   }
 

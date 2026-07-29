@@ -282,6 +282,133 @@ async function run() {
     A.ok(/still/.test(sent[0]), 'and states what the setting actually still is');
   }
 
+  /* ---- G. WAKE WORDS: being called by NAME is being addressed --------------------------------------------
+     "@thebot check the logs" is how you address a bot. "StarNet, check the logs" is how people actually type,
+     and it did nothing at all — the most natural way to call the agent by the name the member gave it. */
+  {
+    const mk = (patterns) => mkAdapter({ botUsername: 'starnetbot', mentionPatterns: patterns });
+
+    let a = mk(['StarNet']);
+    a.ad._internals.dispatch(groupMsg({ text: 'StarNet, check the logs' }));
+    A.eq(a.got.length, 1, 'being called by name wakes the bot');
+    a = mk(['StarNet']);
+    a.ad._internals.dispatch(groupMsg({ text: 'hey starnet can you look at this' }));
+    A.eq(a.got.length, 1, 'case-insensitively, and anywhere in the sentence');
+
+    a = mk(['Ana']);
+    a.ad._internals.dispatch(groupMsg({ text: 'I ate a banana' }));
+    A.eq(a.got.length, 0, 'but only at a WORD BOUNDARY — "Ana" must not fire inside "banana"');
+    a = mk(['Ana']);
+    a.ad._internals.dispatch(groupMsg({ text: 'ana, what do you think?' }));
+    A.eq(a.got.length, 1, 'while the real address still lands');
+
+    a = mk(['Al']);
+    a.ad._internals.dispatch(groupMsg({ text: 'al you around' }));
+    A.eq(a.got.length, 0, 'a name under three characters is refused — it would trigger on half the room');
+
+    a = mk(() => { throw new Error('roster down'); });
+    a.ad._internals.dispatch(groupMsg({ text: 'unaddressed chatter' }));
+    A.eq(a.got.length, 0, 'a throwing lookup contributes no wake words and changes nothing else');
+
+    // it only ever WIDENS addressing: with no patterns the gate behaves exactly as before
+    a = mk(null);
+    a.ad._internals.dispatch(groupMsg({ text: 'unaddressed chatter' }));
+    A.eq(a.got.length, 0, 'no patterns configured = the old behaviour, unchanged');
+    a = mk(['StarNet']);
+    a.ad._internals.dispatch(groupMsg({ text: '@starnetbot still works' , mentions: ['starnetbot'] }));
+    A.eq(a.got.length, 1, 'and an @mention still works alongside it');
+
+    const { wakeWords } = mkAdapter({ mentionPatterns: ['  StarNet  ', 'starnet', '', 'x', null, 'Ana'] }).ad._internals;
+    A.eq(wakeWords(), ['starnet', 'ana'], 'the list is trimmed, lowercased, de-duplicated, and stripped of anything too short');
+  }
+
+  /* ---- H. OBSERVE-UNMENTIONED: the gate bought spend safety and paid in amnesia ----------------------------
+     An unmentioned group message was dropped whole, so when the bot was finally addressed it had never seen what
+     the room was discussing and could not honour "summarise that". */
+  {
+    const a = mkAdapter({ botUsername: 'starnetbot', observeUnmentioned: () => true });
+    a.ad._internals.dispatch(groupMsg({ text: 'the deploy went out at four' }));
+    A.eq(a.got.length, 1, 'an unmentioned message is now delivered…');
+    A.eq(a.got[0].observeOnly, true, '…flagged observe-only, so the hub knows never to answer it');
+    a.ad._internals.dispatch(groupMsg({ text: '@starnetbot what happened?', mentions: ['starnetbot'], messageId: '2' }));
+    A.eq('observeOnly' in a.got[1], false, 'a real address carries no flag');
+
+    // observing must never be a way AROUND admission
+    const b = mkAdapter({ botUsername: 'starnetbot', observeUnmentioned: () => true, allowedChats: ['-9999'] });
+    b.ad._internals.dispatch(groupMsg({ text: 'chatter' }));
+    A.eq(b.got.length, 0, 'a chat that is not on the allowlist is still refused outright — not observed');
+    const c = mkAdapter({ botUsername: 'starnetbot', observeUnmentioned: () => true });
+    c.ad._internals.dispatch(groupMsg({ text: 'chatter', fromBot: true }));
+    A.eq(c.got.length, 0, 'and another bot is dropped, not filed');
+
+    const d = mkAdapter({ botUsername: 'starnetbot' });
+    d.ad._internals.dispatch(groupMsg({ text: 'chatter' }));
+    A.eq(d.got.length, 0, 'observing is OFF by default — storing every message a room sends is the member\'s decision to make');
+  }
+  {
+    // the hub half: filed in the transcript, and NOT A SINGLE model call
+    const store = fakeStore();
+    let runs = 0;
+    const sent = [];
+    const hub = makeChannelHub({
+      runOnce: async () => { runs++; }, store,
+      send: (chatId, text) => { sent.push(text); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen()
+    });
+    const heard = (text, extra) => hub.onInbound(Object.assign({ channel: 'telegram', chatId: '-1001', chatType: 'group', userId: '9', userName: 'Ana', text, messageId: '1', ts: 1, observeOnly: true }, extra || {}));
+
+    await heard('the deploy went out at four');
+    A.eq(runs, 0, 'observing costs ZERO model calls — that is the whole point of it');
+    A.eq(sent.length, 0, 'and says nothing in the room');
+    const filed = store.appends.map(x => x.content);
+    A.eq(filed, ['Ana: the deploy went out at four'], 'it is filed ATTRIBUTED — knowing who said what IS the value');
+
+    // an unmentioned slash command aimed at ANOTHER bot must not be executed by us
+    store.appends.length = 0;
+    await heard('/deploy@someotherbot production');
+    A.eq(sent.length, 0, 'an observed slash command is never answered — the observe branch sits ABOVE command parsing');
+    A.eq(store.appends.length, 1, 'it is just more room chatter');
+
+    // nothing to learn from a wordless message
+    store.appends.length = 0;
+    await heard('');
+    A.eq(store.appends.length, 0, 'a message with no words is skipped rather than filed as an empty turn');
+
+    // and the remembered chatter is replayed when the bot IS finally addressed
+    let lastRun = null;
+    const hub2 = makeChannelHub({
+      runOnce: async (o) => { lastRun = o; o.emit('agent.run.start', { agentId: o.agentId, runId: o.runId, trigger: 'event', model: o.model }); o.emit('agent.token', { agentId: o.agentId, runId: o.runId, delta: 'ok' }); o.emit('agent.run.end', { agentId: o.agentId, runId: o.runId, reason: 'done', turns: 1, usd: 0 }); },
+      store, send: () => Promise.resolve({ ok: true }), secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen()
+    });
+    await hub2.onInbound({ channel: 'telegram', chatId: '-1001', chatType: 'group', userId: '9', userName: 'Ana', text: 'the deploy went out at four', messageId: '1', ts: 1, observeOnly: true });
+    await hub2.onInbound({ channel: 'telegram', chatId: '-1001', chatType: 'group', userId: '5', userName: 'andro', text: 'summarise that', messageId: '2', ts: 1 });
+    const seen = lastRun.messages.map(m => String(m.content)).join('\n');
+    A.ok(/Ana: the deploy went out at four/.test(seen), 'the overheard line is in the replayed history — "summarise that" now has a "that"');
+  }
+  {
+    // /mention is a THREE-state control, and the two fields are always written together
+    const sent = [], saves = [];
+    const store = fakeStore();
+    store.saveChatRecord = (chatId, patch) => { saves.push(patch); return patch; };
+    const hub = makeChannelHub({
+      runOnce: async () => {}, store, send: (c, t) => { sent.push(t); return Promise.resolve({ ok: true }); },
+      secrets: () => ({ key: 'k', model: 'm' }), classify: () => false, newId: idGen()
+    });
+    const say = (text) => hub.onInbound({ channel: 'telegram', chatId: '-1001', chatType: 'group', userId: '9', text, messageId: '1', ts: 1 });
+
+    await say('/mention observe');
+    A.eq(saves[0].requireMention, true, 'observe keeps the mention gate on');
+    A.eq(saves[0].observeUnmentioned, true, 'and turns on following the room');
+    await say('/mention on');
+    A.eq(saves[1].observeUnmentioned, false, 'plain "on" turns following back OFF — the two fields are written together so a chat can never end up answering everything AND filing it twice');
+    await say('/mention off');
+    A.eq(saves[2].requireMention, false, 'and "off" answers everything');
+    A.eq(saves[2].observeUnmentioned, false, 'with nothing to observe, because it already answers everything');
+    sent.length = 0;
+    await say('/mention sideways');
+    A.ok(/observe/.test(sent[0]), 'the usage line offers all three states');
+  }
+
   A.report('channels.telegram.groups');
 }
 
