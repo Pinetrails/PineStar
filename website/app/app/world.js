@@ -3505,11 +3505,7 @@ const World = (() => {
         // MOUNT LIFT, resolved per FRAME rather than stored on the prop: a table-top prop only rides the
         // table while the table is actually under it. Reclaim the table and the prop drops back to the
         // deck instead of floating — which is why no saved station ever needs migrating for this.
-        const mspec = (PropSprites.spec && PropSprites.spec(p.t)) || null;
-        let mounted = null;
-        if (mspec && mspec.mount === 'surface' && station && station.surfaceHostOf) {
-          if (station.surfaceHostOf(p)) mounted = 'surface';
-        }
+        const mounted = (station && station.mountOf) ? station.mountOf(p) : null;
         // a table-top object must draw AFTER its table: both occupy the same tiles, so their sort keys are
         // equal and array order would decide it — which is whichever the player happened to place first
         if (mounted === 'surface') sy += 0.5;

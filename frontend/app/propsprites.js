@@ -7237,7 +7237,19 @@ const PropSprites = (() => {
        functional — SYSTEMS: props that DO something (place · assign · wire into real workflows)
        cosmetic   — DECOR: looks only (decoration, atmosphere, leisure)
      `tier` + `cat` drive the palette grouping; `seat:true` marks an agent-assignable workstation;
-     `desc` is the hover-card blurb. None of this is read by the routing/capability backend (it keys on prop.t). */
+     `desc` is the hover-card blurb. None of this is read by the routing/capability backend (it keys on prop.t).
+
+     THE MOUNT AXIS (three states — worldmodel.js checkProp enforces them):
+       surface: true    this prop IS a table; other props may stand on it.
+       mount:'surface'  this prop REQUIRES a table (it has no business on bare deck).
+       stack: true      this prop MAY stand on a table, and is equally at home on the deck.
+     stack was added 2026-07-29 because only the two mount:'surface' props could ever be placed on a
+     table — a mug, a plant or a stack of printouts hit OVERLAP — so tables read as unusable. What
+     earns the flag is what the ART DRAWS, never the name: an object whose contact is its own base
+     (mug, pot, papers, tote, speaker cab) stacks; anything that draws legs, a stand or a deckPlate
+     is floor furniture and does not (arc_microfiche is a reader DESK, comms_inbox is bolted down,
+     tank/monstera are explicitly floor pieces). Every prop function anchors to its footprint bottom,
+     so a stacked prop needs no art change — draw() lifts the whole origin by SURFACE_RISE. */
   const CATALOG = [
     /* ===================== FUNCTIONAL ===================== */
     // WORKSTATIONS — the agent's seat. Assign ONE agent; it walks here and sits to work when tasked.
@@ -7310,7 +7322,7 @@ const PropSprites = (() => {
     { id: "research_corelens", label: "CORE LENS", cat: "lab", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "research_trendpillar", label: "TREND PILLAR", cat: "lab", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "research_samplecart", label: "SAMPLE CART", cat: "lab", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
-    { id: "research_papers", label: "PAPERS", cat: "lab", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
+    { id: "research_papers", label: "PAPERS", cat: "lab", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false, stack: true },
     { id: "etsy_threadrack", label: "THREAD RACK", cat: "lab", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     { id: "etsy_dyevat", label: "DYE VAT", cat: "lab", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true },
     { id: "etsy_kiln", label: "KILN", cat: "lab", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true },
@@ -7318,17 +7330,17 @@ const PropSprites = (() => {
     // STORAGE — crates, bins & vaults (decorative).
     { id: "rackV", label: "RACK V", cat: "storage", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "crate", label: "CRATE", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
-    { id: "boxes", label: "BOXES", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
+    { id: "boxes", label: "BOXES", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true, stack: true },
     { id: "goldcrate", label: "GOLD CRATE", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     { id: "parcels", label: "PARCELS", cat: "storage", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
-    { id: "gigs_partsbin", label: "PARTS BIN", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
+    { id: "gigs_partsbin", label: "PARTS BIN", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true, stack: true },
     { id: "treasury_coinsorter", label: "COIN SORTER", cat: "storage", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     { id: "treasury_token_furnace", label: "TOKEN FURNACE", cat: "storage", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     // COMMS — antennas & mail dressing.
     { id: "commswall", label: "COMMS WALL", cat: "comms", tier: "cosmetic", w: 6, h: 1, animated: true, blocks: false },
     { id: "comms_inbox", label: "INBOX", cat: "comms", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     { id: "gigs_thumbwall", label: "THUMB WALL", cat: "comms", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
-    { id: "gigs_amp", label: "AMP", cat: "comms", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "gigs_amp", label: "AMP", cat: "comms", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, stack: true },
     { id: "pub_publishpress", label: "PUBLISH PRESS", cat: "comms", tier: "cosmetic", w: 2, h: 2, animated: true, blocks: true },
     { id: "pub_outboundchute", label: "OUTBOUND CHUTE", cat: "comms", tier: "cosmetic", w: 1, h: 2, animated: true, blocks: true },
     { id: "pub_mailpod", label: "MAIL POD", cat: "comms", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
@@ -7336,7 +7348,7 @@ const PropSprites = (() => {
     { id: "arc_microfiche", label: "MICROFICHE", cat: "comms", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: true },
     // LOUNGE — morale & downtime (idle agents drift here).
     { id: "djbooth", label: "DJ BOOTH", cat: "lounge", tier: "cosmetic", w: 4, h: 2, animated: true, blocks: true },
-    { id: "speaker", label: "SPEAKER", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "speaker", label: "SPEAKER", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, stack: true },
     { id: "bar", label: "BAR", cat: "lounge", tier: "cosmetic", w: 4, h: 1, animated: true, blocks: true, use: { kind: 'bar', sit: false, approach: 'south' } },
     { id: "tv", label: "TV", cat: "lounge", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: true, use: { kind: 'tv', sit: false, approach: 'south' } },
     { id: "couch", label: "COUCH", cat: "lounge", tier: "cosmetic", w: 5, h: 1, animated: true, blocks: true, use: { kind: 'couch', sit: true, approach: 'south' } },
@@ -7349,8 +7361,8 @@ const PropSprites = (() => {
     { id: "quarters_lockerbank", label: "LOCKERS", cat: "lounge", tier: "cosmetic", w: 3, h: 1, animated: true, blocks: true },
     { id: "quarters_minifridge", label: "MINIFRIDGE", cat: "lounge", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     // DECOR — small dressing & plain seating.
-    { id: "coffee", label: "COFFEE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
-    { id: "plant", label: "PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
+    { id: "coffee", label: "COFFEE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, stack: true },
+    { id: "plant", label: "PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, stack: true },
     { id: "rug", label: "RUG", cat: "decor", tier: "cosmetic", w: 4, h: 3, animated: true, blocks: false },
     { id: "treasury_pnl_holo", label: "PNL HOLO", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
     { id: "arc_floorlight", label: "FLOOR LIGHT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false },
@@ -7358,13 +7370,14 @@ const PropSprites = (() => {
     { id: "stool", label: "STOOL", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     { id: "chair", label: "CHAIR", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
     // TABLES (2026-07-26) — the catalog had hero surfaces and nothing in between, so every small object
-    // had to be parked on the deck. `surface: true` is what a mount:"surface" prop may be placed ON.
+    // had to be parked on the deck. `surface: true` is what a mount:"surface" / stack:true prop may be
+    // placed ON. See the MOUNT AXIS note above the catalog for what those two flags mean.
     { id: "sidetable", label: "SIDE TABLE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: false, blocks: true, surface: true },
     { id: "loungetable", label: "LOUNGE TABLE", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: false, blocks: true, surface: true },
     { id: "longtable", label: "LONG TABLE", cat: "decor", tier: "cosmetic", w: 3, h: 1, animated: false, blocks: true, surface: true },
     // DECOR EXPANSION (2026-07-15) — theming set. Flat paint/looms walk-over; solid bodies block.
     { id: "lavalamp", label: "LAVA LAMP", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: false, mount: "surface" },
-    { id: "crt_pile", label: "CRT PILE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },
+    { id: "crt_pile", label: "CRT PILE", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true, stack: true },
     { id: "cablerun", label: "CABLE RUN", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
     { id: "hazardpad", label: "HAZARD PAD", cat: "decor", tier: "cosmetic", w: 2, h: 1, animated: true, blocks: false },
     { id: "tallplant", label: "TALL PLANT", cat: "decor", tier: "cosmetic", w: 1, h: 1, animated: true, blocks: true },

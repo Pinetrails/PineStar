@@ -1506,7 +1506,15 @@ const Build = (() => {
     const list = station.props();
     if (!list.length) return;
     PropSprites.setCtx(ctx); PropSprites.setNow(now);
-    const sorted = list.slice().sort((a, b) => (a.y + (a.h || 1)) - (b.y + (b.h || 1)));
+    // MOUNT LIFT — resolved per frame through station.mountOf, the SAME seam world.js draws through.
+    // REFIT is where props are actually placed, so a table-top prop that only lifted in the live world
+    // looked, in the one view you judge it from, like it had been dropped INSIDE the table.
+    // The +0.5 goes with it: a mounted prop and its table cover the same tiles, so their sort keys tie
+    // and raw array order (whichever was placed first) would decide who draws on top.
+    const key = p => (p.y + (p.h || 1)) + (p.mount ? 0.5 : 0);
+    const sorted = list
+      .map(p => { const m = station.mountOf ? station.mountOf(p) : null; return m ? Object.assign({}, p, { mount: m }) : p; })
+      .sort((a, b) => key(a) - key(b));
     for (const p of sorted) PropSprites.draw(p, true);
   }
 
@@ -1773,6 +1781,7 @@ const Build = (() => {
     // MOUNT is a placement RULE, so it belongs on the footprint line next to the other placement facts —
     // a player who only meets it as a red ghost has been told "no" without being told "why".
     const mount = c.mount === 'surface' ? ' · stands on a table'
+      : c.stack ? ' · deck or table'
       : (c.surface ? ' · things can stand on it' : '');
     const foot = c.w + '×' + c.h + (c.blocks === false ? ' · walkable' : ' · solid') + mount;
     const desc = c.desc || (fn ? '' : 'Decor — looks only. Sets the mood; no effect on how the station runs.');
