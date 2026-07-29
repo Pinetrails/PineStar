@@ -40,6 +40,7 @@ test/provider.toolschema.test.js
 test/provider.prices.test.js
 test/provider.timeouts.test.js
 test/provider.registry.test.js
+test/ratelimits.test.js
 test/provider.codex-auth.test.js
 test/purge-leaked-codex-tokens.test.js
 test/provider.oauth-device.test.js
@@ -63,6 +64,7 @@ test/loop.steer.test.js
 test/loop.verify-on-stop.test.js
 test/loop.parallel-tools.test.js
 test/loop.tool-images.test.js
+test/loop.turn-budget.test.js
 test/loop.provider-recovery.test.js
 test/compaction.test.js
 test/loopguard.test.js
@@ -84,6 +86,7 @@ test/keepawake.test.js
 test/grace.test.js
 test/shell-session.test.js
 test/shell-bg.test.js
+test/shell-bg-io.test.js
 test/shell-visible-window.test.js
 test/shell-input-isolation.test.js
 test/shell-machine-state.test.js
@@ -186,6 +189,7 @@ test/fs.jail.test.js
 test/fs.patch.test.js
 test/fs.stale-write.test.js
 test/docextract.test.js
+test/imagewire.test.js
 test/web.ssrf.test.js
 test/web.search.test.js
 test/web.fence.test.js

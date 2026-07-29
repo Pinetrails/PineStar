@@ -13,8 +13,19 @@
    Local-first only — same fs jail + cwd as shell.exec; no docker/ssh/modal. PURE deps (spawn/clock/redact/onExit
    injected) so it is headless-testable with a fake spawn and determinism-clean (ms via the injected clock).
 
+   TWO-WAY, AND READABLE PAST THE TAIL (2026-07-29). For a long time this was start/status/kill only, which
+   made a background process write-only in both directions:
+     - No STDIN. The agent could start `npm create vite@latest` or a `python` REPL and then had no way to
+       answer a single prompt — the process sat wedged until it was killed. write/submit/closeStdin fix that.
+     - No PAGING. `status` returned the last 2000 characters of a 16KB ring, so a stack trace 500 lines up
+       the log was simply unreachable; the agent's only recourse was to re-run the command in the foreground
+       and hope it failed the same way. read() pages and searches by LINE, and says so when the ring has
+       dropped output rather than pretending line 1 is the beginning.
+
      makeShellBg({ spawn, clock?, redact?, onExit?, maxPerAgent?, ringBytes?, isWin? }) ->
-       { start({agentId,cmd,cwd,isWin?}), status(agentId,bgId?), kill(agentId,bgId), killAll(agentId?), count(agentId) } */
+       { start({agentId,cmd,cwd,isWin?}), status(agentId,bgId?), read(agentId,bgId,opts?),
+         write(agentId,bgId,{input,submit?}), closeStdin(agentId,bgId),
+         kill(agentId,bgId), killAll(agentId?), count(agentId) } */
 'use strict';
 (function (root, factory) {
   const api = factory();
@@ -42,7 +53,11 @@
     const onExit = typeof deps.onExit === 'function' ? deps.onExit : () => {};
     const isWinDefault = (deps.isWin != null) ? deps.isWin : WIN;
     const MAX = deps.maxPerAgent || 5;
-    const RING = deps.ringBytes || 16000;
+    /* 16KB held about 200 lines of a dev server — the ring lapped before the agent got back to look, so the
+       compile error that killed the run had already scrolled off. Paging is worthless over a buffer that
+       small, so the ring and the paging landed together. 256KB x 5 procs/agent is a bounded ~1.25MB. */
+    const RING = deps.ringBytes || 262144;
+    const READ_LINES = deps.readLines || 200;      // default page size; the model can ask for more
     // persistent PID ledger (procledger.js): killAll() only reaps on a GRACEFUL stop; a force-killed sidecar
     // (desktop shell TerminateProcess) runs no handlers, so recorded children are swept at the NEXT boot.
     const ledger = (deps.ledger && typeof deps.ledger.record === 'function') ? deps.ledger : null;
@@ -85,8 +100,22 @@
         }
       } catch (_) {}
       const bgId = 'bg_' + (++seq);
-      const rec = { bgId, agentId, cmd, child, out: '', running: true, exitCode: null, killed: false, startedAt: now(), endedAt: null };
-      const append = (buf) => { let s = ''; try { s = redact(String(buf)); } catch (_) { s = String(buf); } rec.out += s; if (rec.out.length > RING) rec.out = rec.out.slice(rec.out.length - RING); };
+      const rec = { bgId, agentId, cmd, child, out: '', running: true, exitCode: null, killed: false, startedAt: now(), endedAt: null, dropped: 0, stdinClosed: false };
+      const append = (buf) => {
+        let s = ''; try { s = redact(String(buf)); } catch (_) { s = String(buf); }
+        rec.out += s;
+        if (rec.out.length > RING) {
+          let cut = rec.out.length - RING;
+          /* Snap the cut FORWARD to a line boundary. A ring that lands mid-line makes the first line of every
+             page a fragment, and a fragment reads as a real line to anything counting them — so line 1 of a
+             paged read would be a lie in a way the caller cannot detect. Bounded scan: if the next newline is
+             absurdly far (one enormous line), keep the raw cut rather than discarding the whole buffer. */
+          const nl = rec.out.indexOf('\n', cut);
+          if (nl >= 0 && nl - cut < 4096) cut = nl + 1;
+          rec.dropped += cut;
+          rec.out = rec.out.slice(cut);
+        }
+      };
       if (child.stdout && child.stdout.on) child.stdout.on('data', append);
       if (child.stderr && child.stderr.on) child.stderr.on('data', append);
       const settle = (code) => {
@@ -108,6 +137,85 @@
       return out;
     }
 
+    // ownership is the ONE gate on every by-id operation: an agent may only touch a process it started.
+    function own(agentId, bgId) {
+      const r = procs.get(String(bgId));
+      return (r && r.agentId === String(agentId || 'agent')) ? r : null;
+    }
+
+    /* PAGED / SEARCHABLE OUTPUT. `offset` is 0-based over the lines currently held; NEGATIVE counts back
+       from the end (-50 = the last 50 lines), which is what "show me the end of the log" actually means and
+       saves a round trip to learn totalLines first. `grep` filters to matching lines, keeping each line's
+       real number so the caller can page around a hit.
+
+       `dropped` is reported, never hidden: once the ring laps, line 1 is NOT the first line the process
+       printed, and a reader that assumes otherwise draws wrong conclusions about where a failure began. */
+    function read(agentId, bgId, opts) {
+      opts = opts || {};
+      const r = own(agentId, bgId);
+      if (!r) return { ok: false, error: 'no such background process' };
+      const all = r.out === '' ? [] : r.out.split('\n');
+      // a trailing newline yields a final '' that is not a line the process wrote
+      if (all.length && all[all.length - 1] === '') all.pop();
+
+      const limit = Math.max(1, Math.min(2000, Number(opts.limit) || READ_LINES));
+      const needle = (opts.grep == null || opts.grep === '') ? null : String(opts.grep).toLowerCase();
+
+      let numbered;
+      if (needle) {
+        numbered = [];
+        for (let i = 0; i < all.length; i++) if (all[i].toLowerCase().indexOf(needle) >= 0) numbered.push([i + 1, all[i]]);
+      } else {
+        numbered = new Array(all.length);
+        for (let i = 0; i < all.length; i++) numbered[i] = [i + 1, all[i]];
+      }
+
+      let off = Number(opts.offset);
+      if (!Number.isFinite(off)) off = needle ? 0 : Math.max(0, numbered.length - limit);   // no offset -> the END, like tail
+      if (off < 0) off = Math.max(0, numbered.length + off);
+      if (off > numbered.length) off = numbered.length;
+      const page = numbered.slice(off, off + limit);
+
+      return {
+        ok: true, bgId: r.bgId, running: r.running, exitCode: r.exitCode, killed: r.killed, cmd: r.cmd,
+        lines: page.map(x => x[1]), firstLineNo: page.length ? page[0][0] : 0, lineNos: page.map(x => x[0]),
+        offset: off, returned: page.length,
+        totalLines: all.length, matchedLines: needle ? numbered.length : null, grep: opts.grep || null,
+        droppedBytes: r.dropped, truncatedStart: r.dropped > 0
+      };
+    }
+
+    /* STDIN. Without this a background process is write-only: an installer that asks one question, or any
+       REPL, wedges forever and the only move left is to kill it. `submit` appends the newline, because the
+       overwhelmingly common case is answering a prompt and a payload without it just sits in the pipe
+       looking like nothing happened. */
+    function write(agentId, bgId, o) {
+      o = o || {};
+      const r = own(agentId, bgId);
+      if (!r) return { ok: false, error: 'no such background process' };
+      if (!r.running) return { ok: false, error: 'process ' + r.bgId + ' has already exited (' + r.exitCode + ') — nothing is listening on its stdin' };
+      if (r.stdinClosed) return { ok: false, error: 'stdin for ' + r.bgId + ' was already closed with eof' };
+      const stdin = r.child && r.child.stdin;
+      if (!stdin || typeof stdin.write !== 'function') return { ok: false, error: 'this process has no writable stdin' };
+      const data = String(o.input == null ? '' : o.input) + (o.submit === false ? '' : '\n');
+      try { stdin.write(data); }
+      catch (e) { return { ok: false, error: 'write failed: ' + ((e && e.message) || e) }; }
+      return { ok: true, bytes: data.length };
+    }
+
+    // EOF. Distinct from kill: many commands (a pipe consumer, an interactive prompt reading to EOF) only
+    // do their work once stdin CLOSES, so killing them instead of closing destroys the result.
+    function closeStdin(agentId, bgId) {
+      const r = own(agentId, bgId);
+      if (!r) return { ok: false, error: 'no such background process' };
+      if (r.stdinClosed) return { ok: true, alreadyClosed: true };
+      const stdin = r.child && r.child.stdin;
+      if (!stdin || typeof stdin.end !== 'function') return { ok: false, error: 'this process has no writable stdin' };
+      try { stdin.end(); } catch (e) { return { ok: false, error: 'close failed: ' + ((e && e.message) || e) }; }
+      r.stdinClosed = true;
+      return { ok: true };
+    }
+
     function kill(agentId, bgId) {
       const r = procs.get(String(bgId));
       if (!r || r.agentId !== String(agentId || 'agent')) return { ok: false, error: 'no such background process' };
@@ -127,7 +235,7 @@
       return n;
     }
 
-    return { start, status, kill, killAll, count, _internals: { procs, view, killTree } };
+    return { start, status, read, write, closeStdin, kill, killAll, count, _internals: { procs, view, killTree, own } };
   }
 
   return { makeShellBg };

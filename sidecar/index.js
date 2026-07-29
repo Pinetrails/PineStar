@@ -36,6 +36,9 @@ const { makeFsTools } = require('./tools/builtin/fs.js');
 // fs.read extracts .docx / .xlsx / .ipynb to readable text. inflateRawSync is injected so the extractor stays
 // pure + headless-testable, and so the OOXML path needs no dependency beyond what Node already ships.
 const docExtract = require('./tools/builtin/docextract.js').makeDocExtract({ inflateRaw: require('node:zlib').inflateRawSync });
+// ...and the same idea for pixels: ONE sniffer shared by every producer that can hand the driving model an
+// image, so the `images` channel has more than a single caller (a channel with one caller is a special case).
+const imageWire = require('./tools/builtin/imagewire.js').makeImageWire({});
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
 const { makeToolSearchTool } = require('./tools/builtin/toolsearch.js');   // tool.search: reach a granted-but-unadvertised (deferred) tool
@@ -73,8 +76,15 @@ const {
   providerUsesDeviceOAuth: registryProviderUsesDeviceOAuth,
   defaultReasoningEffortForProvider: registryDefaultReasoningEffort,
   providerRequiresKey,
-  providerRequiresBaseUrl
+  providerRequiresBaseUrl,
+  attachRateLimits
 } = require('./providers/factory.js');
+/* PROACTIVE QUOTA. One tracker for the whole process, attached to the factory so every provider adapter's
+   injected fetch is instrumented at a single seam (see providers/ratelimits.js). Quota used to be learned only
+   by hitting a 429; now the *-remaining headers of ordinary successful calls are kept, so the station can say
+   "this meter is nearly spent" BEFORE the wall instead of after it. */
+const rateLimits = require('./providers/ratelimits.js').makeRateLimits({ clock: { now: () => Date.now() } });
+attachRateLimits(rateLimits);
 const { DEFAULT_MODEL: CODEX_DEFAULT_MODEL } = require('./providers/codex.js');
 const codexAuth = require('./providers/codex-auth.js');
 const codexTokenStore = require('./providers/codex-token-store.js');
@@ -10190,7 +10200,7 @@ async function runOnce(o) {
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
   const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, { scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null, agentId: (o2 && o2.agentId) || agentId });
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract, imageWire }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
   widgetTools.register(registry);   // WIDGET RAILS Phase 2: widget.set — agent-fed rail readouts (memory capability: sandboxed local write, no consent, no network)
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
@@ -10227,7 +10237,7 @@ async function runOnce(o) {
   // computer.use remains registered behind an INERT driver as defense in depth against a
   // forged dispatch. It is removed from ordinary tool definitions below; no current run host
   // mints the separate one-shot attended-input lease required by computer.js.
-  makeComputerTools({ allowPhysicalInput: false }).register(registry);
+  makeComputerTools({ allowPhysicalInput: false, imageWire }).register(registry);
   // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
   // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
@@ -12178,6 +12188,9 @@ function handleDiagnostics(req, res) {
       uptimeMs: Date.now() - PROCESS_START,
       workspacePresent: workspacePresent,
       lastRun: recent ? { runId: recent.runId, status: recent.reason, ts: recent.ts } : null,
+      // observed provider quota. Empty until a call has actually been made — an empty array means NO DATA and
+      // must never be rendered as "plenty left" (see ratelimits.advise).
+      rateLimits: (() => { try { return rateLimits.snapshot(); } catch (_) { return []; } })(),
       errors: DIAG_ERR_RING.slice()   // already redacted on write; the assembler redacts again as a backstop
     };
     out = diagnostics.assemble(snapshot);
