@@ -1,6 +1,17 @@
 # LEVELING / XP LANE — plan
 
-**Date:** 2026-07-29 · **Branch:** `claude/starnet-improvement-ideas-feef01` · **Status:** PLAN ONLY, nothing built.
+**Date:** 2026-07-29 · **Branch:** `claude/starnet-improvement-ideas-feef01` · **Status:** ALL FIVE SLICES BUILT.
+
+| Slice | Commit | What shipped |
+| --- | --- | --- |
+| S1 | `9df2aec1` | the specialist rate-starve fix — a summoned agent can earn at all |
+| S2 | `f016f09c` | RELIABILITY, the harness's own read, as dossier B2 |
+| S3 | `b103854f` + `62e97d1c` | the track record reaches the lead's dispatch briefing |
+| S4 | `f85e6e10` | five mid-game milestones + the boot-time trophy reconcile |
+| S5 | `d902ab61` | PRACTICE — what the agent taught itself, as dossier B3 |
+
+Each slice carries its own claims re-lock. Two slices landed somewhere other than where this plan aimed
+them; both deviations are recorded under their slice below.
 
 Grounded against trunk by reading the code, not the docs. Current gate for this subsystem is green:
 `test/xp.test.js` 146 assertions · `test/xpstore.test.js` 29 · `test/xp-crewsplit.test.js` 19.
@@ -106,6 +117,12 @@ at all; a `done` run moves both reliability and (after a ▲) XP. `test:fast` gr
 
 ### S3 — Make the numbers load-bearing, without gating
 
+> **SHIPPED ELSEWHERE.** This slice was scoped at `rosterClause()`, whose output is baked into the cached
+> `a.systemPrompt` — hence the recompose trap below. It landed instead on the sidecar's `[ORCHESTRATION]`
+> briefing, which is rebuilt from the roster on EVERY run: same list the lead picks from, so the staleness
+> risk was removed rather than mitigated. `Xp.credential()` quantizes the record precisely so the roster is
+> re-pushed only on a tier crossing or band flip.
+
 The delegation pick is made by the *model*, from the roster string. `rosterClause()`
 ([app.js:250](../frontend/app/app.js)) already composes `name — role` per specialist and rides into the lead's
 system prompt and the pushed roster (`orchestration.js` `roster()` → `Map(agentId → {system, name, model})`).
@@ -135,6 +152,14 @@ one-fire, and predicated only on counters the harness proves. Keep the existing 
 the trophy case shows its unlock hint while locked. `test:fast` green.
 
 ### S5 — Levels that actually level (own lane, after S1–S4)
+
+> **SHIPPED, BUT NOT AS A REDEFINITION OF LEVEL.** Redefining the ladder would silently rewrite records the
+> Commander already earned under the user-approval-only rule, and level renders synchronously in the world
+> name tags and topbar where an async per-agent skill list cannot go. The idea ships intact as PRACTICE, a
+> fourth separately-labelled meter (`Xp.practice`), exactly as S2 did for RELIABILITY. A procedure counts only
+> when the AGENT wrote it, it is not archived, the guard is not withholding it, and it has actually been USED —
+> that last clause is the anti-farm line: authoring moves the number by nothing. The remaining fork (whether a
+> LEVEL should ever be recomputed from capability) stays open and unbuilt.
 
 The payoff, and the reason this subsystem is worth touching at all: make a level a **readout of accumulated
 capability** rather than a currency. `sidecar/skillcurator.js` / `skillreview.js` already distil procedure;
