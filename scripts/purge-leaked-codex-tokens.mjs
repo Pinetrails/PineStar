@@ -36,15 +36,28 @@ const roots = [];
 for (let i = 0; i < argv.length; i++) if (argv[i] === '--root' && argv[i + 1]) roots.push(resolve(argv[++i]));
 if (!roots.length) roots.push(tmpdir());
 
-// The install's own token — the one copy that must SURVIVE. Mirrors sidecar/index.js defaultWorkspaces().
+// The install's own token — the one copy that must SURVIVE. Cover the desktop shell, raw sidecar,
+// legacy app-data roots, and an explicitly configured current workspace.
 function protectedRoots() {
-  const base = process.env.LOCALAPPDATA || process.env.APPDATA || process.env.XDG_DATA_HOME
-    || join(homedir() || '.', '.local', 'share');
-  return [
-    join(base, 'StarNet', 'workspaces'),
-    join(base, 'Skynet', 'workspaces'),
-    join(base, 'ai.skynet.harness', 'workspaces')
-  ].map(p => resolve(p).toLowerCase());
+  const bases = [
+    process.env.LOCALAPPDATA,
+    process.env.APPDATA,
+    process.env.XDG_DATA_HOME
+  ].filter(Boolean);
+  if (!bases.length) bases.push(join(homedir() || '.', '.local', 'share'));
+
+  const roots = [];
+  for (const base of bases) {
+    roots.push(
+      join(base, 'StarNet', 'workspaces'),
+      join(base, 'Skynet', 'workspaces'),
+      join(base, 'ai.skynet.harness', 'workspaces')
+    );
+  }
+  for (const configured of [process.env.STARNET_WORKSPACES, process.env.SKYNET_WORKSPACES]) {
+    if (configured) roots.push(configured);
+  }
+  return Array.from(new Set(roots.map(p => resolve(p).toLowerCase())));
 }
 const PROTECTED = protectedRoots();
 const isProtected = (file) => {

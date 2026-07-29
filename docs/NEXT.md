@@ -1,5 +1,18 @@
 # NEXT.md — current priorities & task queue
 
+## 2026-07-29 — TOKEN PURGE PROTECTS EVERY REAL WORKSPACE (`agent/quality-loop-0729d`)
+
+READY TO MERGE. The new leaked-Codex-token purge protected only the first available app-data
+base. On normal Windows, `LOCALAPPDATA` therefore masked the desktop shell's Roaming `APPDATA`
+workspace: a dry run against distinct fake bases listed
+`Roaming\ai.skynet.harness\workspaces\codex\tokens.json` as a deletion candidate, despite the
+script's guarantee that the signed-in copy must survive. The protected set now includes every
+Local/Roaming/XDG app-data base and any explicitly configured current workspace. The identical
+post-fix dry run found zero candidates. Verification: both touched JS files pass `node --check`,
+the focused destructive-safety regression passes 14 assertions, `git diff --check` is clean, and
+`test:fast` is 432/432 green. Only fake temporary data was used and removed. No push, merge, PR,
+deploy, publish, production-data, secret, or real-credential changes.
+
 ## 2026-07-27 — PERMISSIONS OFFLINE STATE STAYS TRUTHFUL (`agent/community-bughunt-0727`)
 
 A Settings/permissions audit confirmed a fail-closed enforcement but fail-open-looking UI defect:

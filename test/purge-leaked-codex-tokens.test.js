@@ -30,12 +30,23 @@ function run(args, env) {
 }
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'purgetest-'));
-// A FAKE app-data base, so the test never depends on (or endangers) the real install.
+// FAKE, deliberately distinct app-data bases, so the test mirrors normal Windows without depending on
+// (or endangering) the real install. Tauri uses Roaming while the raw sidecar fallback uses Local.
+const localBase = path.join(root, 'localappdata');
 const appBase = path.join(root, 'appdata');
-const env = { LOCALAPPDATA: appBase, APPDATA: appBase, XDG_DATA_HOME: appBase };
+const xdgBase = path.join(root, 'xdg');
+const configuredRoot = path.join(root, 'configured-workspaces');
+const env = {
+  LOCALAPPDATA: localBase,
+  APPDATA: appBase,
+  XDG_DATA_HOME: xdgBase,
+  STARNET_WORKSPACES: configuredRoot,
+  SKYNET_WORKSPACES: ''
+};
 
 // the signed-in copy — must SURVIVE
-const installToken = write(path.join(appBase, 'StarNet', 'workspaces', 'codex', 'tokens.json'));
+const installToken = write(path.join(appBase, 'ai.skynet.harness', 'workspaces', 'codex', 'tokens.json'));
+const configuredToken = write(path.join(configuredRoot, 'codex', 'tokens.json'));
 // leaked copies — must GO
 const scratch = path.join(root, 'scratch');
 const leaked1 = write(path.join(scratch, 'ws-a', 'codex', 'tokens.json'));
@@ -76,6 +87,7 @@ const notTokens = write(path.join(scratch, 'ws-c', 'codex', 'settings.json'), '{
   // the belt-and-braces case: someone points --root at the parent of the real install and confirms.
   const out = run(['--root', root, '--confirm'], env);
   A.ok(fs.existsSync(installToken), 'even scanning a PARENT of the install root cannot delete the signed-in token');
+  A.ok(fs.existsSync(configuredToken), 'an explicitly configured current workspace is protected too');
   A.ok(/protected \(kept\)/.test(out), 'and the protected roots are named in the output so the refusal is visible');
 }
 
