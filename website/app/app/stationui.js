@@ -4949,7 +4949,15 @@ const StationUI = typeof document === 'undefined' ? {} : (() => {
             rows.push('<div class="set-row"><span>✓ ' + esc(plabel(k)) + (hint ? ' <span class="dim">— ' + esc(hint) + '</span>' : '') + ' <span class="dim">— ' + esc(pwhen(snap, k)) + '</span>' + earnedTxt + '</span> <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">✕ REVOKE</button></div>');
           });
           held.filter(k => curated.indexOf(k) < 0).forEach(k => {
-            rows.push('<div class="set-row"><span class="dim">' + esc(k) + ' <span class="dim">— ' + esc(pwhen(snap, k)) + '</span></span> <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">✕ REVOKE</button></div>');
+            // A raw danger key (`path:C:\…`, `mcp:<id>`) is truthful but asks the reader to know the grammar on
+            // the one surface whose job is to make a standing permission revocable ON SIGHT. Show the plain
+            // meaning AND the exact key — never one without the other.
+            const r = (typeof Permissions !== 'undefined' && Permissions.grantRow) ? Permissions.grantRow(k) : { title: k, detail: '', note: '' };
+            const head = r.detail ? (esc(r.title) + ' <span class="dim">' + esc(r.detail) + '</span>') : esc(r.title);
+            rows.push('<div class="set-row"><span>' + head +
+              (r.note ? ' <span class="dim">— ' + esc(r.note) + '</span>' : '') +
+              ' <span class="dim">— ' + esc(pwhen(snap, k)) + '</span></span>' +
+              ' <button class="bb sm danger" data-perm-revoke="' + esc(k) + '">✕ REVOKE</button></div>');
           });
         } else {
           // teaching empty state (P0-5): explains how a row lands here instead of looking broken.

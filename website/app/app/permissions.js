@@ -73,6 +73,27 @@
   // a past interactive prompt) still gets a truthful, revocable line so nothing the agent can do is hidden.
   function describeGrant(key) { const e = catalogEntry(key); return e ? e.desc : (String(key || '') + ' — granted earlier; you can revoke it here.'); }
 
+  /* A LEDGER ROW THE COMMANDER CAN ACT ON. The two non-curated families the sidecar actually persists are
+     machine keys: `path:C:\Users\me\Projects` and `mcp:<connectorId>`. Printing the raw key is truthful but
+     asks the reader to know the danger-key grammar to answer "what did I allow?" — on the one surface whose
+     job is to make a standing permission revocable on sight. Return a plain title AND keep the exact key, so
+     nothing is hidden: the row says what it means and still shows what was granted. Unknown families fall
+     back to the raw key with no invented meaning. */
+  function grantRow(key) {
+    const k = String(key || '');
+    const e = catalogEntry(k);
+    if (e) return { title: e.label, detail: '', key: k, curated: true };
+    if (k.indexOf('path:') === 0) {
+      return { title: 'Folder access', detail: k.slice(5), key: k, curated: false,
+        note: 'the agent may read and write files inside this folder' };
+    }
+    if (k.indexOf('mcp:') === 0) {
+      return { title: 'Connected tool', detail: k.slice(4), key: k, curated: false,
+        note: 'the agent may call this connector\u2019s tools' };
+    }
+    return { title: k, detail: '', key: k, curated: false, note: '' };
+  }
+
   // some grants only take EFFECT once a matching station OBJECT is placed (object=capability): cabinet:write needs a
   // Filing Cabinet in the agent's room — the grant is the CONSENT, the placed object is the CAPABILITY. The panel
   // uses this so a granted-but-inert capability is shown honestly (with a "place a cabinet" nudge), never as a
@@ -155,7 +176,7 @@
     isLevel, normalizeLevel, levelPlan, describeLevel,
     grantableKeys, isGrantable, catalogEntry, catalogLabel, describeGrant,
     grantObject, objectHint, grantEffective,
-    normalizeGrants, levelFromState, reconcileToLevel,
+    normalizeGrants, levelFromState, reconcileToLevel, grantRow,
     emptyApprovals, grantAgeText, EMPTY_APPROVALS
   };
 });
