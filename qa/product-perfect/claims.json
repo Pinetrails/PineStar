@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "ef24e3accb7e55c3db70861de660f7d196e9b9fe",
-    "pathSetSha256": "af9ad09edfc5cfca11ef337473fa52a4231aac027fa96bc0d00026a69427c890",
+    "sourceCommit": "2967a49dddad3f6ca9460251dacae550d81c7bfa",
+    "pathSetSha256": "031a048e70cf37951020ca97daad21f5fc2add4f32686c661c765ad6ba3d5029",
     "files": [
       {
         "path": "INSTALL.md",
@@ -123,8 +123,8 @@
       },
       {
         "path": "frontend/app/build.js",
-        "bytes": 118523,
-        "sha256": "6675c196887b1e28a7980ca5ee476e09d3415b2bd01d535d82be48133abf98be"
+        "bytes": 123874,
+        "sha256": "b88752caf4bf5b238a6c709ac5e63df7e575387cd7270b012d4f5b5d29533699"
       },
       {
         "path": "frontend/app/channels.js",
@@ -445,6 +445,11 @@
         "path": "frontend/app/propanchor.js",
         "bytes": 4107,
         "sha256": "bcd9a97f5727b45fda78aadb1cbf82fb7b040aedef5720b3471d36559ef0de40"
+      },
+      {
+        "path": "frontend/app/propsearch.js",
+        "bytes": 3252,
+        "sha256": "7a9c4a6bf5b93fc4a0b3074d88ee6ec4fbb73629535e68e93af87aeb30b2606d"
       },
       {
         "path": "frontend/app/propsprites.js",
@@ -858,8 +863,8 @@
       },
       {
         "path": "frontend/css/app.css",
-        "bytes": 234928,
-        "sha256": "8c01e1883ca077dd1c7ff2954a5af4796058aa103439452878c7b0b11db37687"
+        "bytes": 235876,
+        "sha256": "49331427db16b0aa85fd45bf05579da6df7557f793b9762ab783e5d616b3d03e"
       },
       {
         "path": "frontend/css/asciifx.css",
@@ -923,8 +928,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 66664,
-        "sha256": "17540bc826830c620d7130cbe5be206cf6de9cf7d175f4b10f2c66aaf45fa26d"
+        "bytes": 66795,
+        "sha256": "eace68352448893dddea9710ddadeabf940aa64dfbd358c5a66c0c048144cfe4"
       },
       {
         "path": "frontend/js/arcade.js",
