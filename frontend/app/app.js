@@ -2987,8 +2987,8 @@ const App = (() => {
       const title = w.title || 'General';
       const st = railRowState(w);
       const tip = title + (w.archived ? ' · archived' : '') + (st.busy ? ' · ' + st.status : '')
-        + (Workstreams.unread(w) ? ' · new activity' : '') + ' — right-click for actions';
-      return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" title="' + U.esc(tip) + '">' +
+        + (Workstreams.unread(w) ? ' · new activity' : '') + ' — Shift+F10 or right-click for actions';
+      return '<li class="' + rowClass(w, st, activeId) + '" data-id="' + U.esc(w.id) + '" tabindex="0" role="button" aria-label="' + U.esc(title + ' session; Enter to open; Shift+F10 for actions') + '" aria-keyshortcuts="Shift+F10" title="' + U.esc(tip) + '">' +
         '<span class="' + st.dot + '"></span>' +
         (w.pinned ? '<span class="ws-pin" aria-hidden="true">★</span>' : '') +
         '<span class="ws-title">' + U.esc(title) + '</span>' +
@@ -3000,10 +3000,19 @@ const App = (() => {
     ul.querySelectorAll('.ws-row').forEach(li => {
       const id = li.dataset.id;
       li.onclick = () => switchWorkstream(id);
+      li.onkeydown = (e) => {
+        if (e.target !== li) return;
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); switchWorkstream(id); return; }
+        if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+          e.preventDefault();
+          const r = li.getBoundingClientRect();
+          openWsMenu(id, r.left, r.bottom + 2, li);
+        }
+      };
       // right-click OR the hover ⋯ button opens the same actions menu (rename · pin · archive · delete)
-      li.oncontextmenu = (e) => { e.preventDefault(); openWsMenu(id, e.clientX, e.clientY); };
+      li.oncontextmenu = (e) => { e.preventDefault(); openWsMenu(id, e.clientX, e.clientY, li); };
       const keb = li.querySelector('.ws-kebab');
-      if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const r = keb.getBoundingClientRect(); openWsMenu(id, r.left, r.bottom + 2); };
+      if (keb) keb.onclick = (e) => { e.preventDefault(); e.stopPropagation(); const r = keb.getBoundingClientRect(); openWsMenu(id, r.left, r.bottom + 2, keb); };
     });
     updateArchivedToggle();
     armRailTicker();
@@ -3142,19 +3151,22 @@ const App = (() => {
      and every mutation goes through the Workstreams store — which already guards General from being
      archived or deleted — then re-renders + persists. Archived streams are hidden by default; the
      ARCHIVED toggle in the rail head reveals them so they can be restored or deleted. */
-  let wsMenuEl = null;
-  function closeWsMenu() {
+  let wsMenuEl = null, wsMenuReturnEl = null;
+  function closeWsMenu(restoreFocus) {
     if (!wsMenuEl) return;
+    const returnEl = wsMenuReturnEl;
     wsMenuEl.remove(); wsMenuEl = null;
+    wsMenuReturnEl = null;
     document.removeEventListener('pointerdown', onWsMenuOutside, true);
     document.removeEventListener('keydown', onWsMenuKey, true);
     window.removeEventListener('blur', closeWsMenu);
     window.removeEventListener('resize', closeWsMenu);
     const ul = el('workstreams'); if (ul) ul.removeEventListener('scroll', closeWsMenu, true);
+    if (restoreFocus === true && returnEl && returnEl.isConnected && returnEl.focus) returnEl.focus();
   }
   function onWsMenuOutside(e) { if (wsMenuEl && !wsMenuEl.contains(e.target)) closeWsMenu(); }
-  function onWsMenuKey(e) { if (e.key === 'Escape') { e.preventDefault(); closeWsMenu(); } }
-  function openWsMenu(id, x, y) {
+  function onWsMenuKey(e) { if (e.key === 'Escape') { e.preventDefault(); closeWsMenu(true); } }
+  function openWsMenu(id, x, y, returnEl) {
     closeWsMenu();
     const w = Workstreams.get(id); if (!w) return;
     const isGeneral = (id === Workstreams.generalId());
@@ -3179,6 +3191,7 @@ const App = (() => {
     menu.style.left = Math.max(6, Math.min(x / z, vw - r.width / z - 6)) + 'px';
     menu.style.top = Math.max(6, Math.min(y / z, vh - r.height / z - 6)) + 'px';
     wsMenuEl = menu;
+    wsMenuReturnEl = returnEl && returnEl.focus ? returnEl : null;
     menu.querySelectorAll('.ws-menu-item').forEach(btn => {
       const act = btn.dataset.act;
       if (act === 'delete') {   // destructive → arm on first click, act on a second within 4s
@@ -3198,6 +3211,7 @@ const App = (() => {
     window.addEventListener('blur', closeWsMenu);
     window.addEventListener('resize', closeWsMenu);
     const ul = el('workstreams'); if (ul) ul.addEventListener('scroll', closeWsMenu, true);
+    menu.querySelector('.ws-menu-item').focus();
     SFX.click();
   }
   function wsMenuAction(act, id) {

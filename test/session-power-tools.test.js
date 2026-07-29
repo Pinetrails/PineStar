@@ -99,6 +99,18 @@ A.ok(/id="ws-rail-search"[\s\S]*id="ws-search"[\s\S]*search sessions \+ transcri
 A.ok(/set\('ws-rail-search', pan\.sessionsList\)/.test(app), 'the PROJECTS view hides rail search along with the sessions list');
 A.ok(/item\('export-md', 'Export \.md'/.test(app) && /item\('export-json', 'Export \.json'/.test(app), 'both export formats live in the row actions menu');
 A.ok(/exportSession\(id, 'markdown'\)/.test(app) && /exportSession\(id, 'json'\)/.test(app), 'menu export acts on the exact row session, never an implicit active one');
+A.ok(app.includes('tabindex="0" role="button" aria-label="\' + U.esc(title + \' session; Enter to open; Shift+F10 for actions\') + \'" aria-keyshortcuts="Shift+F10"'),
+  'each session row is a named keyboard target and exposes its actions shortcut');
+A.ok(/<button class="ws-kebab" tabindex="-1" aria-label="session actions"/.test(app),
+  'the pointer-only kebab stays out of the tab order so each session has one keyboard stop');
+A.ok(/li\.onkeydown = \(e\) => \{[\s\S]{0,450}e\.target !== li[\s\S]{0,450}e\.key === 'Enter'[\s\S]{0,450}e\.key === 'F10'[\s\S]{0,450}openWsMenu\(id, r\.left, r\.bottom \+ 2, li\)/.test(app),
+  'session rows open with Enter or Space and expose actions with Shift+F10');
+A.ok(/openWsMenu\(id, r\.left, r\.bottom \+ 2, keb\)/.test(app),
+  'session actions pass their keyboard-focus origin into the menu');
+A.ok(/menu\.querySelector\('\.ws-menu-item'\)\.focus\(\)/.test(app),
+  'opening the session menu transfers focus to its first action');
+A.ok(/e\.key === 'Escape'[\s\S]{0,100}closeWsMenu\(true\)/.test(app),
+  'Escape closes the session menu and returns focus to its trigger');
 A.ok(/sessionUndo:\s*saved\.sessionUndo/.test(app), 'the durable recovery checkpoint is still hydrated on restart');
 A.ok(/URL\.revokeObjectURL/.test(app), 'export object URL is always revoked');
 
