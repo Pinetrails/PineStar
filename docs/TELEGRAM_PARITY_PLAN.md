@@ -491,6 +491,58 @@ Telegram lane. Until then N14 stays open, and the cost is bounded: a split paste
 per part, and no content is lost (each part is already persisted as its own user turn, and consecutive user
 turns are merged by the provider adapter).
 
+## 4.9 FINAL SCORECARD — all 49 of their Telegram tests, mapped (2026-07-29)
+
+§1's scorecard is now historical. This is the answer to "are we as good as Hermes as a Telegram adapter",
+row by row against their **49 test files**, judged on behaviour rather than on whether we copied their design.
+
+### HAVE — 38 of 49
+
+`approval_buttons` (ours is bounded + token-resolved; theirs leaks and FIFO-crosses) · `auth_check` ·
+`bot_auth_bypass` · `callback_auth_fail_closed` · `caption_merge` · **`conflict` (live-verified)** ·
+`documents` · `error_redaction` · `format` · `init_deadline` · `max_doc_bytes` · `model_picker` · `network` ·
+`network_reconnect` · `pending_update_probe` · `start_polling_timeout` · `typing_backoff` ·
+`audio_vs_voice` · `voice_v0_regressions` · `group_gating` · `mention_boundaries` · `noise_filter` ·
+`channel_posts` · `reactions` · `reply_mode` · `reply_quote` · `topic_mode` · `thread_fallback` ·
+`prune_stale_topic_binding` · `progress_edit_transient` · `overflow_partial` · `clarify_buttons`
+(our TASK_QUESTION keyboards) · `status_indicator` · `status_update` · `username_chat_id` (we never coerce a
+chat id to a number, so an `@name` passes straight through) · `managed_bot` (multi-bot) ·
+`rich_messages` / `rich_newlines` (the subset our converter can prove safe, with a plain-text floor).
+
+### DELIBERATE DIFFERENCES — 6, all documented above
+
+- `send_draft_format`, and the rich-draft half of `rich_messages` — §3: probe-and-degrade, never a dependency.
+- `webhook_secret` — StarNet is local-first; long-poll is the correct transport, not a limitation.
+- `closewait_limits` — an httpx/PTB pool artefact. `fetch` + one long-poll has no pool to exhaust.
+- `slash_confirm` — a formatting regression guard for a Hermes-specific feature, not a capability.
+- `photo_interrupts` — they QUEUE a photo that lands mid-run; we SUPERSEDE. Ours is the documented
+  one-run-per-conversation rule, and no content is lost (the earlier turn is already in history). The
+  pathological case they were guarding, a multi-part photo drop, is handled by our album debounce.
+- `relay_roundtrip_telegram` — their gateway's own plumbing.
+
+### GENUINELY OPEN — 5, and none of them is a correctness bug
+
+| | Why it is still open |
+|---|---|
+| `text_batching`, `text_batch_perf` | Built and reverted — §4.8. Blocked on belt-telemetry surgery, not on Telegram. |
+| `send_path_health` | Partly covered now (`unreachable` chats, the durable outbox, `channel.delivery`). Their specific case is a wedged httpx pool; we have no evidence of the `fetch` equivalent, so building a detector for it would be guessing. |
+| `forum_commands` | We publish one global command menu, which works inside topics; they re-register lazily per forum. |
+| proxy | Environment-specific; nothing in the product needs it yet. |
+| N12 `getChat` | The Bot API cannot resolve an arbitrary **user** @username to a chat id at all — only public chats. Half of this is a platform limit, not a gap. |
+
+### The verdict
+
+**On capability, yes** — every row that a member could feel is HAVE, including the three that mattered most
+and were missing a day ago: the reply lands in the topic it was asked in, it is written live in front of you,
+and the bot is no longer deaf to edits, channel posts or being blocked. What is left is breadth with a
+documented reason.
+
+**On proof, partly.** Everything is gated (`test:fast` 436 steps, `test:http`, 8 Telegram suites, every fix
+revert-proven) and the transport half is now verified against the real Bot API (§4.7). The inbound half —
+thread routing into a real topic, streaming edits on a real run, voice STT, the channel-post echo guard,
+`my_chat_member` — is **still fake-proven only**, because a bot cannot start a conversation and no one has
+messaged the test bot yet. That gap is honest and it is the last one.
+
 ## 5. Honest sizing
 
 P1–P3 are the ones a member would notice tomorrow, and they are mostly wiring over engines we
