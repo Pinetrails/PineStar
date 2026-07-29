@@ -281,7 +281,10 @@
           const ub = gateEl.querySelector('#lp-unhalt');
           if (ub) ub.addEventListener('click', async () => {
             ub.disabled = true; sfx('click');
-            try { await post('/api/loops/control', { action: 'unhalt' }); notify('loops resumed', 'good'); } catch (_) { notify('could not reach the station', 'warn'); }
+            // The E-STOP lift is a SAFETY claim: a refused request left the durable halt engaged while the station
+            // said "loops resumed". Only a 2xx proves the stand-down was lifted (refresh() re-reads it either way).
+            try { const r = await post('/api/loops/control', { action: 'unhalt' }); notify(r.ok ? 'loops resumed' : 'could NOT resume — the emergency stop is still engaged', r.ok ? 'good' : 'warn'); }
+            catch (_) { notify('could not reach the station — loops are still stopped', 'warn'); }
             refresh();
           });
         } else if (loops.length) {
@@ -361,7 +364,12 @@
       const act = btn.dataset.act;
       if (act === 'remove') {
         if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = '✕ CONFIRM'; sfx('bad'); setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '✕ DELETE'; } }, 5000); return; }
-        sfx('bad'); try { await post('/api/loops/remove', { id }); notify('loop deleted'); } catch (_) {} refresh(); return;
+        // ⛔ FETCH RESOLVES ON 4xx/5xx — `await post(...)` only rejects on a network failure, so this toast used to
+        // announce a delete the sidecar refused, with the still-present row re-drawn underneath it by refresh().
+        sfx('bad');
+        try { const r = await post('/api/loops/remove', { id }); notify(r.ok ? 'loop deleted' : 'could not delete this loop', r.ok ? 'good' : 'warn'); }
+        catch (_) { notify('could not reach the station — the loop was not deleted', 'warn'); }
+        refresh(); return;
       }
       if (act === 'pause' || act === 'resume') {
         sfx('click');

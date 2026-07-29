@@ -748,7 +748,9 @@
         if (args && args.background) {
           if (!environment && !bg) return Promise.resolve({ content: 'Background processes are not available in this build.', summary: 'unavailable' });
           const r = environment && typeof environment.startBackground === 'function'
-            ? environment.startBackground({ agentId: aid, cmd: cmd, cwd: cwd, isWin: isWin })
+            // ctx.surface (host authority, from runInputContext) rides along so the backend hands this child only
+            // the service keys the Commander granted for unattended use — see servicekeys.runEnv.
+            ? environment.startBackground({ agentId: aid, cmd: cmd, cwd: cwd, isWin: isWin, surface: ctx.surface })
             : bg.start({ agentId: aid, cmd: cmd, cwd: cwd, isWin: isWin });
           const content = r.ok
             ? 'Started background process ' + r.bgId + ' in your workspace. It keeps running while you work — check it with shell.bg.status (id "' + r.bgId + '"), read its full log with shell.bg.read, send it input with shell.bg.write, stop it with shell.bg.kill.'
@@ -758,7 +760,7 @@
         const timeoutMs = clamp((args && args.timeoutMs) || DEFAULT_MS, 1000, MAX_MS);
         const markerIsWin = environment && environment.backendId !== 'local' ? false : isWin;
         const run = environment && typeof environment.execute === 'function'
-          ? environment.execute({ agentId: aid, cmd: buildMarkedCmd(cmd, markerIsWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now } })
+          ? environment.execute({ agentId: aid, cmd: buildMarkedCmd(cmd, markerIsWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, surface: ctx.surface })
           : runCommand({ spawn: spawn, cmd: buildMarkedCmd(cmd, isWin), cwd: cwd, timeoutMs: timeoutMs, maxBytes: MAX_BYTES, signal: ctx.signal, clock: { now: now }, isWin: isWin });
         return run.then(function (res) {
           // recover the final cwd + the REAL exit code from the marker; persist the cwd only if it stayed in-jail.

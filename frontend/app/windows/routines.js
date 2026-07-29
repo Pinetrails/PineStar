@@ -186,7 +186,9 @@
       try {
         const j = await Harness.api.get('/api/cron');
         const jobs = (j && j.jobs) || [];
-        schedulerArmed = !!(j && j.enabled);   // the live cronArmed — feeds the create-confirm's honest arm-state line
+        // the live cronArmed — feeds the create-confirm's honest arm-state line. A HALTED scheduler is not armed no
+        // matter what the intent flag says, or the create-confirm promises a fire that an E-STOP is holding down.
+        schedulerArmed = !!(j && j.enabled && !j.halted);
         // HONEST disabled-state + one-click ENABLE (G4.6): when the scheduler is OFF, say plainly that routines
         // will NOT fire and offer a one-click ENABLE that arms the live timer (no env edit / restart). When ON,
         // show the armed state + a DISABLE control. `enabled` comes straight from GET /api/cron (the live
@@ -195,7 +197,18 @@
         // APPROVE ask uses) with the ENABLE SCHEDULING action inline, so "saved but won't fire" reads loudly and
         // the fix is one click away. When ON, the calm one-liner + DISABLE control is enough. `#rt-arm`/data-arm
         // stay identical so the arm/disarm wiring below binds unchanged.
-        gateEl.innerHTML = j && j.enabled
+        // E-STOP WINS OVER `enabled` (bug-sweep P0). GET /api/cron carries `halted` — the durable stand-down written
+        // by the emergency stop. `enabled` still records the user's ARM INTENT while halted, so rendering off
+        // `enabled` alone printed "● scheduler armed — routines fire automatically" over a frozen timer. Say the
+        // truth loudly and offer the one-click lift (POST /api/cron/arm {enabled:true} clears the halt server-side,
+        // which is exactly what the existing #rt-arm data-arm="1" handler already does). Mirrors windows/loops.js.
+        gateEl.innerHTML = j && j.halted
+          ? '<div class="brief-block" style="border-left-color:var(--bad);margin-bottom:8px">' +
+              '<div class="brief-k" style="color:var(--bad)">✕ SCHEDULING IS STOPPED (E-STOP)</div>' +
+              '<div class="brief-v">Your routines are saved but <b>will not fire</b> — an emergency stop is engaged and it survives a restart.' +
+              '<div style="margin-top:8px"><button class="bb xs" id="rt-arm" data-arm="1">▶ RESUME SCHEDULING</button></div>' +
+            '</div></div>'
+          : j && j.enabled
           ? '<span style="color:var(--gold)">● scheduler armed</span> <span class="dim">— routines fire automatically.</span>' + tickHealthLine(j) + ' ' +
             '<button class="bb xs" id="rt-arm" data-arm="0">⏸ DISABLE SCHEDULING</button>'
           : '<div class="brief-block" style="border-left-color:var(--bad);margin-bottom:8px">' +
@@ -295,13 +308,21 @@
       const act = btn.dataset.act;
       if (act === 'remove') {
         if (!btn.dataset.armed) { btn.dataset.armed = '1'; btn.textContent = '✕ CONFIRM'; sfx('bad'); setTimeout(() => { if (btn.isConnected) { delete btn.dataset.armed; btn.textContent = '✕ DELETE'; } }, 5000); return; }
-        sfx('bad'); try { await post('/api/cron/remove', { id }); notify('routine deleted'); } catch (_) {} refresh(); return;
+        // ⛔ FETCH RESOLVES ON 4xx/5xx. `await post(...)` only rejects on a network failure, so the toast used to
+        // announce a delete the sidecar had REFUSED — and then refresh() re-drew the still-present row underneath it.
+        sfx('bad');
+        try { const r = await post('/api/cron/remove', { id }); notify(r.ok ? 'routine deleted' : 'could not delete this routine', r.ok ? 'good' : 'warn'); }
+        catch (_) { notify('could not reach the station — the routine was not deleted', 'warn'); }
+        refresh(); return;
       }
       if (act === 'revoke') {
         // withdraw every unattended grant. Immediate and unconfirmed BY DESIGN: revoking a permission is the
         // safe direction, so it must never be harder than granting it was (delete keeps its two-step arm).
         sfx('click');
-        try { await post('/api/cron/update', { id, patch: { unattendedGrants: [] } }); notify('access revoked', 'good'); } catch (_) {}
+        // A REVOKE CLAIM MUST BE PROVEN, not assumed: a rejected request left the standing unattended grant in
+        // force while the station said "access revoked" — the one lie a permission surface can never tell.
+        try { const r = await post('/api/cron/update', { id, patch: { unattendedGrants: [] } }); notify(r.ok ? 'access revoked' : 'could NOT revoke access — the routine still has it', r.ok ? 'good' : 'warn'); }
+        catch (_) { notify('could not reach the station — access was NOT revoked', 'warn'); }
         refresh(); return;
       }
       if (act === 'toggle') {

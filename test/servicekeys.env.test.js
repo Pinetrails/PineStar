@@ -26,12 +26,13 @@ function harness(hostEnv, getKeys) {
   const env = makeEnvironmentManager({
     spawn, fs: require('fs'), pathMod: require('path'), root: OS.tmpdir() + '/starnet-sk-env-test',
     env: hostEnv,
-    serviceEnv: () => K.runEnv(getKeys(), hostEnv, { reservedEnv: RESERVED })
+    // the sidecar edge wires the RUN's surface through (index.js): the backend forwards execute({surface}).
+    serviceEnv: (surface) => K.runEnv(getKeys(), hostEnv, { reservedEnv: RESERVED, surface: surface })
   });
   return {
-    shellEnv() {
+    shellEnv(surface) {
       captured = null;
-      env.execute({ agentId: 'a', cmd: 'echo hi' }).catch(() => {});
+      env.execute({ agentId: 'a', cmd: 'echo hi', surface: surface }).catch(() => {});
       return captured || {};
     }
   };
@@ -65,6 +66,37 @@ function harness(hostEnv, getKeys) {
     [{ id: 'o', name: 'O', envVar: 'OPENROUTER_API_KEY', key: 'k', enabled: true }],
     { OPENROUTER_API_KEY: 'BILLING' }, { reservedEnv: RESERVED });
   A.ok(!('OPENROUTER_API_KEY' in reserved), 'a reserved provider/billing var is never handed to a shell');
+}
+
+// ---- B2. THE UNATTENDED GRANT IS ENFORCED ON THE SHELL ROUTE TOO (bug-sweep P0) ----
+// resolveForRequest refuses an ungranted key on a non-interactive surface; runEnv used to hand EVERY enabled
+// key to an unattended shell child, so the same key was refused to web_request and given to curl in one run.
+{
+  const host = { GRANTED_API_KEY: 'g', UNGRANTED_API_KEY: 'u' };
+  const keys = [
+    { id: 'g', name: 'Granted', envVar: 'GRANTED_API_KEY', key: 'g', enabled: true, autonomous: true },
+    { id: 'u', name: 'Ungranted', envVar: 'UNGRANTED_API_KEY', key: 'u', enabled: true }
+  ];
+  const inter = K.runEnv(keys, host, { reservedEnv: RESERVED, surface: 'interactive' });
+  A.eq(inter.GRANTED_API_KEY, 'g', 'a watched run still gets a granted key');
+  A.eq(inter.UNGRANTED_API_KEY, 'u', 'a watched run still gets an ungranted key — the grant is about UNATTENDED use');
+
+  const auto = K.runEnv(keys, host, { reservedEnv: RESERVED, surface: 'autonomous' });
+  A.eq(auto.GRANTED_API_KEY, 'g', 'an unattended run gets the key the Commander granted for unattended use');
+  A.ok(!('UNGRANTED_API_KEY' in auto), 'an unattended run NEVER receives a key without the unattended grant');
+  // the same rule the request route already enforced — one key, one answer, both routes
+  A.eq(K.resolveForRequest(keys, 'UNGRANTED_API_KEY', 'autonomous').reason, 'unattended',
+    'web_request refuses the same key on the same surface (the two routes now agree)');
+
+  A.eq(K.runEnv(keys, host, { reservedEnv: RESERVED }).UNGRANTED_API_KEY, 'u',
+    'an un-wired caller (no surface) behaves exactly as before');
+
+  // and through the REAL composition: the surface travels execute() -> backend -> serviceEnv hook
+  const h = harness(host, () => keys);
+  const shellAuto = h.shellEnv('autonomous');
+  A.eq(shellAuto.GRANTED_API_KEY, 'g', 'the granted key still reaches an unattended shell child');
+  A.ok(!('UNGRANTED_API_KEY' in shellAuto), 'THE FIX: an unattended shell child no longer receives an ungranted key');
+  A.eq(h.shellEnv('interactive').UNGRANTED_API_KEY, 'u', 'a watched shell child is unchanged');
 }
 
 // ---- C. THE REGRESSION: a pasted key actually reaches the shell child ----

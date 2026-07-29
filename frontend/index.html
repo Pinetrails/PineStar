@@ -484,7 +484,9 @@
            double up, and a leftover title= would still let the OS paint its own bubble here. aria-label
            carries the accessible name the title used to duplicate. -->
       <button id="model-dock-toggle" class="model-dock-toggle" type="button" data-no-tip aria-label="Model selector" aria-haspopup="dialog" aria-expanded="false">
-        <span class="model-dock-sigil" aria-hidden="true"><svg viewBox="0 0 16 16"><rect x="4.4" y="4.4" width="7.2" height="7.2" fill="none" stroke="currentColor" stroke-width="1.3"/><rect x="6.7" y="6.7" width="2.6" height="2.6" fill="currentColor"/><g stroke="currentColor" stroke-width="1.2"><path d="M6 4.4V2.2"/><path d="M10 4.4V2.2"/><path d="M6 13.8v-2.2"/><path d="M10 13.8v-2.2"/><path d="M4.4 6H2.2"/><path d="M4.4 10H2.2"/><path d="M13.8 6h-2.2"/><path d="M13.8 10h-2.2"/></g></svg></span><span id="model-dock-effort-chip" class="model-dock-effort-chip">MED</span>
+        <!-- no sigil: the model NAME is the chip's identity. The name span is injected by modeldock.js
+             before this effort chip, so the resting chip reads MODEL · TIER. -->
+        <span id="model-dock-effort-chip" class="model-dock-effort-chip">MED</span>
       </button>
       <div id="model-dock" class="model-dock" role="dialog" aria-label="Model selector" hidden>
         <div class="model-dock-head">
@@ -765,6 +767,7 @@ document.write('<script src="' + ((window.__STARNET_API__ || '') + '/shared/spec
 <script src="app/confbeats.js"></script><!-- confidence narrative beats (G3a): fire-once calibration-complete + TRUSTED spoken moments (own key) -->
 <script src="app/bottlestore.js"></script><!-- R5 "bottle a run": post-run offer to save a 👍-rated interactive run as a custom recipe (own key, one beat slot, dismiss=stop-forever) -->
 <script src="app/resummonstore.js"></script><!-- P3.1 "run it again?": post-run offer to re-run a 👍-rated run's shape — pre-fills a fresh run (agent + directive), never auto-runs (own key, one beat slot, dismiss=stop-forever) -->
+<script src="app/logoclip.js"></script><!-- brand-mark occlusion geometry: subtracts the floating-window rects from the z960 #logo so a panel dragged into the top-left covers it instead of bleeding through (BEFORE app.js, which calls LogoClip.clipFor) -->
 <script src="app/app.js"></script>
 <script src="app/keycta.js"></script><!-- cold-start honesty: after a KEYLESS awakening, one standing world banner "agent is awake but has no key" → SETTINGS; pure projection of Harness.hasStoredCredential, vanishes the instant a key lands (after app.js so App/Harness/StationUI exist) -->
 <script src="app/topbar.js"></script><!-- topbar instrument cluster: read-only STATION-XP + live SPEND-TODAY wiring (after app.js so Harness/Xp/XpStore/U exist) -->

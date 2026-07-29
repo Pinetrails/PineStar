@@ -107,10 +107,21 @@
   }
 
   // keep only well-formed danger keys (capability:scope). Defensive against a malformed api payload.
+  // ⛔ THE SHAPE IS `<class>:<scope>` AND THE SCOPE IS NOT AN IDENTIFIER. The old filter was
+  // /^[a-z_]+:[a-z]+$/, which silently dropped every REAL standing grant that isn't the one curated key:
+  //   • `path:C:\Users\andro\Projects` — folder trust (sidecar/index.js blessedRoots), scope = a Windows path
+  //     with a drive colon, backslashes and spaces;
+  //   • `mcp:<connectorId>` — one grant per connected MCP server, ids carry digits/dashes;
+  //   • a dotted capability like `shell.exec:exec`.
+  // Filtered out here, they vanished from the Standing-Approvals ledger, which then printed the teaching
+  // empty-state ("No standing approvals yet") while path trust was live and ENFORCED in the sidecar — a
+  // revocable permission the Commander could neither see nor revoke. Require a non-empty identifier-ish CLASS
+  // and a non-empty SCOPE, and reject control characters; everything else the sidecar blessed is real.
+  const GRANT_KEY_RE = /^[A-Za-z0-9_.-]+:[^\u0000-\u001f]+$/;
   function normalizeGrants(arr) {
     if (!Array.isArray(arr)) return [];
     const out = [];
-    for (const k of arr) if (typeof k === 'string' && /^[a-z_]+:[a-z]+$/.test(k) && out.indexOf(k) < 0) out.push(k);
+    for (const k of arr) if (typeof k === 'string' && GRANT_KEY_RE.test(k) && out.indexOf(k) < 0) out.push(k);
     return out.sort();
   }
 
