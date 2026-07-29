@@ -312,7 +312,7 @@ const StationBake = (() => {
   };
 
   /* ---------- per-tile deck painters — one per material ----------
-     Each paints ONE tile in that tile's own base colour. bakeRoomFloor AND the REFIT palette
+     Each paints ONE tile in that tile's own base colour. bakeDeck AND the REFIT palette
      sampler both go through paintDeck, so the swatch a Commander clicks is drawn by the exact
      code that bakes the station — a deck preview here can never drift from the deck they get. */
 
@@ -564,7 +564,19 @@ const StationBake = (() => {
     return deckSlab(b, mat, base, x, y, X, Y, z, n, fd);
   }
 
-  function bakeRoomFloor(b, r) {
+  /* THE ONE DECK PAINTER — every walkable tile in the station, room or corridor, comes through
+     here (2026-07-28). It used to be rooms only, and `bakeCorridorFloor` was a wholly separate,
+     PRE-V2 painter that hand-rolled a slab-tread look and never called `matOf`/`paintDeck` at all.
+     So a corridor's declared material was DEAD ART: `ROOM_KINDS.corridor.mat` is 'spine', set to
+     match `hab` precisely so "a corridor doesn't read as a different floor through the doorway"
+     (worldmodel.js), and the bake threw it away — spine, plate, grate, turf and plank all baked
+     byte-identical corridor pixels. That is the whole of Andrew's "the hallway floor seems very
+     outdated": it was not a dated recipe, it was NO recipe, frozen before the material axis existed.
+     A user could even paint a hallway from REFIT and watch nothing happen, which is the truthful-
+     telemetry law failing in the art layer.
+     LAW: one surface class, one painter. A second painter for "the same thing but narrower" does
+     not stay in sync — it silently stops receiving every improvement the first one gets. */
+  function bakeDeck(b, r) {
     const px = (x, y, w, h, c) => { b.fillStyle = c; b.fillRect(x, y, w, h); };
     const fd = Math.max(0, DEPTH.floorDetail);
     const mat = matOf(r.z);
@@ -626,71 +638,35 @@ const StationBake = (() => {
     }
   }
 
+  /* A CORRIDOR IS THE STATION'S DECK PLUS EXACTLY ONE IDEA — the tracks the crew wears into it.
+     Everything else the old corridor painter drew (a hard tread seam on every tile row, rib bands
+     on a 7px pitch, staggered chevrons, and a full-length gutter hugging each long wall) was a
+     second visual system competing with the deck material underneath it, and every one of those
+     marks ran the corridor's WHOLE length. That is the mark the SPINE deck's service channel was
+     deleted for: a full-run trench reads as a system in a close-up and as an arbitrary bar in the
+     space itself. The wall lane taught the same thing from the other side — of three candidates
+     for a 23px wall face, the EMPTY bay beat both busy ones, because a second element between the
+     columns competes with them instead of supporting them.
+     So the traffic lanes stay and the rest goes. They earn it by being the one mark that is TRUE
+     of a corridor and not of a room: a hallway is a thing people walk down, and foot-polish down
+     the middle is that fact rendered. They also ride DEPTH.floorWear, so they are wear, not
+     decoration, and they vanish with the rest of the wear at 0. */
   function bakeCorridorFloor(b, r) {
-    const px = (x, y, w, h, c) => { b.fillStyle = c; b.fillRect(x, y, w, h); };
-    const fd = Math.max(0, DEPTH.floorDetail);
-    const vertical = (r.y2 - r.y1) > (r.x2 - r.x1);
-    for (let y = r.y1; y <= r.y2; y++) for (let x = r.x1; x <= r.x2; x++) {
-      const base = G.baseColorOf(r.z, x, y);
-      const X = x * T, Y = y * T, n = h2(x, y, 'cor');
-      const sh = d => U.shade(base, d * fd);
-      px(X, Y, T, T, base);
-      px(X, Y, T, T, sh(((n % 4) - 1.5) * 0.013));   // per-tile tread-plate tone (hard, one of 4)
-      // slab tread: seam, lit lip under it, shaded base — each corridor row reads as a step.
-      // Rides DEPTH.deckSeam like the room decks, so a corridor doesn't keep hard rungs after the
-      // rooms have been blended.
-      const sk = Math.max(0, DEPTH.deckSeam);
-      px(X, Y, T, 1, sh(-0.34 * sk));
-      px(X, Y + 1, T, 1, sh(0.05 * sk));
-      px(X, Y + T - 1, T, 1, sh(-0.12 * sk));
-      if (n % 23 === 5) { px(X + 2, Y + 2, T - 4, T - 4, sh(-0.16)); b.strokeStyle = sh(-0.4); b.lineWidth = 1; b.strokeRect(X + 2.5, Y + 2.5, T - 5, T - 5); }
-      // corridor wear ticks (see the room-floor wear block for the idiom)
-      if (DEPTH.floorWear > 0.001 && n % 7 === 2) px(X + (n % 6), Y + 2 + (n % 7), 3 + (n % 3), 1, 'rgba(0,0,0,' + (0.16 * DEPTH.floorWear).toFixed(3) + ')');
-    }
-    // long-axis rib bands + edge air-grilles
-    b.fillStyle = 'rgba(0,0,0,' + (0.12 * fd).toFixed(3) + ')';
-    const x1 = r.x1 * T, y1 = r.y1 * T, rw = (r.x2 - r.x1 + 1) * T, rh = (r.y2 - r.y1 + 1) * T;
-    if (vertical) for (let yy = y1 + 4; yy < y1 + rh; yy += 7) b.fillRect(x1 + 2, yy, rw - 4, 1);
-    else for (let xx = x1 + 4; xx < x1 + rw; xx += 7) b.fillRect(xx, y1 + 2, 1, rh - 4);
-    b.fillStyle = U.shade('#2c2924', -0.5);
-    if (vertical) { for (let yy = y1 + 3; yy < y1 + rh; yy += 5) { b.fillRect(x1 + 1, yy, 1, 2); b.fillRect(x1 + rw - 2, yy, 1, 2); } }
-    else { for (let xx = x1 + 3; xx < x1 + rw; xx += 5) { b.fillRect(xx, y1 + 1, 2, 1); b.fillRect(xx, y1 + rh - 2, 2, 1); } }
-    // V2: chevron stamps between the ribs (staggered direction ticks along the walk axis)
-    // + side GUTTERS — a dark drainage channel with a faint lit lip hugging each long wall
-    if (fd > 0.001) {
-      const tick = 'rgba(0,0,0,' + (0.10 * fd).toFixed(3) + ')';
-      const chan = 'rgba(0,0,0,' + (0.18 * fd).toFixed(3) + ')';
-      const lip = 'rgba(255,244,220,' + (0.03 * fd).toFixed(3) + ')';
-      if (vertical) {
-        const cxp = Math.round(x1 + rw / 2);
-        b.fillStyle = tick;
-        for (let yy = y1 + 8; yy < y1 + rh - 3; yy += 14) { b.fillRect(cxp - 4, yy, 3, 1); b.fillRect(cxp + 1, yy + 2, 3, 1); }
-        b.fillStyle = chan; b.fillRect(x1 + 3, y1 + 2, 1, rh - 4); b.fillRect(x1 + rw - 4, y1 + 2, 1, rh - 4);
-        b.fillStyle = lip; b.fillRect(x1 + 4, y1 + 2, 1, rh - 4); b.fillRect(x1 + rw - 5, y1 + 2, 1, rh - 4);
-      } else {
-        const cyp = Math.round(y1 + rh / 2);
-        b.fillStyle = tick;
-        for (let xx = x1 + 8; xx < x1 + rw - 3; xx += 14) { b.fillRect(xx, cyp - 4, 1, 3); b.fillRect(xx + 2, cyp + 1, 1, 3); }
-        b.fillStyle = chan; b.fillRect(x1 + 2, y1 + 3, rw - 4, 1); b.fillRect(x1 + 2, y1 + rh - 4, rw - 4, 1);
-        b.fillStyle = lip; b.fillRect(x1 + 2, y1 + 4, rw - 4, 1); b.fillRect(x1 + 2, y1 + rh - 5, rw - 4, 1);
-      }
-    }
-    // TRAFFIC LANES (floor wear) — two foot-polished tracks down the corridor's long axis where
-    // the crew actually walks: a pale sheen lane with a faint grime line hugging its outside.
-    // Rides DEPTH.floorWear like the per-tile wear marks; 0 = off.
+    bakeDeck(b, r);
     const wear = Math.max(0, DEPTH.floorWear);
-    if (wear > 0.001) {
-      const lane = 'rgba(255,244,220,' + (0.05 * wear).toFixed(3) + ')';
-      const grime = 'rgba(0,0,0,' + (0.10 * wear).toFixed(3) + ')';
-      if (vertical) {
-        const cx = Math.round(x1 + rw / 2);
-        b.fillStyle = lane; b.fillRect(cx - 4, y1 + 2, 2, rh - 4); b.fillRect(cx + 2, y1 + 2, 2, rh - 4);
-        b.fillStyle = grime; b.fillRect(cx - 5, y1 + 2, 1, rh - 4); b.fillRect(cx + 4, y1 + 2, 1, rh - 4);
-      } else {
-        const cy = Math.round(y1 + rh / 2);
-        b.fillStyle = lane; b.fillRect(x1 + 2, cy - 4, rw - 4, 2); b.fillRect(x1 + 2, cy + 2, rw - 4, 2);
-        b.fillStyle = grime; b.fillRect(x1 + 2, cy - 5, rw - 4, 1); b.fillRect(x1 + 2, cy + 4, rw - 4, 1);
-      }
+    if (wear <= 0.001) return;
+    const vertical = (r.y2 - r.y1) > (r.x2 - r.x1);
+    const x1 = r.x1 * T, y1 = r.y1 * T, rw = (r.x2 - r.x1 + 1) * T, rh = (r.y2 - r.y1 + 1) * T;
+    const lane = 'rgba(255,244,220,' + (0.05 * wear).toFixed(3) + ')';
+    const grime = 'rgba(0,0,0,' + (0.10 * wear).toFixed(3) + ')';
+    if (vertical) {
+      const cx = Math.round(x1 + rw / 2);
+      b.fillStyle = lane; b.fillRect(cx - 4, y1 + 2, 2, rh - 4); b.fillRect(cx + 2, y1 + 2, 2, rh - 4);
+      b.fillStyle = grime; b.fillRect(cx - 5, y1 + 2, 1, rh - 4); b.fillRect(cx + 4, y1 + 2, 1, rh - 4);
+    } else {
+      const cy = Math.round(y1 + rh / 2);
+      b.fillStyle = lane; b.fillRect(x1 + 2, cy - 4, rw - 4, 2); b.fillRect(x1 + 2, cy + 2, rw - 4, 2);
+      b.fillStyle = grime; b.fillRect(x1 + 2, cy - 5, rw - 4, 1); b.fillRect(x1 + 2, cy + 4, rw - 4, 1);
     }
   }
 
@@ -760,7 +736,7 @@ const StationBake = (() => {
     const s = Math.max(0, DEPTH.wallShadow);
     if (s <= 0.001) return;
     // Painted as STEPPED opaque-alpha bands (hard 1px transitions), not a smooth gradient — this
-    // matches the station's own pixel idiom (see bakeRoomFloor / bakeTallNorthFace: no low-alpha
+    // matches the station's own pixel idiom (see bakeDeck / bakeTallNorthFace: no low-alpha
     // washes) AND keeps the bake portable to the headless canvas mock (no createLinearGradient).
     // Cool-black to sit with the existing edge AO tone. Alpha falls off south of the seam.
     const cool = a => 'rgba(6,7,10,' + a.toFixed(3) + ')';
@@ -1735,7 +1711,7 @@ const StationBake = (() => {
     b.globalCompositeOperation = 'source-over';
 
     // floors
-    for (const r of G.allRects) (G.isCorridor(r.z) ? bakeCorridorFloor : bakeRoomFloor)(b, r);
+    for (const r of G.allRects) (G.isCorridor(r.z) ? bakeCorridorFloor : bakeDeck)(b, r);
     bakeEdgeAO(b);
     bakeCorridorDressing(b);
     bakeWalls(b);
