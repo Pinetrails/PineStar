@@ -18,8 +18,8 @@
   "expectedClaimCount": 37,
   "releaseSurface": {
     "algorithm": "sha256",
-    "sourceCommit": "87ebee43b04ae59c38d3df7641c200cc8c8d75d0",
-    "pathSetSha256": "af9ad09edfc5cfca11ef337473fa52a4231aac027fa96bc0d00026a69427c890",
+    "sourceCommit": "252495666c7489c825623e67950de5d19d5cd368",
+    "pathSetSha256": "a07f8025bfdf1ecddd570fce98f4fc3a8d14298f0e938d60b679af43d42072b5",
     "files": [
       {
         "path": "INSTALL.md",
@@ -63,8 +63,8 @@
       },
       {
         "path": "frontend/app/app.js",
-        "bytes": 294351,
-        "sha256": "4719c8408421947feb28fb60b6df79450c37564e2d3954f1b7b2cc55918a97de"
+        "bytes": 297091,
+        "sha256": "18a848c154b4847a02b4fc42e4e83af9d1128707775ea73daea0404cc8f56f28"
       },
       {
         "path": "frontend/app/armconfirm.js",
@@ -320,6 +320,11 @@
         "path": "frontend/app/lifecycle.js",
         "bytes": 3024,
         "sha256": "a5e4dde18f6c1dbf34a54eb59ba7343e159fc5c46549a9da905987d5699dec3d"
+      },
+      {
+        "path": "frontend/app/logoclip.js",
+        "bytes": 4037,
+        "sha256": "b0599d5276c29dac7062fede4168b2a71538b76d911d81684941c6261fa8bbc3"
       },
       {
         "path": "frontend/app/loop-templates.js",
@@ -923,8 +928,8 @@
       },
       {
         "path": "frontend/index.html",
-        "bytes": 66358,
-        "sha256": "3da32862e6c59e498a53f6ae66b075ac224f3291e6d029a7e7811cce17bc61e1"
+        "bytes": 66614,
+        "sha256": "d2a637eb584648fa09eb410e15de03b4e31b98b1079459a16b70d6c5acec6e1b"
       },
       {
         "path": "frontend/js/arcade.js",
