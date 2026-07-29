@@ -526,7 +526,11 @@ const Onboarding = (() => {
         });
         if (!running) return { text: '' };
       }
-      const isSkip = !!res.skip || res.value == null || String(res.value).trim() === '';
+      // A TYPED skip is a skip here too — every optional beat offers a "Skip for now" chip, so the word is the
+      // vocabulary the flow teaches, and a typed one used to be committed as the Commander's own words at
+      // weight 'stated' (and, on a config beat, built into the patch: a purpose of "skip"). Whole-answer match.
+      const isSkip = !!res.skip || res.value == null ||
+        (typeof Interview !== 'undefined' && Interview.isSkipAnswer ? Interview.isSkipAnswer(res.value) : String(res.value).trim() === '');
       if (isSkip && !s.optional) {   // required step: never a dead pause — re-ask gently, never swallow the empty
         await Dialogue.say([seg('i need a direction here — even a rough one.', 46, 320)]);
         if (!running) return { text: '' };

@@ -37,6 +37,7 @@
   'use strict';
 
   const MAX_ERRORS = 5;        // tail length — enough to see a pattern, bounded so the block stays pasteable
+  const MAX_RATE_PROVIDERS = 4; // quota rows — the fallback chain can touch several providers in one session
   const MSG_MAX = 300;         // per-error message cap after redaction
   const IDENT = /* the fields that are shape-only by construction can still be length-clamped for readability */ 200;
 
@@ -97,6 +98,23 @@
           status: clean(lastRun.status, 40) || 'unknown',
           ts: num(lastRun.ts) || null
         } : null,
+        /* OBSERVED PROVIDER QUOTA (providers/ratelimits.js). Numbers and slugs only — no header text is
+           carried through, so this can never smuggle a value from a response into a pasted bug report.
+           An EMPTY array means no call has been observed yet, which is not the same as "quota is fine";
+           render() says so in words rather than printing an empty section that reads as an all-clear. */
+        rateLimits: (Array.isArray(s.rateLimits) ? s.rateLimits : []).slice(0, MAX_RATE_PROVIDERS).map(p => ({
+          provider: clean(p && p.provider, 60) || 'unknown',
+          ageMs: num(p && p.ageMs),
+          buckets: Object.keys((p && p.buckets) || {}).slice(0, 8).map(k => {
+            const b = p.buckets[k];
+            return {
+              resource: clean(k, 24),
+              limit: (b && b.limit != null) ? num(b.limit) : null,
+              remaining: (b && b.remaining != null) ? num(b.remaining) : null,
+              resetInMs: (b && b.resetInMs != null) ? num(b.resetInMs) : null
+            };
+          })
+        })),
         errors: (Array.isArray(s.errors) ? s.errors : []).slice(-MAX_ERRORS).map(e => ({
           ts: num(e && e.ts) || null,
           message: redactStr(e && e.message)   // SECOND redaction backstop over the caller's already-redacted tail
@@ -127,6 +145,23 @@
         lines.push('Last run:      ' + r.lastRun.runId + ' — ' + r.lastRun.status + (r.lastRun.ts ? ' @ ' + iso(r.lastRun.ts) : ''));
       } else {
         lines.push('Last run:      none yet');
+      }
+      /* Quota, as last OBSERVED — the counters ride on ordinary successful responses, so this is real state
+         and not a guess. "not observed yet" is printed in full rather than left blank: a blank quota section
+         in a bug report reads as "quota was fine", which is a claim the harness cannot make. */
+      lines.push('Provider quota (last seen):');
+      if (r.rateLimits && r.rateLimits.length) {
+        for (const p of r.rateLimits) {
+          const age = p.ageMs ? ' (' + Math.round(p.ageMs / 1000) + 's ago)' : '';
+          const cells = p.buckets.map(b => {
+            const amt = (b.remaining == null) ? '?' : (b.limit ? b.remaining + '/' + b.limit : String(b.remaining));
+            const rs = (b.resetInMs == null) ? '' : ', resets in ' + Math.round(b.resetInMs / 1000) + 's';
+            return b.resource + ' ' + amt + rs;
+          });
+          lines.push('  · ' + p.provider + age + ': ' + (cells.length ? cells.join(' · ') : 'no counters'));
+        }
+      } else {
+        lines.push('  (not observed yet — no provider call has reported quota headers this session)');
       }
       lines.push('Recent errors:');
       if (r.errors.length) {

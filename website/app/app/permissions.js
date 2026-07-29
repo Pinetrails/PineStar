@@ -39,7 +39,7 @@
     {
       key: 'cabinet:write',
       label: 'Write files on its own',
-      desc: "Create and edit files in its own workspace while you're away. Needs a Filing Cabinet placed in its room to actually take effect. Stays inside the workspace — .env/.git are always protected — and every change is checkpointed, so you can undo anything it does."
+      desc: "Create and edit files in its own workspace while you're away. Needs an INTEL CAB placed in its room to actually take effect. Stays inside the workspace — .env/.git are always protected — and every change is checkpointed, so you can undo anything it does."
     }
   ];
 
@@ -56,7 +56,7 @@
     never:   "Stays put. Never acts on its own — you drive everything.",
     suggest: "Lines up ideas while you're away; nothing happens until you approve it.",
     draft:   "Acts on its own and leaves finished drafts on your desk — but never writes files, sends, or spends.",
-    full:    "Acts on its own AND writes real files into its workspace (once it has a Filing Cabinet to write into) — everything it does is logged and reversible. It still can't send, publish, spend, or run commands."
+    full:    "Acts on its own AND writes real files into its workspace (once it has an INTEL CAB to write into) — everything it does is logged and reversible. It still can't send, publish, spend, or run commands."
   };
 
   function isLevel(x) { return LEVELS.indexOf(x) >= 0; }
@@ -74,12 +74,12 @@
   function describeGrant(key) { const e = catalogEntry(key); return e ? e.desc : (String(key || '') + ' — granted earlier; you can revoke it here.'); }
 
   // some grants only take EFFECT once a matching station OBJECT is placed (object=capability): cabinet:write needs a
-  // Filing Cabinet in the agent's room — the grant is the CONSENT, the placed object is the CAPABILITY. The panel
-  // uses this so a granted-but-inert capability is shown honestly (with a "place a cabinet" nudge), never as a
+  // INTEL CAB in the agent's room — the grant is the CONSENT, the placed object is the CAPABILITY. The panel
+  // uses this so a granted-but-inert capability is shown honestly (with a "place an INTEL CAB" nudge), never as a
   // silent "writes files" that does nothing — the exact "app lies" beat this project refuses.
   const GRANT_OBJECT = { 'cabinet:write': 'cabinet' };
   function grantObject(key) { return GRANT_OBJECT[key] || null; }                 // the cap-object a grant needs, or null
-  function objectHint(key) { return key === 'cabinet:write' ? 'needs a Filing Cabinet placed in its room to take effect' : ''; }
+  function objectHint(key) { return key === 'cabinet:write' ? 'needs an INTEL CAB placed in its room to take effect' : ''; }
   // is a grant actually in EFFECT given the agent's live placed caps? caps = World.heroCaps() (cap-object ids). A
   // grant with no object requirement is always effective; a null caps (unknown) is treated as effective (no false alarm).
   function grantEffective(key, caps) { const need = grantObject(key); if (!need) return true; if (!Array.isArray(caps)) return true; return caps.indexOf(need) >= 0; }
@@ -107,10 +107,21 @@
   }
 
   // keep only well-formed danger keys (capability:scope). Defensive against a malformed api payload.
+  // ⛔ THE SHAPE IS `<class>:<scope>` AND THE SCOPE IS NOT AN IDENTIFIER. The old filter was
+  // /^[a-z_]+:[a-z]+$/, which silently dropped every REAL standing grant that isn't the one curated key:
+  //   • `path:C:\Users\andro\Projects` — folder trust (sidecar/index.js blessedRoots), scope = a Windows path
+  //     with a drive colon, backslashes and spaces;
+  //   • `mcp:<connectorId>` — one grant per connected MCP server, ids carry digits/dashes;
+  //   • a dotted capability like `shell.exec:exec`.
+  // Filtered out here, they vanished from the Standing-Approvals ledger, which then printed the teaching
+  // empty-state ("No standing approvals yet") while path trust was live and ENFORCED in the sidecar — a
+  // revocable permission the Commander could neither see nor revoke. Require a non-empty identifier-ish CLASS
+  // and a non-empty SCOPE, and reject control characters; everything else the sidecar blessed is real.
+  const GRANT_KEY_RE = /^[A-Za-z0-9_.-]+:[^\u0000-\u001f]+$/;
   function normalizeGrants(arr) {
     if (!Array.isArray(arr)) return [];
     const out = [];
-    for (const k of arr) if (typeof k === 'string' && /^[a-z_]+:[a-z]+$/.test(k) && out.indexOf(k) < 0) out.push(k);
+    for (const k of arr) if (typeof k === 'string' && GRANT_KEY_RE.test(k) && out.indexOf(k) < 0) out.push(k);
     return out.sort();
   }
 

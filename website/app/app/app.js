@@ -129,8 +129,52 @@ const App = (() => {
     const a = anchor.getBoundingClientRect(), b = bar.getBoundingClientRect();
     logo.style.left = (a.left / z) + 'px';
     logo.style.top = (b.top / z + (b.height / z - logo.offsetHeight) / 2) + 'px';
+    queueLogoOcclusion();   // the mark moved — its clip is stale
+  }
+
+  /* ---------- the brand mark yields to windows (2026-07-29 layering report) ----------
+     The z960 hoist that keeps the wordmark crisp above the CRT glass also parks it above every
+     floating window: #terms lives INSIDE #screen-game, a z-index:10 stacking context, so a .term
+     can never out-stack a <body> child no matter how high zTop() climbs. Drag a panel into the
+     top-left and the amber art bleeds straight through it. No z-index fixes this — the glass has
+     to stay over the windows, and anything over the glass is over the windows too — so the mark
+     is CLIPPED under them instead. app/logoclip.js owns the geometry (and its unit test). */
+  function syncLogoOcclusion() {
+    const logo = el('logo'), host = el('terms');
+    if (!logo || typeof LogoClip === 'undefined') return;
+    const box = logo.getBoundingClientRect();
+    // uiZoom law: rects are VISUAL px, clip-path coordinates are the element's own LAYOUT px.
+    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+    const rects = host ? Array.prototype.map.call(host.querySelectorAll('.term'), w => w.getBoundingClientRect()) : [];
+    logo.style.clipPath = LogoClip.clipFor(box, rects, z);
+  }
+  let occlusionQueued = false;
+  function queueLogoOcclusion() {
+    if (occlusionQueued) return;
+    occlusionQueued = true;
+    const run = () => { if (!occlusionQueued) return; occlusionQueued = false; syncLogoOcclusion(); };
+    // rAF reads layout right before paint (the cheap place to force one); the timer is the backstop
+    // for when rAF is FROZEN — a hidden/minimized window, and the dev preview pane.
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+    if (typeof setTimeout === 'function') setTimeout(run, 120);
   }
   if (typeof window !== 'undefined') window.addEventListener('resize', positionLogo);
+  // One watcher covers the whole window lifecycle: childList = open/close, style = drag + resize
+  // + placeTerm, class = minimize/restore. animationend catches the power-on scale settling, which
+  // moves no attribute and so fires no mutation of its own.
+  if (typeof document !== 'undefined' && typeof MutationObserver === 'function') {
+    const host = el('terms');
+    if (host) {
+      new MutationObserver(recs => {
+        for (const r of recs) {
+          if (r.type === 'childList' && r.target === host) { queueLogoOcclusion(); return; }
+          const t = r.target;
+          if (t && t.nodeType === 1 && t.classList && t.classList.contains('term')) { queueLogoOcclusion(); return; }
+        }
+      }).observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+      host.addEventListener('animationend', queueLogoOcclusion);
+    }
+  }
   // boot-settle re-seats: positionLogo's first run happens before VT323 lands and before the logo
   // image has dimensions — both move the topbar/logo geometry with NO resize event, which left the
   // mark visibly off-seat until the first manual resize (part of the 2026-07-20 misalignment report).
@@ -1192,10 +1236,32 @@ const App = (() => {
   // the full backoff loop (the roster is re-derivable from local state and re-pushed constantly): track a
   // single failed flag, warn EXACTLY once on the healthy→failing edge, and let the next persist re-attempt.
   let rosterPushFailed = false;
+  /* S3 — MAKE THE METERS LOAD-BEARING (without gating anything).
+     Until now every reader of an agent's stats was a display surface: the level chip, the dossier, /whoami.
+     Nothing in the station ACTED on them, so a TRUSTED veteran and a stranger were identical to delegation —
+     which is what made the whole leveling system feel cosmetic. This publishes each agent's EARNED track
+     record onto the roster, where the sidecar renders it on the lead's team.dispatch briefing, so the lead
+     picks a worker on evidence instead of on nothing.
+
+     It INFORMS, it never GATES: no level threshold blocks a dispatch, an unproven agent is simply described
+     without a track line (Xp.credential returns '' until something is actually earned), and the Commander can
+     still hand any work to anyone. The sandbox law holds.
+
+     WHY HERE AND NOT IN THE CACHED SYSTEM PROMPT: the plan originally aimed this at rosterClause(), but that
+     line is baked into the stored a.systemPrompt and needs a recomposeOrchestrators() to refresh — the
+     documented cached-prompt trap (see the note above rosterClause). The sidecar's [ORCHESTRATION] briefing is
+     rebuilt from the roster on EVERY run instead, so it is the same list the lead actually picks from with
+     none of the staleness risk. Duplicating a slow-moving copy into the cached prompt as well would buy
+     nothing and add a second thing to keep in sync, so it is deliberately not done. */
+  function rosterTrack(a) {
+    if (!a || typeof Xp === 'undefined' || !Xp.credential || !a.stats) return '';
+    try { return Xp.credential(a.stats).text || ''; } catch (_) { return ''; }
+  }
   function pushRoster() {
     try {
       const fallbackProv = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
       const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'),
+        track: rosterTrack(a),    // S3: this agent's EARNED track record, so the lead's dispatch briefing can pick on evidence (see rosterTrack)
         workshop: !!a.workshop,   // W3: the away-build grant travels with the roster so the consent broker can honor it
         skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // #4: each agent's OWN provider; Class Loadouts S1: per-agent skill package + applied effort
       // P1.1 (UPDATE_STATE_SAFETY_AUDIT): stamp a freshness `updatedAt` so the sidecar can refuse a STALE push (a
@@ -2486,7 +2552,10 @@ const App = (() => {
     }
     // AGENT GROWTH: subscribe XP/Level/Confidence to the real run-outcome bus. Seeds agent.stats +
     // the station rollup, pushes the live numbers to the world HUD, and fires level-up celebrations.
-    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, station: pendingStationStats, persist: persist }); pendingStationStats = null; }
+    // S3: onCredential fires only on a coarse track-record change (tier crossing / band flip), and re-pushes
+    // the roster so the lead's next dispatch briefing describes its crew truthfully. Rare by construction.
+    // S4: `agents` lets the boot-time trophy reconcile reach every specialist's case, not just the hero's.
+    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, agents: () => Array.from(agents.values()), station: pendingStationStats, persist: persist, onCredential: () => pushRoster() }); pendingStationStats = null; }
     // PERSONALIZATION: the local user-affinity profile — folds the interest tag of each task + shipped work
     // into a tiny histogram (profile.js engine). Resume the saved slice, else start fresh + seed cold-start
     // from the agent's deployed specialty domain so day-one suggestions aren't blank.
@@ -3769,8 +3838,18 @@ const App = (() => {
           if (msg) msg.textContent = 'checking for an update…';
           try {
             const snap = await Updates.check(true, 'future-save-gate');
-            if (snap && snap.phase === 'available') { try { await Updates.install(); } catch (_) {} }
-            else if (msg) msg.textContent = 'no newer build is published yet — check back shortly.';
+            const phase = (snap && snap.phase) || '';
+            // ⛔ ONLY `current` MEANS "NOTHING NEWER IS PUBLISHED". Everything that is not 'available' used to
+            // collapse into that one reassuring line — including 'error' (the check FAILED and we told the
+            // Commander all was well), 'unsupported' (this build has no updater at all), and 'checking' (a
+            // re-click while a check is in flight returns the busy snapshot immediately). This gate is a HARD
+            // STOP on a save this build cannot read: a false "check back shortly" strands the user with no
+            // idea that the one action on the screen didn't work. Name each state for what it is.
+            if (phase === 'available') { try { await Updates.install(); } catch (e) { if (msg) msg.textContent = 'update found, but the install failed — open the Update Center and retry.'; } }
+            else if (phase === 'current') { if (msg) msg.textContent = 'no newer build is published yet — check back shortly.'; }
+            else if (phase === 'error') { if (msg) msg.textContent = 'the update check failed' + (snap && snap.error ? ' — ' + snap.error : '') + '. Check your connection and try again.'; }
+            else if (phase === 'checking' || phase === 'downloading' || phase === 'installing' || phase === 'restarting') { if (msg) msg.textContent = 'an update check is already running — one moment…'; }
+            else if (msg) msg.textContent = 'this build cannot check for updates — download the latest StarNet from starnetos.com, then reopen.';
           } catch (_) { if (msg) msg.textContent = 'update check failed — try again in a moment.'; }
         } else if (msg) {
           msg.textContent = 'Update StarNet to the latest version (in the desktop app: Update Center), then reopen.';

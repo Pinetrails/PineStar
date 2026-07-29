@@ -43,8 +43,17 @@ A.ok(/RoutineNudgeStore\.propose\(\);\s*return;/.test(chatSrc.slice(iRoutineNudg
 const iWire = chatSrc.indexOf('function wireCuriosity');
 A.ok(iWire > 0 && chatSrc.slice(iWire, iSuggest).indexOf('Dialogue.isOpen') >= 0, 'wireCuriosity stands down when a focused Dialogue panel is open (guard before any gentle nudge)');
 // Slice 8 minors (chat.js is DOM-flow, not node-loadable — locked at the source like the guards above):
-// the post-run slot fires ONLY for the HERO's runs — a summoned worker's clean run must not trigger a hero nudge.
-A.ok(iWire > 0 && /\(p\.agentId\s*\|\|\s*'agent'\)\s*!==\s*'agent'\)\s*return;/.test(chatSrc.slice(iWire, iWire + 700)), 'wireCuriosity early-returns for a non-hero agentId (a summoned worker run fires no hero nudge)');
+// the GENTLE-NUDGE half of the post-run slot fires ONLY for the HERO's runs — a summoned worker's clean run must
+// not trigger a hero nudge. S1 moved this gate DOWN (it used to be the handler's first line, which also starved
+// every specialist of the rate beat); the invariant it protects is unchanged and re-locked here by ORDER.
+const iHeroGate = chatSrc.indexOf('if (!isHeroRun) return;', iWire);
+const iArmRate = chatSrc.indexOf('armRateFallback(p.agentId', iWire);
+const iRateAttempt = chatSrc.indexOf("maybeStandaloneRate(p.agentId || 'agent', runId) === 'fired'", iWire);
+A.ok(iHeroGate > 0, 'wireCuriosity still gates the gentle-nudge slot on a hero run (a summoned worker run fires no hero nudge)');
+A.ok(iHeroGate < iSuggest, 'the hero gate precedes EVERY gentle nudge (suggestion/seed/curiosity/recruitment stay hero-only)');
+// S1 rate-starve fix: both halves of the rating path must be reachable for a NON-hero run, so they precede the gate.
+A.ok(iArmRate > 0 && iArmRate < iHeroGate, 'armRateFallback is armed BEFORE the hero gate (a specialist run is never starved of its retry)');
+A.ok(iRateAttempt > 0 && iRateAttempt < iHeroGate, 'the rate-the-work attempt precedes the hero gate (a specialist run can still be rated)');
 // a new gentle beat retires any prior unanswered one (no cross-run nudge stacking), and clearNudge is exported
 // so the First Pitch can retire a live nudge before its focused panel opens over it.
 const iCurNudge = chatSrc.indexOf('function curiosityNudge');
@@ -120,10 +129,23 @@ stubSeedWill = false;
    a tutorial/intake panel blocking the 650ms moment. */
 const iMaybe = chatSrc.indexOf('function maybeStandaloneRate');
 A.ok(iMaybe > 0, 'chat.js defines maybeStandaloneRate (the one funnel for a starved rating)');
-A.ok(/workRatedRuns\.has\(runId\)/.test(chatSrc.slice(iMaybe, iMaybe + 500)), 'maybeStandaloneRate never double-asks a rated run');
-A.ok(/\.cmsg\.work-rate/.test(chatSrc.slice(iMaybe, iMaybe + 2200)), 'maybeStandaloneRate never stacks a second live rate ask (one at a time)');
-A.ok(/Dialogue\.isOpen/.test(chatSrc.slice(iMaybe, iMaybe + 2200)) && /'blocked'/.test(chatSrc.slice(iMaybe, iMaybe + 2200)),
+// bound the window at the function's real end (the fallback's ledger declaration) rather than a magic char count,
+// so growing the body's commentary can never silently slide an assertion out of range.
+const iMaybeEnd = chatSrc.indexOf('const armedRateRuns', iMaybe);
+A.ok(iMaybeEnd > iMaybe, 'maybeStandaloneRate is still followed by the armRateFallback ledger (window anchor)');
+const mBody = chatSrc.slice(iMaybe, iMaybeEnd);
+A.ok(/workRatedRuns\.has\(runId\)/.test(mBody), 'maybeStandaloneRate never double-asks a rated run');
+A.ok(/\.cmsg\.work-rate/.test(mBody), 'maybeStandaloneRate never stacks a second live rate ask (one at a time)');
+A.ok(/Dialogue\.isOpen/.test(mBody) && /'blocked'/.test(mBody),
   'a focused panel is a TRANSIENT block (retryable), not a permanent stand-down');
+/* S1 SPECIALIST RATE-STARVE. The gate was `agentId !== 'agent' -> 'never'`, so a summoned specialist could only
+   ever be rated via a memory turn-in card and stayed Lv 1 forever. A non-hero run is now gated on ITS OWN stream
+   being the one on screen (the beat renders into the single shared #chat-log — it must never land a specialist's
+   rating in somebody else's transcript), and that gate is TRANSIENT so the fallback still lands it on switch. */
+A.ok(!/\(agentId \|\| 'agent'\) !== 'agent'\) return 'never'/.test(mBody),
+  'the old hero-only PERMANENT stand-down is gone (it starved every specialist of the primary leveling beat)');
+A.ok(/\(agentId \|\| 'agent'\) !== 'agent' && !\(activeWs && \(activeWs\.agentId \|\| 'agent'\) === \(agentId \|\| 'agent'\)\)\) return 'blocked'/.test(mBody),
+  'a non-hero run is rateable only while ITS OWN stream is displayed, and the wait is TRANSIENT (retried, never starved)');
 // the self-retrying fallback: armed at run end BEFORE any stand-down guard, retries while blocked
 const iArm = chatSrc.indexOf('function armRateFallback');
 A.ok(iArm > 0, 'chat.js defines the armRateFallback retry loop');

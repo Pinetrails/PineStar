@@ -181,7 +181,7 @@
      plainly and persists the kept set. This is what cleans Andrew's existing "ULTRON daily operating loop" pair. */
   function sweepDuplicates(jobs) {
     const list = Array.isArray(jobs) ? jobs.slice() : [];
-    const keyOf = (j) => normName(j.agentId) + ' ' + normName(j.name) + ' ' + normName(j.prompt);
+    const keyOf = (j) => normName(j.agentId) + '\u0000' + normName(j.name) + '\u0000' + normName(j.prompt);
     // stable order by createdAt (oldest first), preserving original index for ties so "keep the oldest" is deterministic.
     const indexed = list.map((j, i) => ({ j: j, i: i }));
     indexed.sort((a, b) => {

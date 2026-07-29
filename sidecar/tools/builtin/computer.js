@@ -162,9 +162,29 @@
     return makeInertDriver('computer-use unavailable: no explicitly configured attended desktop driver');
   }
 
+  /* A capture that is only DESCRIBED is not a capture. `capture_after=<json>` told the model the screen
+     was 1920×1080 and nothing about what was on it, so the next click went to coordinates it had never
+     seen. Drivers hand back base64 under one of several field names (or a bare base64 string); this
+     normalizes them and defers the "may it go on the wire" decision to the shared imagewire sniffer, so
+     this producer and fs.read answer that question identically. */
+  function captureToWire(cap, imageWire) {
+    if (!cap || !imageWire) return { images: null };
+    const b64 = (typeof cap === 'string') ? cap
+      : String((cap && (cap.data || cap.base64 || cap.png || cap.image)) || '');
+    if (!b64 || typeof Buffer === 'undefined') return { images: null };
+    let buf;
+    try { buf = Buffer.from(b64.replace(/^data:[^;,]*(;base64)?,/i, ''), 'base64'); }
+    catch (_) { return { images: null }; }
+    const info = imageWire.sniff('capture.png', buf);
+    if (!info) return { images: null };                  // not decodable as an image -> caller keeps the text proof
+    const wire = imageWire.toWire(buf, info);
+    return { images: wire.images, note: imageWire.describe(info, 'screen') + (wire.note ? ' — ' + wire.note : '') };
+  }
+
   function makeComputerTools(deps) {
     deps = deps || {};
     const driver = makeDriver(deps);
+    const imageWire = (deps.imageWire && typeof deps.imageWire.sniff === 'function') ? deps.imageWire : null;
     const useTool = {
       name: 'computer.use',
       // A cached shell/verify approval (`workbench:execute`) must never authorize input.
@@ -198,14 +218,20 @@
         const fgNote = await checkFocus(driver, action);   // throws BEFORE any input is sent when focus is wrong
         const result = await driver.perform(action);
         let proof = '';
+        let images = null;
         if (action.capture_after || action.action === 'screenshot') {
           const cap = await driver.capture();
           if (!cap) throw new Error('capture_after failed: no capture returned');
-          if (typeof cap === 'string') proof = 'capture_after=' + cap;
+          const wired = captureToWire(cap, imageWire);
+          images = wired.images;
+          // The text proof stays either way: it is what the run log and the war room render, and it is the
+          // only record left when the pixels are dropped (oversized, or the host has tool images off).
+          if (wired.note) proof = 'capture_after=' + wired.note;
+          else if (typeof cap === 'string') proof = 'capture_after=' + cap;
           else proof = 'capture_after=' + JSON.stringify(cap);
         }
         const content = 'computer.' + action.action + ' ok' + (fgNote ? '\n' + fgNote : '') + (proof ? '\n' + proof : '') + (result ? '\n' + String(result) : '');
-        return { content, summary: summarize(action) };
+        return { content, summary: summarize(action), images };
       }
     };
     return { useTool, register(reg) { reg.register(useTool); return reg; }, _internals: { ACTIONS, KEYBOARD_ACTIONS, SELF_WINDOW_RE, checkFocus, hardBlock, validateAction, summarize, COMMAND_TEXT_RE, win32DriverRequested, win32DriverActive, win32DriverDisabled, underDesktopShell, makeWin32DesktopDriver, makeInertDriver, physicalInputAllowed, assertPhysicalInputAllowed } };

@@ -36,6 +36,9 @@ const { makeFsTools } = require('./tools/builtin/fs.js');
 // fs.read extracts .docx / .xlsx / .ipynb to readable text. inflateRawSync is injected so the extractor stays
 // pure + headless-testable, and so the OOXML path needs no dependency beyond what Node already ships.
 const docExtract = require('./tools/builtin/docextract.js').makeDocExtract({ inflateRaw: require('node:zlib').inflateRawSync });
+// ...and the same idea for pixels: ONE sniffer shared by every producer that can hand the driving model an
+// image, so the `images` channel has more than a single caller (a channel with one caller is a special case).
+const imageWire = require('./tools/builtin/imagewire.js').makeImageWire({});
 const { makeNotebookTools } = require('./tools/builtin/notebook.js');
 const { makeRecallTool } = require('./tools/builtin/recall.js');
 const { makeToolSearchTool } = require('./tools/builtin/toolsearch.js');   // tool.search: reach a granted-but-unadvertised (deferred) tool
@@ -73,8 +76,15 @@ const {
   providerUsesDeviceOAuth: registryProviderUsesDeviceOAuth,
   defaultReasoningEffortForProvider: registryDefaultReasoningEffort,
   providerRequiresKey,
-  providerRequiresBaseUrl
+  providerRequiresBaseUrl,
+  attachRateLimits
 } = require('./providers/factory.js');
+/* PROACTIVE QUOTA. One tracker for the whole process, attached to the factory so every provider adapter's
+   injected fetch is instrumented at a single seam (see providers/ratelimits.js). Quota used to be learned only
+   by hitting a 429; now the *-remaining headers of ordinary successful calls are kept, so the station can say
+   "this meter is nearly spent" BEFORE the wall instead of after it. */
+const rateLimits = require('./providers/ratelimits.js').makeRateLimits({ clock: { now: () => Date.now() } });
+attachRateLimits(rateLimits);
 const { DEFAULT_MODEL: CODEX_DEFAULT_MODEL } = require('./providers/codex.js');
 const codexAuth = require('./providers/codex-auth.js');
 const codexTokenStore = require('./providers/codex-token-store.js');
@@ -931,7 +941,12 @@ function replaceAgentRoster(list) {
       // Class Loadouts S1 (additive): the agent's class SKILL PACKAGE + applied reasoning effort. Old rosters
       // without these load unchanged (skills -> [], reasoningEffort -> null). skills are slugs, deduped + capped.
       skills: Array.isArray(a && a.skills) ? [...new Set(a.skills.map(s => String(s || '').trim()).filter(Boolean))].slice(0, 40) : [],
-      reasoningEffort: (a && a.reasoningEffort) ? String(a.reasoningEffort) : null
+      reasoningEffort: (a && a.reasoningEffort) ? String(a.reasoningEffort) : null,
+      // S3 (additive): the agent's EARNED track record, already coarsened + phrased by the browser
+      // (frontend/app/xp.js credential()). Rendered on the lead's [ORCHESTRATION] dispatch list so delegation
+      // is an informed pick, never a gated one. '' for an agent that has proved nothing yet — old rosters
+      // without the field load to '' and the briefing stays byte-identical to before.
+      track: String((a && a.track) || '').slice(0, 120)
     });
   }
 }
@@ -949,7 +964,7 @@ function loadAgentRoster() {
 // P1.1: the fields saveAgentRoster() rebuilds from the live Map — the KNOWN shape. Preserved unknown fields (any
 // key a newer frontend added that this sidecar doesn't model) are spread UNDER these on save, so they survive a
 // re-save by older code rather than being dropped. agentId is always rebuilt (identity), never preserved raw.
-const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'skills', 'reasoningEffort'];
+const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'skills', 'reasoningEffort', 'track'];
 // saveAgentRoster(updatedAt?) — persist the live roster. The optional updatedAt is the CLIENT's freshness stamp
 // (from POST /api/roster body.updatedAt); handleRoster passes it after its anti-clobber gate accepts a push, so the
 // stored envelope records the exact stamp we accepted (a later push older than it is refused). Server-internal
@@ -959,7 +974,7 @@ function saveAgentRoster(updatedAt) {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
     const agents = [...agentRoster].map(([agentId, a]) => {
-      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null };   // Class Loadouts S1: persist per-agent skill package + effort. approvalMode (audit 1.3): the load path parses it (replaceAgentRoster) but the save path omitted it — a Full-Access agent reverted to 'ask' every sidecar restart until a browser re-pushed. Persist it, matching the load-path normalization ('full' | 'ask').
+      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null, track: a.track || '' };   // S3: track = the earned track-record line (see replaceAgentRoster)   // Class Loadouts S1: persist per-agent skill package + effort. approvalMode (audit 1.3): the load path parses it (replaceAgentRoster) but the save path omitted it — a Full-Access agent reverted to 'ask' every sidecar restart until a browser re-pushed. Persist it, matching the load-path normalization ('full' | 'ask').
       // P1.1: forward-compat field preservation — carry any UNKNOWN keys from the last-seen raw record under the
       // known ones, so a field a newer frontend added isn't silently eaten when older sidecar code re-saves.
       const rawRec = agentRosterRaw.get(agentId);
@@ -2665,7 +2680,10 @@ if (require.main === module) {
 const shellBg = makeShellBg({ spawn: childSpawn, redact: redact, clock: { now: () => Date.now() }, onExit: (e) => chanEmit('shell.bg.exit', e), maxPerAgent: 5, ledger: procLedger });
 // serviceEnv: the KEYS-tab vars a shell child must receive. Lazy + per call — sanitizeChildEnv strips every
 // *_API_KEY from the inherited env, so without this the pasted key never reaches curl (see servicekeys.runEnv).
-const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: () => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV }) });
+// `surface` is the RUN's surface, forwarded by the backend from the shell/verify call: an unattended run only
+// receives the keys whose unattended grant is flipped ON, the SAME rule resolveForRequest enforces on
+// web_request. Host authority — it comes from the run, never from tool args.
+const executionEnvironment = makeEnvironmentManager({ spawn: childSpawn, fs: fs, pathMod: path, root: WORKSPACES, bg: shellBg, redact: redact, clock: { now: () => Date.now() }, env: process.env, serviceEnv: (surface) => serviceKeysMod.runEnv(serviceKeys, process.env, { reservedEnv: SERVICEKEYS_RESERVED_ENV, surface: surface }) });
 try { console.log('[exec-env]', JSON.stringify(executionEnvironment.describe())); } catch (_) {}
 const subagents = makeSubagentManager({ fs: fs, pathMod: path, file: path.join(WORKSPACES, 'subagents.json'), clock: { now: () => Date.now() }, emit: chanEmit, newId: () => crypto.randomUUID(), keep: 200, hooks: hookSpine });
 
@@ -9868,6 +9886,33 @@ async function handleRun(req, res) {
   }
 }
 
+/* THE LATEST USER TURN — as TEXT, whatever shape it arrived in.
+
+   ⛔ AN ATTACHMENT TURN IS NOT A STRING (bug-sweep P0). The moment the Commander sends a photo or a file, that
+   user message's `content` is an ARRAY of provider content blocks (attachments.js expands the reference into
+   parts). Four separate scans here walked the messages backwards looking for `typeof content === 'string'`,
+   so on an attachment turn each one silently SKIPPED it and used the PREVIOUS user message instead — never an
+   empty result, always a plausible WRONG one: the run's title and its persisted transcript turn were the older
+   message, the task brief was prepared from the older text, memory recall ranked against the older query, and
+   the study pass studied the older directive. Flatten the parts instead (same rule attachments.textOf uses).
+   Returns '' only when the turn genuinely carries no text (an image-only send) — an honest empty, not a lie. */
+function latestUserText(list) {
+  const msgs = Array.isArray(list) ? list : [];
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i];
+    if (!m || m.role !== 'user') continue;
+    if (typeof m.content === 'string') return m.content;
+    if (!Array.isArray(m.content)) continue;      // an unknown shape is not a user turn we can read — keep walking
+    const parts = [];
+    for (const p of m.content) {
+      if (typeof p === 'string') parts.push(p);
+      else if (p && typeof p.text === 'string') parts.push(p.text);
+    }
+    return parts.join('');                        // '' for an image-only turn: honest, and it IS the latest turn
+  }
+  return '';
+}
+
 /* runOnce — the reusable RUN HOST. Assembles the proven seams (fresh tool registry + the office-workstation
    capability projection + the consent broker + the OpenRouter provider + cost engine), does the tool-capable
    pre-check, injects the Cortex memory-recall fence, and drives the unchanged agentic loop. Extracted verbatim
@@ -10034,10 +10079,7 @@ async function runOnce(o) {
 
   if (isTask && o.taskKey) {
     try {
-      let latestUser = '';
-      for (let i = messages.length - 1; i >= 0; i--) {
-        if (messages[i] && messages[i].role === 'user' && typeof messages[i].content === 'string') { latestUser = messages[i].content; break; }
-      }
+      const latestUser = latestUserText(messages);   // flattens an attachment turn instead of skipping to an older one
       if (latestUser) taskBrief = await taskBriefStore.prepare({
         id: 'tb_' + runId, key: String(o.taskKey), streamId: streamId || '', agentId, runId,
         source: o.taskSource || (surface === 'interactive' ? 'interactive' : 'channel'), text: latestUser,
@@ -10163,7 +10205,7 @@ async function runOnce(o) {
   // against the station's blessed project roots. surface + pathPrompt are per-run: an autonomous run passes
   // no prompt, so pathTrustCore hard-denies any un-blessed outside path (the unattended rule).
   const runPathTrust = (abs, o2) => pathTrustCore.guard(abs, { scope: (o2 && o2.scope) || 'read', surface: surface, prompt: pathPrompt || null, agentId: (o2 && o2.agentId) || agentId });
-  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
+  makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20, readReturn: 24000 }, redact, pathTrust: runPathTrust, docExtract, imageWire }).register(registry);   // redact: scrub secrets out of surfaced fs.search lines (§5.6)
   makeNotebookTools({ store: notebookStore, clock: { now: () => Date.now() }, redact, rank, nextTrust: memcore.nextTrust, findSimilar: memcore.findSimilar }).register(registry);   // §5.6: scrub secrets at the write boundary; rank: explicit read shares auto-recall's relevance order; nextTrust: notebook.feedback rating fold; findSimilar: near-dupe guard so the same belief can't accumulate in N phrasings
   widgetTools.register(registry);   // WIDGET RAILS Phase 2: widget.set — agent-fed rail readouts (memory capability: sandboxed local write, no consent, no network)
   makeRecallTool({ transcriptStore }).register(registry);   // H1.3: recall_conversation — agent searches its own past dialogue (transcriptstore); joins the NOTEBOOK (memory) capability
@@ -10200,7 +10242,7 @@ async function runOnce(o) {
   // computer.use remains registered behind an INERT driver as defense in depth against a
   // forged dispatch. It is removed from ordinary tool definitions below; no current run host
   // mints the separate one-shot attended-input lease required by computer.js.
-  makeComputerTools({ allowPhysicalInput: false }).register(registry);
+  makeComputerTools({ allowPhysicalInput: false, imageWire }).register(registry);
   // team.dispatch (Stage 2 orchestrator): registered every run but only EXPOSED when an 'orchestrator' object is
   // in the room — conferred ONLY on the lead run (below), so a delegated worker can never re-delegate. It calls
   // THIS SAME runOnce per worker; the roster supplies each worker's composed identity (system prompt + model).
@@ -10964,9 +11006,23 @@ async function runOnce(o) {
   if (o.lead) {
     teamNote = '\n\n[ORCHESTRATION] You are the lead orchestrator. You can build and direct a crew for the Commander:';
     const lines = [];
-    for (const [aid, ident] of agentRoster) { if (aid === agentId) continue; lines.push('  - ' + aid + ' (' + (ident.name || aid) + ')' + (ident.role ? ' — ' + ident.role : '')); }
+    // S3: each crew line carries that specialist's EARNED track record when it has one (browser-computed,
+    // coarse — see frontend/app/xp.js credential()). It INFORMS the pick, it never gates it: an agent that has
+    // proved nothing simply has no track clause, exactly as before, and nothing here forbids delegating to it.
+    let anyTrack = false;
+    for (const [aid, ident] of agentRoster) {
+      if (aid === agentId) continue;
+      const track = String((ident && ident.track) || '').trim();
+      if (track) anyTrack = true;
+      lines.push('  - ' + aid + ' (' + (ident.name || aid) + ')' + (ident.role ? ' — ' + ident.role : '') + (track ? ' [' + track + ']' : ''));
+    }
     if (lines.length) teamNote += '\n• DELEGATE to your existing specialist crew with team.dispatch — call it with '
-      + 'workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
+      + 'workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n')
+      // only explain the bracket when at least one is actually present — a station with no proven crew stays
+      // byte-identical to the pre-S3 briefing (no dangling legend for a notation nothing uses).
+      + (anyTrack ? '\n  A [bracketed] note is that specialist\'s REAL track record on this station — earned from work the '
+        + 'Commander rated and runs the harness watched finish. Use it to pick the right worker; it is evidence, not a '
+        + 'permission level, and an agent without one is simply new, not worse.' : '');
     teamNote += '\n• SPAWN temporary same-identity subagents with team.spawn for one-off parallel subtasks when no named specialist is needed. '
       + 'Use background:true for watchable long-running spawned workers, then inspect/control them with team.subagents, team.interrupt, and team.resume.';
     // Class Loadouts S1: the class list here is composed from the SHARED catalog (id + tagline), never hardcoded,
@@ -11140,8 +11196,7 @@ async function runOnce(o) {
   if (!internal) try {
     const stored = notebookStore.get('notebook:' + agentId);
     const recs = Array.isArray(stored) ? stored : [];
-    let q = '';
-    for (let i = messages.length - 1; i >= 0; i--) { if (messages[i] && messages[i].role === 'user' && typeof messages[i].content === 'string') { q = messages[i].content; break; } }
+    const q = latestUserText(messages);   // an attachment turn must rank recall against ITS text, not the previous turn's
     const ranked = rank(recs, q, { now: Date.now(), streamId });   // M-mem.2b: boost the active workstream's working memory
     const recall = renderRecall(ranked, { limit: 1500 });
     if (recall.text) {
@@ -11302,8 +11357,7 @@ async function runOnce(o) {
     if (billed) { try { credits.finishRun({ runId, agentId, usd: finalUsd, tokens: finalTokens, turns: finalTurns, reason: (result && result.reason) || 'done' }); } catch (_) {} }
     // record the run OUTCOME (durable history) — reason + a short title from the triggering user message. Fail-open.
     try {
-      let title = '';
-      for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i] && msgs[i].role === 'user' && typeof msgs[i].content === 'string') { title = msgs[i].content; break; } }
+      const title = latestUserText(msgs);   // an attachment turn titles/records ITSELF, never the message before it
       runStore.record({ runId, agentId, reason: (result && result.reason) || 'done', turns: finalTurns, tokens: finalTokens, usd: finalUsd, title: title, streamId: o.streamId || '', recipeId: o.recipeId || '', model: finalModel, unmetered: providerUnmetered, artifacts: artifactLedger.list(), toolsOk, identityFallback });   // H3.2/H3.3/G6 + work-visibility + crate-honesty + P1.2 identity-honesty: transcript join + honest model/spend/deliverables/worked/named-agent + recipe provenance
 
       // P0.1/H1.1: persist the full DIALOGUE (not just the outcome) — a durable server-side transcript for EVERY
@@ -11408,8 +11462,7 @@ async function runOnce(o) {
   }
   if (_auxSpend.has('study')) {
     studyingNow.add(agentId);
-    let studyDirective = '';
-    for (let i = result.messages.length - 1; i >= 0; i--) { const m = result.messages[i]; if (m && m.role === 'user' && typeof m.content === 'string') { studyDirective = m.content; break; } }
+    const studyDirective = latestUserText(result.messages);   // study the turn that actually ran, attachment or not
     runStudy({ agentId, runId, messages: result.messages.slice(), directive: studyDirective, provider, model: _auxModel, cost, unmetered: providerUnmetered }).catch(() => {}).finally(() => { studyingNow.delete(agentId); });
   }
   if (_auxSpend.has('threadmine')) {
@@ -11796,7 +11849,7 @@ async function handleActivityBeacon(req, res) {
   res.end(JSON.stringify({ ok: true, at: lastUserActivityAt }));
 }
 // GET /api/nightshift/status — truthful telemetry for a later UI lane. Every field is provable from server state:
-// active (timer armed), away + awaySince (the away clock), beatsUsedToday/leashPerDay (the enforced leash),
+// active (timer armed), away + awaySince/awayAt (the away clock: window opened, and when it flips),
 // lastBeatAt, nextEligibleAt (cooldown clears), and `binding` (the gate currently blocking a beat, or null when
 // one would fire this instant). Reads the pure planner's decision so status == what the tick would actually do.
 function handleNightshiftStatus(req, res) {
@@ -11808,12 +11861,21 @@ function handleNightshiftStatus(req, res) {
   const summary = commanderPosture.summary() || {};
   const rolled = nightshift.rollDay(nightshiftState, now);
   // presence truth mirrors the driver's lastActivity dep: a LIVE interactive run counts as activity-now.
-  const awaySince = (interactiveRunInFlight() ? now : lastUserActivityAt) + NIGHTSHIFT_AWAY_MS;   // the instant "away" becomes true
+  /* TWO DIFFERENT INSTANTS, AND THE OLD FIELD NAME CLAIMED THE WRONG ONE. `awaySince` used to carry
+     lastActivity + AWAY_MS — i.e. the instant away BECOMES true, a timestamp in the FUTURE while the Commander
+     is present. That value is correct and deliberate (test/nightshift-presence.e2e.test.js proves telemetry
+     agrees with the driver), but "since" names a PAST boundary, and frontend/app/nightreport.js documents its
+     own `awaySince` parameter as "ms epoch the away window OPENED" and filters `ts >= awaySince` with it. Same
+     word, opposite ends of the window: the first consumer to wire this route into the morning report would have
+     scoped every night-shift decision out of its own report and shown a blank morning.
+     So: `awayAt` carries the future instant under a name that says so, and `awaySince` now means what it says. */
+  const awayWindowOpenedAt = interactiveRunInFlight() ? now : lastUserActivityAt;
   const out = {
     active: !!nightshiftTimer,
     halted: (rolled.haltedAt || 0) > 0,   // NS E-STOP durable halt — true until the Commander re-writes the dial
     away: decision ? !!decision.away : false,
-    awaySince: awaySince,
+    awaySince: awayWindowOpenedAt,        // PAST: when the idle window opened — the boundary a report scopes from
+    awayAt: awayWindowOpenedAt + NIGHTSHIFT_AWAY_MS,   // FUTURE (while present): when `away` flips true
     // the REAL "away" rule, so the UI can say "no input for N min" instead of the ambiguous "while you're away"
     // (users read that as "app closed" — it isn't; the app stays open, away = idle). Provable: the exact knob used.
     awayAfterMs: NIGHTSHIFT_AWAY_MS,
@@ -12154,6 +12216,9 @@ function handleDiagnostics(req, res) {
       uptimeMs: Date.now() - PROCESS_START,
       workspacePresent: workspacePresent,
       lastRun: recent ? { runId: recent.runId, status: recent.reason, ts: recent.ts } : null,
+      // observed provider quota. Empty until a call has actually been made — an empty array means NO DATA and
+      // must never be rendered as "plenty left" (see ratelimits.advise).
+      rateLimits: (() => { try { return rateLimits.snapshot(); } catch (_) { return []; } })(),
       errors: DIAG_ERR_RING.slice()   // already redacted on write; the assembler redacts again as a backstop
     };
     out = diagnostics.assemble(snapshot);

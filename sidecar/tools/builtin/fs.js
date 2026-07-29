@@ -47,6 +47,7 @@
     // OPTIONAL document-to-text for fs.read (.docx / .xlsx / .ipynb). Unwired = the historic behavior, where
     // those files decode as UTF-8 noise. index.js wires it with zlib.inflateRawSync.
     const docExtract = (deps.docExtract && typeof deps.docExtract.sniff === 'function') ? deps.docExtract : null;
+    const imageWire = (deps.imageWire && typeof deps.imageWire.sniff === 'function') ? deps.imageWire : null;
 
     async function workspaceRoot(agentId) {
       if (environment && typeof environment.ensureWorkspace === 'function') return environment.ensureWorkspace(safeAgentId(agentId || 'agent'));
@@ -153,7 +154,7 @@
 
     const readTool = {
       name: 'fs.read', capability: 'cabinet', scope: 'read', requiresConsent: false, timeoutMs: 10000,
-      description: 'Read a file from your workspace. Text files come back as text; Word (.docx), Excel (.xlsx) and Jupyter (.ipynb) files are extracted to readable text automatically.',
+      description: 'Read a file from your workspace. Text files come back as text; Word (.docx), Excel (.xlsx) and Jupyter (.ipynb) files are extracted to readable text automatically; PNG/JPEG/GIF/WEBP images are shown to you as actual pixels so you can look at them directly.',
       schema: { type: 'object', required: ['path'], properties: { path: { type: 'string' } } },
       run: async (args, ctx) => {
         const aid = (ctx && ctx.agentId) || 'agent';
@@ -173,6 +174,25 @@
             const text = docExtract.extract(raw, kind, { maxChars: READ_RETURN });
             if (text) return { content: text, summary: kind + ' → ' + kb(Buffer.byteLength(text)) + ' of text' };
           } catch (_) { /* fall through to the plain read below */ }
+        }
+
+        /* IMAGES. Same shape as documents, same reason: the bytes are unreadable as UTF-8, so without
+           this the agent could see a screenshot existed and had no way to look at it — including the
+           output of its OWN image_generate call. image_analyze routes the picture to a SEPARATE vision
+           model and returns prose, which steers the driving model off a description of the pixels
+           instead of the pixels. Here they ride the `images` channel into the conversation itself.
+           Sniffed by magic bytes, so a mislabelled file falls through to the plain read below. */
+        if (imageWire) {
+          const img = imageWire.sniff(args.path, raw);
+          if (img) {
+            const wire = imageWire.toWire(raw, img);
+            const desc = imageWire.describe(img, args.path);
+            return {
+              content: desc + (wire.note ? '\n' + wire.note : (wire.images ? '' : '')),
+              summary: img.ext + ' ' + (img.width && img.height ? img.width + '×' + img.height : kb(img.bytes)),
+              images: wire.images
+            };
+          }
         }
 
         const txt = raw.toString('utf8');

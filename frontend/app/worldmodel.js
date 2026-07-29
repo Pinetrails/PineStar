@@ -161,8 +161,13 @@ const WorldModel = (() => {
     hex:   { label: 'HEX',    pitch: [1, 1], suggest: 'sterile' },
     plank: { label: 'PLANK',  pitch: [5, 1], suggest: 'walnut' },
     turf:  { label: 'TURF',   pitch: [1, 1], suggest: 'meadow' },
+    // v6 CORRIDOR candidates — decks sized and surfaced for a passage rather than a room.
+    // See the note above deckRunner in stationbake.js.
+    runner:   { label: 'RUNNER',   pitch: [2, 2], suggest: null },
+    treadway: { label: 'TREADWAY', pitch: [3, 2], suggest: null },
+    meshway:  { label: 'MESHWAY',  pitch: [3, 3], suggest: null },
   };
-  const MAT_ORDER = ['spine', 'plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
+  const MAT_ORDER = ['spine', 'runner', 'treadway', 'meshway', 'plate', 'panel', 'tile', 'tread', 'soft', 'grate', 'hex', 'plank', 'turf'];
 
   /* the WALL material catalog — the deck's opposite number. Walls carry the same two axes as the
      floor (hue × recipe) and read from the same FLOOR_STYLES hue catalog, because a room should be
@@ -221,8 +226,21 @@ const WorldModel = (() => {
      carries wallMat null, so this reaches stations already built, deliberately, for the same reason
      the deck default moved. `plating` stays in the palette as the classic. */
   const wallMatOfRoom = rm => (rm && WALL_MATERIALS[rm.wallMat]) ? rm.wallMat : 'bulkhead';
+  /* A CORRIDOR'S WALL IS THE STATION'S BULKHEAD, NOT ITS DECKING (2026-07-29, Andrew: "light
+     doesn't seem to reflect on the walls of the hallway"). Following the deck is right for a ROOM —
+     wall and floor are the same room's finish — but a corridor's floor style is DECKING #2c2924,
+     the DARKEST entry in the table, and its wall inherited that on top of two other deliberate
+     dimmings (corUp 8 vs up 14, LIGHT.corridor 0.42 vs room 0.6). Stacked, they put a hallway wall
+     face at luma 26.5 where a room's reads 39.5 — BELOW what a room wall measures after its own
+     ambient, so no amount of light could ever bring it back. That is why the wall read as unlit
+     next to a deck that had just been fixed.
+     Same law stationbake's sideCap note already states for the wall's top surface: a hallway's
+     bulkhead is the same slab of station as the rooms it connects. A wall's HEIGHT may differ
+     between space types — that is the tunnel read and it stays — its MATERIAL may not.
+     Default only: an explicitly painted wallStyle still wins. */
   const wallStyleOfRoom = rm => {
     if (rm && FLOOR_STYLES[rm.wallStyle]) return rm.wallStyle;
+    if (rm && rm.kind === 'corridor') return 'hull';
     if (rm && FLOOR_STYLES[rm.floorStyle]) return rm.floorStyle;
     return 'hull';
   };

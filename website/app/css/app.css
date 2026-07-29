@@ -1159,7 +1159,7 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 .mic-btn:focus-visible, .voice-toggle:focus-visible, .model-dock-toggle:focus-visible { outline: 1px solid var(--ph-bright); outline-offset: 2px; }
 
 .model-dock-toggle {
-  width: auto; min-width: 54px; max-width: 148px; height: 34px; padding: 0 9px; gap: 6px;
+  width: auto; min-width: 54px; max-width: 172px; height: 34px; padding: 0 9px; gap: 6px;
   font-size: 13px; line-height: 1; letter-spacing: 0; text-shadow: 0 0 5px var(--ph-glow2);
   position: relative; overflow: visible;
 }
@@ -1172,18 +1172,18 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
   box-shadow: 0 0 16px var(--ph-glow);
   text-shadow: none;
 }
-.model-dock-sigil {
-  display: inline-grid; place-items: center; width: 16px; height: 16px; opacity: .9;}
-.model-dock-sigil svg { width: 100%; height: 100%; display: block; }
+/* NO SIGIL: the chip carries no icon — the model NAME is the readout, so it gets the type size. */
 .model-dock-effort-chip {
   display: inline-block; max-width: 40px; overflow: hidden; text-overflow: clip;
   white-space: nowrap; font-size: 10px; letter-spacing: 0.6px; color: var(--ph-bright);
 }
 /* resting-state model short-name: legible at rest (full phosphor, not dimmed) so the chip reads
-   "MODEL · TIER" without a click. Capped + truncated so the composer never grows. */
+   "MODEL · TIER" without a click. With the sigil gone this IS the control's face, so it carries
+   the chip's own 13px type — the effort chip stays small so the model name reads first.
+   Still capped + truncated so the composer never grows. */
 .model-dock-model-name {
-  display: inline-block; max-width: 62px; overflow: hidden; text-overflow: ellipsis;
-  white-space: nowrap; font-size: 10px; letter-spacing: 0.5px;
+  display: inline-block; max-width: 108px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; font-size: 13px; letter-spacing: 0.5px;
   color: var(--ph); line-height: 1;
 }
 .model-dock-model-name.empty { color: var(--ph-dim); opacity: 0.7; }
@@ -1314,11 +1314,10 @@ body.no-curve #stage-wrap::before { background: none; box-shadow: none; }
 
 @media (max-width: 780px) {
   .model-dock-toggle { width: auto; min-width: 44px; max-width: 118px; padding: 0 5px; gap: 3px; }
-  .model-dock-sigil { width: 14px; height: 14px; font-size: 10px; }
-  .model-dock-effort-chip { max-width: 30px; font-size: 10px; }
-  /* on the narrow composer the model short-name is redundant with the tooltip — drop it, keep MODEL·TIER glyphs */
-  .model-dock-model-name { display: none; }
-  .model-dock-toggle .model-dock-effort-chip::before { display: none; }
+  /* on the narrow composer the chip can only afford ONE readout. With no sigil the model name IS the
+     control, so the TIER is what drops here (tooltip + dock still name it); the name only tightens. */
+  .model-dock-model-name { max-width: 74px; font-size: 12px; letter-spacing: 0.3px; }
+  .model-dock-effort-chip { display: none; }
   .model-dock-tip { max-width: min(74vw, 244px); }
   .model-dock { position: fixed; left: 8px; right: 8px; bottom: 120px; width: auto; max-height: min(62vh, 410px); }
   .model-dock-list { max-height: 220px; }

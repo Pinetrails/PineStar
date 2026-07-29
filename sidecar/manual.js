@@ -8,7 +8,7 @@
    Interactive surface only (same gate as capsummary): that is where a Commander is present to be
    helped and where the placement/build UI exists. Autonomous/cron/worker runs skip it to stay lean and
    byte-deterministic. Pure: no IO, no Date.now / Math.random, returns a constant — passes
-   lint-determinism and is node-testable. The labels (REFIT, DISH→WEB, CABINET→FILES, WORKBENCH→TERMINAL,
+   lint-determinism and is node-testable. The labels (REFIT, DISH→WEB, INTEL CAB→FILES, WORKBENCH→TERMINAL,
    SERVER CART→MEMORY, WORKSTATION→COMPUTE) are copied from the live UI vocabulary
    (frontend/app/worldmodel.js CAP_LABEL/CAP_PROP_MAP + capsummary.js) so the prop, the power word, and
    this manual all say the SAME thing. Keep it in sync if those move. */
@@ -43,7 +43,7 @@ const MANUAL =
   '- WORKSTATION (a desk / console / pixel rig) → COMPUTE. Every agent needs its OWN workstation to ' +
   'run at all; a bay with no computer prop shows NO COMPUTE and cannot take floor work.\n' +
   '- DISH (comms dish / uplink / beacon) → WEB (search + fetch the web).\n' +
-  '- CABINET (intel cabinet / safe / vault / rack) → FILES (read + write files).\n' +
+  '- INTEL CAB (or safe / vault / rack) → FILES (read + write files).\n' +
   '- WORKBENCH → TERMINAL (run shell commands and verify code; consent-gated).\n' +
   '- SERVER CART (server cart / relay stack / databank) → MEMORY (long-term memory the agent keeps).\n' +
   '- STUDIO → image generation + analysis. JUKEBOX → music control. CONNECTOR PORTAL → an MCP ' +
@@ -59,7 +59,7 @@ const MANUAL =
   '\n' +
   'TROUBLESHOOTING — when the Commander is stuck, name the concrete fix:\n' +
   '- “My agent can’t search the web / read files / run code” → open REFIT and place the matching ' +
-  'prop in THAT agent’s room: DISH for web, CABINET for files, WORKBENCH for the terminal.\n' +
+  'prop in THAT agent’s room: DISH for web, INTEL CAB for files, WORKBENCH for the terminal.\n' +
   '- “The agent won’t run / it says NO COMPUTE” → its bay has no workstation; place a desk or ' +
   'console in its room so it has its own PC.\n' +
   '- “An approval is stuck / the edge is flashing red” → open the APPROVALS hotspot (Alt+A) and ' +

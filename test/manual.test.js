@@ -26,7 +26,7 @@ const { starnetManual } = require('../sidecar/manual.js');
   // 4) prop → power pairings use the REAL live labels (worldmodel CAP_LABEL / capsummary). A mismatch here
   //    means the manual would tell the Commander to place the wrong thing — exactly the drift we guard against.
   A.ok(/DISH[^\n]*WEB/.test(m), 'pairing: DISH → WEB');
-  A.ok(/CABINET[^\n]*FILES/.test(m), 'pairing: CABINET → FILES');
+  A.ok(/INTEL CAB[^\n]*FILES/.test(m), 'pairing: INTEL CAB → FILES');
   A.ok(/WORKBENCH[^\n]*TERMINAL/.test(m), 'pairing: WORKBENCH → TERMINAL');
   A.ok(/SERVER CART[^\n]*MEMORY/.test(m), 'pairing: SERVER CART → MEMORY');
   A.ok(/WORKSTATION[^\n]*COMPUTE/.test(m), 'pairing: WORKSTATION → COMPUTE');

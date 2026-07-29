@@ -125,8 +125,27 @@ function fakeStack(tools) {
   // the web build ships the same panel — a fix that lands in only one copy is a fix half the users never get
   const webStation = fs.readFileSync(path.join(__dirname, '..', 'website', 'app', 'app', 'windows', 'connectors.js'), 'utf8');
   A.ok(!/id="mc-command"/.test(webStation) && !/id="mc-env"/.test(webStation), 'web build carries the same stdio withdrawal');
+  A.ok(/function readJSON/.test(webStation) && /offline: true/.test(webStation) && /offline: false/.test(webStation),
+    'web build carries the same read-honesty fix — a one-copy fix is one half the users never get');
   A.ok(/id="mc-headers"/.test(station), 'http custom-headers input present');
   A.ok(/id="mc-timeout"/.test(station), 'per-connector timeout input present');
+
+  /* ⛔ AN ERRORED READ IS NOT "YOU HAVE NONE", AND A REFUSAL IS NOT "OFFLINE" (fix 1d0c7557).
+     `(await fetch(u)).json()` RESOLVES on 4xx/5xx — the error body parses fine, `j.groups` comes back
+     undefined, and the KEYS tab printed "No keyed platform connectors" at a Commander who has plenty.
+     A non-JSON error body threw instead, and the catch said "sidecar offline — start it" about a station
+     that had just answered. Both readings send someone to fix the wrong thing. These pin the three-way
+     discrimination, because the defect is invisible in a screenshot: an empty list looks like a fact. */
+  A.ok(/function readJSON/.test(station), 'reads go through readJSON, not a bare (await fetch()).json()');
+  A.ok(/if \(!r\.ok\) return/.test(station), 'a 4xx/5xx is detected instead of being parsed as data');
+  A.ok(/offline: true/.test(station) && /offline: false/.test(station),
+    'readJSON separates "never reached the station" from "the station refused" — a two-state boolean cannot');
+  A.ok(/res\.offline/.test(station), 'the failure line keys off res.offline, so only a real outage says start-it');
+  A.ok(/it is running, so this is not a start-it problem/.test(station),
+    'an errored-but-reachable station says so in words, instead of blaming the station being down');
+  A.ok(/couldn\\?['’]t read this from the station/.test(station),
+    'a failed read is reported as a FAILED READ, never rendered as a confirmed-empty list');
+  A.ok(/HTTP ' \+ res\.status|HTTP ' \+ r\.status/.test(station), 'the status code reaches the user, so the cause is diagnosable');
 
   // add + edit + reload + status
   A.ok(/id="mc-add"/.test(station), 'ADD/SAVE button present');
