@@ -758,6 +758,10 @@ const World = (() => {
     if (slaglog) slaglog.reset();       // W1: wasted-spend post-mortems
     if (convey) convey.reset();         // W2: drop the prior agent's in-flight belt crates
     chanQueues.clear(); serverLit.clear();   // W3: no phantom backlog gauge / no body stuck "working" from a prior run
+    // ...and the helper ledger, for the same reason. Without it the previous Commander's spectral sub-agents
+    // re-rendered beside the NEWBORN hero: drawMeeseeks falls back to `bodyForAgent(s.leadId) || agent`, and
+    // bodyForAgent returns null for the dead lead id, so every orphan re-anchored onto the new body.
+    if (subLedger) subLedger.clear();
     xpAgent = null; xpByAgent.clear();  // W4: name-tag level chip re-seeds from XpStore on enterGame
     levelUpAt = 0; lastSlagAt = -1e9; lastOutboxFlash = -1e9;   // W4: one-shot beats don't replay into the newborn
     agent = {
@@ -5991,8 +5995,19 @@ const World = (() => {
     });
     if (typeof EventSource === 'undefined') return;
     let backoff = 1000;
+    let retryTimer = null;
     const open = () => {
       if (bridgePaused) return;   // disconnected to the title screen — do not (re)open
+      /* ONE STREAM, ALWAYS. onerror nulls chanES and arms a retry timer, and resumeBridge re-opens on
+         !chanES — so a re-entry INSIDE the backoff window (DATA › IMPORT → reentry → enterGame →
+         resumeBridge) created stream #1 and the pending timer then overwrote chanES with #2. #1 was never
+         closed, and its onmessage closure (`U.bus.emit(m.name, m.payload)`) references no state that could
+         stop it, so every server event was re-emitted onto the bus forever: two crates per inbound message,
+         doubled HUD notes, desk heat firing twice. Each further re-entry added another. Cancelling the
+         pending retry here is the other half — without it the timer still fires and replaces a healthy
+         stream (the orphan's own onerror closes the module-level chanES, not itself). */
+      if (retryTimer) { try { clearTimeout(retryTimer); } catch (_) {} retryTimer = null; }
+      if (chanES) return;
       try {
         // EventSource can't send the custom auth header, so pass the per-launch token as ?token=… and
         // prefix the sidecar base in the desktop build (where the page origin isn't the loopback http origin).
@@ -6001,7 +6016,7 @@ const World = (() => {
       } catch (_) { return; }
       chanES.onopen = () => { backoff = 1000; lastSseEventAt = (typeof performance !== 'undefined') ? performance.now() : fnow; fetchSnapshot(); };
       chanES.onmessage = ev => { lastSseEventAt = (typeof performance !== 'undefined') ? performance.now() : fnow; try { const m = JSON.parse(ev.data); if (m && m.name) U.bus.emit(m.name, m.payload); } catch (_) {} };
-      chanES.onerror = () => { try { chanES.close(); } catch (_) {} chanES = null; if (bridgePaused) return; setTimeout(open, backoff); backoff = Math.min(15000, backoff * 2); };
+      chanES.onerror = () => { try { chanES.close(); } catch (_) {} chanES = null; if (bridgePaused) return; if (retryTimer) { try { clearTimeout(retryTimer); } catch (_) {} } retryTimer = setTimeout(() => { retryTimer = null; open(); }, backoff); backoff = Math.min(15000, backoff * 2); };
     };
     connOpenFn = open;
     open();
@@ -6023,6 +6038,21 @@ const World = (() => {
         .then(r => { if (!r.ok) return null; return r.json(); })
         .then(snap => { if (snap) { try { reconcileFromSnapshot(snap); } catch (_) {} } })
         .catch(() => {});   // endpoint absent / offline: TTL net covers it
+      /* The helper sprites need their own reconcile: /api/state/snapshot carries no sub-agent list, and the
+         ledger is fed ONLY by `task` frames — a terminal frame emitted while the socket was down is gone for
+         good (the stream sends no `id:` lines, so there is no Last-Event-ID replay). Without this a finished
+         helper flickered beside the desk forever. Same authoritative source the LIVE HELPERS panel paints from. */
+      if (subLedger) {
+        fetch(apiUrl('/api/subagents?status=running'), { cache: 'no-store' })
+          .then(r => { if (!r.ok) return null; return r.json(); })
+          .then(j => {
+            if (!j || !Array.isArray(j.records)) return;   // absent endpoint: leave the ledger alone
+            // the same clock the fold uses (world.js:5991) — fnow is a stale frame stamp and would skew alpha
+            const nowMs = (typeof performance !== 'undefined') ? performance.now() : fnow;
+            try { subLedger.reconcile(j.records.map(r => ({ id: r && r.id, leadId: r && (r.leadId || r.agentId), title: r && r.title })), nowMs); } catch (_) {}
+          })
+          .catch(() => {});
+      }
     } catch (_) {}
   }
   // the live backlog total — FloorStats owns it (tested), with the chanQueues sum as a fallback if
