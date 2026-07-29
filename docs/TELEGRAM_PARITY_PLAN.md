@@ -122,10 +122,24 @@ passes both through as transport-optional. `channel.send` gained `files` (worksp
 degrades to a line *in the chat* naming the workspace path, and the tool result distinguishes "sent with
 2 files" from "sent, and the files did not go". Caption capped at the **media** limit (1024), not 4096.
 
-⚠ **Consent note, unchanged by this work:** `channel.send` is `requiresConsent: true` (it is the exfil
-surface). A default Telegram chat runs headless with approvals OFF, where a consent-gated tool is
-silently skipped — so pushing a file from a Telegram run needs that chat to have run `/approvals on`.
-Widening that is a security decision, not a media one, and was deliberately not taken here.
+⚠ **PROVEN LIMITATION — P1 is only reachable from a phone with `/approvals on`.** `channel.send` is
+`requiresConsent: true` (it is the exfil surface), and that gate is **unchanged by this work** — `files`
+is a new parameter on an existing tool. Run against the real broker:
+
+```
+makeConsentBroker({ surface:'autonomous', … })(channel.send call)
+  -> { allow:false, reason:'autonomous run cannot self-approve this action — silence is not consent' }
+```
+
+A default Telegram chat runs headless with approvals OFF, so an agent there **cannot push a file (or
+any `channel.send` message) unprompted**; the member must `/approvals on` first, which gives the chat
+an ask channel. This is not a media bug — it is the pre-existing outbound-reach policy, and it applies
+to text sends exactly as much as to files.
+
+**The product decision this leaves open:** replying with a file to the chat you are already talking in
+is arguably not the exfil case the gate was written for (the target is the person who just messaged
+you, and known-targets-only already bounds it). Narrowing consent to "third-party targets only" would
+make P1 work on a default chat. That is a security call, deliberately not taken here.
 
 ### P2 — DONE (inbound half): voice notes are no longer dead input
 A voice note is transcribed through the **same** STT chain `/api/stt` uses (Groq whisper →
