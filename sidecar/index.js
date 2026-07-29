@@ -22,7 +22,6 @@ const budgetCaps = require('./budgetcaps.js');   // pure resolve(env,overrides) 
 const fallbackChain = require('./fallbackchain.js');   // pure resolve(env,saved) + validate patch — SETTINGS→Models fallback chain (P0-3)
 const { makeConcurrencyGate } = require('./concurrency.js');
 const { makeWorkspaceLease } = require('./workspace-lease.js');
-const { makeAgentLifecycle } = require('./agent-lifecycle.js');
 const { makeConsentWait } = require('./consentwait.js');   // EL-11: fail-closed consent timer + human-visible ack extension
 const { killAll } = require('./halt.js');
 const { makeRegistry } = require('./tools/registry.js');
@@ -5401,10 +5400,6 @@ const workspaceLease = makeWorkspaceLease(Object.assign(
   { now: () => Date.now() },
   (_leaseWaitMs >= 0 && isFinite(_leaseWaitMs)) ? { waitMs: Math.floor(_leaseWaitMs) } : {}
 ));
-const agentLifecycle = makeAgentLifecycle({
-  workspaceLease,
-  isActive: (agentId) => concurrencyGate.inFlight(agentId) > 0
-});
 // NAME IS LOAD-BEARING: a second module-scope `function runGit(root, args, timeoutMs)` (the night-shift /
 // loop-harvest one) is declared further down this file. Two function declarations in one CommonJS scope do not
 // error — the LAST one silently wins for the whole module, including for hoisted references ABOVE it. When this
@@ -9143,13 +9138,7 @@ async function handleCheckpointRestore(req, res) {
   const snapshotId = String(body.snapshotId || '');
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'bad agentId' });
   if (!checkpointStore.isValidId(snapshotId)) return json(400, { error: 'bad snapshotId' });
-  const operationId = 'restore-' + crypto.randomUUID();
-  const lifecycle = await agentLifecycle.acquireMutation(agentId, operationId);
-  if (!lifecycle.ok) return json(409, { error: lifecycle.deleting ? 'agent is being deleted' : 'workspace busy' });
-  let ok;
-  try { ok = await checkpointStore.restore(agentId, snapshotId); }
-  catch (e) { return json(500, { error: 'restore failed: ' + ((e && e.message) || e) }); }
-  finally { lifecycle.release(); }
+  let ok; try { ok = await checkpointStore.restore(agentId, snapshotId); } catch (e) { return json(500, { error: 'restore failed: ' + ((e && e.message) || e) }); }
   if (!ok) return json(404, { error: 'no such snapshot for that agent' });
   try { checkpointEmit('checkpoint.restored', { agentId: agentId, runId: '', toSnapshotId: snapshotId, reason: 'manual' }); } catch (_) {}
   json(200, { ok: true });
@@ -9247,11 +9236,6 @@ async function handleAgentDelete(req, res) {
   if (!/^[A-Za-z0-9_-]{1,40}$/.test(agentId)) return json(400, { error: 'invalid agentId' });   // same id regex as roster/fs-jail surfaces
   if (agentId === 'agent') return json(400, { error: 'cannot delete the hero agent' });   // the founder is undeletable (resume depends on it)
 
-  const deletion = await agentLifecycle.beginDelete(agentId, 'delete-' + crypto.randomUUID());
-  if (!deletion.ok) {
-    return json(409, { error: deletion.active ? 'agent is active; stop its runs before deleting' : 'agent lifecycle is busy' });
-  }
-  try {
   const archived = [];
   try {
     const ts = new Date().toISOString().replace(/[:.]/g, '-');
@@ -9301,9 +9285,6 @@ async function handleAgentDelete(req, res) {
     latestStudyRun.delete(agentId); lastStudyAt.delete(agentId); studyingNow.delete(agentId); studyDeclinedByAgent.delete(agentId);
   } catch (_) {}
   return json(200, { ok: true, agentId, rosterRemoved: removed, archived, cronRemoved });
-  } finally {
-    deletion.finish();
-  }
 }
 
 // POST /api/dossier { block } — the browser pushes the composed Commander-dossier block whenever it changes,
@@ -10030,12 +10011,6 @@ async function runOnce(o) {
   // Refuse a run only when a NEW distinct agent would exceed the in-flight cap; a 2nd run of an already-
   // admitted agent always passes (no new slot). On refusal emit the same start→error→end shape every other
   // up-front refusal uses (Codex sign-in / non-tool model), reason 'error', transient (a slot may free up).
-  if (!agentLifecycle.canStart(agentId)) {
-    emit('agent.run.start', { agentId, runId, trigger: trigger, model });
-    emit('agent.run.error', { agentId, runId, transient: true, message: 'This agent is being deleted and cannot start new work.' });
-    emit('agent.run.end', { agentId, runId, reason: 'error', turns: 0, usd: 0 });
-    return;
-  }
   if (!concurrencyGate.tryEnter(agentId)) {
     emit('agent.run.start', { agentId, runId, trigger: trigger, model });
     emit('agent.run.error', { agentId, runId, transient: true, message: 'Too many agents are working at once (limit ' + concurrencyGate.max() + '). Wait for one to finish, or raise STARNET_MAX_CONCURRENT_AGENTS.' });
@@ -11802,11 +11777,8 @@ async function handleAutonomyWrite(req, res) {
   makeFsTools({ fsp, pathMod: path, root: WORKSPACES, environment: executionEnvironment, limits: { writeBytes: 1 << 20 }, redact }).register(reg);
   // the REAL broker on the autonomous surface — NOT a hardcoded allow. hardline: hardlineFloor keeps .env/.git
   // unwritable; granted cabinet:write clears the cache tier; otherwise the autonomous mutation default-denies.
-  const sessionKey = 'autowrite-' + crypto.randomUUID();
+  const sessionKey = 'autowrite-' + Date.now();
   const consent = makeConsentBroker({ bypass: FULL_ACCESS, hardline: hardlineFloor, sessionKey: sessionKey, grantsSession, grantsPermanent, persist: persistAllowlist, grantsBlanket: blanketSetFor(agentId), surface: 'autonomous' });
-  const lifecycle = await agentLifecycle.acquireMutation(agentId, sessionKey);
-  if (!lifecycle.ok) return sendJson(409, { ok: false, reason: lifecycle.deleting ? 'agent is being deleted' : 'workspace busy' });
-  try {
   // CHECKPOINT NET: snapshot BEFORE the write (mirrors the runOnce dispatch wrapper) so it's one rollback away.
   // Keep the snapshot id EVEN when created:false — an unchanged workspace returns the existing HEAD, which is a
   // valid, restorable PRE-write rollback point (the common case for a fresh drafts/* write). Discarding it on
@@ -11817,9 +11789,6 @@ async function handleAutonomyWrite(req, res) {
   const r = await reg.dispatch(call, { agentId: agentId, consent: consent, emit: function () {}, timeoutMs: 10000 });
   if (r && r.ok) return sendJson(200, { ok: true, path: rel, snapshot: snapshot, summary: r.summary });
   return sendJson((r && r.summary === 'denied') ? 403 : 400, { ok: false, path: rel, reason: (r && (r.content || r.summary)) || 'write failed' });
-  } finally {
-    lifecycle.release();
-  }
 }
 
 // POST /api/autonomy/posture { posture:{ initiative, reach, leashPerDay }, beliefs?:{ known, beliefs } } — the
