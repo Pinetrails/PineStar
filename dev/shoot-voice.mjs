@@ -112,7 +112,9 @@ const THEMES = (process.env.THEMES || 'amber').split(',');
 const STATES = (process.env.STATES || 'listening,hearing,thinking,speaking,offline').split(',');
 
 for (const skin of SKINS) {
-  await evalJS(cdp, `VoiceLive.setSkin(${JSON.stringify(skin)})`);
+  // the skin switcher was a candidate-picking scaffold and is gone now that the design is settled;
+  // SKINS= still works against any build that kept it, and is a no-op against one that did not
+  await evalJS(cdp, `(typeof VoiceLive.setSkin === 'function' ? VoiceLive.setSkin(${JSON.stringify(skin)}) : 'no-switcher')`);
   for (const theme of THEMES) {
     await evalJS(cdp, `(() => {
       document.body.className = document.body.className.replace(/\\btheme-\\S+/g, '').trim();
@@ -176,6 +178,22 @@ for (const skin of SKINS) {
     }
   }
 }
+
+// The level IS the control: with no icon left, the only way to cut in is the meter itself, so a
+// capture that merely LOOKS right proves nothing. Assert the button really wraps the bars, really
+// has the click handler, and is really the size the eye thinks it is.
+console.log('barge control:', await evalJS(cdp, `JSON.stringify((() => {
+  const b = document.getElementById('lv-barge');
+  if (!b) return { ok: false, why: 'no #lv-barge' };
+  const r = b.getBoundingClientRect();
+  return {
+    ok: b.tagName === 'BUTTON' && !!b.onclick && !!b.querySelector('#lv-wave i'),
+    tag: b.tagName, cls: b.className, wired: !!b.onclick,
+    wrapsBars: b.querySelectorAll('#lv-wave i').length,
+    label: b.getAttribute('aria-label'),
+    w: Math.round(r.width), h: Math.round(r.height)
+  };
+})())`));
 
 // NO WHITE HTML CONTROLS law: those three computed values ARE the bug's signature.
 console.log('OS-paint offenders:', await evalJS(cdp, `JSON.stringify((() => {

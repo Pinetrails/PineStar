@@ -13,12 +13,9 @@ const VoiceLive = (() => {
   let warmupNotice = false;
   const $ = id => document.getElementById(id);
   const POSITION_KEY = 'starnet.liveVoice.position.v1';
-  // The module's SHAPE is settled (the small pop-up "pod"). What these four select is the face of
-  // the barge-in KEY — mic glyph · vu column · shutter · slit — over the SAME markup, so the
-  // click, the aria label, the readouts and the state machine are identical between candidates and
-  // only the styling differs. One will be picked and the rest deleted. setSkin() flips it live.
-  const SKIN_KEY = 'starnet.liveVoice.skin.v1';
-  const SKINS = ['mic', 'vu', 'shutter', 'slit'];
+  // SETTLED (Andrew, 2026-07-29): a small pop-up module with NO icon — a state line, the volume
+  // indicator, and the transcript. The four-shape and four-icon switchers that got us here are
+  // deleted; shipping the candidates was never the goal, choosing one was.
   // Scope readout: a rolling window of mic RMS, oldest at the left. The bars ARE the microphone —
   // never animate them off a timer, or the panel would claim to hear a room it cannot hear.
   const WAVE_BARS = 17;
@@ -100,11 +97,13 @@ const VoiceLive = (() => {
         '<span id="lv-state" class="lv-state">CONNECTING</span>',
         '<button id="lv-close" class="x-btn lv-x" type="button" aria-label="End live voice" title="End live voice">✕</button>',
       '</header>',
+      // The LEVEL IS THE CONTROL. There is no icon: an orb, a mic glyph, a lamp — anything sitting
+      // beside the meter was a second thing to look at, and the meter already says everything this
+      // module knows. So the button IS the meter: press anywhere on your own voice to cut in.
       '<div class="lv-stage">',
-        '<button id="lv-barge" class="lv-orb" type="button" aria-label="Interrupt and speak" title="Interrupt — speak now">',
-          '<span class="lv-halo"></span><span class="lv-iris"></span><span class="lv-pupil"></span>',
+        '<button id="lv-barge" class="lv-meter" type="button" aria-label="Interrupt and speak" title="Interrupt — speak now">',
+          '<div id="lv-wave" class="lv-wave" aria-hidden="true"></div>',
         '</button>',
-        '<div id="lv-wave" class="lv-wave" aria-hidden="true"></div>',
       '</div>',
       '<p id="lv-heard" class="lv-heard" aria-live="polite">Speak naturally — the transcript lands in COMMS.</p>',
       '<p id="lv-agent" class="lv-say"></p>',
@@ -120,7 +119,6 @@ const VoiceLive = (() => {
     for (let i = 0; i < WAVE_BARS; i++) wave.appendChild(document.createElement('i'));
     document.body.appendChild(panel);
     waveBars = Array.from(wave.children);
-    applySkin(readSkin());
     restorePosition(panel);
     makeDraggable(panel);
     $('lv-close').onclick = end;
@@ -128,29 +126,8 @@ const VoiceLive = (() => {
     $('lv-barge').onclick = bargeIn;
   }
 
-  function readSkin() {
-    try { const saved = localStorage.getItem(SKIN_KEY); if (SKINS.includes(saved)) return saved; } catch (_) {}
-    return SKINS[0];
-  }
-  function applySkin(name) {
-    const skin = SKINS.includes(name) ? name : SKINS[0];
-    const panel = $('live-voice-panel');
-    if (panel) {
-      panel.dataset.skin = skin;
-      // A skin changes the panel's whole silhouette, so a position saved under the old one can
-      // strand it half off-screen. Re-clamp against the new geometry.
-      requestAnimationFrame(() => clampPanel(panel));
-    }
-    return skin;
-  }
-  function setSkin(name) {
-    const skin = applySkin(name);
-    try { localStorage.setItem(SKIN_KEY, skin); } catch (_) {}
-    return skin;
-  }
-
-  // Amplitude drives BOTH the scope and the orb bloom, so the panel's whole light level is the
-  // real mic level — one signal, never a decorative loop pretending to be one.
+  // Amplitude drives the meter bars AND the module's own bloom, so the whole light level of the
+  // thing is the real mic level — one signal, never a decorative loop pretending to be one.
   function pushLevel(value) {
     const level = Math.max(0, Math.min(1, value));
     waveHistory.push(level);
@@ -704,7 +681,7 @@ const VoiceLive = (() => {
     document.addEventListener('keydown', event => { if (event.key === 'Escape' && active) end(); });
   }
 
-  return { init, start, end, isActive: () => active, statusSnapshot, setSkin, skins: () => SKINS.slice() };
+  return { init, start, end, isActive: () => active, statusSnapshot };
 })();
 
 document.addEventListener('DOMContentLoaded', () => VoiceLive.init());
