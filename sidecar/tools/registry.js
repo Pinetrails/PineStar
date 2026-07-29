@@ -65,8 +65,11 @@
 
   // `images` rides ALONGSIDE content, never inside it: a tool result is a string on every wire we speak, so
   // pixels have to travel as their own field and be rendered by the loop (see loop.js SCREENSHOTS AS PIXELS).
-  const okResult = (content, summary, control, parkedPath, images) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null, images: Array.isArray(images) && images.length ? images : null });
-  const errResult = (content, summary, parkedPath) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error' });
+  /* parkedPath is RETURNED, not just baked into the note text, because the loop's per-turn budget may clamp
+     this same content again — and a second head+tail cut can eat the note that says where the full output
+     went. The re-clamp has to be able to rewrite that pointer itself. */
+  const okResult = (content, summary, control, parkedPath, images) => ({ ok: true, isError: false, content: clampOutput(content, parkedPath), summary: summary || 'ok', control: control || null, images: Array.isArray(images) && images.length ? images : null, parkedPath: parkedPath || null });
+  const errResult = (content, summary, parkedPath) => ({ ok: false, isError: true, content: clampOutput(content, parkedPath), summary: summary || 'error', parkedPath: parkedPath || null });
 
   // Ask the host to keep the full output. Never throws and never blocks a result: a parker that fails just
   // means we fall back to the plain clamp — losing the tail must never also lose the answer.
