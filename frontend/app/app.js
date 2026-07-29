@@ -129,8 +129,52 @@ const App = (() => {
     const a = anchor.getBoundingClientRect(), b = bar.getBoundingClientRect();
     logo.style.left = (a.left / z) + 'px';
     logo.style.top = (b.top / z + (b.height / z - logo.offsetHeight) / 2) + 'px';
+    queueLogoOcclusion();   // the mark moved — its clip is stale
+  }
+
+  /* ---------- the brand mark yields to windows (2026-07-29 layering report) ----------
+     The z960 hoist that keeps the wordmark crisp above the CRT glass also parks it above every
+     floating window: #terms lives INSIDE #screen-game, a z-index:10 stacking context, so a .term
+     can never out-stack a <body> child no matter how high zTop() climbs. Drag a panel into the
+     top-left and the amber art bleeds straight through it. No z-index fixes this — the glass has
+     to stay over the windows, and anything over the glass is over the windows too — so the mark
+     is CLIPPED under them instead. app/logoclip.js owns the geometry (and its unit test). */
+  function syncLogoOcclusion() {
+    const logo = el('logo'), host = el('terms');
+    if (!logo || typeof LogoClip === 'undefined') return;
+    const box = logo.getBoundingClientRect();
+    // uiZoom law: rects are VISUAL px, clip-path coordinates are the element's own LAYOUT px.
+    const z = (typeof U !== 'undefined' && U.uiZoom) ? U.uiZoom() : 1;
+    const rects = host ? Array.prototype.map.call(host.querySelectorAll('.term'), w => w.getBoundingClientRect()) : [];
+    logo.style.clipPath = LogoClip.clipFor(box, rects, z);
+  }
+  let occlusionQueued = false;
+  function queueLogoOcclusion() {
+    if (occlusionQueued) return;
+    occlusionQueued = true;
+    const run = () => { if (!occlusionQueued) return; occlusionQueued = false; syncLogoOcclusion(); };
+    // rAF reads layout right before paint (the cheap place to force one); the timer is the backstop
+    // for when rAF is FROZEN — a hidden/minimized window, and the dev preview pane.
+    if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+    if (typeof setTimeout === 'function') setTimeout(run, 120);
   }
   if (typeof window !== 'undefined') window.addEventListener('resize', positionLogo);
+  // One watcher covers the whole window lifecycle: childList = open/close, style = drag + resize
+  // + placeTerm, class = minimize/restore. animationend catches the power-on scale settling, which
+  // moves no attribute and so fires no mutation of its own.
+  if (typeof document !== 'undefined' && typeof MutationObserver === 'function') {
+    const host = el('terms');
+    if (host) {
+      new MutationObserver(recs => {
+        for (const r of recs) {
+          if (r.type === 'childList' && r.target === host) { queueLogoOcclusion(); return; }
+          const t = r.target;
+          if (t && t.nodeType === 1 && t.classList && t.classList.contains('term')) { queueLogoOcclusion(); return; }
+        }
+      }).observe(host, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class'] });
+      host.addEventListener('animationend', queueLogoOcclusion);
+    }
+  }
   // boot-settle re-seats: positionLogo's first run happens before VT323 lands and before the logo
   // image has dimensions — both move the topbar/logo geometry with NO resize event, which left the
   // mark visibly off-seat until the first manual resize (part of the 2026-07-20 misalignment report).

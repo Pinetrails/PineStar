@@ -78,6 +78,7 @@ test/cloudsave-unknown.test.js
 test/cloudsave-unload.test.js
 test/fullscreen.test.js
 test/titlebar.test.js
+test/logo-occlusion.test.js
 test/keepawake.test.js
 test/grace.test.js
 test/shell-session.test.js
