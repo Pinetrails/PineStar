@@ -941,7 +941,12 @@ function replaceAgentRoster(list) {
       // Class Loadouts S1 (additive): the agent's class SKILL PACKAGE + applied reasoning effort. Old rosters
       // without these load unchanged (skills -> [], reasoningEffort -> null). skills are slugs, deduped + capped.
       skills: Array.isArray(a && a.skills) ? [...new Set(a.skills.map(s => String(s || '').trim()).filter(Boolean))].slice(0, 40) : [],
-      reasoningEffort: (a && a.reasoningEffort) ? String(a.reasoningEffort) : null
+      reasoningEffort: (a && a.reasoningEffort) ? String(a.reasoningEffort) : null,
+      // S3 (additive): the agent's EARNED track record, already coarsened + phrased by the browser
+      // (frontend/app/xp.js credential()). Rendered on the lead's [ORCHESTRATION] dispatch list so delegation
+      // is an informed pick, never a gated one. '' for an agent that has proved nothing yet — old rosters
+      // without the field load to '' and the briefing stays byte-identical to before.
+      track: String((a && a.track) || '').slice(0, 120)
     });
   }
 }
@@ -959,7 +964,7 @@ function loadAgentRoster() {
 // P1.1: the fields saveAgentRoster() rebuilds from the live Map — the KNOWN shape. Preserved unknown fields (any
 // key a newer frontend added that this sidecar doesn't model) are spread UNDER these on save, so they survive a
 // re-save by older code rather than being dropped. agentId is always rebuilt (identity), never preserved raw.
-const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'skills', 'reasoningEffort'];
+const ROSTER_KNOWN_FIELDS = ['agentId', 'system', 'name', 'model', 'provider', 'role', 'approvalMode', 'skills', 'reasoningEffort', 'track'];
 // saveAgentRoster(updatedAt?) — persist the live roster. The optional updatedAt is the CLIENT's freshness stamp
 // (from POST /api/roster body.updatedAt); handleRoster passes it after its anti-clobber gate accepts a push, so the
 // stored envelope records the exact stamp we accepted (a later push older than it is refused). Server-internal
@@ -969,7 +974,7 @@ function saveAgentRoster(updatedAt) {
   try {
     fs.mkdirSync(WORKSPACES, { recursive: true });
     const agents = [...agentRoster].map(([agentId, a]) => {
-      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null };   // Class Loadouts S1: persist per-agent skill package + effort. approvalMode (audit 1.3): the load path parses it (replaceAgentRoster) but the save path omitted it — a Full-Access agent reverted to 'ask' every sidecar restart until a browser re-pushed. Persist it, matching the load-path normalization ('full' | 'ask').
+      const known = { agentId, system: a.system || '', name: a.name || agentId, model: a.model || null, provider: a.provider || null, role: a.role || '', approvalMode: (a.approvalMode === 'full') ? 'full' : 'ask', skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null, track: a.track || '' };   // S3: track = the earned track-record line (see replaceAgentRoster)   // Class Loadouts S1: persist per-agent skill package + effort. approvalMode (audit 1.3): the load path parses it (replaceAgentRoster) but the save path omitted it — a Full-Access agent reverted to 'ask' every sidecar restart until a browser re-pushed. Persist it, matching the load-path normalization ('full' | 'ask').
       // P1.1: forward-compat field preservation — carry any UNKNOWN keys from the last-seen raw record under the
       // known ones, so a field a newer frontend added isn't silently eaten when older sidecar code re-saves.
       const rawRec = agentRosterRaw.get(agentId);
@@ -11001,9 +11006,23 @@ async function runOnce(o) {
   if (o.lead) {
     teamNote = '\n\n[ORCHESTRATION] You are the lead orchestrator. You can build and direct a crew for the Commander:';
     const lines = [];
-    for (const [aid, ident] of agentRoster) { if (aid === agentId) continue; lines.push('  - ' + aid + ' (' + (ident.name || aid) + ')' + (ident.role ? ' — ' + ident.role : '')); }
+    // S3: each crew line carries that specialist's EARNED track record when it has one (browser-computed,
+    // coarse — see frontend/app/xp.js credential()). It INFORMS the pick, it never gates it: an agent that has
+    // proved nothing simply has no track clause, exactly as before, and nothing here forbids delegating to it.
+    let anyTrack = false;
+    for (const [aid, ident] of agentRoster) {
+      if (aid === agentId) continue;
+      const track = String((ident && ident.track) || '').trim();
+      if (track) anyTrack = true;
+      lines.push('  - ' + aid + ' (' + (ident.name || aid) + ')' + (ident.role ? ' — ' + ident.role : '') + (track ? ' [' + track + ']' : ''));
+    }
     if (lines.length) teamNote += '\n• DELEGATE to your existing specialist crew with team.dispatch — call it with '
-      + 'workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n');
+      + 'workers:[{agentId, prompt}] and synthesize their returned results into your final answer:\n' + lines.join('\n')
+      // only explain the bracket when at least one is actually present — a station with no proven crew stays
+      // byte-identical to the pre-S3 briefing (no dangling legend for a notation nothing uses).
+      + (anyTrack ? '\n  A [bracketed] note is that specialist\'s REAL track record on this station — earned from work the '
+        + 'Commander rated and runs the harness watched finish. Use it to pick the right worker; it is evidence, not a '
+        + 'permission level, and an agent without one is simply new, not worse.' : '');
     teamNote += '\n• SPAWN temporary same-identity subagents with team.spawn for one-off parallel subtasks when no named specialist is needed. '
       + 'Use background:true for watchable long-running spawned workers, then inspect/control them with team.subagents, team.interrupt, and team.resume.';
     // Class Loadouts S1: the class list here is composed from the SHARED catalog (id + tagline), never hardcoded,
@@ -11830,7 +11849,7 @@ async function handleActivityBeacon(req, res) {
   res.end(JSON.stringify({ ok: true, at: lastUserActivityAt }));
 }
 // GET /api/nightshift/status — truthful telemetry for a later UI lane. Every field is provable from server state:
-// active (timer armed), away + awaySince (the away clock), beatsUsedToday/leashPerDay (the enforced leash),
+// active (timer armed), away + awaySince/awayAt (the away clock: window opened, and when it flips),
 // lastBeatAt, nextEligibleAt (cooldown clears), and `binding` (the gate currently blocking a beat, or null when
 // one would fire this instant). Reads the pure planner's decision so status == what the tick would actually do.
 function handleNightshiftStatus(req, res) {
@@ -11842,12 +11861,21 @@ function handleNightshiftStatus(req, res) {
   const summary = commanderPosture.summary() || {};
   const rolled = nightshift.rollDay(nightshiftState, now);
   // presence truth mirrors the driver's lastActivity dep: a LIVE interactive run counts as activity-now.
-  const awaySince = (interactiveRunInFlight() ? now : lastUserActivityAt) + NIGHTSHIFT_AWAY_MS;   // the instant "away" becomes true
+  /* TWO DIFFERENT INSTANTS, AND THE OLD FIELD NAME CLAIMED THE WRONG ONE. `awaySince` used to carry
+     lastActivity + AWAY_MS — i.e. the instant away BECOMES true, a timestamp in the FUTURE while the Commander
+     is present. That value is correct and deliberate (test/nightshift-presence.e2e.test.js proves telemetry
+     agrees with the driver), but "since" names a PAST boundary, and frontend/app/nightreport.js documents its
+     own `awaySince` parameter as "ms epoch the away window OPENED" and filters `ts >= awaySince` with it. Same
+     word, opposite ends of the window: the first consumer to wire this route into the morning report would have
+     scoped every night-shift decision out of its own report and shown a blank morning.
+     So: `awayAt` carries the future instant under a name that says so, and `awaySince` now means what it says. */
+  const awayWindowOpenedAt = interactiveRunInFlight() ? now : lastUserActivityAt;
   const out = {
     active: !!nightshiftTimer,
     halted: (rolled.haltedAt || 0) > 0,   // NS E-STOP durable halt — true until the Commander re-writes the dial
     away: decision ? !!decision.away : false,
-    awaySince: awaySince,
+    awaySince: awayWindowOpenedAt,        // PAST: when the idle window opened — the boundary a report scopes from
+    awayAt: awayWindowOpenedAt + NIGHTSHIFT_AWAY_MS,   // FUTURE (while present): when `away` flips true
     // the REAL "away" rule, so the UI can say "no input for N min" instead of the ambiguous "while you're away"
     // (users read that as "app closed" — it isn't; the app stays open, away = idle). Provable: the exact knob used.
     awayAfterMs: NIGHTSHIFT_AWAY_MS,

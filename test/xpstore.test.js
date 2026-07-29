@@ -103,4 +103,47 @@ A.ok(world.pulse.some(p => p.agentId === 'agent' && p.level === 2), 'overseer pu
 A.eq((XpStore.stationStats().counters || {}).tasksDone, 8, 'station rollup still includes all agents tasks');
 A.eq((XpStore.stationStats().counters || {}).positiveFeedback, 6, 'station rollup includes all agents positive feedback');
 
+/* ---- S4: the boot-time TROPHY RECONCILE + honest announce copy ----
+   A save written before a badge existed holds the record that earns it and none of the credit. Without the
+   reconcile the trophy case renders that badge LOCKED, with an unlock hint the dossier above it has visibly
+   already met — the app contradicting its own state. It must run for EVERY agent (a specialist's case is not
+   the hero's), it must reach the station rollup, and it must stay SILENT: these are past facts being
+   recognized, not moments happening now. */
+const broadcasts = [];
+global.Chat = { broadcast: (text, opts) => broadcasts.push({ text, opts }) };
+
+// two mid-curve saves that predate S4's badges: 8 shipped tasks + 30 successful tool calls, nothing lit.
+const mkLegacy = (id, name) => ({ id, name, stats: { xp: 0, level: 1, lifetimeXp: 0, confidence: 50, samples: 0, counters: { tasksDone: 8, runs: 9, toolsOk: 30 }, milestones: [] } });
+const oldHero = mkLegacy('agent', 'OVERSEER');
+const oldSpec = mkLegacy('scribe', 'SCRIBE');
+const oldRoster = new Map([['agent', oldHero], ['scribe', oldSpec]]);
+const noticesBefore = notices.length, sfxBefore = sfx;
+
+XpStore.init({
+  getAgent: (id) => oldRoster.get(id || 'agent') || null,
+  agents: () => Array.from(oldRoster.values()),
+  station: { xp: 0, level: 1, lifetimeXp: 0, confidence: 50, samples: 0, counters: { tasksDone: 40, runs: 42, toolsOk: 120 }, milestones: [] },
+  persist: () => { persists++; }
+});
+
+A.ok(oldHero.stats.milestones.indexOf('still_here') !== -1, 'boot lights the badge the hero had already earned (8 tasks)');
+A.ok(oldHero.stats.milestones.indexOf('hands_on') !== -1, 'boot lights HANDS ON off the tool-call record it already had');
+A.eq(oldHero.stats.milestones.indexOf('workhorse'), -1, 'boot lights only what was EARNED — 8 tasks is not 25');
+A.ok(oldSpec.stats.milestones.indexOf('still_here') !== -1, 'a SPECIALIST case is reconciled too, not just the hero');
+A.ok((XpStore.stationStats().milestones || []).indexOf('workhorse') !== -1, 'the station rollup is reconciled off its own record (40 tasks)');
+A.eq(oldHero.stats.xp, 0, 'the backfill mints no XP');
+A.eq(notices.length, noticesBefore, 'the backfill is SILENT — no gold toast for work done weeks ago');
+A.eq(broadcasts.length, 0, '…and no TROPHY EARNED broadcast burst at boot');
+A.eq(sfx, sfxBefore, '…and no sting');
+
+// a badge earned LIVE still announces — and now as a sentence + its real trophy-case label, never a raw slug.
+// (ARCHIVIST/WORKHORSE/NIGHT SHIFT/VETERAN used to fall through to "Milestone — night_shift".)
+bus.emit('workitem.delivered', { agentId: 'agent', workitemId: 'w1', finalQueueId: 'q1' });
+A.ok(oldHero.stats.milestones.indexOf('night_shift') !== -1, 'a real delivery still earns NIGHT SHIFT live');
+A.ok(notices.some(n => n.text === 'Milestone — first external delivery'), 'the live toast reads as a sentence, not a slug');
+A.ok(broadcasts.some(b => b.text === 'TROPHY EARNED · NIGHT SHIFT'), 'the broadcast shouts the trophy-case label');
+A.ok(!notices.some(n => /night_shift/.test(n.text)) && !broadcasts.some(b => /night_shift/.test(b.text)), 'no raw slug reaches the Commander');
+// the label comes from the xp.js catalogue, so a badge added there can never announce as an id.
+A.ok(Xp.MILESTONES.every(m => broadcasts.every(b => !b.text.includes('_'))), 'every announced name is a real label');
+
 A.report('xpstore.test');

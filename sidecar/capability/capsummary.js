@@ -28,7 +28,7 @@
 const CAPS = [
   { id: 'orchestrator', probe: 'team.dispatch',   have: 'delegate to crew, spawn subagents, summon specialists, and create routines', object: 'the lead ORCHESTRATOR role' },
   { id: 'web',          probe: 'web_search',      have: 'search/fetch the web and use the controlled browser', object: 'a DISH' },
-  { id: 'cabinet',      probe: 'fs.read',         have: 'read and write files', object: 'a CABINET' },
+  { id: 'cabinet',      probe: 'fs.read',         have: 'read and write files', object: 'an INTEL CAB' },
   // NOT "control the desktop computer": computer.use/desktop.open carry no capability grant at all and are
   // stripped unconditionally by enforceSyntheticOnly, so claiming desktop control here was a standing lie.
   { id: 'workbench',    probe: 'shell.exec',      have: 'run shell commands and verify code', object: 'a WORKBENCH' },
