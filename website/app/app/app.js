@@ -1192,10 +1192,32 @@ const App = (() => {
   // the full backoff loop (the roster is re-derivable from local state and re-pushed constantly): track a
   // single failed flag, warn EXACTLY once on the healthy→failing edge, and let the next persist re-attempt.
   let rosterPushFailed = false;
+  /* S3 — MAKE THE METERS LOAD-BEARING (without gating anything).
+     Until now every reader of an agent's stats was a display surface: the level chip, the dossier, /whoami.
+     Nothing in the station ACTED on them, so a TRUSTED veteran and a stranger were identical to delegation —
+     which is what made the whole leveling system feel cosmetic. This publishes each agent's EARNED track
+     record onto the roster, where the sidecar renders it on the lead's team.dispatch briefing, so the lead
+     picks a worker on evidence instead of on nothing.
+
+     It INFORMS, it never GATES: no level threshold blocks a dispatch, an unproven agent is simply described
+     without a track line (Xp.credential returns '' until something is actually earned), and the Commander can
+     still hand any work to anyone. The sandbox law holds.
+
+     WHY HERE AND NOT IN THE CACHED SYSTEM PROMPT: the plan originally aimed this at rosterClause(), but that
+     line is baked into the stored a.systemPrompt and needs a recomposeOrchestrators() to refresh — the
+     documented cached-prompt trap (see the note above rosterClause). The sidecar's [ORCHESTRATION] briefing is
+     rebuilt from the roster on EVERY run instead, so it is the same list the lead actually picks from with
+     none of the staleness risk. Duplicating a slow-moving copy into the cached prompt as well would buy
+     nothing and add a second thing to keep in sync, so it is deliberately not done. */
+  function rosterTrack(a) {
+    if (!a || typeof Xp === 'undefined' || !Xp.credential || !a.stats) return '';
+    try { return Xp.credential(a.stats).text || ''; } catch (_) { return ''; }
+  }
   function pushRoster() {
     try {
       const fallbackProv = (typeof Harness !== 'undefined' && Harness.getProv) ? Harness.getProv() : 'openrouter';
       const list = liveAgents().map(a => ({ agentId: a.id, system: a.systemPrompt || '', name: a.name || a.id, model: a.model || '', provider: a.provider || fallbackProv, role: rosterRole(a), approvalMode: (a.approvalMode === 'full' ? 'full' : 'ask'),
+        track: rosterTrack(a),    // S3: this agent's EARNED track record, so the lead's dispatch briefing can pick on evidence (see rosterTrack)
         workshop: !!a.workshop,   // W3: the away-build grant travels with the roster so the consent broker can honor it
         skills: Array.isArray(a.skills) ? a.skills : [], reasoningEffort: a.reasoningEffort || null }));   // #4: each agent's OWN provider; Class Loadouts S1: per-agent skill package + applied effort
       // P1.1 (UPDATE_STATE_SAFETY_AUDIT): stamp a freshness `updatedAt` so the sidecar can refuse a STALE push (a
@@ -2486,7 +2508,9 @@ const App = (() => {
     }
     // AGENT GROWTH: subscribe XP/Level/Confidence to the real run-outcome bus. Seeds agent.stats +
     // the station rollup, pushes the live numbers to the world HUD, and fires level-up celebrations.
-    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, station: pendingStationStats, persist: persist }); pendingStationStats = null; }
+    // S3: onCredential fires only on a coarse track-record change (tier crossing / band flip), and re-pushes
+    // the roster so the lead's next dispatch briefing describes its crew truthfully. Rare by construction.
+    if (typeof XpStore !== 'undefined') { XpStore.init({ getAgent: (id) => agents.get(id || 'agent') || null, station: pendingStationStats, persist: persist, onCredential: () => pushRoster() }); pendingStationStats = null; }
     // PERSONALIZATION: the local user-affinity profile — folds the interest tag of each task + shipped work
     // into a tiny histogram (profile.js engine). Resume the saved slice, else start fresh + seed cold-start
     // from the agent's deployed specialty domain so day-one suggestions aren't blank.

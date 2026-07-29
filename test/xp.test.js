@@ -344,4 +344,57 @@ const rLegacyRan = Xp.reliability(run([done(), done(), done()], legacy).stats);
 A.eq(rLegacyRan.attempted, 3, 'a pre-S2 agent calibrates from its NEW runs only');
 A.eq(rLegacyRan.known, true, 'and becomes known after MIN_RUNS real, attributable runs');
 
+/* ---- S3 CREDENTIAL: the coarse, earned-only track record that makes the meters load-bearing ----
+   Two properties carry the whole slice: it must say NOTHING about an unproven agent (silence, never a rank),
+   and its `key` must be STABLE across ordinary work (or the roster republishes on every event). */
+
+// nothing earned => nothing said. A new specialist must not be described as unproven — that reads as a ranking.
+const cFresh = Xp.credential(Xp.fresh());
+A.eq(cFresh.text, '', 'a brand-new agent publishes NO track record (silence, never "Lv 1 · unproven")');
+A.eq(cFresh.key, '', 'an unearned credential has an empty key, so "has one at all" is a truthiness check');
+A.eq(cFresh.tier, null, 'no experience tier before any tasks ship');
+A.eq(Xp.credential(null).text, '', 'credential(null) is safe and says nothing');
+
+// each part appears ONLY once its own evidence bar is cleared
+const fiveDone = reasons => run(reasons.map((r, i) => ended(r, 'r' + i))).stats;
+A.eq(Xp.credential(fiveDone(['done', 'done', 'done', 'done'])).tier, null, 'four shipped tasks is below the first tier — still nothing claimed');
+const c5 = Xp.credential(fiveDone(['done', 'done', 'done', 'done', 'done']));
+A.eq(c5.tier, 5, 'the first experience tier lands at 5 shipped tasks');
+A.ok(/5\+ tasks shipped/.test(c5.text), 'the tier is published as a THRESHOLD, never a live count');
+A.eq(c5.confBand, null, 'an unrated agent claims no Commander rating');
+A.ok(!/Commander rating/.test(c5.text), '…and the phrase is absent entirely, not empty');
+A.eq(c5.relBand, 'dependable', 'five clean runs DO calibrate the harness-observed finish rate');
+A.ok(/finish rate: DEPENDABLE/.test(c5.text), 'the finish rate is published once MIN_RUNS attributable runs exist');
+
+// a rated agent adds the Commander's own verdict, and the two stay distinguishable in the text
+let rated = fiveDone(['done', 'done', 'done', 'done', 'done']);
+for (let i = 0; i < 3; i++) rated = Xp.applyEvent(rated, { name: 'memory.feedback', payload: { agentId: 'a', id: 'm' + i, delta: 2, reason: 'work_great' } }).stats;
+const cRated = Xp.credential(rated);
+A.ok(/Commander rating: /.test(cRated.text), 'a rated agent publishes the Commander rating');
+A.ok(/finish rate: /.test(cRated.text), '…alongside the separately-sourced finish rate');
+A.ok(cRated.text.indexOf('Commander rating') < cRated.text.indexOf('finish rate'), 'what you said is listed before what the station saw');
+
+/* THE CHURN GUARD — this is what makes the credential safe to publish into a briefing. Ordinary work must not
+   move the key; only a tier crossing or a band flip may. If this goes red, S3 re-POSTs the whole roster
+   (every agent's composed system prompt) on essentially every event. */
+const base = fiveDone(['done', 'done', 'done', 'done', 'done']);
+const keyBefore = Xp.credential(base).key;
+let churned = Xp.clone(base);
+for (const ev of [ended('done', 'x1'), ended('done', 'x2'), toolOk('x1'), delivered(), memUsed('m', 'x3'), ended('done', 'x3')]) churned = Xp.applyEvent(churned, ev).stats;
+A.eq(Xp.credential(churned).key, keyBefore, 'ordinary work does NOT move the credential key (no roster churn)');
+A.ok(churned.counters.tasksDone > base.counters.tasksDone, '…even though the underlying task count really did grow');
+// …and a genuine crossing DOES move it
+let crossed = Xp.clone(base);
+for (let i = 0; i < 20; i++) crossed = Xp.applyEvent(crossed, ended('done', 'c' + i)).stats;
+A.eq(Xp.credential(crossed).tier, 25, 'crossing into the next tier moves the tier');
+A.ok(Xp.credential(crossed).key !== keyBefore, '…and therefore moves the key, so the roster republishes exactly then');
+// a band flip alone is also a real change
+let flipped = Xp.clone(base);
+for (let i = 0; i < 6; i++) flipped = Xp.applyEvent(flipped, ended('max_iters', 'f' + i)).stats;
+A.eq(Xp.credential(flipped).relBand, 'uneven', 'a run of shortfalls flips the finish-rate band');
+A.ok(Xp.credential(flipped).key !== keyBefore, 'a band flip moves the key even with no tier change');
+
+// the credential is a READOUT — it never mints anything
+A.eq(Xp.credential(crossed).text === '' ? 0 : crossed.xp, crossed.xp, 'credential() is pure readout — it mints no XP');
+
 A.report('xp.test');

@@ -312,6 +312,7 @@ test/xp.test.js
 test/xp-crewsplit.test.js
 test/xpstore.test.js
 test/dossier-reliability.test.js
+test/roster-track.test.js
 test/returns.test.js
 test/outbox-window.test.js
 test/personas-fun-five.test.js

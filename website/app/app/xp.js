@@ -372,6 +372,41 @@
     };
   }
 
+  /* S3 — CREDENTIAL: the agent's track record reduced to COARSE, SLOW-MOVING facts, so it can be safely put
+     somewhere a fast-changing number must never go (a delegation briefing the lead reads to pick a worker).
+
+     Everything here is quantized on purpose. XP ticks on every approval and `tasksDone` on every run, so
+     publishing either raw would rewrite the briefing constantly; the tiers and bands below change a handful of
+     times in an agent's whole life, which is what makes `key` usable as a "has anything actually changed?"
+     trigger instead of re-pushing on every event.
+
+     EARNED-ONLY: each part is null until the agent has proved it. A brand-new specialist yields
+     `{ key: '', text: '' }` — the consumer then says NOTHING about it, rather than publishing "Lv 1 · unproven",
+     which would read as a ranking and quietly discourage delegating to a new agent. Silence is the honest
+     default; the sandbox law means an unproven agent must never be disadvantaged by the meter. */
+  const TIERS = [{ at: 100, label: '100+ tasks shipped' }, { at: 25, label: '25+ tasks shipped' }, { at: 5, label: '5+ tasks shipped' }];
+  function credential(stats) {
+    const s = stats || fresh();
+    const c = (s && s.counters) || {};
+    const doneCount = Math.max(0, Math.floor(num(c.tasksDone, 0)));
+    const tier = (TIERS.find(t => doneCount >= t.at) || null);
+    const m = compute(s);
+    const r = reliability(s);
+    const confBand = m.known ? m.band : null;         // what the COMMANDER said (needs MIN_SAMPLES ratings)
+    const relBand = r.known ? r.band : null;          // what the HARNESS saw (needs MIN_RUNS attributable runs)
+    const parts = [];
+    if (tier) parts.push(tier.label);
+    if (confBand) parts.push('Commander rating: ' + confBand.toUpperCase());
+    if (relBand) parts.push('finish rate: ' + relBand.toUpperCase());
+    return {
+      tier: tier ? tier.at : null, confBand, relBand,
+      // the change-detection handle: identical key => nothing worth republishing has moved. Empty (not '||')
+      // when nothing is earned, so "has a credential at all" is a plain truthiness check for every consumer.
+      key: parts.length ? [tier ? tier.at : '', confBand || '', relBand || ''].join('|') : '',
+      text: parts.join(' · '),
+    };
+  }
+
   // the FULL milestone catalogue as render-state: every badge with its label, unlock hint, and earned flag —
   // earned ones lit, locked ones shown with what unlocks them. Pure → drives the trophy case in the dossier.
   function milestones(stats) {
@@ -379,5 +414,5 @@
     return MILESTONES.map(m => ({ id: m.id, label: m.label, hint: m.hint, earned: earned.indexOf(m.id) !== -1 }));
   }
 
-  return { fresh, clone, applyEvent, compute, reliability, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES, MIN_RUNS, workSize, crewSplit };
+  return { fresh, clone, applyEvent, compute, reliability, credential, scoreEvent, levelForXp, xpForLevel, milestones, MILESTONES, LEVEL_K, MIN_SAMPLES, MIN_RUNS, workSize, crewSplit };
 });

@@ -11,6 +11,7 @@ const XpStore = (() => {
   let getAgent = () => null;
   let station = null;            // the station-wide rollup stats (same shape as an agent's .stats)
   let persistFn = () => {};
+  let credentialFn = () => {};   // S3: fired ONLY when an agent's coarse track record actually changes
   let wired = false;
 
   // the real events that feed growth. Only explicit turn-in memory.feedback mints XP; operational events
@@ -98,8 +99,17 @@ const XpStore = (() => {
     if (!station) station = Xp.fresh();
     const ev = { name, payload: payload || {} };
 
+    /* S3 — republish the roster ONLY when this agent's COARSE credential moves (a tier crossing or a band
+       flip), never on every XP tick. Xp.credential is quantized precisely so this key is stable across the
+       hundreds of ordinary events a working agent emits; without the before/after comparison this would fire
+       a full /api/roster POST (every agent's whole composed system prompt) on every single run. */
+    const credBefore = (Xp.credential && a.stats) ? Xp.credential(a.stats).key : '';
     const ra = Xp.applyEvent(a.stats, ev); a.stats = ra.stats;
     const rs = Xp.applyEvent(station, ev); station = rs.stats;
+    if (Xp.credential) {
+      const credAfter = Xp.credential(a.stats).key;
+      if (credAfter !== credBefore) { try { credentialFn(a.id || agentId, credAfter); } catch (_) {} }
+    }
 
     pushToWorld(a);
     pushTopbar();
@@ -117,6 +127,7 @@ const XpStore = (() => {
     opts = opts || {};
     if (opts.getAgent) getAgent = opts.getAgent;
     if (opts.persist) persistFn = opts.persist;
+    if (opts.onCredential) credentialFn = opts.onCredential;   // S3: app.js re-pushes the roster so the dispatch briefing stays true
     // resumed rollup from the save, else a fresh one. NB: fall back to fresh (not the prior in-memory
     // station) so creating a NEW agent mid-session doesn't inherit the previous colony's XP.
     station = (opts.station && typeof opts.station === 'object') ? opts.station : (typeof Xp !== 'undefined' ? Xp.fresh() : null);
