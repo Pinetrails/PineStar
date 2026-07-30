@@ -1022,6 +1022,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
     //      speaks the same hand-rolled protocol (exported codec), proving handleTts serves neural audio no-key ----
     {
       const audioPayload = Buffer.from([0xff, 0xf3, 0x64, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07]);   // fake mp3 bytes we choose
+      const ssmlSeen = [];   // every SSML request the loopback served — carries the <voice name='…'> actually asked for
       const wsServer = http.createServer((rq, rs) => { rs.writeHead(426); rs.end(); });
       wsServer.on('upgrade', (rq, socket) => {
         const wskey = rq.headers['sec-websocket-key'] || '';
@@ -1036,7 +1037,7 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
           socket.write(edge.wsEncode(0x2, Buffer.concat([hl, hdr, audioPayload]), { mask: false }));
           socket.write(edge.wsEncode(0x1, Buffer.from('X-RequestId:mock\r\nPath:turn.end\r\n\r\n{}', 'utf8'), { mask: false }));
         };
-        const parse = edge.makeWsParser((op, payload) => { if (op === 0x1 && payload.toString('utf8').includes('Path:ssml')) respond(); }, () => {});
+        const parse = edge.makeWsParser((op, payload) => { const t = payload.toString('utf8'); if (op === 0x1 && t.includes('Path:ssml')) { ssmlSeen.push(t); respond(); } }, () => {});
         socket.on('data', parse);
         socket.on('error', () => {});
       });
@@ -1063,6 +1064,45 @@ function boot(port, workspaces, attemptsLeft, extraEnv) {
         A.eq(r2.headers.get('x-voice-cache'), 'hit', 'an identical second edge request is served from the disk cache');
         const b2 = Buffer.from(await r2.arrayBuffer());
         A.eq(b2.equals(audioPayload), true, 'the cached edge clip is byte-identical');
+        A.ok(/^edge:/.test(r2.headers.get('x-voice-provider') || ''), 'the serving tier names itself (X-Voice-Provider: edge:…)');
+
+        /* ---- THE SHIPPED SHAPE: local:true where the offline engine cannot load (every installed build —
+           the bundle ships no node_modules; reproduced here with the STARNET_LOCAL_VOICE=0 kill-switch).
+           ⛔ THE BUG THIS LOCKS OUT (2026-07-30, found by ear): this request used to fall through into the
+           KEYED provider chain, so live voice silently spoke with a different provider's identity and the
+           voice picker adjusted an engine that was not there. Now the picked voice maps onto the nearest
+           Edge neural — the SSML the loopback captures is the proof of which voice was actually requested,
+           and the mapped name differing from Edge's own default (Christopher) is what discriminates the fix
+           from the old fallthrough, with no key and no network. */
+        {
+          const shipWs = fs.mkdtempSync(path.join(os.tmpdir(), 'sk-ship-'));
+          const sb = await boot(port + 350, shipWs, 20, {
+            STARNET_LOCAL_VOICE: '0', SKYNET_LOCAL_VOICE: '0',
+            SKYNET_EDGE_TTS: '1', STARNET_EDGE_TTS: '1',
+            SKYNET_EDGE_TTS_HOST: '127.0.0.1', SKYNET_EDGE_TTS_PORT: String(wsPort), SKYNET_EDGE_TTS_INSECURE: '1'
+          });
+          const SB = 'http://' + HOST + ':' + sb.port;
+          try {
+            const stok = await bootToken(SB, SB);
+            const H = { 'Content-Type': 'application/json', 'X-StarNet-Token': stok, Origin: SB };
+            const lvs = await (await fetch(SB + '/api/local-voice/status', { headers: H })).json();
+            A.eq(lvs.available, false, 'the kill-switch presents the installed-build truth through the route');
+            const postLocal = (t, v) => fetch(SB + '/api/tts', { method: 'POST', headers: H, body: JSON.stringify({ text: t, local: true, localVoice: v }) });
+            const g = await postLocal('shipped george check', 'bm_george');
+            A.eq(g.status, 200, 'local:true with the engine absent still serves (200)');
+            A.eq(g.headers.get('x-voice-provider'), 'edge:en-GB-RyanNeural', 'the PICKED voice maps to its Edge neural — never the keyed chain, never Edge\'s own default');
+            A.eq(Buffer.from(await g.arrayBuffer()).equals(audioPayload), true, 'and the audio really came from the Edge floor');
+            A.ok(ssmlSeen.some(s => s.indexOf("name='en-GB-RyanNeural'") >= 0), 'the wire asked Edge for the mapped voice by name');
+            const b = await postLocal('shipped bella check', 'af_bella');
+            A.eq(b.headers.get('x-voice-provider'), 'edge:en-US-AriaNeural', 'a different pick maps differently — the picker is LIVE on an installed build, not decorative');
+            const u = await postLocal('shipped unknown check', 'not-a-voice');
+            A.eq(u.headers.get('x-voice-provider'), 'edge:en-US-ChristopherNeural', 'an unknown pick maps through the default voice, never to another provider');
+          } finally {
+            try { sb.child.kill(); } catch (_) {}
+            await sleep(150);
+            try { fs.rmSync(shipWs, { recursive: true, force: true }); } catch (_) {}
+          }
+        }
       } finally {
         try { eb.child.kill(); } catch (_) {}
         // bounded teardown: force any lingering (keep-alive/upgrade) sockets shut so close() can't stall the test.

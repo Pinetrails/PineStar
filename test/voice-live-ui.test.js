@@ -61,8 +61,17 @@ function bodyOf(name) {
 }
 for (const fn of ['start', 'startDictation']) {
   assert.match(bodyOf(fn), /Voice\.forceSpeakOn\(\)/, fn + '() force-enables the speaker — hands-free is never opened muted');
+  /* ⛔ BOTH entry points speak with the BUILT-IN identity. setLocalTts(true) is what routes /api/tts through
+     the picked voice; the dictation leg passing false is what let the keyed provider voice speak on every
+     installed build while the picker adjusted an engine that was not there (the identity bug Andrew heard).
+     The sidecar maps the pick onto the Edge floor when the offline engine is absent, so true is correct on
+     the shipped path too. */
+  assert.match(bodyOf(fn), /Voice\.setLocalTts\(true\)/, fn + '() opts into the built-in voice identity');
 }
+// (start()'s failure teardown legitimately resets the flag — only a reset on the HAPPY path would be the bug,
+// and the positive per-function assert above is what locks that.)
 assert.match(bodyOf('finish'), /Voice\.restoreSpeak\(\)/, 'leaving restores a mute we lifted (a hand-set speaker is left alone)');
+assert.match(bodyOf('finish'), /Voice\.setLocalTts\(false\)/, 'leaving live voice returns ordinary speech to the persona ladder');
 assert.match(voiceSource, /if \(!forcedSpeak\) return false;/, "restoreSpeak never undoes the Commander's own speaker choice");
 
 console.log('voice-live-ui.test.js: ok');

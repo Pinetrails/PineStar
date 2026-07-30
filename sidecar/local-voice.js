@@ -27,25 +27,34 @@ const state = { asr: 'cold', tts: 'cold', progress: null, error: '', cacheRoot }
    `am_` American male, `bm_` British male, `af_`/`bf_` the female sets. Listed male-first because that is the
    station's character; every one of them is selectable. */
 const DEFAULT_LOCAL_VOICE = 'am_onyx';
+/* `edge` on every row: the nearest Microsoft Edge read-aloud neural to that voice. This is the SHIPPED
+   fallback identity — an installed build carries no node_modules, so the Kokoro engine can never load
+   there, and before this mapping existed /api/tts silently fell through to the KEYED provider voice:
+   the picker was inert and the station spoke with a completely different identity than the one chosen
+   (2026-07-30, found by Andrew's ears on a stale-node_modules dev server that behaved like an installed
+   build). The mapping lives ON the catalogue row so a new voice cannot be added without deciding its
+   shipped fallback — a test fails on any row without one. Sex and accent are preserved; the Edge free
+   set has only ~5 male American neurals for our 8, so some picks share a nearest neighbour — a coarser
+   voice on an installed build is honest, the WRONG voice is not. */
 const LOCAL_VOICES = [
-  { id: 'am_onyx', label: 'ONYX', sex: 'male', accent: 'American' },
-  { id: 'am_michael', label: 'MICHAEL', sex: 'male', accent: 'American' },
-  { id: 'am_adam', label: 'ADAM', sex: 'male', accent: 'American' },
-  { id: 'am_eric', label: 'ERIC', sex: 'male', accent: 'American' },
-  { id: 'am_liam', label: 'LIAM', sex: 'male', accent: 'American' },
-  { id: 'am_fenrir', label: 'FENRIR', sex: 'male', accent: 'American' },
-  { id: 'am_echo', label: 'ECHO', sex: 'male', accent: 'American' },
-  { id: 'am_puck', label: 'PUCK', sex: 'male', accent: 'American' },
-  { id: 'bm_george', label: 'GEORGE', sex: 'male', accent: 'British' },
-  { id: 'bm_lewis', label: 'LEWIS', sex: 'male', accent: 'British' },
-  { id: 'bm_daniel', label: 'DANIEL', sex: 'male', accent: 'British' },
-  { id: 'bm_fable', label: 'FABLE', sex: 'male', accent: 'British' },
-  { id: 'af_heart', label: 'HEART', sex: 'female', accent: 'American' },
-  { id: 'af_bella', label: 'BELLA', sex: 'female', accent: 'American' },
-  { id: 'af_nova', label: 'NOVA', sex: 'female', accent: 'American' },
-  { id: 'af_sarah', label: 'SARAH', sex: 'female', accent: 'American' },
-  { id: 'bf_emma', label: 'EMMA', sex: 'female', accent: 'British' },
-  { id: 'bf_alice', label: 'ALICE', sex: 'female', accent: 'British' }
+  { id: 'am_onyx', label: 'ONYX', sex: 'male', accent: 'American', edge: 'en-US-ChristopherNeural' },
+  { id: 'am_michael', label: 'MICHAEL', sex: 'male', accent: 'American', edge: 'en-US-GuyNeural' },
+  { id: 'am_adam', label: 'ADAM', sex: 'male', accent: 'American', edge: 'en-US-RogerNeural' },
+  { id: 'am_eric', label: 'ERIC', sex: 'male', accent: 'American', edge: 'en-US-EricNeural' },
+  { id: 'am_liam', label: 'LIAM', sex: 'male', accent: 'American', edge: 'en-US-SteffanNeural' },
+  { id: 'am_fenrir', label: 'FENRIR', sex: 'male', accent: 'American', edge: 'en-US-ChristopherNeural' },
+  { id: 'am_echo', label: 'ECHO', sex: 'male', accent: 'American', edge: 'en-US-GuyNeural' },
+  { id: 'am_puck', label: 'PUCK', sex: 'male', accent: 'American', edge: 'en-US-SteffanNeural' },
+  { id: 'bm_george', label: 'GEORGE', sex: 'male', accent: 'British', edge: 'en-GB-RyanNeural' },
+  { id: 'bm_lewis', label: 'LEWIS', sex: 'male', accent: 'British', edge: 'en-GB-ThomasNeural' },
+  { id: 'bm_daniel', label: 'DANIEL', sex: 'male', accent: 'British', edge: 'en-GB-ThomasNeural' },
+  { id: 'bm_fable', label: 'FABLE', sex: 'male', accent: 'British', edge: 'en-GB-RyanNeural' },
+  { id: 'af_heart', label: 'HEART', sex: 'female', accent: 'American', edge: 'en-US-JennyNeural' },
+  { id: 'af_bella', label: 'BELLA', sex: 'female', accent: 'American', edge: 'en-US-AriaNeural' },
+  { id: 'af_nova', label: 'NOVA', sex: 'female', accent: 'American', edge: 'en-US-MichelleNeural' },
+  { id: 'af_sarah', label: 'SARAH', sex: 'female', accent: 'American', edge: 'en-US-JennyNeural' },
+  { id: 'bf_emma', label: 'EMMA', sex: 'female', accent: 'British', edge: 'en-GB-SoniaNeural' },
+  { id: 'bf_alice', label: 'ALICE', sex: 'female', accent: 'British', edge: 'en-GB-LibbyNeural' }
 ];
 const localVoiceIds = new Set(LOCAL_VOICES.map(v => v.id));
 // Validated, never passed through: an unknown id would fail deep inside the engine with a stack trace
@@ -53,6 +62,14 @@ const localVoiceIds = new Set(LOCAL_VOICES.map(v => v.id));
 function normalizeLocalVoice(id) {
   const v = String(id || '').trim();
   return localVoiceIds.has(v) ? v : '';
+}
+/* The SHIPPED identity of a picked voice: the Edge neural nearest to it (see the catalogue note). An
+   unknown/empty pick maps through the default voice, so the answer is always a real Edge voice name —
+   the caller never has to invent one, and never falls back to a different provider's identity. */
+function edgeVoiceFor(id) {
+  const want = normalizeLocalVoice(id) || DEFAULT_LOCAL_VOICE;
+  const row = LOCAL_VOICES.find(v => v.id === want) || LOCAL_VOICES[0];
+  return row.edge;
 }
 
 
@@ -86,7 +103,17 @@ function packagePresent(name) {
   return false;
 }
 
+/* Kill-switch: STARNET_LOCAL_VOICE=0 (or SKYNET_) forces the engine unavailable even where the packages
+   resolve. Two real uses: a user opting out of the on-disk models, and TESTS reproducing the installed-build
+   shape (no node_modules) on a dev checkout — the shape the 2026-07-30 keyed-fallthrough bug only showed on.
+   Read dynamically (not cached) so a spawned test server's env always wins over require-time state. */
+function disabledByEnv() {
+  const v = process.env.STARNET_LOCAL_VOICE != null ? process.env.STARNET_LOCAL_VOICE : process.env.SKYNET_LOCAL_VOICE;
+  return /^(0|false|no|off)$/i.test(String(v == null ? '' : v).trim());
+}
+
 function installed() {
+  if (disabledByEnv()) return false;
   if (installedCache === null) installedCache = REQUIRED_PACKAGES.every(packagePresent);
   return installedCache;
 }
@@ -283,4 +310,4 @@ function status() {
   };
 }
 
-module.exports = { warm, transcribe, synthesize, status, voices: () => LOCAL_VOICES.slice(), defaultVoice: () => DEFAULT_LOCAL_VOICE, normalizeLocalVoice };
+module.exports = { warm, transcribe, synthesize, status, voices: () => LOCAL_VOICES.slice(), defaultVoice: () => DEFAULT_LOCAL_VOICE, normalizeLocalVoice, edgeVoiceFor };
