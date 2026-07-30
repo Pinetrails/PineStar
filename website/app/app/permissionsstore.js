@@ -125,23 +125,30 @@ const PermissionsStore = (() => {
     if (deps.load !== false) { try { refresh(); } catch (_) {} }
   }
 
-  // a brand-new hero starts LOCKED DOWN: drop the cache and revoke the curated autonomous grants, so a fresh station
-  // can never inherit a previous one's standing permission to write files unattended (re-grant via the panel).
-  // RETURNS A PROMISE so onWake can AWAIT the lockdown before the new agent enters the game — closing the window
-  // where a fresh Commander could briefly inherit the prior write grant (the posture reset to 'wait' is the backstop;
-  // this makes the claimed lockdown authoritative, not fire-and-forget). Sync-safe + node-safe (resolves immediately
-  // with no api wired); the revoke calls are still INITIATED synchronously. Non-curated grants are left to the user.
-  function reset() {
+  // a brand-new hero starts LOCKED DOWN: revoke the curated autonomous grants before the fresh station commits.
+  // A revoke failure must preserve the last confirmed cache and REJECT — clearing first made the UI claim lockdown
+  // while the server still held cabinet:write. Non-curated grants remain visible and untouched.
+  async function reset() {
     const keys = ready() ? Permissions.grantableKeys() : ['cabinet:write'];
     const had = blanket.slice();
-    grants = []; grantable = []; meta = {}; blanket = []; loaded = false; error = '';
-    if (!deps.api || typeof deps.api.revoke !== 'function') return Promise.resolve();
-    const jobs = [];
-    for (const k of keys) { try { jobs.push(Promise.resolve(deps.api.revoke(k)).catch(() => {})); } catch (_) {} }
-    // ...and any standing FULL ACCESS wildcard. A "reset everything" that left the broadest grant in the
-    // product standing would be the same lie as the ledger not listing it.
-    for (const b of had) { try { jobs.push(Promise.resolve(deps.api.revoke(b.key)).catch(() => {})); } catch (_) {} }
-    return Promise.all(jobs);
+    if (!deps.api || typeof deps.api.revoke !== 'function') {
+      grants = []; grantable = []; meta = {}; blanket = []; loaded = false; error = '';
+      return snapshot();
+    }
+    error = '';
+    // Curated grants first, then any standing FULL ACCESS wildcard: a lockdown that left the broadest grant
+    // standing would be the same lie as the ledger not listing it. Both go through the local revoke() so a
+    // server refusal lands in `error` and REJECTS here — and note nothing is cleared optimistically, because
+    // blanket is only ever refreshed from the server; wiping it locally is precisely the claim we cannot make.
+    for (const k of keys) {
+      const snap = await revoke(k);
+      if (snap.error) throw new Error('could not lock down standing permissions — ' + snap.error);
+    }
+    for (const b of had) {
+      const snap = await revoke(b.key);
+      if (snap.error) throw new Error('could not lock down standing permissions — ' + snap.error);
+    }
+    return snapshot();
   }
 
   return { init, refresh, snapshot, currentLevel, setLevel, grant, revoke, reset, _grants: () => grants.slice() };
