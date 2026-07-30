@@ -134,7 +134,9 @@ const F = (err, status, opts) => friendlyError(err, status, opts);
   A.eq(v.action, null, 'server_error has no deep-link action');
   A.ok(/local StarNet service hit an error/i.test(v.userMessage), 'server_error leads with the friendly headline');
   A.ok(/sidecar HTTP 500/.test(v.raw), 'raw technical text preserved for the dim sub-line');
-  A.eq(F({ status: 503 }).kind, 'server_error', 'a bare 503 status -> server_error');
+  // 2026-07-30: this line used to assert the DEFECT (a bare 503 -> the "local StarNet service" copy). A 503
+  // with no sidecar evidence in the raw is a provider-shaped failure — the local claim owes proof it never has.
+  A.eq(F({ status: 503 }).kind, 'provider_server_error', 'a bare 503 status -> the PROVIDER server bucket');
 
   // network / transport loss -> retryable network. The KIND is unchanged by proof; only the COPY moves, because
   // the kind drives behavior (retry, no door) while the copy is the part that names a culprit.

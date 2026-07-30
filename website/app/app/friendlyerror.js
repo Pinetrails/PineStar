@@ -70,7 +70,14 @@
   // action: 'settings' (fix the model key) · 'refit' (place the missing gear) · 'skills' (toggle a skill
   //   family) · 'store' (top up managed credit) · null (just retry / nothing).
   const KINDS = {
+    // ONLY for a fault PROVEN local: the raw carries "sidecar http 5xx" (our own service answered 500). A
+    // provider's 5xx/overloaded must never land here — a message naming a component owes proof it is at fault,
+    // and blaming the local service for an Anthropic/OpenRouter overload had users reporting "StarNet's servers
+    // are down" during every industry load spike (2026-07-30, the report wave behind this split).
     server_error:  { retryable: true,  action: null,       msg: 'The local StarNet service hit an error — give it a moment and try again.' },
+    // The PROVIDER's servers answered with an error/overload (5xx, "overloaded", "temporarily unavailable").
+    // StarNet is healthy and says so; retry is the primary door because provider load spikes pass.
+    provider_server_error: { retryable: true, action: null, msg: "The AI provider's servers are having trouble right now (overloaded or erroring) — StarNet itself is fine. Wait a moment and try again; if it keeps failing, switch model or provider in COMMS." },
     network:       { retryable: true,  action: null,       msg: "Can't reach StarNet's local service — if the app closed, restart it; if it restarted, reload this window, then try again." },
     rate_limit:    { retryable: true,  action: null,       msg: 'The model provider is busy (too many requests) — wait a few seconds and try again.' },
     // The sidecar is fine; its call OUT to the model provider failed (see isUpstreamFetchFailure). Say that, and
@@ -120,11 +127,12 @@
     unknown:       { retryable: true,  action: null,       msg: 'Something went wrong on that turn — try again.' }
   };
 
-  // the sidecar classifier speaks in `reason`s; map each onto our UI kind. (Most are 1:1; `overloaded` and
-  // `format_error` fold into the closest beginner-facing bucket.)
+  // the sidecar classifier speaks in `reason`s; map each onto our UI kind. Its whole domain is the PROVIDER
+  // API call (sidecar/providers/errorClass.js) — so its `server_error`/`overloaded` are the provider's fault
+  // by construction and map to provider_server_error, never to the local-service copy.
   const REASON_TO_KIND = {
-    auth: 'auth', billing: 'billing', rate_limit: 'rate_limit', quota_exhausted: 'quota_exhausted', overloaded: 'server_error',
-    server_error: 'server_error', timeout: 'timeout', context_overflow: 'context_overflow',
+    auth: 'auth', billing: 'billing', rate_limit: 'rate_limit', quota_exhausted: 'quota_exhausted', overloaded: 'provider_server_error',
+    server_error: 'provider_server_error', timeout: 'timeout', context_overflow: 'context_overflow',
     model_not_found: 'model_not_found', content_policy_blocked: 'content_policy_blocked',
     format_error: 'unknown', unknown: 'unknown'
   };
@@ -268,10 +276,22 @@
         if (TERMINAL_BILLING_RE.test(low)) return 'billing';
         return 'rate_limit';
       }
-      if (s >= 500) return 'server_error';
+      /* 5xx: WHO answered it decides the copy, and the BODY outranks the prefix. In-band adapter labels name
+         the provider ("Anthropic http 529 - Overloaded"); a pre-stream route failure says "sidecar HTTP 5xx —
+         <detail>" but that detail can be a PROXIED provider body, so the prefix alone proves nothing. Evidence
+         order: provider phrasing/name in the body → provider; a "sidecar http" prefix with neither → local
+         (the one case where our own route demonstrably answered the 5xx); anything else → provider, because
+         this ladder runs on the model-call path and "the local service broke" is the claim that owes proof. */
+      if (s >= 500) {
+        if (/overloaded|over capacity|temporarily unavailable|try again later/.test(low)) return 'provider_server_error';
+        if (/\b(anthropic|openai|openrouter|google|gemini|grok|xai|kimi|codex|deepseek|mistral|groq|ollama)\b/.test(low)) return 'provider_server_error';
+        return /sidecar http/.test(low) ? 'server_error' : 'provider_server_error';
+      }
       if (s === 400 || s === 413 || s === 422) return /context length|maximum context|context window|too many tokens|reduce the length/.test(low) ? 'context_overflow' : 'unknown';
     }
     // message patterns (no status / in-band error text)
+    // in-band provider overload phrasing, mirrored from sidecar/providers/errorClass.js — keep the two in step
+    if (/overloaded|over capacity|temporarily unavailable|try again later/.test(low)) return 'provider_server_error';
     if (QUOTA_EXHAUSTED_RE.test(low) && !SHORT_WINDOW_RE.test(low)) return 'quota_exhausted';
     if (/rate limit|too many requests|rate-limit/.test(low)) return 'rate_limit';
     if (/insufficient|out of credit|not enough credit|quota|payment required|add credits|billing/.test(low)) return 'billing';
@@ -353,6 +373,15 @@
         // `timeout`, which is honest about the SHAPE but silent about the HOP — "the provider timed out" and "your
         // machine can't reach the provider" need different words, and only the latter should mention VPN/proxy.
         if ((kind === 'unknown' || kind === 'network' || kind === 'timeout') && isUpstreamFetchFailure(raw)) kind = 'provider_unreachable';
+        // The node classifier's domain is the provider API, so its server_error/overloaded map to
+        // provider_server_error — but a GENUINE local fault ("sidecar HTTP 500 — internal error", no provider
+        // evidence in the body) also reaches it via the probe. Apply the same evidence rule as the browser
+        // ladder: a sidecar-prefixed 5xx with no provider name/phrasing in the body is the local service's own.
+        if (kind === 'provider_server_error' && /sidecar http/.test(raw.toLowerCase())
+            && !/overloaded|over capacity|temporarily unavailable|try again later/.test(raw.toLowerCase())
+            && !/\b(anthropic|openai|openrouter|google|gemini|grok|xai|kimi|codex|deepseek|mistral|groq|ollama)\b/.test(raw.toLowerCase())) {
+          kind = 'server_error';
+        }
       } catch (_) { kind = kindFromRaw(raw, status); }
     } else {
       kind = kindFromRaw(raw, status);
